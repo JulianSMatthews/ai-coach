@@ -1,0 +1,41 @@
+{
+  "version": "1.0.0",
+  "snippets": [
+    {
+      "id": "nut_protein_def_001",
+      "pillar_key": "nutrition",
+      "concept_key": "protein_basics",
+      "type": "definition",
+      "title": "Protein target per meal",
+      "text": "A simple target is ~20–30g protein per main meal.",
+      "locale": "en-GB"
+    },
+    {
+      "id": "nut_protein_rubric_001",
+      "pillar_key": "nutrition",
+      "concept_key": "protein_basics",
+      "type": "rubric",
+      "title": "Protein rubric",
+      "text": "High: names sources and amounts per meal. Moderate: vague sources. Low: no awareness.",
+      "locale": "en-GB"
+    },
+    {
+      "id": "tr_overload_howto_001",
+      "pillar_key": "training",
+      "concept_key": "progressive_overload",
+      "type": "howto",
+      "title": "Progressive overload tip",
+      "text": "If you hit all reps with good form, add 2.5kg or 1–2 reps next week.",
+      "locale": "en-GB"
+    },
+    {
+      "id": "res_reflect_rubric_001",
+      "pillar_key": "resilience",
+      "concept_key": "reflection",
+      "type": "rubric",
+      "title": "Reflection rubric",
+      "text": "High: weekly written review with 1–2 changes applied next week; Moderate: ad-hoc; Low: none.",
+      "locale": "en-GB"
+    }
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "version": "1.0.0",
+  "pillars": [
+    {
+      "id": "nutrition",
+      "name": "Nutrition",
+      "concepts": [
+        {
+          "id": "protein_basics",
+          "name": "Protein basics",
+          "weight": 2,
+          "description": "Understands typical per‑meal protein portions and sources.",
+          "rubric": {
+            "low": { "band": [0.0, 0.3], "anchors": ["does not mention protein sources", "vague health talk"], "examples": ["I don't track protein."] },
+            "moderate": { "band": [0.4, 0.6], "anchors": ["names 1–2 sources, no amounts"], "examples": ["Chicken sometimes."] },
+            "high": { "band": [0.7, 1.0], "anchors": ["names sources + amounts per meal"], "examples": ["25g per meal; eggs, chicken, tofu."] }
+          },
+          "question_bank": [
+            "What protein do you usually include at lunch?",
+            "Roughly how much protein do you aim for per meal?"
+          ],
+          "clarifiers": [
+            "Quick follow‑up: what protein was in your last lunch?",
+            "Estimate grams or hand‑size you use for protein?"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "training",
+      "name": "Training",
+      "concepts": [
+        {
+          "id": "progressive_overload",
+          "name": "Progressive overload",
+          "weight": 2,
+          "description": "Plan to gradually increase training stress.",
+          "rubric": {
+            "low": { "band": [0.0, 0.3], "anchors": ["does same workout"], "examples": ["Same weights weekly."] },
+            "moderate": { "band": [0.4, 0.6], "anchors": ["adds reps/weight sometimes"], "examples": ["Add reps if easy."] },
+            "high": { "band": [0.7, 1.0], "anchors": ["structured progression plan; tracked"], "examples": ["+2.5kg weekly if all reps."] }
+          },
+          "question_bank": [
+            "When do you usually add weight or reps?",
+            "How do you decide progression from week to week?"
+          ],
+          "clarifiers": [
+            "Do you log the plan in an app or notebook?"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "resilience",
+      "name": "Resilience",
+      "concepts": [
+        {
+          "id": "reflection",
+          "name": "Reflection",
+          "weight": 2,
+          "description": "Reviews performance and applies changes.",
+          "rubric": {
+            "low": { "band": [0.0, 0.3], "anchors": ["never reflects"], "examples": ["I don't think about it."] },
+            "moderate": { "band": [0.4, 0.6], "anchors": ["ad‑hoc reflection"], "examples": ["Only if I mess up."] },
+            "high": { "band": [0.7, 1.0], "anchors": ["weekly routine; written notes"], "examples": ["Sunday review with notes."] }
+          },
+          "question_bank": [
+            "Do you reflect weekly? How do you do it?",
+            "What’s one change you made after a recent review?"
+          ],
+          "clarifiers": [
+            "How often do you journal or check your week?"
+          ]
+        }
+      ]
+    }
+  ]
+}
