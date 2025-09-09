@@ -1,327 +1,226 @@
-# app/models.py
 from __future__ import annotations
 
-import os
 from datetime import datetime
 from sqlalchemy import (
-    Column, Integer, String, Boolean, DateTime, ForeignKey, Text, Index, Float, UniqueConstraint
+    Column, Integer, String, Text, DateTime, Boolean, Float, ForeignKey,
+    UniqueConstraint, Index
 )
+from sqlalchemy.dialects.postgresql import JSONB as JSONType
 from sqlalchemy.orm import declarative_base, relationship
-from sqlalchemy.dialects.postgresql import JSONB  # works on Postgres
-from pgvector.sqlalchemy import Vector
 
 Base = declarative_base()
 
-# Fallback for non‑Postgres environments
-try:
-    JSONType = JSONB
-except Exception:  # pragma: no cover
-    from sqlalchemy import JSON as JSONType  # type: ignore
-
 # ──────────────────────────────────────────────────────────────────────────────
-# Existing app models
+# Core
 # ──────────────────────────────────────────────────────────────────────────────
 
 class User(Base):
     __tablename__ = "users"
+    id         = Column(Integer, primary_key=True)
+    name       = Column(String(120), nullable=True)
+    phone      = Column(String(64), unique=True, nullable=True, index=True)
+    created_on = Column(DateTime, nullable=True)
+    updated_on = Column(DateTime, nullable=True)
 
-    id                = Column(Integer, primary_key=True)
-    name              = Column(String(120), nullable=False)
-    phone             = Column(String(32), nullable=False, unique=True, index=True)
-    tz                = Column(String(64), nullable=False, default="Europe/London")
-
-    # Pillar levels (LLM-assessed)
-    nutrition_level   = Column(String(16), nullable=True)   # "Low" | "Moderate" | "High"
-    training_level    = Column(String(16), nullable=True)
-    resilience_level  = Column(String(16), nullable=True)    # renamed from psych_level
-
-    # Goals snapshot
-    goal_primary      = Column(Text, nullable=True)
-    goal_timeframe    = Column(Text, nullable=True)
-    goal_drivers      = Column(Text, nullable=True)
-    goal_support      = Column(Text, nullable=True)
-    goal_commitment   = Column(Text, nullable=True)
-    goals_updated_at  = Column(DateTime, nullable=True)
-
-    # Onboarding gate
-    onboard_complete  = Column(Boolean, default=False, nullable=False)
-
-    updated_on   = Column(DateTime, default=datetime.utcnow, nullable=False)
-    created_on   = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-    # Relationships
-    assess_sessions   = relationship("AssessSession", back_populates="user", cascade="all, delete-orphan")
-    job_audits        = relationship("JobAudit", back_populates="user", cascade="all, delete-orphan")
-
-    def __repr__(self) -> str:
-        return f"<User id={self.id} phone={self.phone} tz={self.tz}>"
+    sessions   = relationship("AssessSession", back_populates="user", cascade="all, delete-orphan")
 
 
 class AssessSession(Base):
     __tablename__ = "assess_sessions"
-
     id         = Column(Integer, primary_key=True)
-    user_id    = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    domain     = Column(String(24), nullable=False)  # "nutrition" | "training" | "resilience" | "goals" | "combined"
+    user_id    = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    domain     = Column(String(32), nullable=False, default="combined")
     is_active  = Column(Boolean, default=True, nullable=False)
     turn_count = Column(Integer, default=0, nullable=False)
-    state      = Column(JSONType, nullable=True)     # JSON blob for conversation state
+    state      = Column(JSONType, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    user       = relationship("User", back_populates="sessions")
 
-    user       = relationship("User", back_populates="assess_sessions")
 
-    def __repr__(self) -> str:
-        return f"<AssessSession id={self.id} user_id={self.user_id} domain={self.domain} active={self.is_active}>"
+class MessageLog(Base):
+    __tablename__ = "message_logs"
+    id         = Column(Integer, primary_key=True)
+    user_id    = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_name  = Column(String(160), nullable=True)   # optional display name captured at send 
+    phone      = Column(String(64), nullable=True, index=True)
+    direction  = Column(String(16), nullable=False)   # inbound | outbound
+    channel    = Column(String(32), nullable=True)    # e.g. whatsapp
+    text       = Column(Text, nullable=True)
+    meta       = Column(JSONType, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class JobAudit(Base):
     __tablename__ = "job_audits"
-
-    id        = Column(Integer, primary_key=True)
-    user_id   = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    kind      = Column(String(64), nullable=False)   # e.g. "daily_micro_nudge", "weekly_reflection"
-    payload   = Column(JSONType, nullable=True)
-    created_at= Column(DateTime, nullable=False, default=datetime.utcnow)
-
-    user      = relationship("User", back_populates="job_audits")
-
-    def __repr__(self) -> str:
-        return f"<JobAudit id={self.id} user_id={self.user_id} kind={self.kind}>"
-
-
-class MessageLog(Base):
-    """
-    Source of truth for chat events. Insert rows for messages that were actually
-    received (inbound webhook) or successfully handed to Twilio (outbound).
-    """
-    __tablename__ = "message_logs"
-
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
-    phone = Column(String(32), nullable=False, index=True)  # bare E.164
-    direction = Column(String(16), nullable=False)  # 'inbound' | 'outbound'
-    category = Column(String(64), nullable=True)    # 'nutrition_assessment', 'combined', 'nudge', etc.
-    text = Column(Text, nullable=False)
-    twilio_sid = Column(String(64), nullable=True)  # set for successful outbound
+    id         = Column(Integer, primary_key=True)
+    job_name   = Column(String(120), nullable=True)
+    status     = Column(String(32), nullable=True)    # started|ok|error
+    payload    = Column(JSONType, nullable=True)
+    error      = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-    # Optional denorm for admin display
-    user_name = Column(String(120), nullable=True)
-
-
-# Handy index for reviews
-Index("ix_message_logs_user_created", MessageLog.user_id, MessageLog.created_at.desc())
-Index("ix_assess_sessions_user_active", AssessSession.user_id, AssessSession.is_active)
-Index("ix_job_audits_user_created", JobAudit.user_id, JobAudit.created_at)
-
 # ──────────────────────────────────────────────────────────────────────────────
-# Concept taxonomy & rubric
+# Pillars / Concepts + per-user concept state
 # ──────────────────────────────────────────────────────────────────────────────
 
 class Pillar(Base):
     __tablename__ = "pillars"
     id         = Column(Integer, primary_key=True)
-    key        = Column(String(32), unique=True, index=True)  # "nutrition" | "training" | "resilience"
-    name       = Column(String(64), nullable=False)
-    sort_order = Column(Integer, default=0, nullable=False)
-    active     = Column(Boolean, default=True, nullable=False)
-
-    concepts   = relationship("Concept", back_populates="pillar", cascade="all, delete-orphan")
+    key        = Column(String(32), unique=True, nullable=False)  # nutrition/training/resilience/goals
+    name       = Column(String(120), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class Concept(Base):
     __tablename__ = "concepts"
     id          = Column(Integer, primary_key=True)
-    pillar_id   = Column(Integer, ForeignKey("pillars.id", ondelete="CASCADE"), nullable=False, index=True)
-    key         = Column(String(64), nullable=False, index=True)         # e.g. "protein_basics"
-    name        = Column(String(128), nullable=False)
-    weight      = Column(Integer, default=1, nullable=False)
-    description = Column(Text, default="")
-    sort_order  = Column(Integer, default=0, nullable=False)
-    active      = Column(Boolean, default=True, nullable=False)
-    version     = Column(String(16), default="1.0.0")
+    pillar_key  = Column(String(32), nullable=False, index=True)
+    code        = Column(String(64), nullable=False, index=True)
+    name        = Column(String(160), nullable=False)
+    description = Column(Text, nullable=True)
+    created_at  = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-    pillar      = relationship("Pillar", back_populates="concepts")
-    rubrics     = relationship("ConceptRubric", back_populates="concept", cascade="all, delete-orphan")
-    questions   = relationship("ConceptQuestion", back_populates="concept", cascade="all, delete-orphan")
-    clarifiers  = relationship("ConceptClarifier", back_populates="concept", cascade="all, delete-orphan")
-
-    __table_args__ = (UniqueConstraint("pillar_id", "key", name="uq_concept_pillar_key"),)
-
-
-class ConceptRubric(Base):
-    __tablename__ = "concept_rubrics"
-    id         = Column(Integer, primary_key=True)
-    concept_id = Column(Integer, ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False, index=True)
-    level      = Column(String(16), nullable=False)   # "low" | "moderate" | "high"
-    band_min   = Column(Float, default=0.0, nullable=False)
-    band_max   = Column(Float, default=1.0, nullable=False)
-    anchors    = Column(Text, default="")
-    examples   = Column(Text, default="")
-
-    concept    = relationship("Concept", back_populates="rubrics")
+    __table_args__ = (
+        UniqueConstraint("pillar_key", "code", name="uq_concepts_pillar_code"),
+    )
 
 
 class ConceptQuestion(Base):
     __tablename__ = "concept_questions"
     id         = Column(Integer, primary_key=True)
     concept_id = Column(Integer, ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False, index=True)
-    text       = Column(Text, nullable=False)
-    active     = Column(Boolean, default=True, nullable=False)
-
-    concept    = relationship("Concept", back_populates="questions")
-
-
-class ConceptClarifier(Base):
-    __tablename__ = "concept_clarifiers"
-    id         = Column(Integer, primary_key=True)
-    concept_id = Column(Integer, ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False, index=True)
-    text       = Column(Text, nullable=False)
-    active     = Column(Boolean, default=True, nullable=False)
-
-    concept    = relationship("Concept", back_populates="clarifiers")
+    text       = Column(Text, nullable=False)                       # main/alternate question text
+    is_primary = Column(Boolean, default=False, nullable=False)     # one primary per concept
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
 class UserConceptState(Base):
     __tablename__ = "user_concept_state"
-    id           = Column(Integer, primary_key=True)
-    user_id      = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    concept_id   = Column(Integer, ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False, index=True)
-    score        = Column(Float, nullable=True)         # None = Unknown
-    asked_count  = Column(Integer, default=0, nullable=False)
-    last_asked_at= Column(DateTime, nullable=True)
-    notes        = Column(Text, default="")
-    updated_at   = Column(DateTime, default=datetime.utcnow, nullable=False)
+    id            = Column(Integer, primary_key=True)
+    user_id       = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    concept_id    = Column(Integer, ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False, index=True)
+    score         = Column(Float, nullable=True)  # 0..100 running avg
+    asked_count   = Column(Integer, nullable=True)
+    last_asked_at = Column(DateTime, nullable=True)
+    notes         = Column(Text, nullable=True)
+    updated_at    = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-    __table_args__ = (UniqueConstraint("user_id", "concept_id", name="uq_user_concept"),)
+    __table_args__ = (
+        UniqueConstraint("user_id", "concept_id", name="uq_user_concept"),
+    )
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Knowledge base (text + vectors)
+# Knowledge Base (retriever)
 # ──────────────────────────────────────────────────────────────────────────────
 
-EMBEDDING_DIM = int(os.getenv("KB_EMBED_DIM", "1536"))
-try:
-    from pgvector.sqlalchemy import Vector as PGVector
-    VectorType = PGVector(EMBEDDING_DIM)  # cosine distance ops in Postgres
-    HAS_PGVECTOR = True
-except Exception:
-    from sqlalchemy import JSON as VectorJSON  # fallback
-    VectorType = VectorJSON
-    HAS_PGVECTOR = False
-
-
-class KBSnippet(Base):
+class KbSnippet(Base):
     __tablename__ = "kb_snippets"
-    id          = Column(String(64), primary_key=True)   # stable id from kb JSON
-    pillar_key  = Column(String(32), index=True)
-    concept_key = Column(String(64), index=True)
-    type        = Column(String(32), default="definition")  # rubric/example_high/misconception/howto/metric
-    text        = Column(Text, nullable=False)
-    locale      = Column(String(16), default="en-GB")
-    tags        = Column(String(256), default="")
-    weight      = Column(Float, default=1.0)
-    version     = Column(String(16), default="1.0.0")
-    updated_at  = Column(DateTime, default=datetime.utcnow, nullable=False)
+    id           = Column(Integer, primary_key=True)
+    pillar_key   = Column(String(32), nullable=False, index=True)   # nutrition/training/resilience/goals
+    concept_code = Column(String(64), nullable=True, index=True)    # e.g. 'protein_basics'
+    title        = Column(String(200), nullable=True)
+    text         = Column(Text, nullable=False)
+    tags         = Column(JSONType, nullable=True)                  # ["portion", "grams"]
+    created_at   = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_kb_snippets_pillar_concept", "pillar_key", "concept_code"),
+    )
 
 
-class KBVector(Base):
+class KbVector(Base):
     __tablename__ = "kb_vectors"
-
-    id          = Column(Text, primary_key=True)  # ← string IDs like "nut_protein_def_001"
-    pillar_key  = Column(String(32), index=True, nullable=False)
-    concept_key = Column(String(64), index=True, nullable=False)
-    type        = Column(String(32), index=True, nullable=False)   # e.g., "guideline" | "example"
-    locale      = Column(String(8),  index=True, nullable=False, default="en")
-    # ✅ must be pgvector, not JSON
-    embedding   = Column(Vector(1536), nullable=False)
-    title       = Column(String(255), nullable=False)
-    text        = Column(Text, nullable=False)
-    version     = Column(String(16), nullable=True, default=1)
-    created_at  = Column(DateTime, default=datetime.utcnow, nullable=False)
+    id         = Column(Integer, primary_key=True)
+    snippet_id = Column(Integer, ForeignKey("kb_snippets.id", ondelete="CASCADE"), nullable=False, index=True)
+    embedding  = Column(JSONType, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Assessment review / audit
+# Assessment runs + turns (logging / review)
 # ──────────────────────────────────────────────────────────────────────────────
 
 class AssessmentRun(Base):
     __tablename__ = "assessment_runs"
-    id            = Column(Integer, primary_key=True)
-    user_id       = Column(Integer, index=True, nullable=False)
-    started_at    = Column(DateTime, default=datetime.utcnow, nullable=False)
-    finished_at   = Column(DateTime, nullable=True)
-    pillars       = Column(JSONType, nullable=False)      # e.g. ["nutrition","training","resilience","goals"]
-    model_name    = Column(String(64), default="gpt-5-thinking")
-    model_hash    = Column(String(64), default="")
-    kb_version    = Column(String(32), default="1.0.0")
-    rubric_version= Column(String(32), default="1.0.0")
-    is_completed  = Column(Boolean, default=False, nullable=False)
+    id         = Column(Integer, primary_key=True)
+    user_id    = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    domain     = Column(String(32), nullable=False, default="combined")
+    started_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    finished_at= Column(DateTime, nullable=True)
+    combined_overall = Column(Integer, nullable=True)     # 0..100 combined score for this run
+    report_path      = Column(String(255), nullable=True) # filesystem or URL path to generated PDF
 
-    turns         = relationship("AssessmentTurn", back_populates="run", cascade="all, delete-orphan")
-    results       = relationship("PillarResult", back_populates="run", cascade="all, delete-orphan")
+    turns      = relationship("AssessmentTurn", back_populates="run", cascade="all, delete-orphan")
 
 
 class AssessmentTurn(Base):
     __tablename__ = "assessment_turns"
-    id           = Column(Integer, primary_key=True)
-    run_id       = Column(Integer, ForeignKey("assessment_runs.id", ondelete="CASCADE"), nullable=False, index=True)
-    idx          = Column(Integer, nullable=False)   # 0..N
-    pillar       = Column(String(24), nullable=False)  # nutrition/training/resilience/goals
-    concept_key  = Column(String(64), nullable=True)
-    is_clarifier = Column(Boolean, default=False, nullable=False)
+    id                 = Column(Integer, primary_key=True)
+    run_id             = Column(Integer, ForeignKey("assessment_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    idx                = Column(Integer, nullable=False)   # 0..N (order within run)
 
-    assistant_q  = Column(Text, nullable=True)
-    user_a       = Column(Text, nullable=True)
+    pillar             = Column(String(24), nullable=False)      # nutrition/training/resilience/goals
+    concept_key        = Column(String(64), nullable=True)       # e.g. 'protein_basics'
 
-    retrieval    = Column(JSONType, nullable=True)   # [{"id":"nut_protein_001","type":"rubric","score":0.41}, ...]
-    llm_raw      = Column(Text, nullable=True)       # raw JSON returned by model
-    action       = Column(String(24), nullable=True) # ask | finish_domain
-    deltas       = Column(JSONType, nullable=True)   # {"protein_basics":{"delta":0.3,"note":"..."}}
-    confidence   = Column(Float, nullable=True)      # pillar conf after this turn (if computed)
+    is_clarifier       = Column(Boolean, default=False, nullable=False)
 
-    created_at   = Column(DateTime, default=datetime.utcnow, nullable=False)
+    assistant_q        = Column(Text, nullable=True)             # assistant’s question (main or clarifier)
+    user_a             = Column(Text, nullable=True)             # user’s reply
 
-    run          = relationship("AssessmentRun", back_populates="turns")
-    deltas_rows  = relationship("ConceptDelta", back_populates="turn", cascade="all, delete-orphan")
+    retrieval          = Column(JSONType, nullable=True)         # [{"id":..., "type":"kb", "score":...}, ...]
+    llm_raw            = Column(Text, nullable=True)             # raw JSON returned by model
+    action             = Column(String(24), nullable=True)       # 'ask' | 'finish_domain' | 'concept_complete' | 'concept_forced_advance'
+    confidence         = Column(Float, nullable=True)            # pillar-level conf after this turn (if supplied)
+    clarifier_count     = Column(Integer, nullable=True)
 
+    # Per-concept summary payload (one per concept when it completes or is forced)
+    is_concept_summary = Column(Boolean, default=False, nullable=False)
+    concept_score      = Column(Float, nullable=True)            # final score (0..100) for concept at completion
+    dialogue           = Column(JSONType, nullable=True)         # mini transcript (main + clarifiers + replies)
+    kb_used            = Column(JSONType, nullable=True)         # de-duped KB snippets shown to LLM for this concept
 
-class ConceptDelta(Base):
-    __tablename__ = "concept_deltas"
-    id           = Column(Integer, primary_key=True)
-    turn_id      = Column(Integer, ForeignKey("assessment_turns.id", ondelete="CASCADE"), nullable=False, index=True)
-    pillar       = Column(String(24), nullable=False)
-    concept_key  = Column(String(64), nullable=False)
-    score_before = Column(Float, nullable=True)      # None allowed
-    delta        = Column(Float, nullable=False)
-    score_after  = Column(Float, nullable=True)
-    note         = Column(Text, default="")
+    created_at         = Column(DateTime, default=datetime.utcnow, nullable=False)
 
-    turn         = relationship("AssessmentTurn", back_populates="deltas_rows")
+    run                = relationship("AssessmentRun", back_populates="turns")
 
+    __table_args__ = (
+        UniqueConstraint("run_id", "idx", name="uq_assessment_turns_run_idx"),
+        Index("ix_assessment_turns_pillar_concept", "pillar", "concept_key"),
+    )
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Reporting (used by summaries and PDF)
+# ──────────────────────────────────────────────────────────────────────────────
 
 class PillarResult(Base):
     __tablename__ = "pillar_results"
     id           = Column(Integer, primary_key=True)
     run_id       = Column(Integer, ForeignKey("assessment_runs.id", ondelete="CASCADE"), nullable=False, index=True)
-    pillar       = Column(String(24), nullable=False)
-    level        = Column(String(16), nullable=False)     # Low/Moderate/High
-    confidence   = Column(Float, nullable=False)          # 0..1
-    coverage     = Column(JSONType, nullable=True)        # snapshot of concept scores at finish
-    summary_msg  = Column(Text, nullable=True)
+    user_id      = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    pillar_key   = Column(String(32), nullable=False, index=True)
 
-    run          = relationship("AssessmentRun", back_populates="results")
+    overall      = Column(Integer, nullable=False)          # 0..100 rounded (primary display)
+    overall_raw  = Column(Float, nullable=True)             # optional exact value before rounding
+    concept_scores = Column(JSONType, nullable=False, default=dict)  # {"fruit_veg": 85, ...}
 
-
-class ReviewFeedback(Base):
-    __tablename__ = "review_feedback"
-    id           = Column(Integer, primary_key=True)
-    run_id       = Column(Integer, ForeignKey("assessment_runs.id", ondelete="CASCADE"), index=True)
-    turn_id      = Column(Integer, ForeignKey("assessment_turns.id", ondelete="CASCADE"), index=True, nullable=True)
-    reviewer     = Column(String(64), nullable=False)     # email or id
-    rating_q     = Column(Integer, nullable=True)         # 1..5
-    rating_rag   = Column(Integer, nullable=True)         # 1..5
-    rating_score = Column(Integer, nullable=True)         # 1..5
-    comment      = Column(Text, default="")
-    suggested_snippet = Column(Text, default="")
+    rationale    = Column(Text, nullable=True)
+    advice       = Column(JSONType, nullable=True)          # ["feedback", "next step 1", "next step 2"]
+    level        = Column(String(16), nullable=True)        # Low | Moderate | High
+    confidence   = Column(Float, nullable=True)             # 0.0..1.0
+    clarifier_count = Column(Integer, nullable=True)        # total clarifiers asked in this pillar
+    started_at   = Column(DateTime, nullable=True)
+    finished_at  = Column(DateTime, nullable=True)
     created_at   = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("run_id", "pillar_key", name="uq_pillar_results_run_pillar"),
+    )
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Compatibility aliases for legacy imports (safe to keep)
+# ──────────────────────────────────────────────────────────────────────────────
+
+EMBEDDING_DIM = 256  # matches seed’s placeholder embedding dim
+KBSnippet = KbSnippet
+KBVector  = KbVector
