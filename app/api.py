@@ -9,6 +9,7 @@ from urllib.parse import parse_qs
 from fastapi import FastAPI, APIRouter, Request, Response
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
+from pathlib import Path 
 
 from .db import engine, SessionLocal
 from .models import Base, User, MessageLog  # ensure model registered for metadata
@@ -263,9 +264,21 @@ app.include_router(router)
 # Static: serve generated PDFs at /reports/<user_id>/latest.pdf
 # ──────────────────────────────────────────────────────────────────────────────
 try:
-    _reports_dir = os.getenv("REPORTS_DIR") or os.path.join(os.getcwd(), "public", "reports")
-    os.makedirs(_reports_dir, exist_ok=True)
-    app.mount("/reports", StaticFiles(directory=_reports_dir), name="reports")
+    # Always resolve to the project root so this works both locally and on Render
+    PROJECT_ROOT = Path(__file__).resolve().parents[1]
+    reports_dir_env = os.getenv("REPORTS_DIR")
+    _reports_dir = Path(reports_dir_env) if reports_dir_env else (PROJECT_ROOT / "public" / "reports")
+    _reports_dir.mkdir(parents=True, exist_ok=True)
+
+    # Expose /reports so URLs like /reports/<user_id>/latest.pdf work
+    app.mount("/reports", StaticFiles(directory=str(_reports_dir)), name="reports")
     print(f"📄 Reports mounted at /reports -> {_reports_dir}")
+
+    # Helpful hint for absolute URLs in messages:
+    # Set PUBLIC_BASE_URL to your service URL in prod (e.g., https://healthsense-mear.onrender.com)
+    # or to http://localhost:8000 when running locally.
+    public_base = (os.getenv("PUBLIC_BASE_URL") or "").rstrip("/")
+    if public_base:
+        print(f"🔗 Reports base URL: {public_base}/reports")
 except Exception as e:
     print(f"⚠️  Failed to mount /reports: {e!r}")
