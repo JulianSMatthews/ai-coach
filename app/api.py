@@ -26,11 +26,20 @@ except Exception:  # pragma: no cover
     run_seed = None
 
 # Assessor entrypoints
+
+def _dbg(msg: str):
+    try:
+        print(f"[webhook] {msg}")
+    except Exception:
+        pass
+
+
 try:
     from .assessor import (
         start_combined_assessment,
         continue_combined_assessment,
     )
+    _DBG("[INFO] assessor module imported successfully")
 except Exception:
     # Minimal safe fallbacks (won't crash startup; just no-op if used)
     def start_combined_assessment(*_, **__):
@@ -170,11 +179,7 @@ def _log_inbound_direct(user: User, channel: str, body: str, from_raw: str) -> N
         print(f"⚠️ inbound direct-log failed (non-fatal): {e!r}")
 
 
-def _dbg(msg: str):
-    try:
-        print(f"[webhook] {msg}")
-    except Exception:
-        pass
+
 
 
 # ──────────────────────────────────────────────────────────────────────────────
