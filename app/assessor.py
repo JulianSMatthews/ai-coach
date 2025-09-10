@@ -645,6 +645,7 @@ def _next_pillar(curr: str) -> Optional[str]:
 
 def start_combined_assessment(user: User):
     """Start combined assessment (Nutrition → Training → Resilience → Recovery)."""
+    print(f"[DEBUG] Entered start_combined_assessment for user {user.id}")
     with SessionLocal() as s:
         _touch_user_timestamps(s, user)
 
@@ -672,6 +673,7 @@ def start_combined_assessment(user: User):
         }
         sess = AssessSession(user_id=user.id, domain="combined", is_active=True, turn_count=0, state=state)
         s.add(sess); s.commit(); s.refresh(sess)
+        print(f"[DEBUG] Created AssessSession with id={sess.id}")
 
         # Load concepts from DB once for this session
         with SessionLocal() as s_lookup:

@@ -7,6 +7,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import JSONB as JSONType
 from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.sql import func
 
 Base = declarative_base()
 
@@ -33,11 +34,11 @@ class AssessSession(Base):
     is_active  = Column(Boolean, default=True, nullable=False)
     turn_count = Column(Integer, default=0, nullable=False)
     state      = Column(JSONType, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(),
+                        onupdate=func.now(), nullable=False)
 
     user       = relationship("User", back_populates="sessions")
-
 
 class MessageLog(Base):
     __tablename__ = "message_logs"
