@@ -33,20 +33,13 @@ def _dbg(msg: str):
     except Exception:
         pass
 
-
 try:
-    from .assessor import (
-        start_combined_assessment,
-        continue_combined_assessment,
-    )
-    _DBG("[INFO] assessor module imported successfully")
-except Exception:
-    # Minimal safe fallbacks (won't crash startup; just no-op if used)
-    def start_combined_assessment(*_, **__):
-        return None
-
-    def continue_combined_assessment(*_, **__):
-        return None
+    from .assessor import start_combined_assessment, continue_combined_assessment
+    _dbg("[INFO] Correct assessor module imported successfully (module path: " +
+         f"{start_combined_assessment.__module__})")
+except Exception as e:
+    _dbg(f"[ERROR] Failed to import assessors — using fallback: {e}")
+    raise  # Let it crash loud during startup so you catch it immediately
 
 app = FastAPI(title="AI Coach")
 router = APIRouter()
