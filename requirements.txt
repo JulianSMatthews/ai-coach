@@ -9,3 +9,6 @@ python-dotenv
 httpx
 langchain-openai
 python-dateutil
+matplotlib
+reportlab
+twilio
