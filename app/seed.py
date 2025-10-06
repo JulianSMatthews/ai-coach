@@ -31,7 +31,7 @@ CONCEPTS: Dict[str, Dict[str, str]] = {
         "protein_intake":   "Protein intake",
         "fruit_veg":        "Fruit & vegetables",
         "hydration":        "Hydration",
-        "processed_sugar":  "Processed foods & sugar",
+        "processed_sugar":   "Processed foods & sugar",
     },
     "training": {
         "cardio_frequency":     "Cardio frequency",
@@ -168,8 +168,8 @@ KB_SNIPPETS: Dict[str, Dict[str, List[Dict]]] = {
 }
 
 DEMO_USERS = [
-    {"name": "Julian", "phone": "+447710307026"},
-    {"name": "Rhys",   "phone": "+447860362908"},
+    {"name": "Julian", "phone": "+447710307026", "is_superuser": True},
+    {"name": "Rhys",   "phone": "+447860362908", "is_superuser": True},
 ]
 
 def _hash_floats(text: str, dim: int = 256) -> list[float]:
@@ -184,6 +184,30 @@ def _hash_floats(text: str, dim: int = 256) -> list[float]:
         vec.append(v)
     norm = math.sqrt(sum(v*v for v in vec)) or 1.0
     return [v / norm for v in vec]
+
+CONCEPT_SCORE_BOUNDS = {
+    "nutrition": {
+        "protein_intake": {"zero_score": 0, "max_score": 5},
+        "fruit_veg":      {"zero_score": 0, "max_score": 7},
+        "hydration":      {"zero_score": 0, "max_score": 7},
+        "processed_sugar": {"zero_score": 7, "max_score": 0},  # days/week; reverse (7 days bad=0, 0 days best=100)
+    },
+    "training": {
+        "cardio_frequency":     {"zero_score": 0, "max_score": 7},
+        "strength_training":    {"zero_score": 0, "max_score": 7},
+        "flexibility_mobility": {"zero_score": 0, "max_score": 7},
+    },
+    "resilience": {
+        "stress_management": {"zero_score": 0, "max_score": 7},
+        "mood_stability":    {"zero_score": 0, "max_score": 7},
+        "selfcare_social":   {"zero_score": 0, "max_score": 7},
+    },
+    "recovery": {
+        "sleep_duration":      {"zero_score": 0, "max_score": 7},
+        "sleep_quality":       {"zero_score": 0, "max_score": 7},
+        "bedtime_consistency": {"zero_score": 0, "max_score": 7},
+    },
+}
 
 def upsert_pillars(session: Session) -> int:
     created = 0
@@ -200,10 +224,22 @@ def upsert_concepts(session: Session) -> int:
             row = session.execute(
                 select(Concept).where(Concept.pillar_key == pillar_key, Concept.code == code)
             ).scalar_one_or_none()
+            bounds = (CONCEPT_SCORE_BOUNDS.get(pillar_key, {}) or {}).get(code)
             if not row:
-                session.add(Concept(pillar_key=pillar_key, code=code, name=name,
-                                    description=None, created_at=datetime.utcnow()))
+                session.add(Concept(
+                    pillar_key=pillar_key,
+                    code=code,
+                    name=name,
+                    description=None,
+                    created_at=datetime.utcnow(),
+                    zero_score=(bounds or {}).get("zero_score"),
+                    max_score=(bounds or {}).get("max_score"),
+                ))
                 created += 1
+            else:
+                if bounds:
+                    row.zero_score = bounds.get("zero_score")
+                    row.max_score  = bounds.get("max_score")
     session.commit(); return created
 
 def upsert_concept_questions(session: Session) -> int:
@@ -277,13 +313,25 @@ def ensure_vectors_for_snippets(session: Session, dim: int = 256) -> int:
 def upsert_demo_users(session: Session) -> int:
     created = 0
     for u in DEMO_USERS:
-        phone = u.get("phone"); 
-        if not phone: continue
+        phone = u.get("phone")
+        if not phone:
+            continue
         row = session.execute(select(User).where(User.phone == phone)).scalar_one_or_none()
         if not row:
-            session.add(User(name=u.get("name"), phone=phone,
-                             created_on=datetime.utcnow(), updated_on=datetime.utcnow())); created += 1
-    session.commit(); return created
+            session.add(User(
+                name=u.get("name"),
+                phone=phone,
+                is_superuser=bool(u.get("is_superuser")),
+                created_on=datetime.utcnow(),
+                updated_on=datetime.utcnow(),
+            ))
+            created += 1
+        else:
+            # PATCH — 2025-09-11: keep superuser flag in sync with seed config
+            if bool(u.get("is_superuser")) and not getattr(row, "is_superuser", False):
+                row.is_superuser = True
+    session.commit()
+    return created
 
 def run_seed() -> None:
     with SessionLocal() as s:

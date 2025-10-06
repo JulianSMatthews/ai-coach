@@ -44,6 +44,7 @@ from .nudges import send_message
 from .llm import _llm
 
 # Report 
+
 from .reporting import generate_assessment_report_pdf
 
 # Optional integrations (fail-safe no-ops if missing)
@@ -78,27 +79,30 @@ TURN_HARD_CAP = 60
 
 SYSTEM_TEMPLATE = """You are a concise WhatsApp assessor for __PILLAR__.
 Active concept: __CONCEPT__.
-Ask ONE clear main question (<=300 chars, can be detailed with examples) OR a clarifier (<=320 chars) when the user's answer is vague.
-If the user's reply contains a NUMBER that fits the asked timeframe (e.g., 'last 7 days'), TREAT IT AS SUFFICIENT and finish with a score.
-Only finish the concept once you can assign a non-zero score on this concept.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., "daily", "every evening", "twice daily", "each morning"), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
 Return JSON only with these fields:
-{"action":"ask"|"finish","question":"","level":"Low"|"Moderate"|"High","confidence":0.0,
+{"action":"ask"|"finish","question":"","level":"Low"|"Moderate"|"High","confidence":<float 0.0–1.0>,
 "rationale":"","scores":{},
 "status":"scorable"|"needs_clarifier"|"insufficient",
 "why":"",
 "missing":[],
 "parsed_value":{"value":null,"unit":"","timeframe_ok":false}}
 Notes:
-- Model-first scoring: Use your general health/nutrition expertise to judge what is good vs bad behavior for this concept. Treat retrieved KB snippets as optional context only. Do not wait for, or rely on, snippets to decide polarity or scores.
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
 - Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
 - Polarity inference: When the behavior is one people should limit/avoid (e.g., processed/sugary foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
-- Zero-case rule: If the user indicates none/zero within the asked timeframe (e.g., “none”, “0 days”), set parsed_value.value=0, timeframe_ok=true (if the question provided it), and assign a HIGH score (≈95–100) when the behavior is to be limited/avoided.
-- Language-to-number heuristic (if no number given): map “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
-- Clarifiers: Do not repeat the main question. Ask only for the single missing piece (number or timeframe) if needed to score; otherwise finish with a score and a one-line rationale.
-- status=scorable → you can finish now; needs_clarifier → ask exactly one clarifier; insufficient → ask main question.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., "daily"/"every evening" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
 - missing: list the specific fields you need (e.g., ["unit","days_per_week"]).
 - parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
 - IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., "every evening"), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
 """
 
 FEEDBACK_SYSTEM = (
@@ -121,6 +125,26 @@ def _asked_norm_set(turns: list[dict], pillar: str) -> set[str]:
         for t in turns
         if t.get("role") == "assistant" and t.get("pillar") == pillar
     }
+
+# Helper to detect restatements (token-level Jaccard or heavy containment)
+def _too_similar(a: str, b: str, jaccard_threshold: float = 0.7) -> bool:
+    """Return True when a and b are likely restatements (token-level Jaccard or heavy containment)."""
+    aa = _norm(a)
+    bb = _norm(b)
+    if not aa or not bb:
+        return False
+    # Heavy containment: one string covers >=80% of the other
+    if (len(aa) and len(bb)) and (aa in bb or bb in aa):
+        shorter = aa if len(aa) <= len(bb) else bb
+        longer = bb if shorter is aa else aa
+        if len(shorter) / max(1, len(longer)) >= 0.8:
+            return True
+    aset = set(aa.split())
+    bset = set(bb.split())
+    if not aset or not bset:
+        return False
+    jacc = len(aset & bset) / max(1, len(aset | bset))
+    return jacc >= jaccard_threshold
 
 def _as_dialogue_simple(items: list[dict]) -> list[dict]:
     out = []
@@ -170,6 +194,28 @@ def _system_for(pillar: str, concept_code: str) -> str:
         .replace("__CONCEPT__", concept_code.replace("_"," ").title())
     )
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Consent helpers
+# ──────────────────────────────────────────────────────────────────────────────
+def _is_affirmative(text: str) -> bool:
+    t = (text or "").strip().lower()
+    yeses = {"yes", "y", "yeah", "yep", "agree", "i agree", "ok", "okay", "start", "go", "let's go", "lets go", "sure"}
+    return any(t == y or t.startswith(y + " ") for y in yeses)
+
+def _is_negative(text: str) -> bool:
+    t = (text or "").strip().lower()
+    nos = {"no", "n", "nope", "decline", "stop", "cancel"}
+    return any(t == n or t.startswith(n + " ") for n in nos)
+
+def _consent_intro_message(user: User) -> str:
+    name = (getattr(user, "name", "") or "").strip()
+    greet = f"Hi {name}!" if name else "Hi!"
+    return (
+        f"{greet} Before we start, please confirm you consent to a short health assessment over WhatsApp. "
+        "We’ll ask brief questions about Nutrition, Training, Resilience and Recovery. "
+        "Your replies help tailor feedback. Reply YES to consent and start, or NO to opt out."
+    )
+
 def _touch_user_timestamps(s, user: User) -> None:
     now = datetime.utcnow()
     try:
@@ -179,6 +225,7 @@ def _touch_user_timestamps(s, user: User) -> None:
         s.commit()
     except Exception:
         pass
+
 
 def _send_to_user(user: User, text: str) -> bool:
     """Robust send with WhatsApp normalization + logging + clear error surfacing."""
@@ -211,12 +258,38 @@ def _send_to_user(user: User, text: str) -> bool:
             pass
         return False
 
+# Public report URL helper — call api._public_report_url at runtime to avoid import cycles
+def _report_url(user_id: int, filename: str) -> str:
+    """
+    Use the canonical builder from app.api every time; fallback to PUBLIC_BASE_URL/relative.
+    """
+    try:
+        from .api import _public_report_url  # dynamic import prevents circular imports
+        return _public_report_url(user_id, filename)
+    except Exception:
+        base = (os.getenv("PUBLIC_BASE_URL") or "").rstrip("/")
+        path = f"/reports/{user_id}/{filename}"
+        return f"{base}{path}" if base else path
+
 # DB helpers
+
 def _resolve_concept_id(session, pillar_key: str | None, concept_code: str | None) -> Optional[int]:
     if not concept_code:
         return None
     q = select(Concept.id).where(Concept.pillar_key == pillar_key, Concept.code == concept_code)
     return session.execute(q).scalar_one_or_none()
+
+# Resolve concept id and human-readable name
+def _resolve_concept_meta(session, pillar_key: str | None, concept_code: str | None):
+    if not concept_code:
+        return None, None
+    row = session.execute(
+        select(Concept.id, Concept.name).where(Concept.pillar_key == pillar_key,
+                                               Concept.code == concept_code)
+    ).first()
+    if not row:
+        return None, None
+    return row[0], row[1]
 
 def _concept_primary_question(session, pillar: str, concept_code: str) -> Optional[str]:
     cid = _resolve_concept_id(session, pillar, concept_code)
@@ -228,6 +301,30 @@ def _concept_primary_question(session, pillar: str, concept_code: str) -> Option
         .limit(1)
     ).scalar_one_or_none()
     return (row or None)
+
+
+def _concept_bounds(session, pillar: str, concept_code: str):
+    """
+    Return (zero_score, max_score) for the given concept if both are set, else None.
+    zero_score and max_score are integers stored on Concept and define the quantity→score mapping:
+    - If zero_score <= max_score: map zero_score→0 and max_score (or more)→100 (linear; clamp outside).
+    - If zero_score > max_score: LOWER IS BETTER; map zero_score→0 and max_score (or less)→100 (linear; clamp outside).
+    """
+    cid = _resolve_concept_id(session, pillar, concept_code)
+    if not cid:
+        return None
+    row = session.execute(
+        select(Concept.zero_score, Concept.max_score).where(Concept.id == cid)
+    ).first()
+    if not row:
+        return None
+    z, m = row
+    if z is None or m is None:
+        return None
+    try:
+        return (int(z), int(m))
+    except Exception:
+        return None
 
 def _concept_alternates(session, pillar: str, concept_code: str) -> list[str]:
     cid = _resolve_concept_id(session, pillar, concept_code)
@@ -256,37 +353,73 @@ def _load_pillar_concepts(session, cap: int = 5) -> dict[str, list[str]]:
         out[pk] = codes
     return out
 
-def _bump_concept_asked(user_id: int, pillar_key: str | None, concept_code: str | None) -> None:
+def _bump_concept_asked(user_id: int, run_id: int, pillar_key: str | None, concept_code: str | None) -> None:
     if not concept_code:
         return
     now = datetime.utcnow()
     with SessionLocal() as s:
-        cid = _resolve_concept_id(s, pillar_key, concept_code)
+        cid, cname = _resolve_concept_meta(s, pillar_key, concept_code)
         if not cid:
             return
         row = s.execute(
             select(UserConceptState).where(
                 UserConceptState.user_id == user_id,
+                UserConceptState.run_id == run_id,
                 UserConceptState.concept_id == cid
             )
         ).scalar_one_or_none()
         if not row:
             row = UserConceptState(
-                user_id=user_id, concept_id=cid, score=None,
-                asked_count=1, last_asked_at=now, notes=concept_code, updated_at=now
+                user_id=user_id,
+                run_id=run_id,
+                concept_id=cid,
+                score=None,
+                asked_count=1,
+                last_asked_at=now,
+                notes=concept_code,
+                updated_at=now
             )
+            # denormalized fields for grouping/reporting
+            try:
+                row.pillar_key = pillar_key
+            except Exception:
+                pass
+            try:
+                row.concept = cname or _pretty_concept(concept_code)
+            except Exception:
+                pass
             s.add(row)
         else:
             row.asked_count = int(row.asked_count or 0) + 1
             row.last_asked_at = now
             row.updated_at = now
+            # keep denormalized fields fresh
+            try:
+                row.pillar_key = pillar_key
+            except Exception:
+                pass
+            try:
+                row.concept = cname or _pretty_concept(concept_code)
+            except Exception:
+                pass
         s.commit()
 
-def _update_concepts_from_scores(user_id: int, pillar_key: str, scores: dict[str, float]) -> None:
+def _update_concepts_from_scores(user_id: int, pillar_key: str, scores: dict[str, float],
+                                 q_by_code: dict[str, str] | None = None,
+                                 a_by_code: dict[str, str] | None = None,
+                                 conf_by_code: dict[str, float] | None = None,
+                                 notes_by_code: dict[str, dict] | None = None,
+                                 run_id: int | None = None) -> None:
+    """
+    # NOTE: This function now records the latest score for each concept (no running average).
+    """
+    if not run_id:
+        # Without run_id we cannot maintain per-run rows; bail safely
+        return
     now = datetime.utcnow()
     with SessionLocal() as s:
         for code, val in (scores or {}).items():
-            cid = _resolve_concept_id(s, pillar_key, code)
+            cid, cname = _resolve_concept_meta(s, pillar_key, code)
             if not cid:
                 continue
             try:
@@ -296,20 +429,111 @@ def _update_concepts_from_scores(user_id: int, pillar_key: str, scores: dict[str
             row = s.execute(
                 select(UserConceptState).where(
                     UserConceptState.user_id == user_id,
+                    UserConceptState.run_id == run_id,
                     UserConceptState.concept_id == cid
                 )
             ).scalar_one_or_none()
             if not row:
                 row = UserConceptState(
-                    user_id=user_id, concept_id=cid, score=v, asked_count=0,
+                    user_id=user_id, concept_id=cid, run_id=run_id, score=v, asked_count=0,
                     last_asked_at=None, notes=code, updated_at=now
                 )
+                # denormalized grouping fields
+                try:
+                    row.pillar_key = pillar_key
+                except Exception:
+                    pass
+                try:
+                    row.concept = cname or _pretty_concept(code)
+                except Exception:
+                    pass
+                if q_by_code and code in q_by_code:
+                    try:
+                        row.question = q_by_code.get(code) or ""
+                    except Exception:
+                        pass
+                if a_by_code and code in a_by_code:
+                    try:
+                        row.answer = a_by_code.get(code) or ""
+                    except Exception:
+                        pass
+                if conf_by_code and code in conf_by_code:
+                    try:
+                        val_conf = conf_by_code.get(code)
+                        row.confidence = float(val_conf) if val_conf is not None else None
+                    except Exception:
+                        pass
+                if notes_by_code and code in notes_by_code:
+                    import json as _json  # local alias to avoid top-level import edits
+                    base_notes = {}
+                    try:
+                        if getattr(row, "notes", None):
+                            s_val = str(row.notes).strip()
+                            if s_val.startswith("{"):
+                                base_notes = _json.loads(s_val)
+                    except Exception:
+                        base_notes = {}
+                    try:
+                        add_notes = notes_by_code.get(code) or {} if notes_by_code else {}
+                        if isinstance(add_notes, dict):
+                            base_notes.update(add_notes)
+                    except Exception:
+                        pass
+                    try:
+                        row.notes = _json.dumps(base_notes)
+                    except Exception:
+                        row.notes = str(base_notes)
                 s.add(row)
             else:
-                prev = float(row.score or 0.0)
-                n = max(0, int(row.asked_count or 0))
-                row.score = (prev * n + v) / max(1, n + 1)
+                # Store the latest score (no averaging). `asked_count` remains an engagement metric only.
+                row.score = v
                 row.updated_at = now
+                row.run_id = run_id
+                # denormalized grouping fields
+                try:
+                    row.pillar_key = pillar_key
+                except Exception:
+                    pass
+                try:
+                    row.concept = cname or _pretty_concept(code)
+                except Exception:
+                    pass
+                if q_by_code and code in q_by_code:
+                    try:
+                        row.question = q_by_code.get(code) or ""
+                    except Exception:
+                        pass
+                if a_by_code and code in a_by_code:
+                    try:
+                        row.answer = a_by_code.get(code) or ""
+                    except Exception:
+                        pass
+                if conf_by_code and code in conf_by_code:
+                    try:
+                        val_conf = conf_by_code.get(code)
+                        row.confidence = float(val_conf) if val_conf is not None else None
+                    except Exception:
+                        pass
+                if notes_by_code and code in notes_by_code:
+                    import json as _json  # local alias to avoid top-level import edits
+                    base_notes = {}
+                    try:
+                        if getattr(row, "notes", None):
+                            s_val = str(row.notes).strip()
+                            if s_val.startswith("{"):
+                                base_notes = _json.loads(s_val)
+                    except Exception:
+                        base_notes = {}
+                    try:
+                        add_notes = notes_by_code.get(code) or {} if notes_by_code else {}
+                        if isinstance(add_notes, dict):
+                            base_notes.update(add_notes)
+                    except Exception:
+                        pass
+                    try:
+                        row.notes = _json.dumps(base_notes)
+                    except Exception:
+                        row.notes = str(base_notes)
         s.commit()
 
 
@@ -418,11 +642,29 @@ def _regen_clarifier(pillar: str, concept_code: str, payload: dict) -> str:
     """Ask the LLM explicitly to produce a fresh clarifier question (<=320 chars).
     Returns an empty string on error."""
     CLARIFIER_SYSTEM = (
-        "You are clarifying the user's last answer so it can be scored.\n"
-        "Write ONE clarifying question (<=320 chars) that directly asks for the MISSING detail.\n"
-        "- Prefer a NUMBER (e.g., days/week, portions/day, sessions) and a RECENT TIMEFRAME if absent.\n"
-        "- Do NOT repeat the original main question; move the user closer to a scorable answer.\n"
-        "- No lists. No multiple questions. Return ONLY the question text."
+        "You are drafting clarifying questions in a health-assessment chat.\n"
+        "When a user's reply is vague or incomplete, ask a clarifying question that moves the dialog forward.\n"
+        "Guidance (give the model freedom, but avoid repetition):\n"
+        "- Prefer asking for what seems missing (e.g., number of days, portions per day, amount per day, timeframe).\n"
+        "- Do not simply repeat or paraphrase the original main question; change the angle and narrow the ask.\n"
+        "- Focus the question so the next reply is scorable (ideally a numeric value with a recent timeframe).\n"
+        "- Keep it concise (<= 280 chars), plain language.\n"
+        "- It's okay to ask more than one detail **only if truly necessary**, but avoid piling on.\n"
+        "\n"
+        "Examples (good):\n"
+        "Main: 'In the last 7 days, how many days did you eat processed/sugary foods, and how many portions per day?'\n"
+        "User: 'Occasionally'\n"
+        "Clarifier: 'Over the past 7 days, on about how many days did you have processed or sugary foods?'\n"
+        "\n"
+        "Main: 'How many glasses of water per day did you usually drink in the last 7 days?'\n"
+        "User: 'A few'\n"
+        "Clarifier: 'Roughly how many glasses per day did you drink over those 7 days?'\n"
+        "\n"
+        "Main: 'In the last 7 days, on how many days did you do cardio for 20+ minutes?'\n"
+        "User: 'Most days'\n"
+        "Clarifier: 'Approximately how many days (0–7) did you do 20+ minutes of cardio?'\n"
+        "\n"
+        "Bad (avoid): Repeating the full main question verbatim; asking two or more different things when one will do.\n"
     )
     try:
         # Log request shape
@@ -433,7 +675,6 @@ def _regen_clarifier(pillar: str, concept_code: str, payload: dict) -> str:
                                          "hist_len": len(payload.get("history", [])),
                                          "asked_len": len(payload.get("already_asked", []))}))
                 ss.commit()
-            print(f"[JobAudit] clarifier_request pillar={pillar} concept={concept_code}")
         except Exception:
             pass
 
@@ -444,7 +685,11 @@ def _regen_clarifier(pillar: str, concept_code: str, payload: dict) -> str:
                 "concept": concept_code,
                 "history": payload.get("history", []),
                 "already_asked": payload.get("already_asked", []),
+                "already_asked_norm": payload.get("already_asked_norm", []),
                 "retrieval": payload.get("retrieval", []),
+                "main_question": payload.get("main_question", ""),
+                "last_user_reply": payload.get("last_user_reply", ""),
+                "what_seems_missing": payload.get("missing", [])
             }, ensure_ascii=False)},
         ])
         resp = getattr(resp_obj, "content", "") or ""
@@ -454,7 +699,6 @@ def _regen_clarifier(pillar: str, concept_code: str, payload: dict) -> str:
                                 payload={"pillar": pillar, "concept": concept_code,
                                          "has_content": bool(resp), "len": len(resp or "")}))
                 ss.commit()
-            print(f"[JobAudit] clarifier_response pillar={pillar} concept={concept_code} has_content={bool(resp)} len={len(resp or '')}")
         except Exception:
             pass
     except Exception as e:
@@ -464,7 +708,6 @@ def _regen_clarifier(pillar: str, concept_code: str, payload: dict) -> str:
                                 payload={"pillar": pillar, "concept": concept_code},
                                 error=f"{e!r}\n{traceback.format_exc(limit=2)}"))
                 ss.commit()
-            print(f"[JobAudit] clarifier_exception pillar={pillar} concept={concept_code} err={e!r}")
         except Exception:
             pass
         return ""
@@ -472,7 +715,7 @@ def _regen_clarifier(pillar: str, concept_code: str, payload: dict) -> str:
     return q[:320]
 
 # Force-finish when numeric answer + timeframe are present, but the model hesitates
-def _force_finish(pillar: str, concept_code: str, payload: dict) -> str:
+def _force_finish(pillar: str, concept_code: str, payload: dict, extra_rules: str = "", bounds=None) -> str:
     """
     Ask the LLM to return a FINISH JSON when the user's answer appears sufficient (numeric + timeframe).
     Returns raw JSON string (model content) or empty string on error.
@@ -480,7 +723,8 @@ def _force_finish(pillar: str, concept_code: str, payload: dict) -> str:
     FORCE_SYSTEM = (
         "You already have enough to score this concept.\n"
         "The user's reply contains a NUMBER and the main question supplied the timeframe (e.g., last 7 days).\n"
-        "Return JSON for FINISH with: {\"action\":\"finish\",\"question\":\"\",\"level\":\"Low|Moderate|High\",\"confidence\":0.0,\"rationale\":\"\",\"scores\":{}}.\n"
+        "Return JSON for FINISH with: {\"action\":\"finish\",\"question\":\"\",\"level\":\"Low|Moderate|High\",\"confidence\":<float 0.0–1.0>,\"rationale\":\"\",\"scores\":{}}.\n"
+        "Set confidence 0.80–0.95 in this force-finish case (numeric + explicit timeframe). Do NOT copy example values; set confidence per this rule.\n"
         "Do NOT ask another question. Do NOT include extra text outside JSON."
     )
     try:
@@ -489,10 +733,11 @@ def _force_finish(pillar: str, concept_code: str, payload: dict) -> str:
             with SessionLocal() as ss:
                 ss.add(JobAudit(job_name="force_finish_request", status="ok",
                                 payload={"pillar": pillar, "concept": concept_code,
-                                         "hist_len": len(payload.get("history", [])),
-                                         "retrieval_len": len(payload.get("retrieval", []))}))
+                                        "hist_len": len(payload.get("history", [])),
+                                        "retrieval_len": len(payload.get("retrieval", [])),
+                                        "has_range_guide": bool(extra_rules),
+                                        "range_bounds": list(bounds) if bounds else None}))
                 ss.commit()
-            print(f"[JobAudit] force_finish_request pillar={pillar} concept={concept_code}")
         except Exception:
             pass
 
@@ -503,6 +748,7 @@ def _force_finish(pillar: str, concept_code: str, payload: dict) -> str:
                 "concept": concept_code,
                 "history": payload.get("history", []),
                 "retrieval": payload.get("retrieval", []),
+                "extra_rules": (extra_rules or "")      
             }, ensure_ascii=False)},
         ])
         resp = getattr(resp_obj, "content", "") or ""
@@ -512,7 +758,6 @@ def _force_finish(pillar: str, concept_code: str, payload: dict) -> str:
                                 payload={"pillar": pillar, "concept": concept_code,
                                          "has_content": bool(resp), "len": len(resp or "")}))
                 ss.commit()
-            print(f"[JobAudit] force_finish_response pillar={pillar} concept={concept_code} has_content={bool(resp)} len={len(resp or '')}")
         except Exception:
             pass
         return (resp or "")
@@ -523,7 +768,6 @@ def _force_finish(pillar: str, concept_code: str, payload: dict) -> str:
                                 payload={"pillar": pillar, "concept": concept_code},
                                 error=f"{e!r}\n{traceback.format_exc(limit=2)}"))
                 ss.commit()
-            print(f"[JobAudit] _force_finish error pillar={pillar} concept={concept_code} err={e!r}")
         except Exception:
             pass
         return ""
@@ -645,9 +889,14 @@ def _next_pillar(curr: str) -> Optional[str]:
 
 def start_combined_assessment(user: User):
     """Start combined assessment (Nutrition → Training → Resilience → Recovery)."""
-    print(f"[DEBUG] Entered start_combined_assessment for user {user.id}")
     with SessionLocal() as s:
         _touch_user_timestamps(s, user)
+
+        # Consent gate: fetch fresh user in this session to avoid stale consent flag
+        u = s.query(User).get(getattr(user, "id", None)) or user
+        if not bool(getattr(u, "consent_given", False)):
+            _send_to_user(u, _consent_intro_message(u))
+            return True
 
         # Deactivate existing combined sessions
         s.execute(
@@ -673,7 +922,6 @@ def start_combined_assessment(user: User):
         }
         sess = AssessSession(user_id=user.id, domain="combined", is_active=True, turn_count=0, state=state)
         s.add(sess); s.commit(); s.refresh(sess)
-        print(f"[DEBUG] Created AssessSession with id={sess.id}")
 
         # Load concepts from DB once for this session
         with SessionLocal() as s_lookup:
@@ -682,9 +930,6 @@ def start_combined_assessment(user: User):
         # Start run
         _start_or_get_run(s, user, state)
 
-        intro = "We’ll do a quick check on Nutrition, Training, Resilience, then Recovery. Short questions—answer in your own words."
-        _send_to_user(user, intro)
-        state["turns"].append({"role": "assistant", "pillar": "nutrition", "text": intro})
 
         # First concept + main question
         pillar = "nutrition"
@@ -707,6 +952,11 @@ def start_combined_assessment(user: User):
         state["turns"].append({"role": "assistant", "pillar": pillar, "question": q, "concept": first_concept, "is_main": True})
         _commit_state(s, sess, state)
         _send_to_user(user, q)
+        # Mark this concept as asked so user_concept_state.last_asked_at is set for the first concept
+        try:
+            _bump_concept_asked(user.id, state.get("run_id"), pillar, first_concept)
+        except Exception:
+            pass
         _log_turn(s, state, pillar, first_concept, False, q, None, None, None, action="ask")
         _commit_state(s, sess, state)
         return True
@@ -714,6 +964,27 @@ def start_combined_assessment(user: User):
 def continue_combined_assessment(user: User, user_text: str) -> bool:
     with SessionLocal() as s:
         _touch_user_timestamps(s, user)
+
+        # If user hasn't granted consent yet, interpret this message as response
+        if not bool(getattr(user, "consent_given", False)):
+            msg = (user_text or "").strip()
+            if _is_affirmative(msg):
+                try:
+                    db_user = s.query(User).get(getattr(user, "id", None)) or s.merge(user)
+                    db_user.consent_given = True
+                    db_user.consent_at = datetime.utcnow()
+                    s.commit()
+                except Exception:
+                    s.rollback()
+                _send_to_user(user, "Thank you — consent recorded. Let’s begin.\nWe’ll do a quick check on Nutrition, Training, Resilience, then Recovery. Short questions—answer in your own words.")
+                return start_combined_assessment(user)
+            elif _is_negative(msg):
+                _send_to_user(user, "No problem. If you change your mind, just reply YES to begin.")
+                return True
+            else:
+                # Re-prompt consent with context
+                _send_to_user(user, _consent_intro_message(user))
+                return True
 
         sess: Optional[AssessSession] = s.execute(
             select(AssessSession).where(
@@ -734,11 +1005,54 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         cmd = (user_text or "").strip().lower()
 
         if cmd in {"report", "pdf", "report please", "send report", "pdf report", "dashboard", "image report"}:
-            base = os.getenv("PUBLIC_BASE_URL")
-            pdf_link = f"https://{base}/reports/{user.id}/latest.pdf" if base else f"/reports/{user.id}/latest.pdf"
-            img_link = f"https://{base}/reports/{user.id}/latest.jpeg" if base else f"/reports/{user.id}/latest.jpeg"
+            pdf_link = _report_url(user.id, "latest.pdf")
+            img_link = _report_url(user.id, "latest.jpeg")
             _send_to_user(user, f"Here are your latest reports:\n• PDF: {pdf_link}\n• Dashboard (image): {img_link}")
             return True
+
+        # Quick correction command — "redo last"
+        # Re-asks the most recent main question so the next reply overwrites that concept's answer.
+        if cmd == "redo last":
+            turns = state.get("turns", [])
+            last_main = None
+            last_any_q = None
+            # Walk backwards to find the last assistant question, preferring a main question
+            for t in reversed(turns):
+                if t.get("role") != "assistant":
+                    continue
+                if t.get("question"):
+                    last_any_q = t
+                    if t.get("is_main"):
+                        last_main = t
+                        break
+            target = last_main or last_any_q
+            if target and target.get("question"):
+                target_pillar = target.get("pillar") or state.get("current", "nutrition")
+                target_concept = target.get("concept")
+                q_text = target.get("question")
+                # Switch context back to that pillar
+                state["current"] = target_pillar
+                # Let the user know and re-ask the same main question so the next inbound is routed to this concept
+                _send_to_user(user, "Okay — let’s redo that one. Please answer again:")
+                # Append a fresh assistant turn anchoring this concept/question as active
+                turns.append({
+                    "role": "assistant",
+                    "pillar": target_pillar,
+                    "question": q_text,
+                    "concept": target_concept,
+                    "is_main": True
+                })
+                _commit_state(s, sess, state)
+                _send_to_user(user, q_text)
+                try:
+                    _log_turn(s, state, target_pillar, target_concept, False, q_text, None, None, None, action="ask", confidence=None)
+                except Exception:
+                    pass
+                return True
+            else:
+                _send_to_user(user, "Sorry — I couldn't find the last question to redo. We'll continue from here.")
+                _commit_state(s, sess, state)
+                return True
 
         pillar = state.get("current", "nutrition")
         concept_idx_map = state.get("concept_idx", {})
@@ -790,6 +1104,17 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         # Record user reply (+ inbound log)
         msg = (user_text or "").strip()
         turns.append({"role": "user", "pillar": pillar, "text": msg})
+        # Log the user's answer bound to the last asked question for this pillar/concept
+        try:
+            last_q_for_log = None
+            for t in reversed([t for t in turns if t.get("pillar") == pillar]):
+                if t.get("role") == "assistant" and (t.get("question") or t.get("text")):
+                    last_q_for_log = t.get("question") or t.get("text")
+                    break
+            if last_q_for_log:
+                _log_turn(s, state, pillar, concept_code, False, last_q_for_log, msg, None, None, action="answer")
+        except Exception:
+            pass
      
         # Retrieval for this concept
         retrieval_ctx = []
@@ -851,28 +1176,83 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
 
         # Build system/user messages (for logging sizes) and invoke with diagnostics
         _system_msg = _system_for(pillar, concept_code)
+
+        # If the concept defines numeric bounds (zero_score/max_score), add a concise scoring guide
+        bm_tuple = None
+        range_rule_text = ""
+        try:
+            with SessionLocal() as s_bounds:
+                bm_tuple = _concept_bounds(s_bounds, pillar, concept_code)
+            if bm_tuple:
+                z, m = bm_tuple
+                if z <= m:
+                    range_rule_text = (
+                        "SCORING_RANGE_GUIDE:\n"
+                        "- Higher is better; map linearly to 0–100.\n"
+                        f"- {z} → 0; {m}+ → 100; clamp outside bounds.\n"
+                        "- Treat 'none', 'no', 'zero', or 0 as numeric 0.\n"
+                        "- Parse number words (e.g., 'three', 'couple') when digits not given.\n"
+                        f"- In your JSON, put only the active concept key: \"scores\": {{ \"{concept_code}\": <0-100 integer> }}.\n"
+                    )
+                else:
+                    range_rule_text = (
+                        "SCORING_RANGE_GUIDE:\n"
+                        "- Lower is better; map linearly to 0–100.\n"
+                        f"- {z} → 0; {m} or less → 100; clamp outside bounds.\n"
+                        "- Treat 'none', 'no', 'zero', or 0 as numeric 0 (which should map near 100 here).\n"
+                        "- Parse number words (e.g., 'three', 'couple') when digits not given.\n"
+                        f"- In your JSON, put only the active concept key: \"scores\": {{ \"{concept_code}\": <0-100 integer> }}.\n"
+                    )
+            else:
+                print(f"[range] no bounds for {pillar}.{concept_code}")
+        except Exception as e:
+            print(f"[range] failed to load bounds for {pillar}.{concept_code}: {e!r}")
+            bm_tuple = None
+            range_rule_text = ""
+
+        # General scoring rules (wrapped to avoid dangling string literals)
+        general_rules = (
+            "GENERAL_SCORING_RULES:\n"
+            "- If bounds (zero_score, max_score) are provided, they OVERRIDE heuristics and KB for polarity (higher vs lower is better).\n"
+            "- Treat 'none', 'no', 'zero', or 0 as numeric 0.\n"
+            "- Zero scores are valid; do NOT up-bias zero to a non-zero.\n"
+            "- Always clamp outputs to the provided range.\n"
+            "- Do not invent ranges; use exactly what is passed in.\n"
+        )
+        extra_rules = (range_rule_text + ("\n" if range_rule_text else "") + general_rules).strip()
+        
+        # Furtrher rules 
+
         _user_msg = (
             "Continue this concept.\n"
             f"Payload (JSON): {json.dumps(payload, ensure_ascii=False)}\n"
             "Rules:\n"
-            "- Ask ONE clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.\n"
+            "- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.\n"
             "- Clarifiers do NOT count toward the 5-per-pillar main questions.\n"
-            "- If payload.sufficient_for_scoring is true and your rubric mapping is clear, prefer action:\"finish\" with a score over asking another question.\n"
+            "- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.\n"
+            "- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.\n"
             "- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.\n"
-            "- Do NOT repeat the original main question as a clarifier; ask for the missing number/timeframe only if needed.\n"
+            "- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).\n"
             "- Always populate: status, why, missing, parsed_value in your JSON.\n"
-            "- Finish this concept ONLY when you can assign a non-zero score for this concept.\n"
-            'Return JSON only: {"action":"ask"|"finish","question":"","level":"","confidence":0.0,"rationale":"","scores":{},'
+            "- Finish this concept when you can assign an appropriate score (including 0).\n"
+            "- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.\n"
+            f"{range_rule_text}"
+            'Return JSON only: {"action":"ask"|"finish","question":"","level":"","confidence":<float 0.0–1.0>,"rationale":"","scores":{},'
             '"status":"","why":"","missing":[],"parsed_value":{"value":null,"unit":"","timeframe_ok":false}}'
         )
         try:
             with SessionLocal() as ss:
                 ss.add(JobAudit(job_name="assessor_llm_request", status="ok",
-                                payload={"pillar": pillar, "concept": concept_code,
-                                         "system_len": len(_system_msg or ""), "user_len": len(_user_msg or ""),
-                                         "sufficient_for_scoring": payload.get("sufficient_for_scoring")}))
+                                 payload={
+                                     "pillar": pillar,
+                                     "concept": concept_code,
+                                     "system_len": len(_system_msg or ""),
+                                     "user_len": len(_user_msg or ""),
+                                     "sufficient_for_scoring": payload.get("sufficient_for_scoring"),
+                                     "has_range_guide": bool(range_rule_text),
+                                     "range_bounds": list(bm_tuple) if bm_tuple else None,
+                                 }))
                 ss.commit()
-            print(f"[JobAudit] assessor_llm_request pillar={pillar} concept={concept_code} system_len={len(_system_msg)} user_len={len(_user_msg)} suff={payload.get('sufficient_for_scoring')}")
         except Exception:
             pass
         try:
@@ -889,7 +1269,6 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                                              "type": type(_resp).__name__,
                                              "has_content": bool(raw), "content_len": len(raw or ""), "preview": preview}))
                     ss.commit()
-                print(f"[JobAudit] assessor_llm_response pillar={pillar} concept={concept_code} has_content={bool(raw)} len={len(raw or '')}")
             except Exception:
                 pass
         except Exception as e:
@@ -901,7 +1280,6 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                                     payload={"pillar": pillar, "concept": concept_code},
                                     error=f"{e!r}\n{tb}"))
                     ss.commit()
-                print(f"[JobAudit] assessor_llm_exception pillar={pillar} concept={concept_code} err={e!r}")
             except Exception:
                 pass
 
@@ -948,7 +1326,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         # If not done yet, but the input looks sufficient, try a force-finish pass first
         wants_finish = (out.action == "finish_domain") or (this_concept_score > 0.0)
         if not wants_finish and payload.get("sufficient_for_scoring"):
-            raw_ff = _force_finish(pillar, concept_code, payload)
+            raw_ff = _force_finish(pillar, concept_code, payload, extra_rules=range_rule_text, bounds=bm_tuple)           
             if raw_ff:
                 out_ff = _parse_llm_json(raw_ff)
                 c_scores_ff = out_ff.scores or {}
@@ -968,15 +1346,32 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             cprog["clarifiers"] = int(cprog.get("clarifiers", 0)) + 1
 
             # LLM clarifier regeneration logic
+            # Find last main question for this concept (for similarity checks and payload)
+            last_main_q = ""
+            for t in reversed(pillar_turns):
+                if t.get("role") == "assistant" and t.get("is_main") and t.get("concept") == concept_code and t.get("question"):
+                    last_main_q = t.get("question")
+                    break
             asked = _asked_norm_set(turns, pillar)
             cand = (out.question or "").strip()
+            # Avoid re-asking a near-duplicate of the main question
+            if cand and last_main_q and _too_similar(cand, last_main_q):
+                cand = ""
+
             if (not cand) or (_norm(cand) in asked):
-                regen = _regen_clarifier(pillar, concept_code, payload)
-                if regen and _norm(regen) not in asked:
+                # Enrich payload for a better clarifier
+                regen_payload = dict(payload)
+                regen_payload["main_question"] = last_main_q
+                regen_payload["last_user_reply"] = msg
+                regen_payload["missing"] = (out.missing or [])
+
+                regen = _regen_clarifier(pillar, concept_code, regen_payload)
+                if regen and _norm(regen) not in asked and not _too_similar(regen, last_main_q):
                     cand = regen
                 else:
-                    regen2 = _regen_clarifier(pillar, concept_code, payload)
-                    if regen2 and _norm(regen2) not in asked:
+                    # One more attempt with the same enriched payload (still LLM-authored)
+                    regen2 = _regen_clarifier(pillar, concept_code, regen_payload)
+                    if regen2 and _norm(regen2) not in asked and not _too_similar(regen2, last_main_q):
                         cand = regen2
                     else:
                         cand = ""
@@ -987,6 +1382,15 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                         ss.add(JobAudit(job_name="assessor_no_clarifier", status="warn",
                                         payload={"pillar": pillar, "concept": concept_code, "asked_norm": list(asked)},
                                         error="llm_failed_to_generate_clarifier"))
+                        ss.commit()
+                except Exception:
+                    pass
+                # (Optional) Audit: log when we reject a clarifier as “too similar”
+                try:
+                    with SessionLocal() as ss:
+                        ss.add(JobAudit(job_name="clarifier_rejected_as_duplicate", status="warn",
+                                        payload={"pillar": pillar, "concept": concept_code,
+                                                 "main_q": last_main_q[:200], "attempt": (out.question or "")[:200]}))
                         ss.commit()
                 except Exception:
                     pass
@@ -1030,13 +1434,13 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             turns.append({"role": "assistant", "pillar": pillar, "question": cand, "concept": concept_code, "is_main": False})
             _commit_state(s, sess, state)
             _send_to_user(user, cand)
-            _log_turn(s, state, pillar, concept_code, True, cand, msg, retrieval_ctx, raw, action="ask", confidence=out.confidence)
+            _log_turn(s, state, pillar, concept_code, True, cand, None, retrieval_ctx, raw, action="ask", confidence=out.confidence)
             _commit_state(s, sess, state)
             return True
 
         # Concept can be finished
-        prev = float(concept_scores.get(pillar, {}).get(concept_code, 0.0) or 0.0)
-        final_score = max(prev, float(this_concept_score or 0.0))
+        # Use the latest computed score; do not retain previous via max() so state reflects current truth
+        final_score = float(this_concept_score or 0.0)
         concept_scores.setdefault(pillar, {})[concept_code] = final_score
         concept_progress.setdefault(pillar, {}).setdefault(concept_code, {
             "main_asked": True, "clarifiers": 0, "scored": False, "summary_logged": False
@@ -1067,6 +1471,32 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         s.add(summary); s.commit()
         state["turn_idx"] = idx_next
 
+        # Stash per-concept snapshot in state for pillar-level upsert
+        try:
+            qa_snap = state.setdefault("qa_snapshots", {}).setdefault(pillar, {})
+            # Extract main question and latest user answer for this concept
+            last_main_q = ""
+            last_user_a = ""
+            for item in concept_dialogue:
+                if item.get("role") == "assistant" and item.get("is_main") and item.get("concept") == concept_code:
+                    last_main_q = item.get("question") or item.get("text") or last_main_q
+                if item.get("role") == "user":
+                    last_user_a = item.get("text") or last_user_a
+            qa_snap[concept_code] = {
+                "q": last_main_q,
+                "a": last_user_a,
+                "conf": out.confidence,
+                "notes": {
+                    "parsed_value": out.parsed_value if isinstance(out.parsed_value, dict) else {},
+                    "rationale": out.rationale,
+                    "why": out.why,
+                    "status": out.status,
+                }
+            }
+            _commit_state(s, sess, state)
+        except Exception:
+            pass
+
         # Advance concept index
         concept_idx_map[pillar] = int(concept_idx_map.get(pillar, 0)) + 1
         finished_pillar = concept_idx_map[pillar] >= min(MAIN_QUESTIONS_PER_PILLAR, len(pillar_concepts))
@@ -1081,9 +1511,17 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             filled_scores = {k: (float(concept_scores.get(pillar, {}).get(k)) if concept_scores.get(pillar, {}).get(k) is not None else None) for k in codes}
             overall = round(sum(kept) / max(1, len(kept)))
 
-            # Persist concept scores
+            # Persist concept scores with Q/A/Confidence/Notes from snapshots
             try:
-                _update_concepts_from_scores(user.id, pillar, filled_scores)
+                snap_pillar = (state.get("qa_snapshots", {}) or {}).get(pillar) or {}
+                q_by = {k: v.get("q") for k, v in snap_pillar.items()}
+                a_by = {k: v.get("a") for k, v in snap_pillar.items()}
+                conf_by = {k: v.get("conf") for k, v in snap_pillar.items()}
+                notes_by = {k: v.get("notes") for k, v in snap_pillar.items()}
+                _update_concepts_from_scores(user.id, pillar, filled_scores,
+                                             q_by_code=q_by, a_by_code=a_by,
+                                             conf_by_code=conf_by, notes_by_code=notes_by,
+                                             run_id=state.get("run_id"))
             except Exception:
                 pass
 
@@ -1133,6 +1571,11 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     q_next = _concept_primary_question(s2, nxt, next_concept) or f"Quick start on {next_concept.replace('_',' ')} — what’s your current approach?"
                 turns.append({"role": "assistant", "pillar": nxt, "question": q_next, "concept": next_concept, "is_main": True})
                 _send_to_user(user, q_next)
+                # Ensure first question in new pillar bumps last_asked_at
+                try:
+                    _bump_concept_asked(user.id, nxt, next_concept)
+                except Exception:
+                    pass
      
                 _log_turn(s, state, nxt, next_concept, False, q_next, None, None, None, action="ask")
                 _commit_state(s, sess, state)
@@ -1152,9 +1595,8 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 combined = round(sum(per_list) / max(1, len(per_list))) if per_list else 0
 
                 # Build a report link
-                base = os.getenv("PUBLIC_BASE_URL")
-                pdf_link = f"https://{base}/reports/{user.id}/latest.pdf" if base else f"/reports/{user.id}/latest.pdf"
-                img_link = f"https://{base}/reports/{user.id}/latest.jpeg" if base else f"/reports/{user.id}/latest.jpeg"
+                pdf_link = _report_url(user.id, "latest.pdf")
+                img_link = _report_url(user.id, "latest.jpeg")
 
                 # Per-pillar breakdown
                 parts = []
@@ -1241,10 +1683,10 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         _commit_state(s, sess, state)
         _send_to_user(user, next_q)
         try:
-            _bump_concept_asked(user.id, pillar, next_concept)
+            _bump_concept_asked(user.id, state.get("run_id"), pillar, next_concept)
         except Exception:
             pass
 
-        _log_turn(s, state, pillar, next_concept, False, next_q, msg, retrieval_ctx, raw, action="ask", confidence=out.confidence)
+        _log_turn(s, state, pillar, next_concept, False, next_q, None, retrieval_ctx, raw, action="ask", confidence=out.confidence)
         _commit_state(s, sess, state)
         return True

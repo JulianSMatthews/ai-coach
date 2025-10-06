@@ -8,8 +8,6 @@ from datetime import datetime, time, timedelta
 from twilio.rest import Client
 from .config import settings
 from .message_log import write_log
-from .db import SessionLocal
-from .models import User
 
 BUSINESS_START = time(9, 0)
 BUSINESS_END   = time(19, 0)
@@ -51,17 +49,6 @@ def _twilio_client() -> Client | None:
         return None
 
 
-def _print_with_name(phone_e164: str, direction: str, text: str):
-    # console helper with user name
-    try:
-        with SessionLocal() as s:
-            u = s.query(User).filter(User.phone == phone_e164).first()
-            label = f"{u.name} #{u.id}" if u else "Unknown"
-    except Exception:
-        label = "Unknown"
-    print(f"[{direction.upper()}] {label} ({phone_e164}) → {text}")
-
-
 # NOTE: write_log is defined ONLY in app.message_log and imported here; do not redefine.
 def _try_write_outbound_log(*, phone_e164: str, text: str, category: str | None, twilio_sid: str, to_norm: str):
     """Log using the single canonical write_log from app.message_log; never raise."""
@@ -96,19 +83,12 @@ def send_whatsapp(text: str, to: str | None = None, category: str | None = None)
     if client is None:
         raise RuntimeError("Twilio client unavailable")
 
-    # Preflight prints
-    print(f"➡️  send_whatsapp to={to_norm!r} from={settings.TWILIO_FROM!r} text={(text or '')[:120]!r}")
-    _print_with_name(to_norm.replace("whatsapp:", ""), "outbound", (text or "")[:120])
-
     # Send
     msg = client.messages.create(
         from_=settings.TWILIO_FROM,
         body=text,
         to=to_norm,
     )
-
-    # Success prints
-    print(f"✅ Twilio accepted sid={getattr(msg,'sid',None)} status={getattr(msg,'status',None)} to={to_norm}")
 
     # ✅ Log — success only
     phone_e164 = to_norm.replace("whatsapp:", "")

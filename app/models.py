@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, Text, DateTime, Boolean, Float, ForeignKey,
-    UniqueConstraint, Index
+    UniqueConstraint, Index, text
 )
 from sqlalchemy.dialects.postgresql import JSONB as JSONType
 from sqlalchemy.orm import declarative_base, relationship
@@ -22,6 +22,9 @@ class User(Base):
     phone      = Column(String(64), unique=True, nullable=True, index=True)
     created_on = Column(DateTime, nullable=True)
     updated_on = Column(DateTime, nullable=True)
+    is_superuser = Column(Boolean, nullable=False, server_default=text("false"))
+    consent_given = Column(Boolean, nullable=False, server_default=text("false"))
+    consent_at = Column(DateTime, nullable=True)
 
     sessions   = relationship("AssessSession", back_populates="user", cascade="all, delete-orphan")
 
@@ -81,6 +84,10 @@ class Concept(Base):
     code        = Column(String(64), nullable=False, index=True)
     name        = Column(String(160), nullable=False)
     description = Column(Text, nullable=True)
+    # PATCH — 2025-09-11: quantity→score guidelines (simple bounds)
+    # Quantity that maps to score 0, and quantity that maps to score 100 (cap at max+)
+    zero_score = Column(Integer, nullable=True)
+    max_score  = Column(Integer, nullable=True)
     created_at  = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     __table_args__ = (
@@ -102,14 +109,27 @@ class UserConceptState(Base):
     id            = Column(Integer, primary_key=True)
     user_id       = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     concept_id    = Column(Integer, ForeignKey("concepts.id", ondelete="CASCADE"), nullable=False, index=True)
+    run_id        = Column(Integer, ForeignKey("assessment_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    # Snapshot of the most recent scored interaction for this concept
     score         = Column(Float, nullable=True)  # 0..100 running avg
+
+    # Denormalized helpers for fast grouping/reporting
+    pillar_key    = Column(String(32), nullable=True, index=True)   # e.g. "nutrition"
+    concept       = Column(String(160), nullable=True, index=True)  # e.g. "Fruit & Vegetables"
+
+    # Latest Q/A captured for this concept
+    question      = Column(Text, nullable=True)
+    answer        = Column(Text, nullable=True)
+    confidence    = Column(Float, nullable=True)
+    notes         = Column(JSONType, nullable=True)  # raw LLM payload / parsed structures
+
     asked_count   = Column(Integer, nullable=True)
     last_asked_at = Column(DateTime, nullable=True)
-    notes         = Column(Text, nullable=True)
     updated_at    = Column(DateTime, default=datetime.utcnow, nullable=False)
 
     __table_args__ = (
-        UniqueConstraint("user_id", "concept_id", name="uq_user_concept"),
+        UniqueConstraint("user_id", "run_id", "concept_id", name="uq_user_run_concept_state"),
     )
 
 # ──────────────────────────────────────────────────────────────────────────────

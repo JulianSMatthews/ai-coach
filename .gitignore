@@ -18,3 +18,11 @@ env/
 # Local env/config
 .env
 .env.*
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+.env
+/public/reports/
+/public/reports/**
+app/assessor_LATEST.py

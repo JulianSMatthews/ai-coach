@@ -4,6 +4,37 @@
 
 __all__ = ["write_log"]
 
+def _console_echo(phone_e164: str | None, direction: str | None, text: str | None) -> None:
+    """
+    Print a console echo for any message written to MessageLog.
+    Format: [OUTBOUND] Julian #1 (+4477...) → first 120 chars
+    """
+    # Local imports to avoid circular deps
+    try:
+        from .db import SessionLocal  # type: ignore
+        from .models import User as _User  # type: ignore
+    except Exception:
+        SessionLocal = None
+        _User = None
+    phone = (phone_e164 or "").strip()
+    label = "Unknown"
+    if SessionLocal and _User and phone:
+        try:
+            with SessionLocal() as _s:
+                u = _s.query(_User).filter(_User.phone == phone).first()
+                if u:
+                    label = f"{getattr(u, 'name', 'User')} #{getattr(u, 'id', '?')}"
+        except Exception:
+            pass
+    preview = (text or "")[:120]
+    dir_up = (direction or "").upper()
+    phone_disp = phone if phone else "n/a"
+    try:
+        print(f"[{dir_up}] {label} ({phone_disp}) → {preview}")
+    except Exception:
+        # Never let console echo break the write path
+        pass
+
 def write_log(*args, **kwargs) -> None:
     """
     Accepts either:
@@ -76,20 +107,6 @@ def write_log(*args, **kwargs) -> None:
         except Exception:
             user_obj = None
 
-    # 3) Debug print before write
-    try:
-        print(
-            f"Message (pre) : "
-            f"phone={phone_e164}, "
-            f"direction={direction}, "
-            f"text={repr((text or '')[:300])}, "
-            f"category={category}, "
-            f"user_id={getattr(user_obj, 'id', None)}, "
-            f"user_name={getattr(user_obj, 'name', None)}"
-        )
-    except Exception:
-        pass
-
     # 4) Persist (never raise)
     try:
         with SessionLocal() as s:
@@ -105,6 +122,7 @@ def write_log(*args, **kwargs) -> None:
             )
             s.add(row)
             s.commit()
+            _console_echo(phone_e164, direction, text)
     except Exception as e:
         try:
             s.rollback()

@@ -7,7 +7,7 @@ from typing import Optional, Dict, Any, List, Tuple
 import textwrap
 
 from .db import SessionLocal
-from .models import AssessmentRun, PillarResult, User, JobAudit
+from .models import AssessmentRun, PillarResult, User, JobAudit, UserConceptState
 
 def _audit(job: str, status: str = "ok", payload: Dict[str, Any] | None = None, error: str | None = None) -> None:
     try:
@@ -109,6 +109,130 @@ def _wrap_block(text: str, width: int = 42, max_lines: int = 4, bullet: str | No
         lines[-1] = lines[-1].rstrip() + "…"
     return "\n".join(lines)
 
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Detailed (admin) report – grouped by pillar with concept breakdown
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _collect_detailed_report_data(user_id: int) -> Tuple[Optional[User], Optional[AssessmentRun], List[UserConceptState]]:
+    """Fetch the latest AssessmentRun for the user and their concept state rows."""
+    with SessionLocal() as s:
+        run = (
+            s.query(AssessmentRun)
+             .filter(AssessmentRun.user_id == user_id)
+             .order_by(AssessmentRun.started_at.desc())
+             .first()
+        )
+        user = s.query(User).filter(User.id == user_id).first()
+        rows: List[UserConceptState] = (
+            s.query(UserConceptState)
+             .filter(UserConceptState.user_id == user_id)
+             .order_by(UserConceptState.updated_at.desc())
+             .all()
+        )
+        return user, run, rows or []
+
+
+def _write_detailed_pdf(path: str, user: User, run: AssessmentRun, rows: List[UserConceptState]) -> None:
+    """
+    Render a multi‑page, portrait PDF grouped by pillar, with a concept table:
+      Columns: Concept | Score | Question | Answer | Confidence
+      – Wrap long text in Concept/Question/Answer
+      – Footer page numbers
+      – Shows user name in Run Overview (no report path)
+    """
+    # Lazy import so the app can start without reportlab installed.
+    try:
+        from reportlab.platypus import BaseDocTemplate, Frame, PageTemplate, Paragraph, Spacer, Table, TableStyle
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+        from reportlab.lib import colors
+        from reportlab.lib.units import mm
+    except Exception as e:
+        raise RuntimeError(f"reportlab not available: {e!r}")
+
+    _audit("detailed_report_start", "ok", {"user_id": getattr(user, "id", None), "run_id": getattr(run, "id", None), "out_pdf": path})
+
+    styles = getSampleStyleSheet()
+    wrap = ParagraphStyle('wrap', parent=styles['Normal'], fontSize=9, leading=11)
+
+    # Group rows by pillar using configured order, then any others
+    by_pillar: Dict[str, List[UserConceptState]] = {}
+    for r in rows:
+        pk = (getattr(r, 'pillar_key', None) or 'unknown').lower()
+        by_pillar.setdefault(pk, []).append(r)
+
+    def _on_page(c, doc):
+        c.setFont("Helvetica", 8)
+        c.drawRightString(200*mm, 15*mm, f"Page {c.getPageNumber()}")
+
+    # Ensure directory exists
+    out_dir = os.path.dirname(path)
+    os.makedirs(out_dir, exist_ok=True)
+
+    doc = BaseDocTemplate(path, pagesize=A4, leftMargin=36, rightMargin=36, topMargin=36, bottomMargin=36)
+    frame = Frame(doc.leftMargin, doc.bottomMargin, doc.width, doc.height, id='normal')
+    doc.addPageTemplates([PageTemplate(id='with_page_numbers', frames=frame, onPage=_on_page)])
+
+    story: List[Any] = []
+
+    # Title
+    story.append(Paragraph("Assessment Report", styles["Title"]))
+    story.append(Spacer(1, 10))
+
+    # Run overview (user name; omit report path)
+    story.append(Paragraph("<b>Run Overview</b>", styles["Heading2"]))
+    safe_name = _safe_name(user)
+    started = getattr(run, 'started_at', None) or ""
+    finished = getattr(run, 'finished_at', None) or ""
+    combined = getattr(run, 'combined_overall', None) or ""
+
+    ov_rows = [
+        ("Name", safe_name),
+        ("Started", str(started)),
+        ("Finished", str(finished)),
+        ("Combined Overall", str(combined)),
+    ]
+    ov_table = Table(ov_rows, hAlign="LEFT", colWidths=[120, 350])
+    ov_table.setStyle(TableStyle([["GRID", (0,0), (-1,-1), 0.25, colors.grey]]))
+    story.append(ov_table)
+    story.append(Spacer(1, 14))
+
+    # Pillar sections
+    ordered = _pillar_order()
+    pillar_keys = [p for p in ordered if p in by_pillar] + [p for p in by_pillar.keys() if p not in ordered]
+
+    for pk in pillar_keys:
+        grp = by_pillar.get(pk, [])
+        # heading with avg score
+        scores = [float(getattr(r, 'score')) for r in grp if getattr(r, 'score') is not None]
+        avg = round(sum(scores)/len(scores)) if scores else None
+        avg_txt = f"{avg}/100" if avg is not None else "Unscored"
+        story.append(Paragraph(f"{_title_for_pillar(pk)} – Overall: {avg_txt}", styles["Heading2"]))
+
+        data: List[List[Any]] = [["Concept", "Score", "Question", "Answer", "Confidence"]]
+        for item in grp:
+            concept = Paragraph(str(getattr(item, 'concept', '') or ''), wrap)
+            sc = getattr(item, 'score', None)
+            sc_txt = f"{int(round(float(sc)))}/100" if sc is not None else "Unscored"
+            q = Paragraph(str(getattr(item, 'question', '') or ''), wrap)
+            a = Paragraph(str(getattr(item, 'answer', '') or ''), wrap)
+            cf = getattr(item, 'confidence', None)
+            cf_txt = f"{float(cf):.2f}" if cf is not None else ""
+            data.append([concept, sc_txt, q, a, cf_txt])
+
+        table = Table(data, repeatRows=1, colWidths=[90, 45, 160, 120, 55])
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0,0), (-1,0), colors.lightgrey),
+            ("GRID", (0,0), (-1,-1), 0.25, colors.grey),
+            ("VALIGN", (0,0), (-1,-1), "TOP"),
+            ("ALIGN", (1,1), (1,-1), "RIGHT"),
+        ]))
+        story.append(table)
+        story.append(Spacer(1, 12))
+
+    doc.build(story)
+    _audit("detailed_report_pdf_saved", "ok", {"pdf_path": path})
 
 def _write_pdf(path: str, user: User, run: AssessmentRun, pillars: List[PillarResult]) -> None:
     """
@@ -346,6 +470,25 @@ def generate_assessment_report_pdf(run_id: int) -> str:
         with SessionLocal() as s:
             s.add(JobAudit(job_name="report_generate", status="ok",
                            payload={"run_id": run_id, "user_id": user.id, "path": out_path}))
+            s.commit()
+    except Exception:
+        pass
+    return out_path
+
+def generate_detailed_report_pdf_by_user(user_id: int) -> str:
+    """Public entry point to generate the detailed (grouped) PDF for a user.
+    Returns the absolute filesystem path to the generated PDF.
+    """
+    user, run, rows = _collect_detailed_report_data(user_id)
+    if not user or not run:
+        raise RuntimeError("Detailed report: user/run not found")
+    root = _reports_root_for_user(user.id)
+    out_path = os.path.join(root, "detailed.pdf")
+    _write_detailed_pdf(out_path, user, run, rows)
+    try:
+        with SessionLocal() as s:
+            s.add(JobAudit(job_name="detailed_report_generate", status="ok",
+                           payload={"user_id": user.id, "run_id": getattr(run, 'id', None), "path": out_path}))
             s.commit()
     except Exception:
         pass
