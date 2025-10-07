@@ -18,17 +18,18 @@ from pathlib import Path
 from .db import engine, SessionLocal
 from .models import Base, User, MessageLog, AssessSession, AssessmentRun  # ensure model registered for metadata
 from .nudges import send_whatsapp
-from .reporting import generate_detailed_report_pdf_by_user
+from .reporting import generate_detailed_report_pdf_by_user, generate_assessment_summary_pdf
 
 # PATCH — 2025-09-11: Admin usage helper text
 ADMIN_USAGE = (
     "Admin commands:\n"
-    "admin create <phone> [name]\n"
+    "admin create <phone> [first_name [surname]]\n"
     "admin start <phone>\n"
     "admin status <phone>\n"
     "admin report <phone>\n"
     "admin detailed <phone>\n"
-    "\nExample: admin status +447700900123"
+    "admin summary [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
+    "\nExample: admin create +447700900123 Julian Matthews"
 )
 
 print("🚀 app.api loaded: v-2025-09-04E")
@@ -147,12 +148,42 @@ def _maybe_set_public_base_via_ngrok() -> None:
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
+# Name display/split helpers (no legacy 'name' fallback)
+def display_full_name(u: "User") -> str:
+    """
+    Prefer first_name + surname; fall back to phone only (no legacy name).
+    """
+    try:
+        first = (getattr(u, "first_name", None) or "").strip()
+        last = (getattr(u, "surname", None) or "").strip()
+        if first or last:
+            return f"{first} {last}".strip()
+        return getattr(u, "phone", "") or ""
+    except Exception:
+        return getattr(u, "phone", "") or ""
+
+def _split_name(maybe_name: str) -> tuple[str | None, str | None]:
+    """
+    Split a free-form name into (first_name, surname).
+    - Empty/None -> (None, None)
+    - One token -> (token, None)
+    - Two+ tokens -> (first token, rest joined as surname)
+    """
+    if not maybe_name:
+        return None, None
+    parts = [p for p in str(maybe_name).strip().split() if p]
+    if not parts:
+        return None, None
+    if len(parts) == 1:
+        return parts[0], None
+    return parts[0], " ".join(parts[1:])
+
 def _get_or_create_user(phone_e164: str) -> User:
     """Find or create a User record by E.164 phone (no whatsapp: prefix)."""
     with SessionLocal() as s:
         u = s.query(User).filter(User.phone == phone_e164).first()
         if not u:
-            u = User(name=None, phone=phone_e164)
+            u = User(first_name=None, surname=None, phone=phone_e164)
             s.add(u)
             s.commit()
             s.refresh(u)
@@ -204,6 +235,7 @@ def _norm_phone(s: str) -> str:
             return cc + s
     return s
 
+
 def _is_admin_user(u: User) -> bool:
     try:
         ok = bool(getattr(u, "is_superuser", False)) and int(getattr(u, "id", 0)) in (1, 2)
@@ -212,6 +244,42 @@ def _is_admin_user(u: User) -> bool:
     except Exception as e:
         print(f"[admin] check error: {e!r}")
         return False
+
+def _parse_summary_range(args: list[str]) -> tuple[str, str]:
+    """
+    Accepts tokens: today | last7d | last30d | thisweek | YYYY-MM-DD YYYY-MM-DD
+    Returns (start_str, end_str) as ISO dates.
+    """
+    from datetime import date, timedelta
+    today = date.today()
+    if not args:
+        # default to last7d inclusive
+        start = today - timedelta(days=6)
+        end = today
+        return (start.isoformat(), end.isoformat())
+    token = (args[0] or "").lower()
+    if token == "today":
+        return (today.isoformat(), today.isoformat())
+    if token == "last7d":
+        start = today - timedelta(days=6)
+        return (start.isoformat(), today.isoformat())
+    if token == "last30d":
+        start = today - timedelta(days=29)
+        return (start.isoformat(), today.isoformat())
+    if token == "thisweek":
+        # Monday..Sunday of current week
+        weekday = today.weekday()  # Monday=0
+        start = today - timedelta(days=weekday)
+        end = start + timedelta(days=6)
+        return (start.isoformat(), end.isoformat())
+    if len(args) >= 2:
+        # assume explicit dates
+        a, b = args[0], args[1]
+        # no validation here; reporting will raise if invalid
+        return (a, b)
+    # fallback
+    start = today - timedelta(days=6)
+    return (start.isoformat(), today.isoformat())
 
 
 def _handle_admin_command(admin_user: User, text: str) -> bool:
@@ -241,15 +309,17 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
     try:
         if cmd == "create":
             phone = _norm_phone(parts[2])
-            name = " ".join(parts[3:]) if len(parts) > 3 else None
+            raw_name = " ".join(parts[3:]) if len(parts) > 3 else None
+            first_name, surname = _split_name(raw_name)
             with SessionLocal() as s:
                 existing = s.execute(select(User).where(User.phone == phone)).scalar_one_or_none()
                 if existing:
-                    send_whatsapp(to=admin_user.phone, text=f"User exists: id={existing.id}, phone={existing.phone}, name={existing.name or ''}")
+                    send_whatsapp(to=admin_user.phone, text=f"User exists: id={existing.id}, phone={existing.phone}, name={display_full_name(existing)}")
                     return True
                 now = datetime.utcnow()
                 u = User(
-                    name=name or None,
+                    first_name=first_name,
+                    surname=surname,
                     phone=phone,
                     created_on=now,
                     updated_on=now,
@@ -260,7 +330,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 start_combined_assessment(u)
             except Exception as e:
                 print(f"[wa admin create] start failed: {e!r}")
-            send_whatsapp(to=admin_user.phone, text=f"Created user id={u.id} ({u.phone})")
+            send_whatsapp(to=admin_user.phone, text=f"Created user id={u.id} {display_full_name(u)} ({u.phone})")
             return True
         elif cmd == "start":
             target_phone = _norm_phone(parts[2])
@@ -270,7 +340,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                     send_whatsapp(to=admin_user.phone, text=f"User with phone {target_phone} not found")
                     return True
             start_combined_assessment(u)
-            send_whatsapp(to=admin_user.phone, text=f"Started assessment for {u.name or ''} ({u.phone})")
+            send_whatsapp(to=admin_user.phone, text=f"Started assessment for {display_full_name(u)} ({u.phone})")
             return True
         elif cmd == "status":
             target_phone = _norm_phone(parts[2])
@@ -284,7 +354,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                     select(AssessmentRun).where(AssessmentRun.user_id == u.id).order_by(desc(AssessmentRun.id))
                 ).scalars().first()
             status_txt = "in_progress" if active else ("completed" if latest_run and getattr(latest_run, "finished_at", None) else "idle")
-            send_whatsapp(to=admin_user.phone, text=f"Status for {u.name or ''} ({u.phone}): {status_txt}")
+            send_whatsapp(to=admin_user.phone, text=f"Status for {display_full_name(u)} ({u.phone}): {status_txt}")
             return True
         elif cmd == "report":
             target_phone = _norm_phone(parts[2])
@@ -295,7 +365,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                     return True
             pdf = _public_report_url(u.id, "latest.pdf")
             img = _public_report_url(u.id, "latest.jpeg")
-            send_whatsapp(to=admin_user.phone, text=f"Report for {u.name or ''} ({u.phone}):\nPDF: {pdf}\nImage: {img}")
+            send_whatsapp(to=admin_user.phone, text=f"Report for {display_full_name(u)} ({u.phone}):\nPDF: {pdf}\nImage: {img}")
             return True
         elif cmd == "detailed":
             target_phone = _norm_phone(parts[2])
@@ -313,7 +383,27 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to generate detailed report: {e}")
                 return True
             pdf = _public_report_url(u.id, "detailed.pdf")
-            send_whatsapp(to=admin_user.phone, text=f"Detailed report for {u.name or ''} ({u.phone}):\nPDF: {pdf}")
+            send_whatsapp(to=admin_user.phone, text=f"Detailed report for {display_full_name(u)} ({u.phone}):\nPDF: {pdf}")
+            return True
+        elif cmd == "summary":
+            # Usage: admin summary [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]
+            args = parts[2:]
+            start_str, end_str = _parse_summary_range(args)
+            try:
+                pdf_path = generate_assessment_summary_pdf(start_str, end_str)
+            except Exception as e:
+                send_whatsapp(to=admin_user.phone, text=f"Failed to generate summary report: {e}")
+                return True
+            # Derive filename from path for public URL
+            filename = os.path.basename(pdf_path)
+            url = _public_report_url_global(filename)
+            send_whatsapp(
+                to=admin_user.phone,
+                text=(
+                    f"Assessment summary {start_str} → {end_str}\n"
+                    f"PDF: {url}"
+                ),
+            )
             return True
     except Exception as e:
         send_whatsapp(to=admin_user.phone, text=f"Admin error: {e}")
@@ -437,10 +527,11 @@ def _require_admin(x_admin_token: str = Header(None, alias="X-Admin-Token")):
 def admin_create_user(payload: dict):
     """
     Create a new user and trigger consent/intro via start_combined_assessment.
-    Body: { "name": "Julian", "phone": "+4477..." }
+    Body: { "first_name": "Julian", "surname": "Matthews", "phone": "+4477..." }
     """
-    name = (payload.get("name") or "").strip()
     phone = (payload.get("phone") or "").strip()
+    first_name = (payload.get("first_name") or "").strip() or None
+    surname = (payload.get("surname") or "").strip() or None
     if not phone:
         raise HTTPException(status_code=400, detail="phone required")
     with SessionLocal() as s:
@@ -449,7 +540,8 @@ def admin_create_user(payload: dict):
             raise HTTPException(status_code=409, detail="user already exists")
         now = datetime.utcnow()
         u = User(
-            name=name or None,
+            first_name=first_name,
+            surname=surname,
             phone=phone,
             created_on=now,
             updated_on=now,
@@ -461,7 +553,13 @@ def admin_create_user(payload: dict):
     except Exception as e:
         # Do not fail creation if send fails
         print(f"[admin_create_user] start_combined_assessment failed: {e!r}")
-    return {"id": u.id, "name": u.name, "phone": u.phone}
+    return {
+        "id": u.id,
+        "first_name": getattr(u, "first_name", None),
+        "surname": getattr(u, "surname", None),
+        "display_name": display_full_name(u),
+        "phone": u.phone
+    }
 
 @admin.post("/users/{user_id}/start", dependencies=[Depends(_require_admin)])
 def admin_start_user(user_id: int):
@@ -491,7 +589,11 @@ def admin_user_status(user_id: int):
 
     data = {
         "user": {
-            "id": u.id, "name": u.name, "phone": u.phone,
+            "id": u.id,
+            "first_name": getattr(u, "first_name", None),
+            "surname": getattr(u, "surname", None),
+            "display_name": display_full_name(u),
+            "phone": u.phone,
             "consent_given": bool(getattr(u, "consent_given", False)),
             "consent_at": getattr(u, "consent_at", None),
         },
@@ -580,6 +682,10 @@ except Exception as e:
 def _public_report_url(user_id: int, filename: str) -> str:
     """Return absolute URL to a user's report file."""
     return f"{_REPORTS_BASE}/reports/{user_id}/{filename}"
+
+def _public_report_url_global(filename: str) -> str:
+    """Return absolute URL to a global report file located directly under /reports."""
+    return f"{_REPORTS_BASE}/reports/{filename}"
 
 
 

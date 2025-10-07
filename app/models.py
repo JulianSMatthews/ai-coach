@@ -18,7 +18,8 @@ Base = declarative_base()
 class User(Base):
     __tablename__ = "users"
     id         = Column(Integer, primary_key=True)
-    name       = Column(String(120), nullable=True)
+    first_name = Column(String(120), nullable=True)
+    surname    = Column(String(120), nullable=True)
     phone      = Column(String(64), unique=True, nullable=True, index=True)
     created_on = Column(DateTime, nullable=True)
     updated_on = Column(DateTime, nullable=True)

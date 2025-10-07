@@ -126,6 +126,13 @@ def _asked_norm_set(turns: list[dict], pillar: str) -> set[str]:
         if t.get("role") == "assistant" and t.get("pillar") == pillar
     }
 
+# Helper to build display name from first_name + surname only (no legacy name fallback)
+def _display_full_name(user: User) -> str:
+    first = (getattr(user, "first_name", None) or "").strip()
+    last = (getattr(user, "surname", None) or "").strip()
+    full = f"{first} {last}".strip()
+    return full
+
 # Helper to detect restatements (token-level Jaccard or heavy containment)
 def _too_similar(a: str, b: str, jaccard_threshold: float = 0.7) -> bool:
     """Return True when a and b are likely restatements (token-level Jaccard or heavy containment)."""
@@ -208,7 +215,7 @@ def _is_negative(text: str) -> bool:
     return any(t == n or t.startswith(n + " ") for n in nos)
 
 def _consent_intro_message(user: User) -> str:
-    name = (getattr(user, "name", "") or "").strip()
+    name = _display_full_name(user)
     greet = f"Hi {name}!" if name else "Hi!"
     return (
         f"{greet} Before we start, please confirm you consent to a short health assessment over WhatsApp. "

@@ -168,8 +168,8 @@ KB_SNIPPETS: Dict[str, Dict[str, List[Dict]]] = {
 }
 
 DEMO_USERS = [
-    {"name": "Julian", "phone": "+447710307026", "is_superuser": True},
-    {"name": "Rhys",   "phone": "+447860362908", "is_superuser": True},
+    {"first_name": "Julian", "surname": "Matthews", "phone": "+447710307026", "is_superuser": True},
+    {"first_name": "Rhys",   "surname": "Williams", "phone": "+447860362908", "is_superuser": True},
 ]
 
 def _hash_floats(text: str, dim: int = 256) -> list[float]:
@@ -319,7 +319,8 @@ def upsert_demo_users(session: Session) -> int:
         row = session.execute(select(User).where(User.phone == phone)).scalar_one_or_none()
         if not row:
             session.add(User(
-                name=u.get("name"),
+                first_name=u.get("first_name"),
+                surname=u.get("surname"),
                 phone=phone,
                 is_superuser=bool(u.get("is_superuser")),
                 created_on=datetime.utcnow(),
@@ -330,6 +331,16 @@ def upsert_demo_users(session: Session) -> int:
             # PATCH — 2025-09-11: keep superuser flag in sync with seed config
             if bool(u.get("is_superuser")) and not getattr(row, "is_superuser", False):
                 row.is_superuser = True
+            # Ensure first_name/surname are set for existing demo users
+            fn = u.get("first_name")
+            sn = u.get("surname")
+            updated = False
+            if fn is not None and getattr(row, "first_name", None) != fn:
+                row.first_name = fn; updated = True
+            if sn is not None and getattr(row, "surname", None) != sn:
+                row.surname = sn; updated = True
+            if updated:
+                row.updated_on = datetime.utcnow()
     session.commit()
     return created
 
