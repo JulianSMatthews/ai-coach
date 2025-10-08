@@ -67,17 +67,15 @@ def _try_write_outbound_log(*, phone_e164: str, text: str, category: str | None,
 def send_whatsapp(text: str, to: str | None = None, category: str | None = None) -> str:
     """
     Primary send function. Logs only after Twilio accepts.
+    Requires an explicit `to`; will NOT fallback to any env recipient.
     """
-    to_norm = _normalize_whatsapp_phone(to) if to else None
+    if not text or not str(text).strip():
+        raise ValueError("Message text is empty")
 
+    to_norm = _normalize_whatsapp_phone(to) if to else None
     if not to_norm:
-        if os.getenv("FORCE_FALLBACK_TO_ENV_TO") == "1":
-            env_to = _normalize_whatsapp_phone(os.getenv("TWILIO_TO"))
-            if not env_to:
-                raise ValueError("TWILIO_TO is missing or invalid; cannot fallback.")
-            to_norm = env_to
-        else:
-            raise ValueError("Recipient phone missing. Refusing to fallback.")
+        # Explicitly refuse to send without a valid recipient
+        raise ValueError("Recipient phone missing or invalid (expected E.164). No fallback is permitted.")
 
     client = _twilio_client()
     if client is None:
@@ -106,18 +104,31 @@ def send_whatsapp(text: str, to: str | None = None, category: str | None = None)
     return getattr(msg, "sid", "")
 
 
+# Explicit admin notification helper
+def send_admin(text: str, category: str | None = None) -> str | None:
+    """
+    Explicit admin notification helper.
+    Uses ADMIN_WHATSAPP or ADMIN_PHONE (E.164) from environment.
+    Returns Twilio SID on success, or None if admin destination missing.
+    """
+    admin_raw = (os.getenv("ADMIN_WHATSAPP") or os.getenv("ADMIN_PHONE") or "").strip()
+    to_norm = _normalize_whatsapp_phone(admin_raw)
+    if not to_norm:
+        return None
+    return send_whatsapp(text=text, to=admin_raw, category=category)
+
+
 def send_message(arg1: str, arg2: str | None = None, category: str | None = None) -> str:
     """
     Backwards-compat shim for legacy calls.
-    - send_message(phone, text[, category])  → preferred legacy style
-    - send_message(text[, category])         → legacy dev style (needs FORCE_FALLBACK_TO_ENV_TO=1)
+    - send_message(phone, text[, category])  → supported
+    - send_message(text[, category])         → **DISALLOWED** (raises TypeError)
     """
     if arg2 is None:
-        # old pattern: send_message(text)
-        return send_whatsapp(text=arg1, to=None, category=category)
-    else:
-        # old pattern: send_message(phone, text)
-        return send_whatsapp(text=arg2, to=arg1, category=category)
+        # Disallow ambiguous legacy usage that can misroute to admin
+        raise TypeError("send_message(text) is not allowed. Call send_message(phone, text) or send_whatsapp(text, to=...).")
+    # Legacy supported path: (phone, text)
+    return send_whatsapp(text=arg2, to=arg1, category=category)
 
 
 # ──────────────────────────────────────────────────────────────────────────────

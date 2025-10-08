@@ -247,19 +247,31 @@ def _send_to_user(user: User, text: str) -> bool:
         to_fmt = f"whatsapp:{to}"
 
     try:
-        # Preferred signature: (to, message)
+        # Preferred: (to, message)
         send_message(to_fmt, msg)
         return True
     except TypeError:
-        # Legacy signature: (message)
-        send_message(msg)
-        return True
+        # Some legacy builds expect (message, to)
+        try:
+            send_message(msg, to_fmt)
+            return True
+        except TypeError:
+            # Try keyword-based call if supported
+            try:
+                send_message(to=to_fmt, text=msg)
+                return True
+            except TypeError:
+                try:
+                    send_message(to=to_fmt, message=msg)
+                    return True
+                except Exception as e:
+                    raise e
     except Exception as e:
         print(f"❌ send_message failed: {e!r} | to={to_fmt} msg={msg[:120]}")
         try:
             with SessionLocal() as ss:
                 ss.add(JobAudit(job_name="send_message", status="error",
-                                payload={"to": to_fmt, "text": msg}, error=str(e)))
+                                payload={"to": to_fmt, "text": msg, "admin_target": getattr(user, "phone", None)}, error=str(e)))
                 ss.commit()
         except Exception:
             pass

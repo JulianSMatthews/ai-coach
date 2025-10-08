@@ -32,7 +32,34 @@ ADMIN_USAGE = (
     "\nExample: admin create +447700900123 Julian Matthews"
 )
 
-print("🚀 app.api loaded: v-2025-09-04E")
+
+ENV = os.getenv("ENV", "development").lower()
+
+# Application start time (UTC)
+from datetime import timezone
+APP_START_DT = datetime.now(timezone.utc)
+APP_START_ISO = APP_START_DT.isoformat()
+
+def _uptime_seconds() -> int:
+    try:
+        from datetime import timezone as _tz, datetime as _dt
+        return int((_dt.now(_tz.utc) - APP_START_DT).total_seconds())
+    except Exception:
+        return 0
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Environment awareness (simple version)
+# ──────────────────────────────────────────────────────────────────────────────
+def _print_env_banner():
+    try:
+        print("\n" + "═" * 72)
+        print(f"🚀 Starting HealthSense [{ENV.upper()}]")
+        print(f"🕒 App start (UTC): {APP_START_ISO}")
+        print("═" * 72 + "\n")
+    except Exception:
+        pass
+
+print(f"🚀 app.api loaded: v-2025-09-04E (ENV={ENV})")
 
 # Prefer compat shim; fall back to run_seed if needed
 try:
@@ -110,8 +137,8 @@ def on_startup():
             os.makedirs(reports_dir, exist_ok=True)
         except Exception as e:
             print(f"⚠️  Could not create reports dir: {e!r}")
-        # Always try to set PUBLIC_BASE_URL from ngrok if not already set
     _maybe_set_public_base_via_ngrok()
+    _print_env_banner()
 
 def _maybe_set_public_base_via_ngrok() -> None:
     """
@@ -180,6 +207,7 @@ def _split_name(maybe_name: str) -> tuple[str | None, str | None]:
 
 def _get_or_create_user(phone_e164: str) -> User:
     """Find or create a User record by E.164 phone (no whatsapp: prefix)."""
+    phone_e164 = _norm_phone(phone_e164)
     with SessionLocal() as s:
         u = s.query(User).filter(User.phone == phone_e164).first()
         if not u:
@@ -218,21 +246,56 @@ def _log_inbound_direct(user: User, channel: str, body: str, from_raw: str) -> N
 # WhatsApp Admin Command Helpers
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 # Phone normalizer for admin commands
 # PATCH — 2025-09-11: normalize local numbers using DEFAULT_COUNTRY_CODE (e.g., +44)
+import re
+_CC_RE = re.compile(r"^\+(\d{1,3})")
+
+def _guess_default_cc() -> str:
+    """
+    Resolve default country code in priority order:
+    1) DEFAULT_COUNTRY_CODE
+    2) TWILIO_WHATSAPP_FROM (extract +CC)
+    3) ADMIN_WHATSAPP / ADMIN_PHONE
+    4) TWILIO_SMS_FROM
+    5) Hard fallback '+44'
+    """
+    cand = (os.getenv("DEFAULT_COUNTRY_CODE") or "").strip()
+    if cand.startswith("+"):
+        return cand
+    for var in ("TWILIO_WHATSAPP_FROM", "ADMIN_WHATSAPP", "ADMIN_PHONE", "TWILIO_SMS_FROM"):
+        v = (os.getenv(var) or "").strip()
+        if not v:
+            continue
+        v = v.replace("whatsapp:", "")
+        m = _CC_RE.match(v)
+        if m:
+            return f"+{m.group(1)}"
+    return "+44"
+
 def _norm_phone(s: str) -> str:
     s = (s or "").strip()
     if s.startswith("whatsapp:"):
         s = s[len("whatsapp:"):]
-    s = s.replace(" ", "")
-    cc = (os.getenv("DEFAULT_COUNTRY_CODE") or "").strip()
+    # Remove common separators
+    s = s.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+    # Convert '00' international prefix to '+'
+    if s.startswith("00") and len(s) > 2 and s[2:].isdigit():
+        s = "+" + s[2:]
+    # If already E.164, return
     if s.startswith("+"):
         return s
+    # Determine default country code
+    cc_env = (os.getenv("DEFAULT_COUNTRY_CODE") or "").strip()
+    cc = cc_env if cc_env.startswith("+") else _guess_default_cc()
+    # Accept pure digits after stripping separators
     if s.isdigit():
-        if s.startswith("0") and cc.startswith("+"):
+        # UK-style local numbers starting with 0 → drop trunk '0'
+        if s.startswith("0"):
             return cc + s[1:]
-        if cc.startswith("+"):
-            return cc + s
+        # No trunk '0' — still prefix with cc
+        return cc + s
     return s
 
 
@@ -308,8 +371,20 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
     cmd = parts[1].lower()
     try:
         if cmd == "create":
-            phone = _norm_phone(parts[2])
-            raw_name = " ".join(parts[3:]) if len(parts) > 3 else None
+            # Parse phone which may be split across multiple tokens (e.g., "07808 951649")
+            i = 2
+            phone_tokens = []
+            while i < len(parts):
+                tok = parts[i]
+                stripped = tok.replace("+", "").replace("-", "").replace("(", "").replace(")", "").replace(" ", "")
+                if stripped.isdigit():
+                    phone_tokens.append(tok)
+                    i += 1
+                    continue
+                break
+            phone_raw = "".join(phone_tokens) if phone_tokens else parts[2]
+            phone = _norm_phone(phone_raw)
+            raw_name = " ".join(parts[i:]).strip() if i < len(parts) else None
             first_name, surname = _split_name(raw_name)
             with SessionLocal() as s:
                 existing = s.execute(select(User).where(User.phone == phone)).scalar_one_or_none()
@@ -473,11 +548,22 @@ async def twilio_inbound(request: Request):
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    return {
+        "ok": True,
+        "env": ENV,
+        "app_start_utc": APP_START_ISO,
+        "uptime_seconds": _uptime_seconds(),
+    }
 
 @app.get("/")
 def root():
-    return {"service": "ai-coach", "status": "ok"}
+    return {
+        "service": "ai-coach",
+        "status": "ok",
+        "env": ENV,
+        "app_start_utc": APP_START_ISO,
+        "uptime_seconds": _uptime_seconds(),
+    }
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -529,7 +615,7 @@ def admin_create_user(payload: dict):
     Create a new user and trigger consent/intro via start_combined_assessment.
     Body: { "first_name": "Julian", "surname": "Matthews", "phone": "+4477..." }
     """
-    phone = (payload.get("phone") or "").strip()
+    phone = _norm_phone((payload.get("phone") or "").strip())
     first_name = (payload.get("first_name") or "").strip() or None
     surname = (payload.get("surname") or "").strip() or None
     if not phone:
