@@ -39,9 +39,11 @@ CONCEPTS: Dict[str, Dict[str, str]] = {
         "flexibility_mobility": "Flexibility & mobility",
     },
     "resilience": {
-        "stress_management":         "Stress management",
-        "mood_stability":            "Mood stability",
-        "selfcare_social":           "Self-care & social support",
+        "emotional_regulation":   "Emotional regulation",
+        "positive_connection":    "Positive connection & enjoyment",
+        "stress_recovery":        "Stress recovery",
+        "optimism_perspective":   "Optimism & perspective",
+        "support_openness":       "Support & openness",
     },
     "recovery": {
         "sleep_duration":       "Sleep duration",
@@ -56,13 +58,13 @@ CONCEPT_QUESTIONS = {
             "primary": "Thinking about the last 7 days, how many protein portions did you usually eat per day? For reference: 1 portion = palm-sized meat or fish, 2 eggs, 1 handful of nuts, or 1 cup of beans/lentils."
         },
         "fruit_veg": {
-            "primary": "On a day in the last 7 days, how many portions of fruit and vegetables did you eat? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries."
+            "primary": "In the last 7 days, how many portions of fruit and vegetables did you eat on average per day? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries."
         },
         "hydration": {
             "primary": "Thinking about the last 7 days, how much water did you usually drink per day? For reference: 1 glass = 250ml, 1 small bottle = 500ml."
         },
         "processed_sugar": {
-            "primary": "In the last 7 days, on how many days did you eat processed or sugary foods, and roughly how many portions per day? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry."
+            "primary": "In the last 7 days, how many portions of processed food did you eat on average per day? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry."
         },
     },
     "training": {
@@ -77,14 +79,20 @@ CONCEPT_QUESTIONS = {
         },
     },
     "resilience": {
-        "stress_management": {
-            "primary": "In the last 7 days, on how many days did you spend at least 10 minutes on stress management, such as breathing exercises, meditation, or relaxation techniques?"
+        "emotional_regulation": {
+            "primary": "In the past 7 days, on how many days did you feel calm and in control of your emotions for most of the day?"
         },
-        "mood_stability": {
-            "primary": "Thinking about the last 7 days, on how many days did you feel calm and balanced for most of the day?"
+        "positive_connection": {
+            "primary": "In the past 7 days, on how many days did you do something that made you feel genuinely good — either by taking time for yourself or connecting with someone you enjoy spending time with?"
         },
-        "selfcare_social": {
-            "primary": "In the last 7 days, on how many days did you spend time on enjoyable activities for yourself or with supportive friends and family?"
+        "stress_recovery": {
+            "primary": "In the past 7 days, on how many days did you take a short break to relax, breathe deeply, or reset when you felt stressed or tired?"
+        },
+        "optimism_perspective": {
+            "primary": "In the past 7 days, on how many days did you feel able to stay positive and keep things in perspective when challenges arose?"
+        },
+        "support_openness": {
+            "primary": "In the past 7 days, on how many days did you actively connect with others to discuss your goals, progress, or challenges?"
         },
     },
     "recovery": {
@@ -115,8 +123,8 @@ KB_SNIPPETS: Dict[str, Dict[str, List[Dict]]] = {
             {"title": "Urine check", "text": "Pale straw color generally indicates good hydration."},
         ],
         "processed_sugar": [
-        {"title": "Healthy pattern", "text": "Avoid or rarely consume processed and sugary foods. Zero days in a week is best."},
-        {"title": "Unhealthy pattern","text": "Eating processed or sugary foods on most days is poor. Frequent sweets, pastries, or sugary drinks signal a bad pattern."}   
+            {"title": "Healthy pattern", "text": "Avoid or rarely consume processed and sugary foods. Zero days in a week is best."},
+            {"title": "Unhealthy pattern","text": "Eating processed or sugary foods on most days is poor. Frequent sweets, pastries, or sugary drinks signal a bad pattern."}   
         ],
     },
     "training": {
@@ -134,21 +142,25 @@ KB_SNIPPETS: Dict[str, Dict[str, List[Dict]]] = {
         ],
     },
     "resilience": {
-        "stress_management": [
-            {"title": "2-minute calm", "text": "Box breathing 4-4-4-4 or slow exhale breathing reduces acute stress."},
-            {"title": "Micro-reset", "text": "Short walk + sunlight + music can flip state in minutes."},
+        "emotional_regulation": [
+            {"title": "Name & reframe", "text": "Label the feeling and choose a next step; it reduces reactivity."},
+            {"title": "Body check", "text": "Soften jaw/shoulders and slow your exhale to steady your state."},
         ],
-        "mood_stability": [
-            {"title": "Mood supports", "text": "Sleep, meals, and movement stabilize mood; keep basics steady."},
-            {"title": "Name & reframe", "text": "Label feelings and reframe thoughts to reduce reactivity."},
+        "positive_connection": [
+            {"title": "Plan small joys", "text": "Schedule brief, enjoyable activities to lift mood and buffer stress."},
+            {"title": "Connect on purpose", "text": "Reach out to someone you enjoy; even 10 minutes helps."},
         ],
-        "stress_reactions_control": [
-            {"title": "Pause & choose", "text": "Use a brief pause before responding; pick a calm action."},
-            {"title": "Practice cue", "text": "Create a cue like 'slow breath' when stress spikes."},
+        "stress_recovery": [
+            {"title": "2‑minute reset", "text": "Use box breathing 4‑4‑4‑4 or a short walk to reset quickly."},
+            {"title": "Micro‑break cues", "text": "Pair a deep breath with task switches to prevent overload."},
         ],
-        "selfcare_social": [
-            {"title": "Protect buffers", "text": "Plan small enjoyable activities as stress buffers."},
-            {"title": "Support time", "text": "Regular contact with supportive people boosts resilience."},
+        "optimism_perspective": [
+            {"title": "Widen the view", "text": "Ask: what else could be true? Look for neutral/positive evidence."},
+            {"title": "Wins list", "text": "Note one small win daily to reinforce progress and perspective."},
+        ],
+        "support_openness": [
+            {"title": "Ask early", "text": "Share goals or challenges before they build; specific asks work best."},
+            {"title": "Support circle", "text": "Keep a short list of two people you can message for quick support."},
         ],
     },
     "recovery": {
@@ -188,19 +200,21 @@ def _hash_floats(text: str, dim: int = 256) -> list[float]:
 CONCEPT_SCORE_BOUNDS = {
     "nutrition": {
         "protein_intake": {"zero_score": 0, "max_score": 5},
-        "fruit_veg":      {"zero_score": 0, "max_score": 7},
-        "hydration":      {"zero_score": 0, "max_score": 7},
+        "fruit_veg":      {"zero_score": 0, "max_score": 5},
+        "hydration":      {"zero_score": 0, "max_score": 6},
         "processed_sugar": {"zero_score": 7, "max_score": 0},  # days/week; reverse (7 days bad=0, 0 days best=100)
     },
     "training": {
-        "cardio_frequency":     {"zero_score": 0, "max_score": 7},
-        "strength_training":    {"zero_score": 0, "max_score": 7},
-        "flexibility_mobility": {"zero_score": 0, "max_score": 7},
+        "cardio_frequency":     {"zero_score": 0, "max_score": 5},
+        "strength_training":    {"zero_score": 0, "max_score": 4},
+        "flexibility_mobility": {"zero_score": 0, "max_score": 5},
     },
     "resilience": {
-        "stress_management": {"zero_score": 0, "max_score": 7},
-        "mood_stability":    {"zero_score": 0, "max_score": 7},
-        "selfcare_social":   {"zero_score": 0, "max_score": 7},
+        "emotional_regulation":   {"zero_score": 0, "max_score": 7},
+        "positive_connection":    {"zero_score": 0, "max_score": 7},
+        "stress_recovery":        {"zero_score": 0, "max_score": 7},
+        "optimism_perspective":   {"zero_score": 0, "max_score": 7},
+        "support_openness":       {"zero_score": 0, "max_score": 7},
     },
     "recovery": {
         "sleep_duration":      {"zero_score": 0, "max_score": 7},

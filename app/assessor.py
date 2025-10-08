@@ -215,8 +215,8 @@ def _is_negative(text: str) -> bool:
     return any(t == n or t.startswith(n + " ") for n in nos)
 
 def _consent_intro_message(user: User) -> str:
-    name = _display_full_name(user)
-    greet = f"Hi {name}!" if name else "Hi!"
+    first_name = (getattr(user, "first_name", None) or "").strip()
+    greet = f"Hi {first_name}!" if first_name else "Hi!"
     return (
         f"{greet} Before we start, please confirm you consent to a short health assessment over WhatsApp. "
         "We’ll ask brief questions about Nutrition, Training, Resilience and Recovery. "
