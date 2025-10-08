@@ -31,7 +31,7 @@ CONCEPTS: Dict[str, Dict[str, str]] = {
         "protein_intake":   "Protein intake",
         "fruit_veg":        "Fruit & vegetables",
         "hydration":        "Hydration",
-        "processed_sugar":   "Processed foods & sugar",
+        "processed_food":   "Processed food",
     },
     "training": {
         "cardio_frequency":     "Cardio frequency",
@@ -63,7 +63,7 @@ CONCEPT_QUESTIONS = {
         "hydration": {
             "primary": "Thinking about the last 7 days, how much water did you usually drink per day? For reference: 1 glass = 250ml, 1 small bottle = 500ml."
         },
-        "processed_sugar": {
+        "processed_food": {
             "primary": "In the last 7 days, how many portions of processed food did you eat on average per day? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry."
         },
     },
@@ -111,70 +111,70 @@ CONCEPT_QUESTIONS = {
 KB_SNIPPETS: Dict[str, Dict[str, List[Dict]]] = {
     "nutrition": {
         "protein_intake": [
-            {"title": "Protein targets", "text": "Aim ~1.6–2.2 g/kg/day; spread over 3–4 meals for muscle retention."},
-            {"title": "Hand measure", "text": "One palm of lean protein per meal is an easy baseline for most people."},
+            {"title": "Portion baseline", "text": "Aim ~3–4 protein portions/day; 1 portion = palm of lean protein, 2 eggs, or 1 cup beans/lentils."},
+            {"title": "Scoring cue (0–5/day)", "text": "0–1/day = low, 2–3/day = fair, 3–4/day = good, 5/day = excellent; spread evenly across meals."},
         ],
         "fruit_veg": [
-            {"title": "5-a-day", "text": "Target 5+ portions/day; include color variety for micronutrients and fiber."},
-            {"title": "Front-load", "text": "Add veg/fruit to the first two meals to make the target easier."},
+            {"title": "Target & variety", "text": "≥5 portions/day; mix colours for fibre and micronutrients."},
+            {"title": "Make it easy", "text": "Front-load fruit/veg into the first two meals; batch-cook to stay consistent."},
         ],
         "hydration": [
-            {"title": "Daily intake", "text": "A simple start is ~30–35 ml/kg/day; more if hot or training hard."},
-            {"title": "Urine check", "text": "Pale straw color generally indicates good hydration."},
+            {"title": "Daily target", "text": "Women: 2–3 L/day; Men: 3–4 L/day (more with heat/training). Pale-straw urine ≈ good hydration."},
+            {"title": "Scoring cue (0–6 L/day)", "text": "2–4 L/day = strong; spread intake through the day; pair sips with routine cues."},
         ],
-        "processed_sugar": [
-            {"title": "Healthy pattern", "text": "Avoid or rarely consume processed and sugary foods. Zero days in a week is best."},
-            {"title": "Unhealthy pattern","text": "Eating processed or sugary foods on most days is poor. Frequent sweets, pastries, or sugary drinks signal a bad pattern."}   
+        "processed_food": [
+            {"title": "Definition & unit", "text": "UPFs include crisps, sweets, pastries, ready meals, sugary drinks; count portions per day."},
+            {"title": "Scoring cue (reverse; 0–4+/day)", "text": "0/day = best, 0–1/day = good, 2–3/day = fair, ≥4/day = poor; use an 80/20 approach and reward gradual reduction."},
         ],
     },
     "training": {
         "cardio_frequency": [
-            {"title": "Cardio baseline", "text": "Aim for regular moderate cardio most days; start with brisk walks 20–30 min."},
-            {"title": "Progress gently", "text": "Increase time or pace gradually to build endurance safely."},
+            {"title": "Aerobic baseline", "text": "Do ≥20 min most days in Zone 2–3; include 1–2 sessions/week in Zone 4–5 for range."},
+            {"title": "Scoring cue (0–5 days/wk)", "text": "0–1 days = low, 2–3 = fair, 4 = good, 5 = excellent; 150–300 min/week moderate (or 75–150 vigorous) is the weekly anchor."},
         ],
         "strength_training": [
-            {"title": "Progressive overload", "text": "Add small amounts of load or reps when technique is solid."},
-            {"title": "Plan sessions", "text": "Schedule 2–3 strength sessions weekly for best progress."},
+            {"title": "Dose & structure", "text": "2–3 full-body sessions/week; cover push, pull, squat, hinge, carry, core."},
+            {"title": "Scoring cue (0–4 sessions/wk)", "text": "1 = low, 2 = fair, 3 = good, 4 = excellent if recovery (sleep/energy/soreness) is solid."},
         ],
         "flexibility_mobility": [
-            {"title": "Short daily work", "text": "10–20 min of stretching or mobility on most days helps range and recovery."},
-            {"title": "Anchor habit", "text": "Link mobility to existing cues (after workout or before bed)."},
+            {"title": "Baseline habit", "text": "≥10 minutes on ≥3 days/week; link to a fixed time (post-workout or pre-bed)."},
+            {"title": "Scoring cue (0–5 days/wk)", "text": "Consistency beats one-off long sessions; more days at 10–15 min score higher."},
         ],
     },
     "resilience": {
         "emotional_regulation": [
-            {"title": "Name & reframe", "text": "Label the feeling and choose a next step; it reduces reactivity."},
-            {"title": "Body check", "text": "Soften jaw/shoulders and slow your exhale to steady your state."},
+            {"title": "Micro-resets", "text": "Take 5–10 min walks or mindful breaks; use 2–3 presence prompts/day (breath, posture, body scan)."},
+            {"title": "Scoring cue (0–7 days/wk)", "text": "Reward intentional regulation efforts and consistency, not the absence of difficult emotion."},
         ],
         "positive_connection": [
-            {"title": "Plan small joys", "text": "Schedule brief, enjoyable activities to lift mood and buffer stress."},
-            {"title": "Connect on purpose", "text": "Reach out to someone you enjoy; even 10 minutes helps."},
+            {"title": "Gratitude & contact", "text": "Note 2–3 gratitudes/day; brief check-ins (message/call) count as positive connection."},
+            {"title": "Scoring cue (0–7 days/wk)", "text": "Intentional engagement and gratitude both improve scores; more days = higher."},
         ],
         "stress_recovery": [
-            {"title": "2‑minute reset", "text": "Use box breathing 4‑4‑4‑4 or a short walk to reset quickly."},
-            {"title": "Micro‑break cues", "text": "Pair a deep breath with task switches to prevent overload."},
+            {"title": "Active coping", "text": "Use journaling and reach out to supports to reduce overload; short resets beat avoidance."},
+            {"title": "Scoring cue (0–7 days/wk)", "text": "Consistent use of a coping strategy scores higher than infrequent, long sessions."},
         ],
         "optimism_perspective": [
-            {"title": "Widen the view", "text": "Ask: what else could be true? Look for neutral/positive evidence."},
-            {"title": "Wins list", "text": "Note one small win daily to reinforce progress and perspective."},
+            {"title": "Reframe & evidence", "text": "Widen the view: ask what else could be true; track one small win daily."},
+            {"title": "Scoring cue (0–7 days/wk)", "text": "Regular practice of reframing/perspective-taking increases the score."},
         ],
         "support_openness": [
-            {"title": "Ask early", "text": "Share goals or challenges before they build; specific asks work best."},
-            {"title": "Support circle", "text": "Keep a short list of two people you can message for quick support."},
+            {"title": "Ask early & specifically", "text": "Share goals/challenges before they build; make specific asks or check-ins."},
+            {"title": "Scoring cue (0–7 days/wk)", "text": "Willingness to request or accept support earlier and more consistently scores higher."},
         ],
     },
     "recovery": {
         "sleep_duration": [
-            {"title": "7–9 hours", "text": "Most adults benefit from 7–9 hours of sleep per night."},
-            {"title": "Bank sleep", "text": "Prioritize earlier nights if short on sleep to catch up."},
+            {"title": "Hours & anchor", "text": "Most adults benefit from 7–9 h/night; keep a consistent wake time."},
+            {"title": "Scoring cue (0–7 nights/wk)", "text": "More nights at ≥7 h score higher; if fatigued, go to bed earlier rather than sleeping in."},
         ],
         "sleep_quality": [
-            {"title": "Sleep hygiene", "text": "Dark, cool room; reduce caffeine late; limit screens before bed."},
-            {"title": "Wind-down", "text": "Have a simple wind-down routine to signal sleep time."},
+            {"title": "Wind-down routine", "text": "Dim lights, quiet time, breathing/reading; avoid screens ≥60 min before bed."},
+            {"title": "Scoring cue (0–7 mornings/wk)", "text": "Improvement = faster sleep onset, deeper rest, fewer night wakes; more mornings feeling refreshed score higher."},
         ],
         "bedtime_consistency": [
-            {"title": "Regular schedule", "text": "Keeping similar bed/wake times supports circadian rhythm."},
-            {"title": "Small shifts", "text": "Adjust bedtime in small steps (15–30 min) to improve consistency."},
+            {"title": "Circadian window", "text": "Keep sleep/wake within ±60 min to support circadian rhythm."},
+            {"title": "Scoring cue (0–7 nights/wk)", "text": "Reward stabilising a regular schedule over rigid perfection; consistency > total hours for circadian alignment."},
         ],
     },
 }
@@ -202,7 +202,7 @@ CONCEPT_SCORE_BOUNDS = {
         "protein_intake": {"zero_score": 0, "max_score": 5},
         "fruit_veg":      {"zero_score": 0, "max_score": 5},
         "hydration":      {"zero_score": 0, "max_score": 6},
-        "processed_sugar": {"zero_score": 7, "max_score": 0},  # days/week; reverse (7 days bad=0, 0 days best=100)
+        "processed_food": {"zero_score": 4, "max_score": 0},  # days/week; reverse (7 days bad=0, 0 days best=100)
     },
     "training": {
         "cardio_frequency":     {"zero_score": 0, "max_score": 5},

@@ -92,7 +92,7 @@ Return JSON only with these fields:
 Notes:
 - Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
 - Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
-- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed/sugary foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
 - Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
 - Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., "daily"/"every evening" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
 - Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
@@ -671,9 +671,9 @@ def _regen_clarifier(pillar: str, concept_code: str, payload: dict) -> str:
         "- It's okay to ask more than one detail **only if truly necessary**, but avoid piling on.\n"
         "\n"
         "Examples (good):\n"
-        "Main: 'In the last 7 days, how many days did you eat processed/sugary foods, and how many portions per day?'\n"
+        "Main: 'In the last 7 days, how many days did you eat processed foods, and how many portions per day?'\n"
         "User: 'Occasionally'\n"
-        "Clarifier: 'Over the past 7 days, on about how many days did you have processed or sugary foods?'\n"
+        "Clarifier: 'Over the past 7 days, on about how many days did you have processed foods?'\n"
         "\n"
         "Main: 'How many glasses of water per day did you usually drink in the last 7 days?'\n"
         "User: 'A few'\n"
