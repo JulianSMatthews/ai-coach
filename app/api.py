@@ -8,6 +8,7 @@ import json
 import urllib.request
 from urllib.parse import parse_qs
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, APIRouter, Request, Response, Depends, Header, HTTPException, status
 from fastapi.staticfiles import StaticFiles
@@ -35,10 +36,11 @@ ADMIN_USAGE = (
 
 ENV = os.getenv("ENV", "development").lower()
 
-# Application start time (UTC)
-from datetime import timezone
-APP_START_DT = datetime.now(timezone.utc)
-APP_START_ISO = APP_START_DT.isoformat()
+# Application start time (UK)
+UK_TZ = ZoneInfo("Europe/London")
+APP_START_DT = datetime.now(UK_TZ)
+# Format: dd/mm/yy␠HH:MM:SS (UK local time)
+APP_START_UK_STR = APP_START_DT.strftime("%d/%m/%y %H:%M:%S")
 
 def _uptime_seconds() -> int:
     try:
@@ -54,7 +56,7 @@ def _print_env_banner():
     try:
         print("\n" + "═" * 72)
         print(f"🚀 Starting HealthSense [{ENV.upper()}]")
-        print(f"🕒 App start (UTC): {APP_START_ISO}")
+        print(f"🕒 App start (UK): {APP_START_UK_STR}")
         print("═" * 72 + "\n")
     except Exception:
         pass
@@ -551,7 +553,8 @@ def health():
     return {
         "ok": True,
         "env": ENV,
-        "app_start_utc": APP_START_ISO,
+        "timezone": "Europe/London",
+        "app_start_uk": APP_START_UK_STR,
         "uptime_seconds": _uptime_seconds(),
     }
 
@@ -561,7 +564,8 @@ def root():
         "service": "ai-coach",
         "status": "ok",
         "env": ENV,
-        "app_start_utc": APP_START_ISO,
+        "timezone": "Europe/London",
+        "app_start_uk": APP_START_UK_STR,
         "uptime_seconds": _uptime_seconds(),
     }
 
