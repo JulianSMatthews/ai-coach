@@ -913,7 +913,17 @@ def start_combined_assessment(user: User):
 
         # Consent gate: fetch fresh user in this session to avoid stale consent flag
         u = s.query(User).get(getattr(user, "id", None)) or user
-        if not bool(getattr(u, "consent_given", False)):
+
+        # Accept any of these as valid consent signals (back-compat safe):
+        # - consent_given is True
+        # - consent_at timestamp exists (new field)
+        # - consent_yes_at timestamp exists (legacy field)
+        has_consent = bool(getattr(u, "consent_given", False)) \
+                      or bool(getattr(u, "consent_at", None)) \
+                      or bool(getattr(u, "consent_yes_at", None))
+
+        # If no consent recorded yet, prompt once and return
+        if not has_consent:
             _send_to_user(u, _consent_intro_message(u))
             return True
 
@@ -984,14 +994,27 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
     with SessionLocal() as s:
         _touch_user_timestamps(s, user)
 
-        # If user hasn't granted consent yet, interpret this message as response
-        if not bool(getattr(user, "consent_given", False)):
+        # If consent hasn't been recorded in DB, interpret this message as the consent response.
+        db_user = s.query(User).get(getattr(user, "id", None)) or s.merge(user)
+        has_consent = bool(getattr(db_user, "consent_given", False)) \
+                      or bool(getattr(db_user, "consent_at", None)) \
+                      or bool(getattr(db_user, "consent_yes_at", None))
+
+        if not has_consent:
             msg = (user_text or "").strip()
             if _is_affirmative(msg):
                 try:
-                    db_user = s.query(User).get(getattr(user, "id", None)) or s.merge(user)
+                    # Persist consent with both new and legacy fields for back-compat.
                     db_user.consent_given = True
-                    db_user.consent_at = datetime.utcnow()
+                    now_ts = datetime.utcnow()
+                    try:
+                        db_user.consent_at = now_ts
+                    except Exception:
+                        pass
+                    try:
+                        db_user.consent_yes_at = now_ts
+                    except Exception:
+                        pass
                     s.commit()
                 except Exception:
                     s.rollback()
