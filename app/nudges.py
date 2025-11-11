@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import queue
 import re
 import threading
 import time
@@ -28,6 +29,9 @@ MIN_SEND_GAP_SEC = float(os.getenv("WHATSAPP_MIN_SEND_GAP", "0.4"))
 _SEND_LOCK_GUARD = threading.Lock()
 _SEND_LOCKS: dict[str, threading.Lock] = {}
 _LAST_SEND_MONO: dict[str, float] = {}
+_QUEUE_LOCK = threading.Lock()
+_SEND_QUEUES: dict[str, "queue.Queue[dict]"] = {}
+_QUEUE_THREADS: dict[str, threading.Thread] = {}
 
 
 def _lock_for_destination(dest: str) -> threading.Lock:
@@ -89,19 +93,7 @@ def _try_write_outbound_log(*, phone_e164: str, text: str, category: str | None,
         print(f"⚠️ outbound logging failed (non-fatal): {e!r}")
 
 
-def send_whatsapp(text: str, to: str | None = None, category: str | None = None) -> str:
-    """
-    Primary send function. Logs only after Twilio accepts.
-    Requires an explicit `to`; will NOT fallback to any env recipient.
-    """
-    if not text or not str(text).strip():
-        raise ValueError("Message text is empty")
-
-    to_norm = _normalize_whatsapp_phone(to) if to else None
-    if not to_norm:
-        # Explicitly refuse to send without a valid recipient
-        raise ValueError("Recipient phone missing or invalid (expected E.164). No fallback is permitted.")
-
+def _perform_twilio_send(*, text: str, to_norm: str, category: str | None) -> str:
     client = _twilio_client()
     if client is None:
         raise RuntimeError("Twilio client unavailable")
@@ -119,7 +111,6 @@ def send_whatsapp(text: str, to: str | None = None, category: str | None = None)
         except Exception:
             pass
 
-    # ✅ Log — success only
     phone_e164 = to_norm.replace("whatsapp:", "")
     try:
         _try_write_outbound_log(
@@ -133,6 +124,65 @@ def send_whatsapp(text: str, to: str | None = None, category: str | None = None)
         print(f"⚠️ outbound logging wrapper failed (non-fatal): {e!r}")
 
     return getattr(msg, "sid", "")
+
+
+def _ensure_queue_worker(dest: str) -> queue.Queue:
+    with _QUEUE_LOCK:
+        q = _SEND_QUEUES.get(dest)
+        if q is None:
+            q = queue.Queue()
+            _SEND_QUEUES[dest] = q
+            t = threading.Thread(target=_queue_worker, args=(dest, q), daemon=True)
+            _QUEUE_THREADS[dest] = t
+            t.start()
+        return q
+
+
+def _queue_worker(dest: str, q: queue.Queue):
+    while True:
+        job = q.get()
+        if job is None:
+            q.task_done()
+            break
+        text = job["text"]
+        category = job["category"]
+        event = job["event"]
+        result = job["result"]
+        try:
+            sid = _perform_twilio_send(text=text, to_norm=dest, category=category)
+            result["sid"] = sid
+        except Exception as e:
+            result["error"] = e
+        finally:
+            event.set()
+            q.task_done()
+
+
+def _enqueue_and_send(*, to_norm: str, text: str, category: str | None) -> str:
+    q = _ensure_queue_worker(to_norm)
+    event = threading.Event()
+    result: dict[str, str | Exception] = {}
+    q.put({"text": text, "category": category, "event": event, "result": result})
+    event.wait()
+    if "error" in result:
+        raise result["error"]
+    return str(result.get("sid", ""))
+
+
+def send_whatsapp(text: str, to: str | None = None, category: str | None = None) -> str:
+    """
+    Primary send function. Logs only after Twilio accepts.
+    Requires an explicit `to`; will NOT fallback to any env recipient.
+    """
+    if not text or not str(text).strip():
+        raise ValueError("Message text is empty")
+
+    to_norm = _normalize_whatsapp_phone(to) if to else None
+    if not to_norm:
+        # Explicitly refuse to send without a valid recipient
+        raise ValueError("Recipient phone missing or invalid (expected E.164). No fallback is permitted.")
+
+    return _enqueue_and_send(to_norm=to_norm, text=text, category=category)
 
 
 # Explicit admin notification helper
