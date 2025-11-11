@@ -279,6 +279,81 @@ def _system_for(pillar: str, concept_code: str) -> str:
         .replace("__CONCEPT__", concept_code.replace("_"," ").title())
     )
 
+def _ensure_total_questions(state: dict) -> int:
+    """
+    Ensure state['total_questions'] reflects the number of main questions
+    we plan to ask (sum of pillar concept counts, capped).
+    """
+    if not isinstance(state, dict):
+        return len(PILLAR_ORDER) * MAIN_QUESTIONS_PER_PILLAR
+    try:
+        current = int(state.get("total_questions") or 0)
+    except Exception:
+        current = 0
+    if current > 0:
+        state["total_questions"] = current
+        return current
+    pillar_concepts = state.get("pillar_concepts") or {}
+    total = sum(len(codes or []) for codes in pillar_concepts.values())
+    if total <= 0:
+        total = len(PILLAR_ORDER) * MAIN_QUESTIONS_PER_PILLAR
+    state["total_questions"] = total
+    return total
+
+def _ensure_question_number(state: dict, pillar: str | None, concept_code: str | None, question_text: str | None = None) -> int:
+    """
+    Assign (or retrieve) the sequential question number for this concept.
+    Re-asking the same concept reuses its original number.
+    """
+    if not isinstance(state, dict):
+        return 1
+    qnums = state.setdefault("question_numbers", {})
+    pillar_key = pillar or "__global__"
+    pillar_map = qnums.setdefault(pillar_key, {})
+    concept_key = concept_code or (question_text or "__anon__")
+    if concept_key in pillar_map:
+        return int(pillar_map[concept_key])
+    try:
+        seq = int(state.get("question_seq") or 0) + 1
+    except Exception:
+        seq = 1
+    state["question_seq"] = seq
+    pillar_map[concept_key] = seq
+    return seq
+
+def _pillar_progress_line(state: dict, active_pillar: str | None = None) -> str:
+    pillar_concepts = state.get("pillar_concepts") or {}
+    if not pillar_concepts:
+        return ""
+    concept_idx = state.get("concept_idx", {}) or {}
+    blocks: list[str] = []
+    for pk in PILLAR_ORDER:
+        codes = pillar_concepts.get(pk) or []
+        total = len(codes)
+        if total <= 0:
+            continue
+        done = min(int(concept_idx.get(pk, 0) or 0), total)
+        completed = "🟩" * done
+        remaining = "⬜" * max(total - done, 0)
+        if pk == active_pillar and done < total:
+            remaining = ("🟧" + remaining[1:]) if remaining else "🟧"
+        next_block = completed + remaining
+        blocks.append(f"{pk.title()} [{next_block}]")
+    return f"Pillar progress: {'  '.join(blocks)}" if blocks else ""
+
+def _format_main_question_for_user(state: dict, pillar: str | None, concept_code: str | None, question_text: str) -> str:
+    if not question_text:
+        return ""
+    num = _ensure_question_number(state, pillar, concept_code, question_text)
+    total = _ensure_total_questions(state)
+    label = pillar.title() if pillar else "Assessment"
+    prefix = f"Q{num}/{total} · {label}"
+    msg = f"{prefix}: {question_text.strip()}"
+    progress = _pillar_progress_line(state, pillar)
+    if progress:
+        msg = f"{msg}\n{progress}"
+    return msg
+
 # --- OKR sync helper: call this AFTER you have saved & committed a PillarResult ---
 from app.okr import generate_and_update_okrs_for_pillar
 
@@ -1061,6 +1136,9 @@ def start_combined_assessment(user: User):
             "kb_used": {"nutrition": {}, "training": {}, "resilience": {}, "recovery": {}},
             "pillar_concepts": {},  # will be loaded from DB
             "concept_progress": {"nutrition": {}, "training": {}, "resilience": {}, "recovery": {}},
+            "question_seq": 0,
+            "question_numbers": {},
+            "total_questions": 0,
         }
         sess = AssessSession(user_id=user.id, domain="combined", is_active=True, turn_count=0, state=state)
         s.add(sess); s.commit(); s.refresh(sess)
@@ -1068,6 +1146,7 @@ def start_combined_assessment(user: User):
         # Load concepts from DB once for this session
         with SessionLocal() as s_lookup:
             state["pillar_concepts"] = _load_pillar_concepts(s_lookup, cap=MAIN_QUESTIONS_PER_PILLAR)
+            _ensure_total_questions(state)
 
         # Start run
         _start_or_get_run(s, user, state)
@@ -1091,9 +1170,10 @@ def start_combined_assessment(user: User):
         }
         with SessionLocal() as s2:
             q = _concept_primary_question(s2, pillar, first_concept) or "How many meals and snacks do you typically have on a usual day?"
+        display_q = _format_main_question_for_user(state, pillar, first_concept, q)
         state["turns"].append({"role": "assistant", "pillar": pillar, "question": q, "concept": first_concept, "is_main": True})
         _commit_state(s, sess, state)
-        _send_to_user(user, q)
+        _send_to_user(user, display_q)
         # Mark this concept as asked so user_concept_state.last_asked_at is set for the first concept
         try:
             _bump_concept_asked(user.id, state.get("run_id"), pillar, first_concept)
@@ -1155,6 +1235,15 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             state = json.loads(sess.state or "{}")
         except Exception:
             state = {"turns": [], "current": "nutrition", "results": {}}
+        if not isinstance(state.get("question_numbers"), dict):
+            state["question_numbers"] = {}
+        try:
+            state["question_seq"] = int(state.get("question_seq") or 0)
+        except Exception:
+            state["question_seq"] = 0
+        if not isinstance(state.get("pillar_concepts"), dict):
+            state["pillar_concepts"] = {}
+        _ensure_total_questions(state)
 
         # quick commands
         cmd = (user_text or "").strip().lower()
@@ -1197,8 +1286,9 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     "concept": target_concept,
                     "is_main": True
                 })
+                display_q = _format_main_question_for_user(state, target_pillar, target_concept, q_text)
                 _commit_state(s, sess, state)
-                _send_to_user(user, q_text)
+                _send_to_user(user, display_q)
                 try:
                     _log_turn(s, state, target_pillar, target_concept, False, q_text, None, None, None, action="ask", confidence=None)
                 except Exception:
@@ -1750,8 +1840,9 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 next_concept = next_pcodes[0]
                 with SessionLocal() as s2:
                     q_next = _concept_primary_question(s2, nxt, next_concept) or f"Quick start on {next_concept.replace('_',' ')} — what’s your current approach?"
+                display_q_next = _format_main_question_for_user(state, nxt, next_concept, q_next)
                 turns.append({"role": "assistant", "pillar": nxt, "question": q_next, "concept": next_concept, "is_main": True})
-                _send_to_user(user, q_next)
+                _send_to_user(user, display_q_next)
                 # Ensure first question in new pillar bumps last_asked_at
                 try:
                     _bump_concept_asked(user.id, nxt, next_concept)
@@ -1860,9 +1951,10 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         if not (next_q and next_q.strip()):
             next_q = (f"Quick check on {_pretty_concept(next_concept)} — tell me about the last 7 days.")
 
+        display_next = _format_main_question_for_user(state, pillar, next_concept, next_q)
         turns.append({"role": "assistant", "pillar": pillar, "question": next_q, "concept": next_concept, "is_main": True})
         _commit_state(s, sess, state)
-        _send_to_user(user, next_q)
+        _send_to_user(user, display_next)
         try:
             _bump_concept_asked(user.id, state.get("run_id"), pillar, next_concept)
         except Exception:

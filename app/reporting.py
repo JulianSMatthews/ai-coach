@@ -34,6 +34,9 @@ except Exception:
 # Audit/logging controls (silence console by default)
 AUDIT_TO_CONSOLE = os.getenv("AUDIT_TO_CONSOLE", "0") == "1"
 AUDIT_TO_DB = os.getenv("AUDIT_TO_DB", "1") == "1"
+BRAND_NAME = (os.getenv("BRAND_NAME") or "Purple Clubs").strip() or "Purple Clubs"
+BRAND_YEAR = os.getenv("BRAND_YEAR") or str(datetime.utcnow().year)
+BRAND_FOOTER = f"© {BRAND_YEAR} {BRAND_NAME}"
 
 def _audit(job: str, status: str = "ok", payload: Dict[str, Any] | None = None, error: str | None = None) -> None:
     if AUDIT_TO_CONSOLE:
@@ -1302,7 +1305,7 @@ def _write_summary_pdf(path: str, start_str: str, end_str: str, rows: list[dict]
     story: list = []
 
     # Header
-    title = Paragraph("<b>Purple Clubs Assessment Summary Report</b>", styles["Title"])
+    title = Paragraph(f"<b>{BRAND_NAME} Assessment Summary Report</b>", styles["Title"])
     meta = Paragraph(f"Date range: {start_str} → {end_str}<br/>Generated: {_today_str()}", styles["Normal"])
     story += [title, Spacer(1, 6), meta, Spacer(1, 10)]
 
@@ -1353,7 +1356,7 @@ def _write_summary_pdf(path: str, start_str: str, end_str: str, rows: list[dict]
     story.append(table)
 
     story.append(Spacer(1, 10))
-    story.append(Paragraph("© 2025 Purple Clubs — Confidential internal summary", styles["Normal"]))
+    story.append(Paragraph(f"{BRAND_FOOTER} — Confidential internal summary", styles["Normal"]))
 
     doc.build(story)
 
@@ -1650,7 +1653,7 @@ def _write_pdf(path: str, user: User, run: AssessmentRun, pillars: List[PillarRe
         # Footer (intro page)
         pdf.setFillGray(0.35)
         pdf.setFont("Helvetica", 9)
-        pdf.drawRightString(right, 18, "© 2025 Purple Clubs — Confidential wellbeing report")
+        pdf.drawRightString(right, 18, f"{BRAND_FOOTER} — Confidential wellbeing report")
         pdf.setFillGray(0.0)
         pdf.showPage()
 
