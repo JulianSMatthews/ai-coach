@@ -275,11 +275,10 @@ def _format_acknowledgement(msg: str, state: dict, pillar: str | None) -> str:
     text = (msg or "").strip()
     if not text:
         return ""
-    body = ""
     if _has_numeric_signal(text):
-        body = f"Thanks, logged {text} — one moment while I score it."
+        body = f"Thanks, logged {text}"
     else:
-        body = "Thanks — let me work that in."
+        body = "Thanks — noted"
     progress = _pillar_progress_line(state, pillar)
     if progress:
         body = f"{body}\n{progress}"
