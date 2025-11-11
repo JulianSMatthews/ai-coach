@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+apscheduler
+apscheduler-di
+sqlalchemy
+psycopg2-binary
+pydantic-settings
+python-dotenv
+httpx
+langchain-openai
+python-dateutil
+matplotlib
+reportlab
+twilio

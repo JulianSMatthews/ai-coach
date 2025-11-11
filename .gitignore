@@ -1,0 +1,28 @@
+# Bytecode and cache
+__pycache__/
+*.py[cod]
+
+# Virtualenv
+.venv/
+env/
+
+# DB files (if any SQLite fallback is used)
+*.db
+
+# OS files
+.DS_Store
+
+# Logs
+*.log
+
+# Local env/config
+.env
+.env.*
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
+.env
+/public/reports/
+/public/reports/**
+app/assessor_LATEST.py
