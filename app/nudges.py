@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import os
 import re
+import threading
+import time
 from datetime import datetime, time, timedelta
 
 from twilio.rest import Client
@@ -22,6 +24,29 @@ def in_business_hours(now_local: datetime) -> bool:
 # ──────────────────────────────────────────────────────────────────────────────
 
 E164 = re.compile(r"^\+?[1-9]\d{7,14}$")  # simple E.164 validator
+MIN_SEND_GAP_SEC = float(os.getenv("WHATSAPP_MIN_SEND_GAP", "0.4"))
+_SEND_LOCK_GUARD = threading.Lock()
+_SEND_LOCKS: dict[str, threading.Lock] = {}
+_LAST_SEND_MONO: dict[str, float] = {}
+
+
+def _lock_for_destination(dest: str) -> threading.Lock:
+    with _SEND_LOCK_GUARD:
+        lock = _SEND_LOCKS.get(dest)
+        if lock is None:
+            lock = threading.Lock()
+            _SEND_LOCKS[dest] = lock
+        return lock
+
+
+def _throttle_destination(dest: str):
+    try:
+        last = _LAST_SEND_MONO.get(dest, 0.0)
+        gap = MIN_SEND_GAP_SEC - (time.monotonic() - last)
+        if gap > 0:
+            time.sleep(gap)
+    except Exception:
+        pass
 
 
 def _normalize_whatsapp_phone(raw: str | None) -> str | None:
@@ -81,12 +106,18 @@ def send_whatsapp(text: str, to: str | None = None, category: str | None = None)
     if client is None:
         raise RuntimeError("Twilio client unavailable")
 
-    # Send
-    msg = client.messages.create(
-        from_=settings.TWILIO_FROM,
-        body=text,
-        to=to_norm,
-    )
+    lock = _lock_for_destination(to_norm)
+    with lock:
+        _throttle_destination(to_norm)
+        msg = client.messages.create(
+            from_=settings.TWILIO_FROM,
+            body=text,
+            to=to_norm,
+        )
+        try:
+            _LAST_SEND_MONO[to_norm] = time.monotonic()
+        except Exception:
+            pass
 
     # ✅ Log — success only
     phone_e164 = to_norm.replace("whatsapp:", "")
