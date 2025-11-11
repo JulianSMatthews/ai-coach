@@ -268,6 +268,23 @@ def _has_recent_week_window(text: str) -> bool:
     t = (text or "").lower()
     return any(re.search(pattern, t) for pattern in _WEEK_WINDOW_PATTERNS)
 
+def _format_acknowledgement(msg: str, state: dict, pillar: str | None) -> str:
+    """
+    Build a short acknowledgement so the user knows we logged their reply.
+    """
+    text = (msg or "").strip()
+    if not text:
+        return ""
+    body = ""
+    if _has_numeric_signal(text):
+        body = f"Thanks, logged {text} — one moment while I score it."
+    else:
+        body = "Thanks — let me work that in."
+    progress = _pillar_progress_line(state, pillar)
+    if progress:
+        body = f"{body}\n{progress}"
+    return body
+
 # Prettify concept code for user-facing messages
 def _pretty_concept(code: str) -> str:
     return (code or "").replace("_", " ").title()
@@ -348,11 +365,7 @@ def _format_main_question_for_user(state: dict, pillar: str | None, concept_code
     total = _ensure_total_questions(state)
     label = pillar.title() if pillar else "Assessment"
     prefix = f"Q{num}/{total} · {label}"
-    msg = f"{prefix}: {question_text.strip()}"
-    progress = _pillar_progress_line(state, pillar)
-    if progress:
-        msg = f"{msg}\n{progress}"
-    return msg
+    return f"{prefix}: {question_text.strip()}"
 
 # --- OKR sync helper: call this AFTER you have saved & committed a PillarResult ---
 from app.okr import generate_and_update_okrs_for_pillar
@@ -1348,6 +1361,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
 
         # Record user reply (+ inbound log)
         msg = (user_text or "").strip()
+        ack_text = _format_acknowledgement(msg, state, pillar)
         turns.append({"role": "user", "pillar": pillar, "text": msg})
         # Log the user's answer bound to the last asked question for this pillar/concept
         try:
@@ -1584,6 +1598,12 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     wants_finish = True
 
         if not wants_finish:
+            if ack_text:
+                try:
+                    _send_to_user(user, ack_text)
+                except Exception:
+                    pass
+                ack_text = ""
             # bump clarifier count for this concept
             cprog = concept_progress.setdefault(pillar, {}).setdefault(concept_code, {
                 "main_asked": True, "clarifiers": 0, "scored": False, "summary_logged": False
@@ -1744,6 +1764,13 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
 
         # Advance concept index
         concept_idx_map[pillar] = int(concept_idx_map.get(pillar, 0)) + 1
+
+        if ack_text:
+            try:
+                _send_to_user(user, ack_text)
+            except Exception:
+                pass
+            ack_text = ""
         finished_pillar = concept_idx_map[pillar] >= min(MAIN_QUESTIONS_PER_PILLAR, len(pillar_concepts))
 
         if finished_pillar:
