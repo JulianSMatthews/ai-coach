@@ -37,6 +37,8 @@ from .models import (
     MessageLog,
     JobAudit,
     PillarResult,
+    OKRObjective,
+    OKRKeyResult,
 )
 
 # Messaging + LLM
@@ -102,7 +104,7 @@ def build_pillar_feedback(
 
 # Report 
 
-from .reporting import generate_assessment_report_pdf
+from .reporting import generate_assessment_report_pdf, generate_assessment_dashboard_html, _fetch_okrs_for_run
 
 # Optional integrations (fail-safe no-ops if missing)
 try:
@@ -186,9 +188,7 @@ def _asked_norm_set(turns: list[dict], pillar: str) -> set[str]:
 # Helper to build display name from first_name + surname only (no legacy name fallback)
 def _display_full_name(user: User) -> str:
     first = (getattr(user, "first_name", None) or "").strip()
-    last = (getattr(user, "surname", None) or "").strip()
-    full = f"{first} {last}".strip()
-    return full
+    return first
 
 # Helper to detect restatements (token-level Jaccard or heavy containment)
 def _too_similar(a: str, b: str, jaccard_threshold: float = 0.7) -> bool:
@@ -268,20 +268,22 @@ def _has_recent_week_window(text: str) -> bool:
     t = (text or "").lower()
     return any(re.search(pattern, t) for pattern in _WEEK_WINDOW_PATTERNS)
 
-def _format_acknowledgement(msg: str, state: dict, pillar: str | None) -> str:
+def _format_acknowledgement(msg: str, state: dict, pillar: str | None, user: User | None) -> str:
     """
     Build a short acknowledgement so the user knows we logged their reply.
     """
     text = (msg or "").strip()
     if not text:
         return ""
+    name = (getattr(user, "first_name", "") or "").strip()
+    prefix = f"Thanks {name}".strip() if name else "Thanks"
     if _has_numeric_signal(text):
-        body = f"Thanks, logged {text}"
+        body = f"{prefix}, logged {text}."
     else:
-        body = "Thanks — noted"
+        body = f"{prefix} — noted."
     progress = _pillar_progress_line(state, pillar)
     if progress:
-        body = f"{body}\n{progress}"
+        body = f"{body}\n\n{progress}"
     return body
 
 # Prettify concept code for user-facing messages
@@ -357,6 +359,108 @@ def _pillar_progress_line(state: dict, active_pillar: str | None = None) -> str:
         blocks.append(f"{pk.title()} [{next_block}]")
     return f"Pillar progress: {'  '.join(blocks)}" if blocks else ""
 
+def _score_bar(label: str, score: float | None, slots: int = 5) -> str:
+    """
+    Render a colored emoji bar for a given score (0-100). Uses traffic-light colors.
+    """
+    if score is None:
+        return f"{label.title():<10} [No score yet]"
+    try:
+        pct = int(round(float(score)))
+    except Exception:
+        pct = 0
+    pct = max(0, min(100, pct))
+    filled = min(slots, max(0, round(pct / 100 * slots)))
+    color = "🟩" if pct >= 80 else "🟧" if pct >= 60 else "🟥"
+    bar = color * filled + "⬜" * max(slots - filled, 0)
+    return f"[{bar}] {pct}% - *{label.title()}*"
+
+def _compose_final_summary_message(user: User, state: dict) -> str:
+    results_map = state.get("results") or {}
+    def _pill_score(p):
+        v = results_map.get(p, {}) or {}
+        return v.get("overall")
+    n_sc = _pill_score("nutrition")
+    t_sc = _pill_score("training")
+    r_sc = _pill_score("resilience")
+    rc_sc = _pill_score("recovery")
+    per_list = [x for x in [n_sc, t_sc, r_sc, rc_sc] if x is not None]
+    combined = round(sum(per_list) / max(1, len(per_list))) if per_list else 0
+    bars = []
+    if n_sc is not None: bars.append(_score_bar("Nutrition", n_sc))
+    if t_sc is not None: bars.append(_score_bar("Training", t_sc))
+    if r_sc is not None: bars.append(_score_bar("Resilience", r_sc))
+    if rc_sc is not None: bars.append(_score_bar("Recovery", rc_sc))
+    breakdown = "\n".join(bars) if bars else "No pillar scores available"
+    name = (getattr(user, "first_name", "") or "").strip()
+    intro = f"🎯 *Assessment complete, {name}!*" if name else "🎯 *Assessment complete!*"
+    combined_bar = _score_bar("Combined", combined)
+    msg = f"{intro} Your combined score is:\n{combined_bar}\n\n{breakdown}"
+    try:
+        html_link = _report_url(user.id, "latest.html")
+        bust = int(time.time())
+        msg += f"\n\nYour wellbeing dashboard: {html_link}?ts={bust} (type 'dashboard' anytime)"
+    except Exception:
+        pass
+    return msg
+
+def _compose_pillar_message(state: dict, run_id: int | None, pillar: str) -> str:
+    res = (state.get("results") or {}).get(pillar)
+    if not res:
+        return f"I don’t have {pillar.title()} results yet."
+    filled_scores = res.get("scores") or {}
+    breakdown = "\n".join(
+        _score_bar(k.replace("_", " ").title(), v)
+        for k, v in filled_scores.items()
+    ) or "(no sub-scores)"
+    overall = res.get("overall") or 0
+    okr_summary_txt = _pillar_okr_summary_from_run(run_id, pillar)
+    summary_text = okr_summary_txt or (res.get("rationale") or "")
+    return f"✅ *{pillar.title()}* complete — *{int(round(overall))}/100*\n\n{breakdown}\n\n{summary_text}"
+
+def _normalize_pillar_name(token: str) -> str | None:
+    token = (token or "").strip().lower()
+    if not token:
+        return None
+    mapping = {
+        "nutrition": ["nutrition", "nutri", "n"],
+        "training": ["training", "train", "t"],
+        "resilience": ["resilience", "resil", "r"],
+        "recovery": ["recovery", "recov", "rec", "c"],
+    }
+    for slug, aliases in mapping.items():
+        if token in aliases:
+            return slug
+    for slug in PILLAR_ORDER:
+        if token in slug:
+            return slug
+    return None
+
+def _pillar_okr_summary_from_run(run_id: int | None, pillar_key: str | None) -> str:
+    if not (run_id and pillar_key):
+        return ""
+    try:
+        okr_map = _fetch_okrs_for_run(run_id)
+    except Exception:
+        return ""
+    data = okr_map.get(pillar_key)
+    if not data:
+        return ""
+    lines = []
+    obj_text = (data.get("objective") or "").strip()
+    if obj_text:
+        lines.append(f"*This Quarter Objective:* {obj_text}")
+    krs = data.get("krs") or []
+    if krs:
+        lines.append("")
+        lines.append("*Key Results:*")
+        for kr in krs[:3]:
+            desc = (kr or "").strip()
+            if not desc:
+                continue
+            lines.append(f"• {desc}")
+    return "\n".join(lines).strip()
+
 def _format_main_question_for_user(state: dict, pillar: str | None, concept_code: str | None, question_text: str) -> str:
     if not question_text:
         return ""
@@ -368,6 +472,7 @@ def _format_main_question_for_user(state: dict, pillar: str | None, concept_code
 
 # --- OKR sync helper: call this AFTER you have saved & committed a PillarResult ---
 from app.okr import generate_and_update_okrs_for_pillar
+from .config import settings
 
 def _sync_okrs_after_pillar(db, user, assess_session, pillar_result, concept_score_map=None):
     """
@@ -1099,6 +1204,7 @@ def _commit_state(s, sess: AssessSession, state: dict) -> None:
         pass
     s.commit()
 
+
 def _next_pillar(curr: str) -> Optional[str]:
     try:
         i = PILLAR_ORDER.index(curr)
@@ -1261,9 +1367,11 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         cmd = (user_text or "").strip().lower()
 
         if cmd in {"report", "pdf", "report please", "send report", "pdf report", "dashboard", "image report"}:
-            pdf_link = _report_url(user.id, "latest.pdf")
-            img_link = _report_url(user.id, "latest.jpeg")
-            _send_to_user(user, f"Here are your latest reports:\n• PDF: {pdf_link}\n• Dashboard (image): {img_link}")
+            dash_link = _report_url(user.id, "latest.html")
+            _send_to_user(
+                user,
+                f"Your Wellbeing dashboard: {dash_link}\n(Type 'Dashboard' any time to view it again.)",
+            )
             return True
 
         # Quick correction command — "redo last"
@@ -1360,7 +1468,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
 
         # Record user reply (+ inbound log)
         msg = (user_text or "").strip()
-        ack_text = _format_acknowledgement(msg, state, pillar)
+        ack_text = _format_acknowledgement(msg, state, pillar, user)
         turns.append({"role": "user", "pillar": pillar, "text": msg})
         # Log the user's answer bound to the last asked question for this pillar/concept
         try:
@@ -1802,14 +1910,11 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 pillar_score=float(overall) if overall is not None else 0.0,
                 concept_scores=filled_scores
             )
-            def _fmt_score(v):
-                return f"{round(float(v))}/100" if v is not None else "Unscored"
             breakdown = "\n".join(
-                f"• {k.replace('_',' ').title()}: {_fmt_score(v)}"
+                _score_bar(k.replace('_',' ').title(), v)
                 for k, v in filled_scores.items()
-            ) or "• (no sub-scores)"
-            final_msg = f"✅ {pillar.title()} complete — {overall}/100\n{breakdown}\n{feedback_line}"
-            _send_to_user(user, final_msg)
+            ) or "(no sub-scores)"
+            recap_text = feedback_line
             # Write/Update PillarResult for this pillar
             try:
                 _upsert_pillar_result(
@@ -1835,17 +1940,26 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     )
                 ).scalars().first()
 
+                okr_summary_txt = ""
                 if pr is not None:
-                    _ = _sync_okrs_after_pillar(
+                    _sync_okrs_after_pillar(
                         db=s,
                         user=user,
                         assess_session=sess,
                         pillar_result=pr,
                         concept_score_map=filled_scores,  # pass per-concept scores if available
                     )
+                try:
+                    okr_summary_txt = _pillar_okr_summary_from_run(state.get("run_id"), pillar)
+                except Exception:
+                    okr_summary_txt = ""
             except Exception as _okr_e:
                 print(f"[okr] WARN: OKR sync failed for run_id={state.get('run_id')} pillar={pillar}: {_okr_e}")
             # ─────────────────────────────────────────────────────────────────────────────
+
+            summary_text = okr_summary_txt or recap_text
+            final_msg = f"✅ *{pillar.title()}* complete — *{overall}/100*\n\n{breakdown}\n\n{summary_text}"
+            _send_to_user(user, final_msg)
 
             nxt = _next_pillar(pillar)
             state["results"][pillar] = {"level": out.level, "confidence": out.confidence,
@@ -1853,9 +1967,8 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
 
             if nxt:
                 state["current"] = nxt
-                tr_msg = f"Great — {pillar.title()} done. Now a quick check on {nxt.title()} ⭐"
+                tr_msg = f"*Great* — {pillar.title()} done. Now a quick check on {nxt.title()} ⭐"
                 turns.append({"role": "assistant", "pillar": nxt, "text": tr_msg})
-                time.sleep(0.30) 
                 _send_to_user(user, tr_msg)
                 # Ask first concept in next pillar
                 next_pcodes = state.get("pillar_concepts", {}).get(nxt) or []
@@ -1892,25 +2005,25 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 per_list = [x for x in [n_sc, t_sc, r_sc, rc_sc] if x is not None]
                 combined = round(sum(per_list) / max(1, len(per_list))) if per_list else 0
 
-                # Build a report link
-                pdf_link = _report_url(user.id, "latest.pdf")
-                img_link = _report_url(user.id, "latest.jpeg")
+                # Build dashboard link
+                dash_link = _report_url(user.id, "latest.html")
 
-                # Per-pillar breakdown
-                parts = []
-                if n_sc is not None: parts.append(f"Nutrition {int(round(n_sc))}/100")
-                if t_sc is not None: parts.append(f"Training {int(round(t_sc))}/100")
-                if r_sc is not None: parts.append(f"Resilience {int(round(r_sc))}/100")
-                if rc_sc is not None: parts.append(f"Recovery {int(round(rc_sc))}/100")
-                breakdown = " · ".join(parts) if parts else "No pillar scores available"
+                # Per-pillar breakdown with colored bars
+                bars = []
+                if n_sc is not None: bars.append(_score_bar("Nutrition", n_sc))
+                if t_sc is not None: bars.append(_score_bar("Training", t_sc))
+                if r_sc is not None: bars.append(_score_bar("Resilience", r_sc))
+                if rc_sc is not None: bars.append(_score_bar("Recovery", rc_sc))
+                breakdown = "\n".join(bars) if bars else "No pillar scores available"
 
                 # Send final message
+                name = (getattr(user, "first_name", "") or "").strip()
+                intro = f"🎯 *Assessment complete, {name}!*" if name else "🎯 *Assessment complete!*"
                 final_msg = (
-                    f"🎯 Assessment complete — Combined {combined}/100\n"
-                    f"{breakdown}\n"
-                    f"Reports:\n"
-                    f"• PDF: {pdf_link}\n"
-                    f"• Dashboard (image): {img_link}"
+                    f"{intro} Your combined score is *{combined}/100*\n"
+                    f"\n{breakdown}\n\n"
+                    f"Your Wellbeing dashboard: {dash_link}\n"
+                    f"(Type 'Dashboard' any time to view it again.)"
                 )
                 _send_to_user(user, final_msg)
 
@@ -1922,6 +2035,17 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     try:
                         with SessionLocal() as ss:
                             ss.add(JobAudit(job_name="report_generate", status="error",
+                                            payload={"run_id": state.get("run_id")}, error=str(e)))
+                            ss.commit()
+                    except Exception:
+                        pass
+
+                try:
+                    generate_assessment_dashboard_html(state.get("run_id"))
+                except Exception as e:
+                    try:
+                        with SessionLocal() as ss:
+                            ss.add(JobAudit(job_name="dashboard_generate", status="error",
                                             payload={"run_id": state.get("run_id")}, error=str(e)))
                             ss.commit()
                     except Exception:
@@ -1989,3 +2113,34 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         _log_turn(s, state, pillar, next_concept, False, next_q, None, retrieval_ctx, raw, action="ask", confidence=out.confidence)
         _commit_state(s, sess, state)
         return True
+def send_menu_options(user: User) -> None:
+    _send_to_user(user, "Type 'dashboard' anytime to open your interactive tracker link.")
+
+def send_dashboard_link(user: User) -> None:
+    run_id = None
+    try:
+        with SessionLocal() as s:
+            run = (
+                s.query(AssessmentRun)
+                 .filter(AssessmentRun.user_id == user.id)
+                 .order_by(AssessmentRun.finished_at.desc().nullslast(), AssessmentRun.started_at.desc())
+                 .first()
+            )
+            if run:
+                run_id = run.id
+    except Exception:
+        run_id = None
+
+    if not run_id:
+        _send_to_user(user, "No assessment history yet. Start a new assessment to view your tracker.")
+        return
+
+    try:
+        print(f"[dashboard] regenerating HTML for run_id={run_id}")
+        generate_assessment_dashboard_html(run_id)
+        print(f"[dashboard] wrote HTML for run_id={run_id}")
+    except Exception as e:
+        print(f"[dashboard_error] {e}")
+    link = _report_url(user.id, "latest.html")
+    bust = int(time.time())
+    _send_to_user(user, f"Your wellbeing dashboard: {link}?ts={bust}")

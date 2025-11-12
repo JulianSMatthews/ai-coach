@@ -127,7 +127,13 @@ def _dbg(msg: str):
         pass
 
 try:
-    from .assessor import start_combined_assessment, continue_combined_assessment, get_active_domain
+    from .assessor import (
+        start_combined_assessment,
+        continue_combined_assessment,
+        get_active_domain,
+        send_menu_options,
+        send_dashboard_link,
+    )
     _dbg("[INFO] Correct assessor module imported successfully (module path: " +
          f"{start_combined_assessment.__module__})")
 except Exception as e:
@@ -945,11 +951,26 @@ async def twilio_inbound(request: Request):
                     pass
                 return Response(content="", media_type="text/plain", status_code=200)
 
+        lower_body = body.lower()
+
         # ✅ log inbound immediately upon receipt (before processing)
         _log_inbound_direct(user, channel, body, from_raw)
 
+        # Interactive menu commands
+        if lower_body in {"menu", "help", "options"}:
+            send_menu_options(user)
+            return Response(content="", media_type="text/plain", status_code=200)
+
+        if lower_body == "dashboard":
+            try:
+                print(f"[api] dashboard command received for user_id={user.id}")
+            except Exception:
+                pass
+            send_dashboard_link(user)
+            return Response(content="", media_type="text/plain", status_code=200)
+
         # Route to assessor
-        if body.lower() in {"start", "hi", "hello"}:
+        if lower_body in {"start", "hi", "hello"}:
             start_combined_assessment(user)
         else:
             continue_combined_assessment(user, body)

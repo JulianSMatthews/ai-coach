@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, date, timedelta
+import html
+import json
 try:
     from zoneinfo import ZoneInfo  # Python 3.9+
 except Exception:
@@ -1695,6 +1697,206 @@ def generate_assessment_report_pdf(run_id: int) -> str:
             s.commit()
     except Exception:
         pass
+    return out_path
+
+def generate_assessment_dashboard_html(run_id: int) -> str:
+    _audit("dashboard_html_start", "ok", {"run_id": run_id})
+    user, run, pillars = _collect_report_data(run_id)
+    if not user or not run:
+        raise ValueError("Assessment run not found")
+
+    okr_map = _fetch_okrs_for_run(run.id)
+    ordered_keys = _pillar_order()
+    pr_map = {getattr(pr, "pillar_key", ""): pr for pr in pillars}
+
+    combined = getattr(run, "combined_overall", None)
+    if combined is None:
+        vals = []
+        for k in ordered_keys:
+            pr = pr_map.get(k)
+            if pr and getattr(pr, "overall", None) is not None:
+                vals.append(int(getattr(pr, "overall", 0) or 0))
+        combined = round(sum(vals) / max(1, len(vals))) if vals else 0
+    combined = int(combined)
+
+    def _score_bucket(pct: int) -> str:
+        if pct >= 80:
+            return "high"
+        if pct >= 60:
+            return "mid"
+        return "low"
+
+    def _concept_scores_for(pr: PillarResult | None) -> Dict[str, float]:
+        raw = getattr(pr, "concept_scores", None)
+        if not raw:
+            return {}
+        if isinstance(raw, dict):
+            return raw
+        if isinstance(raw, str):
+            try:
+                data = json.loads(raw)
+                if isinstance(data, dict):
+                    return data
+            except Exception:
+                return {}
+        try:
+            return dict(raw)
+        except Exception:
+            return {}
+
+    def _score_row(label: str, pct: int | None) -> str:
+        if pct is None:
+            return ""
+        pct = max(0, min(100, int(round(pct))))
+        bucket = _score_bucket(pct)
+        return (
+            "<div class='score-row'>"
+            f"<div class='score-label'>{html.escape(label)}</div>"
+            "<div class='score-track'>"
+            f"<span class='score-fill {bucket}' style='width:{pct}%;'></span>"
+            "</div>"
+            f"<div class='score-value'>{pct}%</div>"
+            "</div>"
+        )
+
+    def _concept_block(pr: PillarResult | None) -> str:
+        scores = _concept_scores_for(pr)
+        if not scores:
+            return ""
+        rows = []
+        for code in sorted(scores.keys(), key=lambda c: _concept_display(c).lower()):
+            val = scores.get(code)
+            if val is None:
+                continue
+            pct = max(0, min(100, int(round(float(val)))))
+            bucket = _score_bucket(pct)
+            rows.append(
+                "<div class='concept-row'>"
+                f"<div class='concept-name'>{html.escape(_concept_display(code))}</div>"
+                "<div class='concept-track'>"
+                f"<span class='concept-fill {bucket}' style='width:{pct}%;'></span>"
+                "</div>"
+                f"<div class='concept-score'>{pct}%</div>"
+                "</div>"
+            )
+        if not rows:
+            return ""
+        return f"<div class='concept-block'>{''.join(rows)}</div>"
+
+    sections = []
+    today = _today_str()
+    for key in ordered_keys:
+        pr = pr_map.get(key)
+        if not pr:
+            continue
+        score = int(getattr(pr, "overall", 0) or 0)
+        okr = okr_map.get(key, {})
+        objective = html.escape(okr.get("objective", "") or "Not available yet.")
+        krs = okr.get("krs") or []
+        kr_lines = "".join(f"<li>{html.escape(kr)}</li>" for kr in krs[:3] if kr) or "<li>No key results yet.</li>"
+
+        score_pct = max(0, min(100, score))
+        sections.append(
+            f"<section data-pillar='{html.escape(key)}'>"
+            "<div class='pillar-head'>"
+            f"<h2>{html.escape(_title_for_pillar(key))}</h2>"
+            "<div class='pillar-score'>"
+            f"<span class='score-value'>{score_pct}%</span>"
+            "<div class='score-track'>"
+            f"<span class='score-fill {_score_bucket(score_pct)}' style='width:{score_pct}%'></span>"
+            "</div>"
+            "</div>"
+            "</div>"
+            f"{_concept_block(pr)}"
+            "<div class='okr-card'>"
+            "<h3>This Quarter Objective</h3>"
+            f"<p>{objective}</p>"
+            "<h3>Key Results</h3>"
+            f"<ul>{kr_lines}</ul>"
+            "</div>"
+            "</section>"
+        )
+
+    first = (getattr(user, "first_name", None) or "").strip() or "there"
+    score_rows = [
+        _score_row("Combined", combined),
+        _score_row("Nutrition", int(getattr(pr_map.get("nutrition"), "overall", None) or 0) if pr_map.get("nutrition") else None),
+        _score_row("Training", int(getattr(pr_map.get("training"), "overall", None) or 0) if pr_map.get("training") else None),
+        _score_row("Resilience", int(getattr(pr_map.get("resilience"), "overall", None) or 0) if pr_map.get("resilience") else None),
+        _score_row("Recovery", int(getattr(pr_map.get("recovery"), "overall", None) or 0) if pr_map.get("recovery") else None),
+    ]
+    score_panel = "".join([row for row in score_rows if row]) or "<p class='score-empty'>Scores will appear here once available.</p>"
+    html_doc = f"""<!DOCTYPE html>
+<html lang='en'>
+<head>
+  <meta charset='utf-8'/>
+  <meta name='viewport' content='width=device-width, initial-scale=1'/>
+  <title>Your Wellbeing Dashboard</title>
+  <style>
+    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 16px; background: #f5f5f5; }}
+    .card {{ background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 2px 6px rgba(0,0,0,0.06); }}
+    .summary-card {{ display: flex; flex-direction: column; gap: 16px; }}
+    .summary-main h1 {{ font-size: 1.45rem; margin-bottom: 4px; }}
+    .summary-main p {{ margin: 4px 0; color: #333; }}
+    .score-panel {{ background: #f7f9fc; border-radius: 12px; padding: 12px; }}
+    .score-empty {{ margin: 0; color: #6b7280; font-size: 0.95rem; }}
+    .score-row {{ display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }}
+    .score-row:last-child {{ margin-bottom: 0; }}
+    .score-label {{ flex: 0 0 95px; font-weight: 600; color: #1f2933; }}
+    .score-track {{ flex: 1; height: 8px; border-radius: 999px; background: #e4e8f1; overflow: hidden; }}
+    .score-fill {{ display: block; height: 100%; border-radius: 999px; }}
+    .score-fill.high {{ background: linear-gradient(90deg, #0ba360, #3cba92); }}
+    .score-fill.mid {{ background: linear-gradient(90deg, #f6d365, #fda085); }}
+    .score-fill.low {{ background: linear-gradient(90deg, #f76b1c, #f54b64); }}
+    .score-value {{ width: 56px; text-align: right; font-weight: 600; color: #111827; font-variant-numeric: tabular-nums; }}
+    .pillars-card section {{ margin-bottom: 32px; border-bottom: 1px solid #f0f0f0; padding-bottom: 24px; }}
+    .pillars-card section:last-child {{ border-bottom: none; padding-bottom: 0; }}
+    .pillar-head {{ display: flex; flex-direction: column; gap: 8px; }}
+    .pillar-head h2 {{ font-size: 1.2rem; margin: 0; color: #0f172a; }}
+    .pillar-score {{ display: flex; align-items: center; gap: 12px; }}
+    .pillar-score .score-value {{ width: auto; }}
+    .concept-block {{ margin: 12px 0 16px; border: 1px solid #edf1f7; border-radius: 12px; padding: 12px; background: #fafcff; }}
+    .concept-row {{ display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }}
+    .concept-row:last-child {{ margin-bottom: 0; }}
+    .concept-name {{ flex: 0 0 45%; font-weight: 600; color: #111827; }}
+    .concept-track {{ flex: 1; height: 6px; border-radius: 999px; background: #e4e8f1; overflow: hidden; }}
+    .concept-fill {{ display: block; height: 100%; border-radius: 999px; }}
+    .concept-fill.high {{ background: linear-gradient(90deg, #0ba360, #3cba92); }}
+    .concept-fill.mid {{ background: linear-gradient(90deg, #f6d365, #fda085); }}
+    .concept-fill.low {{ background: linear-gradient(90deg, #f76b1c, #f54b64); }}
+    .concept-score {{ width: 48px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; color: #111827; }}
+    .okr-card h3 {{ font-size: 1rem; margin: 12px 0 6px; color: #475467; }}
+    .okr-card p {{ margin: 0 0 8px; color: #1f2933; line-height: 1.4; }}
+    .okr-card ul {{ padding-left: 18px; margin: 0; color: #1f2933; }}
+    @media (min-width: 720px) {{
+      .summary-card {{ flex-direction: row; justify-content: space-between; align-items: flex-start; }}
+      .summary-main {{ flex: 1; }}
+      .score-panel {{ flex: 0 0 320px; }}
+      .pillar-head {{ flex-direction: row; justify-content: space-between; align-items: center; }}
+    }}
+  </style>
+ </head>
+ <body>
+   <div class='card summary-card'>
+     <div class='summary-main'>
+       <h1>Your Wellbeing Dashboard</h1>
+       <p>Hi {html.escape(first)}, here's your latest assessment snapshot.</p>
+       <p style='color:#475467;'>Updated {html.escape(today)}</p>
+     </div>
+     <div class='score-panel'>
+       {score_panel}
+     </div>
+   </div>
+   <div class='card pillars-card'>
+     {''.join(sections)}
+   </div>
+ </body>
+</html>"""
+
+    out_dir = _reports_root_for_user(user.id)
+    out_path = os.path.join(out_dir, "latest.html")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(html_doc)
     return out_path
 
 def generate_detailed_report_pdf_by_user(user_id: int) -> str:
