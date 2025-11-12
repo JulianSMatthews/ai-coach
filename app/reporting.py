@@ -5,6 +5,7 @@ import os
 from datetime import datetime, date, timedelta
 import html
 import json
+from collections import defaultdict
 try:
     from zoneinfo import ZoneInfo  # Python 3.9+
 except Exception:
@@ -13,10 +14,10 @@ from typing import Optional, Dict, Any, List, Tuple
 import textwrap
 
 from .db import SessionLocal
-from .models import AssessmentRun, PillarResult, User, JobAudit, UserConceptState
+from .models import AssessmentRun, PillarResult, User, JobAudit, UserConceptState, AssessmentTurn
 
 # For raw SQL fallback when OKR models are unavailable
-from sqlalchemy import text
+from sqlalchemy import text, select
 
 # Optional OKR tables – support both naming variants in models.py
 OkrObjective = None  # type: ignore
@@ -77,6 +78,220 @@ def _reports_root_global() -> str:
     base = os.getenv("REPORTS_DIR") or os.path.join(os.getcwd(), "public", "reports")
     os.makedirs(base, exist_ok=True)
     return base
+
+
+def _short_text(text: str | None, limit: int = 200) -> str:
+    if not text:
+        return ""
+    txt = text.strip()
+    if len(txt) <= limit:
+        return txt
+    return txt[: limit - 1].rstrip() + "…"
+
+
+def _collect_run_dialogue(run_id: int, limit_per_pillar: int = 3) -> dict[str, list[dict]]:
+    out: dict[str, list[dict]] = defaultdict(list)
+    with SessionLocal() as s:
+        rows = (
+            s.query(AssessmentTurn)
+             .filter(AssessmentTurn.run_id == run_id)
+             .order_by(AssessmentTurn.idx.asc())
+             .all()
+        )
+    for row in rows:
+        if not getattr(row, "user_a", None):
+            continue
+        pillar = (getattr(row, "pillar", None) or "combined").lower()
+        bucket = out[pillar]
+        if len(bucket) >= limit_per_pillar:
+            continue
+        bucket.append({
+            "question": _short_text(getattr(row, "assistant_q", ""), 220),
+            "answer": _short_text(getattr(row, "user_a", ""), 220),
+            "concept": getattr(row, "concept_key", None)
+        })
+    return out
+
+
+def _llm_text_to_html(text: str) -> str:
+    parts = [ln.strip() for ln in text.replace("\r\n", "\n").split("\n") if ln.strip()]
+    if not parts:
+        return ""
+    return "".join(f"<p>{html.escape(p)}</p>" for p in parts)
+
+
+def _score_narrative_from_llm(user: User, combined: int, payload: list[dict]) -> str:
+    if not payload:
+        return ""
+    name = (getattr(user, "first_name", None) or "the member").strip()
+    prompt = (
+        "You are a supportive wellbeing coach writing a concise summary of assessment scores.\n"
+        f"Person's preferred name: {name}.\n"
+        f"Combined score: {combined}/100.\n"
+        "Data (JSON):\n"
+        f"{json.dumps(payload, ensure_ascii=False)}\n\n"
+        "Write two short paragraphs (under 140 words total) that:\n"
+        "- explain what the combined score and per-pillar scores suggest\n"
+        "- reference notable answers when helpful\n"
+        "- treat Resilience gently and encourage small next steps\n"
+        "- use second-person voice ('you')\n"
+        "Return plain text."
+    )
+    try:
+        resp = _llm.invoke(prompt)
+        text = resp.content.strip() if hasattr(resp, "content") else str(resp).strip()
+    except Exception:
+        return ""
+    return _llm_text_to_html(text)
+
+
+def _okr_narrative_from_llm(user: User, payload: list[dict]) -> str:
+    if not payload:
+        return ""
+    name = (getattr(user, "first_name", None) or "you").strip()
+    prompt = (
+        "You are a wellbeing performance coach. Explain why each Objective and Key Result matters "
+        f"for {name}'s wellbeing.\n"
+        "Data (JSON):\n"
+        f"{json.dumps(payload, ensure_ascii=False)}\n\n"
+        "Write two short paragraphs that tie the objectives to the scores, highlight where focus is needed, "
+        "and keep the tone gentle but action-oriented. Use second-person voice."
+    )
+    try:
+        resp = _llm.invoke(prompt)
+        text = resp.content.strip() if hasattr(resp, "content") else str(resp).strip()
+    except Exception:
+        return ""
+    return _llm_text_to_html(text)
+
+
+def _scores_narrative_fallback(combined: int, payload: list[dict]) -> str:
+    parts = [
+        (
+            f"<p>Your combined wellbeing score is <strong>{combined}/100</strong>. "
+            "Keep leaning on the stronger habits while giving extra care to the areas that dip.</p>"
+        )
+    ]
+    if payload:
+        bullet = "".join(
+            f"<li><strong>{html.escape(item['pillar_name'])}</strong>: "
+            f"{item.get('score', '–')}/100</li>"
+            for item in payload
+        )
+        parts.append(f"<p>Pillar snapshot:</p><ul>{bullet}</ul>")
+    return "".join(parts)
+
+
+def _okr_narrative_fallback(payload: list[dict]) -> str:
+    if not payload:
+        return "<p>Your Objectives and Key Results will appear once an assessment finishes.</p>"
+    bullet = "".join(
+        f"<li><strong>{html.escape(item['pillar_name'])}</strong>: "
+        f"{html.escape(item.get('objective') or 'Objective coming soon.')}</li>"
+        for item in payload
+    )
+    return "<p>Quarterly focus:</p><ul>" + bullet + "</ul>"
+
+
+def generate_global_users_html() -> str:
+    """
+    Render a simple HTML table listing all users and core metadata (id, club_id, names, phone, roles, consent).
+    Returns the absolute filesystem path to the generated HTML file.
+    """
+    with SessionLocal() as s:
+        users = (
+            s.execute(
+                select(User).order_by(User.id.asc())
+            )
+            .scalars()
+            .all()
+        )
+
+    def _esc(value) -> str:
+        return html.escape("" if value is None else str(value))
+
+    def _fmt_dt(value) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, datetime):
+            return value.strftime("%Y-%m-%d %H:%M")
+        return str(value)
+
+    def _fmt_bool(flag) -> str:
+        return "Yes" if bool(flag) else "No"
+
+    headers = [
+        "ID",
+        "Club ID",
+        "First Name",
+        "Surname",
+        "Phone",
+        "Created On",
+        "Updated On",
+        "Superuser",
+        "Admin Role",
+        "Consent Given",
+        "Consent At",
+    ]
+
+    rows_html = []
+    for u in users:
+        rows_html.append(
+            "<tr>"
+            f"<td>{_esc(u.id)}</td>"
+            f"<td>{_esc(u.club_id)}</td>"
+            f"<td>{_esc(getattr(u, 'first_name', None))}</td>"
+            f"<td>{_esc(getattr(u, 'surname', None))}</td>"
+            f"<td>{_esc(getattr(u, 'phone', None))}</td>"
+            f"<td>{_esc(_fmt_dt(getattr(u, 'created_on', None)))}</td>"
+            f"<td>{_esc(_fmt_dt(getattr(u, 'updated_on', None)))}</td>"
+            f"<td>{_esc(_fmt_bool(getattr(u, 'is_superuser', False)))}</td>"
+            f"<td>{_esc(getattr(u, 'admin_role', ''))}</td>"
+            f"<td>{_esc(_fmt_bool(getattr(u, 'consent_given', False)))}</td>"
+            f"<td>{_esc(_fmt_dt(getattr(u, 'consent_at', None)))}</td>"
+            "</tr>"
+        )
+
+    css = """
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 24px; color: #111; }
+      h1 { margin-bottom: 4px; font-size: 20px; }
+      .meta { color: #666; margin-bottom: 16px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border: 1px solid #ddd; padding: 8px 6px; text-align: left; vertical-align: top; font-size: 14px; }
+      th { background: #f5f5f5; font-weight: 600; }
+      td:nth-child(5) { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+    </style>
+    """
+
+    html_doc = [
+        "<!doctype html>",
+        "<html lang=\"en\">",
+        "<meta charset=\"utf-8\">",
+        "<title>Global Users</title>",
+        css,
+        "<body>",
+        "<h1>Global Users</h1>",
+        f"<div class=\"meta\">Total users: {len(users)} · Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</div>",
+        "<table>",
+        "<thead><tr>" + "".join(f"<th>{_esc(h)}</th>" for h in headers) + "</tr></thead>",
+        "<tbody>" + ("".join(rows_html) if rows_html else "<tr><td colspan=\"11\">No users found.</td></tr>") + "</tbody>",
+        "</table>",
+        "</body>",
+        "</html>",
+    ]
+
+    out_root = _reports_root_global()
+    out_path = os.path.join(out_root, "global-users.html")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(html_doc))
+
+    try:
+        _audit("global_users_html", "ok", {"count": len(users), "path": out_path})
+    except Exception:
+        pass
+
+    return out_path
 
 
 def _display_full_name(user: User) -> str:
@@ -1706,6 +1921,7 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
         raise ValueError("Assessment run not found")
 
     okr_map = _fetch_okrs_for_run(run.id)
+    qa_by_pillar = _collect_run_dialogue(run.id)
     ordered_keys = _pillar_order()
     pr_map = {getattr(pr, "pillar_key", ""): pr for pr in pillars}
 
@@ -1783,7 +1999,16 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
             return ""
         return f"<div class='concept-block'>{''.join(rows)}</div>"
 
+    def _bucket_label(pct: int) -> tuple[str, str]:
+        if pct >= 80:
+            return "strong", "great momentum here—keep reinforcing the habits that already work."
+        if pct >= 60:
+            return "steady", "you’re on track; a few consistent tweaks will lift this pillar."
+        return "emerging", "this pillar needs extra care; pick one doable habit to stabilise it."
+
     sections = []
+    pillar_payload: list[dict] = []
+    okr_payload: list[dict] = []
     today = _today_str()
     for key in ordered_keys:
         pr = pr_map.get(key)
@@ -1796,6 +2021,21 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
         kr_lines = "".join(f"<li>{html.escape(kr)}</li>" for kr in krs[:3] if kr) or "<li>No key results yet.</li>"
 
         score_pct = max(0, min(100, score))
+        pillar_payload.append({
+            "pillar_key": key,
+            "pillar_name": _title_for_pillar(key),
+            "score": score_pct,
+            "concept_scores": _concept_scores_for(pr),
+            "qa_samples": qa_by_pillar.get(key, [])
+        })
+        okr_payload.append({
+            "pillar_key": key,
+            "pillar_name": _title_for_pillar(key),
+            "score": score_pct,
+            "objective": okr.get("objective", ""),
+            "key_results": krs[:3]
+        })
+
         sections.append(
             f"<section data-pillar='{html.escape(key)}'>"
             "<div class='pillar-head'>"
@@ -1817,7 +2057,13 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
             "</section>"
         )
 
-    first = (getattr(user, "first_name", None) or "").strip() or "there"
+    first_name = (getattr(user, "first_name", None) or "").strip()
+    first = first_name or "there"
+
+    score_narrative = _score_narrative_from_llm(user, combined, pillar_payload) \
+        or _scores_narrative_fallback(combined, pillar_payload)
+    okr_narrative = _okr_narrative_from_llm(user, okr_payload) \
+        or _okr_narrative_fallback(okr_payload)
     score_rows = [
         _score_row("Combined", combined),
         _score_row("Nutrition", int(getattr(pr_map.get("nutrition"), "overall", None) or 0) if pr_map.get("nutrition") else None),
@@ -1868,16 +2114,33 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
     .okr-card h3 {{ font-size: 1rem; margin: 12px 0 6px; color: #475467; }}
     .okr-card p {{ margin: 0 0 8px; color: #1f2933; line-height: 1.4; }}
     .okr-card ul {{ padding-left: 18px; margin: 0; color: #1f2933; }}
+    .narrative-card h2 {{ margin-top: 0; font-size: 1.25rem; color: #0f172a; }}
+    .narrative-card p {{ margin: 0 0 8px; color: #1f2933; line-height: 1.5; }}
+    .narrative-card ul {{ margin: 0; padding-left: 18px; color: #111; }}
+    .narrative-card li {{ margin-bottom: 6px; line-height: 1.4; }}
+    .section {{ display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px; }}
     @media (min-width: 720px) {{
+      .section {{ flex-direction: row; align-items: flex-start; }}
+      .section .narrative-card {{ flex: 1; }}
+      .scores-section .summary-card {{ flex: 1; }}
+      .okr-section .pillars-card {{ flex: 1; }}
+      .pillar-head {{ flex-direction: row; justify-content: space-between; align-items: center; }}
       .summary-card {{ flex-direction: row; justify-content: space-between; align-items: flex-start; }}
       .summary-main {{ flex: 1; }}
       .score-panel {{ flex: 0 0 320px; }}
-      .pillar-head {{ flex-direction: row; justify-content: space-between; align-items: center; }}
+    }}
+    @media (min-width: 720px) {{
+      .section {{ margin-bottom: 32px; }}
     }}
   </style>
  </head>
  <body>
-   <div class='card summary-card'>
+  <div class='section scores-section'>
+    <div class='card narrative-card'>
+      <h2>How you're doing</h2>
+      {score_narrative}
+    </div>
+    <div class='card summary-card'>
      <div class='summary-main'>
        <h1>Your Wellbeing Dashboard</h1>
        <p>Hi {html.escape(first)}, here's your latest assessment snapshot.</p>
@@ -1886,10 +2149,17 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
      <div class='score-panel'>
        {score_panel}
      </div>
-   </div>
-   <div class='card pillars-card'>
+    </div>
+  </div>
+  <div class='section okr-section'>
+    <div class='card narrative-card'>
+      <h2>Your OKR focus</h2>
+      {okr_narrative}
+    </div>
+    <div class='card pillars-card'>
      {''.join(sections)}
-   </div>
+    </div>
+  </div>
  </body>
 </html>"""
 
@@ -1940,3 +2210,4 @@ def generate_assessment_summary_pdf(start: date | str, end: date | str, *, club_
     except Exception as e:
         _audit("summary_report_generate", "error", {"start": start_str, "end": end_str}, error=str(e))
         raise
+from .llm import _llm

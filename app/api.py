@@ -1,10 +1,11 @@
 # app/api.py
 # PATCH — proper API module + robust Twilio webhook (2025-09-04)
-# PATCH — 2025-09-11: Add minimal superuser admin endpoints (create user, start, status, report)
-# PATCH — 2025-09-11: Admin hardening + WhatsApp admin commands (token+DB check; create/start/status/report)
+# PATCH — 2025-09-11: Add minimal superuser admin endpoints (create user, start, status, dashboard)
+# PATCH — 2025-09-11: Admin hardening + WhatsApp admin commands (token+DB check; create/start/status/dashboard)
 
 import os
 import json
+import time
 import urllib.request
 from urllib.parse import parse_qs
 from datetime import datetime, timedelta
@@ -32,6 +33,8 @@ from .reporting import (
     generate_detailed_report_pdf_by_user,
     generate_assessment_summary_pdf,
     generate_assessment_report_pdf,
+    generate_assessment_dashboard_html,
+    generate_global_users_html,
 )
 
 # Lazy import holder to avoid startup/reload ImportError if symbol is added later
@@ -67,7 +70,7 @@ ADMIN_USAGE = (
     "admin create <phone> [first_name [surname]]\n"
     "admin start <phone>\n"
     "admin status <phone>\n"
-    "admin report <phone>\n"
+    "admin dashboard <phone>\n"
     "admin detailed <phone>\n"
     "admin summary [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
     "admin okr-summary [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
@@ -82,6 +85,7 @@ GLOBAL_USAGE = (
     "global summary [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
     "global okr-summary [range]\n"
     "global okr-summaryllm [range]\n"
+    "global users\n"
     "\nExample: global summary last30d"
 )
 
@@ -491,7 +495,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
       admin create <phone> [<name...>]
       admin start <phone>
       admin status <phone>
-      admin report <phone>
+      admin dashboard <phone>
       admin detailed <phone>
     Returns True if handled; False to allow normal flow.
     """
@@ -551,7 +555,14 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                     club_id=admin_club_id,
                     created_on=now,
                     updated_on=now,
+                    consent_given=True,
+                    consent_at=now,
                 )
+                if hasattr(u, "consent_yes_at"):
+                    try:
+                        setattr(u, "consent_yes_at", now)
+                    except Exception:
+                        pass
                 s.add(u); s.commit(); s.refresh(u)
             # trigger consent/intro
             try:
@@ -594,9 +605,9 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
             status_txt = "in_progress" if active else ("completed" if latest_run and getattr(latest_run, "finished_at", None) else "idle")
             send_whatsapp(to=admin_user.phone, text=f"Status for {display_full_name(u)} ({u.phone}): {status_txt}")
             return True
-        elif cmd == "report":
+        elif cmd == "dashboard":
             if len(parts) < 3:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin report <phone>")
+                send_whatsapp(to=admin_user.phone, text="Usage: admin dashboard <phone>")
                 return True
             target_phone = _norm_phone(parts[2])
             with SessionLocal() as s:
@@ -613,17 +624,19 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 send_whatsapp(to=admin_user.phone, text=f"No assessment run found for {display_full_name(u)} ({u.phone}).")
                 return True
             try:
-                # Regenerate the assessment report for the latest run
-                generate_assessment_report_pdf(latest_run.id)
-                pdf = _public_report_url(u.id, "latest.pdf")
-                img = _public_report_url(u.id, "latest.jpeg")
+                generate_assessment_dashboard_html(latest_run.id)
+                dash_url = _public_report_url(u.id, "latest.html")
+                bust = int(time.time())
                 send_whatsapp(
                     to=admin_user.phone,
-                    text=f"Report regenerated for {display_full_name(u)} ({u.phone}) [run #{latest_run.id}]:\nPDF: {pdf}\nImage: {img}"
+                    text=(
+                        f"Dashboard refreshed for {display_full_name(u)} ({u.phone}) "
+                        f"[run #{latest_run.id}]:\nLink: {dash_url}?ts={bust}"
+                    )
                 )
                 return True
             except Exception as e:
-                send_whatsapp(to=admin_user.phone, text=f"Failed to regenerate report: {e}")
+                send_whatsapp(to=admin_user.phone, text=f"Failed to regenerate dashboard: {e}")
                 return True
         elif cmd == "detailed":
             if len(parts) < 3:
@@ -816,6 +829,20 @@ def _handle_global_command(admin_user: User, text: str) -> bool:
                 text="Unknown global set command. Use:\n- global set club <club>\n- global set user <phone> <club>"
             )
             return True
+        if cmd == "users":
+            try:
+                html_path = generate_global_users_html()
+            except Exception as e:
+                send_whatsapp(to=admin_user.phone, text=f"Failed to generate global users report: {e}")
+                return True
+            filename = os.path.basename(html_path)
+            url = _public_report_url_global(filename)
+            bust = int(time.time())
+            send_whatsapp(
+                to=admin_user.phone,
+                text=f"Global users listing ready:\n{url}?ts={bust}"
+            )
+            return True
         if cmd == "summary":
             start_str, end_str = _parse_summary_range(args)
             try:
@@ -978,6 +1005,11 @@ async def twilio_inbound(request: Request):
         return Response(content="", media_type="text/plain", status_code=200)
 
     except Exception as e:
+        try:
+            import traceback
+            traceback.print_exc()
+        except Exception:
+            pass
         return Response(content="", media_type="text/plain", status_code=500)
 
 
@@ -1093,7 +1125,14 @@ def admin_create_user(payload: dict, admin_user: User = Depends(_require_admin))
             club_id=admin_club_id,
             created_on=now,
             updated_on=now,
+            consent_given=True,
+            consent_at=now,
         )
+        if hasattr(u, "consent_yes_at"):
+            try:
+                setattr(u, "consent_yes_at", now)
+            except Exception:
+                pass
         s.add(u); s.commit(); s.refresh(u)
     # Fire consent/intro; this will send the WhatsApp message
     try:

@@ -24,6 +24,7 @@ from datetime import datetime
 from typing import Optional, Literal
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 
 from .db import SessionLocal
 from .models import (
@@ -268,6 +269,14 @@ def _has_recent_week_window(text: str) -> bool:
     t = (text or "").lower()
     return any(re.search(pattern, t) for pattern in _WEEK_WINDOW_PATTERNS)
 
+def _shorten_ack_text(text: str, limit: int = 160) -> str:
+    """Bound acknowledgement echo length so we don’t spam the user with full essays."""
+    snippet = (text or "").strip()
+    if len(snippet) <= limit:
+        return snippet
+    return snippet[:limit - 1].rstrip() + "…"
+
+
 def _format_acknowledgement(msg: str, state: dict, pillar: str | None, user: User | None) -> str:
     """
     Build a short acknowledgement so the user knows we logged their reply.
@@ -275,16 +284,33 @@ def _format_acknowledgement(msg: str, state: dict, pillar: str | None, user: Use
     text = (msg or "").strip()
     if not text:
         return ""
+    snippet = _shorten_ack_text(text)
     name = (getattr(user, "first_name", "") or "").strip()
     prefix = f"Thanks {name}".strip() if name else "Thanks"
+    hint = " (type redo to change or restart to begin again)"
     if _has_numeric_signal(text):
-        body = f"{prefix}, logged {text}."
+        body = f'{prefix}, logged "{snippet}".{hint}'
     else:
-        body = f"{prefix} — noted."
+        body = f'{prefix} — noted "{snippet}".{hint}'
     progress = _pillar_progress_line(state, pillar)
     if progress:
         body = f"{body}\n\n{progress}"
     return body
+
+def _pillar_overview_message(user: User) -> str:
+    name = (getattr(user, "first_name", "") or "").strip()
+    greeting = f"*{name}*" if name else "there"
+    return (
+        f"Hey {greeting}! 😊 Before we dive in, here’s what to expect. "
+        "We’ll chat through four quick wellbeing pillars:\n\n"
+        "• *Nutrition* – what you’re eating and drinking day to day\n"
+        "• *Training* – how you’re moving and staying active\n"
+        "• *Resilience* – how you’re feeling emotionally and coping with stress "
+        "(share only what feels comfortable; we’ll keep it light)\n"
+        "• *Recovery* – how you’re resting and recharging between busy stretches\n\n"
+        "Each pillar has just a few questions about the past 7 days. Type *redo* to change an answer "
+        "or *restart* to begin again at any time. Ready to get started?"
+    )
 
 def _compose_ack_with_message(ack_text: str | None, message: str | None) -> tuple[str, str]:
     """
@@ -1187,7 +1213,29 @@ def _log_turn(s, state, pillar, concept_code, is_clarifier, assistant_q, user_a,
         assistant_q=assistant_q, user_a=user_a,
         retrieval=retrieval, llm_raw=llm_raw, action=action, confidence=confidence
     )
-    s.add(t); s.commit()
+    try:
+        s.add(t); s.commit()
+    except IntegrityError as e:
+        s.rollback()
+        existing = s.execute(
+            select(AssessmentTurn).where(
+                AssessmentTurn.run_id == run_id,
+                AssessmentTurn.idx == idx
+            )
+        ).scalars().first()
+        if existing:
+            existing.pillar = pillar
+            existing.concept_key = concept_code
+            existing.is_clarifier = bool(is_clarifier)
+            existing.assistant_q = assistant_q
+            existing.user_a = user_a
+            existing.retrieval = retrieval
+            existing.llm_raw = llm_raw
+            existing.action = action
+            existing.confidence = confidence
+            s.commit()
+        else:
+            raise e
     # Log meta for debugging
     try:
         with SessionLocal() as ss:
@@ -1270,6 +1318,7 @@ def start_combined_assessment(user: User):
             "question_seq": 0,
             "question_numbers": {},
             "total_questions": 0,
+            "intro_sent": False,
         }
         sess = AssessSession(user_id=user.id, domain="combined", is_active=True, turn_count=0, state=state)
         s.add(sess); s.commit(); s.refresh(sess)
@@ -1281,6 +1330,11 @@ def start_combined_assessment(user: User):
 
         # Start run
         _start_or_get_run(s, user, state)
+
+        if not state.get("intro_sent"):
+            _send_to_user(user, _pillar_overview_message(user))
+            state["intro_sent"] = True
+            _commit_state(s, sess, state)
 
 
         # First concept + main question
@@ -1389,29 +1443,86 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
 
         # Quick correction command — "redo last"
         # Re-asks the most recent main question so the next reply overwrites that concept's answer.
-        if cmd == "redo last":
+        if cmd in {"redo", "redo last", "redo last question", "redo question"}:
             turns = state.get("turns", [])
+            concept_progress = state.setdefault("concept_progress", {
+                "nutrition": {}, "training": {}, "resilience": {}, "recovery": {}
+            })
+            concept_scores = state.setdefault("concept_scores", {
+                "nutrition": {}, "training": {}, "resilience": {}, "recovery": {}
+            })
+            concept_idx_map = state.setdefault("concept_idx", {
+                "nutrition": 0, "training": 0, "resilience": 0, "recovery": 0
+            })
+            qa_snapshots = state.setdefault("qa_snapshots", {})
+
+            last_answer_idx = None
+            last_answer_pillar = None
+            for idx in range(len(turns) - 1, -1, -1):
+                t = turns[idx]
+                if t.get("role") == "user":
+                    last_answer_idx = idx
+                    last_answer_pillar = t.get("pillar") or state.get("current", "nutrition")
+                    break
+            search_range = range(len(turns) - 1, -1, -1)
+            if last_answer_idx is not None:
+                search_range = range(last_answer_idx - 1, -1, -1)
             last_main = None
             last_any_q = None
-            # Walk backwards to find the last assistant question, preferring a main question
-            for t in reversed(turns):
-                if t.get("role") != "assistant":
+            target_idx = None
+            for i in search_range:
+                t = turns[i]
+                if t.get("role") != "assistant" or not t.get("question"):
                     continue
-                if t.get("question"):
+                if last_answer_pillar and t.get("pillar") not in {None, last_answer_pillar}:
+                    continue
+                if last_any_q is None:
                     last_any_q = t
-                    if t.get("is_main"):
-                        last_main = t
-                        break
+                    target_idx = i
+                if t.get("is_main"):
+                    last_main = t
+                    target_idx = i
+                    break
             target = last_main or last_any_q
             if target and target.get("question"):
                 target_pillar = target.get("pillar") or state.get("current", "nutrition")
                 target_concept = target.get("concept")
                 q_text = target.get("question")
-                # Switch context back to that pillar
+                # Drop any turns captured after the original question so we get a clean redo
+                if target_idx is not None:
+                    turns[:] = turns[:target_idx]
                 state["current"] = target_pillar
-                # Let the user know and re-ask the same main question so the next inbound is routed to this concept
+
+                # Reset progress + scores for this concept so the new answer replaces the old one
+                pillar_prog = concept_progress.setdefault(target_pillar, {})
+                if target_concept is None:
+                    # Use a placeholder when concept metadata is missing
+                    concept_key = "__anon__"
+                else:
+                    concept_key = target_concept
+                cprog = pillar_prog.setdefault(concept_key, {
+                    "main_asked": True, "clarifiers": 0, "scored": False, "summary_logged": False
+                })
+                cprog["clarifiers"] = 0
+                cprog["scored"] = False
+                cprog["summary_logged"] = False
+                cprog["main_asked"] = True
+
+                if target_concept:
+                    concept_scores.setdefault(target_pillar, {}).pop(target_concept, None)
+                    try:
+                        qa_snapshots.get(target_pillar, {}).pop(target_concept, None)
+                    except Exception:
+                        pass
+
+                pillar_concepts = (state.get("pillar_concepts") or {}).get(target_pillar, []) or []
+                if target_concept and target_concept in pillar_concepts:
+                    concept_idx_map[target_pillar] = pillar_concepts.index(target_concept)
+                else:
+                    concept_idx_map[target_pillar] = max(0, int(concept_idx_map.get(target_pillar, 0)) - 1)
+
                 _send_to_user(user, "Okay — let’s redo that one. Please answer again:")
-                # Append a fresh assistant turn anchoring this concept/question as active
+
                 turns.append({
                     "role": "assistant",
                     "pillar": target_pillar,
@@ -1431,6 +1542,17 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 _send_to_user(user, "Sorry — I couldn't find the last question to redo. We'll continue from here.")
                 _commit_state(s, sess, state)
                 return True
+
+        if cmd in {"restart", "restart assessment", "start over", "reset"}:
+            try:
+                if sess:
+                    sess.is_active = False
+                    _commit_state(s, sess, state)
+            except Exception:
+                pass
+            _send_to_user(user, "Okay — restarting from the beginning. Let's start fresh.")
+            start_combined_assessment(user)
+            return True
 
         pillar = state.get("current", "nutrition")
         concept_idx_map = state.get("concept_idx", {})
@@ -1926,7 +2048,6 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 _score_bar(k.replace('_',' ').title(), v)
                 for k, v in filled_scores.items()
             ) or "(no sub-scores)"
-            recap_text = feedback_line
             # Write/Update PillarResult for this pillar
             try:
                 _upsert_pillar_result(
@@ -1952,7 +2073,6 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     )
                 ).scalars().first()
 
-                okr_summary_txt = ""
                 if pr is not None:
                     _sync_okrs_after_pillar(
                         db=s,
@@ -1965,16 +2085,11 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     s.commit()
                 except Exception:
                     s.rollback()
-                try:
-                    okr_summary_txt = _pillar_okr_summary_from_run(state.get("run_id"), pillar)
-                except Exception:
-                    okr_summary_txt = ""
             except Exception as _okr_e:
                 print(f"[okr] WARN: OKR sync failed for run_id={state.get('run_id')} pillar={pillar}: {_okr_e}")
             # ─────────────────────────────────────────────────────────────────────────────
 
-            summary_text = okr_summary_txt or recap_text
-            final_msg = f"✅ *{pillar.title()}* complete — *{overall}/100*\n\n{breakdown}\n\n{summary_text}"
+            final_msg = f"✅ *{pillar.title()}* complete — *{overall}/100*\n\n{breakdown}"
             composed_msg, ack_text = _compose_ack_with_message(ack_text, final_msg)
             if composed_msg:
                 _send_to_user(user, composed_msg)
