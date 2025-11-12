@@ -286,6 +286,19 @@ def _format_acknowledgement(msg: str, state: dict, pillar: str | None, user: Use
         body = f"{body}\n\n{progress}"
     return body
 
+def _compose_ack_with_message(ack_text: str | None, message: str | None) -> tuple[str, str]:
+    """
+    Merge the acknowledgement with the next outbound message so WhatsApp preserves ordering.
+    Returns (composed_message, remaining_ack_text).
+    """
+    ack = (ack_text or "").strip()
+    body = (message or "").strip()
+    if ack and body:
+        return f"{ack}\n\n{body}", ""
+    if ack:
+        return ack, ""
+    return body, ""
+
 # Prettify concept code for user-facing messages
 def _pretty_concept(code: str) -> str:
     return (code or "").replace("_", " ").title()
@@ -1705,12 +1718,6 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     wants_finish = True
 
         if not wants_finish:
-            if ack_text:
-                try:
-                    _send_to_user(user, ack_text)
-                except Exception:
-                    pass
-                ack_text = ""
             # bump clarifier count for this concept
             cprog = concept_progress.setdefault(pillar, {}).setdefault(concept_code, {
                 "main_asked": True, "clarifiers": 0, "scored": False, "summary_logged": False
@@ -1749,6 +1756,12 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                         cand = ""
 
             if not cand:
+                pending_msg, ack_text = _compose_ack_with_message(ack_text, None)
+                if pending_msg:
+                    try:
+                        _send_to_user(user, pending_msg)
+                    except Exception:
+                        pass
                 try:
                     with SessionLocal() as ss:
                         ss.add(JobAudit(job_name="assessor_no_clarifier", status="warn",
@@ -1798,14 +1811,19 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 cprog["scored"] = False
                 concept_idx_map[pillar] = int(concept_idx_map.get(pillar, 0)) + 1
 
-                _send_to_user(user, "Thanks — we don’t have enough detail to score that one yet, so we’ll move on.")
+                fallback_text = "Thanks — we don’t have enough detail to score that one yet, so we’ll move on."
+                composed_msg, ack_text = _compose_ack_with_message(ack_text, fallback_text)
+                if composed_msg:
+                    _send_to_user(user, composed_msg)
                 _commit_state(s, sess, state)
                 return True
 
             # Otherwise, ask the clarifier
             turns.append({"role": "assistant", "pillar": pillar, "question": cand, "concept": concept_code, "is_main": False})
             _commit_state(s, sess, state)
-            _send_to_user(user, cand)
+            composed_msg, ack_text = _compose_ack_with_message(ack_text, cand)
+            if composed_msg:
+                _send_to_user(user, composed_msg)
             _log_turn(s, state, pillar, concept_code, True, cand, None, retrieval_ctx, raw, action="ask", confidence=out.confidence)
             _commit_state(s, sess, state)
             return True
@@ -1872,12 +1890,6 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         # Advance concept index
         concept_idx_map[pillar] = int(concept_idx_map.get(pillar, 0)) + 1
 
-        if ack_text:
-            try:
-                _send_to_user(user, ack_text)
-            except Exception:
-                pass
-            ack_text = ""
         finished_pillar = concept_idx_map[pillar] >= min(MAIN_QUESTIONS_PER_PILLAR, len(pillar_concepts))
 
         if finished_pillar:
@@ -1950,6 +1962,10 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                         concept_score_map=filled_scores,  # pass per-concept scores if available
                     )
                 try:
+                    s.commit()
+                except Exception:
+                    s.rollback()
+                try:
                     okr_summary_txt = _pillar_okr_summary_from_run(state.get("run_id"), pillar)
                 except Exception:
                     okr_summary_txt = ""
@@ -1959,7 +1975,9 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
 
             summary_text = okr_summary_txt or recap_text
             final_msg = f"✅ *{pillar.title()}* complete — *{overall}/100*\n\n{breakdown}\n\n{summary_text}"
-            _send_to_user(user, final_msg)
+            composed_msg, ack_text = _compose_ack_with_message(ack_text, final_msg)
+            if composed_msg:
+                _send_to_user(user, composed_msg)
 
             nxt = _next_pillar(pillar)
             state["results"][pillar] = {"level": out.level, "confidence": out.confidence,
@@ -2090,6 +2108,12 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         # Not finished pillar: ask next concept main question
         next_index = int(concept_idx_map[pillar])
         if next_index >= len(pillar_concepts):
+            pending_msg, ack_text = _compose_ack_with_message(ack_text, None)
+            if pending_msg:
+                try:
+                    _send_to_user(user, pending_msg)
+                except Exception:
+                    pass
             _commit_state(s, sess, state)
             return True
         next_concept = pillar_concepts[next_index]
@@ -2104,7 +2128,9 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         display_next = _format_main_question_for_user(state, pillar, next_concept, next_q)
         turns.append({"role": "assistant", "pillar": pillar, "question": next_q, "concept": next_concept, "is_main": True})
         _commit_state(s, sess, state)
-        _send_to_user(user, display_next)
+        composed_msg, ack_text = _compose_ack_with_message(ack_text, display_next)
+        if composed_msg:
+            _send_to_user(user, composed_msg)
         try:
             _bump_concept_asked(user.id, state.get("run_id"), pillar, next_concept)
         except Exception:
