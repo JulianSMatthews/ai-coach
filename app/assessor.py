@@ -1437,7 +1437,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             dash_link = _report_url(user.id, "latest.html")
             _send_to_user(
                 user,
-                f"Your Wellbeing dashboard: {dash_link}\n(Type 'Dashboard' any time to view it again.)",
+                f"Your Wellbeing dashboard: {dash_link}\n(*Type 'Dashboard' any time to view it again.*)",
             )
             return True
 
@@ -2156,7 +2156,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     f"{intro} Your combined score is *{combined}/100*\n"
                     f"\n{breakdown}\n\n"
                     f"Your Wellbeing dashboard: {dash_link}\n"
-                    f"(Type 'Dashboard' any time to view it again.)"
+                    f"(*Type 'Dashboard' any time to view it again.*)"
                 )
                 _send_to_user(user, final_msg)
 

@@ -10,7 +10,6 @@ import urllib.request
 from urllib.parse import parse_qs
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-
 from fastapi import FastAPI, APIRouter, Request, Response, Depends, Header, HTTPException, status
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text, select, desc, func, or_
@@ -67,7 +66,7 @@ def _resolve_okr_summary_gen():
 
 ADMIN_USAGE = (
     "Admin commands:\n"
-    "admin create <phone> [first_name [surname]]\n"
+    "admin create <phone> <first_name> <surname>\n"
     "admin start <phone>\n"
     "admin status <phone>\n"
     "admin dashboard <phone>\n"
@@ -250,14 +249,26 @@ def _split_name(maybe_name: str) -> tuple[str | None, str | None]:
     """
     if not maybe_name:
         return None, None
-    parts = [p for p in str(maybe_name).strip().split() if p]
+    cleaned = _strip_invisible(str(maybe_name)).strip()
+    parts = [p for p in cleaned.split() if p]
     if not parts:
         return None, None
     if len(parts) == 1:
         return parts[0], None
     return parts[0], " ".join(parts[1:])
 
+def _require_name_fields(first: str | None, last: str | None) -> bool:
+    return bool(first and first.strip()) and bool(last and last.strip())
+
 _DEFAULT_CLUB_ID_CACHE: int | None = None
+_FORMAT_CHAR_MAP = {
+    ord(ch): None for ch in ("\u202a", "\u202c", "\u202d", "\u202e", "\ufeff", "\u200f", "\u200e")
+}
+
+def _strip_invisible(text: str | None) -> str:
+    if not text:
+        return ""
+    return text.translate(_FORMAT_CHAR_MAP)
 
 def _resolve_default_club_id(sess) -> int:
     """
@@ -329,7 +340,9 @@ def _get_or_create_user(phone_e164: str) -> User:
         u = s.query(User).filter(User.phone == phone_e164).first()
         if not u:
             club_id = _resolve_default_club_id(s)
-            u = User(first_name=None, surname=None, phone=phone_e164, club_id=club_id)
+            now = datetime.utcnow()
+            u = User(first_name=None, surname=None, phone=phone_e164, club_id=club_id,
+                     created_on=now, updated_on=now)
             s.add(u)
             s.commit()
             s.refresh(u)
@@ -393,7 +406,7 @@ def _guess_default_cc() -> str:
     return "+44"
 
 def _norm_phone(s: str) -> str:
-    s = (s or "").strip()
+    s = _strip_invisible(s).strip()
     if s.startswith("whatsapp:"):
         s = s[len("whatsapp:"):]
     # Remove common separators
@@ -524,8 +537,8 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
             return True
 
         if cmd == "create":
-            if len(parts) < 3:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin create <phone> [first_name [surname]]")
+            if len(parts) < 4:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin create <phone> <first_name> <surname>")
                 return True
             # Parse phone which may be split across multiple tokens (e.g., "07808 951649")
             i = 2
@@ -540,8 +553,11 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 break
             phone_raw = "".join(phone_tokens) if phone_tokens else parts[2]
             phone = _norm_phone(phone_raw)
-            raw_name = " ".join(parts[i:]).strip() if i < len(parts) else None
+            raw_name = _strip_invisible(" ".join(parts[i:])).strip() if i < len(parts) else ""
             first_name, surname = _split_name(raw_name)
+            if not _require_name_fields(first_name, surname):
+                send_whatsapp(to=admin_user.phone, text="Please provide both first and surname when creating a user.")
+                return True
             with SessionLocal() as s:
                 existing = s.execute(select(User).where(User.phone == phone)).scalar_one_or_none()
                 if existing:
@@ -1106,10 +1122,12 @@ def admin_create_user(payload: dict, admin_user: User = Depends(_require_admin))
     Body: { "first_name": "Julian", "surname": "Matthews", "phone": "+4477..." }
     """
     phone = _norm_phone((payload.get("phone") or "").strip())
-    first_name = (payload.get("first_name") or "").strip() or None
-    surname = (payload.get("surname") or "").strip() or None
+    first_name = _strip_invisible((payload.get("first_name") or "")).strip() or None
+    surname = _strip_invisible((payload.get("surname") or "")).strip() or None
     if not phone:
         raise HTTPException(status_code=400, detail="phone required")
+    if not _require_name_fields(first_name, surname):
+        raise HTTPException(status_code=400, detail="first_name and surname required")
     admin_club_id = getattr(admin_user, "club_id", None)
     if admin_club_id is None:
         raise HTTPException(status_code=400, detail="admin user missing club")
