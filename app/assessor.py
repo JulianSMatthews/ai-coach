@@ -2089,10 +2089,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 print(f"[okr] WARN: OKR sync failed for run_id={state.get('run_id')} pillar={pillar}: {_okr_e}")
             # ─────────────────────────────────────────────────────────────────────────────
 
-            final_msg = f"✅ *{pillar.title()}* complete — *{overall}/100*\n\n{breakdown}"
-            composed_msg, ack_text = _compose_ack_with_message(ack_text, final_msg)
-            if composed_msg:
-                _send_to_user(user, composed_msg)
+            # No pillar score message during assessment; save breakdown for final report
 
             nxt = _next_pillar(pillar)
             state["results"][pillar] = {"level": out.level, "confidence": out.confidence,
@@ -2100,7 +2097,11 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
 
             if nxt:
                 state["current"] = nxt
-                tr_msg = f"*Great* — {pillar.title()} done. Now a quick check on {nxt.title()} ⭐"
+                first_name = (getattr(user, "first_name", "") or "").strip()
+                if first_name:
+                    tr_msg = f"*Great {first_name}* — {pillar.title()} done. Now a quick check on {nxt.title()} ⭐"
+                else:
+                    tr_msg = f"*Great* — {pillar.title()} done. Now a quick check on {nxt.title()} ⭐"
                 turns.append({"role": "assistant", "pillar": nxt, "text": tr_msg})
                 _send_to_user(user, tr_msg)
                 # Ask first concept in next pillar
