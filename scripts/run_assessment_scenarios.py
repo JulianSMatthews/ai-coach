@@ -76,32 +76,7 @@ def _latest_session_id_for(user: "User"):
 
 # Debug: list recent sessions for this user
 def _debug_list_sessions_for(user: "User", limit: int = 5):
-    if AssessSession is None:
-        print("[debug] AssessSession model unavailable")
-        return
-    try:
-        with SessionLocal() as s:
-            rows = (
-                s.query(AssessSession)
-                 .filter(AssessSession.user_id == user.id)
-                 .order_by(AssessSession.id.desc())
-                 .limit(limit)
-                 .all()
-            )
-            if not rows:
-                print("[debug] no AssessSession rows for user", getattr(user, "id", None))
-                return
-            print(f"[debug] recent AssessSession for user {getattr(user,'id',None)}:")
-            for r in rows:
-                cid = getattr(r, 'id', None)
-                cts = getattr(r, 'created_at', None) or getattr(r, 'created', None)
-                uts = getattr(r, 'updated_at', None) or getattr(r, 'updated', None)
-                cg  = getattr(r, 'consent_given', None)
-                cya = getattr(r, 'consent_yes_at', None)
-                st  = getattr(r, 'status', None)
-                print(f"  - id={cid} created={cts} updated={uts} consent={cg} yes_at={cya} status={st}")
-    except Exception as e:
-        print(f"[debug] error listing sessions: {e}")
+    return
 
 # Wait for final completion message in MessageLog (best-effort)
 def _wait_for_completion_message(user: "User", timeout_s: float = 10.0, poll_s: float = 0.5) -> bool:
@@ -574,10 +549,8 @@ def main():
             session_id = getattr(session, "id", None)
             if session_id is None:
                 session_id = _latest_session_id_for(user)
-            print(f"[session] id={session_id}")
             time.sleep(0.5)
             sid_boot = _latest_session_id_for(user)
-            print(f"[session] after-start lookup id={sid_boot}")
             _debug_list_sessions_for(user)
             if session_id is None:
                 print("[warn] start_combined_assessment returned no session id; will rely on DB to attach run after consent.")
@@ -585,7 +558,6 @@ def main():
         except Exception as e:
             print(f"[warn] Unable to start new assessment session automatically: {e}")
             session_id = _latest_session_id_for(user)
-            print(f"[session] (fallback) id={session_id}")
 
         started = False
         print(f"[run] scenario={scenario}")
@@ -596,11 +568,8 @@ def main():
                     start_combined_assessment(user=user)
                 continue_combined_assessment(user=user, user_text="YES")
                 sid = _latest_session_id_for(user)
-                if sid is not None:
-                    print(f"[session] active id={sid}")
                 time.sleep(0.5)
                 sid2 = _latest_session_id_for(user)
-                print(f"[session] post-consent lookup id={sid2}")
                 _debug_list_sessions_for(user)
                 if session_id is None:
                     session_id = _latest_session_id_for(user)

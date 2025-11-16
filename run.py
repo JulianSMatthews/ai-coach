@@ -8,7 +8,7 @@ except ImportError:
 import uvicorn
 
 if load_dotenv is not None:
-    load_dotenv()
+    load_dotenv(override=True)
 
 def start_ngrok(port: int = 8000, region: Optional[str] = None, hostname: Optional[str] = None) -> str:
     # Start ngrok in the background (requires `brew install ngrok/ngrok/ngrok` and authtoken configured)

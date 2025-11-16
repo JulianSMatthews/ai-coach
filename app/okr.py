@@ -23,10 +23,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from calendar import monthrange
 import os
+import json
 
 # --- Needed for new state context helper ---
 from sqlalchemy.sql import text as _sql_text
-from app.models import UserConceptState, Concept, PillarResult
+from app.db import SessionLocal
+from app.models import UserConceptState, Concept, PillarResult, JobAudit
 
 # --- KR key slug helper (cap to VARCHAR(32)) ---------------------------------
 import re, hashlib
@@ -42,6 +44,13 @@ def _slug32(text: str, max_len: int = 32) -> str:
     h = hashlib.md5(base.encode("utf-8")).hexdigest()[:6]
     keep = max_len - 1 - 6
     return f"{base[:keep]}_{h}"
+
+def _normalize_concept_key(text: str | None) -> str:
+    if not text:
+        return ""
+    import re
+    slug = re.sub(r"[^a-z0-9]+", "_", text.strip().lower())
+    return slug.strip("_")
 
 # --- OpenAI client (optional) -------------------------------------------------
 try:
@@ -68,6 +77,14 @@ SYSTEM_MSG = (
     "Each KR should be a small, safe step from the baseline toward a sensible guideline cap; prefer weekly cadence. "
     "Output only the OKR block, no extra commentary."
 )
+
+def _baseline_debug(reason: str, detail: dict | None = None) -> None:
+    pass
+
+
+def _okr_audit(job: str, *, status: str = "ok", payload: dict | None = None, error: str | None = None) -> None:
+    pass
+
 
 def _fallback_okr(pillar_slug: str, pillar_score: float | None) -> str:
     """Deterministic OKR in case the LLM call fails or client is unavailable."""
@@ -164,10 +181,11 @@ STRUCTURED_OKR_SYSTEM_RAW = (
 # Practical coaching variant: push the model toward concrete, weekly habits using per-concept guidance
 PRACTICAL_OKR_SYSTEM = (
     "You are a pragmatic health coach helping people translate assessment scores into weekly habits. "
-    "Return STRICT JSON with keys: objective (string), krs (array of 2–4 items). "
+    "Return STRICT JSON with keys: objective (string), krs (array of 1–3 items). "
     "Each KR MUST be an observable behavior the user can perform weekly/daily, expressed in real-world units: "
     "sessions/week, days/week, nights/week, portions/day, litres/day, or percent. "
     "Use the provided behavior_context (labels, units, direction) to decide what to increase, maintain, or reduce. "
+    "Skip any KR that would simply 'maintain' the current habit; only include behaviors that need to change versus the reported answers."
     "Forbidden terms in KR text: 'score', 'adherence', 'priority action(s)'. "
     "Prefer small, realistic progressions and specific habits (e.g., add a veg portion at lunch, 10‑min mobility after training, 2L water/day). "
     "Return JSON only. Within text fields, write plain-English habit descriptions."
@@ -202,6 +220,173 @@ def _sanitize_kr_phrasing(pillar_slug: str, data: dict) -> None:
             # rewrite phrasing into a habit statement while keeping units
             unit_suffix = f" ({unit})" if unit else ""
             data["krs"][i]["description"] = f"Commit to the target habit each week: {label}{unit_suffix}"
+
+def _infer_unit_from_text(desc: str) -> str | None:
+    if not desc:
+        return None
+    text = desc.lower()
+    hints = {
+        "hours/night": "hours/night",
+        "hours per night": "hours/night",
+        "nights/week": "nights/week",
+        "nights per week": "nights/week",
+        "sessions/week": "sessions/week",
+        "sessions per week": "sessions/week",
+        "days/week": "days/week",
+        "days per week": "days/week",
+        "per week": "per week",
+        "portions/day": "portions/day",
+        "portions per day": "portions/day",
+        "l/day": "L/day",
+        "litres per day": "L/day",
+        "%": "%",
+        "percent": "%",
+    }
+    for hint, unit in hints.items():
+        if hint in text:
+            return unit
+    return None
+
+_NUMBER_WORDS = {
+    "zero": 0,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+    "twenty": 20,
+    "thirty": 30,
+    "forty": 40,
+    "fifty": 50,
+    "sixty": 60,
+    "seventy": 70,
+    "eighty": 80,
+    "ninety": 90,
+}
+
+
+def _infer_numbers_from_text(desc: str) -> list[float]:
+    if not desc:
+        return []
+    matches = re.findall(r"\d+(?:\.\d+)?", desc)
+    numbers = [float(m) for m in matches]
+    if numbers:
+        return numbers
+    words = re.findall(r"[a-z]+", desc.lower())
+    for w in words:
+        if w in _NUMBER_WORDS:
+            numbers.append(float(_NUMBER_WORDS[w]))
+    return numbers
+
+def _normalize_phrase(text: str | None) -> str:
+    if not text:
+        return ""
+    text = text.replace("&", " and ")
+    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+
+
+def _guess_concept_from_description(pillar_slug: str, desc: str) -> str | None:
+    if not desc:
+        return None
+    text = _normalize_phrase(desc)
+    for key, meta in (_GUIDE.get(pillar_slug, {}) or {}).items():
+        label = _normalize_phrase(meta.get("label"))
+        if label and label in text:
+            return key
+        slug = _normalize_phrase(key.replace("_", " "))
+        if slug and slug in text:
+            return key
+    return None
+
+def _enrich_kr_defaults(pillar_slug: str, kr: dict, concept_scores: dict[str, float], state_answers: dict[str, float]) -> dict:
+    guide = _GUIDE.get(pillar_slug, {})
+    concept_key = _normalize_concept_key((kr.get("concept_key") or "").split(".")[-1]) or _guess_concept_from_description(pillar_slug, kr.get("description", ""))
+    meta = guide.get(concept_key)
+    if meta:
+        kr.setdefault("metric_label", meta.get("label"))
+        kr.setdefault("unit", meta.get("unit"))
+    if kr.get("unit") is None:
+        inferred_unit = _infer_unit_from_text(kr.get("description", ""))
+        if inferred_unit:
+            kr["unit"] = inferred_unit
+    if kr.get("metric_label") is None and kr.get("unit"):
+        kr["metric_label"] = kr["unit"]
+
+    text = kr.get("description", "") or ""
+    numbers = _infer_numbers_from_text(text)
+    unit = kr.get("unit") or ""
+    unit_nums: list[float] = []
+    if unit:
+        pattern = re.escape(unit)
+        matches = re.findall(r"(\d+(?:\.\d+)?)\s*" + pattern, text)
+        unit_nums = [float(m) for m in matches]
+    nums = unit_nums or numbers
+    lower_text = text.lower()
+
+    if kr.get("target_num") is None and nums:
+        kr["target_num"] = nums[-1]
+
+    if kr.get("baseline_num") is None:
+        # Highest priority: numeric answer we captured from the assessment dialogue
+        state_val = state_answers.get(concept_key) if concept_key else None
+        if state_val is not None:
+            kr["baseline_num"] = state_val
+            kr["_baseline_source"] = "state"
+            _baseline_debug("baseline_from_state", {"concept": concept_key, "value": state_val})
+        # Next: concept score map (normalized 0-100) — only if present and numeric
+        elif concept_key and concept_key in concept_scores and concept_scores[concept_key] is not None:
+            try:
+                kr["baseline_num"] = float(concept_scores[concept_key])
+                kr["_baseline_source"] = "concept_score"
+                _baseline_debug("baseline_from_concept_score", {"concept": concept_key, "value": kr["baseline_num"]})
+            except Exception as exc:
+                _baseline_debug("concept_score_cast_failed", {"concept": concept_key, "value": concept_scores.get(concept_key), "err": str(exc)})
+                pass
+        # Next: if description has multiple numbers, take the first as baseline
+        elif len(nums) > 1:
+            kr["baseline_num"] = nums[0]
+            kr["_baseline_source"] = "text_first"
+            _baseline_debug("baseline_from_text_first", {"concept": concept_key, "value": kr["baseline_num"], "text": text})
+        # Next: any single number found
+        elif numbers:
+            kr["baseline_num"] = numbers[0]
+            kr["_baseline_source"] = "text_any"
+            _baseline_debug("baseline_from_text_any", {"concept": concept_key, "value": kr["baseline_num"], "text": text})
+        else:
+            kr["baseline_num"] = 0
+            kr["_baseline_source"] = "default_zero"
+            _baseline_debug("baseline_not_found_default_zero", {"concept": concept_key, "description": text})
+
+    if kr.get("target_num") is None and kr.get("baseline_num") is not None:
+        direction = (meta or {}).get("low", "increase")
+        delta = 1
+        base = float(kr["baseline_num"])
+        kr["target_num"] = max(0, base - delta) if direction == "reduce" else base + delta
+
+    if kr.get("actual_num") is None:
+        if concept_key and concept_key in state_answers:
+            kr["actual_num"] = state_answers[concept_key]
+        else:
+            kr["actual_num"] = kr.get("baseline_num")
+
+    if not kr.get("concept_key") and concept_key:
+        kr["concept_key"] = concept_key
+
+    return kr
 
 # Minimal guidance per pillar → concept (label, default unit, preferred direction when score is high/low)
 _GUIDE: dict[str, dict[str, dict[str, str]]] = {
@@ -321,13 +506,23 @@ def _build_state_context_from_models(session: "Session", *, user_id: int, run_id
             q = q.filter(UserConceptState.run_id == run_id)
         q = q.order_by(UserConceptState.id.asc())
         for st, c in q.all():
+            notes = getattr(st, "notes", {}) or {}
+            parsed_val = None
+            parsed_unit = ""
+            if isinstance(notes, dict):
+                pv = notes.get("parsed_value")
+                if isinstance(pv, dict):
+                    parsed_val = pv.get("value")
+                    parsed_unit = pv.get("unit") or ""
             rows_out.append({
                 "concept":   c.code or c.name,
+                "concept_code": _normalize_concept_key(c.code) or _normalize_concept_key(c.name),
                 "question":  st.question or "",
                 "answer":    st.answer or "",
-                "unit":      "",  # no explicit unit in schema; default unit will be inferred from _GUIDE
+                "unit":      parsed_unit or "",
                 "min_val":   c.zero_score,
                 "max_val":   c.max_score,
+                "value_num": parsed_val,
             })
         return rows_out
     except Exception:
@@ -339,7 +534,8 @@ def _build_state_context_from_models(session: "Session", *, user_id: int, run_id
                    COALESCE(ucs.question, '')         AS question_text,
                    COALESCE(ucs.answer, '')           AS answer_text,
                    COALESCE(c.zero_score, NULL)       AS min_val,
-                   COALESCE(c.max_score,  NULL)       AS max_val
+                   COALESCE(c.max_score,  NULL)       AS max_val,
+                   ucs.notes                          AS notes_json
             FROM user_concept_state ucs
             JOIN concepts c ON ucs.concept_id = c.id
             WHERE ucs.user_id = :uid
@@ -348,20 +544,67 @@ def _build_state_context_from_models(session: "Session", *, user_id: int, run_id
             ORDER BY ucs.id ASC
         """
         try:
-            rs = session.execute(_sql_text(sql), params).fetchall()
+            rs = session.execute(_sql_text(sql), params)
             for r in rs:
+                concept_key = r["concept_key"] or (r["question_text"] or "")
+                norm_code = _normalize_concept_key(concept_key)
+                notes_obj = r["notes_json"]
+                parsed_val = None
+                parsed_unit = ""
+                if isinstance(notes_obj, dict):
+                    pv = notes_obj.get("parsed_value")
+                elif isinstance(notes_obj, str) and notes_obj.strip():
+                    try:
+                        notes_dict = json.loads(notes_obj)
+                        pv = notes_dict.get("parsed_value") if isinstance(notes_dict, dict) else None
+                    except Exception:
+                        pv = None
+                else:
+                    pv = None
+                if isinstance(pv, dict):
+                    parsed_val = pv.get("value")
+                    parsed_unit = pv.get("unit") or ""
+
                 rows_out.append({
-                    "concept":  r[1],
-                    "question": r[2] or "",
-                    "answer":   r[3] or "",
-                    "unit":     "",
-                    "min_val":  r[4],
-                    "max_val":  r[5],
+                    "concept":  concept_key,
+                    "concept_code": norm_code,
+                    "question": r["question_text"] or "",
+                    "answer":   r["answer_text"] or "",
+                    "unit":     parsed_unit or "",
+                    "min_val":  r["min_val"],
+                    "max_val":  r["max_val"],
+                    "value_num": parsed_val,
                 })
         except Exception:
             pass
         return rows_out
 
+
+def _answers_from_state_context(rows: list[dict]) -> dict[str, float]:
+    out: dict[str, float] = {}
+    for row in rows:
+        concept = _normalize_concept_key(row.get("concept_code") or row.get("concept"))
+        if not concept:
+            _baseline_debug("missing_concept_code", row)
+            continue
+        val = row.get("value_num")
+        if val is not None:
+            try:
+                out[concept] = float(val)
+                continue
+            except Exception as exc:
+                _baseline_debug("value_num_cast_failed", {"concept": concept, "value": val, "err": str(exc)})
+        ans = row.get("answer") or ""
+        try:
+            nums = _infer_numbers_from_text(ans)
+            if nums:
+                out[concept] = nums[-1]
+            else:
+                _baseline_debug("no_numeric_in_answer", {"concept": concept, "answer": ans})
+        except Exception as exc:
+            _baseline_debug("infer_numbers_error", {"concept": concept, "answer": ans, "err": str(exc)})
+            continue
+    return out
 
 def make_structured_okr_llm(
     pillar_slug: str,
@@ -409,6 +652,7 @@ def make_structured_okr_llm(
         state_block = "\n".join(st_lines)
     else:
         state_block = "state_context: []"
+    state_answers = _answers_from_state_context(st_rows)
 
     # (Optional) keep the simpler qa_context for transparency, if present
     qa_rows = qa_context or []
@@ -437,6 +681,8 @@ def make_structured_okr_llm(
             "- Return 2–4 Key Results that are weekly/daily habits with concrete units (sessions/week, portions/day, L/day, nights/week, days/week, or %).\n"
             "- Forbidden in KR text: 'score', 'adherence', 'priority action(s)'. Use behaviors and units instead.\n"
             "- Prefer small, realistic progressions derived from the stated answers (e.g., from '1 session/week' move to '3 sessions/week').\n"
+            "- DO NOT include a Key Result if the user is already at the recommended level or no improvement is needed; fewer KRs are preferred over maintenance targets.\n"
+            "- Reuse the units mentioned in the user's answers (state_context meta); do not switch to different units like percentages if the question used days/week or portions/day.\n"
             "Return JSON only. Do not include markdown or code fences."
         ),
     }
@@ -489,6 +735,7 @@ def make_structured_okr_llm(
                     "baseline_num": None,
                     "target_num": None,
                     "score": None,
+                    "concept_key": None,
                 })
             elif isinstance(kr, dict):
                 normalized_krs.append({
@@ -499,6 +746,7 @@ def make_structured_okr_llm(
                     "baseline_num": kr.get("baseline_num"),
                     "target_num": kr.get("target_num"),
                     "score": kr.get("score"),
+                    "concept_key": kr.get("concept_key"),
                 })
             else:
                 # Fallback for unexpected types: coerce to string description
@@ -510,8 +758,12 @@ def make_structured_okr_llm(
                     "baseline_num": None,
                     "target_num": None,
                     "score": None,
+                    "concept_key": None,
                 })
-        data["krs"] = normalized_krs
+        data["krs"] = [
+            _enrich_kr_defaults(pillar_slug, kr, concept_scores or {}, state_answers)
+            for kr in normalized_krs
+        ]
         _sanitize_kr_phrasing(pillar_slug, data)
         # Store EXACTLY what we sent to the LLM (no footer, no mutation)
         data["prompt_text"] = prompt_text
@@ -529,6 +781,10 @@ def make_structured_okr_llm(
         data = _fallback_structured_okr(pillar_slug, pillar_score)
         # Store EXACTLY what we intended to send (even though we fell back)
         data["prompt_text"] = prompt_text
+        data["krs"] = [
+            _enrich_kr_defaults(pillar_slug, kr, concept_scores or {}, state_answers)
+            for kr in data.get("krs", [])
+        ]
         _sanitize_kr_phrasing(pillar_slug, data)
         return data
 
@@ -659,6 +915,17 @@ def upsert_objective_from_pillar(
         if llm_prompt is not None:
             obj.llm_prompt = llm_prompt
         session.flush()
+
+    # Remove any older objectives for the same quarter/user/pillar so only the latest set remains
+    session.query(OKRObjective)\
+        .filter(
+            OKRObjective.cycle_id == cycle.id,
+            OKRObjective.owner_user_id == user_id,
+            OKRObjective.pillar_key == pillar_key,
+            OKRObjective.id != obj.id,
+        )\
+        .delete(synchronize_session=False)
+    session.flush()
 
     return obj
 
@@ -812,6 +1079,8 @@ def sync_okrs_for_completed_pillar(
 
     # 2) upsert KRs
     if kr_specs:
+        session.query(OKRKeyResult).filter(OKRKeyResult.objective_id == obj.id).delete(synchronize_session=False)
+        session.flush()
         for spec in kr_specs:
             upsert_kr(
                 session,
@@ -883,12 +1152,6 @@ def generate_and_update_okrs_for_pillar(
     except Exception:
         pass
     state_ctx = _build_state_context_from_models(session, user_id=user_id, run_id=run_id_for_pillar, pillar_slug=pillar_key)
-    print(f"[OKR][DEBUG] pillar={pillar_key} run_id={run_id_for_pillar} user_id={user_id} state_ctx_rows={len(state_ctx)}")
-    if not state_ctx:
-        print("[OKR][DEBUG] state_ctx is empty — check user_concept_state rows for this user/run/pillar.")
-    else:
-        _prev = {k: state_ctx[0].get(k) for k in ("concept","question","answer","min_val","max_val")}
-        print(f"[OKR][DEBUG] state_ctx first: { _prev }")
     okr_struct = make_structured_okr_llm(
         pillar_slug=pillar_key,
         pillar_score=pillar_score,
@@ -914,21 +1177,33 @@ def generate_and_update_okrs_for_pillar(
             normalised_krs.append(norm)
         else:
             normalised_krs.append(_capitalise(kr))
-    okr_struct["krs"] = normalised_krs
-
-    # Simple on-screen debug of what we'll write to llm_prompt
-    _pt = okr_struct.get("prompt_text") or ""
-    try:
-        _preview = _pt[:240].replace("\n", " ")
-    except Exception:
-        _preview = str(_pt)[:240]
-    print(f"[LLM_PROMPT] pillar={pillar_key} user_id={user_id} len={len(_pt)} preview=\"{_preview}\"")
+    processed_krs: list = []
+    for kr in normalised_krs:
+        base = kr.get("baseline_num")
+        target = kr.get("target_num")
+        try:
+            if base is not None and target is not None and abs(float(base) - float(target)) < 1e-6:
+                continue
+        except Exception:
+            pass
+        processed_krs.append(kr)
+    okr_struct["krs"] = processed_krs
 
     # Build a nice display block (keeps your current UX)
     def _kr_desc(kr):
         if isinstance(kr, dict):
             return kr.get("description") or ""
         return str(kr)
+
+    def _kr_notes_blob(kr: dict) -> str | None:
+        payload: dict[str, Any] = {}
+        ck = (kr.get("concept_key") or "").strip()
+        if ck:
+            payload["concept_key"] = ck
+        src = (kr.get("_baseline_source") or "").strip()
+        if src:
+            payload["baseline_source"] = src
+        return json.dumps(payload) if payload else None
     pretty_text = (
         f"🧭 {quarter_label or DEFAULT_OKR_QUARTER} Objective: {okr_struct['objective']}\n"
         "Key Results:\n" + "\n".join(
@@ -953,11 +1228,11 @@ def generate_and_update_okrs_for_pillar(
                 "unit": kr.get("unit"),
                 "baseline_num": kr.get("baseline_num"),
                 "target_num": kr.get("target_num"),
-                "actual_num": None,
+                "actual_num": kr.get("actual_num"),
                 "score": kr.get("score"),
                 "weight": 1.0,
                 "status": "active",
-                "notes": None,
+                "notes": _kr_notes_blob(kr),
                 "add_progress_entry": write_progress_entries,
                 "progress_note": "Initialized from assessment",
                 "progress_source": "assessment",

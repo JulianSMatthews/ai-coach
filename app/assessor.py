@@ -297,20 +297,31 @@ def _format_acknowledgement(msg: str, state: dict, pillar: str | None, user: Use
         body = f"{body}\n\n{progress}"
     return body
 
-def _pillar_overview_message(user: User) -> str:
-    name = (getattr(user, "first_name", "") or "").strip()
-    greeting = f"*{name}*" if name else "there"
-    return (
-        f"Hey {greeting}! 😊 Before we dive in, here’s what to expect. "
-        "We’ll chat through four quick wellbeing pillars:\n\n"
-        "• *Nutrition* – what you’re eating and drinking day to day\n"
-        "• *Training* – how you’re moving and staying active\n"
-        "• *Resilience* – how you’re feeling emotionally and coping with stress "
-        "(share only what feels comfortable; we’ll keep it light)\n"
-        "• *Recovery* – how you’re resting and recharging between busy stretches\n\n"
-        "Each pillar has just a few questions about the past 7 days. Type *redo* to change an answer "
-        "or *restart* to begin again at any time. Ready to get started?"
-    )
+def _user_has_full_name(user: User) -> bool:
+    first = (getattr(user, "first_name", "") or "").strip()
+    last = (getattr(user, "surname", "") or "").strip()
+    return bool(first and last)
+
+def _capture_name_from_text(db_session, user: User, text: str) -> bool:
+    tokens = [t for t in (text or "").replace(",", " ").split() if t.strip()]
+    if len(tokens) < 2:
+        return False
+    first = tokens[0].strip()
+    last = " ".join(tokens[1:]).strip()
+    if not first or not last:
+        return False
+    user.first_name = first
+    user.surname = last
+    try:
+        user.updated_on = datetime.utcnow()
+    except Exception:
+        pass
+    try:
+        db_session.commit()
+    except Exception:
+        db_session.rollback()
+        return False
+    return True
 
 def _compose_ack_with_message(ack_text: str | None, message: str | None) -> tuple[str, str]:
     """
@@ -557,11 +568,16 @@ def _is_negative(text: str) -> bool:
 
 def _consent_intro_message(user: User) -> str:
     first_name = (getattr(user, "first_name", None) or "").strip()
-    greet = f"Hi {first_name}!" if first_name else "Hi!"
+    greet = f"Hi {first_name}! " if first_name else "Hi! "
     return (
-        f"{greet} Before we start, please confirm you consent to a short health assessment over WhatsApp. "
-        "We’ll ask brief questions about Nutrition, Training, Resilience and Recovery. "
-        "Your replies help tailor feedback. Reply YES to consent and start, or NO to opt out."
+        f"{greet}Before we start, please confirm you consent to a short health assessment over WhatsApp. "
+        "We’ll ask quick questions about four wellbeing pillars:\n\n"
+        "• *Nutrition* – what you’re eating and drinking day to day\n"
+        "• *Training* – how you’re moving and staying active\n"
+        "• *Resilience* – how you’re feeling emotionally and coping with stress (share only what feels comfortable; we’ll keep it light)\n"
+        "• *Recovery* – how you’re resting and recharging between busy stretches\n\n"
+        "Each pillar covers the past 7 days. You can type *redo* to change an answer or *restart* to begin again at any time.\n\n"
+        "Reply *YES* to consent and continue, or *NO* to opt out."
     )
 
 def _touch_user_timestamps(s, user: User) -> None:
@@ -1280,6 +1296,9 @@ def start_combined_assessment(user: User):
 
         # Consent gate: fetch fresh user in this session to avoid stale consent flag
         u = s.query(User).get(getattr(user, "id", None)) or user
+        if not _user_has_full_name(u):
+            _send_to_user(u, "Before we begin, please reply with your first and last name (e.g., 'Sam Smith'). Once we have that, I'll walk you through a few quick consent steps and the first question.")
+            return False
 
         # Accept any of these as valid consent signals (back-compat safe):
         # - consent_given is True
@@ -1318,7 +1337,6 @@ def start_combined_assessment(user: User):
             "question_seq": 0,
             "question_numbers": {},
             "total_questions": 0,
-            "intro_sent": False,
         }
         sess = AssessSession(user_id=user.id, domain="combined", is_active=True, turn_count=0, state=state)
         s.add(sess); s.commit(); s.refresh(sess)
@@ -1330,12 +1348,6 @@ def start_combined_assessment(user: User):
 
         # Start run
         _start_or_get_run(s, user, state)
-
-        if not state.get("intro_sent"):
-            _send_to_user(user, _pillar_overview_message(user))
-            state["intro_sent"] = True
-            _commit_state(s, sess, state)
-
 
         # First concept + main question
         pillar = "nutrition"
@@ -1372,8 +1384,17 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
     with SessionLocal() as s:
         _touch_user_timestamps(s, user)
 
-        # If consent hasn't been recorded in DB, interpret this message as the consent response.
+        # Ensure name captured before proceeding
         db_user = s.query(User).get(getattr(user, "id", None)) or s.merge(user)
+        if not _user_has_full_name(db_user):
+            if _capture_name_from_text(s, db_user, user_text):
+                first = (getattr(db_user, "first_name", "") or "").strip()
+                _send_to_user(user, f"Thanks {first}! Reply 'start' to kick things off.")
+            else:
+                _send_to_user(user, "Please include both first and last name (e.g., 'Sam Smith') so we can continue.")
+            return True
+
+        # If consent hasn't been recorded in DB, interpret this message as the consent response.
         has_consent = bool(getattr(db_user, "consent_given", False)) \
                       or bool(getattr(db_user, "consent_at", None)) \
                       or bool(getattr(db_user, "consent_yes_at", None))
@@ -1396,7 +1417,9 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     s.commit()
                 except Exception:
                     s.rollback()
-                _send_to_user(user, "Thank you — consent recorded. Let’s begin.\nWe’ll do a quick check on Nutrition, Training, Resilience, then Recovery. Short questions—answer in your own words.")
+                confirm_name = (getattr(db_user, "first_name", "") or "").strip()
+                prefix = f"Thanks {confirm_name}! " if confirm_name else "Thanks! "
+                _send_to_user(user, f"{prefix}Your consent is recorded — I’ll start with Nutrition now. These are short check-in questions about the last 7 days; you can type *redo* or *restart* any time.")
                 return start_combined_assessment(user)
             elif _is_negative(msg):
                 _send_to_user(user, "No problem. If you change your mind, just reply YES to begin.")

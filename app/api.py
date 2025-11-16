@@ -70,6 +70,7 @@ ADMIN_USAGE = (
     "admin start <phone>\n"
     "admin status <phone>\n"
     "admin dashboard <phone>\n"
+    "admin progress <phone>\n"
     "admin detailed <phone>\n"
     "admin summary [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
     "admin okr-summary [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
@@ -430,6 +431,18 @@ def _norm_phone(s: str) -> str:
     return s
 
 
+def _admin_lookup_user_by_phone(session, phone: str, admin_user: User) -> User | None:
+    """
+    Fetch a user for admin WhatsApp commands, restricting non-global admins to their club.
+    Global admins (club_id=None) can target any club.
+    """
+    q = select(User).where(User.phone == phone)
+    club_id = getattr(admin_user, "club_id", None)
+    if club_id is not None:
+        q = q.where(User.club_id == club_id)
+    return session.execute(q).scalar_one_or_none()
+
+
 def _user_admin_role(u: User) -> str:
     try:
         role = (getattr(u, "admin_role", None) or "").strip().lower()
@@ -587,17 +600,41 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 print(f"[wa admin create] start failed: {e!r}")
             send_whatsapp(to=admin_user.phone, text=f"Created user id={u.id} {display_full_name(u)} ({u.phone})")
             return True
+        if cmd == "progress":
+            if len(parts) < 3:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin progress <phone>")
+                return True
+            target_phone = _norm_phone(parts[2])
+            with SessionLocal() as s:
+                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
+                if not u:
+                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
+                    send_whatsapp(
+                        to=admin_user.phone,
+                        text=f"User with phone {target_phone} not found{scope_txt}."
+                    )
+                    return True
+            try:
+                from .reporting import generate_progress_report_html
+                generate_progress_report_html(u.id)
+                url = _public_report_url(u.id, "progress.html")
+                send_whatsapp(to=admin_user.phone, text=f"Progress report for {display_full_name(u)}: {url}")
+            except Exception as e:
+                send_whatsapp(to=admin_user.phone, text=f"Failed to generate progress report: {e}")
+            return True
         elif cmd == "start":
             if len(parts) < 3:
                 send_whatsapp(to=admin_user.phone, text="Usage: admin start <phone>")
                 return True
             target_phone = _norm_phone(parts[2])
             with SessionLocal() as s:
-                u = s.execute(
-                    select(User).where(User.phone == target_phone, User.club_id == admin_club_id)
-                ).scalar_one_or_none()
+                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
                 if not u:
-                    send_whatsapp(to=admin_user.phone, text=f"User with phone {target_phone} not found in your club")
+                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
+                    send_whatsapp(
+                        to=admin_user.phone,
+                        text=f"User with phone {target_phone} not found{scope_txt}."
+                    )
                     return True
             start_combined_assessment(u)
             send_whatsapp(to=admin_user.phone, text=f"Started assessment for {display_full_name(u)} ({u.phone})")
@@ -608,11 +645,13 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 return True
             target_phone = _norm_phone(parts[2])
             with SessionLocal() as s:
-                u = s.execute(
-                    select(User).where(User.phone == target_phone, User.club_id == admin_club_id)
-                ).scalar_one_or_none()
+                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
                 if not u:
-                    send_whatsapp(to=admin_user.phone, text=f"User with phone {target_phone} not found in your club")
+                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
+                    send_whatsapp(
+                        to=admin_user.phone,
+                        text=f"User with phone {target_phone} not found{scope_txt}."
+                    )
                     return True
                 active = get_active_domain(u)
                 latest_run = s.execute(
@@ -627,11 +666,13 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 return True
             target_phone = _norm_phone(parts[2])
             with SessionLocal() as s:
-                u = s.execute(
-                    select(User).where(User.phone == target_phone, User.club_id == admin_club_id)
-                ).scalar_one_or_none()
+                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
                 if not u:
-                    send_whatsapp(to=admin_user.phone, text=f"User with phone {target_phone} not found in your club")
+                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
+                    send_whatsapp(
+                        to=admin_user.phone,
+                        text=f"User with phone {target_phone} not found{scope_txt}."
+                    )
                     return True
                 latest_run = s.execute(
                     select(AssessmentRun).where(AssessmentRun.user_id == u.id).order_by(desc(AssessmentRun.id))
@@ -658,15 +699,19 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
             if len(parts) < 3:
                 send_whatsapp(to=admin_user.phone, text="Usage: admin detailed <phone|me>")
                 return True
-            target_phone = _norm_phone(parts[2])
-            with SessionLocal() as s:
-                u = s.execute(
-                    select(User).where(User.phone == target_phone, User.club_id == admin_club_id)
-                ).scalar_one_or_none()
-                if not u and parts[2].lower() in {"me", "my", "self"}:
-                    u = admin_user
+            arg = parts[2].lower()
+            if arg in {"me", "my", "self"}:
+                u = admin_user
+            else:
+                target_phone = _norm_phone(parts[2])
+                with SessionLocal() as s:
+                    u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
                 if not u:
-                    send_whatsapp(to=admin_user.phone, text=f"User with phone {parts[2]} not found in your club")
+                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
+                    send_whatsapp(
+                        to=admin_user.phone,
+                        text=f"User with phone {target_phone} not found{scope_txt}."
+                    )
                     return True
             try:
                 # Generate the detailed (grouped) PDF via reporting module
@@ -1010,6 +1055,15 @@ async def twilio_inbound(request: Request):
             except Exception:
                 pass
             send_dashboard_link(user)
+            return Response(content="", media_type="text/plain", status_code=200)
+        if lower_body == "progress":
+            try:
+                from .reporting import generate_progress_report_html
+                path = generate_progress_report_html(user.id)
+                url = _public_report_url(user.id, "progress.html")
+                send_whatsapp(to=user.phone, text=f"Your progress report: {url}")
+            except Exception as e:
+                send_whatsapp(to=user.phone, text=f"Couldn't refresh your progress report: {e}")
             return Response(content="", media_type="text/plain", status_code=200)
 
         # Route to assessor

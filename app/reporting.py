@@ -14,10 +14,27 @@ from typing import Optional, Dict, Any, List, Tuple
 import textwrap
 
 from .db import SessionLocal
-from .models import AssessmentRun, PillarResult, User, JobAudit, UserConceptState, AssessmentTurn
+from .okr import (
+    _build_state_context_from_models,
+    _answers_from_state_context,
+    _guess_concept_from_description,
+    _normalize_concept_key,
+)
+from .models import (
+    AssessmentRun,
+    PillarResult,
+    User,
+    JobAudit,
+    UserConceptState,
+    AssessmentTurn,
+    OKRCycle,
+    OKRObjective,
+    OKRKeyResult,
+)
 
 # For raw SQL fallback when OKR models are unavailable
 from sqlalchemy import text, select
+from sqlalchemy.orm import selectinload
 
 # Optional OKR tables – support both naming variants in models.py
 OkrObjective = None  # type: ignore
@@ -40,6 +57,7 @@ AUDIT_TO_DB = os.getenv("AUDIT_TO_DB", "1") == "1"
 BRAND_NAME = (os.getenv("BRAND_NAME") or "Purple Clubs").strip() or "Purple Clubs"
 BRAND_YEAR = os.getenv("BRAND_YEAR") or str(datetime.utcnow().year)
 BRAND_FOOTER = f"© {BRAND_YEAR} {BRAND_NAME}"
+DEBUG_PROGRESS_BASELINES = os.getenv("DEBUG_PROGRESS_BASELINES", "0") == "1"
 
 def _audit(job: str, status: str = "ok", payload: Dict[str, Any] | None = None, error: str | None = None) -> None:
     if AUDIT_TO_CONSOLE:
@@ -87,6 +105,27 @@ def _short_text(text: str | None, limit: int = 200) -> str:
     if len(txt) <= limit:
         return txt
     return txt[: limit - 1].rstrip() + "…"
+
+
+def _kr_notes_dict(notes: str | None) -> dict:
+    if not notes:
+        return {}
+    try:
+        data = json.loads(notes)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {}
+
+
+def _progress_debug(message: str, payload: dict | None = None) -> None:
+    if not DEBUG_PROGRESS_BASELINES:
+        return
+    try:
+        print(f"[REPORT][KR] {message} :: {payload or {}}")
+    except Exception:
+        pass
 
 
 def _collect_run_dialogue(run_id: int, limit_per_pillar: int = 3) -> dict[str, list[dict]]:
@@ -634,14 +673,6 @@ def _fetch_okrs_for_run(run_id: int) -> Dict[str, Dict[str, Any]]:
 
                             enriched = base_txt.strip() if base_txt else ''
                             if enriched:
-                                b = baseline_val
-                                t = target_val
-                                if b and t:
-                                    enriched = f"{enriched} (from {_fmt_num(b)}{_fmt_unit(unit_label, per_label)} to {_fmt_num(t)}{_fmt_unit(unit_label, per_label)})"
-                                elif t:
-                                    enriched = f"{enriched} (target {_fmt_num(t)}{_fmt_unit(unit_label, per_label)})"
-                                elif b:
-                                    enriched = f"{enriched} (baseline {_fmt_num(b)}{_fmt_unit(unit_label, per_label)})"
                                 krs.append(enriched)
                         out[pk] = {'objective': objective_text, 'krs': krs, 'llm_prompt': getattr(obj, 'llm_prompt', None)}
             # Audit successful fetch just before return
@@ -871,15 +902,7 @@ def _fetch_okrs_for_run(run_id: int) -> Dict[str, Dict[str, Any]]:
                                 return ''
 
                             if kr_txt:
-                                if b and t:
-                                    disp = f"{kr_txt} (from {_fmt_num(b)}{_fmt_unit(u, p)} to {_fmt_num(t)}{_fmt_unit(u, p)})"
-                                elif t:
-                                    disp = f"{kr_txt} (target {_fmt_num(t)}{_fmt_unit(u, p)})"
-                                elif b:
-                                    disp = f"{kr_txt} (baseline {_fmt_num(b)}{_fmt_unit(u, p)})"
-                                else:
-                                    disp = kr_txt
-                                krs.append(disp)
+                                krs.append(kr_txt)
                         if pk:
                             out[pk] = {"objective": obj_txt, "krs": krs, "llm_prompt": prompt_txt}
                 # Add a tag indicating which path was used
@@ -2072,6 +2095,7 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
         _score_row("Recovery", int(getattr(pr_map.get("recovery"), "overall", None) or 0) if pr_map.get("recovery") else None),
     ]
     score_panel = "".join([row for row in score_rows if row]) or "<p class='score-empty'>Scores will appear here once available.</p>"
+    reported_at = datetime.utcnow().strftime("%d %b %Y %H:%M UTC")
     html_doc = f"""<!DOCTYPE html>
 <html lang='en'>
 <head>
@@ -2160,7 +2184,8 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
      {''.join(sections)}
     </div>
   </div>
- </body>
+</body>
+<div class='report-footer'>Reported on {reported_at}</div>
 </html>"""
 
     out_dir = _reports_root_for_user(user.id)
@@ -2211,3 +2236,218 @@ def generate_assessment_summary_pdf(start: date | str, end: date | str, *, club_
         _audit("summary_report_generate", "error", {"start": start_str, "end": end_str}, error=str(e))
         raise
 from .llm import _llm
+def _collect_progress_rows(user_id: int) -> list[dict]:
+    rows: list[dict] = []
+    with SessionLocal() as s:
+        objectives = (
+            s.query(OKRObjective)
+             .filter(OKRObjective.owner_user_id == user_id)
+             .options(selectinload(OKRObjective.key_results), selectinload(OKRObjective.cycle))
+             .order_by(OKRObjective.cycle_id.asc(), OKRObjective.pillar_key.asc(), OKRObjective.created_at.asc())
+             .all()
+        )
+        state_cache: dict[int, dict[str, float]] = {}
+        for obj in objectives:
+            cycle = obj.cycle
+            answers: dict[str, float] = {}
+            src_pillar_id = getattr(obj, "source_pillar_id", None)
+            if src_pillar_id:
+                cached = state_cache.get(src_pillar_id)
+                if cached is None:
+                    try:
+                        pr = s.get(PillarResult, src_pillar_id)
+                    except Exception:
+                        pr = None
+                    if pr:
+                        try:
+                            ctx_rows = _build_state_context_from_models(
+                                s,
+                                user_id=getattr(obj, "owner_user_id", user_id),
+                                run_id=getattr(pr, "run_id", None),
+                                pillar_slug=obj.pillar_key,
+                            )
+                            cached = _answers_from_state_context(ctx_rows)
+                        except Exception:
+                            cached = {}
+                    else:
+                        cached = {}
+                    state_cache[src_pillar_id] = cached
+                answers = cached or {}
+
+            kr_payload = []
+            for kr in (getattr(obj, "key_results", []) or []):
+                notes_dict = _kr_notes_dict(getattr(kr, "notes", None))
+                concept_key = notes_dict.get("concept_key")
+                if concept_key:
+                    concept_key = concept_key.split(".")[-1]
+                if not concept_key:
+                    inferred = _guess_concept_from_description(obj.pillar_key, kr.description or "")
+                    concept_key = inferred
+                concept_key = _normalize_concept_key(concept_key) if concept_key else None
+                state_val = answers.get(concept_key) if concept_key and answers else None
+                baseline_val = state_val if state_val is not None else kr.baseline_num
+                actual_val = state_val if state_val is not None else (kr.actual_num if kr.actual_num is not None else kr.baseline_num)
+                _progress_debug(
+                    "kr_baseline_choice",
+                    {
+                        "objective_id": getattr(obj, "id", None),
+                        "kr_id": getattr(kr, "id", None),
+                        "description": kr.description,
+                        "concept_key": concept_key,
+                        "notes_concept": notes_dict.get("concept_key"),
+                        "state_val": state_val,
+                        "stored_baseline": kr.baseline_num,
+                        "stored_actual": kr.actual_num,
+                        "final_baseline": baseline_val,
+                        "final_actual": actual_val,
+                    },
+                )
+                kr_payload.append({
+                    "description": kr.description or "",
+                    "baseline": baseline_val,
+                    "target": kr.target_num,
+                    "unit": kr.unit,
+                    "metric_label": kr.metric_label,
+                    "actual": actual_val,
+                })
+
+            rows.append({
+                "pillar": obj.pillar_key,
+                "objective": obj.objective or "",
+                "krs": kr_payload,
+                "cycle_label": getattr(cycle, "title", None) or f"FY{getattr(cycle, 'year', '')} {getattr(cycle, 'quarter', '')}",
+                "cycle_start": getattr(cycle, "starts_on", None),
+                "cycle_end": getattr(cycle, "ends_on", None),
+            })
+    rows.sort(key=lambda r: (r.get("cycle_start") or datetime.min, r.get("pillar")))
+    return rows
+
+def _format_cycle_range(start: datetime | None, end: datetime | None) -> str:
+    if isinstance(start, datetime) and isinstance(end, datetime):
+        return f"{start.strftime('%d %b %Y')} – {end.strftime('%d %b %Y')}"
+    if isinstance(start, datetime):
+        return start.strftime("%d %b %Y")
+    if isinstance(end, datetime):
+        return end.strftime("%d %b %Y")
+    return ""
+
+def _format_number(val: float | None) -> str:
+    if val is None:
+        return ""
+    if isinstance(val, (int, float)) and float(val).is_integer():
+        return str(int(val))
+    return f"{val:.2f}".rstrip("0").rstrip(".")
+
+def _render_progress_bar(current: float | None, target: float | None, baseline: float | None = None) -> str:
+    try:
+        cur = float(current) if current is not None else None
+        tgt = float(target) if target is not None else None
+        base = float(baseline) if baseline is not None else None
+    except Exception:
+        cur = tgt = base = None
+    percent = 0.0
+    if cur is not None and tgt is not None and base is not None:
+        span = tgt - base
+        if abs(span) > 1e-9:
+            progress = cur - base
+            percent = max(0, min(100, (progress / span) * 100))
+        else:
+            percent = 0.0
+    elif cur is not None and tgt:
+        if tgt != 0:
+            percent = max(0, min(100, (cur / tgt) * 100))
+        else:
+            percent = 0.0
+    return (
+        "<div class='progress-track'>"
+        f"<div class='progress-fill' style='width:{percent}%;'></div>"
+        "</div>"
+    )
+
+def _render_kr_table(krs: list[dict]) -> str:
+    if not krs:
+        return "<p class='empty-kr'>No key results captured yet.</p>"
+    rows = []
+    for kr in krs:
+        desc = html.escape(kr.get("description") or "Key Result")
+        baseline = _format_number(kr.get("baseline"))
+        target = _format_number(kr.get("target"))
+        actual = _format_number(kr.get("actual") or kr.get("baseline"))
+        rows.append(
+            "<tr>"
+            f"<td>{desc}</td>"
+            f"<td>{baseline or '–'}</td>"
+            f"<td>{actual or '–'}</td>"
+            f"<td>{target or '–'}</td>"
+            f"<td>{_render_progress_bar(kr.get('actual') if kr.get('actual') is not None else kr.get('baseline'), kr.get('target'), kr.get('baseline'))}</td>"
+            "</tr>"
+        )
+    return (
+        "<table class='kr-table'>"
+        "<thead><tr>"
+        "<th>Description</th><th>Baseline</th><th>Current</th><th>Target</th><th>Progress</th>"
+        "</tr></thead>"
+        f"<tbody>{''.join(rows)}</tbody>"
+        "</table>"
+    )
+
+def generate_progress_report_html(user_id: int) -> str:
+    with SessionLocal() as s:
+        user = s.query(User).filter(User.id == user_id).one_or_none()
+    if not user:
+        raise RuntimeError("User not found")
+    rows = _collect_progress_rows(user_id)
+    reported_at = datetime.utcnow().strftime("%d %b %Y %H:%M UTC")
+    css = """
+    <style>
+      body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; margin:24px; color:#101828; }
+      h1 { margin-bottom: 4px; }
+      .meta { color:#475467; margin-bottom:16px; }
+      .timeline { border-left: 3px solid #d0d5dd; margin-left: 8px; padding-left: 24px; }
+      .entry { margin-bottom: 24px; position: relative; }
+      .entry::before { content: ''; width: 10px; height: 10px; background:#0ba5ec; border-radius:50%; position:absolute; left:-29px; top:6px; }
+      .entry h2 { margin:0; font-size:1.1rem; color:#0f172a; }
+      .objective { font-weight:600; margin:8px 0; }
+      .cycle { color:#475467; font-size:0.95rem; margin-bottom:6px; }
+      ul { margin:0 0 0 18px; color:#1d2939; }
+      .empty-kr { color:#98a2b3; font-style:italic; margin:4px 0 0 0; }
+      .kr-table { width:100%; border-collapse: collapse; margin-top:10px; }
+      .kr-table th, .kr-table td { border:1px solid #e4e7ec; padding:8px 10px; text-align:left; font-size:0.95rem; vertical-align: top; }
+      .kr-table th { background:#f8fafc; font-weight:600; color:#0f172a; }
+      .progress-track { width:100%; height:8px; background:#e4e7ec; border-radius:999px; overflow:hidden; }
+      .progress-fill { height:100%; background:linear-gradient(90deg,#0ba5ec,#3cba92); border-radius:999px; }
+      .kr-unit { color:#98a2b3; font-size:0.8rem; margin-top:2px; }
+      .report-footer { margin-top: 24px; font-size: 0.85rem; color: #98a2b3; }
+    </style>
+    """
+    items = []
+    for row in rows:
+        cycle_bits = [row.get("cycle_label"), _format_cycle_range(row.get("cycle_start"), row.get("cycle_end"))]
+        cycle_text = " · ".join([b for b in cycle_bits if b])
+        krs = row.get("krs") or []
+        kr_block = _render_kr_table(krs)
+        items.append(
+            f"<div class='entry'>"
+            f"<div class='cycle'>{html.escape(cycle_text or '')}</div>"
+            f"<h2>{html.escape(_title_for_pillar(row['pillar']))}</h2>"
+            f"<div class='objective'>Objective: {html.escape(row['objective'] or 'TBA')}</div>"
+            f"{kr_block}"
+            "</div>"
+        )
+    html_doc = f"""<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Progress Report</title>
+{css}
+<h1>Progress Report</h1>
+<div class="meta">Name: {html.escape(_display_full_name(user))}</div>
+<div class="timeline">
+{''.join(items) if items else '<p>No key results recorded yet.</p>'}
+</div>
+<div class="report-footer">Reported on {reported_at}</div>
+</html>"""
+    out_dir = _reports_root_for_user(user_id)
+    out_path = os.path.join(out_dir, "progress.html")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(html_doc)
+    return out_path
