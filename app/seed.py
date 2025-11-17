@@ -241,9 +241,9 @@ CONCEPT_SCORE_BOUNDS = {
         "processed_food": {"zero_score": 4, "max_score": 0},  # days/week; reverse (7 days bad=0, 0 days best=100)
     },
     "training": {
-        "cardio_frequency":     {"zero_score": 0, "max_score": 5},
+        "cardio_frequency":     {"zero_score": 0, "max_score": 3},
         "strength_training":    {"zero_score": 0, "max_score": 4},
-        "flexibility_mobility": {"zero_score": 0, "max_score": 5},
+        "flexibility_mobility": {"zero_score": 0, "max_score": 4},
     },
     "resilience": {
         "emotional_regulation":   {"zero_score": 0, "max_score": 7},
