@@ -292,7 +292,7 @@ def _format_acknowledgement(msg: str, state: dict, pillar: str | None, user: Use
         body = f'{prefix}, logged "{snippet}".{hint}'
     else:
         body = f'{prefix} — noted "{snippet}".{hint}'
-    progress = _pillar_progress_line(state, pillar)
+    progress = _pillar_progress_line(state, pillar, active_increment=1)
     if progress:
         body = f"{body}\n\n{progress}"
     return body
@@ -389,7 +389,7 @@ def _ensure_question_number(state: dict, pillar: str | None, concept_code: str |
     pillar_map[concept_key] = seq
     return seq
 
-def _pillar_progress_line(state: dict, active_pillar: str | None = None) -> str:
+def _pillar_progress_line(state: dict, active_pillar: str | None = None, active_increment: int = 0) -> str:
     pillar_concepts = state.get("pillar_concepts") or {}
     if not pillar_concepts:
         return ""
@@ -400,7 +400,7 @@ def _pillar_progress_line(state: dict, active_pillar: str | None = None) -> str:
         total = len(codes)
         if total <= 0:
             continue
-        done = min(int(concept_idx.get(pk, 0) or 0), total)
+        done = min(int(concept_idx.get(pk, 0) or 0) + (active_increment if pk == active_pillar else 0), total)
         completed = "🟩" * done
         remaining = "⬜" * max(total - done, 0)
         if pk == active_pillar and done < total:
@@ -584,12 +584,11 @@ def _send_consent_intro(user: User) -> None:
         "Your answers are stored securely and only used to personalise your wellbeing programme.\n"
         "We never share your information with third parties, and you can stop at any time.\n"
         "Replying is optional, and you can request deletion of your data whenever you want.\n\n"
-        "If you ever want to change an answer, type redo.\n"
-        "To start again, type restart.\n\n"
-        "If you’re happy to continue, reply YES to give consent.\n"
-        "If not, reply NO to opt out."
+        "If you’re happy to continue, **reply YES** to give consent.\n"
+        "If not, **reply NO** to opt out."
     )
     _send_to_user(user, msg1)
+    time.sleep(0.2)
     _send_to_user(user, msg2)
 
 def _touch_user_timestamps(s, user: User) -> None:
@@ -1301,7 +1300,7 @@ def _next_pillar(curr: str) -> Optional[str]:
         return None
     return PILLAR_ORDER[i + 1] if i + 1 < len(PILLAR_ORDER) else None
 
-def start_combined_assessment(user: User):
+def start_combined_assessment(user: User, *, force_intro: bool = False):
     """Start combined assessment (Nutrition → Training → Resilience → Recovery)."""
     with SessionLocal() as s:
         _touch_user_timestamps(s, user)
@@ -1320,7 +1319,20 @@ def start_combined_assessment(user: User):
                       or bool(getattr(u, "consent_at", None)) \
                       or bool(getattr(u, "consent_yes_at", None))
 
-        # If no consent recorded yet, prompt once and return
+        # If forcing intro, clear consent so we wait for a fresh YES/NO before proceeding.
+        if force_intro:
+            try:
+                u.consent_given = False
+                if hasattr(u, "consent_at"):
+                    setattr(u, "consent_at", None)
+                if hasattr(u, "consent_yes_at"):
+                    setattr(u, "consent_yes_at", None)
+                s.commit()
+            except Exception:
+                s.rollback()
+            has_consent = False
+
+        # If consent is missing, send intro and wait for YES/NO before proceeding.
         if not has_consent:
             _send_consent_intro(u)
             return True
@@ -1432,7 +1444,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 confirm_name = (getattr(db_user, "first_name", "") or "").strip()
                 prefix = f"Thanks {confirm_name}! " if confirm_name else "Thanks! "
                 _send_to_user(user, f"{prefix}Your consent is recorded — I’ll start with Nutrition now. These are short check-in questions about the last 7 days; you can type *redo* or *restart* any time.")
-                return start_combined_assessment(user)
+                return start_combined_assessment(user, force_intro=False)
             elif _is_negative(msg):
                 _send_to_user(user, "No problem. If you change your mind, just reply YES to begin.")
                 return True
@@ -1586,7 +1598,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             except Exception:
                 pass
             _send_to_user(user, "Okay — restarting from the beginning. Let's start fresh.")
-            start_combined_assessment(user)
+            start_combined_assessment(user, force_intro=True)
             return True
 
         pillar = state.get("current", "nutrition")

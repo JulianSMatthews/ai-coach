@@ -994,7 +994,7 @@ def main():
 
         # Start session
         try:
-            session = start_combined_assessment(user=user)
+            session = start_combined_assessment(user=user, force_intro=True)
             session_id = getattr(session, "id", None)
             if session_id is None:
                 session_id = _latest_session_id_for(user)
@@ -1018,7 +1018,7 @@ def main():
             msg = answers.get(code)
             if not started:
                 if session_id is None:
-                    start_combined_assessment(user=user)
+                    start_combined_assessment(user=user, force_intro=True)
                 _continue_with_timeout(user=user, text="YES", timeout_s=args.call_timeout)
                 _mark_consent(user)
                 sid = _latest_session_id_for(user)
