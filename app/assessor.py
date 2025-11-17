@@ -584,8 +584,8 @@ def _send_consent_intro(user: User) -> None:
         "Your answers are stored securely and only used to personalise your wellbeing programme.\n"
         "We never share your information with third parties, and you can stop at any time.\n"
         "Replying is optional, and you can request deletion of your data whenever you want.\n\n"
-        "If you’re happy to continue, **reply YES** to give consent.\n"
-        "If not, **reply NO** to opt out."
+        "If you’re happy to continue, *reply YES* to give consent.\n"
+        "If not, *reply NO* to opt out."
     )
     _send_to_user(user, msg1)
     time.sleep(0.2)
