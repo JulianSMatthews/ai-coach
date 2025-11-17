@@ -566,19 +566,31 @@ def _is_negative(text: str) -> bool:
     nos = {"no", "n", "nope", "decline", "stop", "cancel"}
     return any(t == n or t.startswith(n + " ") for n in nos)
 
-def _consent_intro_message(user: User) -> str:
+def _send_consent_intro(user: User) -> None:
     first_name = (getattr(user, "first_name", None) or "").strip()
-    greet = f"Hi {first_name}! " if first_name else "Hi! "
-    return (
-        f"{greet}Before we start, please confirm you consent to a short health assessment over WhatsApp. "
-        "We’ll ask quick questions about four wellbeing pillars:\n\n"
-        "• *Nutrition* – what you’re eating and drinking day to day\n"
-        "• *Training* – how you’re moving and staying active\n"
-        "• *Resilience* – how you’re feeling emotionally and coping with stress (share only what feels comfortable; we’ll keep it light)\n"
-        "• *Recovery* – how you’re resting and recharging between busy stretches\n\n"
-        "Each pillar covers the past 7 days. You can type *redo* to change an answer or *restart* to begin again at any time.\n\n"
-        "Reply *YES* to consent and continue, or *NO* to opt out."
+    greet = f"Hey {first_name}! " if first_name else "Hey! "
+    msg1 = (
+        f"{greet}😊 Welcome to your wellbeing journey! 👋🏻\n\n"
+        "In a moment we’ll be taking you through a short check-in over WhatsApp. Nothing heavy - just a quick snapshot of how the last 7 days have been across four wellbeing pillars:\n\n"
+        "• *Nutrition* – what you’ve been eating and drinking day to day\n"
+        "• *Training* – how you’ve been moving and staying active\n"
+        "• *Resilience* – how you’re feeling emotionally and coping with stress (share only what feels comfortable — we’re here to support you)\n"
+        "• *Recovery* – how you’ve been resting and recharging\n\n"
+        "These questions help us build a clear picture of your routine so we can tailor the next steps that actually matter for you."
     )
+    msg2 = (
+        "Before we get started, I just need to confirm your consent.\n\n"
+        "🔒 Your data:\n"
+        "Your answers are stored securely and only used to personalise your wellbeing programme.\n"
+        "We never share your information with third parties, and you can stop at any time.\n"
+        "Replying is optional, and you can request deletion of your data whenever you want.\n\n"
+        "If you ever want to change an answer, type redo.\n"
+        "To start again, type restart.\n\n"
+        "If you’re happy to continue, reply YES to give consent.\n"
+        "If not, reply NO to opt out."
+    )
+    _send_to_user(user, msg1)
+    _send_to_user(user, msg2)
 
 def _touch_user_timestamps(s, user: User) -> None:
     now = datetime.utcnow()
@@ -1310,7 +1322,7 @@ def start_combined_assessment(user: User):
 
         # If no consent recorded yet, prompt once and return
         if not has_consent:
-            _send_to_user(u, _consent_intro_message(u))
+            _send_consent_intro(u)
             return True
 
         # Deactivate existing combined sessions
@@ -1426,7 +1438,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 return True
             else:
                 # Re-prompt consent with context
-                _send_to_user(user, _consent_intro_message(user))
+                _send_consent_intro(user)
                 return True
 
         sess: Optional[AssessSession] = s.execute(
