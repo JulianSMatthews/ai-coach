@@ -54,9 +54,9 @@ except Exception:
 # Audit/logging controls (silence console by default)
 AUDIT_TO_CONSOLE = os.getenv("AUDIT_TO_CONSOLE", "0") == "1"
 AUDIT_TO_DB = os.getenv("AUDIT_TO_DB", "1") == "1"
-BRAND_NAME = (os.getenv("BRAND_NAME") or "Purple Clubs").strip() or "Purple Clubs"
+BRAND_NAME = (os.getenv("BRAND_NAME") or "").strip()
 BRAND_YEAR = os.getenv("BRAND_YEAR") or str(datetime.utcnow().year)
-BRAND_FOOTER = f"© {BRAND_YEAR} {BRAND_NAME}"
+BRAND_FOOTER = f"© {BRAND_YEAR} {BRAND_NAME}" if BRAND_NAME else ""
 DEBUG_PROGRESS_BASELINES = os.getenv("DEBUG_PROGRESS_BASELINES", "0") == "1"
 
 def _audit(job: str, status: str = "ok", payload: Dict[str, Any] | None = None, error: str | None = None) -> None:
@@ -207,7 +207,7 @@ def _okr_narrative_from_llm(user: User, payload: list[dict]) -> str:
 def _scores_narrative_fallback(combined: int, payload: list[dict]) -> str:
     parts = [
         (
-            f"<p>Your combined wellbeing score is <strong>{combined}/100</strong>. "
+            f"<p>Your combined wellbeing score is <strong>{int(round(combined))}/100</strong>. "
             "Keep leaning on the stronger habits while giving extra care to the areas that dip.</p>"
         )
     ]
@@ -1498,9 +1498,9 @@ def _collect_summary_rows(start_dt: datetime, end_dt: datetime, club_id: int | N
             combined = getattr(run, "combined_overall", None)
             if combined is None:
                 vals = [v for v in [pmap.get("nutrition"), pmap.get("training"), pmap.get("resilience"), pmap.get("recovery")] if isinstance(v, (int, float))]
-                combined = round(sum(vals) / max(1, len(vals)), 2) if vals else 0.0
+                combined = round(sum(vals) / max(1, len(vals)), 0) if vals else 0.0
             else:
-                combined = _to_float(combined, 0.0)
+                combined = round(_to_float(combined, 0.0)) if combined is not None else 0.0
 
             out.append({
                 "name": _display_full_name(user),
@@ -1596,7 +1596,8 @@ def _write_summary_pdf(path: str, start_str: str, end_str: str, rows: list[dict]
     story.append(table)
 
     story.append(Spacer(1, 10))
-    story.append(Paragraph(f"{BRAND_FOOTER} — Confidential internal summary", styles["Normal"]))
+    if BRAND_FOOTER:
+        story.append(Paragraph(f"{BRAND_FOOTER} — Confidential internal summary", styles["Normal"]))
 
     doc.build(story)
 
@@ -1893,7 +1894,8 @@ def _write_pdf(path: str, user: User, run: AssessmentRun, pillars: List[PillarRe
         # Footer (intro page)
         pdf.setFillGray(0.35)
         pdf.setFont("Helvetica", 9)
-        pdf.drawRightString(right, 18, f"{BRAND_FOOTER} — Confidential wellbeing report")
+        if BRAND_FOOTER:
+            pdf.drawRightString(right, 18, f"{BRAND_FOOTER} — Confidential wellbeing report")
         pdf.setFillGray(0.0)
         pdf.showPage()
 

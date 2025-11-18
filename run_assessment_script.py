@@ -69,10 +69,11 @@ from app.models import User, Club
 
 # Optional models for completion/score checks (best-effort)
 try:
-    from app.models import AssessmentRun, PillarResult  # type: ignore
+    from app.models import AssessmentRun, PillarResult, Concept  # type: ignore
 except Exception:
     AssessmentRun = None  # type: ignore
     PillarResult = None   # type: ignore
+    Concept = None        # type: ignore
 from app.assessor import continue_combined_assessment  # adjust if named differently
 from app.assessor import start_combined_assessment  # ensures a new assessment session starts
 
@@ -634,6 +635,39 @@ def _variant_short(v: str) -> str:
     }
     return mapping.get(v, v)
 
+
+def _parse_number(text: str) -> float | None:
+    if not text:
+        return None
+    import re
+    words = {
+        "zero": 0, "none": 0,
+        "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+        "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+        "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+    }
+    nums = re.findall(r"\d+(?:\.\d+)?", text)
+    if nums:
+        try:
+            return float(nums[-1])
+        except Exception:
+            return None
+    for w in text.lower().split():
+        if w in words:
+            return float(words[w])
+    return None
+
+
+def _expected_score_from_bounds(zero: float, maxv: float, val: float) -> float:
+    # if lower is better (zero > maxv)
+    if zero > maxv:
+        span = zero - maxv
+        pct = ((zero - val) / span) * 100 if span else 0
+    else:
+        span = maxv - zero
+        pct = ((val - zero) / span) * 100 if span else 0
+    return max(0, min(100, pct))
+
 def _is_uniform_level_map(level_map: Dict[str, str]) -> bool:
     """Return True when every pillar uses the same level."""
     completed = _complete_level_map(level_map)
@@ -909,6 +943,11 @@ def get_or_create_user(
 def main():
     parser = argparse.ArgumentParser(description="Run assessment scenarios (in-process).")
     parser.add_argument("scenario", nargs="?", help="Scenario key (e.g., novice_a). Use --batch to run all.")
+    level_group = parser.add_mutually_exclusive_group()
+    level_group.add_argument("--max", action="store_true", help="Run with maximum scores (expert level).")
+    level_group.add_argument("--min", action="store_true", help="Run with minimum scores (novice level).")
+    level_group.add_argument("--med", action="store_true", help="Run with mid scores (competent level).")
+    parser.add_argument("--range", action="store_true", help="Run three passes: min, med, and max presets sequentially.")
     parser.add_argument("--batch", action="store_true", help="Run all scenarios in sequence.")
     parser.add_argument("--sleep", type=float, default=2.0, help="Seconds to sleep between scenarios in batch.")
     parser.add_argument("--unique", dest="unique", action="store_true", help="Force unique user per run (UNIQUE_TEST_USER=1).")
@@ -945,6 +984,15 @@ def main():
     # Ensure seed (bounds/questions/snippets) is current
     run_seed()
 
+    # Determine preset level if requested
+    preset_level = None
+    if args.max:
+        preset_level = "expert"
+    elif args.min:
+        preset_level = "novice"
+    elif args.med:
+        preset_level = "competent"
+
     # Early exit for admin summary report
     if args.admin_summary:
         if _reporting is None:
@@ -976,13 +1024,22 @@ def main():
             print(f"[admin-summary] error: {e}")
         return
 
-    def run_one(scenario: str, club_choice: tuple[int | None, str | None] = (None, None)):
+    def run_one(
+        scenario: str,
+        club_choice: tuple[int | None, str | None] = (None, None),
+        answers_override: Dict[str, str] | None = None,
+        level_map_override: Dict[str, str] | None = None,
+        variant_override: str | None = None,
+    ):
         club_id, club_label = club_choice
-        try:
-            answers, level_map, variant = resolve_scenario(scenario)
-        except ValueError as exc:
-            print(exc)
-            sys.exit(2)
+        if answers_override is not None and level_map_override is not None and variant_override is not None:
+            answers, level_map, variant = answers_override, level_map_override, variant_override
+        else:
+            try:
+                answers, level_map, variant = resolve_scenario(scenario)
+            except ValueError as exc:
+                print(exc)
+                sys.exit(2)
         order = build_order()
         user = get_or_create_user(
             scenario,
@@ -1051,7 +1108,7 @@ def main():
         print(f"[summary] latest run id={sid_final}")
         _debug_list_sessions_for(user)
         # Print quick scores snapshot if models are present
-        if AssessmentRun is not None and PillarResult is not None:
+        if AssessmentRun is not None and PillarResult is not None and Concept is not None:
             try:
                 with SessionLocal() as s:
                     run = (
@@ -1076,6 +1133,14 @@ def main():
                                  .order_by(PillarResult.id.asc())
                                  .all()
                             )
+                        # Build concept bounds map and answer map for quick sanity checks
+                        bounds_map: dict[tuple[str, str], tuple[float, float]] = {}
+                        rows = s.query(Concept.pillar_key, Concept.code, Concept.zero_score, Concept.max_score).all()
+                        for pk, code, z, m in rows:
+                            if z is None or m is None:
+                                continue
+                            bounds_map[(pk, code)] = (float(z), float(m))
+                        ans_map = answers_override or answers
                         # Be tolerant to schema drift: overall score may be stored under different names
                         def _first_attr(obj, names: list[str]):
                             for n in names:
@@ -1091,6 +1156,21 @@ def main():
                             pillar_name = _first_attr(row, ['pillar_key', 'pillar', 'name'])
                             pillar_score = _first_attr(row, ['score', 'overall', 'value', 'total'])
                             print(f"   - {pillar_name}: {pillar_score}")
+                            cscores = getattr(row, "concept_scores", {}) or {}
+                            for code, sval in cscores.items():
+                                ans_txt = ans_map.get(code)
+                                num = _parse_number(ans_txt or "")
+                                bounds = bounds_map.get((pillar_name, code))
+                                if num is not None and bounds:
+                                    expected = _expected_score_from_bounds(bounds[0], bounds[1], num)
+                                    try:
+                                        actual = float(sval)
+                                    except Exception:
+                                        continue
+                                    if abs(actual - expected) > 15:
+                                        print(f"      [warn] {code}: ans='{ans_txt}' expected~{expected:.0f} vs actual {actual:.0f} (bounds {bounds[0]}/{bounds[1]})")
+                                    else:
+                                        print(f"      [ok]   {code}: ans='{ans_txt}' expected~{expected:.0f} vs actual {actual:.0f}")
             except Exception as _e:
                 print(f"[scores] error: {_e}")
         print("[done] scenario complete.")
@@ -1121,7 +1201,31 @@ def main():
     # single scenario
     scenario = (args.scenario or "competent_a").lower()
     solo_choice = club_cycle[0] if club_cycle else (None, None)
-    run_one(scenario, solo_choice)
+    if args.range:
+        levels = [("novice", "a"), ("competent", "a"), ("expert", "a")]
+        for idx, (lvl, var) in enumerate(levels, 1):
+            preset_answers = _scenario_answers_for(lvl, var)
+            preset_map = _uniform_level_map(lvl)
+            scenario_label = f"{lvl}_{var}"
+            print(f"[range] run {idx}/3 -> {scenario_label}")
+            run_one(
+                scenario_label,
+                solo_choice,
+                answers_override=preset_answers,
+                level_map_override=preset_map,
+                variant_override=var,
+            )
+            if idx < len(levels):
+                time.sleep(max(0.0, args.sleep))
+        return
+    elif preset_level:
+        preset_answers = _scenario_answers_for(preset_level, "a")
+        preset_map = _uniform_level_map(preset_level)
+        preset_variant = "a"
+        scenario = f"{preset_level}_a"
+        run_one(scenario, solo_choice, answers_override=preset_answers, level_map_override=preset_map, variant_override=preset_variant)
+    else:
+        run_one(scenario, solo_choice)
 
 if __name__ == "__main__":
     main()

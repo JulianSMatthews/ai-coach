@@ -248,6 +248,32 @@ def _has_numeric_signal(text: str) -> bool:
             return True
     return False
 
+
+def _parse_number(text: str) -> float | None:
+    if not text:
+        return None
+    nums = re.findall(r"\d+(?:\.\d+)?", text)
+    if nums:
+        try:
+            return float(nums[-1])
+        except Exception:
+            return None
+    words = {**_NUM_WORDS, "none": 0, "no": 0, "couple": 2, "few": 3, "several": 4}
+    for w in text.lower().split():
+        if w in words:
+            return float(words[w])
+    return None
+
+
+def _score_from_bounds(zero: float, maxv: float, val: float) -> float:
+    if zero > maxv:
+        span = zero - maxv
+        pct = ((zero - val) / span) * 100 if span else 0
+    else:
+        span = maxv - zero
+        pct = ((val - zero) / span) * 100 if span else 0
+    return max(0.0, min(100.0, pct))
+
 _WEEK_WINDOW_PATTERNS = [
     r"\blast\s+7\s+days?\b",
     r"\bpast\s+7\s+days?\b",
@@ -1769,6 +1795,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         general_rules = (
             "GENERAL_SCORING_RULES:\n"
             "- If bounds (zero_score, max_score) are provided, they OVERRIDE heuristics and KB for polarity (higher vs lower is better).\n"
+            "- When bounds are provided AND the user's answer is numeric (or parsed_number is present), compute the score linearly using those bounds; do not choose your own rubric.\n"
             "- Treat 'none', 'no', 'zero', or 0 as numeric 0.\n"
             "- Zero scores are valid; do NOT up-bias zero to a non-zero.\n"
             "- Always clamp outputs to the provided range.\n"
@@ -2005,13 +2032,8 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             return True
 
         # Concept can be finished
-        # Use the latest computed score; do not retain previous via max() so state reflects current truth
+        # Use the latest computed score; override with deterministic bounds if available + numeric answer
         final_score = float(this_concept_score or 0.0)
-        concept_scores.setdefault(pillar, {})[concept_code] = final_score
-        concept_progress.setdefault(pillar, {}).setdefault(concept_code, {
-            "main_asked": True, "clarifiers": 0, "scored": False, "summary_logged": False
-        })
-        concept_progress[pillar][concept_code]["scored"] = True
 
         # Emit concept summary turn
         concept_dialogue = []
@@ -2022,6 +2044,43 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             if t.get("is_main") and t.get("concept") == concept_code:
                 break
         concept_dialogue = list(reversed(concept_dialogue))
+
+        last_user_a = ""
+        for item in reversed(concept_dialogue):
+            if item.get("role") == "user":
+                last_user_a = item.get("text") or ""
+                break
+
+        num_val = None
+        try:
+            if isinstance(out.parsed_value, dict):
+                num_val = out.parsed_value.get("value")
+        except Exception:
+            num_val = None
+        if num_val is None:
+            num_val = _parse_number(last_user_a)
+        if num_val is None:
+            try:
+                qa_snap = state.get("qa_snapshots", {}).get(pillar, {}).get(concept_code, {})
+                num_val = _parse_number(qa_snap.get("a", ""))
+            except Exception:
+                num_val = None
+        if bm_tuple is None:
+            try:
+                bm_tuple = _concept_bounds(s, pillar, concept_code)
+            except Exception:
+                bm_tuple = None
+        if bm_tuple and num_val is not None:
+            try:
+                final_score = _score_from_bounds(float(bm_tuple[0]), float(bm_tuple[1]), float(num_val))
+            except Exception:
+                pass
+
+        concept_scores.setdefault(pillar, {})[concept_code] = final_score
+        concept_progress.setdefault(pillar, {}).setdefault(concept_code, {
+            "main_asked": True, "clarifiers": 0, "scored": False, "summary_logged": False
+        })
+        concept_progress[pillar][concept_code]["scored"] = True
 
         run_id = state.get("run_id")
         idx_next = int(state.get("turn_idx", 0)) + 1
