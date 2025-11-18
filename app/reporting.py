@@ -2160,10 +2160,6 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
  </head>
  <body>
   <div class='section scores-section'>
-    <div class='card narrative-card'>
-      <h2>How you're doing</h2>
-      {score_narrative}
-    </div>
     <div class='card summary-card'>
      <div class='summary-main'>
        <h1>Your Wellbeing Dashboard</h1>
@@ -2173,6 +2169,10 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
      <div class='score-panel'>
        {score_panel}
      </div>
+    </div>
+    <div class='card narrative-card'>
+      <h2>How you're doing</h2>
+      {score_narrative}
     </div>
   </div>
   <div class='section okr-section'>

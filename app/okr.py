@@ -643,8 +643,10 @@ def make_structured_okr_llm(
             min_v    = row.get("min_val")
             max_v    = row.get("max_val")
             bounds   = []
-            if min_v is not None: bounds.append(f"min={min_v}")
-            if max_v is not None: bounds.append(f"max={max_v}")
+            if min_v is not None: bounds.append(f"zero_score={min_v}")
+            if max_v is not None: bounds.append(f"max_score={max_v}")
+            if min_v is not None and max_v is not None and min_v > max_v:
+                bounds.append("direction=lower_is_better")
             bounds_s = ", ".join(bounds)
             unit_s   = f", unit={unit}" if unit else ""
             meta_s   = f" ({bounds_s}{unit_s})" if (bounds_s or unit_s) else ""

@@ -287,7 +287,7 @@ def _format_acknowledgement(msg: str, state: dict, pillar: str | None, user: Use
     snippet = _shorten_ack_text(text)
     name = (getattr(user, "first_name", "") or "").strip()
     prefix = f"Thanks {name}".strip() if name else "Thanks"
-    hint = " (type redo to change or restart to begin again)"
+    hint = " (type *redo* to change or *restart* to begin again)"
     if _has_numeric_signal(text):
         body = f'{prefix}, logged "{snippet}".{hint}'
     else:
@@ -1743,12 +1743,19 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                         f"- In your JSON, put only the active concept key: \"scores\": {{ \"{concept_code}\": <0-100 integer> }}.\n"
                     )
                 else:
+                    # Example target for directional clarity (e.g., processed_food 4→0,0→100 => 1 ≈ 75)
+                    example_val = m + ((z - m) * 0.25)
+                    try:
+                        example_score = max(0, min(100, round(((z - example_val) / (z - m)) * 100)))
+                    except Exception:
+                        example_score = 75
                     range_rule_text = (
                         "SCORING_RANGE_GUIDE:\n"
                         "- Lower is better; map linearly to 0–100.\n"
                         f"- {z} → 0; {m} or less → 100; clamp outside bounds.\n"
                         "- Treat 'none', 'no', 'zero', or 0 as numeric 0 (which should map near 100 here).\n"
                         "- Parse number words (e.g., 'three', 'couple') when digits not given.\n"
+                        f"- Example: if the answer is ~{example_val:.1f}, score around {example_score}.\n"
                         f"- In your JSON, put only the active concept key: \"scores\": {{ \"{concept_code}\": <0-100 integer> }}.\n"
                     )
             else:
