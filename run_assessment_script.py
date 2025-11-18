@@ -1269,11 +1269,12 @@ def main():
     scenario = (args.scenario or "competent_a").lower()
     solo_choice = club_cycle[0] if club_cycle else (None, None)
     if args.range:
-        levels = [("novice", "a"), ("competent", "a"), ("expert", "a")]
-        for idx, (lvl, var) in enumerate(levels, 1):
-            preset_answers = _scenario_answers_for(lvl, var)
-            preset_map = _uniform_level_map(lvl)
-            scenario_label = f"{lvl}_{var}"
+        runs = [
+            ("min_bounds_a", _answers_at_bounds_min(), _uniform_level_map("novice"), "a"),
+            ("mid_bounds_a", _answers_at_bounds_mid(), _uniform_level_map("competent"), "a"),
+            ("max_bounds_a", _answers_at_bounds_max(), _uniform_level_map("expert"), "a"),
+        ]
+        for idx, (scenario_label, preset_answers, preset_map, var) in enumerate(runs, 1):
             print(f"[range] run {idx}/3 -> {scenario_label}")
             run_one(
                 scenario_label,
@@ -1282,7 +1283,7 @@ def main():
                 level_map_override=preset_map,
                 variant_override=var,
             )
-            if idx < len(levels):
+            if idx < len(runs):
                 time.sleep(max(0.0, args.sleep))
         return
     elif preset_level:

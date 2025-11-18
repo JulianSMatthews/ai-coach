@@ -100,15 +100,22 @@ def _reports_root_global() -> str:
 
 def _report_link(user_id: int, filename: str) -> str:
     """
-    Build an HTTP-ish report link to a user report file. Uses PUBLIC_BASE_URL if set,
-    otherwise falls back to a relative /reports/... path.
+    Build an HTTP-ish report link to a user report file.
+    Priority: REPORTS_BASE_URL > PUBLIC_REPORT_BASE_URL > PUBLIC_BASE_URL > RENDER_EXTERNAL_URL.
+    Falls back to relative /reports/... if none are set.
     """
-    base = (os.getenv("PUBLIC_BASE_URL") or "").strip()
-    suffix = f"/reports/{user_id}/{filename}"
+    base = (
+        os.getenv("REPORTS_BASE_URL")
+        or os.getenv("PUBLIC_REPORT_BASE_URL")
+        or os.getenv("PUBLIC_BASE_URL")
+        or os.getenv("RENDER_EXTERNAL_URL")
+        or ""
+    ).strip()
+    path = f"/reports/{user_id}/{filename}".replace("//", "/")
     if base:
         prefix = base if base.startswith(("http://", "https://")) else f"https://{base}"
-        return f"{prefix.rstrip('/')}{suffix}"
-    return suffix
+        return f"{prefix.rstrip('/')}{path}"
+    return path
 
 
 def _short_text(text: str | None, limit: int = 200) -> str:
