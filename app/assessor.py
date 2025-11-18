@@ -105,7 +105,7 @@ def build_pillar_feedback(
 
 # Report 
 
-from .reporting import generate_assessment_report_pdf, generate_assessment_dashboard_html, _fetch_okrs_for_run
+    from .reporting import generate_assessment_dashboard_html, _fetch_okrs_for_run
 
 # Optional integrations (fail-safe no-ops if missing)
 try:
@@ -347,8 +347,10 @@ def _capture_name_from_text(db_session, user: User, text: str) -> bool:
     tokens = [t for t in (text or "").replace(",", " ").split() if t.strip()]
     if len(tokens) < 2:
         return False
-    first = tokens[0].strip()
-    last = " ".join(tokens[1:]).strip()
+    def _titlecase_chunk(chunk: str) -> str:
+        return " ".join(word.capitalize() for word in (chunk or "").split())
+    first = _titlecase_chunk(tokens[0].strip())
+    last = _titlecase_chunk(" ".join(tokens[1:]).strip())
     if not first or not last:
         return False
     user.first_name = first
@@ -2305,21 +2307,11 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 _send_to_user(user, final_msg)
 
                 # Generate PDF report to disk
+                # Generate dashboard HTML only (PDF skipped)
                 try:
-                    abs_path = generate_assessment_report_pdf(state.get("run_id"))
+                    _dash_abs = generate_assessment_dashboard_html(state.get("run_id"))
                 except Exception as e:
-                    abs_path = None
-                    try:
-                        with SessionLocal() as ss:
-                            ss.add(JobAudit(job_name="report_generate", status="error",
-                                            payload={"run_id": state.get("run_id")}, error=str(e)))
-                            ss.commit()
-                    except Exception:
-                        pass
-
-                try:
-                    generate_assessment_dashboard_html(state.get("run_id"))
-                except Exception as e:
+                    _dash_abs = None
                     try:
                         with SessionLocal() as ss:
                             ss.add(JobAudit(job_name="dashboard_generate", status="error",
@@ -2328,9 +2320,9 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     except Exception:
                         pass
 
-                # Persist combined score + report path onto AssessmentRun (for reporting)
+                # Persist combined score + dashboard path onto AssessmentRun (for reporting)
                 try:
-                    rpt_path = f"/reports/{user.id}/latest.pdf"
+                    rpt_path = f"/reports/{user.id}/latest.html"
                     s.execute(
                         update(AssessmentRun)
                         .where(AssessmentRun.id == state.get("run_id"))

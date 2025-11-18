@@ -98,6 +98,19 @@ def _reports_root_global() -> str:
     return base
 
 
+def _report_link(user_id: int, filename: str) -> str:
+    """
+    Build an HTTP-ish report link to a user report file. Uses PUBLIC_BASE_URL if set,
+    otherwise falls back to a relative /reports/... path.
+    """
+    base = (os.getenv("PUBLIC_BASE_URL") or "").strip()
+    suffix = f"/reports/{user_id}/{filename}"
+    if base:
+        prefix = base if base.startswith(("http://", "https://")) else f"https://{base}"
+        return f"{prefix.rstrip('/')}{suffix}"
+    return suffix
+
+
 def _short_text(text: str | None, limit: int = 200) -> str:
     if not text:
         return ""
@@ -1513,6 +1526,8 @@ def _collect_summary_rows(start_dt: datetime, end_dt: datetime, club_id: int | N
                 "recovery": pmap.get("recovery"),
                 "user_id": getattr(user, "id", None),
                 "run_id": getattr(run, "id", None),
+                "dashboard_url": _report_link(user.id, "latest.html"),
+                "progress_url": _report_link(user.id, "progress.html"),
             })
     return out
 
@@ -1559,7 +1574,7 @@ def _write_summary_pdf(path: str, start_str: str, end_str: str, rows: list[dict]
     story += [Paragraph(f"Total assessments: {total}<br/>Average overall score: {avg_overall}<br/>{best_line}", styles["Normal"]), Spacer(1, 12)]
 
     # Table
-    header = ["#", "Name", "Date Completed", "Overall", "Nutrition", "Training", "Resilience", "Recovery"]
+    header = ["#", "Name", "Date Completed", "Overall", "Nutrition", "Training", "Resilience", "Recovery", "Dashboard", "Progress"]
     data = [header]
     from reportlab.platypus import Paragraph
     for idx, r in enumerate(rows, start=1):
@@ -1570,18 +1585,24 @@ def _write_summary_pdf(path: str, start_str: str, end_str: str, rows: list[dict]
         # Wrap Name column so long user names don't overflow; escape HTML-sensitive chars
         name_text = str(r.get("name", "") or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
         name_cell = Paragraph(name_text, wrap)
+        dash_url = r.get("dashboard_url") or ""
+        prog_url = r.get("progress_url") or ""
+        dash_cell = Paragraph(f"<link href='{dash_url}' color='blue'>dashboard</link>" if dash_url else "", wrap)
+        prog_cell = Paragraph(f"<link href='{prog_url}' color='blue'>progress</link>" if prog_url else "", wrap)
         data.append([
             str(idx),
             name_cell,
             date_str,
-            f"{_to_float(r.get('overall'), 0.0):.1f}",
+            f"{_to_float(r.get('overall'), 0.0):.0f}",
             "" if r.get("nutrition") is None else f"{_to_float(r.get('nutrition'), 0.0):.0f}",
             "" if r.get("training")  is None else f"{_to_float(r.get('training'), 0.0):.0f}",
             "" if r.get("resilience") is None else f"{_to_float(r.get('resilience'), 0.0):.0f}",
             "" if r.get("recovery")  is None else f"{_to_float(r.get('recovery'), 0.0):.0f}",
+            dash_cell,
+            prog_cell,
         ])
 
-    table = Table(data, repeatRows=1, colWidths=[24, 160, 110, 70, 70, 70, 80, 70])
+    table = Table(data, repeatRows=1, colWidths=[24, 150, 90, 60, 60, 60, 70, 60, 90, 90])
     table.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#003366")),
         ("TEXTCOLOR", (0,0), (-1,0), colors.whitesmoke),

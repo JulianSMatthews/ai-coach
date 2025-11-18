@@ -254,9 +254,13 @@ def _split_name(maybe_name: str) -> tuple[str | None, str | None]:
     parts = [p for p in cleaned.split() if p]
     if not parts:
         return None, None
+    def _titlecase_chunk(chunk: str) -> str:
+        return " ".join(word.capitalize() for word in chunk.split())
     if len(parts) == 1:
-        return parts[0], None
-    return parts[0], " ".join(parts[1:])
+        return _titlecase_chunk(parts[0]), None
+    first = _titlecase_chunk(parts[0])
+    last = _titlecase_chunk(" ".join(parts[1:]))
+    return first, last
 
 def _require_name_fields(first: str | None, last: str | None) -> bool:
     return bool(first and first.strip()) and bool(last and last.strip())
@@ -1176,8 +1180,16 @@ def admin_create_user(payload: dict, admin_user: User = Depends(_require_admin))
     Body: { "first_name": "Julian", "surname": "Matthews", "phone": "+4477..." }
     """
     phone = _norm_phone((payload.get("phone") or "").strip())
-    first_name = _strip_invisible((payload.get("first_name") or "")).strip() or None
-    surname = _strip_invisible((payload.get("surname") or "")).strip() or None
+    def _titlecase_chunk(chunk: str | None) -> str | None:
+        if not chunk:
+            return None
+        chunk = _strip_invisible(chunk).strip()
+        if not chunk:
+            return None
+        return " ".join(word.capitalize() for word in chunk.split())
+
+    first_name = _titlecase_chunk(payload.get("first_name"))
+    surname = _titlecase_chunk(payload.get("surname"))
     if not phone:
         raise HTTPException(status_code=400, detail="phone required")
     if not _require_name_fields(first_name, surname):
