@@ -1068,7 +1068,7 @@ async def twilio_inbound(request: Request):
 
         # Route to assessor
         if lower_body in {"start", "hi", "hello"}:
-            start_combined_assessment(user)
+            start_combined_assessment(user, force_intro=True)
         else:
             continue_combined_assessment(user, body)
 

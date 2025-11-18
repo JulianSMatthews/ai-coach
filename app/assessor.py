@@ -2076,6 +2076,13 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             num_val = None
         if num_val is None:
             num_val = _parse_number(last_user_a)
+        # Fallback: parse any user turn for this concept from the full turn history
+        if num_val is None:
+            for t in reversed(turns):
+                if t.get("pillar") == pillar and t.get("concept") == concept_code and t.get("role") == "user":
+                    num_val = _parse_number(t.get("text", ""))
+                    if num_val is not None:
+                        break
         if num_val is None:
             try:
                 qa_snap = state.get("qa_snapshots", {}).get(pillar, {}).get(concept_code, {})

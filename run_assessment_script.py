@@ -63,7 +63,7 @@ from typing import Dict, List, Tuple
 import threading
 
 # --- import your app bits ---
-from app.seed import run_seed, CONCEPTS
+from app.seed import run_seed, CONCEPTS, CONCEPT_SCORE_BOUNDS
 from app.db import SessionLocal
 from app.models import User, Club
 
@@ -350,6 +350,69 @@ ALL_CONCEPTS = [
     ("recovery",   "sleep_duration"),
     ("recovery",   "sleep_quality"),
 ]
+
+
+def _answers_at_bounds_max() -> Dict[str, str]:
+    """
+    Build answers that hit the maximum score per concept using seeded bounds.
+    For higher-is-better, this picks max_score; for lower-is-better (e.g., processed_food)
+    this still uses max_score, which is the low-value bound that yields 100.
+    """
+    answers: Dict[str, str] = {}
+    for pillar, code in ALL_CONCEPTS:
+        bounds = (CONCEPT_SCORE_BOUNDS.get(pillar, {}) or {}).get(code, {})
+        zero = bounds.get("zero_score")
+        maxv = bounds.get("max_score")
+        if zero is None or maxv is None:
+            continue
+        val = float(maxv)
+        # Use plain numeric strings to maximise deterministic parsing/scoring
+        if pillar == "nutrition" and code == "hydration":
+            answers[code] = f"{val:g} liters"
+        else:
+            answers[code] = f"{val:g}"
+    return answers
+
+
+def _answers_at_bounds_min() -> Dict[str, str]:
+    """
+    Build answers that hit the minimum score per concept using seeded bounds (zero_score).
+    For higher-is-better, zero_score is the low bound; for lower-is-better, zero_score is the high bound.
+    """
+    answers: Dict[str, str] = {}
+    for pillar, code in ALL_CONCEPTS:
+        bounds = (CONCEPT_SCORE_BOUNDS.get(pillar, {}) or {}).get(code, {})
+        zero = bounds.get("zero_score")
+        maxv = bounds.get("max_score")
+        if zero is None or maxv is None:
+            continue
+        val = float(zero)
+        # Use plain numeric strings to maximise deterministic parsing/scoring
+        if pillar == "nutrition" and code == "hydration":
+            answers[code] = f"{val:g} liters"
+        else:
+            answers[code] = f"{val:g}"
+    return answers
+
+
+def _answers_at_bounds_mid() -> Dict[str, str]:
+    """
+    Build answers at the midpoint between zero_score and max_score for each concept.
+    This should map to ~50 when using linear bounds-based scoring (higher or lower is better handled).
+    """
+    answers: Dict[str, str] = {}
+    for pillar, code in ALL_CONCEPTS:
+        bounds = (CONCEPT_SCORE_BOUNDS.get(pillar, {}) or {}).get(code, {})
+        zero = bounds.get("zero_score")
+        maxv = bounds.get("max_score")
+        if zero is None or maxv is None:
+            continue
+        val = (float(zero) + float(maxv)) / 2.0
+        if pillar == "nutrition" and code == "hydration":
+            answers[code] = f"{val:g} liters"
+        else:
+            answers[code] = f"{val:g}"
+    return answers
 
 def _uniform_level_map(level: str) -> Dict[str, str]:
     """Return a per-pillar mapping where every pillar uses the same level."""
@@ -946,7 +1009,7 @@ def main():
     level_group = parser.add_mutually_exclusive_group()
     level_group.add_argument("--max", action="store_true", help="Run with maximum scores (expert level).")
     level_group.add_argument("--min", action="store_true", help="Run with minimum scores (novice level).")
-    level_group.add_argument("--med", action="store_true", help="Run with mid scores (competent level).")
+    level_group.add_argument("--mid", action="store_true", help="Run with mid-range scores (~50 via bounds midpoints).")
     parser.add_argument("--range", action="store_true", help="Run three passes: min, med, and max presets sequentially.")
     parser.add_argument("--batch", action="store_true", help="Run all scenarios in sequence.")
     parser.add_argument("--sleep", type=float, default=2.0, help="Seconds to sleep between scenarios in batch.")
@@ -986,12 +1049,16 @@ def main():
 
     # Determine preset level if requested
     preset_level = None
+    preset_answers_override: Dict[str, str] | None = None
     if args.max:
         preset_level = "expert"
+        preset_answers_override = _answers_at_bounds_max()
     elif args.min:
         preset_level = "novice"
-    elif args.med:
+        preset_answers_override = _answers_at_bounds_min()
+    elif args.mid:
         preset_level = "competent"
+        preset_answers_override = _answers_at_bounds_mid()
 
     # Early exit for admin summary report
     if args.admin_summary:
@@ -1219,10 +1286,19 @@ def main():
                 time.sleep(max(0.0, args.sleep))
         return
     elif preset_level:
-        preset_answers = _scenario_answers_for(preset_level, "a")
-        preset_map = _uniform_level_map(preset_level)
         preset_variant = "a"
-        scenario = f"{preset_level}_a"
+        if preset_answers_override:
+            preset_answers = preset_answers_override
+            if args.max:
+                scenario = "max_bounds_a"
+            elif args.min:
+                scenario = "min_bounds_a"
+            else:
+                scenario = "mid_bounds_a"
+        else:
+            preset_answers = _scenario_answers_for(preset_level, preset_variant)
+            scenario = f"{preset_level}_{preset_variant}"
+        preset_map = _uniform_level_map(preset_level)
         run_one(scenario, solo_choice, answers_override=preset_answers, level_map_override=preset_map, variant_override=preset_variant)
     else:
         run_one(scenario, solo_choice)
