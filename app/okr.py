@@ -684,6 +684,7 @@ def make_structured_okr_llm(
             "- Forbidden in KR text: 'score', 'adherence', 'priority action(s)'. Use behaviors and units instead.\n"
             "- Prefer small, realistic progressions derived from the stated answers (e.g., from '1 session/week' move to '3 sessions/week').\n"
             "- DO NOT include a Key Result if the user is already at the recommended level or no improvement is needed; fewer KRs are preferred over maintenance targets.\n"
+            "- Do NOT propose improvements for concepts already scoring ~100; focus on concepts materially below the top score.\n"
             "- Reuse the units mentioned in the user's answers (state_context meta); do not switch to different units like percentages if the question used days/week or portions/day.\n"
             "Return JSON only. Do not include markdown or code fences."
         ),
@@ -1183,9 +1184,18 @@ def generate_and_update_okrs_for_pillar(
     for kr in normalised_krs:
         base = kr.get("baseline_num")
         target = kr.get("target_num")
+        ckey = _normalize_concept_key((kr.get("concept_key") or "").split(".")[-1])
+        # Skip maintenance KRs (no delta) or concepts already at/near 100
         try:
             if base is not None and target is not None and abs(float(base) - float(target)) < 1e-6:
                 continue
+        except Exception:
+            pass
+        try:
+            if ckey and ckey in (concept_scores or {}):
+                sc = concept_scores.get(ckey)
+                if sc is not None and float(sc) >= 99:
+                    continue
         except Exception:
             pass
         processed_krs.append(kr)

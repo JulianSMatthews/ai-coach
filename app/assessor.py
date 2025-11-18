@@ -274,6 +274,21 @@ def _score_from_bounds(zero: float, maxv: float, val: float) -> float:
         pct = ((val - zero) / span) * 100 if span else 0
     return max(0.0, min(100.0, pct))
 
+
+def _normalize_value_for_concept(pillar: str, concept: str, val: float, unit: str | None, answer_text: str | None) -> float:
+    """
+    Normalize raw numeric answers to the expected unit for scoring.
+    - Hydration: convert ml→L, glasses→L (0.25L/glass)
+    """
+    u = (unit or "").lower()
+    ans = (answer_text or "").lower()
+    if pillar == "nutrition" and concept == "hydration":
+        if "ml" in u or "ml" in ans:
+            return val / 1000.0
+        if "glass" in u or "glass" in ans:
+            return val * 0.25
+    return val
+
 _WEEK_WINDOW_PATTERNS = [
     r"\blast\s+7\s+days?\b",
     r"\bpast\s+7\s+days?\b",
@@ -2052,9 +2067,11 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 break
 
         num_val = None
+        raw_unit = None
         try:
             if isinstance(out.parsed_value, dict):
                 num_val = out.parsed_value.get("value")
+                raw_unit = (out.parsed_value.get("unit") or "") if isinstance(out.parsed_value, dict) else ""
         except Exception:
             num_val = None
         if num_val is None:
@@ -2065,14 +2082,20 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 num_val = _parse_number(qa_snap.get("a", ""))
             except Exception:
                 num_val = None
+        normalized_val = None
+        if num_val is not None:
+            try:
+                normalized_val = _normalize_value_for_concept(pillar, concept_code, float(num_val), raw_unit, last_user_a)
+            except Exception:
+                normalized_val = num_val
         if bm_tuple is None:
             try:
                 bm_tuple = _concept_bounds(s, pillar, concept_code)
             except Exception:
                 bm_tuple = None
-        if bm_tuple and num_val is not None:
+        if bm_tuple and normalized_val is not None:
             try:
-                final_score = _score_from_bounds(float(bm_tuple[0]), float(bm_tuple[1]), float(num_val))
+                final_score = _score_from_bounds(float(bm_tuple[0]), float(bm_tuple[1]), float(normalized_val))
             except Exception:
                 pass
 
