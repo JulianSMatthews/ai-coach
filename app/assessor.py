@@ -1624,16 +1624,6 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         if "awaiting_preamble" not in state:
             state["awaiting_preamble"] = None
         pref_cache = state["pillar_preamble"]
-        for pillar_key in PILLAR_PREAMBLE_QUESTIONS.keys():
-            status = pref_cache.get(pillar_key) or {}
-            if status.get("answered"):
-                continue
-            pref_key = PILLAR_PREFERENCE_KEYS.get(pillar_key)
-            if not pref_key:
-                continue
-            existing_pref = _get_user_preference_value(user.id, pref_key)
-            if existing_pref is not None:
-                pref_cache[pillar_key] = {"asked": True, "answered": True, "answer": existing_pref}
 
         # quick commands
         cmd = (user_text or "").strip().lower()

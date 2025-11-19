@@ -30,6 +30,7 @@ from .models import (
     OKRCycle,
     OKRObjective,
     OKRKeyResult,
+    UserPreference,
     Club,
 )
 
@@ -124,6 +125,22 @@ def _report_link(user_id: int, filename: str) -> str:
     return path
 
 
+def _load_user_preferences(user_id: int) -> dict[str, str]:
+    if not user_id:
+        return {}
+    prefs: dict[str, str] = {}
+    with SessionLocal() as s:
+        rows = (
+            s.query(UserPreference.key, UserPreference.value)
+             .filter(UserPreference.user_id == user_id)
+             .all()
+        )
+        for key, value in rows:
+            if key:
+                prefs[key] = value or ""
+    return prefs
+
+
 def _short_text(text: str | None, limit: int = 200) -> str:
     if not text:
         return ""
@@ -195,6 +212,7 @@ def _score_narrative_from_llm(user: User, combined: int, payload: list[dict]) ->
         f"Combined score: {combined}/100.\n"
         "Data (JSON):\n"
         f"{json.dumps(payload, ensure_ascii=False)}\n\n"
+        "Payload entries may include an optional 'focus_note'; weave it in when present.\n"
         "Write two short paragraphs (under 140 words total) that:\n"
         "- explain what the combined score and per-pillar scores suggest\n"
         "- reference notable answers when helpful\n"
@@ -220,7 +238,7 @@ def _okr_narrative_from_llm(user: User, payload: list[dict]) -> str:
         "Data (JSON):\n"
         f"{json.dumps(payload, ensure_ascii=False)}\n\n"
         "Write two short paragraphs that tie the objectives to the scores, highlight where focus is needed, "
-        "and keep the tone gentle but action-oriented. Use second-person voice."
+        "and keep the tone gentle but action-oriented. Use second-person voice. If 'focus_note' is present, reference it when explaining priorities."
     )
     try:
         resp = _llm.invoke(prompt)
@@ -2177,6 +2195,7 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
     qa_by_pillar = _collect_run_dialogue(run.id)
     ordered_keys = _pillar_order()
     pr_map = {getattr(pr, "pillar_key", ""): pr for pr in pillars}
+    user_prefs = _load_user_preferences(getattr(user, "id", None))
 
     combined = getattr(run, "combined_overall", None)
     if combined is None:
@@ -2274,19 +2293,24 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
         kr_lines = "".join(f"<li>{html.escape(kr)}</li>" for kr in krs[:3] if kr) or "<li>No key results yet.</li>"
 
         score_pct = max(0, min(100, score))
+        focus_note = ""
+        if key == "training":
+            focus_note = (user_prefs.get("training_focus") or "").strip()
         pillar_payload.append({
             "pillar_key": key,
             "pillar_name": _title_for_pillar(key),
             "score": score_pct,
             "concept_scores": _concept_scores_for(pr),
-            "qa_samples": qa_by_pillar.get(key, [])
+            "qa_samples": qa_by_pillar.get(key, []),
+            "focus_note": focus_note,
         })
         okr_payload.append({
             "pillar_key": key,
             "pillar_name": _title_for_pillar(key),
             "score": score_pct,
             "objective": okr.get("objective", ""),
-            "key_results": krs[:3]
+            "key_results": krs[:3],
+            "focus_note": focus_note,
         })
 
         sections.append(

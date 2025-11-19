@@ -28,7 +28,11 @@ import json
 # --- Needed for new state context helper ---
 from sqlalchemy.sql import text as _sql_text
 from app.db import SessionLocal
-from app.models import UserConceptState, Concept, PillarResult, JobAudit
+from app.models import UserConceptState, Concept, PillarResult, JobAudit, UserPreference
+
+PILLAR_PREF_KEYS = {
+    "training": "training_focus",
+}
 
 # --- KR key slug helper (cap to VARCHAR(32)) ---------------------------------
 import re, hashlib
@@ -615,6 +619,7 @@ def make_structured_okr_llm(
     temperature: float = 0.2,
     qa_context: Optional[List[Dict[str, str]]] = None,
     state_context: Optional[List[Dict[str, str]]] = None,
+    pillar_preference: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
     Returns a dict:
@@ -669,13 +674,17 @@ def make_structured_okr_llm(
     else:
         qa_block = "qa_context: []"
 
+    focus_line = ""
+    if pillar_preference:
+        focus_line = f"user_focus: \"{pillar_preference.strip()}\"\n"
     prompt_user = {
         "role": "user",
         "content": (
             f"pillar: {pillar_slug}\n"
             f"{context_block}\n"
             f"{state_block}\n"
-            f"{qa_block}\n\n"
+            f"{qa_block}\n"
+            f"{focus_line}\n"
             "Rules:\n"
             "- Base the Objective and ALL Key Results on the user's answers in state_context (prefer) or qa_context if state_context is empty.\n"
             "- Where bounds are given (min/max or unit), set realistic targets within bounds; do NOT exceed max. Respect units.\n"
@@ -1155,12 +1164,23 @@ def generate_and_update_okrs_for_pillar(
     except Exception:
         pass
     state_ctx = _build_state_context_from_models(session, user_id=user_id, run_id=run_id_for_pillar, pillar_slug=pillar_key)
+    pref_value = None
+    pref_key = PILLAR_PREF_KEYS.get(pillar_key)
+    if pref_key:
+        pref_row = (
+            session.query(UserPreference.value)
+            .filter(UserPreference.user_id == user_id, UserPreference.key == pref_key)
+            .scalar()
+        )
+        if pref_row:
+            pref_value = pref_row
     okr_struct = make_structured_okr_llm(
         pillar_slug=pillar_key,
         pillar_score=pillar_score,
         concept_scores=concept_scores or {},
         qa_context=None,                 # not required when state_context is present
         state_context=state_ctx,
+        pillar_preference=pref_value,
     )
 
     def _capitalise(text: Any) -> str:
