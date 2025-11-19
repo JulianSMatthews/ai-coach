@@ -75,6 +75,7 @@ ADMIN_USAGE = (
     "admin summary [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
     "admin okr-summary [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
     "admin okr-summaryllm [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
+    "admin users\n"
     "\nExample: admin create +447700900123 Julian Matthews"
 )
 
@@ -546,7 +547,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
     admin_club_id = getattr(admin_user, "club_id", None)
     club_scope_id = admin_club_id
     try:
-        if cmd in {"create", "start", "status", "report", "detailed", "summary", "okr-summary", "okr-summaryllm"} and club_scope_id is None:
+        if cmd in {"create", "start", "status", "report", "detailed", "summary", "okr-summary", "okr-summaryllm", "users"} and club_scope_id is None:
             send_whatsapp(
                 to=admin_user.phone,
                 text="Your admin profile is not linked to a club. Use 'admin set global <club>' first."
@@ -699,6 +700,22 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
             except Exception as e:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to regenerate dashboard: {e}")
                 return True
+        elif cmd == "users":
+            if club_scope_id is None:
+                send_whatsapp(to=admin_user.phone, text="Set your club first via 'admin set global <club_id>'.")
+                return True
+            try:
+                from .reporting import generate_club_users_html
+                path = generate_club_users_html(club_scope_id)
+                fname = os.path.basename(path)
+                url = _public_report_url_global(fname)
+                send_whatsapp(
+                    to=admin_user.phone,
+                    text=f"Club users report refreshed:\n{url}?ts={int(time.time())}"
+                )
+            except Exception as e:
+                send_whatsapp(to=admin_user.phone, text=f"Failed to generate club users report: {e}")
+            return True
         elif cmd == "detailed":
             if len(parts) < 3:
                 send_whatsapp(to=admin_user.phone, text="Usage: admin detailed <phone|me>")

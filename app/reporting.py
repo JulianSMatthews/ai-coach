@@ -30,6 +30,7 @@ from .models import (
     OKRCycle,
     OKRObjective,
     OKRKeyResult,
+    Club,
 )
 
 # For raw SQL fallback when OKR models are unavailable
@@ -270,12 +271,16 @@ def generate_global_users_html() -> str:
             .scalars()
             .all()
         )
-        runs = (
-            s.query(AssessmentRun)
-             .filter(AssessmentRun.finished_at.isnot(None))
-             .order_by(AssessmentRun.user_id.asc(), AssessmentRun.finished_at.desc())
-             .all()
-        )
+        user_ids = [getattr(u, "id", None) for u in users if getattr(u, "id", None) is not None]
+        runs = []
+        if user_ids:
+            runs = (
+                s.query(AssessmentRun)
+                 .filter(AssessmentRun.finished_at.isnot(None))
+                 .filter(AssessmentRun.user_id.in_(user_ids))
+                 .order_by(AssessmentRun.user_id.asc(), AssessmentRun.finished_at.desc())
+                 .all()
+            )
 
     latest_run_by_user: dict[int, AssessmentRun] = {}
     for run in runs:
@@ -384,6 +389,137 @@ def generate_global_users_html() -> str:
 
     try:
         _audit("global_users_html", "ok", {"count": len(users), "path": out_path})
+    except Exception:
+        pass
+
+    return out_path
+
+
+def generate_club_users_html(club_id: int) -> str:
+    """
+    Render an HTML users report filtered to a specific club, including latest assessment + links.
+    """
+    with SessionLocal() as s:
+        club = s.query(Club).filter(Club.id == club_id).one_or_none()
+        users = (
+            s.query(User)
+             .filter(User.club_id == club_id)
+             .order_by(User.id.asc())
+             .all()
+        )
+        user_ids = [getattr(u, "id", None) for u in users if getattr(u, "id", None) is not None]
+        runs = []
+        if user_ids:
+            runs = (
+                s.query(AssessmentRun)
+                 .filter(AssessmentRun.finished_at.isnot(None))
+                 .filter(AssessmentRun.user_id.in_(user_ids))
+                 .order_by(AssessmentRun.user_id.asc(), AssessmentRun.finished_at.desc())
+                 .all()
+            )
+    club_label = (
+        getattr(club, "name", None)
+        or getattr(club, "slug", None)
+        or f"Club {club_id}"
+    )
+    latest_run_by_user: dict[int, AssessmentRun] = {}
+    for run in runs:
+        uid = getattr(run, "user_id", None)
+        if uid is None or uid in latest_run_by_user:
+            continue
+        latest_run_by_user[uid] = run
+
+    def _esc(value) -> str:
+        return html.escape("" if value is None else str(value))
+
+    def _fmt_dt(value) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, datetime):
+            return value.strftime("%Y-%m-%d %H:%M")
+        return str(value)
+
+    headers = [
+        "ID",
+        "First Name",
+        "Surname",
+        "Phone",
+        "Created On",
+        "Updated On",
+        "Consent Given",
+        "Consent At",
+        "Last Assessment",
+        "Dashboard",
+        "Progress",
+    ]
+
+    rows_html = []
+    for u in users:
+        latest_run = latest_run_by_user.get(getattr(u, "id", None))
+        finished_str = ""
+        dash_cell = ""
+        prog_cell = ""
+        if latest_run:
+            _ensure_dashboard_and_progress(u, latest_run)
+            finished_str = _fmt_dt(getattr(latest_run, "finished_at", None))
+            dash_link = _report_link(u.id, "latest.html")
+            prog_link = _report_link(u.id, "progress.html")
+            if dash_link:
+                dash_cell = f"<a href=\"{html.escape(dash_link)}\" target=\"_blank\">dashboard</a>"
+            if prog_link:
+                prog_cell = f"<a href=\"{html.escape(prog_link)}\" target=\"_blank\">progress</a>"
+        rows_html.append(
+            "<tr>"
+            f"<td>{_esc(u.id)}</td>"
+            f"<td>{_esc(getattr(u, 'first_name', None))}</td>"
+            f"<td>{_esc(getattr(u, 'surname', None))}</td>"
+            f"<td>{_esc(getattr(u, 'phone', None))}</td>"
+            f"<td>{_esc(_fmt_dt(getattr(u, 'created_on', None)))}</td>"
+            f"<td>{_esc(_fmt_dt(getattr(u, 'updated_on', None)))}</td>"
+            f"<td>{_esc('Yes' if getattr(u, 'consent_given', False) else 'No')}</td>"
+            f"<td>{_esc(_fmt_dt(getattr(u, 'consent_at', None)))}</td>"
+            f"<td>{_esc(finished_str)}</td>"
+            f"<td>{dash_cell}</td>"
+            f"<td>{prog_cell}</td>"
+            "</tr>"
+        )
+
+    css = """
+    <style>
+      body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 24px; color: #111; }
+      h1 { margin-bottom: 4px; font-size: 20px; }
+      .meta { color: #666; margin-bottom: 16px; }
+      table { width: 100%; border-collapse: collapse; }
+      th, td { border: 1px solid #ddd; padding: 8px 6px; text-align: left; vertical-align: top; font-size: 14px; }
+      th { background: #f5f5f5; font-weight: 600; }
+      td:nth-child(4) { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+    </style>
+    """
+
+    html_doc = [
+        "<!doctype html>",
+        "<html lang=\"en\">",
+        "<meta charset=\"utf-8\">",
+        f"<title>{html.escape(club_label)} · Users</title>",
+        css,
+        "<body>",
+        f"<h1>{html.escape(club_label)} · Users</h1>",
+        f"<div class=\"meta\">Total users: {len(users)} · Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</div>",
+        "<table>",
+        "<thead><tr>" + "".join(f"<th>{_esc(h)}</th>" for h in headers) + "</tr></thead>",
+        "<tbody>" + ("".join(rows_html) if rows_html else "<tr><td colspan=\"11\">No users found.</td></tr>") + "</tbody>",
+        "</table>",
+        "</body>",
+        "</html>",
+    ]
+
+    out_root = _reports_root_global()
+    out_path = os.path.join(out_root, f"club-{club_id}-users.html")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write("\n".join(html_doc))
+
+    try:
+        _audit("club_users_html", "ok", {"club_id": club_id, "count": len(users), "path": out_path})
     except Exception:
         pass
 

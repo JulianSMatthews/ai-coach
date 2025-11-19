@@ -105,7 +105,7 @@ def build_pillar_feedback(
 
 # Report 
 
-    from .reporting import generate_assessment_dashboard_html, _fetch_okrs_for_run
+from .reporting import generate_assessment_dashboard_html, generate_progress_report_html, _fetch_okrs_for_run
 
 # Optional integrations (fail-safe no-ops if missing)
 try:
@@ -2316,6 +2316,18 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                         with SessionLocal() as ss:
                             ss.add(JobAudit(job_name="dashboard_generate", status="error",
                                             payload={"run_id": state.get("run_id")}, error=str(e)))
+                            ss.commit()
+                    except Exception:
+                        pass
+
+                # Generate/update progress report HTML
+                try:
+                    generate_progress_report_html(user.id)
+                except Exception as e:
+                    try:
+                        with SessionLocal() as ss:
+                            ss.add(JobAudit(job_name="progress_generate", status="error",
+                                            payload={"user_id": user.id}, error=str(e)))
                             ss.commit()
                     except Exception:
                         pass
