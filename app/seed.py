@@ -120,6 +120,11 @@ CONCEPT_QUESTIONS = {
     },
 }
 
+# Optional pillar-level preamble questions (can be asked before concept questions)
+PILLAR_PREAMBLE_QUESTIONS = {
+    "training": "Looking ahead over the next three months, do you have any particular training goal or focus (e.g., marathon prep, strength maintenance, injury recovery)?"
+}
+
 KB_SNIPPETS: Dict[str, Dict[str, List[Dict]]] = {
     "nutrition": {
         "protein_intake": [

@@ -34,6 +34,7 @@ from .reporting import (
     generate_assessment_report_pdf,
     generate_assessment_dashboard_html,
     generate_global_users_html,
+    generate_club_users_html,
 )
 
 # Lazy import holder to avoid startup/reload ImportError if symbol is added later

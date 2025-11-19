@@ -40,6 +40,7 @@ from .models import (
     PillarResult,
     OKRObjective,
     OKRKeyResult,
+    UserPreference,
 )
 
 # Messaging + LLM
@@ -57,6 +58,7 @@ from .llm import _llm
 # ==============================================================================
 
 from .okr import make_quarterly_okr_llm
+from .seed import PILLAR_PREAMBLE_QUESTIONS
 
 # --- Unified helper -----------------------------------------------------------
 def feedback_to_okr(
@@ -701,6 +703,47 @@ def _report_url(user_id: int, filename: str) -> str:
         path = f"/reports/{user_id}/{filename}"
         return f"{base}{path}" if base else path
 
+# Pillar preference mappings (for preamble collection)
+PILLAR_PREFERENCE_KEYS = {
+    "training": "training_focus",
+}
+
+
+def _get_user_preference_value(user_id: int, key: str) -> Optional[str]:
+    if not user_id or not key:
+        return None
+    with SessionLocal() as db:
+        row = db.execute(
+            select(UserPreference).where(
+                UserPreference.user_id == user_id,
+                UserPreference.key == key,
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            return None
+        return row.value
+
+
+def _set_user_preference_value(user_id: int, key: str, value: str | None) -> None:
+    if not user_id or not key:
+        return
+    with SessionLocal() as db:
+        row = db.execute(
+            select(UserPreference).where(
+                UserPreference.user_id == user_id,
+                UserPreference.key == key,
+            )
+        ).scalar_one_or_none()
+        if row is None:
+            row = UserPreference(user_id=user_id, key=key, value=value or "")
+            db.add(row)
+        else:
+            row.value = value or ""
+        try:
+            db.commit()
+        except Exception:
+            db.rollback()
+
 # DB helpers
 
 def _resolve_concept_id(session, pillar_key: str | None, concept_code: str | None) -> Optional[int]:
@@ -833,6 +876,60 @@ def _bump_concept_asked(user_id: int, run_id: int, pillar_key: str | None, conce
             except Exception:
                 pass
         s.commit()
+
+
+def _maybe_prompt_preamble_question(user: User, state: dict, pillar: str, turns: list[dict]) -> bool:
+    question = PILLAR_PREAMBLE_QUESTIONS.get(pillar)
+    if not question:
+        return False
+    pref_map = state.setdefault("pillar_preamble", {})
+    status = pref_map.get(pillar) or {}
+    if status.get("answered"):
+        return False
+    awaiting = state.get("awaiting_preamble")
+    if awaiting:
+        return awaiting == pillar
+    pref_map[pillar] = {"asked": True, "answered": False}
+    state["awaiting_preamble"] = pillar
+    turns.append({
+        "role": "assistant",
+        "pillar": pillar,
+        "question": question,
+        "concept": "__preamble__",
+        "is_main": False,
+    })
+    _send_to_user(user, question)
+    return True
+
+
+def _send_first_concept_question_for_pillar(user: User, state: dict, pillar: str, turns: list[dict], db_session) -> bool:
+    next_pcodes = state.get("pillar_concepts", {}).get(pillar) or []
+    if not next_pcodes:
+        _send_to_user(user, f"Setup note: I don’t have {pillar.title()} concepts. Please seed the DB and try again.")
+        return False
+    next_concept = next_pcodes[0]
+    with SessionLocal() as lookup:
+        q_next = _concept_primary_question(lookup, pillar, next_concept) or (
+            f"Quick start on {next_concept.replace('_', ' ')} — what’s your current approach?"
+        )
+    display_q = _format_main_question_for_user(state, pillar, next_concept, q_next)
+    turns.append({
+        "role": "assistant",
+        "pillar": pillar,
+        "question": q_next,
+        "concept": next_concept,
+        "is_main": True,
+    })
+    _send_to_user(user, display_q)
+    try:
+        _bump_concept_asked(user.id, state.get("run_id"), pillar, next_concept)
+    except Exception:
+        pass
+    try:
+        _log_turn(db_session, state, pillar, next_concept, False, q_next, None, None, None, action="ask")
+    except Exception:
+        pass
+    return True
 
 def _update_concepts_from_scores(user_id: int, pillar_key: str, scores: dict[str, float],
                                  q_by_code: dict[str, str] | None = None,
@@ -1519,6 +1616,24 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         if not isinstance(state.get("pillar_concepts"), dict):
             state["pillar_concepts"] = {}
         _ensure_total_questions(state)
+        if not isinstance(state.get("turns"), list):
+            state["turns"] = []
+        turns = state["turns"]
+        if not isinstance(state.get("pillar_preamble"), dict):
+            state["pillar_preamble"] = {}
+        if "awaiting_preamble" not in state:
+            state["awaiting_preamble"] = None
+        pref_cache = state["pillar_preamble"]
+        for pillar_key in PILLAR_PREAMBLE_QUESTIONS.keys():
+            status = pref_cache.get(pillar_key) or {}
+            if status.get("answered"):
+                continue
+            pref_key = PILLAR_PREFERENCE_KEYS.get(pillar_key)
+            if not pref_key:
+                continue
+            existing_pref = _get_user_preference_value(user.id, pref_key)
+            if existing_pref is not None:
+                pref_cache[pillar_key] = {"asked": True, "answered": True, "answer": existing_pref}
 
         # quick commands
         cmd = (user_text or "").strip().lower()
@@ -1534,7 +1649,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         # Quick correction command — "redo last"
         # Re-asks the most recent main question so the next reply overwrites that concept's answer.
         if cmd in {"redo", "redo last", "redo last question", "redo question"}:
-            turns = state.get("turns", [])
+            turns = state["turns"]
             concept_progress = state.setdefault("concept_progress", {
                 "nutrition": {}, "training": {}, "resilience": {}, "recovery": {}
             })
@@ -1644,11 +1759,36 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             start_combined_assessment(user, force_intro=True)
             return True
 
+        awaiting_pillar = state.get("awaiting_preamble")
+        if awaiting_pillar:
+            reply = (user_text or "").strip()
+            if not reply:
+                _send_to_user(user, "Just a short note on your focus will help tailor this pillar—feel free to type it or say skip.")
+                return True
+            if reply.lower() in {"skip", "no", "none"}:
+                reply = ""
+            pref_key = PILLAR_PREFERENCE_KEYS.get(awaiting_pillar)
+            if pref_key:
+                _set_user_preference_value(user.id, pref_key, reply)
+            pref_map = state.setdefault("pillar_preamble", {})
+            pref_map[awaiting_pillar] = {"asked": True, "answered": True, "answer": reply}
+            state["awaiting_preamble"] = None
+            turns.append({"role": "user", "pillar": awaiting_pillar, "text": reply, "is_preamble": True})
+            ack = "Thanks — I’ll keep that in mind."
+            if awaiting_pillar == "training":
+                ack = "Thanks — I'll shape Training around that focus."
+            _send_to_user(user, ack)
+            if not _send_first_concept_question_for_pillar(user, state, awaiting_pillar, turns, s):
+                _commit_state(s, sess, state)
+                return True
+            _commit_state(s, sess, state)
+            return True
+
         pillar = state.get("current", "nutrition")
         concept_idx_map = state.get("concept_idx", {})
         concept_scores = state.get("concept_scores", {})
         kb_used = state.get("kb_used", {})
-        turns = state.get("turns", [])
+        turns = state["turns"]
         concept_progress = state.get("concept_progress", {})
         if not concept_progress:
             concept_progress = {"nutrition": {}, "training": {}, "resilience": {}, "recovery": {}}
@@ -1673,6 +1813,10 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 _send_to_user(user, "No concepts configured. Please seed the DB and try again.")
                 _commit_state(s, sess, state)
                 return True
+
+        if _maybe_prompt_preamble_question(user, state, pillar, turns):
+            _commit_state(s, sess, state)
+            return True
 
         # Start run if needed
         _start_or_get_run(s, user, state)
@@ -2249,25 +2393,12 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     tr_msg = f"*Great* — {pillar.title()} done. Now a quick check on {nxt.title()} ⭐"
                 turns.append({"role": "assistant", "pillar": nxt, "text": tr_msg})
                 _send_to_user(user, tr_msg)
-                # Ask first concept in next pillar
-                next_pcodes = state.get("pillar_concepts", {}).get(nxt) or []
-                if not next_pcodes:
-                    _send_to_user(user, f"Setup note: I don’t have {nxt.title()} concepts. Please seed the DB and try again.")
+                if _maybe_prompt_preamble_question(user, state, nxt, turns):
                     _commit_state(s, sess, state)
                     return True
-                next_concept = next_pcodes[0]
-                with SessionLocal() as s2:
-                    q_next = _concept_primary_question(s2, nxt, next_concept) or f"Quick start on {next_concept.replace('_',' ')} — what’s your current approach?"
-                display_q_next = _format_main_question_for_user(state, nxt, next_concept, q_next)
-                turns.append({"role": "assistant", "pillar": nxt, "question": q_next, "concept": next_concept, "is_main": True})
-                _send_to_user(user, display_q_next)
-                # Ensure first question in new pillar bumps last_asked_at
-                try:
-                    _bump_concept_asked(user.id, nxt, next_concept)
-                except Exception:
-                    pass
-     
-                _log_turn(s, state, nxt, next_concept, False, q_next, None, None, None, action="ask")
+                if not _send_first_concept_question_for_pillar(user, state, nxt, turns, s):
+                    _commit_state(s, sess, state)
+                    return True
                 _commit_state(s, sess, state)
                 return True
             else:

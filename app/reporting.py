@@ -1652,10 +1652,12 @@ def _ensure_dashboard_and_progress(user: User | None, run: AssessmentRun | None)
             generate_assessment_dashboard_html(run_id)
         except Exception:
             pass
-    try:
-        generate_progress_report_html(user_id)
-    except Exception:
-        pass
+    prog_path = os.path.join(root, "progress.html")
+    if not os.path.exists(prog_path):
+        try:
+            generate_progress_report_html(user_id)
+        except Exception:
+            pass
 
 
 def _collect_summary_rows(start_dt: datetime, end_dt: datetime, club_id: int | None = None) -> list[dict]:

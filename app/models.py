@@ -147,6 +147,21 @@ class UserConceptState(Base):
         UniqueConstraint("user_id", "run_id", "concept_id", name="uq_user_run_concept_state"),
     )
 
+
+class UserPreference(Base):
+    __tablename__ = "user_preferences"
+
+    id         = Column(Integer, primary_key=True)
+    user_id    = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    key        = Column(String(64), nullable=False)
+    value      = Column(Text, nullable=True)
+    metadata   = Column(JSONType, nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "key", name="uq_user_preferences_user_key"),
+    )
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Knowledge Base (retriever)
 # ──────────────────────────────────────────────────────────────────────────────
