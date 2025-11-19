@@ -270,6 +270,19 @@ def generate_global_users_html() -> str:
             .scalars()
             .all()
         )
+        runs = (
+            s.query(AssessmentRun)
+             .filter(AssessmentRun.finished_at.isnot(None))
+             .order_by(AssessmentRun.user_id.asc(), AssessmentRun.finished_at.desc())
+             .all()
+        )
+
+    latest_run_by_user: dict[int, AssessmentRun] = {}
+    for run in runs:
+        uid = getattr(run, "user_id", None)
+        if uid is None or uid in latest_run_by_user:
+            continue
+        latest_run_by_user[uid] = run
 
     def _esc(value) -> str:
         return html.escape("" if value is None else str(value))
@@ -296,10 +309,26 @@ def generate_global_users_html() -> str:
         "Admin Role",
         "Consent Given",
         "Consent At",
+        "Last Assessment",
+        "Dashboard",
+        "Progress",
     ]
 
     rows_html = []
     for u in users:
+        latest_run = latest_run_by_user.get(getattr(u, "id", None))
+        if latest_run:
+            _ensure_dashboard_and_progress(u, latest_run)
+            finished = getattr(latest_run, "finished_at", None)
+            finished_str = _fmt_dt(finished)
+            dash_link = _report_link(u.id, "latest.html")
+            prog_link = _report_link(u.id, "progress.html")
+            dash_cell = f"<a href=\"{html.escape(dash_link)}\" target=\"_blank\">dashboard</a>" if dash_link else ""
+            prog_cell = f"<a href=\"{html.escape(prog_link)}\" target=\"_blank\">progress</a>" if prog_link else ""
+        else:
+            finished_str = ""
+            dash_cell = ""
+            prog_cell = ""
         rows_html.append(
             "<tr>"
             f"<td>{_esc(u.id)}</td>"
@@ -313,6 +342,9 @@ def generate_global_users_html() -> str:
             f"<td>{_esc(getattr(u, 'admin_role', ''))}</td>"
             f"<td>{_esc(_fmt_bool(getattr(u, 'consent_given', False)))}</td>"
             f"<td>{_esc(_fmt_dt(getattr(u, 'consent_at', None)))}</td>"
+            f"<td>{_esc(finished_str)}</td>"
+            f"<td>{dash_cell}</td>"
+            f"<td>{prog_cell}</td>"
             "</tr>"
         )
 
@@ -339,7 +371,7 @@ def generate_global_users_html() -> str:
         f"<div class=\"meta\">Total users: {len(users)} · Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</div>",
         "<table>",
         "<thead><tr>" + "".join(f"<th>{_esc(h)}</th>" for h in headers) + "</tr></thead>",
-        "<tbody>" + ("".join(rows_html) if rows_html else "<tr><td colspan=\"11\">No users found.</td></tr>") + "</tbody>",
+        "<tbody>" + ("".join(rows_html) if rows_html else "<tr><td colspan=\"13\">No users found.</td></tr>") + "</tbody>",
         "</table>",
         "</body>",
         "</html>",
@@ -1466,6 +1498,30 @@ def _write_detailed_pdf(path: str, user: User, run: AssessmentRun, rows: List[Us
 # ──────────────────────────────────────────────────────────────────────────────
 # Summary (admin) report – date range across users/runs
 # ──────────────────────────────────────────────────────────────────────────────
+def _ensure_dashboard_and_progress(user: User | None, run: AssessmentRun | None) -> None:
+    """
+    Ensure dashboard (latest.html) and progress (progress.html) reports exist for the user.
+    Generates them on demand if missing.
+    """
+    if not user or not getattr(user, "id", None):
+        return
+    user_id = getattr(user, "id", None)
+    run_id = getattr(run, "id", None)
+    if user_id is None:
+        return
+    root = _reports_root_for_user(user_id)
+    dash_path = os.path.join(root, "latest.html")
+    if (not os.path.exists(dash_path)) and run_id:
+        try:
+            generate_assessment_dashboard_html(run_id)
+        except Exception:
+            pass
+    try:
+        generate_progress_report_html(user_id)
+    except Exception:
+        pass
+
+
 def _collect_summary_rows(start_dt: datetime, end_dt: datetime, club_id: int | None = None) -> list[dict]:
     """
     Collect assessment runs finished within [start_dt, end_dt] along with pillar scores.
@@ -1511,6 +1567,7 @@ def _collect_summary_rows(start_dt: datetime, end_dt: datetime, club_id: int | N
         for pair in runs:
             run: AssessmentRun = pair.AssessmentRun
             user: User = pair.User
+            _ensure_dashboard_and_progress(user, run)
             plist = by_run.get(getattr(run, "id", 0), [])
 
             # Map pillar -> overall score for that pillar
