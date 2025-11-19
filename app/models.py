@@ -155,7 +155,7 @@ class UserPreference(Base):
     user_id    = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     key        = Column(String(64), nullable=False)
     value      = Column(Text, nullable=True)
-    metadata   = Column(JSONType, nullable=True)
+    meta       = Column(JSONType, nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     __table_args__ = (
