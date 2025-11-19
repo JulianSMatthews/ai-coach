@@ -104,6 +104,11 @@ def _report_link(user_id: int, filename: str) -> str:
     Priority: REPORTS_BASE_URL > PUBLIC_REPORT_BASE_URL > PUBLIC_BASE_URL > RENDER_EXTERNAL_URL.
     Falls back to relative /reports/... if none are set.
     """
+    try:
+        from .api import _public_report_url  # type: ignore
+        return _public_report_url(user_id, filename)
+    except Exception:
+        pass
     base = (
         os.getenv("REPORTS_BASE_URL")
         or os.getenv("PUBLIC_REPORT_BASE_URL")
