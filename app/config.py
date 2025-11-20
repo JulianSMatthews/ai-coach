@@ -1,5 +1,6 @@
 # app/config.py
 import zoneinfo
+from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
@@ -14,7 +15,7 @@ class Settings(BaseSettings):
     TWILIO_ACCOUNT_SID: str
     TWILIO_AUTH_TOKEN: str
     TWILIO_FROM: str
-    TWILIO_TO: str | None = None  # optional fallback "to"
+    TWILIO_TO: Optional[str] = None  # optional fallback "to"
 
     # Fast-test scheduling
     TEST_FAST_SCHEDULE: bool = Field(False, env="TEST_FAST_SCHEDULE")
@@ -26,7 +27,7 @@ class Settings(BaseSettings):
     RESET_DB_ON_STARTUP: bool = Field(False, env="RESET_DB_ON_STARTUP")
     SEED_TEST_USER: bool = Field(False, env="SEED_TEST_USER")
     SEED_USER_NAME: str = Field("Test User", env="SEED_USER_NAME")
-    SEED_USER_PHONE: str | None = Field(None, env="SEED_USER_PHONE")
+    SEED_USER_PHONE: Optional[str] = Field(None, env="SEED_USER_PHONE")
     SEED_USER_TZ: str = Field("Europe/London", env="SEED_USER_TZ")
 
     # Default app timezone (used only if a user record has no tz)

@@ -494,7 +494,7 @@ def _compose_final_summary_message(user: User, state: dict) -> str:
     try:
         html_link = _report_url(user.id, "latest.html")
         bust = int(time.time())
-        msg += f"\n\nYour wellbeing dashboard: {html_link}?ts={bust} (type 'dashboard' anytime)"
+        msg += f"\n\nYour wellbeing assessment: {html_link}?ts={bust} (type 'assessment' anytime)"
     except Exception:
         pass
     return msg
@@ -1628,11 +1628,11 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         # quick commands
         cmd = (user_text or "").strip().lower()
 
-        if cmd in {"report", "pdf", "report please", "send report", "pdf report", "dashboard", "image report"}:
+        if cmd in {"report", "pdf", "report please", "send report", "pdf report", "dashboard", "image report", "assessment"}:
             dash_link = _report_url(user.id, "latest.html")
             _send_to_user(
                 user,
-                f"Your Wellbeing dashboard: {dash_link}\n(*Type 'Dashboard' any time to view it again.*)",
+                f"Your Wellbeing assessment: {dash_link}\n(*Type 'assessment' any time to view it again.*)",
             )
             return True
 
@@ -2405,7 +2405,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 per_list = [x for x in [n_sc, t_sc, r_sc, rc_sc] if x is not None]
                 combined = round(sum(per_list) / max(1, len(per_list))) if per_list else 0
 
-                # Build dashboard link
+                # Build assessment link
                 dash_link = _report_url(user.id, "latest.html")
 
                 # Per-pillar breakdown with colored bars
@@ -2422,8 +2422,8 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 final_msg = (
                     f"{intro} Your combined score is *{combined}/100*\n"
                     f"\n{breakdown}\n\n"
-                    f"Your Wellbeing dashboard: {dash_link}\n"
-                    f"(*Type 'Dashboard' any time to view it again.*)"
+                    f"Your Wellbeing assessment: {dash_link}\n"
+                    f"(*Type 'assessment' any time to view it again.*)"
                 )
                 _send_to_user(user, final_msg)
 
@@ -2524,7 +2524,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         _commit_state(s, sess, state)
         return True
 def send_menu_options(user: User) -> None:
-    _send_to_user(user, "Type 'dashboard' anytime to open your interactive tracker link.")
+    _send_to_user(user, "Type 'assessment' anytime to open your interactive tracker link.")
 
 def send_dashboard_link(user: User) -> None:
     run_id = None
@@ -2546,11 +2546,11 @@ def send_dashboard_link(user: User) -> None:
         return
 
     try:
-        print(f"[dashboard] regenerating HTML for run_id={run_id}")
+        print(f"[assessment] regenerating HTML for run_id={run_id}")
         generate_assessment_dashboard_html(run_id)
-        print(f"[dashboard] wrote HTML for run_id={run_id}")
+        print(f"[assessment] wrote HTML for run_id={run_id}")
     except Exception as e:
-        print(f"[dashboard_error] {e}")
+        print(f"[assessment_error] {e}")
     link = _report_url(user.id, "latest.html")
     bust = int(time.time())
-    _send_to_user(user, f"Your wellbeing dashboard: {link}?ts={bust}")
+    _send_to_user(user, f"Your wellbeing assessment: {link}?ts={bust}")

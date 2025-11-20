@@ -9,6 +9,7 @@ import time
 from datetime import datetime, time, timedelta
 
 from twilio.rest import Client
+from twilio.base.exceptions import TwilioRestException
 from .config import settings
 from .message_log import write_log
 
@@ -101,11 +102,18 @@ def _perform_twilio_send(*, text: str, to_norm: str, category: str | None) -> st
     lock = _lock_for_destination(to_norm)
     with lock:
         _throttle_destination(to_norm)
-        msg = client.messages.create(
-            from_=settings.TWILIO_FROM,
-            body=text,
-            to=to_norm,
-        )
+        try:
+            msg = client.messages.create(
+                from_=settings.TWILIO_FROM,
+                body=text,
+                to=to_norm,
+            )
+        except TwilioRestException as exc:
+            code = getattr(exc, "code", None)
+            print(f"❌ Twilio send failed to {to_norm}: {exc.msg if hasattr(exc, 'msg') else exc} (code={code})")
+            if code == 63016:
+                print("💡 WhatsApp session expired (>24h). Send an approved template to reopen the window before freeform messages.")
+            raise
         try:
             _LAST_SEND_MONO[to_norm] = time.monotonic()
         except Exception:

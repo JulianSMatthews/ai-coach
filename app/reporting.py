@@ -56,9 +56,9 @@ except Exception:
 # Audit/logging controls (silence console by default)
 AUDIT_TO_CONSOLE = os.getenv("AUDIT_TO_CONSOLE", "0") == "1"
 AUDIT_TO_DB = os.getenv("AUDIT_TO_DB", "1") == "1"
-BRAND_NAME = (os.getenv("BRAND_NAME") or "").strip()
+BRAND_NAME = (os.getenv("BRAND_NAME") or "HealthSense").strip()
 BRAND_YEAR = os.getenv("BRAND_YEAR") or str(datetime.utcnow().year)
-BRAND_FOOTER = f"© {BRAND_YEAR} {BRAND_NAME}" if BRAND_NAME else ""
+BRAND_FOOTER = f"© {BRAND_YEAR} {BRAND_NAME}. All rights reserved." if BRAND_NAME else ""
 DEBUG_PROGRESS_BASELINES = os.getenv("DEBUG_PROGRESS_BASELINES", "0") == "1"
 
 def _audit(job: str, status: str = "ok", payload: Dict[str, Any] | None = None, error: str | None = None) -> None:
@@ -333,7 +333,7 @@ def generate_global_users_html() -> str:
         "Consent Given",
         "Consent At",
         "Last Assessment",
-        "Dashboard",
+        "Assessment",
         "Progress",
     ]
 
@@ -346,7 +346,7 @@ def generate_global_users_html() -> str:
             finished_str = _fmt_dt(finished)
             dash_link = _report_link(u.id, "latest.html")
             prog_link = _report_link(u.id, "progress.html")
-            dash_cell = f"<a href=\"{html.escape(dash_link)}\" target=\"_blank\">dashboard</a>" if dash_link else ""
+            dash_cell = f"<a href=\"{html.escape(dash_link)}\" target=\"_blank\">assessment</a>" if dash_link else ""
             prog_cell = f"<a href=\"{html.escape(prog_link)}\" target=\"_blank\">progress</a>" if prog_link else ""
         else:
             finished_str = ""
@@ -387,15 +387,16 @@ def generate_global_users_html() -> str:
         "<!doctype html>",
         "<html lang=\"en\">",
         "<meta charset=\"utf-8\">",
-        "<title>Global Users</title>",
+        f"<title>{html.escape(BRAND_NAME or 'HealthSense')} · Global Users</title>",
         css,
         "<body>",
-        "<h1>Global Users</h1>",
+        f"<h1>{html.escape(BRAND_NAME or 'HealthSense')} · Global Users</h1>",
         f"<div class=\"meta\">Total users: {len(users)} · Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</div>",
         "<table>",
         "<thead><tr>" + "".join(f"<th>{_esc(h)}</th>" for h in headers) + "</tr></thead>",
         "<tbody>" + ("".join(rows_html) if rows_html else "<tr><td colspan=\"13\">No users found.</td></tr>") + "</tbody>",
         "</table>",
+        f"<div style=\"text-align:right; margin-top:12px; color:#666; font-size:12px;\">{html.escape(BRAND_FOOTER)}</div>",
         "</body>",
         "</html>",
     ]
@@ -467,7 +468,7 @@ def generate_club_users_html(club_id: int) -> str:
         "Consent Given",
         "Consent At",
         "Last Assessment",
-        "Dashboard",
+        "Assessment",
         "Progress",
     ]
 
@@ -483,7 +484,7 @@ def generate_club_users_html(club_id: int) -> str:
             dash_link = _report_link(u.id, "latest.html")
             prog_link = _report_link(u.id, "progress.html")
             if dash_link:
-                dash_cell = f"<a href=\"{html.escape(dash_link)}\" target=\"_blank\">dashboard</a>"
+                dash_cell = f"<a href=\"{html.escape(dash_link)}\" target=\"_blank\">assessment</a>"
             if prog_link:
                 prog_cell = f"<a href=\"{html.escape(prog_link)}\" target=\"_blank\">progress</a>"
         rows_html.append(
@@ -518,15 +519,16 @@ def generate_club_users_html(club_id: int) -> str:
         "<!doctype html>",
         "<html lang=\"en\">",
         "<meta charset=\"utf-8\">",
-        f"<title>{html.escape(club_label)} · Users</title>",
+        f"<title>{html.escape(BRAND_NAME or 'HealthSense')} · {html.escape(club_label)} · Users</title>",
         css,
         "<body>",
-        f"<h1>{html.escape(club_label)} · Users</h1>",
+        f"<h1>{html.escape(BRAND_NAME or 'HealthSense')} · {html.escape(club_label)} · Users</h1>",
         f"<div class=\"meta\">Total users: {len(users)} · Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</div>",
         "<table>",
         "<thead><tr>" + "".join(f"<th>{_esc(h)}</th>" for h in headers) + "</tr></thead>",
         "<tbody>" + ("".join(rows_html) if rows_html else "<tr><td colspan=\"11\">No users found.</td></tr>") + "</tbody>",
         "</table>",
+        f"<div style=\"text-align:right; margin-top:12px; color:#666; font-size:12px;\">{html.escape(BRAND_FOOTER)}</div>",
         "</body>",
         "</html>",
     ]
@@ -1751,7 +1753,7 @@ def _collect_summary_rows(start_dt: datetime, end_dt: datetime, club_id: int | N
                 "recovery": pmap.get("recovery"),
                 "user_id": getattr(user, "id", None),
                 "run_id": getattr(run, "id", None),
-                "dashboard_url": _report_link(user.id, "latest.html"),
+            "dashboard_url": _report_link(user.id, "latest.html"),
                 "progress_url": _report_link(user.id, "progress.html"),
             })
     return out
@@ -1799,7 +1801,7 @@ def _write_summary_pdf(path: str, start_str: str, end_str: str, rows: list[dict]
     story += [Paragraph(f"Total assessments: {total}<br/>Average overall score: {avg_overall}<br/>{best_line}", styles["Normal"]), Spacer(1, 12)]
 
     # Table
-    header = ["#", "Name", "Date Completed", "Overall", "Nutrition", "Training", "Resilience", "Recovery", "Dashboard", "Progress"]
+    header = ["#", "Name", "Date Completed", "Overall", "Nutrition", "Training", "Resilience", "Recovery", "Assessment", "Progress"]
     data = [header]
     from reportlab.platypus import Paragraph
     for idx, r in enumerate(rows, start=1):
@@ -1812,7 +1814,7 @@ def _write_summary_pdf(path: str, start_str: str, end_str: str, rows: list[dict]
         name_cell = Paragraph(name_text, wrap)
         dash_url = r.get("dashboard_url") or ""
         prog_url = r.get("progress_url") or ""
-        dash_cell = Paragraph(f"<link href='{dash_url}' color='blue'>dashboard</link>" if dash_url else "", wrap)
+        dash_cell = Paragraph(f"<link href='{dash_url}' color='blue'>assessment</link>" if dash_url else "", wrap)
         prog_cell = Paragraph(f"<link href='{prog_url}' color='blue'>progress</link>" if prog_url else "", wrap)
         data.append([
             str(idx),
@@ -1843,7 +1845,7 @@ def _write_summary_pdf(path: str, start_str: str, end_str: str, rows: list[dict]
 
     story.append(Spacer(1, 10))
     if BRAND_FOOTER:
-        story.append(Paragraph(f"{BRAND_FOOTER} — Confidential internal summary", styles["Normal"]))
+        story.append(Paragraph(f"{BRAND_FOOTER}", styles["Normal"]))
 
     doc.build(story)
 
@@ -2416,7 +2418,7 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
   <div class='section scores-section'>
     <div class='card summary-card'>
      <div class='summary-main'>
-       <h1>Your Wellbeing Dashboard</h1>
+       <h1>HealthSense Wellbeing Assessment</h1>
        <p>Hi {html.escape(first)}, here's your latest assessment snapshot.</p>
        <p style='color:#475467;'>Updated {html.escape(today)}</p>
      </div>
@@ -2439,7 +2441,7 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
     </div>
   </div>
 </body>
-<div class='report-footer'>Reported on {reported_at}</div>
+<div class='report-footer'>Positives on {reported_at} · {BRAND_FOOTER}</div>
 </html>"""
 
     out_dir = _reports_root_for_user(user.id)
@@ -2671,7 +2673,7 @@ def generate_progress_report_html(user_id: int) -> str:
       .progress-track { width:100%; height:8px; background:#e4e7ec; border-radius:999px; overflow:hidden; }
       .progress-fill { height:100%; background:linear-gradient(90deg,#0ba5ec,#3cba92); border-radius:999px; }
       .kr-unit { color:#98a2b3; font-size:0.8rem; margin-top:2px; }
-      .report-footer { margin-top: 24px; font-size: 0.85rem; color: #98a2b3; }
+    .report-footer { margin-top: 24px; font-size: 0.85rem; color: #98a2b3; text-align: right; }
     </style>
     """
     items = []
@@ -2691,14 +2693,14 @@ def generate_progress_report_html(user_id: int) -> str:
     html_doc = f"""<!doctype html>
 <html lang="en">
 <meta charset="utf-8">
-<title>Progress Report</title>
+<title>HealthSense Progress Report</title>
 {css}
-<h1>Progress Report</h1>
+<h1>HealthSense Progress Report</h1>
 <div class="meta">Name: {html.escape(_display_full_name(user))}</div>
 <div class="timeline">
 {''.join(items) if items else '<p>No key results recorded yet.</p>'}
 </div>
-<div class="report-footer">Reported on {reported_at}</div>
+<div class="report-footer">{BRAND_FOOTER} · Reported on {reported_at}</div>
 </html>"""
     out_dir = _reports_root_for_user(user_id)
     out_path = os.path.join(out_dir, "progress.html")

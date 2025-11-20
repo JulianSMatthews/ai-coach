@@ -2,9 +2,11 @@
 # Canonical message logger — SINGLE SOURCE OF TRUTH.
 # All modules must import and call write_log from here.
 
+from typing import Optional
+
 __all__ = ["write_log"]
 
-def _console_echo(phone_e164: str | None, direction: str | None, text: str | None) -> None:
+def _console_echo(phone_e164: Optional[str], direction: Optional[str], text: Optional[str]) -> None:
     """
     Print a console echo for any message written to MessageLog.
     Format: [OUTBOUND] Julian #1 (+4477...) → first 120 chars
@@ -40,13 +42,13 @@ def write_log(*args, **kwargs) -> None:
     Accepts either:
       LEGACY (most common in this codebase):
         write_log(phone_e164: str, direction: str, text: str,
-                  category: str | None = None, twilio_sid: str | None = None,
-                  user: User | None = None)
+                  category: Optional[str] = None, twilio_sid: Optional[str] = None,
+                  user: Optional[User] = None)
       MODERN (supported for compatibility):
-        write_log(user_id: int | None = None, user_name: str | None = None,
-                  direction: str = "", channel: str | None = None,
-                  text: str | None = None, body: str | None = None,
-                  meta: dict | None = None, user: object | None = None)
+        write_log(user_id: Optional[int] = None, user_name: Optional[str] = None,
+                  direction: str = "", channel: Optional[str] = None,
+                  text: Optional[str] = None, body: Optional[str] = None,
+                  meta: Optional[dict] = None, user: object | None = None)
     Normalizes to a single DB write.
     """
     # Local imports to avoid circular deps

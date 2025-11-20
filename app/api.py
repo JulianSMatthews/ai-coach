@@ -1,7 +1,7 @@
 # app/api.py
 # PATCH — proper API module + robust Twilio webhook (2025-09-04)
-# PATCH — 2025-09-11: Add minimal superuser admin endpoints (create user, start, status, dashboard)
-# PATCH — 2025-09-11: Admin hardening + WhatsApp admin commands (token+DB check; create/start/status/dashboard)
+# PATCH — 2025-09-11: Add minimal superuser admin endpoints (create user, start, status, assessment)
+# PATCH — 2025-09-11: Admin hardening + WhatsApp admin commands (token+DB check; create/start/status/assessment)
 
 import os
 import json
@@ -70,7 +70,7 @@ ADMIN_USAGE = (
     "admin create <phone> <first_name> <surname>\n"
     "admin start <phone>\n"
     "admin status <phone>\n"
-    "admin dashboard <phone>\n"
+    "admin assessment <phone>\n"
     "admin progress <phone>\n"
     "admin detailed <phone>\n"
     "admin summary [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
@@ -527,7 +527,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
       admin create <phone> [<name...>]
       admin start <phone>
       admin status <phone>
-      admin dashboard <phone>
+      admin assessment <phone>
       admin detailed <phone>
     Returns True if handled; False to allow normal flow.
     """
@@ -548,7 +548,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
     admin_club_id = getattr(admin_user, "club_id", None)
     club_scope_id = admin_club_id
     try:
-        if cmd in {"create", "start", "status", "report", "detailed", "summary", "okr-summary", "okr-summaryllm", "users"} and club_scope_id is None:
+        if cmd in {"create", "start", "status", "report", "detailed", "summary", "okr-summary", "okr-summaryllm", "users", "assessment"} and club_scope_id is None:
             send_whatsapp(
                 to=admin_user.phone,
                 text="Your admin profile is not linked to a club. Use 'admin set global <club>' first."
@@ -666,9 +666,9 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
             status_txt = "in_progress" if active else ("completed" if latest_run and getattr(latest_run, "finished_at", None) else "idle")
             send_whatsapp(to=admin_user.phone, text=f"Status for {display_full_name(u)} ({u.phone}): {status_txt}")
             return True
-        elif cmd == "dashboard":
+        elif cmd == "assessment":
             if len(parts) < 3:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin dashboard <phone>")
+                send_whatsapp(to=admin_user.phone, text="Usage: admin assessment <phone>")
                 return True
             target_phone = _norm_phone(parts[2])
             with SessionLocal() as s:
@@ -693,13 +693,13 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 send_whatsapp(
                     to=admin_user.phone,
                     text=(
-                        f"Dashboard refreshed for {display_full_name(u)} ({u.phone}) "
+                        f"Assessment refreshed for {display_full_name(u)} ({u.phone}) "
                         f"[run #{latest_run.id}]:\nLink: {dash_url}?ts={bust}"
                     )
                 )
                 return True
             except Exception as e:
-                send_whatsapp(to=admin_user.phone, text=f"Failed to regenerate dashboard: {e}")
+                send_whatsapp(to=admin_user.phone, text=f"Failed to regenerate assessment report: {e}")
                 return True
         elif cmd == "users":
             if club_scope_id is None:
@@ -1071,9 +1071,9 @@ async def twilio_inbound(request: Request):
             send_menu_options(user)
             return Response(content="", media_type="text/plain", status_code=200)
 
-        if lower_body == "dashboard":
+        if lower_body == "assessment":
             try:
-                print(f"[api] dashboard command received for user_id={user.id}")
+                print(f"[api] assessment command received for user_id={user.id}")
             except Exception:
                 pass
             send_dashboard_link(user)

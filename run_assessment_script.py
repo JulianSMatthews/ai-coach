@@ -351,6 +351,11 @@ ALL_CONCEPTS = [
     ("recovery",   "sleep_quality"),
 ]
 
+# Optional preamble answers per pillar (e.g., focus question before training)
+PREAMBLE_ANSWERS = {
+    "training": "Looking ahead over the next three months, I want to prioritise cardio and keep strength maintenance.",
+}
+
 
 def _answers_at_bounds_max() -> Dict[str, str]:
     """
@@ -1115,6 +1120,7 @@ def main():
             club_id=club_id,
             club_label=club_label,
         )
+        preamble_sent: dict[str, bool] = {}
 
         # Start session
         try:
@@ -1140,6 +1146,12 @@ def main():
             print(f"[run] scenario={scenario}")
         for idx, (pillar, code) in enumerate(order, 1):
             msg = answers.get(code)
+            if pillar == "training" and not preamble_sent.get(pillar) and PREAMBLE_ANSWERS.get(pillar):
+                preamble_text = PREAMBLE_ANSWERS[pillar]
+                ok_pre = _continue_with_timeout(user=user, text=preamble_text, timeout_s=args.call_timeout)
+                print(f"[preamble] training -> '{preamble_text}' [{'ok' if ok_pre else 'warn'}]")
+                preamble_sent[pillar] = True
+                time.sleep(0.25)
             if not started:
                 if session_id is None:
                     start_combined_assessment(user=user, force_intro=True)
