@@ -13,6 +13,7 @@ from typing import Dict, List
 from datetime import datetime
 import os
 import hashlib, math, random
+import json
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -26,6 +27,7 @@ from .models import (
     KbSnippet,
     KbVector,
     Club,
+    UserPreference,
     ADMIN_ROLE_MEMBER,
     ADMIN_ROLE_CLUB,
     ADMIN_ROLE_GLOBAL,
@@ -67,16 +69,16 @@ CONCEPTS: Dict[str, Dict[str, str]] = {
 CONCEPT_QUESTIONS = {
     "nutrition": {
         "protein_intake": {
-            "primary": "Thinking about the last 7 days, how many protein portions did you usually eat per day? For reference: 1 portion = palm-sized meat or fish, 2 eggs, 1 handful of nuts, or 1 cup of beans/lentils."
+            "primary": "Thinking about the last 7 days, how many protein portions did you usually *eat on average per day*? For reference: 1 portion = palm-sized meat or fish, 2 eggs, 1 handful of nuts, or 1 cup of beans/lentils."
         },
         "fruit_veg": {
-            "primary": "In the last 7 days, how many portions of fruit and vegetables did you eat on average per day? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries."
+            "primary": "In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries."
         },
         "hydration": {
-            "primary": "Thinking about the last 7 days, how much water did you usually drink per day? For reference: 1 glass = 250ml, 1 small bottle = 500ml."
+            "primary": "Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml."
         },
         "processed_food": {
-            "primary": "In the last 7 days, how many portions of processed food did you eat on average per day? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry."
+            "primary": "In the last 7 days, how many portions of processed food did you *eat on average per day*? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry."
         },
     },
     "training": {
@@ -219,6 +221,33 @@ DEMO_USERS = [
     },
 ]
 
+# Touchpoint type definitions for user-facing explanations
+TOUCHPOINT_TYPES = [
+    {"code": "prime",   "label": "Prime",   "description": "Light pre-period nudge to confirm focus and gather blockers."},
+    {"code": "kickoff", "label": "Kickoff", "description": "Sets the plan and 2–3 key actions for the period."},
+    {"code": "adjust",  "label": "Adjust",  "description": "Mid-period variance check to course-correct."},
+    {"code": "wrap",    "label": "Wrap",    "description": "Retro: wins, misses, and setup for the next period."},
+    {"code": "ad_hoc",  "label": "Ad hoc",  "description": "On-demand or triggered interaction outside the cadence."},
+]
+
+# Default cadence profiles (can be overridden per user via UserPreference)
+CADENCE_PROFILES = [
+    {
+        "code": "standard_loop",
+        "label": "Standard loop",
+        "types": ["prime", "kickoff", "adjust", "wrap"],
+        "intensity": "medium",
+        "description": "Balanced cadence with planning, mid-course check, and wrap."
+    },
+    {
+        "code": "light_loop",
+        "label": "Light loop",
+        "types": ["kickoff", "wrap"],
+        "intensity": "light",
+        "description": "Low-touch cadence for users who prefer fewer check-ins."
+    },
+]
+
 def _seed_admin_role(entry: dict) -> str:
     role = (entry.get("admin_role") or "").strip().lower()
     if role in {ADMIN_ROLE_MEMBER, ADMIN_ROLE_CLUB, ADMIN_ROLE_GLOBAL}:
@@ -237,6 +266,16 @@ def _hash_floats(text: str, dim: int = 256) -> list[float]:
         vec.append(v)
     norm = math.sqrt(sum(v*v for v in vec)) or 1.0
     return [v / norm for v in vec]
+
+
+def _ensure_user_pref(session: Session, user_id: int, key: str, value: str, meta=None) -> bool:
+    row = session.execute(
+        select(UserPreference).where(UserPreference.user_id == user_id, UserPreference.key == key)
+    ).scalar_one_or_none()
+    if row:
+        return False
+    session.add(UserPreference(user_id=user_id, key=key, value=value, meta=meta))
+    return True
 
 CONCEPT_SCORE_BOUNDS = {
     "nutrition": {
@@ -365,7 +404,7 @@ def ensure_vectors_for_snippets(session: Session, dim: int = 256) -> int:
         new_vectors += 1
     session.commit(); return new_vectors
 
- 
+
 def upsert_clubs(session: Session) -> int:
     created = 0
     for slug, name in CLUBS:
@@ -445,6 +484,35 @@ def upsert_demo_users(session: Session) -> int:
     session.commit()
     return created
 
+
+def upsert_touchpoint_defaults(session: Session) -> dict:
+    """
+    Seeds default cadence/profile preferences for all users and stores
+    the touchpoint type definitions for reference.
+    """
+    created_prefs = 0
+    created_defs = 0
+
+    users = session.execute(select(User)).scalars().all()
+    if not users:
+        return {"created_prefs": 0, "created_defs": 0}
+
+    # Store shared definitions as JSON string per user (lightweight duplication)
+    type_defs_json = json.dumps(TOUCHPOINT_TYPES)
+    default_profile = CADENCE_PROFILES[0]["code"] if CADENCE_PROFILES else "standard_loop"
+    default_intensity = CADENCE_PROFILES[0].get("intensity") if CADENCE_PROFILES else "medium"
+
+    for u in users:
+        if _ensure_user_pref(session, u.id, "touchpoint_types", type_defs_json):
+            created_defs += 1
+        if _ensure_user_pref(session, u.id, "touchpoint_cadence_profile", default_profile):
+            created_prefs += 1
+        if _ensure_user_pref(session, u.id, "touchpoint_intensity", default_intensity):
+            created_prefs += 1
+
+    session.commit()
+    return {"created_prefs": created_prefs, "created_defs": created_defs}
+
 def run_seed() -> None:
     """
     Full seed entrypoint. Safely seeds in the right order and won't crash
@@ -467,6 +535,7 @@ def run_seed() -> None:
 
             # 4) Users last (requires clubs)
             u  = upsert_demo_users(s) if 'upsert_demo_users' in globals() else 0
+            tp = upsert_touchpoint_defaults(s) if 'upsert_touchpoint_defaults' in globals() else {"created_prefs": 0, "created_defs": 0}
 
             # Commit once at the end
             s.commit()
@@ -479,6 +548,7 @@ def run_seed() -> None:
             print(f"[seed] Concept questions upsert complete. new_questions={cq}")
             print(f"[seed] KB vectors complete. new_vectors={kv} (dim=256)")
             print(f"[seed] Users seed complete. Created {u} new user(s).")
+            print(f"[seed] Touchpoint defaults complete. new_prefs={tp['created_prefs']} new_defs={tp['created_defs']}")
 
         except Exception as e:
             s.rollback()

@@ -30,9 +30,14 @@ from .models import (
     OKRCycle,
     OKRObjective,
     OKRKeyResult,
+    WeeklyFocus,
+    WeeklyFocusKR,
+    PsychProfile,
     UserPreference,
     Club,
+    OKRKrEntry,
 )
+from . import llm as shared_llm
 
 # For raw SQL fallback when OKR models are unavailable
 from sqlalchemy import text, select
@@ -200,6 +205,55 @@ def _llm_text_to_html(text: str) -> str:
     if not parts:
         return ""
     return "".join(f"<p>{html.escape(p)}</p>" for p in parts)
+
+
+def _coaching_approach_text(user_id: int, first_name: str | None = None) -> str:
+    with SessionLocal() as s:
+        prof = (
+            s.query(PsychProfile)
+            .filter(PsychProfile.user_id == user_id)
+            .order_by(PsychProfile.completed_at.desc().nullslast(), PsychProfile.id.desc())
+            .first()
+        )
+    if not prof:
+        return ""
+    flags = getattr(prof, "flags", {}) or {}
+    params = getattr(prof, "parameters", {}) or {}
+    sec = getattr(prof, "section_averages", {}) or {}
+    name = (first_name or "").strip() or "you"
+    client = getattr(shared_llm, "_llm", None)
+    text = ""
+    if client:
+        prompt = (
+            "You are a concise wellbeing coach writing directly to the user. "
+            "In 2–3 sentences, explain how you'll tailor support based on their habit readiness profile. "
+            "Use 'you', keep it plain text, no bullets.\n"
+            f"User: {name}\n"
+            f"Section averages: {sec}\nFlags: {flags}\nParameters: {params}"
+        )
+        try:
+            resp = client.invoke(prompt)
+            candidate = (getattr(resp, "content", None) or "").strip()
+            if candidate:
+                text = candidate
+        except Exception:
+            text = ""
+    if not text:
+        parts = []
+        if flags.get("low_readiness"):
+            parts.append("We’ll keep goals small and build early wins.")
+        if flags.get("stress_sensitive"):
+            parts.append("We’ll use gentle pacing and add resilience support.")
+        if flags.get("low_self_reg") or flags.get("high_accountability"):
+            parts.append("I’ll bring more structure and simple scheduling prompts.")
+        if flags.get("perfectionism"):
+            parts.append("We’ll avoid all-or-nothing and allow slips.")
+        if flags.get("high_readiness"):
+            parts.append("If you want, we can progress faster.")
+        text = " ".join(parts) or "I’ll tailor goals and support to your current capacity and style."
+    return text
+
+
 
 
 def _score_narrative_from_llm(user: User, combined: int, payload: list[dict]) -> str:
@@ -1594,6 +1648,16 @@ def _write_detailed_pdf(path: str, user: User, run: AssessmentRun, rows: List[Us
     # Fetch OKRs for this run (uses structured OKR tables if available)
     okr_map = _fetch_okrs_for_run(getattr(run, 'id', None))
 
+    coaching_text = _coaching_approach_text(getattr(user, "id", None), first_name)
+    coaching_block = ""
+    if coaching_text:
+        coaching_block = (
+            "<div class='card coach-card'>"
+            "<h2>Coaching approach</h2>"
+            f"{_llm_text_to_html(coaching_text)}"
+            "</div>"
+        )
+
     for pk in pillar_keys:
         grp = by_pillar.get(pk, [])
         # heading with avg score
@@ -2343,6 +2407,15 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
         or _scores_narrative_fallback(combined, pillar_payload)
     okr_narrative = _okr_narrative_from_llm(user, okr_payload) \
         or _okr_narrative_fallback(okr_payload)
+    coaching_text = _coaching_approach_text(getattr(user, "id", None))
+    coaching_block = ""
+    if coaching_text:
+        coaching_block = (
+            "<div class='card coach-card'>"
+            "<h2>Coaching approach</h2>"
+            f"{_llm_text_to_html(coaching_text)}"
+            "</div>"
+        )
     score_rows = [
         _score_row("Combined", combined),
         _score_row("Nutrition", int(getattr(pr_map.get("nutrition"), "overall", None) or 0) if pr_map.get("nutrition") else None),
@@ -2399,6 +2472,8 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
     .narrative-card ul {{ margin: 0; padding-left: 18px; color: #111; }}
     .narrative-card li {{ margin-bottom: 6px; line-height: 1.4; }}
     .section {{ display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px; }}
+    .coach-card h2 {{ margin-top: 0; font-size: 1.15rem; color: #0f172a; }}
+    .coach-card p {{ margin: 0; color: #1f2933; line-height: 1.5; }}
     @media (min-width: 720px) {{
       .section {{ flex-direction: row; align-items: flex-start; }}
       .section .narrative-card {{ flex: 1; }}
@@ -2437,9 +2512,10 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
       {okr_narrative}
     </div>
     <div class='card pillars-card'>
-     {''.join(sections)}
+      {''.join(sections)}
     </div>
   </div>
+  {coaching_block}
 </body>
 <div class='report-footer'>Positives on {reported_at} · {BRAND_FOOTER}</div>
 </html>"""
@@ -2541,8 +2617,18 @@ def _collect_progress_rows(user_id: int) -> list[dict]:
                     concept_key = inferred
                 concept_key = _normalize_concept_key(concept_key) if concept_key else None
                 state_val = answers.get(concept_key) if concept_key and answers else None
-                baseline_val = state_val if state_val is not None else kr.baseline_num
-                actual_val = state_val if state_val is not None else (kr.actual_num if kr.actual_num is not None else kr.baseline_num)
+                # Prefer latest KR entry (e.g., Sunday check-in) over stored/state values
+                cutoff = datetime.utcnow() - timedelta(days=8)
+                latest_entry = (
+                    s.query(OKRKrEntry)
+                    .filter(OKRKrEntry.key_result_id == kr.id)
+                    .filter(OKRKrEntry.occurred_at >= cutoff)
+                    .order_by(OKRKrEntry.occurred_at.desc(), OKRKrEntry.id.desc())
+                    .first()
+                )
+                entry_actual = getattr(latest_entry, "actual_num", None) if latest_entry else None
+                baseline_val = kr.baseline_num if kr.baseline_num is not None else state_val
+                actual_val = entry_actual if entry_actual is not None else (kr.actual_num if kr.actual_num is not None else state_val)
                 _progress_debug(
                     "kr_baseline_choice",
                     {
@@ -2554,12 +2640,14 @@ def _collect_progress_rows(user_id: int) -> list[dict]:
                         "state_val": state_val,
                         "stored_baseline": kr.baseline_num,
                         "stored_actual": kr.actual_num,
+                        "entry_actual": entry_actual,
                         "final_baseline": baseline_val,
                         "final_actual": actual_val,
                     },
                 )
                 kr_payload.append({
                     "description": kr.description or "",
+                    "id": kr.id,
                     "baseline": baseline_val,
                     "target": kr.target_num,
                     "unit": kr.unit,
@@ -2598,21 +2686,13 @@ def _render_progress_bar(current: float | None, target: float | None, baseline: 
     try:
         cur = float(current) if current is not None else None
         tgt = float(target) if target is not None else None
-        base = float(baseline) if baseline is not None else None
     except Exception:
-        cur = tgt = base = None
+        cur = tgt = None
     percent = 0.0
-    if cur is not None and tgt is not None and base is not None:
-        span = tgt - base
-        if abs(span) > 1e-9:
-            progress = cur - base
-            percent = max(0, min(100, (progress / span) * 100))
-        else:
-            percent = 0.0
-    elif cur is not None and tgt:
-        if tgt != 0:
-            percent = max(0, min(100, (cur / tgt) * 100))
-        else:
+    if cur is not None and tgt not in (None, 0, "0"):
+        try:
+            percent = max(0, min(100, (cur / float(tgt)) * 100))
+        except Exception:
             percent = 0.0
     return (
         "<div class='progress-track'>"
@@ -2620,22 +2700,50 @@ def _render_progress_bar(current: float | None, target: float | None, baseline: 
         "</div>"
     )
 
-def _render_kr_table(krs: list[dict]) -> str:
+def _render_kr_table(krs: list[dict], focus_ids: set[int] | None = None, future_block: bool = False) -> str:
     if not krs:
         return "<p class='empty-kr'>No key results captured yet.</p>"
+    focus_ids = focus_ids or set()
     rows = []
     for kr in krs:
         desc = html.escape(kr.get("description") or "Key Result")
+        is_focus = kr.get("id") in focus_ids
         baseline = _format_number(kr.get("baseline"))
         target = _format_number(kr.get("target"))
-        actual = _format_number(kr.get("actual") or kr.get("baseline"))
+        actual_val = kr.get("actual")
+        actual = _format_number(actual_val)
+        target_val = kr.get("target")
+        pct = None
+        status = "not started"
+        if target_val is not None and actual_val is not None and target_val not in (0, "0"):
+            try:
+                pct = max(0, min(1, float(actual_val) / float(target_val)))
+            except Exception:
+                pct = None
+        if future_block:
+            status = "not started"
+            pct_display = "–"
+        else:
+            if pct is None:
+                status = "not started"
+            elif pct >= 0.9:
+                status = "on track"
+            elif pct >= 0.5:
+                status = "at risk"
+            else:
+                status = "off track"
+            pct_display = f"{int(pct * 100)}%" if pct is not None else "–"
+        badge = "<div class='focus-badge'>Focus KR</div>" if is_focus else ""
         rows.append(
             "<tr>"
-            f"<td>{desc}</td>"
+            f"<td>{desc}{badge}"
+            f"<div class='kr-unit'>Status: <span class='chip {status.replace(' ', '-')}'>{status.title()}</span></div></td>"
             f"<td>{baseline or '–'}</td>"
             f"<td>{actual or '–'}</td>"
             f"<td>{target or '–'}</td>"
-            f"<td>{_render_progress_bar(kr.get('actual') if kr.get('actual') is not None else kr.get('baseline'), kr.get('target'), kr.get('baseline'))}</td>"
+            f"<td>"
+            f"<div class='progress-row'><span class='pct'>{pct_display}</span>{_render_progress_bar(actual_val, target_val, kr.get('baseline'))}</div>"
+            f"</td>"
             "</tr>"
         )
     return (
@@ -2647,11 +2755,72 @@ def _render_kr_table(krs: list[dict]) -> str:
         "</table>"
     )
 
-def generate_progress_report_html(user_id: int) -> str:
+def generate_progress_report_html(user_id: int, anchor_date: date | None = None) -> str:
+    anchor_today = anchor_date or datetime.utcnow().date()
+    anchor_label = anchor_today.strftime("%d %b %Y")
+    def _habit_readiness_panel(u_id: int, first_name: str) -> str:
+        with SessionLocal() as ss:
+            prof = (
+                ss.query(PsychProfile)
+                .filter(PsychProfile.user_id == u_id)
+                .order_by(PsychProfile.completed_at.desc().nullslast(), PsychProfile.id.desc())
+                .first()
+            )
+        if not prof:
+            return ""
+        sec = getattr(prof, "section_averages", {}) or {}
+        vals = [v for v in sec.values() if isinstance(v, (int, float))]
+        avg = sum(vals) / len(vals) if vals else None
+        if avg is None:
+            return ""
+        if avg < 2.6:
+            label = "Low"
+            tint = "#fff4e5"
+            border = "#f8b84a"
+            note = "We’ll keep things light, add structure, and focus on simple wins this week."
+        elif avg < 3.6:
+            label = "Moderate"
+            tint = "#e6f4ff"
+            border = "#8ac2ff"
+            note = "We’ll balance guidance with autonomy and check in on any sticking points."
+        else:
+            label = "High"
+            tint = "#e8f7f0"
+            border = "#5cbf82"
+            note = "You can handle more autonomy; we’ll keep nudges concise and goal-focused."
+        readiness_str = f"{int(round(avg))}/5" if isinstance(avg, (int, float)) else "N/A"
+        return (
+            f"<div class='readiness-card' style='border:1px solid {border}; background:{tint}; border-radius:12px; padding:12px; margin:16px 0;'>"
+            f"<div style='display:flex; justify-content:space-between; align-items:center;'>"
+            f"<div><strong>Habit readiness</strong></div>"
+            f"<div style='font-weight:700;'>{label}</div>"
+            f"</div>"
+            f"<div style='color:#475467; margin-top:6px;'>Profile: {readiness_str} · Tailoring: {note}</div>"
+            "</div>"
+        )
+
     with SessionLocal() as s:
         user = s.query(User).filter(User.id == user_id).one_or_none()
-    if not user:
-        raise RuntimeError("User not found")
+        if not user:
+            raise RuntimeError("User not found")
+        # Latest weekly focus for this user (use anchor_today to pick current)
+        today = anchor_today
+        wf = (
+            s.query(WeeklyFocus)
+            .filter(WeeklyFocus.user_id == user.id, WeeklyFocus.starts_on <= today, WeeklyFocus.ends_on >= today)
+            .order_by(WeeklyFocus.starts_on.desc())
+            .first()
+        ) or (
+            s.query(WeeklyFocus)
+            .filter(WeeklyFocus.user_id == user.id)
+            .order_by(WeeklyFocus.starts_on.desc())
+            .first()
+        )
+        focus_kr_ids = []
+        if wf:
+            focus_kr_ids = [
+                row.kr_id for row in s.query(WeeklyFocusKR).filter(WeeklyFocusKR.weekly_focus_id == wf.id).all()
+            ]
     rows = _collect_progress_rows(user_id)
     reported_at = datetime.utcnow().strftime("%d %b %Y %H:%M UTC")
     css = """
@@ -2659,44 +2828,221 @@ def generate_progress_report_html(user_id: int) -> str:
       body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; margin:24px; color:#101828; }
       h1 { margin-bottom: 4px; }
       .meta { color:#475467; margin-bottom:16px; }
+      .scorecard { border:1px solid #e4e7ec; border-radius:12px; padding:16px; margin: 16px 0 24px 0; background:#f8fafc; }
+      .scorecard h2 { margin:0 0 8px 0; font-size:1.05rem; }
+      .scorecard .summary { display:flex; gap:12px; flex-wrap:wrap; color:#344054; }
+      .status-grid { display:flex; flex-wrap:wrap; gap:10px; }
+      .status-box { flex:1 1 150px; padding:10px 12px; border-radius:10px; border:1px solid #e4e7ec; }
+      .status-box .label { font-weight:700; color:#0f172a; }
+      .status-box .value { font-weight:700; font-size:1.1rem; }
+      .status-on { background:#ecfdf3; border-color:#c6f6d5; color:#065f46; }
+      .status-risk { background:#fff7ed; border-color:#fed7aa; color:#9a3412; }
+      .status-off { background:#fef2f2; border-color:#fecdd3; color:#b91c1c; }
+      .status-not { background:#eff6ff; border-color:#bfdbfe; color:#1d4ed8; }
+      .chip { padding:2px 8px; border-radius:999px; font-size:0.8rem; font-weight:600; display:inline-block; }
+      .chip.on-track { background:#ecfdf3; color:#027a48; }
+      .chip.at-risk { background:#fff7ed; color:#c2410c; }
+      .chip.off-track { background:#fef2f2; color:#b42318; }
+      .chip.not-started { background:#f4f4f5; color:#52525b; }
       .timeline { border-left: 3px solid #d0d5dd; margin-left: 8px; padding-left: 24px; }
-      .entry { margin-bottom: 24px; position: relative; }
+      .entry { margin-bottom: 24px; position: relative; border-radius:10px; padding:10px; }
       .entry::before { content: ''; width: 10px; height: 10px; background:#0ba5ec; border-radius:50%; position:absolute; left:-29px; top:6px; }
       .entry h2 { margin:0; font-size:1.1rem; color:#0f172a; }
       .objective { font-weight:600; margin:8px 0; }
       .cycle { color:#475467; font-size:0.95rem; margin-bottom:6px; }
       ul { margin:0 0 0 18px; color:#1d2939; }
       .empty-kr { color:#98a2b3; font-style:italic; margin:4px 0 0 0; }
+      .focus-strip { margin:8px 0; color:#0f172a; }
+      .focus-pill { display:inline-block; background:#fef3c7; color:#92400e; padding:4px 8px; border-radius:8px; margin:4px 4px 0 0; font-weight:600; font-size:0.9rem; }
       .kr-table { width:100%; border-collapse: collapse; margin-top:10px; }
       .kr-table th, .kr-table td { border:1px solid #e4e7ec; padding:8px 10px; text-align:left; font-size:0.95rem; vertical-align: top; }
       .kr-table th { background:#f8fafc; font-weight:600; color:#0f172a; }
       .progress-track { width:100%; height:8px; background:#e4e7ec; border-radius:999px; overflow:hidden; }
       .progress-fill { height:100%; background:linear-gradient(90deg,#0ba5ec,#3cba92); border-radius:999px; }
+      .progress-row { display:flex; align-items:center; gap:8px; }
+      .pct { font-weight:600; color:#101828; }
       .kr-unit { color:#98a2b3; font-size:0.8rem; margin-top:2px; }
+      .focus-badge { display:inline-block; background:#fef3c7; color:#92400e; padding:2px 6px; border-radius:6px; font-size:0.75rem; font-weight:700; margin-left:6px; }
     .report-footer { margin-top: 24px; font-size: 0.85rem; color: #98a2b3; text-align: right; }
+      .programme { border:1px solid #e4e7ec; border-radius:12px; padding:14px; margin:16px 0; background:#fff; }
+      .programme h3 { margin:0 0 8px 0; font-size:1rem; }
+      .programme-row { display:flex; flex-wrap:wrap; gap:8px; }
+      .programme-pill { flex:1 1 160px; border:1px solid #e4e7ec; border-radius:10px; padding:10px; background:#f8fafc; }
+      .programme-pill .label { font-weight:700; color:#0f172a; }
+      .programme-pill .weeks { color:#475467; font-size:0.9rem; }
+      .programme-pill .focus { margin-top:4px; color:#111827; }
+      .programme-pill.nutrition { border-color:#0ba5ec; background:#ebf8ff; }
+      .programme-pill.recovery { border-color:#a855f7; background:#f5f3ff; }
+      .programme-pill.training { border-color:#22c55e; background:#ecfdf3; }
+      .programme-pill.resilience { border-color:#f97316; background:#fff7ed; }
+      .entry.nutrition { background:#f0f9ff; }
+      .entry.nutrition::before { background:#0ba5ec; }
+      .entry.recovery { background:#f8f5ff; }
+      .entry.recovery::before { background:#a855f7; }
+      .entry.training { background:#ecfdf3; }
+      .entry.training::before { background:#22c55e; }
+      .entry.resilience { background:#fff7ed; }
+      .entry.resilience::before { background:#f97316; }
     </style>
     """
-    items = []
+    def _coaching_approach_text(user_id: int) -> str:
+        return ""
+    # Simple scorecard summary (counts by status)
+    programme_offsets = {"nutrition": 0, "recovery": 3, "training": 6, "resilience": 9}
+    def _future_block(pillar_key: str, start_dt):
+        blk_start = None
+        if isinstance(start_dt, datetime):
+            blk_start = (start_dt + timedelta(weeks=programme_offsets.get(pillar_key, 0))).date()
+        elif isinstance(start_dt, date):
+            blk_start = start_dt + timedelta(weeks=programme_offsets.get(pillar_key, 0))
+        if blk_start is None:
+            return False
+        return anchor_today < blk_start
+
+    status_counts = {"on track": 0, "at risk": 0, "off track": 0, "not started": 0}
+    total_krs = 0
     for row in rows:
+        future = _future_block(row.get("pillar") or "", row.get("cycle_start"))
+        for kr in row.get("krs") or []:
+            total_krs += 1
+            if future:
+                status_counts["not started"] += 1
+                continue
+            target_val = kr.get("target")
+            actual_val = kr.get("actual") if kr.get("actual") is not None else kr.get("baseline")
+            pct = None
+            if target_val is not None and actual_val is not None and target_val not in (0, "0"):
+                try:
+                    pct = max(0, min(1, float(actual_val) / float(target_val)))
+                except Exception:
+                    pct = None
+            if pct is None:
+                status_counts["not started"] += 1
+            elif pct >= 0.9:
+                status_counts["on track"] += 1
+            elif pct >= 0.5:
+                status_counts["at risk"] += 1
+            else:
+                status_counts["off track"] += 1
+
+    # Programme overview (12-week, 3-week blocks by pillar)
+    blocks = [
+        ("Weeks 1–3", "Nutrition", "nutrition"),
+        ("Weeks 4–6", "Recovery", "recovery"),
+        ("Weeks 7–9", "Training", "training"),
+        ("Weeks 10–12", "Resilience", "resilience"),
+    ]
+    programme_html = (
+        "<div class='programme'>"
+        "<h3>12-week programme (3-week focus blocks)</h3>"
+        "<div class='programme-row'>"
+        + "".join(
+            f"<div class='programme-pill {css_class}'>"
+            f"<div class='label'>{label}</div>"
+            f"<div class='weeks'>{weeks}</div>"
+            f"<div class='focus'>Focus: {label}</div>"
+            "</div>"
+            for weeks, label, css_class in blocks
+        )
+        + "</div></div>"
+    )
+
+    focus_titles = []
+    items = []
+    # Group rows by pillar for ordering and cycle labeling
+    by_pillar: dict[str, list[dict]] = defaultdict(list)
+    for row in rows:
+        by_pillar[row.get("pillar", "")].append(row)
+    programme_order = ["nutrition", "recovery", "training", "resilience"]
+    # Programme weeks and static date labels (can be adjusted to actual calendar if available)
+    weeks_map = {
+        "nutrition": "Weeks 1–3",
+        "recovery": "Weeks 4–6",
+        "training": "Weeks 7–9",
+        "resilience": "Weeks 10–12",
+    }
+    ordered_rows = []
+    for p in programme_order:
+        ordered_rows.extend(by_pillar.get(p, []))
+    # add any remaining pillars not in the standard order
+    for p, vals in by_pillar.items():
+        if p not in programme_order:
+            ordered_rows.extend(vals)
+
+    programme_offsets = {"nutrition": 0, "recovery": 3, "training": 6, "resilience": 9}
+    for row in ordered_rows:
         cycle_bits = [row.get("cycle_label"), _format_cycle_range(row.get("cycle_start"), row.get("cycle_end"))]
-        cycle_text = " · ".join([b for b in cycle_bits if b])
+        default_cycle = " · ".join([b for b in cycle_bits if b])
+        pillar_key = row.get("pillar") or ""
+        # Show week window + dates if we have them
+        week_label = weeks_map.get(pillar_key)
+        date_label = ""
+        start_dt = row.get("cycle_start")
+        future_block = False
+        blk_start = None
+        if isinstance(start_dt, datetime):
+            offset_weeks = programme_offsets.get(pillar_key, 0)
+            blk_start = (start_dt + timedelta(weeks=offset_weeks)).date()
+        elif isinstance(start_dt, date):
+            blk_start = start_dt + timedelta(weeks=programme_offsets.get(pillar_key, 0))
+        if blk_start:
+            blk_end = blk_start + timedelta(days=20)  # 3-week block
+            date_label = f"{blk_start.strftime('%d %b %Y')} – {blk_end.strftime('%d %b %Y')}"
+            if anchor_today < blk_start:
+                future_block = True
+        cycle_text = " · ".join([lbl for lbl in [week_label, date_label] if lbl]) or default_cycle
         krs = row.get("krs") or []
-        kr_block = _render_kr_table(krs)
+        kr_block = _render_kr_table(krs, focus_ids=set(focus_kr_ids), future_block=future_block)
+        for kr in krs:
+            if kr.get("id") in focus_kr_ids:
+                focus_titles.append(kr.get("description") or "")
         items.append(
-            f"<div class='entry'>"
+            f"<div class='entry {html.escape(pillar_key)}'>"
             f"<div class='cycle'>{html.escape(cycle_text or '')}</div>"
             f"<h2>{html.escape(_title_for_pillar(row['pillar']))}</h2>"
             f"<div class='objective'>Objective: {html.escape(row['objective'] or 'TBA')}</div>"
             f"{kr_block}"
             "</div>"
         )
+    focus_strip = ""
+    if focus_titles:
+        pills = "".join(f"<span class='focus-pill'>{html.escape(t)}</span>" for t in focus_titles)
+        focus_strip = f"<div class='focus-strip'><strong>This week’s focus KRs:</strong> {pills}</div>"
+    display_name = (getattr(user, "first_name", None) or "").strip() or "there"
+    readiness_html = _habit_readiness_panel(user_id, display_name)
+    programme_html = (
+        "<div class='programme'>"
+        "<h3>12-week programme (3-week focus blocks)</h3>"
+        "<div class='programme-row'>"
+        "<div class='programme-pill nutrition'><div class='label'>Nutrition</div><div class='weeks'>Weeks 1–3</div><div class='focus'>Focus: Nutrition</div></div>"
+        "<div class='programme-pill recovery'><div class='label'>Recovery</div><div class='weeks'>Weeks 4–6</div><div class='focus'>Focus: Recovery</div></div>"
+        "<div class='programme-pill training'><div class='label'>Training</div><div class='weeks'>Weeks 7–9</div><div class='focus'>Focus: Training</div></div>"
+        "<div class='programme-pill resilience'><div class='label'>Resilience</div><div class='weeks'>Weeks 10–12</div><div class='focus'>Focus: Resilience</div></div>"
+        "</div></div>"
+    )
+    display_name = (getattr(user, "first_name", None) or "").strip() or "there"
     html_doc = f"""<!doctype html>
 <html lang="en">
 <meta charset="utf-8">
-<title>HealthSense Progress Report</title>
+<title>{html.escape(display_name)} your HealthSense progress report — {anchor_label}</title>
 {css}
-<h1>HealthSense Progress Report</h1>
-<div class="meta">Name: {html.escape(_display_full_name(user))}</div>
+<div style="text-align:center; background:#e6f4ff; border:1px solid #bee3ff; border-radius:12px; padding:12px;">
+<h1 style="margin:0;">{html.escape(display_name)} your HealthSense progress report</h1>
+<div class="meta">Report date: {anchor_label} (generated {reported_at})</div>
+</div>
+<div class="scorecard">
+   <h2>This week your key results at a glance</h2>
+   <div class="status-grid">
+     <div class="status-box status-on"><div class="label">On track</div><div class="value">{status_counts['on track']}</div></div>
+     <div class="status-box status-risk"><div class="label">At risk</div><div class="value">{status_counts['at risk']}</div></div>
+     <div class="status-box status-off"><div class="label">Off track</div><div class="value">{status_counts['off track']}</div></div>
+     <div class="status-box status-not"><div class="label">Not started</div><div class="value">{status_counts['not started']}</div></div>
+     <div class="status-box"><div class="label">Total</div><div class="value">{total_krs}</div></div>
+   </div>
+ </div>
+{readiness_html}
+{programme_html}
+{focus_strip}
 <div class="timeline">
 {''.join(items) if items else '<p>No key results recorded yet.</p>'}
 </div>

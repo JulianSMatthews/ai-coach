@@ -190,7 +190,19 @@ def send_whatsapp(text: str, to: str | None = None, category: str | None = None)
         # Explicitly refuse to send without a valid recipient
         raise ValueError("Recipient phone missing or invalid (expected E.164). No fallback is permitted.")
 
-    return _enqueue_and_send(to_norm=to_norm, text=text, category=category)
+    result_sid = _enqueue_and_send(to_norm=to_norm, text=text, category=category)
+
+    # Optional local file logging (e.g., for weekflow review)
+    log_path = os.getenv("WEEKFLOW_LOG_FILE", "").strip()
+    if log_path:
+        try:
+            ts = datetime.utcnow().isoformat(timespec="seconds")
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(f"[{ts}] {text}\n")
+        except Exception:
+            pass
+
+    return result_sid
 
 
 # Explicit admin notification helper

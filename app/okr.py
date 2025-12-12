@@ -20,7 +20,7 @@
 from __future__ import annotations
 from typing import Dict, Optional, List, Any
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from calendar import monthrange
 import os
 import json
@@ -28,7 +28,8 @@ import json
 # --- Needed for new state context helper ---
 from sqlalchemy.sql import text as _sql_text
 from app.db import SessionLocal
-from app.models import UserConceptState, Concept, PillarResult, JobAudit, UserPreference
+from app.models import UserConceptState, Concept, PillarResult, JobAudit, UserPreference, AssessSession
+from . import psych
 
 PILLAR_PREF_KEYS = {
     "training": "training_focus",
@@ -620,6 +621,7 @@ def make_structured_okr_llm(
     qa_context: Optional[List[Dict[str, str]]] = None,
     state_context: Optional[List[Dict[str, str]]] = None,
     pillar_preference: Optional[str] = None,
+    psych_profile: Optional[dict] = None,
 ) -> Dict[str, Any]:
     """
     Returns a dict:
@@ -661,6 +663,16 @@ def make_structured_okr_llm(
         state_block = "state_context: []"
     state_answers = _answers_from_state_context(st_rows)
 
+    psych_block = ""
+    if psych_profile:
+        import json as _json
+        pp = {
+            "section_averages": psych_profile.get("section_averages"),
+            "flags": psych_profile.get("flags"),
+            "parameters": psych_profile.get("parameters"),
+        }
+        psych_block = f"psych_profile: {_json.dumps(pp, ensure_ascii=False)}\n"
+
     # (Optional) keep the simpler qa_context for transparency, if present
     qa_rows = qa_context or []
     if qa_rows and not st_rows:
@@ -685,6 +697,7 @@ def make_structured_okr_llm(
             f"{state_block}\n"
             f"{qa_block}\n"
             f"{focus_line}\n"
+            f"{psych_block}"
             "Rules:\n"
             "- Base the Objective and ALL Key Results on the user's answers in state_context (prefer) or qa_context if state_context is empty.\n"
             "- Where bounds are given (min/max or unit), set realistic targets within bounds; do NOT exceed max. Respect units.\n"
@@ -829,11 +842,23 @@ def _quarter_bounds(year: int, quarter: str):
     end = datetime(year, end_month, last_day, 23, 59, 59, tzinfo=timezone.utc)
     return start, end
 
-def ensure_cycle(session: Session, now: Optional[datetime] = None) -> OKRCycle:
-    """Ensure the current quarter exists in okr_cycles and return it."""
-    now     = now or datetime.now(timezone.utc)
-    year    = now.year
-    quarter = _quarter_for(now)
+def _next_sunday_after(dt: datetime) -> datetime:
+    """Return midnight (UTC) on the current/next Sunday (if already Sunday, use today)."""
+    base_date = dt.date()
+    delta = (6 - base_date.weekday()) % 7  # Monday=0, Sunday=6
+    sunday = base_date + timedelta(days=delta)
+    return datetime(sunday.year, sunday.month, sunday.day, 0, 0, 0, tzinfo=timezone.utc)
+
+
+def ensure_cycle(session: Session, anchor: Optional[datetime] = None) -> OKRCycle:
+    """
+    Ensure an OKR cycle exists. Anchor to the current/next Sunday (same-day if Sunday) and run for roughly 90 days (13 weeks).
+    """
+    anchor   = anchor or datetime.now(timezone.utc)
+    start    = _next_sunday_after(anchor)
+    end      = start + timedelta(days=89)  # ~13 weeks
+    year     = start.year
+    quarter  = _quarter_for(start)
 
     cycle = (
         session.query(OKRCycle)
@@ -843,13 +868,12 @@ def ensure_cycle(session: Session, now: Optional[datetime] = None) -> OKRCycle:
     if cycle:
         return cycle
 
-    starts_on, ends_on = _quarter_bounds(year, quarter)
     cycle = OKRCycle(
         year=year,
         quarter=quarter,
         title=f"FY{year} {quarter}",
-        starts_on=starts_on,
-        ends_on=ends_on,
+        starts_on=start,
+        ends_on=end,
         pillar_weights=DEFAULT_PILLAR_WEIGHTS,
     )
     session.add(cycle)
@@ -871,7 +895,12 @@ def upsert_objective_from_pillar(
     Create or update the OKR Objective for this user/pillar in the current quarter,
     linking back to the assessment session and specific pillar result.
     """
-    cycle = ensure_cycle(session, datetime.now(timezone.utc))
+    # Anchor cycle to the assessment session creation time if available
+    anchor_dt = None
+    if assess_session_id:
+        sess = session.query(AssessSession).filter(AssessSession.id == assess_session_id).one_or_none()
+        anchor_dt = getattr(sess, "created_at", None)
+    cycle = ensure_cycle(session, anchor_dt or datetime.now(timezone.utc))
 
     # 1) Try exact lineage idempotency
     obj = (
@@ -1174,6 +1203,17 @@ def generate_and_update_okrs_for_pillar(
         )
         if pref_row:
             pref_value = pref_row
+    psych_profile = None
+    try:
+        prof = psych.latest_profile(user_id)
+        if prof:
+            psych_profile = {
+                "section_averages": getattr(prof, "section_averages", None),
+                "flags": getattr(prof, "flags", None),
+                "parameters": getattr(prof, "parameters", None),
+            }
+    except Exception:
+        psych_profile = None
     okr_struct = make_structured_okr_llm(
         pillar_slug=pillar_key,
         pillar_score=pillar_score,
@@ -1181,6 +1221,7 @@ def generate_and_update_okrs_for_pillar(
         qa_context=None,                 # not required when state_context is present
         state_context=state_ctx,
         pillar_preference=pref_value,
+        psych_profile=psych_profile,
     )
 
     def _capitalise(text: Any) -> str:

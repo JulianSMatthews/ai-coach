@@ -54,6 +54,13 @@ from __future__ import annotations
 
 # Ensure project root is on sys.path so `import app...` works anywhere
 import os, sys
+# Load environment variables from .env if available
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None  # type: ignore
+if load_dotenv is not None:
+    load_dotenv(override=True)
 # Add project root (parent of this scripts/ folder) to sys.path so `import app...` works anywhere
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 if ROOT_DIR not in sys.path:
@@ -61,11 +68,13 @@ if ROOT_DIR not in sys.path:
 import sys, time, argparse, random
 from typing import Dict, List, Tuple
 import threading
+import json
 
 # --- import your app bits ---
 from app.seed import run_seed, CONCEPTS, CONCEPT_SCORE_BOUNDS
 from app.db import SessionLocal
-from app.models import User, Club
+from app.models import User, Club, OKRKeyResult, UserPreference
+from app import weekflow, sunday
 
 # Optional models for completion/score checks (best-effort)
 try:
@@ -101,12 +110,41 @@ if os.environ.get("MOCK_OUTBOUND", "1") == "1":
     except Exception as _e:
         print(f"[warn] MOCK_OUTBOUND patch failed: {_e}")
 
+def _patch_weekflow_outbound_noop():
+    """
+    In simulation, suppress outbound WhatsApp by patching the send_whatsapp
+    references inside weekflow and its child modules.
+    """
+    try:
+        from app import weekflow as _wf, monday as _mon, tuesday as _tue, wednesday as _wed, thursday as _thu, friday as _fri, sunday as _sun
+        from app import nudges as _nudges_mod
+        def _noop(text: str = "", to: str | None = None, category: str | None = None):
+            preview = (text or "")[:120].replace("\n", " ")
+            print(f"[MOCK OUTBOUND] {preview}")
+            log_path = os.getenv("WEEKFLOW_LOG_FILE", "").strip()
+            if log_path:
+                try:
+                    ts = datetime.utcnow().isoformat(timespec="seconds")
+                    with open(log_path, "a", encoding="utf-8") as f:
+                        f.write(f"[{ts}] {text}\n")
+                except Exception:
+                    pass
+            return True
+        for mod in (_wf, _mon, _tue, _wed, _thu, _fri, _sun, _nudges_mod):
+            if hasattr(mod, "send_whatsapp"):
+                setattr(mod, "send_whatsapp", _noop)
+    except Exception as _e:
+        print(f"[warn] unable to patch weekflow outbound: {_e}")
+
 # Optional models (best-effort) for consent/state detection
 try:
-    from app.models import AssessSession, MessageLog  # type: ignore
+    from app.models import AssessSession, MessageLog, UserPreference  # type: ignore
+    from app import psych  # type: ignore
 except Exception:
     AssessSession = None  # type: ignore
     MessageLog = None     # type: ignore
+    UserPreference = None  # type: ignore
+    psych = None  # type: ignore
 
 # Helper to fetch the latest assessment session id for a user
 def _latest_session_id_for(user: "User"):
@@ -128,6 +166,46 @@ def _latest_session_id_for(user: "User"):
 # Debug: list recent sessions for this user
 def _debug_list_sessions_for(user: "User", limit: int = 5):
     return
+
+# Psych helpers
+def _clear_psych_state(user_id: int):
+    if UserPreference is None:
+        return
+    try:
+        with SessionLocal() as s:
+            s.query(UserPreference).filter(
+                UserPreference.user_id == user_id,
+                UserPreference.key.in_(["psych_state", "pending_assessment_summary"]),
+            ).delete(synchronize_session=False)
+            s.commit()
+    except Exception:
+        pass
+
+def _psych_active(user_id: int) -> bool:
+    if UserPreference is None:
+        return False
+    try:
+        with SessionLocal() as s:
+            pref = (
+                s.query(UserPreference)
+                .filter(UserPreference.user_id == user_id, UserPreference.key == "psych_state")
+                .one_or_none()
+            )
+            return pref is not None
+    except Exception:
+        return False
+
+# Default psych answers (1–5 Likert) by level for scripted runs (6-question flow)
+PSYCH_ANSWERS = {
+    "novice":       ["2", "3", "2", "4", "2", "3"],
+    "developing":   ["3", "4", "3", "3", "3", "3"],
+    "competent":    ["3", "4", "3", "3", "3", "3"],
+    "proficient":   ["4", "5", "4", "3", "4", "2"],
+    "expert":       ["5", "5", "5", "2", "5", "2"],
+    # Convenience overrides for Julian habit readiness extremes
+    "julianlow":    ["2"] * 6,
+    "julianhigh":   ["5"] * 6,
+}
 
 # Wait for final completion message in MessageLog (best-effort)
 def _wait_for_completion_message(user: "User", timeout_s: float = 10.0, poll_s: float = 0.5) -> bool:
@@ -901,6 +979,9 @@ def get_or_create_user(
     variant: str,
     club_id: int | None = None,
     club_label: str | None = None,
+    first_name_override: str | None = None,
+    surname_override: str | None = None,
+    phone_override: str | None = None,
 ) -> User:
     """
     Create (or fetch) a user whose name reflects the script/scenario.
@@ -916,15 +997,15 @@ def get_or_create_user(
         if not club_label
         else f"{scenario_display} ({club_label})"
     )
-    scenario_name = _bounded_first_name(scenario_name)
-    surname_value = _answers_surname_string_for_levels(level_map)
+    scenario_name = _bounded_first_name(first_name_override or scenario_name)
+    surname_value = surname_override or _answers_surname_string_for_levels(level_map)
     unique_user = os.environ.get("UNIQUE_TEST_USER", "1") == "1"
 
     # Base: encode scenario into a short, stable suffix so each scenario can be reused.
     # If UNIQUE_TEST_USER=1, add a time-based suffix to force a new user each run.
     base_prefix = "+44771030"
     stable_suffix = abs(hash((scenario, club_id))) % 10000  # 4 digits stable per scenario+club
-    phone = f"{base_prefix}{stable_suffix:04d}"
+    phone = phone_override or f"{base_prefix}{stable_suffix:04d}"
 
     if unique_user:
         # Use high-resolution timestamp + randomness to minimise collisions during fast batch loops.
@@ -970,12 +1051,20 @@ def get_or_create_user(
                     nonlocal_club_id = getattr(club_row, "id", None)
             except Exception:
                 nonlocal_club_id = None
-        # Try match by first_name (+club when available) so we reuse scenario+club combinations when UNIQUE_TEST_USER=0
-        query = s.query(User).filter(User.first_name == scenario_name)
-        if nonlocal_club_id is not None:
-            query = query.filter(User.club_id == nonlocal_club_id)
-        user = query.one_or_none()
+        # Try match by override name first
+        user = None
+        if first_name_override:
+            q = s.query(User).filter(User.first_name == first_name_override)
+            if nonlocal_club_id is not None:
+                q = q.filter(User.club_id == nonlocal_club_id)
+            user = q.order_by(User.id.asc()).first()
         if not user:
+            # Try match by first_name (+club when available) so we reuse scenario+club combinations when UNIQUE_TEST_USER=0
+            query = s.query(User).filter(User.first_name == scenario_name)
+            if nonlocal_club_id is not None:
+                query = query.filter(User.club_id == nonlocal_club_id)
+            user = query.one_or_none()
+        if not user and phone:
             # Fallback: try phone match (in case of prior runs)
             phone_query = s.query(User).filter(User.phone == phone)
             if nonlocal_club_id is not None:
@@ -985,7 +1074,7 @@ def get_or_create_user(
         if not user:
             user = User(
                 club_id=nonlocal_club_id,
-                first_name=scenario_name,
+                first_name=first_name_override or scenario_name,
                 surname=surname_value,
                 phone=phone,
                 is_superuser=False,
@@ -999,7 +1088,7 @@ def get_or_create_user(
             if nonlocal_club_id is not None and getattr(user, "club_id", None) != nonlocal_club_id:
                 user.club_id = nonlocal_club_id
                 changed = True
-            if getattr(user, "first_name", None) != scenario_name:
+            if not first_name_override and getattr(user, "first_name", None) != scenario_name:
                 user.first_name = scenario_name; changed = True
             desired_surname = surname_value
             if getattr(user, "surname", None) != desired_surname:
@@ -1028,6 +1117,16 @@ def main():
     parser.add_argument("--club-ids", default=os.environ.get("BATCH_CLUB_IDS", ""),
                         help="Comma/semicolon separated club IDs to cycle through (batch defaults to first two).")
     parser.add_argument("--call-timeout", type=float, default=45.0, help="Seconds to wait for each LLM/assessor call before skipping")
+    parser.add_argument("--julian", action="store_true",
+                        help="Convenience: run mid-range scenario as Julian (defaults to competent_a on existing user).")
+    parser.add_argument("--julianlow", action="store_true",
+                        help="Convenience: run low habit-readiness scenario for Julian (uses novice_a + low psych).")
+    parser.add_argument("--julianhigh", action="store_true",
+                        help="Convenience: run high habit-readiness scenario for Julian (uses expert_a + high psych).")
+    parser.add_argument("--simulate-12-weeks", action="store_true",
+                        help="After assessment, simulate weeks 1–12 (touchpoints + Sunday entries).")
+    parser.add_argument("--simulate-week-one", action="store_true",
+                        help="After assessment, simulate week 1 only (touchpoints + Sunday entries).")
     parser.set_defaults(unique=True)
     args = parser.parse_args()
 
@@ -1102,7 +1201,10 @@ def main():
         answers_override: Dict[str, str] | None = None,
         level_map_override: Dict[str, str] | None = None,
         variant_override: str | None = None,
-    ):
+        first_name_override: str | None = None,
+        surname_override: str | None = None,
+        phone_override: str | None = None,
+    ) -> User:
         club_id, club_label = club_choice
         if answers_override is not None and level_map_override is not None and variant_override is not None:
             answers, level_map, variant = answers_override, level_map_override, variant_override
@@ -1119,6 +1221,9 @@ def main():
             variant,
             club_id=club_id,
             club_label=club_label,
+            first_name_override=first_name_override,
+            surname_override=surname_override,
+            phone_override=phone_override,
         )
         preamble_sent: dict[str, bool] = {}
 
@@ -1172,6 +1277,17 @@ def main():
             status = "ok" if ok else "warn"
             print(f"{idx:02d}. {pillar}.{code:<22} -> '{msg}' [{status}]")
             time.sleep(0.25)
+            # Stop sending if assessment session is no longer active (finished early)
+            if AssessSession is not None:
+                with SessionLocal() as s:
+                    active = (
+                        s.query(AssessSession)
+                        .filter(AssessSession.user_id == user.id, AssessSession.is_active == True)  # noqa: E712
+                        .first()
+                    )
+                if not active:
+                    print("[info] assessment session finished early; stopping further pillar answers.")
+                    break
 
         # finalize
         _finalize_run(user)
@@ -1182,6 +1298,37 @@ def main():
             time.sleep(0.75)
             got_final = _wait_for_completion_message(user, timeout_s=5.0, poll_s=0.5)
             print(f"[finalize] retry completion_seen={got_final}")
+
+        # Close any active assessment sessions before psych readiness (prevent restart)
+        if AssessSession is not None:
+            with SessionLocal() as s:
+                s.query(AssessSession).filter(AssessSession.user_id == user.id).update({"is_active": False})
+                s.commit()
+
+        # Drive psych readiness questions automatically (6 items) if available
+        if psych is not None:
+            try:
+                psych.start(user, close_assessment_sessions=True)
+            except Exception as e:
+                print(f"[warn] psych start failed: {e}")
+            overall_level = None
+            if isinstance(level_map, dict):
+                overall_level = level_map.get("overall") or next(iter(level_map.values()), None)
+            if args.julianlow:
+                overall_level = "julianlow"
+            elif args.julianhigh:
+                overall_level = "julianhigh"
+            if overall_level not in PSYCH_ANSWERS:
+                overall_level = "competent"
+            psych_ans = PSYCH_ANSWERS.get(overall_level, PSYCH_ANSWERS["competent"])
+            for j, ans in enumerate(psych_ans, 1):
+                try:
+                    psych.handle_message(user, ans)
+                    status = "ok"
+                except Exception as e:
+                    status = f"warn ({e})"
+                print(f"[psych] Q{j:02d}/06 -> '{ans}' [{status}]")
+                time.sleep(0.2)
 
         sid_final = _latest_session_id_for(user)
         print(f"[summary] latest run id={sid_final}")
@@ -1253,8 +1400,10 @@ def main():
             except Exception as _e:
                 print(f"[scores] error: {_e}")
         print("[done] scenario complete.")
+        return user
 
     if args.batch:
+        user: User | None = None
         all_names = list(DEFAULT_BATCH_SCENARIOS)
         if args.start_from:
             key = args.start_from.strip().lower()
@@ -1272,14 +1421,24 @@ def main():
                 print(f"\n[batch] {i}/{len(all_names)} -> {name} [club={club_desc}]")
             else:
                 print(f"\n[batch] {i}/{len(all_names)} -> {name}")
-            run_one(name, club_choice)
+            user = run_one(name, club_choice)
             if i < len(all_names):
                 time.sleep(max(0.0, args.sleep))
-        return
+        return user
 
     # single scenario
-    scenario = (args.scenario or "competent_a").lower()
+    user: User | None = None
+    scenario = (
+        args.scenario
+        or ("competent_a" if (args.julian or args.julianlow or args.julianhigh) else None)
+    )
+    if not scenario:
+        print("Please provide a scenario (e.g., novice_a) or use --batch.")
+        sys.exit(2)
+    scenario = scenario.lower()
     solo_choice = club_cycle[0] if club_cycle else (None, None)
+    first_name_override = "Julian" if (args.julian or args.julianlow or args.julianhigh) else None
+    surname_override = "Matthews" if (args.julian or args.julianlow or args.julianhigh) else None
     if args.range:
         runs = [
             ("min_bounds_a", _answers_at_bounds_min(), _uniform_level_map("novice"), "a"),
@@ -1294,6 +1453,8 @@ def main():
                 answers_override=preset_answers,
                 level_map_override=preset_map,
                 variant_override=var,
+                first_name_override=first_name_override,
+                surname_override=surname_override,
             )
             if idx < len(runs):
                 time.sleep(max(0.0, args.sleep))
@@ -1312,9 +1473,116 @@ def main():
             preset_answers = _scenario_answers_for(preset_level, preset_variant)
             scenario = f"{preset_level}_{preset_variant}"
         preset_map = _uniform_level_map(preset_level)
-        run_one(scenario, solo_choice, answers_override=preset_answers, level_map_override=preset_map, variant_override=preset_variant)
+        user = run_one(
+            scenario,
+            solo_choice,
+            answers_override=preset_answers,
+            level_map_override=preset_map,
+            variant_override=preset_variant,
+            first_name_override=first_name_override,
+            surname_override=surname_override,
+        )
     else:
-        run_one(scenario, solo_choice)
+        user = run_one(
+            scenario,
+            solo_choice,
+            first_name_override=first_name_override,
+            surname_override=surname_override,
+        )
+
+    if args.simulate_12_weeks:
+        _patch_weekflow_outbound_noop()
+        if user is None:
+            print("[simulate] No user available for 12-week simulation.")
+            return
+        # Simulate weeks 1–12, sending Sunday answers automatically (mock outbound recommended)
+        sunday_responses = ["1", "1", "1", "Wins: kept meals simple", "Blockers: midweek busy"]
+        for wk in range(1, 13):
+            print(f"[simulate] week {wk}/12")
+            try:
+                weekflow.run_week_flow(user, week_no=wk)
+            except Exception as e:
+                print(f"[simulate] week {wk} failed: {e}")
+                continue
+            # If Sunday state is active, feed canned answers in the right order
+            try:
+                if not sunday.has_active_state(user.id):
+                    print(f"[simulate] Sunday state missing for week {wk}, skipping canned answers.")
+                    continue
+                with SessionLocal() as s:
+                    pref = (
+                        s.query(UserPreference)
+                        .filter(UserPreference.user_id == user.id, UserPreference.key == "sunday_state")
+                        .one_or_none()
+                    )
+                    responses: list[str] = []
+                    kr_ids: list[int] = []
+                    if pref and pref.value:
+                        try:
+                            data = json.loads(pref.value)
+                            kr_ids = data.get("kr_ids") or []
+                        except Exception:
+                            kr_ids = []
+                    if kr_ids:
+                        for kr_id in kr_ids:
+                            kr = s.query(OKRKeyResult).get(kr_id)
+                            if kr and kr.target_num is not None:
+                                responses.append(str(kr.target_num))
+                            else:
+                                responses.append("1")
+                    else:
+                        # default to three numeric placeholders if we can't resolve kr_ids
+                        responses = ["1", "1", "1"]
+                    responses += ["Wins: kept meals simple", "Blockers: midweek busy"]
+                for resp in responses:
+                    sunday.handle_message(user, resp)
+            except Exception as e:
+                print(f"[simulate] Sunday responses failed (week {wk}): {e}")
+    elif args.simulate_week_one:
+        _patch_weekflow_outbound_noop()
+        if user is None:
+            print("[simulate] No user available for week-1 simulation.")
+            return
+        sunday_responses = ["1", "1", "1", "Wins: kept meals simple", "Blockers: midweek busy"]
+        wk = 1
+        print(f"[simulate] week {wk}/1")
+        try:
+            weekflow.run_week_flow(user, week_no=wk)
+        except Exception as e:
+            print(f"[simulate] week {wk} failed: {e}")
+            return
+        try:
+            if not sunday.has_active_state(user.id):
+                print(f"[simulate] Sunday state missing for week {wk}, skipping canned answers.")
+                return
+            with SessionLocal() as s:
+                pref = (
+                    s.query(UserPreference)
+                    .filter(UserPreference.user_id == user.id, UserPreference.key == "sunday_state")
+                    .one_or_none()
+                )
+                responses: list[str] = []
+                kr_ids: list[int] = []
+                if pref and pref.value:
+                    try:
+                        data = json.loads(pref.value)
+                        kr_ids = data.get("kr_ids") or []
+                    except Exception:
+                        kr_ids = []
+                if kr_ids:
+                    for kr_id in kr_ids:
+                        kr = s.query(OKRKeyResult).get(kr_id)
+                        if kr and kr.target_num is not None:
+                            responses.append(str(kr.target_num))
+                        else:
+                            responses.append("1")
+                else:
+                    responses = ["1", "1", "1"]
+                responses += ["Wins: kept meals simple", "Blockers: midweek busy"]
+            for resp in responses:
+                sunday.handle_message(user, resp)
+        except Exception as e:
+            print(f"[simulate] Sunday responses failed (week {wk}): {e}")
 
 if __name__ == "__main__":
     main()

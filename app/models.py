@@ -5,6 +5,7 @@ from sqlalchemy import (
     Column, Integer, String, Text, DateTime, Boolean, Float, ForeignKey,
     UniqueConstraint, Index, text
 )
+from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB as JSONType
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
@@ -188,6 +189,31 @@ class KbVector(Base):
     embedding  = Column(JSONType, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
+
+# Educational content (news/updates/longer-form) kept separate from assessment KB
+class EduContent(Base):
+    __tablename__ = "edu_content"
+
+    id            = Column(Integer, primary_key=True)
+    pillar_key    = Column(String(32), nullable=False, index=True)   # nutrition/training/resilience/goals
+    concept_code  = Column(String(64), nullable=True, index=True)    # e.g. 'sleep_quality'
+    title         = Column(String(200), nullable=True)
+    text          = Column(Text, nullable=False)                     # normalized summary/script body
+    source_type   = Column(String(64), nullable=True)                # public_domain|journal|blog|manual
+    source_url    = Column(String(512), nullable=True)
+    license       = Column(String(64), nullable=True)                # e.g., cc0, cc-by, internal
+    published_at  = Column(DateTime, nullable=True)
+    level         = Column(String(32), nullable=True)                # intro|intermediate|advanced
+    tags          = Column(JSONType, nullable=True)                  # ["sleep","cbt-i","chronotype"]
+    beats         = Column(JSONType, nullable=True)                  # talking points for media generation
+    is_active     = Column(Boolean, nullable=False, server_default=sa_text("true"))
+    meta          = Column(JSONType, nullable=True)                  # {"source_confidence":0.9,"reviewed_at":...}
+    created_at    = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        Index("ix_edu_content_pillar_concept_active", "pillar_key", "concept_code", "is_active"),
+    )
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Assessment runs + turns (logging / review)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -345,7 +371,8 @@ class OKRKrEntry(Base):
 
     id               = Column(Integer, primary_key=True)
     key_result_id    = Column(Integer, ForeignKey("okr_key_results.id", ondelete="CASCADE"), nullable=False, index=True)
-
+    # Optional lineage to a user-submitted check-in that triggered this update
+    check_in_id      = Column(Integer, ForeignKey("check_ins.id", ondelete="SET NULL"), nullable=True, index=True)
     occurred_at      = Column(DateTime, nullable=False, server_default=func.now())
     actual_num       = Column(Float, nullable=True)
     note             = Column(Text, nullable=True)
@@ -356,6 +383,28 @@ class OKRKrEntry(Base):
     __table_args__   = (
         Index("ix_okr_kr_entries_kr_time", "key_result_id", "occurred_at"),
     )
+
+
+class PsychProfile(Base):
+    """
+    Stores a brief psychological/readiness profile captured post-assessment to tailor KR sizing and coaching.
+    """
+    __tablename__ = "psych_profiles"
+
+    id                 = Column(Integer, primary_key=True)
+    user_id            = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    assessment_run_id  = Column(Integer, ForeignKey("assessment_runs.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    scores             = Column(JSONType, nullable=True)          # {"q1":3,...,"q6":4}
+    section_averages   = Column(JSONType, nullable=True)          # {"readiness":3.5,...}
+    flags              = Column(JSONType, nullable=True)          # {"stress_sensitive":true,...}
+    parameters         = Column(JSONType, nullable=True)          # {"kr_scale_hint":0.8,"tone":"gentle",...}
+
+    completed_at       = Column(DateTime, nullable=True)
+    created_at         = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user               = relationship("User")
+    assessment_run     = relationship("AssessmentRun")
 
 class OKRObjectiveReview(Base):
     __tablename__ = "okr_objective_reviews"
@@ -397,6 +446,176 @@ class PillarResult(Base):
 
     __table_args__ = (
         UniqueConstraint("run_id", "pillar_key", name="uq_pillar_results_run_pillar"),
+    )
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Personalized comms + simulations (OKR-driven touchpoints)
+# ──────────────────────────────────────────────────────────────────────────────
+
+class CheckIn(Base):
+    __tablename__ = "check_ins"
+
+    # Captures a user's self-reported progress and context per touchpoint
+    id               = Column(Integer, primary_key=True)
+    user_id          = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    touchpoint_type  = Column(String(64), nullable=False)            # constrained set: kickoff|adjust|wrap|prime|ad_hoc
+    progress_updates = Column(JSONType, nullable=True)               # [{kr_id, delta, note}]
+    blockers         = Column(JSONType, nullable=True)               # user-declared impediments
+    commitments      = Column(JSONType, nullable=True)               # user-committed actions with dates
+    created_at       = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class Touchpoint(Base):
+    __tablename__ = "touchpoints"
+
+    # Scheduled or sent outbound interactions (text/audio/video) tied to OKR coaching
+    id                  = Column(Integer, primary_key=True)
+    user_id             = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    type                = Column(String(64), nullable=False)        # kickoff|adjust|wrap|prime|ad_hoc
+    weekly_focus_id     = Column(Integer, ForeignKey("weekly_focus.id", ondelete="SET NULL"), nullable=True, index=True)
+    scheduled_at        = Column(DateTime, nullable=True)
+    channel             = Column(String(64), nullable=True)
+    status              = Column(String(32), nullable=False, server_default=text("'planned'"))  # planned|sent|failed|expired
+    source_check_in_id  = Column(Integer, ForeignKey("check_ins.id", ondelete="SET NULL"), nullable=True, index=True)
+    generated_text      = Column(Text, nullable=True)
+    audio_url           = Column(String(512), nullable=True)
+    video_url           = Column(String(512), nullable=True)
+    meta                = Column(JSONType, nullable=True)            # {length_hint, template_id, llm_model}
+    created_at          = Column(DateTime, nullable=False, server_default=func.now())
+    sent_at             = Column(DateTime, nullable=True)
+
+    __table_args__ = (
+        Index("ix_touchpoints_user_type", "user_id", "type"),
+    )
+
+
+class TouchpointKR(Base):
+    __tablename__ = "touchpoint_krs"
+
+    # Explicit linkage of a touchpoint to the KRs it is focusing on (ordered)
+    id             = Column(Integer, primary_key=True)
+    touchpoint_id  = Column(Integer, ForeignKey("touchpoints.id", ondelete="CASCADE"), nullable=False, index=True)
+    kr_id          = Column(Integer, ForeignKey("okr_key_results.id", ondelete="CASCADE"), nullable=False, index=True)
+    priority_order = Column(Integer, nullable=True)                 # 0,1,2 for top-3 focus
+    role           = Column(String(32), nullable=True)              # primary|secondary
+    ask_text       = Column(Text, nullable=True)                    # cached ask/action for this KR in the touchpoint
+
+    __table_args__ = (
+        UniqueConstraint("touchpoint_id", "kr_id", name="uq_touchpoint_kr"),
+        Index("ix_touchpoint_krs_touchpoint_order", "touchpoint_id", "priority_order"),
+    )
+
+
+class OKRFocusStack(Base):
+    __tablename__ = "okr_focus_stack"
+
+    # Snapshot of prioritized KRs for a user at a given touchpoint for transparency/debug
+    id             = Column(Integer, primary_key=True)
+    user_id        = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    touchpoint_id  = Column(Integer, ForeignKey("touchpoints.id", ondelete="CASCADE"), nullable=True, index=True)
+    items          = Column(JSONType, nullable=False)                # [{kr_id, priority_score, rationale, recommended_actions}]
+    computed_at    = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class ContentTemplate(Base):
+    __tablename__ = "content_templates"
+
+    # Versioned templated bodies used to generate personalized touchpoint messages
+    id              = Column(Integer, primary_key=True)
+    name            = Column(String(160), nullable=False)
+    touchpoint_type = Column(String(64), nullable=False)
+    persona_tag     = Column(String(64), nullable=True)
+    status_state    = Column(String(32), nullable=True)              # on_track|off_track|low_energy
+    body            = Column(Text, nullable=False)                   # templated text with slots
+    slots           = Column(JSONType, nullable=True)                # ["kr","metric","deadline"]
+    version         = Column(Integer, nullable=False, server_default=text("1"))
+    is_active       = Column(Boolean, nullable=False, server_default=text("true"))
+    created_at      = Column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_content_templates_touchpoint_persona", "touchpoint_type", "persona_tag"),
+    )
+
+
+class GenerationRun(Base):
+    __tablename__ = "generation_runs"
+
+    # Audit log for LLM/auto-media generation per touchpoint
+    id             = Column(Integer, primary_key=True)
+    touchpoint_id  = Column(Integer, ForeignKey("touchpoints.id", ondelete="CASCADE"), nullable=False, index=True)
+    template_id    = Column(Integer, ForeignKey("content_templates.id", ondelete="SET NULL"), nullable=True, index=True)
+    llm_prompt     = Column(JSONType, nullable=True)
+    llm_response   = Column(JSONType, nullable=True)
+    tts_engine     = Column(String(120), nullable=True)
+    video_engine   = Column(String(120), nullable=True)
+    duration_ms    = Column(Integer, nullable=True)
+    status         = Column(String(32), nullable=True)              # started|ok|error
+    created_at     = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class EngagementEvent(Base):
+    __tablename__ = "engagement_events"
+
+    # Logged engagement outcomes per touchpoint (opens/clicks/plays/feedback)
+    id              = Column(Integer, primary_key=True)
+    touchpoint_id   = Column(Integer, ForeignKey("touchpoints.id", ondelete="CASCADE"), nullable=False, index=True)
+    channel         = Column(String(64), nullable=True)
+    opened          = Column(Boolean, nullable=True)
+    clicked         = Column(Boolean, nullable=True)
+    played          = Column(Boolean, nullable=True)
+    watch_time_pct  = Column(Float, nullable=True)
+    feedback        = Column(JSONType, nullable=True)               # {useful, too_long, free_text}
+    result          = Column(String(32), nullable=True)             # delivered|no_reply|user_replied|failed
+    created_at      = Column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_engagement_events_touchpoint_channel", "touchpoint_id", "channel"),
+    )
+
+class WeeklyFocus(Base):
+    __tablename__ = "weekly_focus"
+
+    # The KR shortlist selected during the planning call for a given period (typically a week)
+    id            = Column(Integer, primary_key=True)
+    user_id       = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    starts_on     = Column(DateTime, nullable=True)
+    ends_on       = Column(DateTime, nullable=True)
+    notes         = Column(Text, nullable=True)                     # optional summary/context from planning
+    created_at    = Column(DateTime, nullable=False, server_default=func.now())
+
+
+class WeeklyFocusKR(Base):
+    __tablename__ = "weekly_focus_krs"
+
+    # The specific KRs chosen for the weekly focus shortlist (ordered)
+    id              = Column(Integer, primary_key=True)
+    weekly_focus_id = Column(Integer, ForeignKey("weekly_focus.id", ondelete="CASCADE"), nullable=False, index=True)
+    kr_id           = Column(Integer, ForeignKey("okr_key_results.id", ondelete="CASCADE"), nullable=False, index=True)
+    priority_order  = Column(Integer, nullable=True)               # 0,1,2 for top-3 focus
+    role            = Column(String(32), nullable=True)            # primary|secondary
+    rationale       = Column(Text, nullable=True)                  # why this KR made the shortlist
+
+    __table_args__ = (
+        UniqueConstraint("weekly_focus_id", "kr_id", name="uq_weekly_focus_kr"),
+        Index("ix_weekly_focus_krs_focus_order", "weekly_focus_id", "priority_order"),
+    )
+
+
+class PreferenceInferenceAudit(Base):
+    __tablename__ = "preference_inference_audit"
+
+    # Tracks inferred/updated user preferences from interactions to monitor LLM accuracy
+    id                 = Column(Integer, primary_key=True)
+    user_id            = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    source_touchpoint_id = Column(Integer, ForeignKey("touchpoints.id", ondelete="SET NULL"), nullable=True, index=True)
+    key                = Column(String(128), nullable=False)        # e.g., "tone_pref","medium","time_window"
+    old_value          = Column(Text, nullable=True)
+    new_value          = Column(Text, nullable=True)
+    confidence         = Column(Float, nullable=True)               # 0..1 confidence from model/human
+    created_at         = Column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        Index("ix_pref_inference_user_key", "user_id", "key"),
     )
 
 # ──────────────────────────────────────────────────────────────────────────────

@@ -12,3 +12,4 @@ python-dateutil
 matplotlib
 reportlab
 twilio
+azure-cognitiveservices-speech

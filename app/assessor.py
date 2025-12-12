@@ -108,6 +108,7 @@ def build_pillar_feedback(
 # Report 
 
 from .reporting import generate_assessment_dashboard_html, generate_progress_report_html, _fetch_okrs_for_run
+from . import psych
 
 # Optional integrations (fail-safe no-ops if missing)
 try:
@@ -1601,6 +1602,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             )
         ).scalars().first()
         if not sess:
+            # No active session: do not auto-start a new one here; require explicit 'start'
             return False
 
         try:
@@ -1764,9 +1766,25 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             pref_map[awaiting_pillar] = {"asked": True, "answered": True, "answer": reply}
             state["awaiting_preamble"] = None
             turns.append({"role": "user", "pillar": awaiting_pillar, "text": reply, "is_preamble": True})
-            ack = "Thanks — I’ll keep that in mind."
             if awaiting_pillar == "training":
-                ack = "Thanks — I'll shape Training around that focus."
+                first = (getattr(user, "first_name", "") or "").strip()
+                prefix = f"Thanks {first}".strip() if first else "Thanks"
+                if reply:
+                    snippet = _shorten_ack_text(reply)
+                    ack = (
+                        f'{prefix}, logged "{snippet}". I’ll shape training around this. '
+                        "(type *redo* to change or *restart* to begin again)"
+                    )
+                else:
+                    ack = (
+                        f"{prefix} — I'll shape training around this focus. "
+                        "(type *restart* to begin again if you want to update)"
+                    )
+                progress = _pillar_progress_line(state, awaiting_pillar, active_increment=0)
+                if progress:
+                    ack = f"{ack}\n\n{progress}"
+            else:
+                ack = "Thanks — I’ll keep that in mind."
             _send_to_user(user, ack)
             if not _send_first_concept_question_for_pillar(user, state, awaiting_pillar, turns, s):
                 _commit_state(s, sess, state)
@@ -2416,7 +2434,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 if rc_sc is not None: bars.append(_score_bar("Recovery", rc_sc))
                 breakdown = "\n".join(bars) if bars else "No pillar scores available"
 
-                # Send final message
+                # Build final message (will be sent after psych check completes)
                 name = (getattr(user, "first_name", "") or "").strip()
                 intro = f"🎯 *Assessment complete, {name}!*" if name else "🎯 *Assessment complete!*"
                 final_msg = (
@@ -2425,33 +2443,27 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     f"Your Wellbeing assessment: {dash_link}\n"
                     f"(*Type 'assessment' any time to view it again.*)"
                 )
-                _send_to_user(user, final_msg)
-
-                # Generate PDF report to disk
-                # Generate dashboard HTML only (PDF skipped)
+                # Mark any active assessment sessions as inactive before psych
                 try:
-                    _dash_abs = generate_assessment_dashboard_html(state.get("run_id"))
-                except Exception as e:
-                    _dash_abs = None
-                    try:
-                        with SessionLocal() as ss:
-                            ss.add(JobAudit(job_name="dashboard_generate", status="error",
-                                            payload={"run_id": state.get("run_id")}, error=str(e)))
-                            ss.commit()
-                    except Exception:
-                        pass
-
-                # Generate/update progress report HTML
+                    s.execute(
+                        update(AssessSession)
+                        .where(AssessSession.user_id == user.id, AssessSession.is_active == True)
+                        .values(is_active=False, updated_at=datetime.utcnow())
+                    )
+                    s.commit()
+                except Exception:
+                    s.rollback()
                 try:
-                    generate_progress_report_html(user.id)
-                except Exception as e:
-                    try:
-                        with SessionLocal() as ss:
-                            ss.add(JobAudit(job_name="progress_generate", status="error",
-                                            payload={"user_id": user.id}, error=str(e)))
-                            ss.commit()
-                    except Exception:
-                        pass
+                    psych.store_pending_summary(user.id, final_msg)
+                except Exception:
+                    _send_to_user(user, final_msg)
+
+                # Start psych readiness mini-assessment before closing (if not already active)
+                try:
+                    if not psych.has_active_state(user.id):
+                        psych.start(user, state.get("run_id"))
+                except Exception:
+                    pass
 
                 # Persist combined score + dashboard path onto AssessmentRun (for reporting)
                 try:

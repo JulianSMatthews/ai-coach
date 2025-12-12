@@ -8,7 +8,7 @@ import json
 import time
 import urllib.request
 from urllib.parse import parse_qs
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
 from fastapi import FastAPI, APIRouter, Request, Response, Depends, Header, HTTPException, status
 from fastapi.staticfiles import StaticFiles
@@ -27,6 +27,9 @@ from .models import (
     ADMIN_ROLE_CLUB,
     ADMIN_ROLE_GLOBAL,
 )  # ensure model registered for metadata
+from . import monday, wednesday, thursday, friday, weekflow, tuesday, sunday
+from . import psych
+from . import coachmycoach
 from .nudges import send_whatsapp
 from .reporting import (
     generate_detailed_report_pdf_by_user,
@@ -73,6 +76,17 @@ ADMIN_USAGE = (
     "admin assessment <phone>\n"
     "admin progress <phone>\n"
     "admin detailed <phone>\n"
+    "admin weekstart <phone> [notes]\n"
+    "admin monday <phone> [notes]\n"
+    "admin midweek <phone>\n"
+    "admin wednesday <phone>\n"
+    "admin tuesday <phone>\n"
+    "admin thursday <phone>\n"
+    "admin boost <phone>\n"
+    "admin friday <phone>\n"
+    "admin sunday <phone>\n"
+    "admin week <phone> <week_no>\n"
+    "admin midweek <phone>\n"
     "admin summary [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
     "admin okr-summary [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
     "admin okr-summaryllm [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
@@ -548,7 +562,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
     admin_club_id = getattr(admin_user, "club_id", None)
     club_scope_id = admin_club_id
     try:
-        if cmd in {"create", "start", "status", "report", "detailed", "summary", "okr-summary", "okr-summaryllm", "users", "assessment"} and club_scope_id is None:
+        if cmd in {"create", "start", "status", "report", "detailed", "summary", "okr-summary", "okr-summaryllm", "users", "assessment", "weekstart"} and club_scope_id is None:
             send_whatsapp(
                 to=admin_user.phone,
                 text="Your admin profile is not linked to a club. Use 'admin set global <club>' first."
@@ -627,6 +641,151 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 send_whatsapp(to=admin_user.phone, text=f"Progress report for {display_full_name(u)}: {url}")
             except Exception as e:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to generate progress report: {e}")
+            return True
+        elif cmd in {"weekstart", "monday"}:
+            # Usage: admin weekstart <phone> [notes] — auto-select top KRs
+            if len(parts) < 3:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin monday <phone> [notes]")
+                return True
+            target_phone = _norm_phone(parts[2])
+            notes = " ".join(parts[3:]).strip() if len(parts) > 3 else ""
+            notes = notes or None
+
+            try:
+                with SessionLocal() as s:
+                    u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
+                if not u:
+                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
+                    send_whatsapp(
+                        to=admin_user.phone,
+                        text=f"User with phone {target_phone} not found{scope_txt}."
+                    )
+                    return True
+
+                # Trigger weekstart kickoff for that user
+                monday.start_kickoff(u, notes=notes)
+            except Exception as e:
+                send_whatsapp(to=admin_user.phone, text=f"Failed to plan weekstart: {e}")
+            return True
+        elif cmd in {"midweek", "wednesday"}:
+            if len(parts) < 3:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin wednesday <phone>")
+                return True
+            target_phone = _norm_phone(parts[2])
+            with SessionLocal() as s:
+                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
+                if not u:
+                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
+                    send_whatsapp(
+                        to=admin_user.phone,
+                        text=f"User with phone {target_phone} not found{scope_txt}."
+                    )
+                    return True
+            try:
+                wednesday.send_midweek_check(u)
+            except Exception as e:
+                send_whatsapp(to=admin_user.phone, text=f"Failed to send midweek: {e}")
+            return True
+        elif cmd in {"tuesday"}:
+            if len(parts) < 3:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin tuesday <phone>")
+                return True
+            target_phone = _norm_phone(parts[2])
+            with SessionLocal() as s:
+                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
+                if not u:
+                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
+                    send_whatsapp(
+                        to=admin_user.phone,
+                        text=f"User with phone {target_phone} not found{scope_txt}."
+                    )
+                    return True
+            try:
+                tuesday.send_tuesday_check(u)
+            except Exception as e:
+                send_whatsapp(to=admin_user.phone, text=f"Failed to send Tuesday check: {e}")
+            return True
+        elif cmd in {"boost", "friday"}:
+            if len(parts) < 3:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin friday <phone>")
+                return True
+            target_phone = _norm_phone(parts[2])
+            with SessionLocal() as s:
+                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
+                if not u:
+                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
+                    send_whatsapp(
+                        to=admin_user.phone,
+                        text=f"User with phone {target_phone} not found{scope_txt}."
+                    )
+                    return True
+            try:
+                friday.send_boost(u)
+            except Exception as e:
+                send_whatsapp(to=admin_user.phone, text=f"Failed to send boost: {e}")
+            return True
+        elif cmd in {"sunday"}:
+            if len(parts) < 3:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin sunday <phone>")
+                return True
+            target_phone = _norm_phone(parts[2])
+            with SessionLocal() as s:
+                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
+                if not u:
+                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
+                    send_whatsapp(
+                        to=admin_user.phone,
+                        text=f"User with phone {target_phone} not found{scope_txt}."
+                    )
+                    return True
+            try:
+                sunday.send_sunday_review(u)
+            except Exception as e:
+                send_whatsapp(to=admin_user.phone, text=f"Failed to send Sunday review: {e}")
+            return True
+        elif cmd in {"thursday"}:
+            if len(parts) < 3:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin thursday <phone>")
+                return True
+            target_phone = _norm_phone(parts[2])
+            with SessionLocal() as s:
+                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
+                if not u:
+                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
+                    send_whatsapp(
+                        to=admin_user.phone,
+                        text=f"User with phone {target_phone} not found{scope_txt}."
+                    )
+                    return True
+            try:
+                thursday.send_thursday_boost(u)
+            except Exception as e:
+                send_whatsapp(to=admin_user.phone, text=f"Failed to send Thursday boost: {e}")
+            return True
+        elif cmd == "week":
+            if len(parts) < 4:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin week <phone> <week_no>")
+                return True
+            target_phone = _norm_phone(parts[2])
+            try:
+                week_no = int(parts[3])
+            except Exception:
+                send_whatsapp(to=admin_user.phone, text="Week number must be an integer.")
+                return True
+            with SessionLocal() as s:
+                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
+                if not u:
+                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
+                    send_whatsapp(
+                        to=admin_user.phone,
+                        text=f"User with phone {target_phone} not found{scope_txt}."
+                    )
+                    return True
+            try:
+                weekflow.run_week_flow(u, week_no=week_no)
+                send_whatsapp(to=admin_user.phone, text=f"Week flow triggered for week {week_no} (includes Sunday review).")
+            except Exception as e:
+                send_whatsapp(to=admin_user.phone, text=f"Failed to run week flow: {e}")
             return True
         elif cmd == "start":
             if len(parts) < 3:
@@ -1066,6 +1225,96 @@ async def twilio_inbound(request: Request):
         # ✅ log inbound immediately upon receipt (before processing)
         _log_inbound_direct(user, channel, body, from_raw)
 
+        # User coaching note command (available anytime)
+        if lower_body.startswith("coachmycoach"):
+            coachmycoach.handle(user, body)
+            return Response(content="", media_type="text/plain", status_code=200)
+
+        if lower_body.startswith("psych") or psych.has_active_state(user.id):
+            try:
+                psych.handle_message(user, body)
+            except Exception as e:
+                send_whatsapp(to=user.phone, text=f"Psych check failed: {e}")
+            return Response(content="", media_type="text/plain", status_code=200)
+        if sunday.has_active_state(user.id):
+            try:
+                sunday.handle_message(user, body)
+            except Exception as e:
+                send_whatsapp(to=user.phone, text=f"Sunday review failed: {e}")
+            return Response(content="", media_type="text/plain", status_code=200)
+
+        if lower_body.startswith("kickoff"):
+            # Podcast-style kickoff: generate a personalised transcript
+            try:
+                from .kickoff import generate_kickoff_podcast_audio
+                audio_url, transcript = generate_kickoff_podcast_audio(user.id)
+                transcript = transcript or "Generated your kickoff briefing."
+                # Twilio text body limit is 1600 chars; chunk if needed
+                if audio_url:
+                    send_whatsapp(
+                        to=user.phone,
+                        text=f"*Kickoff* Hi { (user.first_name or '').strip().title() or 'there' }, {os.getenv('COACH_NAME','Gia')} here. Here’s your kickoff podcast—give it a listen: {audio_url}",
+                    )
+            except Exception as e:
+                send_whatsapp(to=user.phone, text=f"Couldn't generate kickoff briefing: {e}")
+            return Response(content="", media_type="text/plain", status_code=200)
+
+        if lower_body.startswith("midweek") or lower_body.startswith("wednesday"):
+            try:
+                wednesday.send_midweek_check(user)
+            except Exception as e:
+                send_whatsapp(to=user.phone, text=f"Midweek failed: {e}")
+            return Response(content="", media_type="text/plain", status_code=200)
+        if lower_body.startswith("week"):
+            parts = lower_body.split()
+            week_no = 1
+            if len(parts) > 1:
+                try:
+                    week_no = int(parts[1])
+                except Exception:
+                    week_no = 1
+            try:
+                weekflow.run_week_flow(user, week_no=week_no)
+            except Exception as e:
+                send_whatsapp(to=user.phone, text=f"Week flow failed: {e}")
+            return Response(content="", media_type="text/plain", status_code=200)
+        if lower_body.startswith("sunday"):
+            try:
+                sunday.send_sunday_review(user)
+            except Exception as e:
+                send_whatsapp(to=user.phone, text=f"Sunday review failed: {e}")
+            return Response(content="", media_type="text/plain", status_code=200)
+        if lower_body.startswith("tuesday"):
+            try:
+                tuesday.send_tuesday_check(user)
+            except Exception as e:
+                send_whatsapp(to=user.phone, text=f"Tuesday check failed: {e}")
+            return Response(content="", media_type="text/plain", status_code=200)
+        if lower_body.startswith("thursday"):
+            try:
+                thursday.send_thursday_boost(user)
+            except Exception as e:
+                send_whatsapp(to=user.phone, text=f"Thursday boost failed: {e}")
+            return Response(content="", media_type="text/plain", status_code=200)
+        if lower_body.startswith("sunday"):
+            try:
+                sunday.send_sunday_review(user)
+            except Exception as e:
+                send_whatsapp(to=user.phone, text=f"Sunday review failed: {e}")
+            return Response(content="", media_type="text/plain", status_code=200)
+
+        if lower_body.startswith("weekstart") or lower_body.startswith("monday") or monday.has_active_state(user.id):
+            try:
+                monday.handle_message(user, body)
+            except Exception as e:
+                send_whatsapp(to=user.phone, text=f"Kickoff failed: {e}")
+            return Response(content="", media_type="text/plain", status_code=200)
+        if lower_body.startswith("boost") or lower_body.startswith("friday"):
+            try:
+                friday.send_boost(user)
+            except Exception as e:
+                send_whatsapp(to=user.phone, text=f"Boost failed: {e}")
+            return Response(content="", media_type="text/plain", status_code=200)
         # Interactive menu commands
         if lower_body in {"menu", "help", "options"}:
             send_menu_options(user)
@@ -1088,12 +1337,35 @@ async def twilio_inbound(request: Request):
                 send_whatsapp(to=user.phone, text=f"Couldn't refresh your progress report: {e}")
             return Response(content="", media_type="text/plain", status_code=200)
 
-        # Route to assessor
+        # Explicit assessment entry
         if lower_body in {"start", "hi", "hello"}:
+            # Clear any stale active session and force fresh consent/name capture
             start_combined_assessment(user, force_intro=True)
-        else:
-            continue_combined_assessment(user, body)
+            return Response(content="", media_type="text/plain", status_code=200)
 
+        # Active assessment session handling (consent/name or in-progress)
+        try:
+            from .models import AssessSession
+            with SessionLocal() as s:
+                active_sess = (
+                    s.query(AssessSession)
+                    .filter(AssessSession.user_id == user.id, AssessSession.is_active == True)  # noqa: E712
+                    .first()
+                )
+            if active_sess:
+                continue_combined_assessment(user, body)
+                return Response(content="", media_type="text/plain", status_code=200)
+            # If no active session but consent not recorded, continue assessment flow to capture consent/name
+            has_consent = bool(getattr(user, "consent_given", False)) \
+                          or bool(getattr(user, "consent_at", None)) \
+                          or bool(getattr(user, "consent_yes_at", None))
+            if not has_consent:
+                continue_combined_assessment(user, body)
+                return Response(content="", media_type="text/plain", status_code=200)
+        except Exception:
+            pass
+
+        # No explicit command matched; acknowledge silently
         return Response(content="", media_type="text/plain", status_code=200)
 
     except Exception as e:
