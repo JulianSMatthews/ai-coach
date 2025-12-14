@@ -30,6 +30,7 @@ from .models import (
 from . import monday, wednesday, thursday, friday, weekflow, tuesday, sunday
 from . import psych
 from . import coachmycoach
+from . import scheduler
 from .nudges import send_whatsapp
 from .reporting import (
     generate_detailed_report_pdf_by_user,
@@ -76,17 +77,16 @@ ADMIN_USAGE = (
     "admin assessment <phone>\n"
     "admin progress <phone>\n"
     "admin detailed <phone>\n"
-    "admin weekstart <phone> [notes]\n"
-    "admin monday <phone> [notes]\n"
-    "admin midweek <phone>\n"
-    "admin wednesday <phone>\n"
+    "admin autoprompts <phone> on|off\n"
+    "\nWeekly touchpoints (by day):\n"
+    "admin monday <phone>\n"
     "admin tuesday <phone>\n"
+    "admin wednesday <phone>\n"
     "admin thursday <phone>\n"
-    "admin boost <phone>\n"
     "admin friday <phone>\n"
     "admin sunday <phone>\n"
-    "admin week <phone> <week_no>\n"
-    "admin midweek <phone>\n"
+    "admin week <phone> <week_no>      # run full week flow (includes Sunday)\n"
+    "\nReports:\n"
     "admin summary [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
     "admin okr-summary [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
     "admin okr-summaryllm [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
@@ -207,6 +207,12 @@ def on_startup():
             print(f"⚠️  Could not create reports dir: {e!r}")
     _maybe_set_public_base_via_ngrok()
     _print_env_banner()
+    # Start scheduler (user-level auto prompts are handled per preference)
+    try:
+        scheduler.start_scheduler()
+        scheduler.schedule_auto_daily_prompts()
+    except Exception as e:
+        print(f"⚠️  Scheduler start failed: {e!r}")
 
 def _maybe_set_public_base_via_ngrok() -> None:
     """
@@ -562,7 +568,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
     admin_club_id = getattr(admin_user, "club_id", None)
     club_scope_id = admin_club_id
     try:
-        if cmd in {"create", "start", "status", "report", "detailed", "summary", "okr-summary", "okr-summaryllm", "users", "assessment", "weekstart"} and club_scope_id is None:
+        if cmd in {"create", "start", "status", "report", "detailed", "summary", "okr-summary", "okr-summaryllm", "users", "assessment"} and club_scope_id is None:
             send_whatsapp(
                 to=admin_user.phone,
                 text="Your admin profile is not linked to a club. Use 'admin set global <club>' first."
@@ -685,6 +691,34 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 wednesday.send_midweek_check(u)
             except Exception as e:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to send midweek: {e}")
+            return True
+        elif cmd == "autoprompts":
+            if len(parts) < 4:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin autoprompts <phone> on|off")
+                return True
+            target_phone = _norm_phone(parts[2])
+            toggle = parts[3].lower()
+            if toggle not in {"on", "off"}:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin autoprompts <phone> on|off")
+                return True
+            with SessionLocal() as s:
+                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
+                if not u:
+                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
+                    send_whatsapp(
+                        to=admin_user.phone,
+                        text=f"User with phone {target_phone} not found{scope_txt}."
+                    )
+                    return True
+            ok = False
+            if toggle == "on":
+                ok = scheduler.enable_auto_prompts(u.id)
+            else:
+                ok = scheduler.disable_auto_prompts(u.id)
+            if ok:
+                send_whatsapp(to=admin_user.phone, text=f"Auto prompts turned {toggle} for {target_phone}.")
+            else:
+                send_whatsapp(to=admin_user.phone, text="Failed to update auto prompts (check AUTO_DAILY_PROMPTS env).")
             return True
         elif cmd in {"tuesday"}:
             if len(parts) < 3:

@@ -12,9 +12,10 @@ from apscheduler.executors.pool import ThreadPoolExecutor
 
 from .config import settings
 from .db import SessionLocal
-from .models import User, JobAudit, AssessSession
+from .models import User, JobAudit, AssessSession, UserPreference
 from .nudges import send_message
 from .llm import compose_prompt
+from . import monday, tuesday, wednesday, thursday, friday, sunday
 
 # ──────────────────────────────────────────────────────────────────────────────
 # APScheduler setup
@@ -91,6 +92,42 @@ def _user_onboarding_active(user_id: int) -> bool:
         return active is not None
 
 
+def _user_pref_time(session, user_id: int, day_key: str) -> tuple[int, int] | None:
+    pref = (
+        session.query(UserPreference)
+        .filter(UserPreference.user_id == user_id, UserPreference.key == f"coach_schedule_{day_key}")
+        .one_or_none()
+    )
+    if not pref or not pref.value:
+        return None
+    try:
+        hh, mm = str(pref.value).split(":")
+        return int(hh), int(mm)
+    except Exception:
+        return None
+
+
+def _default_times() -> dict[str, tuple[int, int]]:
+    # Defaults in 24h: Sunday 18:00, Monday 08:00, Tuesday 19:00, Wednesday 08:00, Thursday 19:00, Friday 08:00
+    return {
+        "sunday": (18, 0),
+        "monday": (8, 0),
+        "tuesday": (19, 0),
+        "wednesday": (8, 0),
+        "thursday": (19, 0),
+        "friday": (8, 0),
+    }
+
+
+def _auto_prompts_enabled(session, user_id: int) -> bool:
+    pref = (
+        session.query(UserPreference)
+        .filter(UserPreference.user_id == user_id, UserPreference.key == "auto_daily_prompts")
+        .one_or_none()
+    )
+    return bool(pref and str(pref.value).strip() == "1")
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Core send
 # ──────────────────────────────────────────────────────────────────────────────
@@ -162,6 +199,139 @@ def cancel_timeout_followup(user_id: int):
         scheduler.remove_job(job_id)
     except Exception:
         pass
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Automatic daily prompts (day-specific handlers)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _run_day_prompt(user_id: int, day: str):
+    """Invoke the day-specific handler for a user."""
+    with SessionLocal() as s:
+        user = s.get(User, user_id)
+        if not user:
+            return
+    if _user_onboarding_active(user_id):
+        print(f"[scheduler] skip {day} prompt for user {user_id}: onboarding active")
+        return
+    try:
+        if day == "monday":
+            monday.start_kickoff(user)
+        elif day == "tuesday":
+            tuesday.send_tuesday_check(user)
+        elif day == "wednesday":
+            wednesday.send_midweek_check(user)
+        elif day == "thursday":
+            thursday.send_thursday_boost(user)
+        elif day == "friday":
+            friday.send_boost(user)
+        elif day == "sunday":
+            sunday.send_sunday_review(user)
+        else:
+            print(f"[scheduler] unknown day prompt: {day}")
+            return
+        _audit(user_id, f"auto_prompt_{day}", {})
+    except Exception as e:
+        print(f"[scheduler] {day} prompt failed for user {user_id}: {e}")
+
+
+def _schedule_prompt_for_user(user: User, day: str, dow: str, hour: int, minute: int):
+    tz = _tz(user)
+    job_id = f"auto_prompt_{day}_{user.id}"
+    scheduler.add_job(
+        _run_day_prompt,
+        trigger="cron",
+        day_of_week=dow,
+        hour=hour,
+        minute=minute,
+        args=[user.id, day],
+        id=job_id,
+        replace_existing=True,
+        misfire_grace_time=3600,
+        timezone=tz,
+    )
+    print(f"[scheduler] scheduled {day} prompt for user {user.id} at {hour:02d}:{minute:02d} ({tz})")
+
+
+def _unschedule_prompts_for_user(user_id: int):
+    for day in ("monday", "tuesday", "wednesday", "thursday", "friday", "sunday"):
+        job_id = f"auto_prompt_{day}_{user_id}"
+        try:
+            scheduler.remove_job(job_id)
+        except Exception:
+            pass
+
+
+def _schedule_prompts_for_user(user: User, defaults: dict[str, tuple[int, int]], session) -> None:
+    # Skip if user not enabled
+    if not _auto_prompts_enabled(session, user.id):
+        _unschedule_prompts_for_user(user.id)
+        return
+    for day, (hh_default, mm_default) in defaults.items():
+        pref_time = _user_pref_time(session, user.id, day) or (hh_default, mm_default)
+        dow = {
+            "monday": "mon",
+            "tuesday": "tue",
+            "wednesday": "wed",
+            "thursday": "thu",
+            "friday": "fri",
+            "sunday": "sun",
+        }.get(day)
+        if not dow:
+            continue
+        _schedule_prompt_for_user(user, day, dow, pref_time[0], pref_time[1])
+
+
+def schedule_auto_daily_prompts():
+    """Schedule day-specific prompts for all users based on their own preference."""
+    defaults = _default_times()
+    with SessionLocal() as s:
+        users = s.query(User).all()
+        for u in users:
+            # Skip if onboarding not complete
+            if _user_onboarding_active(u.id):
+                continue
+            _schedule_prompts_for_user(u, defaults, s)
+
+
+def enable_auto_prompts(user_id: int) -> bool:
+    """Enable auto prompts for a user and schedule them. Returns True on success."""
+    defaults = _default_times()
+    with SessionLocal() as s:
+        u = s.get(User, user_id)
+        if not u:
+            return False
+        pref = (
+            s.query(UserPreference)
+            .filter(UserPreference.user_id == user_id, UserPreference.key == "auto_daily_prompts")
+            .one_or_none()
+        )
+        if pref:
+            pref.value = "1"
+        else:
+            s.add(UserPreference(user_id=user_id, key="auto_daily_prompts", value="1"))
+        s.commit()
+        _schedule_prompts_for_user(u, defaults, s)
+    return True
+
+
+def disable_auto_prompts(user_id: int) -> bool:
+    """Disable auto prompts for a user and unschedule them. Returns True on success."""
+    defaults = _default_times()
+    with SessionLocal() as s:
+        u = s.get(User, user_id)
+        if not u:
+            return False
+        pref = (
+            s.query(UserPreference)
+            .filter(UserPreference.user_id == user_id, UserPreference.key == "auto_daily_prompts")
+            .one_or_none()
+        )
+        if pref:
+            pref.value = "0"
+            s.commit()
+        _unschedule_prompts_for_user(user_id)
+    return True
 
 
 # ──────────────────────────────────────────────────────────────────────────────
