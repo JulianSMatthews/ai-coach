@@ -114,6 +114,8 @@ APP_START_DT = datetime.now(UK_TZ)
 # Format: dd/mm/yy␠HH:MM:SS (UK local time)
 APP_START_UK_STR = APP_START_DT.strftime("%d/%m/%y %H:%M:%S")
 
+ROBOTS_TXT = "User-agent: *\nAllow: /\nDisallow: /admin\nDisallow: /reports\n"
+
 def _uptime_seconds() -> int:
     try:
         from datetime import timezone as _tz, datetime as _dt
@@ -1435,6 +1437,12 @@ def root():
         "app_start_uk": APP_START_UK_STR,
         "uptime_seconds": _uptime_seconds(),
     }
+
+
+@app.get("/robots.txt", include_in_schema=False)
+def robots_txt():
+    """Serve a small robots.txt so crawlers don't get a 404."""
+    return Response(content=ROBOTS_TXT, media_type="text/plain")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
