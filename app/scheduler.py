@@ -284,7 +284,19 @@ def _run_day_prompt(user_id: int, day: str):
         print(f"[scheduler] {day} prompt failed for user {user_id}: {e}")
 
 
-def _schedule_prompt_for_user(user: User, day: str, dow: str, hour: int, minute: int):
+def _next_monday_anchor(user: User, hour: int, minute: int) -> datetime:
+    """Return the next Monday at hour:minute in the user's timezone (today if still upcoming)."""
+    tz = _tz(user)
+    now = datetime.now(tz)
+    days_ahead = (0 - now.weekday()) % 7  # Monday=0
+    anchor_date = (now + timedelta(days=days_ahead)).date()
+    anchor_dt = datetime(anchor_date.year, anchor_date.month, anchor_date.day, hour, minute, tzinfo=tz)
+    if anchor_dt <= now:
+        anchor_dt = anchor_dt + timedelta(days=7)
+    return anchor_dt
+
+
+def _schedule_prompt_for_user(user: User, day: str, dow: str, hour: int, minute: int, start_date: datetime | None = None):
     tz = _tz(user)
     job_id = f"auto_prompt_{day}_{user.id}"
     scheduler.add_job(
@@ -298,8 +310,10 @@ def _schedule_prompt_for_user(user: User, day: str, dow: str, hour: int, minute:
         replace_existing=True,
         misfire_grace_time=3600,
         timezone=tz,
+        start_date=start_date,
     )
-    print(f"[scheduler] scheduled {day} prompt for user {user.id} at {hour:02d}:{minute:02d} ({tz})")
+    sd_txt = f", start={start_date.isoformat()}" if start_date else ""
+    print(f"[scheduler] scheduled {day} prompt for user {user.id} at {hour:02d}:{minute:02d} ({tz}{sd_txt})")
 
 
 def _unschedule_prompts_for_user(user_id: int):
@@ -316,6 +330,11 @@ def _schedule_prompts_for_user(user: User, defaults: dict[str, tuple[int, int]],
     if not _coaching_enabled(session, user.id):
         _unschedule_prompts_for_user(user.id)
         return
+    # Ensure first scheduled prompt is the Monday weekstart after enabling (avoid midweek out-of-sequence)
+    mon_hour, mon_min = _user_pref_time(session, user.id, "monday") or defaults.get("monday", (8, 0))
+    anchor_monday = _next_monday_anchor(user, mon_hour, mon_min)
+    dow_idx = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "sunday": 6}
+    anchor_date = anchor_monday.date()
     for day, (hh_default, mm_default) in defaults.items():
         pref_time = _user_pref_time(session, user.id, day) or (hh_default, mm_default)
         dow = {
@@ -328,7 +347,18 @@ def _schedule_prompts_for_user(user: User, defaults: dict[str, tuple[int, int]],
         }.get(day)
         if not dow:
             continue
-        _schedule_prompt_for_user(user, day, dow, pref_time[0], pref_time[1])
+        offset_days = dow_idx.get(day, 0)
+        start_dt_date = anchor_date + timedelta(days=offset_days)
+        tz = _tz(user)
+        start_date = datetime(
+            start_dt_date.year,
+            start_dt_date.month,
+            start_dt_date.day,
+            pref_time[0],
+            pref_time[1],
+            tzinfo=tz,
+        )
+        _schedule_prompt_for_user(user, day, dow, pref_time[0], pref_time[1], start_date=start_date)
 
 
 def schedule_auto_daily_prompts():

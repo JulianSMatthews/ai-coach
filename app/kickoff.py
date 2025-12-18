@@ -1,6 +1,5 @@
 """
-Kickoff touchpoint flow (proposal → review → confirmation + support offers).
-Self-contained: handles outbound message generation and inbound replies.
+Kickoff touchpoint: create/reuse Week 1 focus and send a kickoff podcast.
 """
 from __future__ import annotations
 
@@ -265,6 +264,8 @@ def send_kickoff_podcast_message(
     audio_url: str | None,
     coach_name: str = COACH_NAME,
     week_no: int | None = None,
+    weekly_focus_id: int | None = None,
+    kr_ids: list[int] | None = None,
 ) -> None:
     """
     Send kickoff podcast link and log touchpoint (used by automated weekflow kickoff).
@@ -284,9 +285,9 @@ def send_kickoff_podcast_message(
         log_touchpoint(
             user_id=user.id,
             tp_type="kickoff",
-            weekly_focus_id=None,
+            weekly_focus_id=weekly_focus_id,
             week_no=week_no,
-            kr_ids=None,
+            kr_ids=kr_ids,
             meta={"source": "kickoff_auto", "label": "kickoff", "week_no": week_no},
             generated_text=message,
             audio_url=audio_url,
@@ -440,153 +441,91 @@ def _summary_message(krs: list[OKRKeyResult]) -> str:
 
 
 def start_kickoff(user: User, notes: str | None = None, debug: bool = False) -> None:
-    """Create weekly focus, pick KRs, send kickoff message, and set state."""
+    """
+    Create (or reuse) Week 1 focus, generate kickoff podcast, and send it.
+    """
+    week_no = 1
     with SessionLocal() as s:
-        # select KRs
-        selected = select_top_krs_for_user(s, user.id, limit=None)
+        selected = select_top_krs_for_user(s, user.id, limit=None, week_no=week_no)
         kr_ids = [kr_id for kr_id, _ in selected]
         if not kr_ids:
             send_whatsapp(to=user.phone, text="No active KRs found to propose. Please set OKRs first.")
             return
 
-        # create weekly focus
         today = datetime.utcnow().date()
-        days_ahead = 7 - today.weekday()
-        start = today + timedelta(days=days_ahead)
-        end = start + timedelta(days=6)
-        wf = WeeklyFocus(user_id=user.id, starts_on=start, ends_on=end, notes=notes, week_no=1)
-        s.add(wf); s.flush()
-        for idx, kr_id in enumerate(kr_ids):
-            s.add(WeeklyFocusKR(weekly_focus_id=wf.id, kr_id=kr_id, priority_order=idx, role="primary" if idx == 0 else "secondary"))
-        s.commit()
-
-        krs = s.query(OKRKeyResult).filter(OKRKeyResult.id.in_(kr_ids)).all()
-
-        kickoff_msg = _initial_message(user, wf, krs)
-        send_whatsapp(to=user.phone, text=kickoff_msg)
-
-        # Log touchpoint for kickoff (initial 12-week start)
-        log_touchpoint(
-            user_id=user.id,
-            tp_type="kickoff",
-            weekly_focus_id=wf.id,
-            week_no=getattr(wf, "week_no", None),
-            kr_ids=kr_ids,
-            meta={"notes": notes, "source": "kickoff_flow", "label": "kickoff"},
-            generated_text=kickoff_msg,
+        earliest = (
+            s.query(WeeklyFocus)
+            .filter(WeeklyFocus.user_id == user.id)
+            .order_by(WeeklyFocus.starts_on.asc())
+            .first()
         )
+        base_start = earliest.starts_on if earliest else (today - timedelta(days=today.weekday()))
+        start = base_start  # Week 1 anchor
+        end = start + timedelta(days=6)
 
-        # set state
-        _set_state(s, user.id, {"mode": "proposal", "wf_id": wf.id, "kr_ids": kr_ids, "debug": debug})
-        s.commit()
+        wf = (
+            s.query(WeeklyFocus)
+            .filter(WeeklyFocus.user_id == user.id, WeeklyFocus.starts_on == start, WeeklyFocus.ends_on == end)
+            .first()
+        )
+        if wf:
+            existing_kr_ids = [
+                row.kr_id
+                for row in (
+                    s.query(WeeklyFocusKR)
+                    .filter(WeeklyFocusKR.weekly_focus_id == wf.id)
+                    .order_by(WeeklyFocusKR.priority_order.asc())
+                    .all()
+                )
+            ]
+            if existing_kr_ids:
+                kr_ids = existing_kr_ids
+            else:
+                for idx, kr_id in enumerate(kr_ids):
+                    s.add(
+                        WeeklyFocusKR(
+                            weekly_focus_id=wf.id,
+                            kr_id=kr_id,
+                            priority_order=idx,
+                            role="primary" if idx == 0 else "secondary",
+                        )
+                    )
+                s.commit()
+        else:
+            wf = WeeklyFocus(user_id=user.id, starts_on=start, ends_on=end, notes=notes, week_no=week_no)
+            s.add(wf); s.flush()
+            for idx, kr_id in enumerate(kr_ids):
+                s.add(
+                    WeeklyFocusKR(
+                        weekly_focus_id=wf.id,
+                        kr_id=kr_id,
+                        priority_order=idx,
+                        role="primary" if idx == 0 else "secondary",
+                    )
+                )
+            s.commit()
+
+    try:
+        audio_url, _ = generate_kickoff_podcast_audio(user.id, week_no=week_no)
+        send_kickoff_podcast_message(
+            user,
+            audio_url,
+            coach_name=COACH_NAME,
+            week_no=week_no,
+            weekly_focus_id=getattr(wf, "id", None),
+            kr_ids=kr_ids,
+        )
+    except Exception as e:
+        send_whatsapp(to=user.phone, text=f"Couldn't start kickoff: {e}")
 
 
 def handle_message(user: User, text: str) -> None:
     msg = (text or "").strip()
     lower = msg.lower()
-    with SessionLocal() as s:
-        state = _get_state(s, user.id)
+    # kickoff keyword starts a new flow
+    if lower.startswith("kickoff"):
+        start_kickoff(user, debug=lower.startswith("kickoffdebug"))
+        return
 
-        # kickoff keyword starts a new flow
-        if lower.startswith("kickoffdebug"):
-            _set_state(s, user.id, None); s.commit()
-            start_kickoff(user, debug=True)
-            return
-        if lower.startswith("kickoff") or state is None:
-            # start new kickoff
-            _set_state(s, user.id, None); s.commit()
-            start_kickoff(user, debug=False)
-            return
-
-        # if no state after attempt, bail
-        if state is None:
-            send_whatsapp(to=user.phone, text="Say kickoff to start your weekly focus.")
-            return
-
-        # load wf and krs
-        wf = s.query(WeeklyFocus).get(state.get("wf_id"))
-        wkrs = (
-            s.query(WeeklyFocusKR, OKRKeyResult)
-             .join(OKRKeyResult, WeeklyFocusKR.kr_id == OKRKeyResult.id)
-             .filter(WeeklyFocusKR.weekly_focus_id == wf.id)
-             .order_by(WeeklyFocusKR.priority_order.asc())
-             .all()
-        )
-        ordered_ids = state.get("kr_ids") or [kr.id for _, kr in wkrs]
-        krs_lookup = {kr.id: kr for _, kr in wkrs}
-        krs = [krs_lookup[kid] for kid in ordered_ids if kid in krs_lookup]
-        kr_ids = [kr.id for kr in krs]
-
-        mode = state.get("mode")
-        debug = bool(state.get("debug"))
-
-        # proposal phase
-        if mode == "proposal":
-            if lower.replace(" ", "") in {"allok", "allokay", "allokey"} or lower.strip() == "all ok":
-                support_text, history = _support_conversation(krs, [], None, user, debug)
-                send_whatsapp(to=user.phone, text=support_text)
-                _set_state(s, user.id, {"mode": "support", "wf_id": wf.id, "kr_ids": kr_ids, "history": history, "debug": debug})
-                s.commit()
-                return
-            if lower.startswith("review"):
-                _set_state(s, user.id, {"mode": "review", "wf_id": wf.id, "kr_ids": kr_ids, "idx": 0})
-                s.commit()
-                current = krs[0]
-                send_whatsapp(to=user.phone, text=f"Reviewing KR 1/{len(kr_ids)}: {current.description} (target={_fmt_num(current.target_num)}). Reply keep or drop.")
-                return
-            # unknown input in proposal
-            send_whatsapp(to=user.phone, text="Type All ok to confirm or review to modify KRs proposed.")
-            return
-
-        # review phase
-        if mode == "review":
-            idx = state.get("idx", 0)
-            kr_id_list = state.get("kr_ids", [])
-            if idx >= len(kr_id_list):
-                _set_state(s, user.id, None); s.commit()
-                send_whatsapp(to=user.phone, text=_summary_message(krs))
-                send_whatsapp(to=user.phone, text=_support_offer(krs))
-                return
-            current_id = kr_id_list[idx]
-            current = next((kr for kr in krs if kr.id == current_id), None)
-            if not current:
-                _set_state(s, user.id, None); s.commit()
-                send_whatsapp(to=user.phone, text="No KRs to review. Say kickoff to start again.")
-                return
-            if "drop" in lower:
-                kr_id_list = [kid for kid in kr_id_list if kid != current_id]
-                state["kr_ids"] = kr_id_list
-            elif "keep" in lower:
-                pass
-            else:
-                send_whatsapp(to=user.phone, text=f"KR {idx+1}/{len(state['kr_ids'])}: {current.description} (target={_fmt_num(current.target_num)}). Reply keep or drop.")
-                return
-            idx += 1
-            if idx >= len(kr_id_list):
-                # finalize
-                krs_final = [kr for kr in krs if kr.id in kr_id_list]
-                support_text, history = _support_conversation(krs_final, [], None, user, debug)
-                _set_state(s, user.id, {"mode": "support", "wf_id": wf.id, "kr_ids": kr_id_list, "history": history, "debug": debug}); s.commit()
-                send_whatsapp(to=user.phone, text=_summary_message(krs_final))
-                send_whatsapp(to=user.phone, text=support_text)
-                return
-            state["idx"] = idx
-            _set_state(s, user.id, state); s.commit()
-            nxt = next((kr for kr in krs if kr.id == kr_id_list[idx]), None)
-            if nxt:
-                send_whatsapp(to=user.phone, text=f"KR {idx+1}/{len(kr_id_list)}: {nxt.description} (target={_fmt_num(nxt.target_num)}). Reply keep or drop.")
-            return
-
-        # support phase
-        if mode == "support":
-            history = state.get("history") or []
-            # allow user to end the session explicitly
-            support_text, new_history = _support_conversation(krs, history, msg, user, debug)
-            send_whatsapp(to=user.phone, text=support_text)
-            _set_state(s, user.id, {"mode": "support", "wf_id": wf.id, "kr_ids": kr_ids, "history": new_history, "debug": debug})
-            s.commit()
-            return
-
-        # fallback
-        _set_state(s, user.id, None); s.commit()
-        send_whatsapp(to=user.phone, text="Session reset. Say kickoff to start your weekly focus.")
+    # No other stateful kickoff chat: politely prompt the user to use the keyword
+    send_whatsapp(to=user.phone, text="Say kickoff to start your weekly focus.")

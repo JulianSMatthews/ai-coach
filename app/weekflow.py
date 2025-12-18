@@ -9,21 +9,13 @@ from datetime import datetime, timedelta
 from .models import User, WeeklyFocus, WeeklyFocusKR
 from .nudges import send_whatsapp
 from . import monday, wednesday, friday, tuesday, sunday
-from .kickoff import generate_kickoff_podcast_audio, COACH_NAME, send_kickoff_podcast_message
+from .kickoff import start_kickoff
 from .db import SessionLocal
 from .focus import select_top_krs_for_user
 from .reporting import generate_progress_report_html, _reports_root_for_user
 import os
 import shutil
 from datetime import datetime, date
-
-
-def _send_kickoff_podcast(user: User, week_no: int | None = None):
-    try:
-        audio_url, transcript = generate_kickoff_podcast_audio(user.id)
-        send_kickoff_podcast_message(user, audio_url, coach_name=COACH_NAME, week_no=week_no)
-    except Exception as e:
-        send_whatsapp(to=user.phone, text=f"Couldn't generate kickoff briefing: {e}")
 
 
 def _ensure_weekly_focus(user: User, week_no: int) -> bool:
@@ -98,7 +90,7 @@ def run_week_flow(user: User, week_no: int = 1) -> None:
     prev_log = os.environ.get("WEEKFLOW_LOG_FILE")
     os.environ["WEEKFLOW_LOG_FILE"] = log_path
     if week_no == 1:
-        _send_kickoff_podcast(user, week_no=week_no)
+        start_kickoff(user, notes=f"weekflow week {week_no}", debug=False)
     if not _ensure_weekly_focus(user, week_no):
         if prev_log is not None:
             os.environ["WEEKFLOW_LOG_FILE"] = prev_log
