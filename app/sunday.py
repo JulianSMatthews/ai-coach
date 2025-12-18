@@ -10,10 +10,12 @@ from sqlalchemy.orm import Session
 
 from .db import SessionLocal
 from .nudges import send_whatsapp
+from .checkins import record_checkin
 from .models import WeeklyFocus, WeeklyFocusKR, OKRKeyResult, User, UserPreference, OKRKrEntry
 from .kickoff import COACH_NAME
 from .prompts import sunday_prompt
 from . import llm as shared_llm
+from .touchpoints import log_touchpoint
 
 STATE_KEY = "sunday_state"
 
@@ -89,25 +91,31 @@ def _ask_current_kr(user: User, kr: OKRKeyResult, idx: int, total: int) -> None:
 
 
 def send_sunday_review(user: User, coach_name: str = COACH_NAME) -> None:
+    wf_id: int | None = None
+    kr_ids: list[int] = []
     with SessionLocal() as s:
         wf = _latest_weekly_focus(s, user.id)
         if not wf:
             send_whatsapp(to=user.phone, text="No weekly plan found. Say monday to plan your week first.")
             return
-        krs = _pick_krs(s, wf.id)
+        wf_id = wf.id
+        krs = _pick_krs(s, wf_id)
         if not krs:
             send_whatsapp(to=user.phone, text="No key results found for this week. Say monday to set them up.")
             return
 
-        # initialise state
+        # initialise state (store ids only to avoid detached instances)
         kr_ids = [kr.id for kr in krs]
         _set_state(
             s,
             user.id,
-            {"step": "kr", "idx": 0, "kr_ids": kr_ids, "wf_id": wf.id, "wins": None, "blocks": None},
+            {"step": "kr", "idx": 0, "kr_ids": kr_ids, "wf_id": wf_id, "wins": None, "blocks": None},
         )
         s.commit()
     # Fetch fresh KR in a new session to avoid detached instances
+    if not kr_ids or wf_id is None:
+        send_whatsapp(to=user.phone, text="*Sunday* No key results available to review.")
+        return
     with SessionLocal() as s:
         first_kr = s.query(OKRKeyResult).filter(OKRKeyResult.id == kr_ids[0]).one_or_none()
         if not first_kr:
@@ -177,10 +185,51 @@ def handle_message(user: User, body: str) -> None:
             state["blocks"] = text
             _set_state(s, user.id, None)
             s.commit()
+            # Record check-in with latest KR actuals and blockers/wins
+            wf = s.query(WeeklyFocus).get(state.get("wf_id"))
+            krs = []
+            if wf:
+                krs = (
+                    s.query(WeeklyFocusKR, OKRKeyResult)
+                    .join(OKRKeyResult, WeeklyFocusKR.kr_id == OKRKeyResult.id)
+                    .filter(WeeklyFocusKR.weekly_focus_id == wf.id)
+                    .all()
+                )
+            progress_updates = []
+            for _, kr in krs:
+                progress_updates.append({"kr_id": kr.id, "actual": kr.actual_num, "target": kr.target_num})
+            blockers = [{"note": text}] if text else []
+            wins = state.get("wins")
+            commitments = [{"note": wins}] if wins else []
+            check_in_id = None
+            try:
+                check_in_id = record_checkin(
+                    user_id=user.id,
+                    touchpoint_type="sunday",
+                    progress_updates=progress_updates,
+                    blockers=blockers,
+                    commitments=commitments,
+                    weekly_focus_id=wf.id if wf else None,
+                    week_no=getattr(wf, "week_no", None) if wf else None,
+                )
+            except Exception:
+                check_in_id = None
             send_whatsapp(
                 to=user.phone,
                 text="*Sunday* Thanks, got your updates. I’ll summarise these and we’ll pick up with Monday’s kickoff.",
             )
+            try:
+                log_touchpoint(
+                    user_id=user.id,
+                    tp_type="sunday",
+                    weekly_focus_id=wf.id if wf else None,
+                    week_no=getattr(wf, "week_no", None) if wf else None,
+                    kr_ids=[kr.id for _, kr in krs] if krs else [],
+                    meta={"source": "sunday", "label": "sunday"},
+                    source_check_in_id=check_in_id,
+                )
+            except Exception:
+                pass
             return
 
         # default: clear if unknown

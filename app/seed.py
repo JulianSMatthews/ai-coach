@@ -485,34 +485,6 @@ def upsert_demo_users(session: Session) -> int:
     return created
 
 
-def upsert_touchpoint_defaults(session: Session) -> dict:
-    """
-    Seeds default cadence/profile preferences for all users and stores
-    the touchpoint type definitions for reference.
-    """
-    created_prefs = 0
-    created_defs = 0
-
-    users = session.execute(select(User)).scalars().all()
-    if not users:
-        return {"created_prefs": 0, "created_defs": 0}
-
-    # Store shared definitions as JSON string per user (lightweight duplication)
-    type_defs_json = json.dumps(TOUCHPOINT_TYPES)
-    default_profile = CADENCE_PROFILES[0]["code"] if CADENCE_PROFILES else "standard_loop"
-    default_intensity = CADENCE_PROFILES[0].get("intensity") if CADENCE_PROFILES else "medium"
-
-    for u in users:
-        if _ensure_user_pref(session, u.id, "touchpoint_types", type_defs_json):
-            created_defs += 1
-        if _ensure_user_pref(session, u.id, "touchpoint_cadence_profile", default_profile):
-            created_prefs += 1
-        if _ensure_user_pref(session, u.id, "touchpoint_intensity", default_intensity):
-            created_prefs += 1
-
-    session.commit()
-    return {"created_prefs": created_prefs, "created_defs": created_defs}
-
 def run_seed() -> None:
     """
     Full seed entrypoint. Safely seeds in the right order and won't crash

@@ -9,7 +9,9 @@ from .db import SessionLocal
 from .models import WeeklyFocus, WeeklyFocusKR, OKRKeyResult, User
 from .nudges import send_whatsapp
 from . import llm as shared_llm
-from .prompts import midweek_prompt
+from .prompts import midweek_prompt, format_checkin_history
+from .touchpoints import log_touchpoint
+from .checkins import fetch_recent_checkins, record_checkin
 
 
 def _latest_weekly_focus(session: Session, user_id: int) -> Optional[WeeklyFocus]:
@@ -45,6 +47,12 @@ def send_midweek_check(user: User, coach_name: str = "Gia") -> None:
 
         client = getattr(shared_llm, "_llm", None)
         message = None
+        history_text = ""
+        try:
+            hist = fetch_recent_checkins(user.id, limit=3, weekly_focus_id=wf.id)
+            history_text = format_checkin_history(hist)
+        except Exception:
+            history_text = ""
         if client:
             try:
                 payload = {"description": kr.description, "target": kr.target_num, "actual": kr.actual_num}
@@ -53,6 +61,7 @@ def send_midweek_check(user: User, coach_name: str = "Gia") -> None:
                     user_name=user.first_name or "",
                     kr=payload,
                     timeframe="midweek check",
+                    history_text=history_text,
                 )
                 resp = client.invoke(prompt)
                 message = (getattr(resp, "content", None) or "").strip()
@@ -71,4 +80,22 @@ def send_midweek_check(user: User, coach_name: str = "Gia") -> None:
                 "Any blockers? Try a small tweak this week—pick one simpler option that keeps you consistent."
             )
 
-        send_whatsapp(to=user.phone, text=message)
+    send_whatsapp(to=user.phone, text=message)
+    log_touchpoint(
+        user_id=user.id,
+        tp_type="wednesday",
+        weekly_focus_id=wf.id,
+        week_no=getattr(wf, "week_no", None),
+        kr_ids=[kr.id] if kr else [],
+        meta={"source": "wednesday", "label": "wednesday"},
+        generated_text=message,
+        source_check_in_id=record_checkin(
+            user_id=user.id,
+            touchpoint_type="wednesday",
+            progress_updates=[],
+            blockers=[],
+            commitments=[],
+            weekly_focus_id=wf.id,
+            week_no=getattr(wf, "week_no", None),
+        ),
+    )

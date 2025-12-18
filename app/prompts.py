@@ -11,6 +11,38 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, List, Optional
 
+
+def format_checkin_history(checkins: List[Dict[str, Any]]) -> str:
+    """
+    Render recent check-ins into a concise bullet list for prompt context.
+    """
+    if not checkins:
+        return ""
+    lines: List[str] = []
+    for ci in checkins:
+        ts = ci.get("created_at")
+        ts_str = ts.isoformat(timespec="minutes") if ts else ""
+        header = f"- {ci.get('touchpoint_type','check-in')}"
+        if ts_str:
+            header += f" @ {ts_str}"
+        parts: List[str] = []
+        for upd in ci.get("progress_updates") or []:
+            desc = upd.get("note") or upd.get("actual") or upd
+            if desc:
+                parts.append(f"progress {desc}")
+        for blk in ci.get("blockers") or []:
+            desc = blk.get("note") if isinstance(blk, dict) else blk
+            if desc:
+                parts.append(f"blocker {desc}")
+        for com in ci.get("commitments") or []:
+            desc = com.get("note") if isinstance(com, dict) else com
+            if desc:
+                parts.append(f"commitment {desc}")
+        if parts:
+            header += " — " + "; ".join(str(p) for p in parts)
+        lines.append(header)
+    return "\n".join(lines)
+
 # ---------------------------------------------------------------------------
 # Structured prompt blocks (reusable building pieces)
 # Each block is a simple text fragment; compose them with assemble_prompt.
@@ -180,20 +212,27 @@ def midweek_prompt(
     user_name: str,
     kr: Dict[str, Any],
     timeframe: str = "",
+    history_text: str = "",
 ) -> str:
     """Midweek check-in: single KR, blockers, micro-adjustment, consistency."""
     blocks = [
         coach_block(coach_name),
         user_block(user_name),
         context_block("midweek", "single-KR check-in", timeframe=timeframe),
-        okr_block([kr]),
-        task_block(
-            "Write one short midweek message that: 1) asks how they’re getting on; "
-            "2) asks ONE focused question on this KR; 3) asks about blockers; "
-            "4) suggests one micro-adjustment; 5) encourages consistency.",
-            constraints="Keep it concise and conversational. Do not ask about other KRs.",
-        ),
     ]
+    if history_text:
+        blocks.append(context_block("history", "recent check-ins", extras=f"Recent check-ins:\\n{history_text}"))
+    blocks.extend(
+        [
+            okr_block([kr]),
+            task_block(
+                "Write one short midweek message that: 1) asks how they’re getting on; "
+                "2) asks ONE focused question on this KR; 3) asks about blockers; "
+                "4) suggests one micro-adjustment; 5) encourages consistency.",
+                constraints="Keep it concise and conversational. Do not ask about other KRs.",
+            ),
+        ]
+    )
     return assemble_prompt(blocks)
 
 
@@ -253,20 +292,27 @@ def tuesday_prompt(
     user_name: str,
     kr: Dict[str, Any],
     timeframe: str = "Tuesday",
+    history_text: str = "",
 ) -> str:
     """Tuesday micro-check: light prompt with a simple nudge."""
     blocks = [
         coach_block(coach_name),
         user_block(user_name),
         context_block("tuesday", "micro-check", timeframe=timeframe),
-        okr_block([kr]),
-        task_block(
-            "Write a very short check-in asking how they’re doing on this goal. "
-            "Ask for a simple yes/no or number. Offer one actionable nudge. "
-            "Keep it friendly, low-burden, WhatsApp length, plain language (no OKR/KR terms).",
-            constraints="Avoid medical advice; avoid jargon; focus on one goal; be concise.",
-        ),
     ]
+    if history_text:
+        blocks.append(context_block("history", "recent check-ins", extras=f"Recent check-ins:\\n{history_text}"))
+    blocks.extend(
+        [
+            okr_block([kr]),
+            task_block(
+                "Write a very short check-in asking how they’re doing on this goal. "
+                "Ask for a simple yes/no or number. Offer one actionable nudge. "
+                "Keep it friendly, low-burden, WhatsApp length, plain language (no OKR/KR terms).",
+                constraints="Avoid medical advice; avoid jargon; focus on one goal; be concise.",
+            ),
+        ]
+    )
     return assemble_prompt(blocks)
 
 

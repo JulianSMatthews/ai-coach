@@ -10,8 +10,11 @@ from .db import SessionLocal
 from .nudges import send_whatsapp
 from .models import WeeklyFocus, WeeklyFocusKR, OKRKeyResult, User
 from .kickoff import COACH_NAME
-from .prompts import tuesday_prompt
+from .prompts import tuesday_prompt, format_checkin_history
 from . import llm as shared_llm
+from .touchpoints import log_touchpoint
+from .checkins import fetch_recent_checkins
+from .checkins import record_checkin
 
 
 def _latest_weekly_focus(session: Session, user_id: int) -> Optional[WeeklyFocus]:
@@ -47,12 +50,19 @@ def send_tuesday_check(user: User, coach_name: str = COACH_NAME) -> None:
 
         client = getattr(shared_llm, "_llm", None)
         message = None
+        history_text = ""
+        try:
+            hist = fetch_recent_checkins(user.id, limit=3, weekly_focus_id=wf.id)
+            history_text = format_checkin_history(hist)
+        except Exception:
+            history_text = ""
         if client:
             try:
                 prompt = tuesday_prompt(
                     coach_name=coach_name,
                     user_name=user.first_name or "there",
                     kr={"description": kr.description, "target": kr.target_num, "actual": kr.actual_num},
+                    history_text=history_text,
                 )
                 resp = client.invoke(prompt)
                 message = (getattr(resp, "content", None) or "").strip()
@@ -70,3 +80,26 @@ def send_tuesday_check(user: User, coach_name: str = COACH_NAME) -> None:
             )
 
         send_whatsapp(to=user.phone, text=message)
+        check_in_id = None
+        try:
+            check_in_id = record_checkin(
+                user_id=user.id,
+                touchpoint_type="tuesday",
+                progress_updates=[],
+                blockers=[],
+                commitments=[],
+                weekly_focus_id=wf.id,
+                week_no=getattr(wf, "week_no", None),
+            )
+        except Exception:
+            check_in_id = None
+        log_touchpoint(
+            user_id=user.id,
+            tp_type="tuesday",
+            weekly_focus_id=wf.id,
+            week_no=getattr(wf, "week_no", None),
+            kr_ids=[kr.id] if kr else [],
+            meta={"source": "tuesday", "label": "tuesday"},
+            generated_text=message,
+            source_check_in_id=check_in_id,
+        )

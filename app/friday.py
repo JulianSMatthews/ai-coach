@@ -13,6 +13,7 @@ from .kickoff import COACH_NAME
 from .prompts import boost_prompt
 from .podcast import generate_podcast_audio
 from . import llm as shared_llm
+from .touchpoints import log_touchpoint
 
 
 def _latest_weekly_focus(session: Session, user_id: int) -> Optional[WeeklyFocus]:
@@ -71,9 +72,20 @@ def send_boost(user: User, coach_name: str = COACH_NAME, week_no: int | None = N
         fname = f"friday_week{week_no}.mp3" if week_no else "friday.mp3"
         audio_url = generate_podcast_audio(transcript, user.id, filename=fname)
         if audio_url:
-            send_whatsapp(
-                to=user.phone,
-                text=f"*Friday* Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. Here’s your boost podcast—give it a quick listen: {audio_url}",
+            message = (
+                f"*Friday* Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. "
+                f"Here’s your boost podcast—give it a quick listen: {audio_url}"
             )
         else:
-            send_whatsapp(to=user.phone, text=transcript if transcript.startswith("*Friday*") else f"*Friday* {transcript}")
+            message = transcript if transcript.startswith("*Friday*") else f"*Friday* {transcript}"
+        send_whatsapp(to=user.phone, text=message)
+        log_touchpoint(
+            user_id=user.id,
+            tp_type="friday",
+            weekly_focus_id=wf.id,
+            week_no=getattr(wf, "week_no", None),
+            kr_ids=[kr.id] if kr else [],
+            meta={"source": "friday", "week_no": week_no, "label": "friday"},
+            generated_text=message,
+            audio_url=audio_url,
+        )

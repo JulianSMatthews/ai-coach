@@ -41,6 +41,7 @@ class User(Base):
     admin_role  = Column(String(32), nullable=False, server_default=text("'member'"))
     consent_given = Column(Boolean, nullable=False, server_default=text("false"))
     consent_at = Column(DateTime, nullable=True)
+    onboard_complete = Column(Boolean, nullable=False, server_default=text("false"))
 
     sessions   = relationship("AssessSession", back_populates="user", cascade="all, delete-orphan")
     club       =relationship("Club")
@@ -473,6 +474,7 @@ class Touchpoint(Base):
     user_id             = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     type                = Column(String(64), nullable=False)        # kickoff|adjust|wrap|prime|ad_hoc
     weekly_focus_id     = Column(Integer, ForeignKey("weekly_focus.id", ondelete="SET NULL"), nullable=True, index=True)
+    week_no             = Column(Integer, nullable=True)            # explicit programme week index for this touchpoint
     scheduled_at        = Column(DateTime, nullable=True)
     channel             = Column(String(64), nullable=True)
     status              = Column(String(32), nullable=False, server_default=text("'planned'"))  # planned|sent|failed|expired
@@ -580,6 +582,7 @@ class WeeklyFocus(Base):
     user_id       = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     starts_on     = Column(DateTime, nullable=True)
     ends_on       = Column(DateTime, nullable=True)
+    week_no       = Column(Integer, nullable=True)                  # explicit programme week index
     notes         = Column(Text, nullable=True)                     # optional summary/context from planning
     created_at    = Column(DateTime, nullable=False, server_default=func.now())
 

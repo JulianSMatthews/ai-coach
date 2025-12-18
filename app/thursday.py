@@ -16,6 +16,7 @@ from .prompts import thursday_prompt
 from .podcast import generate_podcast_audio, generate_podcast_audio_for_voice
 from .reporting import _reports_root_for_user
 from . import llm as shared_llm
+from .touchpoints import log_touchpoint
 
 
 def _latest_weekly_focus(session: Session, user_id: int) -> Optional[WeeklyFocus]:
@@ -105,26 +106,26 @@ def send_thursday_boost(user: User, coach_name: str = COACH_NAME, week_no: int |
                 edu_text = segments[0].rstrip(".") + "."
                 mot_text = ". ".join(segments[1:]).rstrip(".") + "."
 
-        male_voice = os.getenv("ELEVENLABS_VOICE_MALE") or os.getenv("elevenlabs_voice_male")
-        female_voice = os.getenv("ELEVENLABS_VOICE_FEMALE") or os.getenv("elevenlabs_voice_female")
-
         fname_suffix = f"_week{week_no}" if week_no else ""
         edu_res = generate_podcast_audio_for_voice(
             edu_text,
             user.id,
             filename=f"thursday_edu{fname_suffix}.mp3",
-            voice_override=male_voice,
+            voice_role="male",
             return_bytes=True,
         )
         mot_res = generate_podcast_audio_for_voice(
             mot_text,
             user.id,
             filename=f"thursday_mot{fname_suffix}.mp3",
-            voice_override=female_voice,
+            voice_role="female",
             return_bytes=True,
         )
 
-        print(f"[TTS-Thursday] male_voice={male_voice or 'default'} female_voice={female_voice or 'default'} edu_res_type={type(edu_res)} mot_res_type={type(mot_res)}")
+        print(
+            f"[TTS-Thursday] male_voice_role=male female_voice_role=female "
+            f"edu_res_type={type(edu_res)} mot_res_type={type(mot_res)}"
+        )
 
         combined_url = None
         try:
@@ -150,9 +151,20 @@ def send_thursday_boost(user: User, coach_name: str = COACH_NAME, week_no: int |
             combined_url = None
 
         if combined_url:
-            send_whatsapp(
-                to=user.phone,
-                text=f"*Thursday* Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. Here’s your Thursday boost podcast—give it a quick listen: {combined_url}",
+            message = (
+                f"*Thursday* Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. "
+                f"Here’s your Thursday boost podcast—give it a quick listen: {combined_url}"
             )
         else:
-            send_whatsapp(to=user.phone, text=transcript if transcript.startswith("*Thursday*") else f"*Thursday* {transcript}")
+            message = transcript if transcript.startswith("*Thursday*") else f"*Thursday* {transcript}"
+        send_whatsapp(to=user.phone, text=message)
+        log_touchpoint(
+            user_id=user.id,
+            tp_type="thursday",
+            weekly_focus_id=wf.id,
+            week_no=getattr(wf, "week_no", None),
+            kr_ids=[kr.id] if kr else [],
+            meta={"source": "thursday", "week_no": week_no, "label": "thursday"},
+            generated_text=message,
+            audio_url=combined_url,
+        )

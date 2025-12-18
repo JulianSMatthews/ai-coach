@@ -2,6 +2,7 @@
 # PATCH — proper API module + robust Twilio webhook (2025-09-04)
 # PATCH — 2025-09-11: Add minimal superuser admin endpoints (create user, start, status, assessment)
 # PATCH — 2025-09-11: Admin hardening + WhatsApp admin commands (token+DB check; create/start/status/assessment)
+from __future__ import annotations
 
 import os
 import json
@@ -14,6 +15,7 @@ from fastapi import FastAPI, APIRouter, Request, Response, Depends, Header, HTTP
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text, select, desc, func, or_
 from pathlib import Path 
+from typing import Optional
 
 from .db import engine, SessionLocal
 from .models import (
@@ -26,12 +28,15 @@ from .models import (
     ADMIN_ROLE_MEMBER,
     ADMIN_ROLE_CLUB,
     ADMIN_ROLE_GLOBAL,
+    WeeklyFocus,
+    Touchpoint,
 )  # ensure model registered for metadata
-from . import monday, wednesday, thursday, friday, weekflow, tuesday, sunday
+from . import monday, wednesday, thursday, friday, weekflow, tuesday, sunday, kickoff
 from . import psych
 from . import coachmycoach
 from . import scheduler
 from .nudges import send_whatsapp
+from .checkins import record_checkin
 from .reporting import (
     generate_detailed_report_pdf_by_user,
     generate_assessment_summary_pdf,
@@ -77,7 +82,8 @@ ADMIN_USAGE = (
     "admin assessment <phone>\n"
     "admin progress <phone>\n"
     "admin detailed <phone>\n"
-    "admin autoprompts <phone> on|off\n"
+    "admin kickoff <phone>            # send 12-week kickoff podcast/flow\n"
+    "admin coaching <phone> on|off    # toggle scheduled coaching prompts (was autoprompts)\n"
     "\nWeekly touchpoints (by day):\n"
     "admin monday <phone>\n"
     "admin tuesday <phone>\n"
@@ -201,6 +207,12 @@ def on_startup():
         # Seed
         run_seed()
 
+        # Clear any persisted scheduler jobs so the job store is fresh
+        try:
+            scheduler.reset_job_store(clear_table=True)
+        except Exception as e:
+            print(f"⚠️  Could not reset APScheduler jobs: {e!r}")
+
         # Ensure reports dir exists even when not resetting DB
         try:
             reports_dir = os.getenv("REPORTS_DIR") or os.path.join(os.getcwd(), "public", "reports")
@@ -215,6 +227,48 @@ def on_startup():
         scheduler.schedule_auto_daily_prompts()
     except Exception as e:
         print(f"⚠️  Scheduler start failed: {e!r}")
+
+
+def _record_freeform_checkin(user, body: str) -> None:
+    """
+    Capture unstructured inbound replies as a simple check-in, linked to the latest touchpoint/week if available.
+    """
+    txt = (body or "").strip()
+    if not txt:
+        return
+    try:
+        weekly_focus_id = None
+        week_no = None
+        tp_type = "user_reply"
+        with SessionLocal() as s:
+            wf = (
+                s.query(WeeklyFocus)
+                .filter(WeeklyFocus.user_id == user.id)
+                .order_by(WeeklyFocus.starts_on.desc(), WeeklyFocus.id.desc())
+                .first()
+            )
+            if wf:
+                weekly_focus_id = wf.id
+                week_no = getattr(wf, "week_no", None)
+            last_tp = (
+                s.query(Touchpoint)
+                .filter(Touchpoint.user_id == user.id)
+                .order_by(Touchpoint.sent_at.desc().nullslast(), Touchpoint.created_at.desc())
+                .first()
+            )
+            if last_tp and getattr(last_tp, "type", None):
+                tp_type = last_tp.type
+        record_checkin(
+            user_id=user.id,
+            touchpoint_type=tp_type,
+            progress_updates=[{"note": txt}],
+            blockers=[],
+            commitments=[],
+            weekly_focus_id=weekly_focus_id,
+            week_no=week_no,
+        )
+    except Exception:
+        pass
 
 def _maybe_set_public_base_via_ngrok() -> None:
     """
@@ -265,7 +319,7 @@ def display_full_name(u: "User") -> str:
     except Exception:
         return getattr(u, "phone", "") or ""
 
-def _split_name(maybe_name: str) -> tuple[str | None, str | None]:
+def _split_name(maybe_name: str) -> tuple[Optional[str], Optional[str]]:
     """
     Split a free-form name into (first_name, surname).
     - Empty/None -> (None, None)
@@ -637,11 +691,11 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
                 if not u:
                     scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
-                    send_whatsapp(
-                        to=admin_user.phone,
-                        text=f"User with phone {target_phone} not found{scope_txt}."
-                    )
-                    return True
+            send_whatsapp(
+                to=admin_user.phone,
+                text=f"User with phone {target_phone} not found{scope_txt}."
+            )
+            return True
             try:
                 from .reporting import generate_progress_report_html
                 generate_progress_report_html(u.id)
@@ -670,10 +724,32 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                     )
                     return True
 
-                # Trigger weekstart kickoff for that user
-                monday.start_kickoff(u, notes=notes)
+                # Trigger weekstart for that user
+                monday.start_weekstart(u, notes=notes)
             except Exception as e:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to plan weekstart: {e}")
+            return True
+        elif cmd == "kickoff":
+            # Usage: admin kickoff <phone> [notes] — run 12-week kickoff flow/podcast
+            if len(parts) < 3:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin kickoff <phone> [notes]")
+                return True
+            target_phone = _norm_phone(parts[2])
+            notes = " ".join(parts[3:]).strip() if len(parts) > 3 else ""
+            notes = notes or None
+            with SessionLocal() as s:
+                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
+                if not u:
+                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
+                    send_whatsapp(
+                        to=admin_user.phone,
+                        text=f"User with phone {target_phone} not found{scope_txt}."
+                    )
+                    return True
+            try:
+                kickoff.start_kickoff(u, notes=notes)
+            except Exception as e:
+                send_whatsapp(to=admin_user.phone, text=f"Failed to run kickoff: {e}")
             return True
         elif cmd in {"midweek", "wednesday"}:
             if len(parts) < 3:
@@ -694,14 +770,14 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
             except Exception as e:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to send midweek: {e}")
             return True
-        elif cmd == "autoprompts":
+        elif cmd in {"autoprompts", "coaching"}:
             if len(parts) < 4:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin autoprompts <phone> on|off")
+                send_whatsapp(to=admin_user.phone, text="Usage: admin coaching <phone> on|off")
                 return True
             target_phone = _norm_phone(parts[2])
             toggle = parts[3].lower()
             if toggle not in {"on", "off"}:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin autoprompts <phone> on|off")
+                send_whatsapp(to=admin_user.phone, text="Usage: admin coaching <phone> on|off")
                 return True
             with SessionLocal() as s:
                 u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
@@ -714,13 +790,13 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                     return True
             ok = False
             if toggle == "on":
-                ok = scheduler.enable_auto_prompts(u.id)
+                ok = scheduler.enable_coaching(u.id)
             else:
-                ok = scheduler.disable_auto_prompts(u.id)
+                ok = scheduler.disable_coaching(u.id)
             if ok:
-                send_whatsapp(to=admin_user.phone, text=f"Auto prompts turned {toggle} for {target_phone}.")
+                send_whatsapp(to=admin_user.phone, text=f"Coaching prompts turned {toggle} for {target_phone}.")
             else:
-                send_whatsapp(to=admin_user.phone, text="Failed to update auto prompts (check AUTO_DAILY_PROMPTS env).")
+                send_whatsapp(to=admin_user.phone, text="Failed to update coaching prompts (check AUTO_DAILY_PROMPTS env).")
             return True
         elif cmd in {"tuesday"}:
             if len(parts) < 3:
@@ -1401,7 +1477,12 @@ async def twilio_inbound(request: Request):
         except Exception:
             pass
 
-        # No explicit command matched; acknowledge silently
+        # No explicit command matched; treat as a freeform check-in for history
+        try:
+            _record_freeform_checkin(user, body)
+        except Exception:
+            pass
+        # Acknowledge silently
         return Response(content="", media_type="text/plain", status_code=200)
 
     except Exception as e:

@@ -9,11 +9,16 @@ from typing import Any
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.executors.pool import ThreadPoolExecutor
+from sqlalchemy import text
 
 from .config import settings
-from .db import SessionLocal
+from .db import SessionLocal, engine
 from .models import User, JobAudit, AssessSession, UserPreference
+
+# Preference key(s) for auto coaching prompts (new primary key: "coaching"; legacy: "auto_daily_prompts")
+AUTO_PROMPT_PREF_KEYS = ("coaching", "auto_daily_prompts")
 from .nudges import send_message
+from . import kickoff
 from .llm import compose_prompt
 from . import monday, tuesday, wednesday, thursday, friday, sunday
 
@@ -29,6 +34,39 @@ scheduler = AsyncIOScheduler(jobstores=jobstores, executors=executors, timezone=
 def start_scheduler():
     if not scheduler.running:
         scheduler.start()
+
+
+def reset_job_store(clear_table: bool = False):
+    """
+    Remove all scheduled jobs. Optionally wipe the APS table (used when DB is reset).
+    """
+    removed = False
+    try:
+        scheduler.remove_all_jobs()
+        removed = True
+    except Exception:
+        pass
+    if clear_table:
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("DELETE FROM apscheduler_jobs"))
+        except Exception as e:
+            print(f"[scheduler] failed to clear apscheduler_jobs rows: {e}")
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("DELETE FROM apscheduler_jobs_backup"))
+        except Exception as e:
+            # backup table may not exist; ignore
+            pass
+        # If rows remain or table is broken, drop so SQLAlchemyJobStore can recreate
+        try:
+            with engine.begin() as conn:
+                conn.execute(text("DROP TABLE IF EXISTS apscheduler_jobs CASCADE"))
+                conn.execute(text("DROP TABLE IF EXISTS apscheduler_jobs_backup CASCADE"))
+        except Exception as e:
+            print(f"[scheduler] failed to drop apscheduler_jobs tables: {e}")
+    if clear_table or removed:
+        print("[scheduler] job store reset requested; jobs cleared")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -119,11 +157,15 @@ def _default_times() -> dict[str, tuple[int, int]]:
     }
 
 
-def _auto_prompts_enabled(session, user_id: int) -> bool:
+def _coaching_enabled(session, user_id: int) -> bool:
     pref = (
         session.query(UserPreference)
-        .filter(UserPreference.user_id == user_id, UserPreference.key == "auto_daily_prompts")
-        .one_or_none()
+        .filter(
+            UserPreference.user_id == user_id,
+            UserPreference.key.in_(AUTO_PROMPT_PREF_KEYS),
+        )
+        .order_by(UserPreference.updated_at.desc())  # prefer most recent if both exist
+        .first()
     )
     return bool(pref and str(pref.value).strip() == "1")
 
@@ -215,18 +257,25 @@ def _run_day_prompt(user_id: int, day: str):
         print(f"[scheduler] skip {day} prompt for user {user_id}: onboarding active")
         return
     try:
+        tp_type = "ad_hoc"  # fallback if not matched below
         if day == "monday":
-            monday.start_kickoff(user)
+            monday.start_weekstart(user)
+            tp_type = "weekstart"
         elif day == "tuesday":
             tuesday.send_tuesday_check(user)
+            tp_type = "adjust"
         elif day == "wednesday":
             wednesday.send_midweek_check(user)
+            tp_type = "adjust"
         elif day == "thursday":
             thursday.send_thursday_boost(user)
+            tp_type = "adjust"
         elif day == "friday":
             friday.send_boost(user)
+            tp_type = "adjust"
         elif day == "sunday":
             sunday.send_sunday_review(user)
+            tp_type = "wrap"
         else:
             print(f"[scheduler] unknown day prompt: {day}")
             return
@@ -264,7 +313,7 @@ def _unschedule_prompts_for_user(user_id: int):
 
 def _schedule_prompts_for_user(user: User, defaults: dict[str, tuple[int, int]], session) -> None:
     # Skip if user not enabled
-    if not _auto_prompts_enabled(session, user.id):
+    if not _coaching_enabled(session, user.id):
         _unschedule_prompts_for_user(user.id)
         return
     for day, (hh_default, mm_default) in defaults.items():
@@ -294,8 +343,8 @@ def schedule_auto_daily_prompts():
             _schedule_prompts_for_user(u, defaults, s)
 
 
-def enable_auto_prompts(user_id: int) -> bool:
-    """Enable auto prompts for a user and schedule them. Returns True on success."""
+def enable_coaching(user_id: int) -> bool:
+    """Enable coaching prompts for a user and schedule them. Returns True on success."""
     defaults = _default_times()
     with SessionLocal() as s:
         u = s.get(User, user_id)
@@ -303,20 +352,28 @@ def enable_auto_prompts(user_id: int) -> bool:
             return False
         pref = (
             s.query(UserPreference)
-            .filter(UserPreference.user_id == user_id, UserPreference.key == "auto_daily_prompts")
-            .one_or_none()
+            .filter(UserPreference.user_id == user_id, UserPreference.key.in_(AUTO_PROMPT_PREF_KEYS))
+            .order_by(UserPreference.updated_at.desc())
+            .first()
         )
+        key = AUTO_PROMPT_PREF_KEYS[0]
         if pref:
+            pref.key = key
             pref.value = "1"
         else:
-            s.add(UserPreference(user_id=user_id, key="auto_daily_prompts", value="1"))
+            s.add(UserPreference(user_id=user_id, key=key, value="1"))
         s.commit()
         _schedule_prompts_for_user(u, defaults, s)
+    # Also trigger the 12-week kickoff flow once when coaching is enabled
+    try:
+        kickoff.start_kickoff(u, notes="auto kickoff: coaching enabled")
+    except Exception as e:
+        print(f"[scheduler] kickoff on coaching enable failed for user {user_id}: {e}")
     return True
 
 
-def disable_auto_prompts(user_id: int) -> bool:
-    """Disable auto prompts for a user and unschedule them. Returns True on success."""
+def disable_coaching(user_id: int) -> bool:
+    """Disable coaching prompts for a user and unschedule them. Returns True on success."""
     defaults = _default_times()
     with SessionLocal() as s:
         u = s.get(User, user_id)
@@ -324,10 +381,13 @@ def disable_auto_prompts(user_id: int) -> bool:
             return False
         pref = (
             s.query(UserPreference)
-            .filter(UserPreference.user_id == user_id, UserPreference.key == "auto_daily_prompts")
-            .one_or_none()
+            .filter(UserPreference.user_id == user_id, UserPreference.key.in_(AUTO_PROMPT_PREF_KEYS))
+            .order_by(UserPreference.updated_at.desc())
+            .first()
         )
+        key = AUTO_PROMPT_PREF_KEYS[0]
         if pref:
+            pref.key = key
             pref.value = "0"
             s.commit()
         _unschedule_prompts_for_user(user_id)

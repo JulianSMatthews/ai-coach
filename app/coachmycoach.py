@@ -48,6 +48,28 @@ def _set_note(session, user_id: int, note: Optional[str]):
         session.add(UserPreference(user_id=user_id, key=_note_key(), value=note))
 
 
+def _auto_prompt_status(session, user_id: int) -> str:
+    """
+    Return a human-friendly auto-prompt status for the user.
+    Stored in UserPreference.coaching (primary) or legacy auto_daily_prompts: "1"=on, "0"=off, missing=not configured.
+    """
+    pref = (
+        session.query(UserPreference)
+        .filter(
+            UserPreference.user_id == user_id,
+            UserPreference.key.in_(("coaching", "auto_daily_prompts")),
+        )
+        .order_by(UserPreference.updated_at.desc())
+        .first()
+    )
+    val = (pref.value or "").strip() if pref else ""
+    if val == "1":
+        return "on"
+    if val == "0":
+        return "off"
+    return "not configured"
+
+
 def handle(user: User, body: str) -> None:
     """
     Handle the coachmycoach command.
@@ -151,6 +173,8 @@ def handle(user: User, body: str) -> None:
         vp = voice_pref.value if voice_pref and voice_pref.value else "not set"
         reply = "You don't have a coaching note yet." if not current else f"Your current coaching note:\n{current}"
         reply += f"\n\nVoice preference: {vp}"
+        auto_status = _auto_prompt_status(s, user.id)
+        reply += f"\nCoaching: {auto_status}"
         # Show any custom prompt times
         times = {}
         for d in ("monday", "tuesday", "wednesday", "thursday", "friday", "sunday"):
@@ -167,6 +191,6 @@ def handle(user: User, body: str) -> None:
         reply += (
             "\n\nSend 'coachmycoach <note>' to set a note, 'coachmycoach clear' to remove it, "
             "'coachmycoach male' / 'coachmycoach female' for voice, or "
-            "'coachmycoach time <day> <HH:MM>' to set a daily prompt time."
+            "'coachmycoach time <day> <HH:MM>' to set a daily prompt time. Auto prompts can be turned on/off by your coach."
         )
         send_whatsapp(to=user.phone, text=reply)

@@ -2478,6 +2478,16 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     s.commit()
                 except Exception:
                     pass
+                # Mark user onboarding as complete (unblocks scheduler-driven prompts)
+                try:
+                    s.execute(
+                        update(User)
+                        .where(User.id == user.id)
+                        .values(onboard_complete=True, updated_on=datetime.utcnow())
+                    )
+                    s.commit()
+                except Exception:
+                    s.rollback()
 
                 # Finish run in review_log
                 try:

@@ -37,6 +37,7 @@ from .prompts import (
     task_block,
     assemble_prompt,
 )
+from .touchpoints import log_touchpoint
 import os
 from .podcast import generate_podcast_audio
 
@@ -259,6 +260,41 @@ def generate_kickoff_podcast_audio(
     return audio_url, transcript
 
 
+def send_kickoff_podcast_message(
+    user: User,
+    audio_url: str | None,
+    coach_name: str = COACH_NAME,
+    week_no: int | None = None,
+) -> None:
+    """
+    Send kickoff podcast link and log touchpoint (used by automated weekflow kickoff).
+    """
+    if audio_url:
+        message = (
+            f"*Kickoff* Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. "
+            f"Here’s your kickoff podcast—give it a listen: {audio_url}"
+        )
+    else:
+        message = (
+            f"*Kickoff* Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. "
+            "I couldn’t generate your kickoff audio just now, but the plan is ready—let’s proceed."
+        )
+    send_whatsapp(to=user.phone, text=message)
+    try:
+        log_touchpoint(
+            user_id=user.id,
+            tp_type="kickoff",
+            weekly_focus_id=None,
+            week_no=week_no,
+            kr_ids=None,
+            meta={"source": "kickoff_auto", "label": "kickoff", "week_no": week_no},
+            generated_text=message,
+            audio_url=audio_url,
+        )
+    except Exception:
+        pass
+
+
 def _state_key() -> str:
     return "kickoff_state"
 
@@ -418,7 +454,7 @@ def start_kickoff(user: User, notes: str | None = None, debug: bool = False) -> 
         days_ahead = 7 - today.weekday()
         start = today + timedelta(days=days_ahead)
         end = start + timedelta(days=6)
-        wf = WeeklyFocus(user_id=user.id, starts_on=start, ends_on=end, notes=notes)
+        wf = WeeklyFocus(user_id=user.id, starts_on=start, ends_on=end, notes=notes, week_no=1)
         s.add(wf); s.flush()
         for idx, kr_id in enumerate(kr_ids):
             s.add(WeeklyFocusKR(weekly_focus_id=wf.id, kr_id=kr_id, priority_order=idx, role="primary" if idx == 0 else "secondary"))
@@ -426,8 +462,19 @@ def start_kickoff(user: User, notes: str | None = None, debug: bool = False) -> 
 
         krs = s.query(OKRKeyResult).filter(OKRKeyResult.id.in_(kr_ids)).all()
 
-        # send kickoff
-        send_whatsapp(to=user.phone, text=_initial_message(user, wf, krs))
+        kickoff_msg = _initial_message(user, wf, krs)
+        send_whatsapp(to=user.phone, text=kickoff_msg)
+
+        # Log touchpoint for kickoff (initial 12-week start)
+        log_touchpoint(
+            user_id=user.id,
+            tp_type="kickoff",
+            weekly_focus_id=wf.id,
+            week_no=getattr(wf, "week_no", None),
+            kr_ids=kr_ids,
+            meta={"notes": notes, "source": "kickoff_flow", "label": "kickoff"},
+            generated_text=kickoff_msg,
+        )
 
         # set state
         _set_state(s, user.id, {"mode": "proposal", "wf_id": wf.id, "kr_ids": kr_ids, "debug": debug})

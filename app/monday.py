@@ -1,5 +1,5 @@
 """
-Monday kickoff touchpoint (podcast + support): proposal → support.
+Monday weekstart touchpoint (podcast + support): proposal → support.
 """
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from . import llm as shared_llm
 from .kickoff import generate_kickoff_podcast_transcript, COACH_NAME
 from .podcast import generate_podcast_audio
 from .prompts import weekstart_actions_prompt, weekstart_support_prompt
+from .touchpoints import log_touchpoint
 
 
 def _current_focus_pillar(user: User) -> Optional[str]:
@@ -50,7 +51,7 @@ def _current_focus_pillar(user: User) -> Optional[str]:
 
 
 def _send_weekly_briefing(user: User, week_no: int) -> tuple[Optional[str], Optional[str]]:
-    """Generate and send a short audio briefing for the weekly kickoff. Returns (audio_url, transcript)."""
+    """Generate and send a short audio briefing for the weekly weekstart. Returns (audio_url, transcript)."""
     transcript = None
     audio_url = None
     pillar_key = _current_focus_pillar(user)
@@ -241,8 +242,8 @@ def _summary_message(krs: list[OKRKeyResult]) -> str:
     return "Agreed KRs for this week:\n" + _format_krs(krs)
 
 
-def start_kickoff(user: User, notes: str | None = None, debug: bool = False, set_state: bool = True, week_no: Optional[int] = None) -> None:
-    """Create weekly focus, pick KRs, send monday message, and optionally set state."""
+def start_weekstart(user: User, notes: str | None = None, debug: bool = False, set_state: bool = True, week_no: Optional[int] = None) -> None:
+    """Create weekly focus, pick KRs, send monday weekstart message, and optionally set state."""
     with SessionLocal() as s:
         selected = select_top_krs_for_user(s, user.id, limit=None, week_no=week_no)
         kr_ids = [kr_id for kr_id, _ in selected]
@@ -254,7 +255,7 @@ def start_kickoff(user: User, notes: str | None = None, debug: bool = False, set
         days_ahead = 7 - today.weekday()
         start = today + timedelta(days=days_ahead)
         end = start + timedelta(days=6)
-        wf = WeeklyFocus(user_id=user.id, starts_on=start, ends_on=end, notes=notes)
+        wf = WeeklyFocus(user_id=user.id, starts_on=start, ends_on=end, notes=notes, week_no=label_week)
         s.add(wf); s.flush()
         for idx, kr_id in enumerate(kr_ids):
             s.add(WeeklyFocusKR(weekly_focus_id=wf.id, kr_id=kr_id, priority_order=idx, role="primary" if idx == 0 else "secondary"))
@@ -270,13 +271,25 @@ def start_kickoff(user: User, notes: str | None = None, debug: bool = False, set
             except Exception:
                 label_week = 1
 
-        _send_weekly_briefing(user, week_no=label_week)
+        audio_url, transcript = _send_weekly_briefing(user, week_no=label_week)
         summary = _summarize_actions("", krs)
         if summary and not summary.lower().startswith("*monday*"):
             summary = "*Monday* " + summary
         send_whatsapp(
             to=user.phone,
             text=summary,
+        )
+
+        # Log weekstart touchpoint
+        log_touchpoint(
+            user_id=user.id,
+            tp_type="monday",
+            weekly_focus_id=wf.id,
+            week_no=label_week,
+            kr_ids=kr_ids,
+            meta={"notes": notes, "week_no": label_week, "source": "weekstart", "label": "monday"},
+            generated_text=summary,
+            audio_url=audio_url,
         )
 
         if set_state:
@@ -292,11 +305,11 @@ def handle_message(user: User, text: str) -> None:
 
         if lower.startswith("mondaydebug"):
             _set_state(s, user.id, None); s.commit()
-            start_kickoff(user, debug=True, set_state=True, week_no=None)
+            start_weekstart(user, debug=True, set_state=True, week_no=None)
             return
         if lower.startswith("monday") or state is None:
             _set_state(s, user.id, None); s.commit()
-            start_kickoff(user, debug=False, set_state=True, week_no=None)
+            start_weekstart(user, debug=False, set_state=True, week_no=None)
             return
 
         if state is None:
