@@ -504,6 +504,7 @@ def start_kickoff(user: User, notes: str | None = None, debug: bool = False) -> 
                     )
                 )
             s.commit()
+        wf_id = getattr(wf, "id", None)
 
     try:
         audio_url, _ = generate_kickoff_podcast_audio(user.id, week_no=week_no)
@@ -512,7 +513,7 @@ def start_kickoff(user: User, notes: str | None = None, debug: bool = False) -> 
             audio_url,
             coach_name=COACH_NAME,
             week_no=week_no,
-            weekly_focus_id=getattr(wf, "id", None),
+            weekly_focus_id=wf_id,
             kr_ids=kr_ids,
         )
     except Exception as e:
