@@ -85,7 +85,7 @@ ADMIN_USAGE = (
     "admin progress <phone>\n"
     "admin detailed <phone>\n"
     "admin kickoff <phone>            # send 12-week kickoff podcast/flow\n"
-    "admin coaching <phone> on|off    # toggle scheduled coaching prompts (was autoprompts)\n"
+    "admin coaching <phone> on|off|faston|reset    # toggle scheduled coaching prompts (faston=every 10m test; reset clears jobs)\n"
     "admin schedule <phone>           # show scheduled coaching prompts for user (HTML + summary)\n"
     "\nWeekly touchpoints (by day):\n"
     "admin monday <phone>\n"
@@ -812,12 +812,12 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
             return True
         elif cmd in {"autoprompts", "coaching"}:
             if len(parts) < 4:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin coaching <phone> on|off")
+                send_whatsapp(to=admin_user.phone, text="Usage: admin coaching <phone> on|off|faston")
                 return True
             target_phone = _norm_phone(parts[2])
             toggle = parts[3].lower()
-            if toggle not in {"on", "off"}:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin coaching <phone> on|off")
+            if toggle not in {"on", "off", "faston", "reset"}:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin coaching <phone> on|off|faston|reset")
                 return True
             with SessionLocal() as s:
                 u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
@@ -829,12 +829,22 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                     )
                     return True
             ok = False
-            if toggle == "on":
-                ok = scheduler.enable_coaching(u.id)
+            fast_minutes = 10 if toggle == "faston" else None
+            if toggle == "reset":
+                ok = scheduler.reset_coaching_jobs(u.id)
+            elif toggle == "on":
+                ok = scheduler.enable_coaching(u.id, fast_minutes=fast_minutes)
+            elif toggle == "faston":
+                ok = scheduler.enable_coaching(u.id, fast_minutes=fast_minutes)
             else:
                 ok = scheduler.disable_coaching(u.id)
             if ok:
-                send_whatsapp(to=admin_user.phone, text=f"Coaching prompts turned {toggle} for {target_phone}.")
+                msg = f"Coaching prompts turned {toggle} for {target_phone}."
+                if toggle == "faston":
+                    msg += " (every 10 minutes for testing)"
+                if toggle == "reset":
+                    msg = f"Coaching prompt jobs cleared for {target_phone} (preference unchanged)."
+                send_whatsapp(to=admin_user.phone, text=msg)
             else:
                 send_whatsapp(to=admin_user.phone, text="Failed to update coaching prompts (check AUTO_DAILY_PROMPTS env).")
             return True

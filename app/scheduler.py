@@ -323,12 +323,37 @@ def _unschedule_prompts_for_user(user_id: int):
             scheduler.remove_job(job_id)
         except Exception:
             pass
+    print(f"[scheduler] unscheduled all prompts for user {user_id}")
 
 
-def _schedule_prompts_for_user(user: User, defaults: dict[str, tuple[int, int]], session) -> None:
+def _schedule_prompts_for_user(
+    user: User,
+    defaults: dict[str, tuple[int, int]],
+    session,
+    fast_minutes: int | None = None,
+) -> None:
     # Skip if user not enabled
     if not _coaching_enabled(session, user.id):
         _unschedule_prompts_for_user(user.id)
+        return
+    # If fast mode requested, replace existing jobs with interval every N minutes starting now
+    if fast_minutes:
+        _unschedule_prompts_for_user(user.id)
+        tz = _tz(user)
+        for day in ("monday", "tuesday", "wednesday", "thursday", "friday", "sunday"):
+            job_id = f"auto_prompt_{day}_{user.id}"
+            scheduler.add_job(
+                _run_day_prompt,
+                trigger="interval",
+                minutes=fast_minutes,
+                args=[user.id, day],
+                id=job_id,
+                replace_existing=True,
+                misfire_grace_time=3600,
+                timezone=tz,
+                start_date=datetime.now(tz) + timedelta(seconds=5),
+            )
+        print(f"[scheduler] scheduled FAST prompts every {fast_minutes}m for user {user.id} ({tz})")
         return
     # Ensure first scheduled prompt is the Monday weekstart after enabling (avoid midweek out-of-sequence)
     mon_hour, mon_min = _user_pref_time(session, user.id, "monday") or defaults.get("monday", (8, 0))
@@ -373,7 +398,7 @@ def schedule_auto_daily_prompts():
             _schedule_prompts_for_user(u, defaults, s)
 
 
-def enable_coaching(user_id: int) -> bool:
+def enable_coaching(user_id: int, fast_minutes: int | None = None) -> bool:
     """Enable coaching prompts for a user and schedule them. Returns True on success."""
     defaults = _default_times()
     with SessionLocal() as s:
@@ -393,7 +418,7 @@ def enable_coaching(user_id: int) -> bool:
         else:
             s.add(UserPreference(user_id=user_id, key=key, value="1"))
         s.commit()
-        _schedule_prompts_for_user(u, defaults, s)
+        _schedule_prompts_for_user(u, defaults, s, fast_minutes=fast_minutes)
     # Also trigger the 12-week kickoff flow once when coaching is enabled
     try:
         kickoff.start_kickoff(u, notes="auto kickoff: coaching enabled")
@@ -421,6 +446,12 @@ def disable_coaching(user_id: int) -> bool:
             pref.value = "0"
             s.commit()
         _unschedule_prompts_for_user(user_id)
+    return True
+
+
+def reset_coaching_jobs(user_id: int) -> bool:
+    """Remove all scheduled coaching prompt jobs (does not change preference)."""
+    _unschedule_prompts_for_user(user_id)
     return True
 
 
