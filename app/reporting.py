@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 import html
 import json
 from collections import defaultdict
@@ -215,9 +215,33 @@ def user_schedule_report(user_id: int) -> List[Dict[str, Any]]:
     Return a readable snapshot of scheduled jobs for a user (job id suffix match).
     Includes trigger and next run time in UTC and the user's local timezone.
     """
-    if not _sched or not getattr(_sched, "scheduler", None):
-        return []
-    # Lightweight TZ resolver to avoid importing scheduler internals
+
+    def _from_jobstore_table(tz_local):
+        rows: List[Dict[str, Any]] = []
+        try:
+            with SessionLocal() as s:
+                res = s.execute(text("SELECT id, next_run_time FROM apscheduler_jobs"))
+                for rid, next_run in res.fetchall():
+                    if not rid or not str(rid).endswith(f"_{user_id}"):
+                        continue
+                    try:
+                        ts = float(next_run)
+                        dt_utc = datetime.fromtimestamp(ts, tz=timezone.utc)
+                        dt_local = dt_utc.astimezone(tz_local) if tz_local else None
+                    except Exception:
+                        dt_utc, dt_local = None, None
+                    rows.append(
+                        {
+                            "id": rid,
+                            "trigger": "jobstore",
+                            "next_run_utc": dt_utc.isoformat() if dt_utc else None,
+                            "next_run_local": dt_local.isoformat() if dt_local else None,
+                        }
+                    )
+        except Exception:
+            return []
+        return rows
+
     def _tz_for_user(u: User | None):
         if not u:
             return None
@@ -236,20 +260,28 @@ def user_schedule_report(user_id: int) -> List[Dict[str, Any]]:
     tz = _tz_for_user(user)
 
     out: List[Dict[str, Any]] = []
-    for job in _sched.scheduler.get_jobs():
-        parts = job.id.split("_")
-        if not parts or parts[-1] != str(user_id):
-            continue
-        next_utc = job.next_run_time
-        next_local = next_utc.astimezone(tz) if next_utc and tz else None
-        out.append(
-            {
-                "id": job.id,
-                "trigger": str(job.trigger),
-                "next_run_utc": next_utc.isoformat() if next_utc else None,
-                "next_run_local": next_local.isoformat() if next_local else None,
-            }
-        )
+    if _sched and getattr(_sched, "scheduler", None):
+        # Primary path: live scheduler instance (loads jobs into memory)
+        try:
+            for job in _sched.scheduler.get_jobs():
+                parts = job.id.split("_")
+                if not parts or parts[-1] != str(user_id):
+                    continue
+                next_utc = job.next_run_time
+                next_local = next_utc.astimezone(tz) if next_utc and tz else None
+                out.append(
+                    {
+                        "id": job.id,
+                        "trigger": str(job.trigger),
+                        "next_run_utc": next_utc.isoformat() if next_utc else None,
+                        "next_run_local": next_local.isoformat() if next_local else None,
+                    }
+                )
+        except Exception:
+            out = []
+    if not out:
+        # Fallback: query the jobstore table directly (covers cases where scheduler is not started in this process)
+        out = _from_jobstore_table(tz)
     return sorted(out, key=lambda r: r.get("next_run_utc") or "")
 
 
