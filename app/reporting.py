@@ -285,6 +285,69 @@ def user_schedule_report(user_id: int) -> List[Dict[str, Any]]:
     return sorted(out, key=lambda r: r.get("next_run_utc") or "")
 
 
+def generate_schedule_report_html(user_id: int, filename: str = "schedule.html") -> str:
+    """
+    Build a simple HTML report of scheduled jobs for a user and return the public link.
+    """
+    rows = user_schedule_report(user_id)
+    with SessionLocal() as s:
+        u = s.get(User, user_id)
+    name = (getattr(u, "first_name", "") or "").strip() or "User"
+    phone = getattr(u, "phone", "") or ""
+    tz_name = getattr(u, "tz", None) or "UTC"
+    table_rows = []
+    for r in rows:
+        table_rows.append(
+            "<tr>"
+            f"<td>{html.escape(r.get('id') or '')}</td>"
+            f"<td>{html.escape(r.get('trigger') or '')}</td>"
+            f"<td>{html.escape(r.get('next_run_local') or '—')}</td>"
+            f"<td>{html.escape(r.get('next_run_utc') or '—')}</td>"
+            "</tr>"
+        )
+    body = (
+        "<p>No scheduled jobs found.</p>"
+        if not table_rows
+        else (
+            "<table>"
+            "<thead><tr><th>Job ID</th><th>Trigger</th><th>Next run (local)</th><th>Next run (UTC)</th></tr></thead>"
+            f"<tbody>{''.join(table_rows)}</tbody></table>"
+        )
+    )
+    html_doc = f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Schedule for {html.escape(name)}</title>
+  <style>
+    body {{ font-family: -apple-system, system-ui, sans-serif; padding: 16px; color: #111; }}
+    h1 {{ font-size: 20px; margin: 0 0 4px; }}
+    .meta {{ color: #555; margin-bottom: 12px; }}
+    table {{ border-collapse: collapse; width: 100%; max-width: 900px; }}
+    th, td {{ border: 1px solid #ddd; padding: 8px; font-size: 14px; }}
+    th {{ background: #f5f5f5; text-align: left; }}
+    tr:nth-child(even) {{ background: #fafafa; }}
+  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+</head>
+<body>
+  <h1>Schedule for {html.escape(name)}</h1>
+  <div class="meta">
+    Phone: {html.escape(phone)} &nbsp;|&nbsp; TZ: {html.escape(tz_name)}<br/>
+    Generated: {datetime.utcnow().isoformat()}Z
+  </div>
+  {body}
+</body>
+</html>
+"""
+    out_dir = _reports_root_for_user(user_id)
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, filename)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(html_doc)
+    return _report_link(user_id, filename)
+
+
 def _llm_text_to_html(text: str) -> str:
     parts = [ln.strip() for ln in text.replace("\r\n", "\n").split("\n") if ln.strip()]
     if not parts:

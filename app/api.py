@@ -45,6 +45,7 @@ from .reporting import (
     generate_global_users_html,
     generate_club_users_html,
     user_schedule_report,
+    generate_schedule_report_html,
 )
 
 # Lazy import holder to avoid startup/reload ImportError if symbol is added later
@@ -85,7 +86,7 @@ ADMIN_USAGE = (
     "admin detailed <phone>\n"
     "admin kickoff <phone>            # send 12-week kickoff podcast/flow\n"
     "admin coaching <phone> on|off    # toggle scheduled coaching prompts (was autoprompts)\n"
-    "admin schedule <phone>           # show scheduled coaching prompts for user\n"
+    "admin schedule <phone>           # show scheduled coaching prompts for user (HTML + summary)\n"
     "\nWeekly touchpoints (by day):\n"
     "admin monday <phone>\n"
     "admin tuesday <phone>\n"
@@ -771,6 +772,11 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
             if not rows:
                 send_whatsapp(to=admin_user.phone, text=f"No scheduled jobs found for {target_phone}.")
                 return True
+            link = None
+            try:
+                link = generate_schedule_report_html(u.id)
+            except Exception:
+                link = None
             lines = []
             for row in rows[:15]:
                 nid = row.get("id") or ""
@@ -781,6 +787,8 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 phone=target_phone,
                 lines="\n".join(lines),
             )
+            if link:
+                body += f"\n\nHTML: {link}"
             send_whatsapp(to=admin_user.phone, text=body)
             return True
         elif cmd in {"midweek", "wednesday"}:
