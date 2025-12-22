@@ -340,20 +340,22 @@ def _schedule_prompts_for_user(
     if fast_minutes:
         _unschedule_prompts_for_user(user.id)
         tz = _tz(user)
-        for day in ("monday", "tuesday", "wednesday", "thursday", "friday", "sunday"):
+        now = datetime.now(tz)
+        # Single cycle: one run per day, spaced by fast_minutes to avoid spam
+        for idx, day in enumerate(("monday", "tuesday", "wednesday", "thursday", "friday", "sunday")):
+            run_time = now + timedelta(minutes=(fast_minutes * idx) + 1)
             job_id = f"auto_prompt_{day}_{user.id}"
             scheduler.add_job(
                 _run_day_prompt,
-                trigger="interval",
-                minutes=fast_minutes,
+                trigger="date",
+                run_date=run_time,
                 args=[user.id, day],
                 id=job_id,
                 replace_existing=True,
                 misfire_grace_time=3600,
                 timezone=tz,
-                start_date=datetime.now(tz) + timedelta(seconds=5),
             )
-        print(f"[scheduler] scheduled FAST prompts every {fast_minutes}m for user {user.id} ({tz})")
+        print(f"[scheduler] scheduled FAST single-cycle prompts (spacing {fast_minutes}m) for user {user.id} ({tz})")
         return
     # Ensure first scheduled prompt is the Monday weekstart after enabling (avoid midweek out-of-sequence)
     mon_hour, mon_min = _user_pref_time(session, user.id, "monday") or defaults.get("monday", (8, 0))
