@@ -44,6 +44,7 @@ from .reporting import (
     generate_assessment_dashboard_html,
     generate_global_users_html,
     generate_club_users_html,
+    user_schedule_report,
 )
 
 # Lazy import holder to avoid startup/reload ImportError if symbol is added later
@@ -84,6 +85,7 @@ ADMIN_USAGE = (
     "admin detailed <phone>\n"
     "admin kickoff <phone>            # send 12-week kickoff podcast/flow\n"
     "admin coaching <phone> on|off    # toggle scheduled coaching prompts (was autoprompts)\n"
+    "admin schedule <phone>           # show scheduled coaching prompts for user\n"
     "\nWeekly touchpoints (by day):\n"
     "admin monday <phone>\n"
     "admin tuesday <phone>\n"
@@ -750,6 +752,36 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 kickoff.start_kickoff(u, notes=notes)
             except Exception as e:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to run kickoff: {e}")
+            return True
+        elif cmd in {"schedule", "jobs"}:
+            if len(parts) < 3:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin schedule <phone>")
+                return True
+            target_phone = _norm_phone(parts[2])
+            with SessionLocal() as s:
+                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
+                if not u:
+                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
+                    send_whatsapp(
+                        to=admin_user.phone,
+                        text=f"User with phone {target_phone} not found{scope_txt}."
+                    )
+                    return True
+            rows = user_schedule_report(u.id)
+            if not rows:
+                send_whatsapp(to=admin_user.phone, text=f"No scheduled jobs found for {target_phone}.")
+                return True
+            lines = []
+            for row in rows[:15]:
+                nid = row.get("id") or ""
+                nxt_local = row.get("next_run_local") or "n/a"
+                nxt_utc = row.get("next_run_utc") or "n/a"
+                lines.append(f"- {nid}: local {nxt_local}, utc {nxt_utc}")
+            body = "*Schedule* for {phone}:\n{lines}".format(
+                phone=target_phone,
+                lines="\n".join(lines),
+            )
+            send_whatsapp(to=admin_user.phone, text=body)
             return True
         elif cmd in {"midweek", "wednesday"}:
             if len(parts) < 3:

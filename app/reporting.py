@@ -43,6 +43,12 @@ from . import llm as shared_llm
 from sqlalchemy import text, select
 from sqlalchemy.orm import selectinload
 
+# Optional scheduler import for introspection helpers (guarded to avoid hard failures)
+try:
+    from . import scheduler as _sched  # type: ignore
+except Exception:
+    _sched = None  # type: ignore
+
 # Optional OKR tables – support both naming variants in models.py
 OkrObjective = None  # type: ignore
 OkrKeyResult = None  # type: ignore
@@ -198,6 +204,53 @@ def _collect_run_dialogue(run_id: int, limit_per_pillar: int = 3) -> dict[str, l
             "concept": getattr(row, "concept_key", None)
         })
     return out
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Scheduler reporting helpers
+# ──────────────────────────────────────────────────────────────────────────────
+
+def user_schedule_report(user_id: int) -> List[Dict[str, Any]]:
+    """
+    Return a readable snapshot of scheduled jobs for a user (job id suffix match).
+    Includes trigger and next run time in UTC and the user's local timezone.
+    """
+    if not _sched or not getattr(_sched, "scheduler", None):
+        return []
+    # Lightweight TZ resolver to avoid importing scheduler internals
+    def _tz_for_user(u: User | None):
+        if not u:
+            return None
+        try:
+            tz_name = getattr(u, "tz", None) or "UTC"
+            return ZoneInfo(tz_name) if ZoneInfo else None
+        except Exception:
+            return None
+
+    user = None
+    try:
+        with SessionLocal() as s:
+            user = s.get(User, user_id)
+    except Exception:
+        user = None
+    tz = _tz_for_user(user)
+
+    out: List[Dict[str, Any]] = []
+    for job in _sched.scheduler.get_jobs():
+        parts = job.id.split("_")
+        if not parts or parts[-1] != str(user_id):
+            continue
+        next_utc = job.next_run_time
+        next_local = next_utc.astimezone(tz) if next_utc and tz else None
+        out.append(
+            {
+                "id": job.id,
+                "trigger": str(job.trigger),
+                "next_run_utc": next_utc.isoformat() if next_utc else None,
+                "next_run_local": next_local.isoformat() if next_local else None,
+            }
+        )
+    return sorted(out, key=lambda r: r.get("next_run_utc") or "")
 
 
 def _llm_text_to_html(text: str) -> str:
