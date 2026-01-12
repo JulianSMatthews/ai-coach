@@ -15,7 +15,7 @@ import os
 import hashlib, math, random
 import json
 
-from sqlalchemy import select
+from sqlalchemy import select, text as sa_text
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
@@ -28,6 +28,9 @@ from .models import (
     KbVector,
     Club,
     UserPreference,
+    PromptTemplate,
+    PromptSettings,
+    PromptTemplateVersionLog,
     ADMIN_ROLE_MEMBER,
     ADMIN_ROLE_CLUB,
     ADMIN_ROLE_GLOBAL,
@@ -254,6 +257,180 @@ def _seed_admin_role(entry: dict) -> str:
         return role
     return ADMIN_ROLE_GLOBAL if bool(entry.get("is_superuser")) else ADMIN_ROLE_MEMBER
 
+
+DEFAULT_PROMPT_TEMPLATES = [
+    {
+        "touchpoint": "podcast_kickoff",
+        "okr_scope": "all",
+        "programme_scope": "full",
+        "is_active": True,
+        "block_order": ["system","locale","context","programme","okr","scores","habit","task","user"],
+        "include_blocks": ["system","locale","context","programme","task","scores","habit","okr"],
+        "task_block": (
+            "You are a warm, concise wellbeing coach creating a 2–3 minute kickoff audio intro. "
+            "Write a transcript with: 1) welcome & personal context; 2) assessment findings summary (per pillar); "
+            "3) habit readiness summary (from psych profile); 4) 12-week plan overview (3-week blocks by pillar); "
+            "5) how to use the plan this week; 6) closing encouragement."
+        ),
+    },
+    {
+        "touchpoint": "podcast_weekstart",
+        "okr_scope": "pillar",
+        "programme_scope": "pillar",
+        "is_active": True,
+        "block_order": ["system","locale","context","programme","history","okr","scores","habit","task","user"],
+        "include_blocks": ["system","locale","context","programme","task","scores","habit","history","okr"],
+        "task_block": (
+            "You are a warm, concise wellbeing coach creating a 1–2 minute weekly audio brief. "
+            "Focus on the current 3-week block: explain why each KR matters, and give 2–3 simple suggestions to start this week. "
+            "Include: welcome, quick assessment nod, habit readiness nod, this block’s dates and pillar, "
+            "KR highlights for this block, practical Week 1 ideas, and a short motivational close."
+        ),
+    },
+    {
+        "touchpoint": "weekstart_support",
+        "okr_scope": "week",
+        "is_active": True,
+        "block_order": ["system","locale","context","history","okr","scores","habit","task","user"],
+        "include_blocks": ["system","locale","context","okr","scores","habit","history","task"],
+        "task_block": "Reply with 2-3 practical ideas or next steps for this week; include a couple of follow-ups that advance the plan. Do not assume progress; avoid praise/commands; do not suggest more sessions than KR targets; keep it conversational.",
+    },
+    {
+        "touchpoint": "tuesday",
+        "okr_scope": "week",
+        "is_active": True,
+        "block_order": ["system","locale","context","history","okr","scores","habit","task","user"],
+        "include_blocks": ["system","locale","context","history","okr","scores","habit","task"],
+        "task_block": (
+            "Write a very short check-in asking how they’re doing on this goal. "
+            "Ask for a simple yes/no or number. Offer one actionable nudge. "
+            "Keep it friendly, low-burden, WhatsApp length, plain language (no OKR/KR terms). "
+            "Avoid medical advice; avoid jargon; focus on one goal; be concise."
+        ),
+    },
+    {
+        "touchpoint": "weekstart_actions",
+        "okr_scope": "week",
+        "is_active": True,
+        "block_order": ["system","locale","context","history","okr","scores","habit","task","user"],
+        "include_blocks": ["system","locale","context","okr","history","task"],
+        "task_block": (
+            "You are a concise wellbeing coach. Using the podcast transcript and the KR context, "
+            "write a short intro plus 2-3 bullet-style actions for this week. "
+            "Intro should say: 'As per the podcast, here are practical actions for this week:' "
+            "Keep bullets tight. "
+            "Use British English spelling and phrasing; avoid Americanisms. "
+            "End with an invitation for questions and note they can ask about the podcast."
+        ),
+    },
+    {
+        "touchpoint": "midweek",
+        "okr_scope": "week",
+        "is_active": True,
+        "block_order": ["system","locale","context","history","okr","scores","habit","task","user"],
+        "include_blocks": ["system","locale","context","history","okr","scores","habit","task"],
+        "task_block": (
+            "Write one short midweek message that: 1) asks how they’re getting on; "
+            "2) asks ONE focused question on this KR; 3) asks about blockers; "
+            "4) suggest one micro-adjustment; 5) encourage consistency. "
+            "Keep it concise and conversational. Do not ask about other KRs."
+        ),
+    },
+    {
+        "touchpoint": "sunday",
+        "okr_scope": "week",
+        "is_active": True,
+        "block_order": ["system","locale","context","history","okr","scores","habit","task","user"],
+        "include_blocks": ["system","locale","context","okr","scores","habit","history","task"],
+        "task_block": (
+            "Write a short Sunday review message that: 1) asks for a 1–5 update on each KR; "
+            "2) asks what worked well this week; 3) asks what didn't work well or made things harder. "
+            "End by saying you'll summarise and prep Monday’s kickoff. "
+            "Keep it concise, friendly, and plain language; no OKR/KR jargon; no medical advice."
+        ),
+    },
+    {
+        "touchpoint": "podcast_thursday",
+        "okr_scope": "week",
+        "is_active": True,
+        "block_order": ["system","locale","context","history","okr","scores","habit","task","user"],
+        "include_blocks": ["system","locale","context","okr","history","task"],
+        "task_block": (
+            "You are a warm, concise wellbeing coach creating a short Thursday check-in podcast (~45–60s). "
+            "Write a script with: 1) quick check-in; 2) one focused goal recap (no OKR/KR jargon); "
+            "3) one simple action to try before the weekend; 4) short encouragement. No medical advice."
+        ),
+    },
+    {
+        "touchpoint": "podcast_friday",
+        "okr_scope": "week",
+        "is_active": True,
+        "block_order": ["system","locale","context","history","okr","scores","habit","task","user"],
+        "include_blocks": ["system","locale","context","okr","history","task"],
+        "task_block": (
+            "You are a warm, concise wellbeing coach creating a short Friday boost podcast (~45–60s). "
+            "Write a script that: 1) friendly check-in; 2) encourage ONE focus goal in plain language (no OKR/KR terms); "
+            "3) give ONE simple, realistic action they can do over the weekend; 4) keep it brief, motivating, and specific; 5) no medical advice."
+        ),
+    },
+    {
+        "touchpoint": "assessment_scores",
+        "okr_scope": None,
+        "programme_scope": None,
+        "is_active": True,
+        "block_order": ["system","locale","context","scores","task","user"],
+        "include_blocks": ["system","locale","context","scores","task"],
+        "task_block": (
+            "You are a supportive wellbeing coach writing a concise summary of assessment scores. "
+            "Write two short paragraphs (under 140 words total) that explain what the combined score and per-pillar scores suggest, "
+            "reference notable answers when helpful, treat Resilience gently, and encourage small next steps. "
+            "Use second-person voice ('you'). Return plain text."
+        ),
+    },
+    {
+        "touchpoint": "assessment_okr",
+        "okr_scope": None,
+        "programme_scope": None,
+        "is_active": True,
+        "block_order": ["system","locale","context","okr","task","user"],
+        "include_blocks": ["system","locale","context","okr","task"],
+        "task_block": (
+            "You are a consise wellbeing performance coach. Explain why each Objective and Key Result matters for the user’s wellbeing. "
+            "Write two short paragraphs that tie the objectives to the scores, highlight where focus is needed, keep the tone gentle but action-oriented, "
+            "and use second-person voice. Reference 'focus_note' when present."
+        ),
+    },
+    {
+        "touchpoint": "assessment_approach",
+        "okr_scope": None,
+        "programme_scope": None,
+        "is_active": True,
+        "block_order": ["system","locale","context","habit","task","user"],
+        "include_blocks": ["system","locale","context","habit","task"],
+        "task_block": (
+            "You are a concise wellbeing coach writing directly to the user. "
+            "In 2–3 sentences, explain how you'll tailor support based on their habit readiness profile. "
+            "Use 'you', keep it plain text, no bullets."
+        ),
+    },
+    {
+        "touchpoint": "assessor_system",
+        "okr_scope": None,
+        "programme_scope": None,
+        "response_format": "json",
+        "is_active": True,
+        "block_order": ["system","locale","context","assessor","task","user"],
+        "include_blocks": ["system","locale","context","assessor","task"],
+        "task_block": (
+            "You are a concise WhatsApp assessor. Ask a main question (<=300 chars) or a clarifier (<=320 chars) when the user's answer is vague. "
+            "If the reply contains a NUMBER or strongly implies a count/timeframe, you may treat it as sufficient and finish with a score. "
+            "Only finish once you can assign a 0–100 score. Return JSON only with fields: "
+            "{action:ask|finish, question, level:Low|Moderate|High, confidence:float, rationale, scores:{}, status:scorable|needs_clarifier|insufficient, why, missing:[], parsed_value:{value,unit,timeframe_ok}}. "
+            "Use polarity inference and bounds when provided; map habitual phrases to counts; prefer clarifiers if uncertain."
+        ),
+    },
+]
+
 def _hash_floats(text: str, dim: int = 256) -> list[float]:
     if not text:
         text = " "
@@ -369,6 +546,90 @@ def upsert_concept_questions(session: Session) -> int:
                 if not exists:
                     session.add(ConceptQuestion(concept_id=concept.id, text=t, is_primary=False)); created += 1
     session.commit(); return created
+
+
+def seed_prompt_templates(session: Session) -> int:
+    """Seed baseline prompt templates with default OKR scopes."""
+    try:
+        PromptTemplate.__table__.create(bind=session.bind, checkfirst=True)
+    except Exception:
+        pass
+    try:
+        session.execute(sa_text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS programme_scope varchar(32);"))
+        session.execute(sa_text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS response_format varchar(32);"))
+        session.execute(sa_text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS state varchar(32) DEFAULT 'develop';"))
+        session.execute(sa_text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS version integer DEFAULT 1;"))
+        session.execute(sa_text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS note text;"))
+        session.execute(sa_text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS parent_id integer;"))
+        try:
+            session.execute(sa_text("ALTER TABLE prompt_templates DROP CONSTRAINT IF EXISTS prompt_templates_touchpoint_key;"))
+        except Exception:
+            pass
+        try:
+            session.execute(sa_text("DROP INDEX IF EXISTS prompt_templates_touchpoint_key;"))
+        except Exception:
+            pass
+        try:
+            session.execute(sa_text("DROP INDEX IF EXISTS uq_prompt_templates_touchpoint;"))
+        except Exception:
+            pass
+        session.execute(sa_text("CREATE UNIQUE INDEX IF NOT EXISTS uq_prompt_templates_touchpoint_state_version ON prompt_templates(touchpoint,state,version);"))
+        session.execute(sa_text("UPDATE prompt_templates SET state='beta' WHERE state='stage';"))
+        session.execute(sa_text("UPDATE prompt_templates SET state='live' WHERE state='production';"))
+        session.execute(sa_text("UPDATE prompt_templates SET version=1 WHERE version IS NULL;"))
+    except Exception:
+        pass
+    try:
+        PromptSettings.__table__.create(bind=session.bind, checkfirst=True)
+    except Exception:
+        pass
+    try:
+        PromptTemplateVersionLog.__table__.create(bind=session.bind, checkfirst=True)
+    except Exception:
+        pass
+    # Ensure a singleton settings row exists with defaults
+    settings = session.execute(select(PromptSettings)).scalar_one_or_none()
+    if not settings:
+        session.add(
+            PromptSettings(
+                system_block="Tone: supportive, conversational; speak directly to the user as their coach. Do not mention background music or sound effects. Do not read out section headers or labels; speak naturally as a flowing message. Do not read or say emoji names; ignore emoji.",
+                locale_block="Use British English: UK spelling (favour, programme, behaviour), light British phrasing (have a think, check in, crack on), warm, calm, supportive tone; avoid Americanisms (vacation, sidewalk, awesome, mom); no US cultural refs.",
+                default_block_order=DEFAULT_PROMPT_TEMPLATES[0].get("block_order"),
+            )
+        )
+    created = 0
+    TARGET_STATES = ["develop", "beta", "live"]
+    for tpl in DEFAULT_PROMPT_TEMPLATES:
+        base = dict(tpl)
+        base_state = base.pop("state", None)  # legacy; ignored for multi-state seeding
+        base_version = base.pop("version", 1)
+        for st in TARGET_STATES:
+            target_state = st
+            version_val = base_version or 1
+            row = (
+                session.execute(
+                    select(PromptTemplate).where(
+                        PromptTemplate.touchpoint == base["touchpoint"],
+                        PromptTemplate.state == target_state,
+                        PromptTemplate.version == version_val,
+                    )
+                ).scalar_one_or_none()
+            )
+            if row:
+                row.okr_scope = base.get("okr_scope")
+                row.programme_scope = base.get("programme_scope")
+                row.response_format = base.get("response_format")
+                row.is_active = base.get("is_active", True)
+                row.block_order = base.get("block_order") or row.block_order
+                row.include_blocks = base.get("include_blocks") or row.include_blocks
+                row.task_block = base.get("task_block") or row.task_block
+                row.state = target_state
+                row.version = row.version or version_val
+            else:
+                session.add(PromptTemplate(state=target_state, version=version_val, **base))
+                created += 1
+    session.commit()
+    return created
 
 def upsert_kb_snippets(session: Session) -> int:
     created = 0
@@ -490,7 +751,6 @@ def run_seed() -> None:
     Full seed entrypoint. Safely seeds in the right order and won't crash
     if a helper is missing (it will just skip that step).
     """
-
     with SessionLocal() as s:
         try:
             # 1) Clubs first (so users.club_id NOT NULL can be satisfied)
@@ -509,6 +769,9 @@ def run_seed() -> None:
             u  = upsert_demo_users(s) if 'upsert_demo_users' in globals() else 0
             tp = upsert_touchpoint_defaults(s) if 'upsert_touchpoint_defaults' in globals() else {"created_prefs": 0, "created_defs": 0}
 
+            # 5) Prompt templates
+            pt = seed_prompt_templates(s)
+
             # Commit once at the end
             s.commit()
 
@@ -521,6 +784,7 @@ def run_seed() -> None:
             print(f"[seed] KB vectors complete. new_vectors={kv} (dim=256)")
             print(f"[seed] Users seed complete. Created {u} new user(s).")
             print(f"[seed] Touchpoint defaults complete. new_prefs={tp['created_prefs']} new_defs={tp['created_defs']}")
+            print(f"[seed] Prompt templates complete. new_templates={pt}")
 
         except Exception as e:
             s.rollback()

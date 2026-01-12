@@ -11,11 +11,11 @@ from sqlalchemy.orm import Session
 from .db import SessionLocal
 from .nudges import send_whatsapp
 from .checkins import record_checkin
-from .models import WeeklyFocus, WeeklyFocusKR, OKRKeyResult, User, UserPreference, OKRKrEntry
+from .models import WeeklyFocus, OKRKeyResult, User, UserPreference, OKRKrEntry
 from .kickoff import COACH_NAME
-from .prompts import sunday_prompt
 from . import llm as shared_llm
 from .touchpoints import log_touchpoint
+from .prompts import kr_payload_list, build_prompt, run_llm_prompt
 
 STATE_KEY = "sunday_state"
 
@@ -27,17 +27,6 @@ def _latest_weekly_focus(session: Session, user_id: int) -> Optional[WeeklyFocus
         .order_by(WeeklyFocus.starts_on.desc(), WeeklyFocus.id.desc())
         .first()
     )
-
-
-def _pick_krs(session: Session, wf_id: int) -> list[OKRKeyResult]:
-    rows = (
-        session.query(WeeklyFocusKR, OKRKeyResult)
-        .join(OKRKeyResult, WeeklyFocusKR.kr_id == OKRKeyResult.id)
-        .filter(WeeklyFocusKR.weekly_focus_id == wf_id)
-        .order_by(WeeklyFocusKR.priority_order.asc())
-        .all()
-    )
-    return [kr for _, kr in rows]
 
 
 def _get_state(session: Session, user_id: int) -> Optional[dict]:
@@ -99,13 +88,12 @@ def send_sunday_review(user: User, coach_name: str = COACH_NAME) -> None:
             send_whatsapp(to=user.phone, text="No weekly plan found. Say monday to plan your week first.")
             return
         wf_id = wf.id
-        krs = _pick_krs(s, wf_id)
-        if not krs:
+        kr_ids = [kr["id"] for kr in kr_payload_list(user.id, session=s, max_krs=3)]
+        if not kr_ids:
             send_whatsapp(to=user.phone, text="No key results found for this week. Say monday to set them up.")
             return
 
         # initialise state (store ids only to avoid detached instances)
-        kr_ids = [kr.id for kr in krs]
         _set_state(
             s,
             user.id,
@@ -189,14 +177,9 @@ def handle_message(user: User, body: str) -> None:
             wf = s.query(WeeklyFocus).get(state.get("wf_id"))
             krs = []
             if wf:
-                krs = (
-                    s.query(WeeklyFocusKR, OKRKeyResult)
-                    .join(OKRKeyResult, WeeklyFocusKR.kr_id == OKRKeyResult.id)
-                    .filter(WeeklyFocusKR.weekly_focus_id == wf.id)
-                    .all()
-                )
+                krs = s.query(OKRKeyResult).filter(OKRKeyResult.id.in_(kr_ids)).all()
             progress_updates = []
-            for _, kr in krs:
+            for kr in krs:
                 progress_updates.append({"kr_id": kr.id, "actual": kr.actual_num, "target": kr.target_num})
             blockers = [{"note": text}] if text else []
             wins = state.get("wins")
@@ -214,10 +197,34 @@ def handle_message(user: User, body: str) -> None:
                 )
             except Exception:
                 check_in_id = None
-            send_whatsapp(
-                to=user.phone,
-                text="*Sunday* Thanks, got your updates. I’ll summarise these and we’ll pick up with Monday’s kickoff.",
+
+            # LLM closing summary (logged)
+            prompt_assembly = build_prompt(
+                "sunday",
+                user_id=user.id,
+                coach_name=COACH_NAME,
+                user_name=user.first_name or "there",
+                locale=getattr(user, "tz", "UK") or "UK",
+                timeframe="Sunday",
             )
+            closing = run_llm_prompt(
+                prompt_assembly.text,
+                user_id=user.id,
+                touchpoint="sunday",
+                context_meta={"wf_id": wf.id if wf else None},
+                prompt_variant=prompt_assembly.variant,
+                task_label=prompt_assembly.task_label,
+                prompt_blocks={**prompt_assembly.blocks, **(prompt_assembly.meta or {})},
+                block_order=prompt_assembly.block_order,
+                log=True,
+            )
+            if closing:
+                send_whatsapp(to=user.phone, text=closing if closing.startswith("*Sunday*") else f"*Sunday* {closing}")
+            else:
+                send_whatsapp(
+                    to=user.phone,
+                    text="*Sunday* Thanks, got your updates. I’ll summarise these and we’ll pick up with Monday’s kickoff.",
+                )
             try:
                 log_touchpoint(
                     user_id=user.id,

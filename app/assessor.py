@@ -42,6 +42,7 @@ from .models import (
     OKRKeyResult,
     UserPreference,
 )
+from .prompts import log_llm_prompt
 
 # Messaging + LLM
 from .nudges import send_message
@@ -2012,6 +2013,28 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 {"role": "user", "content": _user_msg},
             ])
             raw = getattr(_resp, "content", "") or ""
+            try:
+                log_llm_prompt(
+                    user_id=state.get("user_id"),
+                    touchpoint="assessor_system",
+                    prompt_text=_system_msg + "\n\n" + _user_msg,
+                    model=getattr(_resp, "model", None),
+                    response_preview=raw[:200] if raw else None,
+                    context_meta={
+                        "pillar": pillar,
+                        "concept": concept_code,
+                        "has_range": bool(range_rule_text),
+                    },
+                    prompt_variant="assessor_system",
+                    task_label="assessor_system",
+                    prompt_blocks={
+                        "system": _system_msg,
+                        "assessor": _user_msg,
+                    },
+                    block_order=["system", "assessor"],
+                )
+            except Exception:
+                pass
             try:
                 preview = (raw[:220] + "…") if len(raw) > 220 else raw
                 with SessionLocal() as ss:

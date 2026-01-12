@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
-from .nudges import send_whatsapp
+from .nudges import send_whatsapp, send_whatsapp_media
 from .models import (
     User,
     UserPreference,
@@ -25,17 +25,7 @@ from .models import (
 from .focus import select_top_krs_for_user
 from . import llm as shared_llm
 from .reporting import _reports_root_for_user
-from .prompts import (
-    podcast_prompt,
-    coach_block,
-    user_block,
-    context_block,
-    okr_block,
-    scores_block,
-    habit_readiness_block,
-    task_block,
-    assemble_prompt,
-)
+from .prompts import podcast_prompt, build_prompt, run_llm_prompt
 from .touchpoints import log_touchpoint
 import os
 from .podcast import generate_podcast_audio
@@ -122,6 +112,7 @@ def generate_kickoff_podcast_transcript(
     mode: str = "kickoff",
     focus_pillar: str | None = None,
     week_no: int | None = None,
+    locale: str | None = None,
 ) -> str:
     """
     Build a personalised kickoff transcript. Uses LLM when available; otherwise returns a concise fallback.
@@ -131,6 +122,7 @@ def generate_kickoff_podcast_transcript(
     with SessionLocal() as s:
         user = s.query(User).get(user_id)
     name = (getattr(user, "first_name", "") or "").strip() or "there"
+    # locale currently unused; kept for compatibility/future prompt tweaks
     psych = _latest_psych(user_id)
     psych_payload: Dict[str, Any] = {}
     if psych:
@@ -156,48 +148,67 @@ def generate_kickoff_podcast_transcript(
         else:
             current_block = first_block
     okrs = _okr_by_pillar(user_id)
+    okrs_for_prompt = (
+        okrs_by_pillar_payload(user_id, week_no=week_no, max_krs=None)
+        if mode == "weekstart"
+        else {pillar: [kr.description for kr in krs] for pillar, krs in okrs.items()}
+    )
     llm_client = getattr(shared_llm, "_llm", None)
 
     if llm_client:
-        okr_payload = {pillar: [kr.description for kr in krs] for pillar, krs in okrs.items()}
-        blocks = [
-            coach_block(coach_name),
-            user_block(name),
-            context_block("weekstart" if mode == "weekstart" else "kickoff", "podcast intro", timeframe=str(first_block or programme)),
-            okr_block(okr_payload),
-            scores_block(scores),
-            habit_readiness_block(psych_payload),
-        ]
         if mode == "weekstart":
-            pillar_label = (focus_pillar or (current_block or {}).get("label") or "current pillar").title()
-            window = (current_block or {}).get("window") or ""
-            within_block = None
-            if week_no and week_no > 0:
-                within_block = ((week_no - 1) % 3) + 1
-            week_hint = f" (Week {week_no})" if week_no else ""
-            descr = (
-                f"Create a 1–2 minute weekly audio brief for the {pillar_label} block"
-                f"{' ' + window if window else ''}{week_hint}; explain why each KR matters and give 2–3 practical suggestions for this specific week."
+            prompt_assembly = build_prompt(
+                "podcast_weekstart",
+                user_id=user_id,
+                coach_name=coach_name,
+                user_name=name,
+                scores=scores,
+                psych_payload=psych_payload,
+                programme=programme,
+                first_block=first_block,
+                week_no=week_no,
+                focus_pillar=focus_pillar,
+                locale=locale or "UK",
             )
-            constraints = "No music/SFX; no section headers; natural flow; make tips feel fresh for this week, not a repeat of prior weeks."
-            if within_block:
-                constraints += f" Tailor guidance to week {within_block} of this 3-week block."
-            blocks.append(task_block(descr, constraints=constraints))
-        else:
-            blocks.append(
-                task_block(
-                    "Create a 2–3 minute kickoff audio intro covering welcome, assessment summary, habit readiness summary, 12-week plan overview (3-week blocks), KR highlights, weekly expectations, and a motivational close.",
-                    constraints="No music/SFX; no section headers; natural flow.",
-                )
+            transcript = run_llm_prompt(
+                prompt_assembly.text,
+                user_id=user_id,
+                touchpoint="podcast_weekstart",
+                context_meta={"week_no": week_no, "focus_pillar": focus_pillar},
+                prompt_variant=prompt_assembly.variant,
+                task_label=prompt_assembly.task_label,
+                prompt_blocks={**prompt_assembly.blocks, **(prompt_assembly.meta or {})},
+                block_order=prompt_assembly.block_order,
+                log=True,
             )
-        prompt = assemble_prompt(blocks)
-        try:
-            resp = llm_client.invoke(prompt)
-            transcript = (getattr(resp, "content", None) or "").strip()
             if transcript:
                 return transcript
-        except Exception:
-            pass
+        else:
+            prompt_assembly = build_prompt(
+                "podcast_kickoff",
+                user_id=user_id,
+                coach_name=coach_name,
+                user_name=name,
+                scores=scores,
+                psych_payload=psych_payload,
+                programme=programme,
+                first_block=first_block,
+                okrs_by_pillar={pillar: [kr.description for kr in krs] for pillar, krs in okrs.items()},
+                locale=locale or "UK",
+            )
+            transcript = run_llm_prompt(
+                prompt_assembly.text,
+                user_id=user_id,
+                touchpoint="podcast_kickoff",
+                context_meta={"week_no": week_no},
+                prompt_variant=prompt_assembly.variant,
+                task_label=prompt_assembly.task_label,
+                prompt_blocks={**prompt_assembly.blocks, **(prompt_assembly.meta or {})},
+                block_order=prompt_assembly.block_order,
+                log=True,
+            )
+            if transcript:
+                return transcript
 
     # Fallback transcript
     parts = []
@@ -211,10 +222,11 @@ def generate_kickoff_podcast_transcript(
         within_block = None
         if week_no and week_no > 0:
             within_block = ((week_no - 1) % 3) + 1
-        if okrs:
+        if okrs_for_prompt:
             pillar_key = (focus_pillar or (blk or {}).get("pillar_key") or "").lower()
-            if pillar_key in okrs:
-                kr_list = "; ".join(kr.description for kr in okrs[pillar_key][:3])
+            if pillar_key in okrs_for_prompt:
+                pillar_krs = okrs_for_prompt[pillar_key]
+                kr_list = "; ".join((kr.description if hasattr(kr, "description") else str(kr)) for kr in pillar_krs[:3])
                 parts.append(f"This block’s KRs: {kr_list}.")
         if within_block == 1:
             parts.append("Since this is the first week of the block, start light: swap one processed meal for whole foods, add one extra portion of fruit/veg, and plan one small session.")
@@ -271,11 +283,20 @@ def send_kickoff_podcast_message(
     Send kickoff podcast link and log touchpoint (used by automated weekflow kickoff).
     """
     if audio_url:
-        message = (
+        print(f"[kickoff] sending podcast media for user={user.id} url={audio_url}")
+        base_caption = (
             f"*Kickoff* Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. "
-            f"Here’s your kickoff podcast—give it a listen: {audio_url}"
+            "Here’s your kickoff podcast—give it a listen."
         )
+        message = base_caption
+        try:
+            send_whatsapp_media(to=user.phone, media_url=audio_url, caption=base_caption)
+        except Exception:
+            # Fallback to link if media send fails
+            message = f"{base_caption} {audio_url}"
+            send_whatsapp(to=user.phone, text=message)
     else:
+        print(f"[kickoff] no audio_url for user={user.id}; sending fallback text")
         message = (
             f"*Kickoff* Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. "
             "I couldn’t generate your kickoff audio just now, but the plan is ready—let’s proceed."
@@ -366,18 +387,17 @@ def _support_prompt(krs: list[OKRKeyResult], history: list[dict], user_message: 
     if user_message:
         transcript.append(f"USER: {user_message}")
     transcript_str = "\n".join(transcript)
-    return (
-        "You are a concise wellbeing coach in a kickoff support chat. "
-        "Context: the user already completed an assessment; objectives and KRs exist. "
-        "These KRs are the agreed focus for this week, and this kickoff is to help them plan and feel supported. "
-        "Do NOT assume progress yet; stay focused on planning and making the week doable. "
-        "Acknowledge what they just shared, build on it, and avoid repeating the same ask. "
-        "Offer 2-3 practical ideas or next steps for this week and feel free to include a couple of follow-ups that logically advance the plan (e.g., which idea they want to try, and whether they need a resource/schedule). "
-        "Do not suggest more sessions than the KR targets unless the user asked for it. "
-        "Avoid praise, avoid commands, keep it conversational and forward-looking.\n"
-        f"KRs: {payload}\n"
-        f"Conversation so far:\n{transcript_str}"
+    assembly = build_prompt(
+        "kickoff_support",
+        user_id=0,
+        coach_name=COACH_NAME,
+        user_name="User",
+        locale="UK",
+        krs_payload=payload,
+        transcript_history=transcript_str,
+        user_message=user_message,
     )
+    return assembly.text
 
 
 def _support_conversation(

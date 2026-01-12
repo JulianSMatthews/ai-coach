@@ -125,10 +125,11 @@ def _tts_via_azure(transcript: str, voice_name: str | None) -> bytes | None:
             or os.getenv("AZURE_SPEECH_VOICE_ID")
             or "en-US-JennyNeural"
         )
-        print(
-            "[TTS][azure] synthesizing "
-            f"(region={region}, endpoint={'set' if endpoint else 'default'}, voice={voice}, key={_mask_secret(key)})"
-        )
+        # Debug: Azure synthesis start
+        # print(
+        #     "[TTS][azure] synthesizing "
+        #     f"(region={region}, endpoint={'set' if endpoint else 'default'}, voice={voice}, key={_mask_secret(key)})"
+        # )
         speech_config.speech_synthesis_voice_name = voice
         speech_config.set_speech_synthesis_output_format(
             speechsdk.SpeechSynthesisOutputFormat.Audio16Khz32KBitRateMonoMp3
@@ -137,20 +138,22 @@ def _tts_via_azure(transcript: str, voice_name: str | None) -> bytes | None:
         synthesizer = speechsdk.SpeechSynthesizer(speech_config=speech_config, audio_config=None)
         result = synthesizer.speak_text_async(transcript).get()
         if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
-            print(f"[TTS][azure] success (bytes={len(result.audio_data) if result.audio_data else 0})")
+            # Debug: Azure synthesis success
+            # print(f"[TTS][azure] success (bytes={len(result.audio_data) if result.audio_data else 0})")
             return bytes(result.audio_data)
         # Handle cancellations/errors without assuming error_details attribute exists
         if getattr(result, "reason", None) == speechsdk.ResultReason.Canceled:
             cd = getattr(result, "cancellation_details", None)
             err = getattr(cd, "error_details", None) if cd else None
             reason = getattr(cd, "reason", None)
-            print(f"[TTS][azure] canceled (reason={reason}, error={err})")
+            # Debug: Azure canceled
+            # print(f"[TTS][azure] canceled (reason={reason}, error={err})")
         else:
             detail = getattr(result, "error_details", None)
             print(f"[TTS][azure] failed (reason={getattr(result, 'reason', None)}, error={detail})")
     except Exception as e:
         print(f"[TTS][azure] error: {e}")
-    return None
+        return None
 
 
 # OpenAI ChatGPT TTS supported voices (as of 2025-09)
@@ -182,14 +185,20 @@ def generate_podcast_audio_for_voice(
     Saves to public/reports/<user_id>/<filename> and returns the public URL or None.
     If return_bytes=True, also returns audio bytes as a tuple (url, bytes).
     """
+    if not transcript or not str(transcript).strip():
+        print(f"[TTS] skip empty transcript for user={user_id}, file={filename}")
+        return None if not return_bytes else (None, None)
+
     audio_bytes = None
+    used_provider = None
     azure_voice, chatgpt_voice, el_voice = _select_voice_choices(user_id, voice_role, voice_override)
     use_el = os.getenv("USE_ELEVENLABS", "0") == "1"
 
     # Try Azure Speech first when enabled
     audio_bytes = _tts_via_azure(transcript, azure_voice)
     if audio_bytes:
-        print(f"[TTS] used Azure Speech (voice={azure_voice})")
+        used_provider = f"azure:{azure_voice}"
+        print(f"[TTS] used Azure Speech (voice={azure_voice}, bytes={len(audio_bytes) if audio_bytes else 0})")
 
     # Always sanitize ChatGPT voice before calling OpenAI TTS.
     if chatgpt_voice not in _VALID_CHATGPT_VOICES:
@@ -226,6 +235,9 @@ def generate_podcast_audio_for_voice(
             except Exception as e:
                 print(f"[TTS] ElevenLabs failed: {e}")
                 audio_bytes = None
+            else:
+                used_provider = f"elevenlabs:{el_voice}"
+                print(f"[TTS] used ElevenLabs (voice={el_voice}, bytes={len(audio_bytes) if audio_bytes else 0})")
 
     # Default: OpenAI TTS
     if audio_bytes is None:
@@ -240,13 +252,15 @@ def generate_podcast_audio_for_voice(
                 input=transcript,
             )
             audio_bytes = resp.read()
-            print(f"[TTS] used OpenAI TTS (voice={chatgpt_voice})")
+            used_provider = f"openai:{chatgpt_voice}"
+            print(f"[TTS] used OpenAI TTS (voice={chatgpt_voice}, bytes={len(audio_bytes) if audio_bytes else 0})")
         except Exception as e:
             print(f"[TTS] OpenAI TTS failed: {e}")
             audio_bytes = None
 
     if not audio_bytes:
-        return None
+        print(f"[TTS] no audio produced (provider={used_provider}, user={user_id}, file={filename})")
+        return None if not return_bytes else (None, None)
 
     try:
         reports_root = _reports_root_for_user(user_id)
@@ -260,8 +274,9 @@ def generate_podcast_audio_for_voice(
         if return_bytes:
             return url, audio_bytes
         return url
-    except Exception:
-        return None
+    except Exception as e:
+        print(f"[TTS] failed to write audio file: {e}")
+        return None if not return_bytes else (None, None)
 
 
 def generate_podcast_audio(

@@ -38,6 +38,14 @@ from .models import (
     OKRKrEntry,
 )
 from . import llm as shared_llm
+from .prompts import (
+    coaching_approach_prompt,
+    assessment_scores_prompt,
+    okr_narrative_prompt,
+    log_llm_prompt,
+    _ensure_llm_prompt_log_schema,
+    build_prompt,
+)
 
 # For raw SQL fallback when OKR models are unavailable
 from sqlalchemy import text, select
@@ -71,6 +79,11 @@ BRAND_NAME = (os.getenv("BRAND_NAME") or "HealthSense").strip()
 BRAND_YEAR = os.getenv("BRAND_YEAR") or str(datetime.utcnow().year)
 BRAND_FOOTER = f"© {BRAND_YEAR} {BRAND_NAME}. All rights reserved." if BRAND_NAME else ""
 DEBUG_PROGRESS_BASELINES = os.getenv("DEBUG_PROGRESS_BASELINES", "0") == "1"
+FONT_FACE = (
+    "@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;600&family=Inter:wght@400;500;600&display=swap'); "
+    "body { font-family: 'Inter', system-ui, -apple-system, sans-serif; color:#101828; } "
+    "h1, h2, h3, h4, h5, h6 { font-family: 'Outfit', 'Inter', system-ui, sans-serif; }"
+)
 
 def _audit(job: str, status: str = "ok", payload: Dict[str, Any] | None = None, error: str | None = None) -> None:
     if AUDIT_TO_CONSOLE:
@@ -320,7 +333,8 @@ def generate_schedule_report_html(user_id: int, filename: str = "schedule.html")
   <meta charset="utf-8" />
   <title>Schedule for {html.escape(name)}</title>
   <style>
-    body {{ font-family: -apple-system, system-ui, sans-serif; padding: 16px; color: #111; }}
+    {FONT_FACE}
+    body {{ padding: 16px; }}
     h1 {{ font-size: 20px; margin: 0 0 4px; }}
     .meta {{ color: #555; margin-bottom: 12px; }}
     table {{ border-collapse: collapse; width: 100%; max-width: 900px; }}
@@ -355,6 +369,141 @@ def _llm_text_to_html(text: str) -> str:
     return "".join(f"<p>{html.escape(p)}</p>" for p in parts)
 
 
+def generate_llm_prompt_log_report_html(user_id: int, limit: int = 100) -> str:
+    """
+    Render the latest LLM prompt logs for a user as an HTML report and return the public link.
+    """
+    _ensure_llm_prompt_log_schema()
+    try:
+        limit = int(limit)
+    except Exception:
+        limit = 100
+    limit = max(1, min(limit, 500))
+
+    with SessionLocal() as s:
+        user = s.get(User, user_id)
+        rows = s.execute(
+            text(
+                """
+                SELECT id, created_at, touchpoint, model, prompt_variant, task_label,
+                       block_order, system_block, developer_block, policy_block, tool_block,
+                       locale_block, okr_block, okr_scope, scores_block, habit_block,
+                       task_block, user_block, extra_blocks, assembled_prompt,
+                       response_preview, context_meta
+                FROM llm_prompt_logs_view
+                WHERE user_id = :uid
+                ORDER BY created_at DESC
+                LIMIT :lim
+                """
+            ),
+            {"uid": user_id, "lim": limit},
+        ).fetchall()
+
+    name = _display_full_name(user) if user else f"User {user_id}"
+    phone = getattr(user, "phone", "") if user else ""
+
+    def _esc(val: Any) -> str:
+        if val is None:
+            return ""
+        return html.escape(str(val))
+
+    def _pre(val: Any) -> str:
+        if val is None:
+            return ""
+        if isinstance(val, (dict, list)):
+            try:
+                val = json.dumps(val, ensure_ascii=False, indent=2)
+            except Exception:
+                val = str(val)
+        return f"<pre style='white-space:pre-wrap; margin:4px 0 0 0;'>{_esc(val)}</pre>"
+
+    cards = []
+    for r in rows:
+        block_rows = []
+        for label, key in [
+            ("System", "system_block"),
+            ("Developer", "developer_block"),
+            ("Policy", "policy_block"),
+            ("Tool", "tool_block"),
+            ("Locale", "locale_block"),
+            ("OKR", "okr_block"),
+            ("OKR scope", "okr_scope"),
+            ("Scores", "scores_block"),
+            ("Habit", "habit_block"),
+            ("Task", "task_block"),
+            ("User", "user_block"),
+        ]:
+            val = getattr(r, key, None)
+            if val:
+                block_rows.append(f"<tr><th>{label}</th><td>{_pre(val)}</td></tr>")
+        if getattr(r, "extra_blocks", None):
+            block_rows.append(f"<tr><th>Extra blocks</th><td>{_pre(r.extra_blocks)}</td></tr>")
+
+        block_order_val = getattr(r, "block_order", None)
+        if isinstance(block_order_val, (list, dict)):
+            try:
+                block_order_val = json.dumps(block_order_val, ensure_ascii=False)
+            except Exception:
+                block_order_val = str(block_order_val)
+
+        cards.append(
+            "<div class='card'>"
+            f"<div class='meta'>#{r.id} · {r.created_at} · { _esc(getattr(r, 'touchpoint', '') )}</div>"
+            f"<div class='headline'><strong>Variant:</strong> {_esc(getattr(r, 'prompt_variant', ''))} &nbsp; "
+            f"<strong>Task:</strong> {_esc(getattr(r, 'task_label', ''))} &nbsp; "
+            f"<strong>Model:</strong> {_esc(getattr(r, 'model', ''))}</div>"
+            f"<div class='meta'>Block order: {_esc(block_order_val)}</div>"
+            "<table class='blocks'>" + "".join(block_rows) + "</table>"
+            "<div class='section'><div class='label'>Assembled prompt</div>"
+            f"{_pre(getattr(r, 'assembled_prompt', None))}</div>"
+            "<div class='section'><div class='label'>Response preview</div>"
+            f"{_pre(getattr(r, 'response_preview', None))}</div>"
+            "<div class='section'><div class='label'>Context meta</div>"
+            f"{_pre(getattr(r, 'context_meta', None))}</div>"
+            "</div>"
+        )
+
+    cards_html = "".join(cards) if cards else "<p>No prompt logs found for this user.</p>"
+    css = f"""
+    <style>
+      {FONT_FACE}
+      body { margin:24px; }
+      h1 { margin:0 0 6px 0; }
+      .meta { color:#475467; margin:4px 0; font-size:0.9rem; }
+      .card { border:1px solid #e4e7ec; border-radius:12px; padding:14px; margin:14px 0; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,0.04); }
+      .headline { font-size:0.95rem; margin:6px 0; color:#0f172a; }
+      table.blocks { width:100%; border-collapse: collapse; margin:10px 0; }
+      table.blocks th { width:120px; text-align:left; vertical-align: top; padding:8px; background:#f8fafc; border:1px solid #e4e7ec; color:#0f172a; }
+      table.blocks td { padding:8px; border:1px solid #e4e7ec; vertical-align: top; background:#fff; }
+      .section { margin:10px 0; }
+      .section .label { font-weight:700; color:#0f172a; margin-bottom:4px; }
+      pre { font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Consolas, monospace; font-size:13px; background:#f9fafb; padding:8px; border-radius:8px; border:1px solid #e4e7ec; }
+    </style>
+    """
+    html_doc = f"""<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>LLM Prompt Logs — {html.escape(name)}</title>
+  {css}
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+</head>
+<body>
+  <h1>LLM Prompt Logs</h1>
+  <div class="meta">User: {html.escape(name)} &nbsp;|&nbsp; Phone: {html.escape(phone)} &nbsp;|&nbsp; Limit: {limit} &nbsp;|&nbsp; Generated: {datetime.utcnow().isoformat()}Z</div>
+  {cards_html}
+  <div class="report-footer">{BRAND_FOOTER}</div>
+</body>
+</html>
+"""
+    out_dir = _reports_root_for_user(user_id)
+    os.makedirs(out_dir, exist_ok=True)
+    path = os.path.join(out_dir, "llm_review.html")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(html_doc)
+    return _report_link(user_id, "llm_review.html")
+
+
 def _coaching_approach_text(user_id: int, first_name: str | None = None) -> str:
     with SessionLocal() as s:
         prof = (
@@ -372,18 +521,32 @@ def _coaching_approach_text(user_id: int, first_name: str | None = None) -> str:
     client = getattr(shared_llm, "_llm", None)
     text = ""
     if client:
-        prompt = (
-            "You are a concise wellbeing coach writing directly to the user. "
-            "In 2–3 sentences, explain how you'll tailor support based on their habit readiness profile. "
-            "Use 'you', keep it plain text, no bullets.\n"
-            f"User: {name}\n"
-            f"Section averages: {sec}\nFlags: {flags}\nParameters: {params}"
-        )
+        assembly = coaching_approach_prompt(name, sec, flags, params)
+        prompt = assembly.text
         try:
+            import time
+            t0 = time.perf_counter()
             resp = client.invoke(prompt)
+            duration_ms = int((time.perf_counter() - t0) * 1000)
             candidate = (getattr(resp, "content", None) or "").strip()
             if candidate:
                 text = candidate
+            try:
+                log_llm_prompt(
+                    user_id=user_id,
+                    touchpoint="coaching_approach",
+                    prompt_text=prompt,
+                    model=getattr(resp, "model", None),
+                    response_preview=text[:200] if text else None,
+                    context_meta={"profile_id": getattr(prof, "id", None)},
+                    prompt_variant="coaching_approach",
+                    task_label="coaching_approach",
+                    prompt_blocks={**assembly.blocks, **(assembly.meta or {})},
+                    block_order=assembly.block_order,
+                    duration_ms=duration_ms,
+                )
+            except Exception:
+                pass
         except Exception:
             text = ""
     if not text:
@@ -408,23 +571,30 @@ def _score_narrative_from_llm(user: User, combined: int, payload: list[dict]) ->
     if not payload:
         return ""
     name = (getattr(user, "first_name", None) or "the member").strip()
-    prompt = (
-        "You are a supportive wellbeing coach writing a concise summary of assessment scores.\n"
-        f"Person's preferred name: {name}.\n"
-        f"Combined score: {combined}/100.\n"
-        "Data (JSON):\n"
-        f"{json.dumps(payload, ensure_ascii=False)}\n\n"
-        "Payload entries may include an optional 'focus_note'; weave it in when present.\n"
-        "Write two short paragraphs (under 140 words total) that:\n"
-        "- explain what the combined score and per-pillar scores suggest\n"
-        "- reference notable answers when helpful\n"
-        "- treat Resilience gently and encourage small next steps\n"
-        "- use second-person voice ('you')\n"
-        "Return plain text."
-    )
+    assembly = assessment_scores_prompt(name, combined, payload)
+    prompt = assembly.text
     try:
+        import time
+        t0 = time.perf_counter()
         resp = _llm.invoke(prompt)
+        duration_ms = int((time.perf_counter() - t0) * 1000)
         text = resp.content.strip() if hasattr(resp, "content") else str(resp).strip()
+        try:
+            log_llm_prompt(
+                user_id=getattr(user, "id", None),
+                touchpoint="assessment_scores",
+                prompt_text=prompt,
+                model=getattr(resp, "model", None),
+                response_preview=text[:200] if text else None,
+                context_meta={"combined": combined, "scores": payload},
+                prompt_variant="assessment_scores",
+                task_label="assessment_scores",
+                prompt_blocks={**assembly.blocks, **(assembly.meta or {})},
+                block_order=assembly.block_order,
+                duration_ms=duration_ms,
+            )
+        except Exception:
+            pass
     except Exception:
         return ""
     return _llm_text_to_html(text)
@@ -434,17 +604,30 @@ def _okr_narrative_from_llm(user: User, payload: list[dict]) -> str:
     if not payload:
         return ""
     name = (getattr(user, "first_name", None) or "you").strip()
-    prompt = (
-        "You are a wellbeing performance coach. Explain why each Objective and Key Result matters "
-        f"for {name}'s wellbeing.\n"
-        "Data (JSON):\n"
-        f"{json.dumps(payload, ensure_ascii=False)}\n\n"
-        "Write two short paragraphs that tie the objectives to the scores, highlight where focus is needed, "
-        "and keep the tone gentle but action-oriented. Use second-person voice. If 'focus_note' is present, reference it when explaining priorities."
-    )
+    assembly = okr_narrative_prompt(name, payload)
+    prompt = assembly.text
     try:
+        import time
+        t0 = time.perf_counter()
         resp = _llm.invoke(prompt)
+        duration_ms = int((time.perf_counter() - t0) * 1000)
         text = resp.content.strip() if hasattr(resp, "content") else str(resp).strip()
+        try:
+            log_llm_prompt(
+                user_id=getattr(user, "id", None),
+                touchpoint="assessment_okr",
+                prompt_text=prompt,
+                model=getattr(resp, "model", None),
+                response_preview=text[:200] if text else None,
+                context_meta={"okr_payload": payload},
+                prompt_variant="assessment_okr",
+                task_label="assessment_okr",
+                prompt_blocks={**assembly.blocks, **(assembly.meta or {})},
+                block_order=assembly.block_order,
+                duration_ms=duration_ms,
+            )
+        except Exception:
+            pass
     except Exception:
         return ""
     return _llm_text_to_html(text)
@@ -573,9 +756,10 @@ def generate_global_users_html() -> str:
             "</tr>"
         )
 
-    css = """
+    css = f"""
     <style>
-      body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 24px; color: #111; }
+      {FONT_FACE}
+      body { margin: 24px; color: #111; }
       h1 { margin-bottom: 4px; font-size: 20px; }
       .meta { color: #666; margin-bottom: 16px; }
       table { width: 100%; border-collapse: collapse; }
@@ -707,7 +891,8 @@ def generate_club_users_html(club_id: int) -> str:
 
     css = """
     <style>
-      body { font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; margin: 24px; color: #111; }
+      {FONT_FACE}
+      body { margin: 24px; color: #111; }
       h1 { margin-bottom: 4px; font-size: 20px; }
       .meta { color: #666; margin-bottom: 16px; }
       table { width: 100%; border-collapse: collapse; }
@@ -1463,26 +1648,27 @@ def generate_okr_summary_html(
         )
 
     # CSS for fixed layout + wrapping
-    css = """
+    css = f"""
     <style>
-      :root { --fg:#222; --muted:#666; --bg:#fff; --head:#f3f3f3; --grid:#ddd; }
-      * { box-sizing: border-box; }
-      body { margin: 24px; font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color: var(--fg); background: var(--bg); }
-      h1 { font-size: 20px; margin: 0 0 10px 0; }
-      .meta { color: var(--muted); margin-bottom: 16px; }
-      table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-      thead th { background: var(--head); border: 1px solid var(--grid); padding: 8px 6px; text-align: left; font-weight: 600; }
-      tbody td { border: 1px solid var(--grid); padding: 8px 6px; vertical-align: top; overflow-wrap: anywhere; word-break: break-word; }
-      .num { text-align: right; white-space: nowrap; }
-      .name { width: 22%; }
-      .pillar { width: 10%; }
-      .score { width: 6%; }
-      .objective { width: 26%; }
-      .krs { width: 30%; }
-      .prompt { width: 30%; color: var(--fg); }
-      ul { margin: 0; padding-left: 18px; }
-      li { margin: 0 0 6px 0; }
-      pre { margin: 0; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 12px; line-height: 1.35; }
+      {FONT_FACE}
+      :root {{ --fg:#222; --muted:#666; --bg:#fff; --head:#f3f3f3; --grid:#ddd; }}
+      * {{ box-sizing: border-box; }}
+      body {{ margin: 24px; color: var(--fg); background: var(--bg); }}
+      h1 {{ font-size: 20px; margin: 0 0 10px 0; }}
+      .meta {{ color: var(--muted); margin-bottom: 16px; }}
+      table {{ width: 100%; border-collapse: collapse; table-layout: fixed; }}
+      thead th {{ background: var(--head); border: 1px solid var(--grid); padding: 8px 6px; text-align: left; font-weight: 600; }}
+      tbody td {{ border: 1px solid var(--grid); padding: 8px 6px; vertical-align: top; overflow-wrap: anywhere; word-break: break-word; }}
+      .num {{ text-align: right; white-space: nowrap; }}
+      .name {{ width: 22%; }}
+      .pillar {{ width: 10%; }}
+      .score {{ width: 6%; }}
+      .objective {{ width: 26%; }}
+      .krs {{ width: 30%; }}
+      .prompt {{ width: 30%; color: var(--fg); }}
+      ul {{ margin: 0; padding-left: 18px; }}
+      li {{ margin: 0 0 6px 0; }}
+      pre {{ margin: 0; white-space: pre-wrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace; font-size: 12px; line-height: 1.35; }}
     </style>
     """
 
@@ -2580,7 +2766,8 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
   <meta name='viewport' content='width=device-width, initial-scale=1'/>
   <title>Your Wellbeing Dashboard</title>
   <style>
-    body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; margin: 0; padding: 16px; background: #f5f5f5; }}
+    {FONT_FACE}
+    body {{ margin: 0; padding: 16px; background: #f5f5f5; }}
     .card {{ background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 2px 6px rgba(0,0,0,0.06); }}
     .summary-card {{ display: flex; flex-direction: column; gap: 16px; }}
     .summary-main h1 {{ font-size: 1.45rem; margin-bottom: 4px; }}
@@ -2973,7 +3160,8 @@ def generate_progress_report_html(user_id: int, anchor_date: date | None = None)
     reported_at = datetime.utcnow().strftime("%d %b %Y %H:%M UTC")
     css = """
     <style>
-      body { font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; margin:24px; color:#101828; }
+      {FONT_FACE}
+      body { margin:24px; color:#101828; }
       h1 { margin-bottom: 4px; }
       .meta { color:#475467; margin-bottom:16px; }
       .scorecard { border:1px solid #e4e7ec; border-radius:12px; padding:16px; margin: 16px 0 24px 0; background:#f8fafc; }

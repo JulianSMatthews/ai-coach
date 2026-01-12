@@ -79,8 +79,18 @@ def _get_user(user_id: int) -> User | None:
 
 
 def _audit(user_id: int, kind: str, payload: dict[str, Any] | None = None):
+    """
+    Record a lightweight audit entry for scheduled jobs.
+    JobAudit schema uses (job_name, status, payload, error), so we store user_id in payload.
+    """
     with SessionLocal() as s:
-        s.add(JobAudit(user_id=user_id, kind=kind, payload=payload or {}))
+        body = {"user_id": user_id}
+        if payload:
+            try:
+                body.update(payload)
+            except Exception:
+                body["payload"] = payload
+        s.add(JobAudit(job_name=kind, status="ok", payload=body))
         s.commit()
 
 
@@ -317,13 +327,28 @@ def _schedule_prompt_for_user(user: User, day: str, dow: str, hour: int, minute:
 
 
 def _unschedule_prompts_for_user(user_id: int):
-    for day in ("monday", "tuesday", "wednesday", "thursday", "friday", "sunday"):
-        job_id = f"auto_prompt_{day}_{user_id}"
+    job_ids = [f"auto_prompt_{day}_{user_id}" for day in ("monday", "tuesday", "wednesday", "thursday", "friday", "sunday")]
+    for job_id in job_ids:
         try:
             scheduler.remove_job(job_id)
         except Exception:
             pass
     print(f"[scheduler] unscheduled all prompts for user {user_id}")
+
+
+def _run_fast_cycle(user_id: int, start_ts: datetime, fast_minutes: int, offset: int = 0):
+    """
+    Fast mode runner: rotate through day prompts every fast_minutes in order.
+    """
+    with SessionLocal() as s:
+        user = s.get(User, user_id)
+    tz = _tz(user) if user else zoneinfo.ZoneInfo("UTC")
+    now = datetime.now(tz)
+    elapsed = max(0, (now - start_ts).total_seconds() / 60.0)
+    days = ("monday", "tuesday", "wednesday", "thursday", "friday", "sunday")
+    idx = (int(elapsed // fast_minutes) + offset) % len(days)
+    day = days[idx]
+    _run_day_prompt(user_id, day)
 
 
 def _schedule_prompts_for_user(
@@ -336,26 +361,32 @@ def _schedule_prompts_for_user(
     if not _coaching_enabled(session, user.id):
         _unschedule_prompts_for_user(user.id)
         return
-    # If fast mode requested, replace existing jobs with interval every N minutes starting now
+    # If fast mode requested, schedule each day as interval jobs (2m) instead of daily cron.
     if fast_minutes:
         _unschedule_prompts_for_user(user.id)
         tz = _tz(user)
         now = datetime.now(tz)
-        # Single cycle: one run per day, spaced by fast_minutes to avoid spam
-        for idx, day in enumerate(("monday", "tuesday", "wednesday", "thursday", "friday", "sunday")):
-            run_time = now + timedelta(minutes=(fast_minutes * idx) + 1)
+        days = ("monday", "tuesday", "wednesday", "thursday", "friday", "sunday")
+        interval_minutes = fast_minutes * len(days)
+        # Kickoff fires immediately; start Monday after fast_minutes, then every fast_minutes thereafter.
+        for idx, day in enumerate(days):
             job_id = f"auto_prompt_{day}_{user.id}"
+            start_offset = timedelta(minutes=(idx + 1) * fast_minutes)
             scheduler.add_job(
                 _run_day_prompt,
-                trigger="date",
-                run_date=run_time,
+                trigger="interval",
+                minutes=interval_minutes,
+                start_date=now + start_offset,
                 args=[user.id, day],
                 id=job_id,
                 replace_existing=True,
                 misfire_grace_time=3600,
                 timezone=tz,
             )
-        print(f"[scheduler] scheduled FAST single-cycle prompts (spacing {fast_minutes}m) for user {user.id} ({tz})")
+            print(
+                f"[scheduler] fast job {job_id} start={now + start_offset} interval={interval_minutes}m offset={start_offset}"
+            )
+        print(f"[scheduler] scheduled FAST prompts every {interval_minutes}m (start offset {fast_minutes}m, 2m spacing) for user {user.id} ({tz})")
         return
     # Ensure first scheduled prompt is the Monday weekstart after enabling (avoid midweek out-of-sequence)
     mon_hour, mon_min = _user_pref_time(session, user.id, "monday") or defaults.get("monday", (8, 0))
@@ -420,12 +451,12 @@ def enable_coaching(user_id: int, fast_minutes: int | None = None) -> bool:
         else:
             s.add(UserPreference(user_id=user_id, key=key, value="1"))
         s.commit()
+        # Trigger kickoff before scheduling prompts so the first Monday follows kickoff.
+        try:
+            kickoff.start_kickoff(u, notes="auto kickoff: coaching enabled")
+        except Exception as e:
+            print(f"[scheduler] kickoff on coaching enable failed for user {user_id}: {e}")
         _schedule_prompts_for_user(u, defaults, s, fast_minutes=fast_minutes)
-    # Also trigger the 12-week kickoff flow once when coaching is enabled
-    try:
-        kickoff.start_kickoff(u, notes="auto kickoff: coaching enabled")
-    except Exception as e:
-        print(f"[scheduler] kickoff on coaching enable failed for user {user_id}: {e}")
     return True
 
 

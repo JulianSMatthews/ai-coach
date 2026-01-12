@@ -111,8 +111,15 @@ def _progress_line(idx: int) -> str:
     total = TOTAL_QUESTIONS
     # idx is 0-based for next question; we want completed = idx
     done = max(0, min(idx, total))
-    remaining = total - done
-    bar = f"[{'🟩' * done}{'⬜️' * remaining}]"
+    bar_parts = []
+    if done > 0:
+        bar_parts.append("🟩" * done)
+    if done < total:
+        # Highlight the current position in orange to mirror the main assessment
+        remaining = max(total - done - 1, 0)
+        bar_parts.append("🟧")
+        bar_parts.append("⬜️" * remaining)
+    bar = f"[{''.join(bar_parts)}]"
     return f"Progress: {bar} {done}/{total}"
 
 

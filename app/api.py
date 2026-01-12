@@ -31,7 +31,7 @@ from .models import (
     WeeklyFocus,
     Touchpoint,
 )  # ensure model registered for metadata
-from . import monday, wednesday, thursday, friday, weekflow, tuesday, sunday, kickoff
+from . import monday, wednesday, thursday, friday, weekflow, tuesday, sunday, kickoff, admin_routes
 from . import psych
 from . import coachmycoach
 from . import scheduler
@@ -46,6 +46,7 @@ from .reporting import (
     generate_club_users_html,
     user_schedule_report,
     generate_schedule_report_html,
+    generate_llm_prompt_log_report_html,
 )
 
 # Lazy import holder to avoid startup/reload ImportError if symbol is added later
@@ -83,10 +84,12 @@ ADMIN_USAGE = (
     "admin status <phone>\n"
     "admin assessment <phone>\n"
     "admin progress <phone>\n"
+    "admin llm-review <phone> [limit]\n"
     "admin detailed <phone>\n"
     "admin kickoff <phone>            # send 12-week kickoff podcast/flow\n"
-    "admin coaching <phone> on|off|faston|reset    # toggle scheduled coaching prompts (faston=every 10m test; reset clears jobs)\n"
+    "admin coaching <phone> on|off|faston|reset    # toggle scheduled coaching prompts (faston=every 2m test; reset clears jobs)\n"
     "admin schedule <phone>           # show scheduled coaching prompts for user (HTML + summary)\n"
+    "admin beta <phone> [live|beta|develop|clear]   # set prompt state override for testing\n"
     "\nWeekly touchpoints (by day):\n"
     "admin monday <phone>\n"
     "admin tuesday <phone>\n"
@@ -187,7 +190,15 @@ def _predrop_legacy_tables():
         "concept_rubrics",
         "concept_clarifiers",
     ]
+    legacy_views = [
+        "llm_prompt_logs_view",
+    ]
     with engine.begin() as conn:
+        for vw in legacy_views:
+            try:
+                conn.execute(text(f'DROP VIEW IF EXISTS "{vw}" CASCADE'))
+            except Exception as e:
+                print(f"⚠️  Pre-drop warning for view {vw}: {e}")
         for tbl in legacy_tables:
             try:
                 conn.execute(text(f'DROP TABLE IF EXISTS "{tbl}" CASCADE'))
@@ -627,11 +638,43 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
     admin_club_id = getattr(admin_user, "club_id", None)
     club_scope_id = admin_club_id
     try:
-        if cmd in {"create", "start", "status", "report", "detailed", "summary", "okr-summary", "okr-summaryllm", "users", "assessment"} and club_scope_id is None:
+        if cmd in {"create", "start", "status", "report", "detailed", "summary", "okr-summary", "okr-summaryllm", "users", "assessment", "llm-review", "llmreview"} and club_scope_id is None:
             send_whatsapp(
                 to=admin_user.phone,
                 text="Your admin profile is not linked to a club. Use 'admin set global <club>' first."
             )
+            return True
+
+        if cmd == "beta":
+            if len(args) < 1:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin beta <phone> [live|beta|develop|clear]")
+                return True
+            target_phone_raw = args[0]
+            desired_state = args[1].lower() if len(args) > 1 else "beta"
+            if desired_state == "clear":
+                desired_state = "live"
+            if desired_state not in {"live", "beta", "develop"}:
+                send_whatsapp(to=admin_user.phone, text="State must be live|beta|develop|clear")
+                return True
+            with SessionLocal() as s:
+                u = _admin_lookup_user_by_phone(s, target_phone_raw, admin_user)
+                if not u:
+                    send_whatsapp(to=admin_user.phone, text=f"User not found for {target_phone_raw}")
+                    return True
+                pref = (
+                    s.query(UserPreference)
+                    .filter(UserPreference.user_id == u.id, UserPreference.key == "prompt_state_override")
+                    .first()
+                )
+                if not pref:
+                    pref = UserPreference(user_id=u.id, key="prompt_state_override")
+                    s.add(pref)
+                pref.value = desired_state
+                s.commit()
+                send_whatsapp(
+                    to=admin_user.phone,
+                    text=f"Prompt state override for {display_full_name(u)} ({u.phone}) set to {desired_state}.",
+                )
             return True
 
         if cmd == "create":
@@ -706,6 +749,34 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 send_whatsapp(to=admin_user.phone, text=f"Progress report for {display_full_name(u)}: {url}")
             except Exception as e:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to generate progress report: {e}")
+            return True
+        if cmd in {"llm-review", "llmreview"}:
+            if len(parts) < 3:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin llm-review <phone> [limit]")
+                return True
+            target_phone = _norm_phone(parts[2])
+            try:
+                limit = int(parts[3]) if len(parts) > 3 else 100
+            except Exception:
+                limit = 100
+            with SessionLocal() as s:
+                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
+                if not u:
+                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
+                    send_whatsapp(
+                        to=admin_user.phone,
+                        text=f"User with phone {target_phone} not found{scope_txt}."
+                    )
+                    return True
+            try:
+                link = generate_llm_prompt_log_report_html(u.id, limit=limit)
+                bust = int(time.time())
+                send_whatsapp(
+                    to=admin_user.phone,
+                    text=f"LLM prompt logs (limit {limit}) for {display_full_name(u)}: {link}?ts={bust}"
+                )
+            except Exception as e:
+                send_whatsapp(to=admin_user.phone, text=f"Failed to generate LLM prompt log report: {e}")
             return True
         elif cmd in {"weekstart", "monday"}:
             # Usage: admin weekstart <phone> [notes] — auto-select top KRs
@@ -829,7 +900,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                     )
                     return True
             ok = False
-            fast_minutes = 10 if toggle == "faston" else None
+            fast_minutes = 2 if toggle == "faston" else None
             if toggle == "reset":
                 ok = scheduler.reset_coaching_jobs(u.id)
             elif toggle == "on":
@@ -841,7 +912,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
             if ok:
                 msg = f"Coaching prompts turned {toggle} for {target_phone}."
                 if toggle == "faston":
-                    msg += " (every 10 minutes for testing)"
+                    msg += f" (every {fast_minutes} minutes for testing)"
                 if toggle == "reset":
                     msg = f"Coaching prompt jobs cleared for {target_phone} (preference unchanged)."
                 send_whatsapp(to=admin_user.phone, text=msg)
@@ -1601,6 +1672,8 @@ def debug_routes():
 
 # Mount routes
 app.include_router(router)
+# Admin routes UI (no auth on this router; protect via network or middleware if needed)
+app.include_router(admin_routes.admin)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Admin (superuser) endpoints

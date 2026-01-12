@@ -94,10 +94,12 @@ def _try_write_outbound_log(*, phone_e164: str, text: str, category: str | None,
         print(f"⚠️ outbound logging failed (non-fatal): {e!r}")
 
 
-def _perform_twilio_send(*, text: str, to_norm: str, category: str | None) -> str:
+def _perform_twilio_send(*, text: str | None, to_norm: str, category: str | None, media_urls: list[str] | None = None) -> str:
     client = _twilio_client()
     if client is None:
         raise RuntimeError("Twilio client unavailable")
+    if (not text or not str(text).strip()) and not media_urls:
+        raise ValueError("Cannot send empty WhatsApp message (no text or media).")
 
     lock = _lock_for_destination(to_norm)
     with lock:
@@ -106,6 +108,7 @@ def _perform_twilio_send(*, text: str, to_norm: str, category: str | None) -> st
             msg = client.messages.create(
                 from_=settings.TWILIO_FROM,
                 body=text,
+                media_url=media_urls,
                 to=to_norm,
             )
         except TwilioRestException as exc:
@@ -123,7 +126,7 @@ def _perform_twilio_send(*, text: str, to_norm: str, category: str | None) -> st
     try:
         _try_write_outbound_log(
             phone_e164=phone_e164,
-            text=text,
+            text=text or "(media)",
             category=category,
             twilio_sid=getattr(msg, "sid", None) or "",
             to_norm=to_norm,
@@ -154,10 +157,11 @@ def _queue_worker(dest: str, q: queue.Queue):
             break
         text = job["text"]
         category = job["category"]
+        media_urls = job.get("media_urls")
         event = job["event"]
         result = job["result"]
         try:
-            sid = _perform_twilio_send(text=text, to_norm=dest, category=category)
+            sid = _perform_twilio_send(text=text, to_norm=dest, category=category, media_urls=media_urls)
             result["sid"] = sid
         except Exception as e:
             result["error"] = e
@@ -166,11 +170,11 @@ def _queue_worker(dest: str, q: queue.Queue):
             q.task_done()
 
 
-def _enqueue_and_send(*, to_norm: str, text: str, category: str | None) -> str:
+def _enqueue_and_send(*, to_norm: str, text: str | None, category: str | None, media_urls: list[str] | None = None) -> str:
     q = _ensure_queue_worker(to_norm)
     event = threading.Event()
     result: dict[str, str | Exception] = {}
-    q.put({"text": text, "category": category, "event": event, "result": result})
+    q.put({"text": text, "category": category, "media_urls": media_urls, "event": event, "result": result})
     event.wait()
     if "error" in result:
         raise result["error"]
@@ -190,7 +194,7 @@ def send_whatsapp(text: str, to: str | None = None, category: str | None = None)
         # Explicitly refuse to send without a valid recipient
         raise ValueError("Recipient phone missing or invalid (expected E.164). No fallback is permitted.")
 
-    result_sid = _enqueue_and_send(to_norm=to_norm, text=text, category=category)
+    result_sid = _enqueue_and_send(to_norm=to_norm, text=text, category=category, media_urls=None)
 
     # Optional local file logging (e.g., for weekflow review)
     log_path = os.getenv("WEEKFLOW_LOG_FILE", "").strip()
@@ -202,6 +206,32 @@ def send_whatsapp(text: str, to: str | None = None, category: str | None = None)
         except Exception:
             pass
 
+    return result_sid
+
+
+def send_whatsapp_media(
+    *,
+    media_url: str,
+    to: str | None = None,
+    caption: str | None = None,
+    category: str | None = None,
+) -> str:
+    """
+    Send a WhatsApp media message (e.g., audio) with optional caption.
+    Requires a valid HTTPS-accessible media_url.
+    """
+    to_norm = _normalize_whatsapp_phone(to) if to else None
+    if not to_norm:
+        raise ValueError("Recipient phone missing or invalid (expected E.164). No fallback is permitted.")
+    media_url = (media_url or "").strip()
+    if not media_url:
+        raise ValueError("media_url is required for send_whatsapp_media")
+    result_sid = _enqueue_and_send(
+        to_norm=to_norm,
+        text=caption,
+        category=category,
+        media_urls=[media_url],
+    )
     return result_sid
 
 

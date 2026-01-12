@@ -10,13 +10,13 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
-from .nudges import send_whatsapp
+from .nudges import send_whatsapp, send_whatsapp_media
 from .models import User, UserPreference, WeeklyFocus, WeeklyFocusKR, OKRKeyResult, OKRObjective
 from .focus import select_top_krs_for_user
 from . import llm as shared_llm
 from .kickoff import generate_kickoff_podcast_transcript, COACH_NAME
 from .podcast import generate_podcast_audio
-from .prompts import weekstart_actions_prompt, weekstart_support_prompt
+from .prompts import coaching_prompt, kr_payload_list, build_prompt, run_llm_prompt
 from .touchpoints import log_touchpoint
 
 
@@ -62,15 +62,28 @@ def _send_weekly_briefing(user: User, week_no: int) -> tuple[Optional[str], Opti
             mode="weekstart",
             focus_pillar=pillar_key,
             week_no=week_no,
+            locale="UK",
         )
         audio_url = generate_podcast_audio(transcript, user.id, filename=f"monday_week{week_no}.mp3")
         if audio_url:
-            send_whatsapp(
-                to=user.phone,
-                text=f"*Monday* Hi { (user.first_name or '').strip().title() or 'there' }. {COACH_NAME} here. Here’s your Week {week_no} podcast—please have a listen: {audio_url}",
+            caption = (
+                f"*Monday* Hi { (user.first_name or '').strip().title() or 'there' }. "
+                f"{COACH_NAME} here. Here’s your Week {week_no} podcast—give it a listen."
             )
-    except Exception:
-        pass
+            try:
+                send_whatsapp_media(to=user.phone, media_url=audio_url, caption=caption)
+            except Exception:
+                send_whatsapp(to=user.phone, text=f"{caption} {audio_url}")
+        else:
+            # Fallback: send transcript if audio generation failed
+            if transcript:
+                send_whatsapp(
+                    to=user.phone,
+                    text=f"*Monday* Podcast unavailable right now—here’s the briefing:\n\n{transcript}",
+                )
+            print(f"[monday] podcast generation returned no URL (user={user.id}, week={week_no})")
+    except Exception as e:
+        print(f"[monday] podcast generation error for user {user.id}: {e}")
     return audio_url, transcript
 
 
@@ -79,7 +92,16 @@ def _summarize_actions(transcript: Optional[str], krs: list[OKRKeyResult]) -> st
     transcript = (transcript or "").strip()
     client = getattr(shared_llm, "_llm", None)
     if client and transcript:
-        prompt = weekstart_actions_prompt(transcript, [kr.description for kr in krs])
+        prompt_assembly = build_prompt(
+            "weekstart_actions",
+            user_id=krs[0].user_id if krs else 0,
+            coach_name=COACH_NAME,
+            user_name=(krs[0].user.first_name if krs and getattr(krs[0], "user", None) else "") if krs else "",
+            locale=getattr(krs[0].user, "tz", "UK") if krs and getattr(krs[0], "user", None) else "UK",
+            transcript=transcript,
+            krs=[kr.description for kr in krs],
+        )
+        prompt = prompt_assembly.text
         try:
             resp = client.invoke(prompt)
             txt = (getattr(resp, "content", "") or "").strip()
@@ -103,6 +125,7 @@ def _summarize_actions(transcript: Optional[str], krs: list[OKRKeyResult]) -> st
 
 
 def _fmt_num(val) -> str:
+    """Render numeric values as clean strings (ints without .0)."""
     try:
         f = float(val)
         return str(int(f)) if f.is_integer() else str(f).rstrip("0").rstrip(".")
@@ -111,10 +134,12 @@ def _fmt_num(val) -> str:
 
 
 def _state_key() -> str:
+    """Preference key used to store the monday session state."""
     return "weekstart_state"
 
 
 def _get_state(session: Session, user_id: int) -> Optional[dict]:
+    """Load the monday session state from UserPreference, if present."""
     pref = (
         session.query(UserPreference)
         .filter(UserPreference.user_id == user_id, UserPreference.key == _state_key())
@@ -129,6 +154,7 @@ def _get_state(session: Session, user_id: int) -> Optional[dict]:
 
 
 def _set_state(session: Session, user_id: int, state: Optional[dict]):
+    """Persist or clear the monday session state in UserPreference."""
     pref = (
         session.query(UserPreference)
         .filter(UserPreference.user_id == user_id, UserPreference.key == _state_key())
@@ -146,12 +172,14 @@ def _set_state(session: Session, user_id: int, state: Optional[dict]):
 
 
 def has_active_state(user_id: int) -> bool:
+    """Check if a monday session state is stored for this user."""
     with SessionLocal() as s:
         st = _get_state(s, user_id)
         return bool(st)
 
 
 def _format_krs(krs: list[OKRKeyResult]) -> str:
+    """Human-readable multi-line string for the current KRs."""
     lines = []
     for idx, kr in enumerate(krs, 1):
         tgt = _fmt_num(kr.target_num)
@@ -166,11 +194,8 @@ def _format_krs(krs: list[OKRKeyResult]) -> str:
     return "\n".join(lines)
 
 
-def _support_prompt(krs: list[OKRKeyResult], history: list[dict], user_message: str | None, user: User) -> str:
-    payload = [
-        {"description": kr.description, "target": _fmt_num(kr.target_num), "actual": _fmt_num(kr.actual_num)}
-        for kr in krs
-    ]
+def _support_prompt(user: User, history: list[dict], user_message: str | None):
+    """Build the LLM prompt for weekstart support chat."""
     transcript = []
     for turn in history:
         role = turn.get("role", "")
@@ -179,42 +204,54 @@ def _support_prompt(krs: list[OKRKeyResult], history: list[dict], user_message: 
             transcript.append(f"{role.upper()}: {content}")
     if user_message:
         transcript.append(f"USER: {user_message}")
-    return weekstart_support_prompt(payload, transcript, COACH_NAME, user_name=(user.first_name or ""))
+    return build_prompt(
+        "weekstart_support",
+        user_id=user.id,
+        coach_name=COACH_NAME,
+        user_name=(user.first_name or ""),
+        locale=getattr(user, "tz", "UK") or "UK",
+        history=transcript,
+    )
 
 
 def _support_conversation(
-    krs: list[OKRKeyResult],
     history: list[dict],
     user_message: str | None,
     user: User,
     debug: bool = False,
 ) -> tuple[str, list[dict]]:
     """Generate the next support message and updated history."""
-    client = getattr(shared_llm, "_llm", None)
-    prompt = _support_prompt(krs, history, user_message, user)
+    prompt_assembly = _support_prompt(user, history, user_message)
+    prompt = prompt_assembly.text
     if debug:
         try:
             send_whatsapp(to=user.phone, text="(i Inst) " + prompt)
         except Exception:
             pass
-    text = None
-    if client:
-        try:
-            resp = client.invoke(prompt)
-            candidate = (getattr(resp, "content", None) or "").strip()
-            if candidate:
-                text = "(i) " + candidate
-        except Exception:
-            text = None
+    candidate = run_llm_prompt(
+        prompt,
+        user_id=user.id,
+        touchpoint="weekstart_support",
+        context_meta={"debug": debug},
+        prompt_variant=prompt_assembly.variant,
+        task_label=prompt_assembly.task_label,
+        prompt_blocks={**prompt_assembly.blocks, **(prompt_assembly.meta or {})},
+        block_order=prompt_assembly.block_order,
+        log=True,
+    )
+    text = "(i) " + candidate if candidate else None
     if text is None:
         if user_message:
             text = "(i) Thanks for the update. Want a quick idea for the next step on any goal? Tell me which one, and I’ll keep it simple."
         else:
             tips = [
-                f"{kr.description}: quick plan or light scheduling idea for this week."
-                for kr in krs
+                f"{kr['description']}: quick plan or light scheduling idea for this week."
+                for kr in kr_payload_list(user.id, max_krs=3)
             ]
-            text = "(i) Here are ideas to help this week: " + " ".join(tips)
+            if tips:
+                text = "(i) Here are ideas to help this week: " + " ".join(tips)
+            else:
+                text = "(i) Here are ideas to help this week: pick any goal you want to start with and I’ll suggest one easy action."
 
     new_history = list(history)
     if user_message:
@@ -224,6 +261,7 @@ def _support_conversation(
 
 
 def _initial_message(user: User, wf: WeeklyFocus, krs: list[OKRKeyResult]) -> str:
+    """First monday message proposing the weekly KR set."""
     name = (getattr(user, "first_name", None) or "there").strip().title()
     start_str = ""
     if wf and wf.starts_on:
@@ -239,14 +277,14 @@ def _initial_message(user: User, wf: WeeklyFocus, krs: list[OKRKeyResult]) -> st
 
 
 def _summary_message(krs: list[OKRKeyResult]) -> str:
+    """Short confirmation of the agreed KRs."""
     return "Agreed KRs for this week:\n" + _format_krs(krs)
 
 
 def start_weekstart(user: User, notes: str | None = None, debug: bool = False, set_state: bool = True, week_no: Optional[int] = None) -> None:
     """Create weekly focus, pick KRs, send monday weekstart message, and optionally set state."""
     with SessionLocal() as s:
-        selected = select_top_krs_for_user(s, user.id, limit=None, week_no=week_no)
-        kr_ids = [kr_id for kr_id, _ in selected]
+        kr_ids = [kr["id"] for kr in kr_payload_list(user.id, session=s, week_no=week_no, max_krs=3)]
         if not kr_ids:
             send_whatsapp(to=user.phone, text="No active KRs found to propose. Please set OKRs first.")
             return
@@ -255,6 +293,15 @@ def start_weekstart(user: User, notes: str | None = None, debug: bool = False, s
         days_ahead = 7 - today.weekday()
         start = today + timedelta(days=days_ahead)
         end = start + timedelta(days=6)
+
+        # Decide week number label (used for WF + briefing/touchpoint)
+        label_week = week_no
+        if label_week is None:
+            try:
+                label_week = max(1, int(((start - today).days // 7) + 1))
+            except Exception:
+                label_week = 1
+
         wf = WeeklyFocus(user_id=user.id, starts_on=start, ends_on=end, notes=notes, week_no=label_week)
         s.add(wf); s.flush()
         for idx, kr_id in enumerate(kr_ids):
@@ -262,14 +309,6 @@ def start_weekstart(user: User, notes: str | None = None, debug: bool = False, s
         s.commit()
 
         krs = s.query(OKRKeyResult).filter(OKRKeyResult.id.in_(kr_ids)).all()
-
-        # Decide week number label
-        label_week = week_no
-        if label_week is None:
-            try:
-                label_week = max(1, int(((start - today).days // 7) + 1))
-            except Exception:
-                label_week = 1
 
         audio_url, transcript = _send_weekly_briefing(user, week_no=label_week)
         summary = _summarize_actions("", krs)
@@ -298,6 +337,7 @@ def start_weekstart(user: User, notes: str | None = None, debug: bool = False, s
 
 
 def handle_message(user: User, text: str) -> None:
+    """Entry point for inbound monday/Weekstart chat messages."""
     msg = (text or "").strip()
     lower = msg.lower()
     with SessionLocal() as s:
@@ -335,7 +375,7 @@ def handle_message(user: User, text: str) -> None:
         if mode == "proposal":
             if lower.startswith("review"):
                 send_whatsapp(to=user.phone, text="We’re keeping the Nutrition goals as-is for this week. Let’s focus on making them doable.")
-            support_text, history = _support_conversation(krs, [], msg, user, debug)
+            support_text, history = _support_conversation([], msg, user, debug)
             if support_text and not support_text.lower().startswith("*monday*"):
                 support_text = "*Monday* " + support_text
             send_whatsapp(to=user.phone, text=support_text)
@@ -346,7 +386,7 @@ def handle_message(user: User, text: str) -> None:
 
         if mode == "support":
             history = state.get("history") or []
-            support_text, new_history = _support_conversation(krs, history, msg, user, debug)
+            support_text, new_history = _support_conversation(history, msg, user, debug)
             if support_text and not support_text.lower().startswith("*monday*"):
                 support_text = "*Monday* " + support_text
             send_whatsapp(to=user.phone, text=support_text)

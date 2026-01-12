@@ -5,11 +5,42 @@ Sections:
 1) Structured prompt blocks (coach/user/context/OKR/scores/habit readiness/task)
 2) Podcast prompts (kickoff/weekstart) built from blocks
 3) Message prompts (weekstart support/actions, assessment/OKR/psych, assessor)
+
+Index (helper → purpose → used by):
+- podcast_prompt: kickoff, weekstart, Thursday, Friday podcast transcripts → kickoff.py, monday.py, thursday.py, friday.py
+- coaching_prompt: unified coaching text prompts (weekstart_support, kickoff_support, weekstart_actions, midweek, tuesday, sunday)
+- weekstart_support_prompt (legacy): weekstart support chat → monday.py
+- kickoff_support_prompt (legacy): kickoff support chat → kickoff.py
+- weekstart_actions_prompt (legacy): actions summary from podcast transcript → monday.py
+- current_krs_context + helpers: fetch current focused KRs and derive payloads (list, primary, okrs_by_pillar) for all prompts
+- coaching_approach_prompt: habit-readiness approach → reporting.py (_coaching_approach_text)
+- assessment_scores_prompt: assessment score narrative → reporting.py (_score_narrative_from_llm)
+- okr_narrative_prompt: OKR narrative → reporting.py (_okr_narrative_from_llm)
+- assessment_narrative_prompt: assessment narrative → assessor.py
+- assessor_system_prompt: assessor system message → assessor.py
+- assessor_feedback_prompt: short feedback/next steps → assessor.py
+- Blocks: context_block, okr_block, scores_block, habit_readiness_block, task_block, assemble_prompt
+
+Callers should pass data only; keep LLM instructions here for reviewability.
 """
 from __future__ import annotations
 
 import json
+import os
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+
+from sqlalchemy.orm import Session
+from sqlalchemy import func, text, case
+
+from .db import SessionLocal, engine, _is_postgres, _table_exists
+from .focus import select_top_krs_for_user
+from .models import OKRKeyResult, OKRObjective, PromptTemplate, PromptSettings
+from . import llm as shared_llm
+from .models import LLMPromptLog
+
+PROMPT_STATE_ALIASES = {"production": "live", "stage": "beta"}
+PROMPT_STATE_ORDER = ["live", "beta", "develop"]
 
 
 def format_checkin_history(checkins: List[Dict[str, Any]]) -> str:
@@ -49,21 +80,41 @@ def format_checkin_history(checkins: List[Dict[str, Any]]) -> str:
 # ---------------------------------------------------------------------------
 
 
-def coach_block(coach_name: str, extras: str = "") -> str:
-    """Coach persona: name, tone, and global constraints."""
+LOCALE_GUIDANCE_UK = (
+    "Use British English: UK spelling (favour, programme, behaviour), light British phrasing (have a think, check in, crack on), "
+    "warm, calm, supportive tone; avoid Americanisms (vacation, sidewalk, awesome, mom); no US cultural refs."
+)
+
+
+@dataclass
+class PromptAssembly:
+    text: str
+    blocks: Dict[str, str]
+    variant: str
+    task_label: str
+    block_order: List[str] = field(default_factory=list)
+    meta: Dict[str, Any] = field(default_factory=dict)
+
+
+def common_prompt_header(coach_name: str, user_name: str, locale: str = "UK") -> str:
+    """Shared tone/locale/persona guidance for all prompts (text and podcast)."""
     return (
-        f"Coach profile: Name={coach_name}; tone=supportive, concise, conversational; "
-        "avoid music/SFX; avoid reading section headers; forward-looking. "
-        + extras
+        "Tone: supportive, conversational; speak directly to the user as their coach. "
+        "Do not mention background music or sound effects. "
+        "Do not read out section headers or labels; speak naturally as a flowing message. "
+        "Do not read or say emoji names; ignore emoji. "
+        f"Coach={coach_name}; User={user_name}; Locale={locale}."
     )
 
 
-def user_block(user_name: str, persona_notes: str = "") -> str:
-    """User persona: preferred name and any salient notes/preferences."""
-    return f"User profile: Name={user_name}; {persona_notes}".strip()
-
-
-def context_block(interaction: str, purpose: str, timeframe: str = "", history: str = "", channel: str = "WhatsApp") -> str:
+def context_block(
+    interaction: str,
+    purpose: str,
+    timeframe: str = "",
+    history: str = "",
+    channel: str = "WhatsApp",
+    extras: str = "",
+) -> str:
     """Context of the interaction: type, purpose, channel, timeframe, history."""
     bits = [
         f"Interaction={interaction}",
@@ -74,12 +125,80 @@ def context_block(interaction: str, purpose: str, timeframe: str = "", history: 
         bits.append(f"Timeframe={timeframe}")
     if history:
         bits.append(f"History: {history}")
+    if extras:
+        bits.append(f"Extras: {extras}")
     return "Context: " + "; ".join(bits)
 
 
 def okr_block(okrs_by_pillar: Dict[str, List[str]] | List[Dict[str, Any]], targets: Optional[Dict[str, Any]] = None) -> str:
     """OKR/KR snapshot: objectives/KRs and optional targets."""
-    return f"OKRs/KRs: {okrs_by_pillar}; Targets: {targets or {}}"
+    def _format_dict_entry(d: Dict[str, Any]) -> str:
+        desc = d.get("description") or d.get("title") or ""
+        tgt = d.get("target") or d.get("target_num") or d.get("target_text")
+        actual = d.get("actual") or d.get("actual_num") or d.get("actual_text")
+        bits = []
+        if tgt is not None:
+            bits.append(f"target {tgt}")
+        if actual is not None:
+            bits.append(f"now {actual}")
+        suffix = f" ({'; '.join(bits)})" if bits else ""
+        return f"{desc}{suffix}".strip()
+
+    formatted = ""
+    if isinstance(okrs_by_pillar, dict):
+        parts = []
+        for pillar, items in okrs_by_pillar.items():
+            if isinstance(items, list):
+                rendered = []
+                for item in items:
+                    if isinstance(item, dict):
+                        rendered.append(_format_dict_entry(item))
+                    else:
+                        rendered.append(str(item))
+                parts.append(f"{pillar}: " + "; ".join(rendered))
+            else:
+                parts.append(f"{pillar}: {items}")
+        formatted = " | ".join(parts)
+    elif isinstance(okrs_by_pillar, list):
+        rendered = []
+        for item in okrs_by_pillar:
+            if isinstance(item, dict):
+                rendered.append(_format_dict_entry(item))
+            else:
+                rendered.append(str(item))
+        formatted = "; ".join(rendered)
+    else:
+        formatted = str(okrs_by_pillar)
+
+    tgt_txt = ""
+    if targets:
+        try:
+            tgt_txt = f"; Targets: {targets}"
+        except Exception:
+            tgt_txt = ""
+    return f"OKRs/KRs: {formatted}{tgt_txt}"
+
+
+def okr_block_with_scope(scope: str, okrs: Any, targets: Optional[Dict[str, Any]] = None) -> tuple[str, Dict[str, Any]]:
+    """
+    Return (block_text, meta) where meta carries okr_scope for logging.
+    scope: all | pillar | week | single
+    """
+    return okr_block(okrs, targets=targets), {"okr_scope": scope}
+
+
+def programme_block_with_scope(scope: str, programme: Any, current_block: Any = None) -> str:
+    """
+    Render programme/current-block info according to scope.
+    scope: full | pillar | none
+    """
+    scope = (scope or "").lower() or "none"
+    if scope == "none":
+        return ""
+    if scope == "pillar":
+        return f"Current block: {current_block}" if current_block else ""
+    # full
+    return f"Programme blocks: {programme}" if programme else ""
 
 
 def scores_block(pillar_scores: List[Dict[str, Any]], combined: Optional[int] = None) -> str:
@@ -90,6 +209,13 @@ def scores_block(pillar_scores: List[Dict[str, Any]], combined: Optional[int] = 
 def habit_readiness_block(psych_payload: Dict[str, Any]) -> str:
     """Habit readiness / psych flags and parameters."""
     return f"Habit readiness: {psych_payload}"
+
+
+def locale_block(locale: str) -> str:
+    """Locale-specific instructions (e.g., spelling/tone)."""
+    if locale.upper() == "UK":
+        return LOCALE_GUIDANCE_UK
+    return f"Locale: {locale}"
 
 
 def task_block(instruction: str, length_hint: str = "", constraints: str = "") -> str:
@@ -107,6 +233,1015 @@ def assemble_prompt(blocks: List[str]) -> str:
     return "\n".join([b for b in blocks if b])
 
 
+def history_block(label: str, entries: List[str]) -> str:
+    """Render conversation or check-in history as a labeled block."""
+    if not entries:
+        return ""
+    return context_block("history", label, extras="\n".join(entries))
+
+
+# ---------------------------------------------------------------------------
+# Prompt logging helpers
+# ---------------------------------------------------------------------------
+
+DEFAULT_PROMPT_BLOCK_ORDER = [
+    "system",
+    "locale",
+    "context",
+    "history",
+    "programme",
+    "okr",
+    "scores",
+    "habit",
+    "assessor",
+    "task",
+    "user",
+]
+
+_BANNED_BLOCKS = {"developer", "policy", "tool"}
+
+def _canonical_state(state: Optional[str]) -> Optional[str]:
+    if not state:
+        return None
+    return PROMPT_STATE_ALIASES.get(state, state)
+
+
+def _state_priority_expr():
+    return case(
+        (
+            (PromptTemplate.state == "live")
+            | (PromptTemplate.state == "production"),
+            0,
+        ),
+        (
+            (PromptTemplate.state == "beta")
+            | (PromptTemplate.state == "stage"),
+            1,
+        ),
+        (PromptTemplate.state == "develop", 2),
+        else_=3,
+    )
+
+
+def _merge_template_meta(meta: Optional[Dict[str, Any]], template: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    merged = dict(meta or {})
+    if template:
+        state = _canonical_state(template.get("state"))
+        if state:
+            merged["template_state"] = state
+        version = template.get("version")
+        if version is not None:
+            merged["template_version"] = version
+    return merged
+
+
+def _apply_prompt_template(parts: List[tuple[str, str]], template: Optional[Dict[str, Any]]) -> tuple[List[tuple[str, str]], Optional[List[str]]]:
+    """
+    Apply template overrides (system/locale/task), include list, and block order.
+    Returns (parts, block_order_override).
+    """
+    if not template:
+        return parts, None
+
+    include_blocks = [b for b in (template.get("include_blocks") or []) if b not in _BANNED_BLOCKS] or None
+    order_override = [b for b in (template.get("block_order") or []) if b not in _BANNED_BLOCKS]
+    programme_scope = template.get("programme_scope")
+    overrides: Dict[str, Optional[str]] = {
+        "task": template.get("task_block"),
+    }
+    new_parts: List[tuple[str, str]] = []
+    for label, txt in parts:
+        if label in _BANNED_BLOCKS:
+            continue
+        val = overrides.get(label, txt)
+        if include_blocks and label not in include_blocks:
+            continue
+        if val:
+            new_parts.append((label, val))
+
+    if order_override:
+        order_index = {lbl: idx for idx, lbl in enumerate(order_override)}
+        new_parts.sort(key=lambda p: order_index.get(p[0], len(order_index)))
+
+    return new_parts, order_override if order_override else None
+
+
+def _template_prompt_with_data(
+    touchpoint: str,
+    user_name: str,
+    locale: str,
+    context_label: str,
+    data_payload: Any,
+    default_task: str,
+    persona: str = "Coach",
+) -> PromptAssembly:
+    """
+    Build a simple prompt using global settings + template overrides with a JSON data block.
+    Returns assembled prompt text.
+    """
+    settings = _load_prompt_settings()
+    template = _load_prompt_template(touchpoint)
+    sys_block = settings.get("system_block") or common_prompt_header(persona, user_name, locale)
+    loc_block = settings.get("locale_block") or locale_block(locale)
+    parts = [
+        ("system", sys_block),
+        ("locale", loc_block),
+        ("context", f"Context: {context_label}"),
+        ("data", f"Data (JSON): {json.dumps(data_payload, ensure_ascii=False)}" if data_payload is not None else ""),
+        ("task", (template or {}).get("task_block") or default_task),
+    ]
+    parts, order_override = _apply_prompt_template(parts, template)
+    meta = _merge_template_meta({}, template)
+    assembly = _prompt_assembly(
+        touchpoint,
+        touchpoint,
+        parts,
+        meta=meta,
+        block_order_override=order_override or settings.get("default_block_order"),
+    )
+    return assembly
+
+
+def _load_prompt_template(touchpoint: str) -> Optional[Dict[str, Any]]:
+    """
+    Fetch a prompt template row for this touchpoint (if any), preferring live > beta > develop.
+    """
+    try:
+        PromptTemplate.__table__.create(bind=engine, checkfirst=True)
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS programme_scope varchar(32);"))
+                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS response_format varchar(32);"))
+                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS state varchar(32) DEFAULT 'develop';"))
+                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS version integer DEFAULT 1;"))
+                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS note text;"))
+                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS parent_id integer;"))
+                # Relax legacy unique constraint on touchpoint to allow multi-state/version rows
+                try:
+                    conn.execute(text("ALTER TABLE prompt_templates DROP CONSTRAINT IF EXISTS prompt_templates_touchpoint_key;"))
+                except Exception:
+                    pass
+                try:
+                    conn.execute(text("DROP INDEX IF EXISTS prompt_templates_touchpoint_key;"))
+                except Exception:
+                    pass
+                try:
+                    conn.execute(text("DROP INDEX IF EXISTS uq_prompt_templates_touchpoint;"))
+                except Exception:
+                    pass
+                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_prompt_templates_touchpoint_state_version ON prompt_templates(touchpoint, state, version);"))
+                # Map legacy state labels to new ones
+                conn.execute(text("UPDATE prompt_templates SET state='beta' WHERE state='stage';"))
+                conn.execute(text("UPDATE prompt_templates SET state='live' WHERE state='production';"))
+                conn.execute(text("UPDATE prompt_templates SET version=1 WHERE version IS NULL;"))
+                conn.commit()
+        except Exception:
+            pass
+        with SessionLocal() as s:
+            row = (
+                s.query(PromptTemplate)
+                .filter(PromptTemplate.touchpoint == touchpoint, PromptTemplate.is_active == True)
+                .order_by(
+                    _state_priority_expr(),
+                    PromptTemplate.version.desc(),
+                    PromptTemplate.id.desc(),
+                )
+                .first()
+            )
+            if not row:
+                return None
+            state_val = _canonical_state(getattr(row, "state", None))
+            return {
+                "task_block": getattr(row, "task_block", None),
+                "block_order": getattr(row, "block_order", None),
+                "include_blocks": getattr(row, "include_blocks", None),
+                "okr_scope": getattr(row, "okr_scope", None),
+                "programme_scope": getattr(row, "programme_scope", None),
+                "response_format": getattr(row, "response_format", None),
+                "state": state_val,
+                "version": getattr(row, "version", None),
+            }
+    except Exception as e:
+        print(f"[prompts] WARN: failed to load prompt template for {touchpoint}: {e}")
+        return None
+
+
+def _load_prompt_template_with_state(touchpoint: str, state: str) -> Optional[Dict[str, Any]]:
+    """
+    Fetch a prompt template row for this touchpoint with explicit state (if any).
+    """
+    target_state = _canonical_state(state)
+    try:
+        PromptTemplate.__table__.create(bind=engine, checkfirst=True)
+        with SessionLocal() as s:
+            row = (
+                s.query(PromptTemplate)
+                .filter(
+                    PromptTemplate.touchpoint == touchpoint,
+                    PromptTemplate.is_active == True,
+                    PromptTemplate.state.in_(
+                        [
+                            target_state,
+                            "stage" if target_state == "beta" else target_state,
+                            "production" if target_state == "live" else target_state,
+                        ]
+                    ),
+                )
+                .order_by(PromptTemplate.version.desc(), PromptTemplate.id.desc())
+                .first()
+            )
+            if not row:
+                return _load_prompt_template(touchpoint)
+            state_val = _canonical_state(getattr(row, "state", None))
+            return {
+                "task_block": getattr(row, "task_block", None),
+                "block_order": getattr(row, "block_order", None),
+                "include_blocks": getattr(row, "include_blocks", None),
+                "okr_scope": getattr(row, "okr_scope", None),
+                "programme_scope": getattr(row, "programme_scope", None),
+                "response_format": getattr(row, "response_format", None),
+                "state": state_val,
+                "version": getattr(row, "version", None),
+            }
+    except Exception:
+        return _load_prompt_template(touchpoint)
+
+
+def _load_prompt_settings() -> Dict[str, Any]:
+    """
+    Load global prompt settings (singleton). Falls back to defaults if missing.
+    """
+    defaults = {
+        "system_block": None,
+        "locale_block": None,
+        "default_block_order": DEFAULT_PROMPT_BLOCK_ORDER,
+    }
+    try:
+        PromptSettings.__table__.create(bind=engine, checkfirst=True)
+    except Exception:
+        return defaults
+    try:
+        with SessionLocal() as s:
+            row = s.query(PromptSettings).order_by(PromptSettings.id.asc()).first()
+            if not row:
+                return defaults
+            order = getattr(row, "default_block_order", None) or DEFAULT_PROMPT_BLOCK_ORDER
+            order = [b for b in order if b not in _BANNED_BLOCKS]
+            data = {
+                "system_block": getattr(row, "system_block", None),
+                "locale_block": getattr(row, "locale_block", None),
+                "default_block_order": order or DEFAULT_PROMPT_BLOCK_ORDER,
+            }
+            return data
+    except Exception as e:
+        print(f"[prompts] WARN: failed to load prompt settings: {e}")
+        return defaults
+
+
+def _prompt_assembly(
+    variant: str,
+    task_label: Optional[str],
+    parts: List[tuple[str, str]],
+    meta: Optional[Dict[str, Any]] = None,
+    block_order_override: Optional[List[str]] = None,
+) -> PromptAssembly:
+    """
+    Build PromptAssembly from labeled parts while preserving order.
+    parts: list of (label, text) pairs; empty/falsey texts are skipped.
+    """
+    filtered = [(lbl, txt) for lbl, txt in parts if txt]
+    block_order = block_order_override or [lbl for lbl, _ in filtered]
+    blocks = {lbl: txt for lbl, txt in filtered}
+    return PromptAssembly(
+        text=assemble_prompt([txt for _, txt in filtered]),
+        blocks=blocks,
+        variant=variant,
+        task_label=task_label or variant,
+        block_order=block_order,
+        meta=meta or {},
+    )
+
+
+def _normalize_prompt_blocks(
+    prompt_blocks: Optional[Dict[str, str]],
+    preferred_order: Optional[List[str]] = None,
+) -> tuple[Dict[str, str], Dict[str, str], List[str], str]:
+    """
+    Split prompt_blocks into known buckets + extras, capture the order, and assemble text.
+    Returns (known_blocks, extra_blocks, order, assembled_text).
+    """
+    prompt_blocks = prompt_blocks or {}
+    order_template = preferred_order or DEFAULT_PROMPT_BLOCK_ORDER
+
+    ordered_labels: List[str] = []
+    known_blocks: Dict[str, str] = {}
+    extra_blocks: Dict[str, str] = {}
+
+    for label in order_template:
+        val = prompt_blocks.get(label)
+        if val is not None:
+            sval = str(val)
+            ordered_labels.append(label)
+            known_blocks[label] = sval
+
+    for label, val in prompt_blocks.items():
+        if val is None or label in ordered_labels:
+            continue
+        sval = str(val)
+        ordered_labels.append(label)
+        extra_blocks[label] = sval
+
+    assembled = assemble_prompt([str(prompt_blocks[l]) for l in ordered_labels if prompt_blocks.get(l) is not None])
+    return known_blocks, extra_blocks, ordered_labels, assembled
+
+
+def _ensure_llm_prompt_log_schema() -> None:
+    """
+    Idempotently add new prompt-block columns and a reviewer-friendly view.
+    Keeps compatibility for existing deployments without migrations.
+    """
+    try:
+        LLMPromptLog.__table__.create(bind=engine, checkfirst=True)
+    except Exception as e:
+        print(f"[prompts] ensure llm_prompt_logs failed: {e}")
+
+    with engine.begin() as conn:
+        if not _table_exists(conn, "llm_prompt_logs"):
+            return
+
+        is_pg = _is_postgres()
+        alterations = [
+            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS prompt_variant varchar(160);",
+            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS task_label varchar(160);",
+            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS system_block text;",
+            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS locale_block text;",
+            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS okr_block text;",
+            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS okr_scope varchar(32);",
+            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS scores_block text;",
+            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS habit_block text;",
+            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS task_block text;",
+            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS user_block text;",
+            (
+                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS extra_blocks jsonb;"
+                if is_pg
+                else "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS extra_blocks text;"
+            ),
+            (
+                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS block_order jsonb;"
+                if is_pg
+                else "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS block_order text;"
+            ),
+            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS assembled_prompt text;",
+            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS template_state varchar(32);",
+            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS template_version integer;",
+            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS duration_ms integer;",
+        ]
+
+        for stmt in alterations:
+            try:
+                conn.execute(text(stmt))
+            except Exception as e:
+                # Ignore duplicate-column or dialect errors; log for visibility.
+                print(f"[prompts] WARN: alter llm_prompt_logs skipped ({stmt}): {e}")
+
+        # Attempt to drop deprecated columns (best-effort; ignore failures)
+        for drop_col in ["developer_block", "policy_block", "tool_block"]:
+            try:
+                conn.execute(text(f"ALTER TABLE llm_prompt_logs DROP COLUMN IF EXISTS {drop_col};"))
+            except Exception as e:
+                print(f"[prompts] WARN: drop column skipped ({drop_col}): {e}")
+
+        if is_pg:
+            view_sql = """
+                CREATE OR REPLACE VIEW llm_prompt_logs_view AS
+                SELECT
+                    l.id,
+                    l.created_at,
+                    l.touchpoint,
+                    l.user_id,
+                    l.model,
+                    l.duration_ms,
+                    l.prompt_variant,
+                    l.task_label,
+                    COALESCE(l.block_order, '["system","locale","context","history","programme","okr","scores","habit","assessor","task","user"]'::jsonb) AS block_order,
+                    l.system_block,
+                    l.locale_block,
+                    l.okr_block,
+                    l.okr_scope,
+                    l.scores_block,
+                    l.habit_block,
+                    l.task_block,
+                    l.template_state,
+                    l.template_version,
+                    l.user_block,
+                    l.extra_blocks,
+                    COALESCE(l.assembled_prompt, l.prompt_text) AS assembled_prompt,
+                    l.response_preview,
+                    l.context_meta
+                FROM llm_prompt_logs l
+                ORDER BY l.created_at DESC;
+            """
+        else:
+            sqlite_view_sql = """
+                CREATE VIEW IF NOT EXISTS llm_prompt_logs_view AS
+                SELECT
+                    l.id,
+                    l.created_at,
+                    l.touchpoint,
+                    l.user_id,
+                    l.model,
+                    l.duration_ms,
+                    l.prompt_variant,
+                    l.task_label,
+                    COALESCE(l.block_order, json('["system","locale","context","history","programme","okr","scores","habit","assessor","task","user"]')) AS block_order,
+                    l.system_block,
+                    l.locale_block,
+                    l.okr_block,
+                    l.okr_scope,
+                    l.scores_block,
+                    l.habit_block,
+                    l.task_block,
+                    l.template_state,
+                    l.template_version,
+                    l.user_block,
+                    l.extra_blocks,
+                    COALESCE(l.assembled_prompt, l.prompt_text) AS assembled_prompt,
+                    l.response_preview,
+                    l.context_meta
+                FROM llm_prompt_logs l
+                ORDER BY l.created_at DESC;
+            """
+
+        try:
+            if is_pg:
+                conn.execute(text(view_sql))
+            else:
+                conn.execute(text("DROP VIEW IF EXISTS llm_prompt_logs_view;"))
+                conn.execute(text(sqlite_view_sql))
+        except Exception as e:
+            print(f"[prompts] WARN: could not create llm_prompt_logs_view: {e}")
+
+
+# ---------------------------------------------------------------------------
+# KR context helper (shared across prompts)
+# ---------------------------------------------------------------------------
+
+
+def current_krs_context(
+    user_id: int,
+    week_no: Optional[int] = None,
+    max_krs: Optional[int] = 3,
+    session: Optional[Session] = None,
+) -> Dict[str, Any]:
+    """
+    Return the current focused KRs (active, current pillar) for prompt builders.
+    Uses select_top_krs_for_user to pick 2–3 active KRs on the current pillar.
+    Returns dict with: krs (ordered list), krs_by_pillar, primary_kr.
+    """
+    owns_session = session is None
+    session = session or SessionLocal()
+    try:
+        selected = select_top_krs_for_user(session, user_id, limit=max_krs, week_no=week_no)
+        kr_ids = [kr_id for kr_id, _ in selected]
+        rows: list[Any] = []
+        if kr_ids:
+            rows = (
+                session.query(OKRKeyResult, OKRObjective)
+                .join(OKRObjective, OKRKeyResult.objective_id == OKRObjective.id)
+                .filter(OKRKeyResult.id.in_(kr_ids))
+                .all()
+            )
+
+        order_map = {kr_id: idx for idx, kr_id in enumerate(kr_ids)}
+        krs: List[Dict[str, Any]] = []
+        for idx, row in enumerate(rows):
+            kr, obj = row
+            priority = order_map.get(kr.id, idx)
+            pillar = (getattr(obj, "pillar_key", None) or "").lower()
+            krs.append(
+                {
+                    "id": kr.id,
+                    "description": kr.description,
+                    "target": getattr(kr, "target_num", None),
+                    "actual": getattr(kr, "actual_num", None),
+                    "status": getattr(kr, "status", None),
+                    "pillar": pillar,
+                    "priority": priority,
+                }
+            )
+        krs.sort(key=lambda x: x["priority"])
+        if max_krs is not None:
+            krs = krs[:max_krs]
+        krs_by_pillar: Dict[str, List[str]] = {}
+        for kr in krs:
+            krs_by_pillar.setdefault(kr["pillar"], []).append(kr["description"])
+        primary = krs[0] if krs else None
+        return {
+            "krs": krs,
+            "krs_by_pillar": krs_by_pillar,
+            "primary_kr": primary,
+        }
+    finally:
+        if owns_session:
+            session.close()
+
+
+def kr_payload_list(
+    user_id: int,
+    week_no: Optional[int] = None,
+    max_krs: Optional[int] = 3,
+    session: Optional[Session] = None,
+) -> List[Dict[str, Any]]:
+    """Convenience wrapper: list of KR payload dicts for prompts."""
+    ctx = current_krs_context(user_id, week_no=week_no, max_krs=max_krs, session=session)
+    return ctx.get("krs", [])
+
+
+def primary_kr_payload(
+    user_id: int,
+    week_no: Optional[int] = None,
+    session: Optional[Session] = None,
+) -> Dict[str, Any]:
+    """Convenience wrapper: single primary KR payload dict (or empty dict)."""
+    ctx = current_krs_context(user_id, week_no=week_no, max_krs=1, session=session)
+    return ctx.get("primary_kr") or {}
+
+
+def okrs_by_pillar_payload(
+    user_id: int,
+    week_no: Optional[int] = None,
+    max_krs: Optional[int] = 3,
+    session: Optional[Session] = None,
+) -> Dict[str, List[str]]:
+    """Convenience wrapper: pillar→KR descriptions mapping for podcast prompts."""
+    ctx = current_krs_context(user_id, week_no=week_no, max_krs=max_krs, session=session)
+    return ctx.get("krs_by_pillar", {})
+
+
+# ---------------------------------------------------------------------------
+# Central dispatcher / LLM runner
+# ---------------------------------------------------------------------------
+
+
+def build_prompt(
+    touchpoint: str,
+    user_id: int,
+    coach_name: str,
+    user_name: str,
+    locale: str = "UK",
+    use_state: Optional[str] = None,
+    **data,
+) -> PromptAssembly:
+    """
+    Central prompt builder. touchpoint options:
+    - podcast_weekstart
+    - podcast_thursday
+    - podcast_friday
+    - weekstart_support
+    - kickoff_support
+    - weekstart_actions
+    - tuesday
+    - midweek
+    - sunday
+    """
+    tp = touchpoint.lower()
+    settings = _load_prompt_settings()
+    preferred_state = _canonical_state(use_state or "live")
+    if preferred_state in {"live", None}:
+        try:
+            with SessionLocal() as s:
+                pref = (
+                    s.query(UserPreference)
+                    .filter(UserPreference.user_id == user_id, UserPreference.key == "prompt_state_override")
+                    .first()
+                )
+                if pref and (pref.value or "").strip().lower() in {"live", "beta", "develop"}:
+                    preferred_state = (pref.value or "").strip().lower()
+        except Exception:
+            pass
+    template = _load_prompt_template(tp) if not preferred_state else _load_prompt_template_with_state(tp, preferred_state)
+    if tp == "podcast_weekstart":
+        scores = data.get("scores", [])
+        psych_payload = data.get("psych_payload", {})
+        first_block = data.get("first_block")
+        okrs_by_pillar = okrs_by_pillar_payload(user_id, week_no=data.get("week_no"), max_krs=None)
+        history_text = data.get("history_text", "")
+        okr_scope = (template or {}).get("okr_scope") or "pillar"
+        okr_txt, okr_meta = okr_block_with_scope(okr_scope, okrs_by_pillar)
+        programme_scope = (template or {}).get("programme_scope") or "pillar"
+        programme_txt = programme_block_with_scope(programme_scope, data.get("programme"), first_block)
+        instruction = (
+            "You are a warm, concise wellbeing coach creating a 1–2 minute weekly audio brief. "
+            "Focus on the current 3-week block: explain why each KR matters, and give 2–3 simple suggestions to start this week. "
+            "Include: welcome, quick assessment nod, habit readiness nod, this block’s dates and pillar, "
+            "KR highlights for this block, practical Week 1 ideas, and a short motivational close."
+        )
+        parts = [
+            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
+            ("locale", settings.get("locale_block") or locale_block(locale)),
+            ("context", context_block("podcast_weekstart", "weekly audio brief", timeframe=data.get("week_no") or "")),
+            ("task", instruction),
+            ("scores", f"Assessment scores: {scores}" if scores else ""),
+            ("habit", f"Habit readiness: {psych_payload}" if psych_payload else ""),
+            ("history", f"History: {history_text}" if history_text else ""),
+            ("programme", programme_txt),
+            ("okr", okr_txt),
+        ]
+        parts, order_override = _apply_prompt_template(parts, template)
+        return _prompt_assembly(
+            "podcast_weekstart",
+            "weekstart_podcast",
+            parts,
+            meta=_merge_template_meta(okr_meta, template),
+            block_order_override=order_override or settings.get("default_block_order"),
+        )
+    if tp == "podcast_kickoff":
+        scores = data.get("scores", [])
+        psych_payload = data.get("psych_payload", {})
+        programme = data.get("programme", [])
+        okrs_by_pillar = data.get("okrs_by_pillar", {})
+        okr_scope = (template or {}).get("okr_scope") or "all"
+        okr_txt, okr_meta = okr_block_with_scope(okr_scope, okrs_by_pillar) if okrs_by_pillar else ("", {})
+        programme_scope = (template or {}).get("programme_scope") or "full"
+        programme_txt = programme_block_with_scope(programme_scope, programme, data.get("first_block"))
+        instruction = (
+            "You are a warm, concise wellbeing coach creating a 2–3 minute kickoff audio intro. "
+            "Write a transcript with: 1) welcome & personal context; 2) assessment findings summary (per pillar); "
+            "3) habit readiness summary (from psych profile); 4) 12-week plan overview (3-week blocks by pillar); "
+            "5) how to use the plan this week; 6) closing encouragement."
+        )
+        parts = [
+            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
+            ("locale", settings.get("locale_block") or locale_block(locale)),
+            ("context", context_block("podcast_kickoff", "kickoff audio intro")),
+            ("task", instruction),
+            ("scores", f"Assessment scores: {scores}" if scores else ""),
+            ("habit", f"Habit readiness: {psych_payload}" if psych_payload else ""),
+            ("programme", programme_txt),
+            ("okr", okr_txt),
+        ]
+        parts, order_override = _apply_prompt_template(parts, template)
+        return _prompt_assembly(
+            "podcast_kickoff",
+            "kickoff_podcast",
+            parts,
+            meta=_merge_template_meta(okr_meta, template),
+            block_order_override=order_override or settings.get("default_block_order"),
+        )
+    if tp == "podcast_thursday":
+        kr = primary_kr_payload(user_id, week_no=data.get("week_no"))
+        krs = [kr] if kr else []
+        okr_scope = (template or {}).get("okr_scope") or "week"
+        okr_txt, okr_meta = okr_block_with_scope(okr_scope, krs)
+        instruction = (
+            "You are a warm, concise wellbeing coach creating a short Thursday check-in podcast (~45–60s). "
+            "Write a script with: 1) quick check-in; 2) one focused goal recap (no OKR/KR jargon); "
+            "3) one simple action to try before the weekend; 4) short encouragement. No medical advice."
+        )
+        parts = [
+            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
+            ("locale", settings.get("locale_block") or locale_block(locale)),
+            ("context", context_block("podcast_thursday", "thursday boost")),
+            ("task", instruction),
+            ("okr", okr_txt),
+            ("history", f"History: {data.get('history_text','')}" if data.get("history_text") else ""),
+        ]
+        parts, order_override = _apply_prompt_template(parts, template)
+        return _prompt_assembly(
+            "podcast_thursday",
+            "thursday_podcast",
+            parts,
+            meta=_merge_template_meta(okr_meta, template),
+            block_order_override=order_override or settings.get("default_block_order"),
+        )
+    if tp == "podcast_friday":
+        kr = primary_kr_payload(user_id, week_no=data.get("week_no"))
+        krs = [kr] if kr else []
+        okr_scope = (template or {}).get("okr_scope") or "week"
+        okr_txt, okr_meta = okr_block_with_scope(okr_scope, krs)
+        instruction = (
+            "You are a warm, concise wellbeing coach creating a short Friday boost podcast (~45–60s). "
+            "Write a script that: 1) friendly check-in; 2) encourage ONE focus goal in plain language (no OKR/KR terms); "
+            "3) give ONE simple, realistic action they can do over the weekend; 4) keep it brief, motivating, and specific; 5) no medical advice."
+        )
+        parts = [
+            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
+            ("locale", settings.get("locale_block") or locale_block(locale)),
+            ("context", context_block("podcast_friday", "friday boost")),
+            ("task", instruction),
+            ("okr", okr_txt),
+            ("history", f"History: {data.get('history_text','')}" if data.get("history_text") else ""),
+        ]
+        parts, order_override = _apply_prompt_template(parts, template)
+        return _prompt_assembly(
+            "podcast_friday",
+            "friday_podcast",
+            parts,
+            meta=_merge_template_meta(okr_meta, template),
+            block_order_override=order_override or settings.get("default_block_order"),
+        )
+    if tp == "weekstart_support":
+        history = "\n".join(data.get("history", []))
+        payload = kr_payload_list(user_id, max_krs=3)
+        scores_payload = data.get("scores") or []
+        psych_payload = data.get("psych_payload") or {}
+        okr_scope = (template or {}).get("okr_scope") or "week"
+        okr_txt, okr_meta = okr_block_with_scope(okr_scope, payload)
+        parts: List[tuple[str, str]] = [
+            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
+            ("locale", settings.get("locale_block") or locale_block(locale)),
+            ("context", context_block("weekstart", "support chat")),
+            ("okr", okr_txt),
+            ("scores", scores_block(scores_payload) if scores_payload else ""),
+            ("habit", habit_readiness_block(psych_payload) if psych_payload else ""),
+            ("history", history_block("conversation", history.splitlines()) if history else ""),
+            (
+                "task",
+                task_block(
+                    "Reply with 2-3 practical ideas or next steps for this week; include a couple of follow-ups that advance the plan.",
+                    constraints="Do not assume progress; avoid praise/commands; do not suggest more sessions than KR targets; keep it conversational.",
+                ),
+            ),
+        ]
+        parts, order_override = _apply_prompt_template(parts, template)
+        return _prompt_assembly(
+            "weekstart_support",
+            "weekstart_support_reply",
+            parts,
+            meta=_merge_template_meta(okr_meta, template),
+            block_order_override=order_override or settings.get("default_block_order"),
+        )
+    if tp == "weekstart_actions":
+        transcript = data.get("transcript", "")
+        krs = data.get("krs", [])
+        okr_scope = (template or {}).get("okr_scope") or "week"
+        okr_txt, okr_meta = okr_block_with_scope(okr_scope, krs)
+        parts = [
+            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
+            ("locale", settings.get("locale_block") or locale_block(locale)),
+            ("context", context_block("weekstart_actions", "actions summary")),
+            ("okr", okr_txt),
+            ("task",
+                "You are a concise wellbeing coach. Using the podcast transcript and the KR context, "
+                "write a short intro plus 2-3 bullet-style actions for this week. "
+                "Intro should say: 'As per the podcast, here are practical actions for this week:' "
+                "Keep bullets tight. "
+                "Use British English spelling and phrasing; avoid Americanisms. "
+                "End with an invitation for questions and note they can ask about the podcast."
+            ),
+            ("history", f"Transcript: {transcript}"),
+        ]
+        parts, order_override = _apply_prompt_template(parts, template)
+        return _prompt_assembly(
+            "weekstart_actions",
+            "weekstart_actions",
+            parts,
+            meta=_merge_template_meta(okr_meta, template),
+            block_order_override=order_override or settings.get("default_block_order"),
+        )
+    if tp == "tuesday":
+        kr = primary_kr_payload(user_id)
+        timeframe = data.get("timeframe", "Tuesday")
+        history_text = data.get("history_text", "")
+        scores_payload = data.get("scores") or []
+        psych_payload = data.get("psych_payload") or {}
+        okr_scope = (template or {}).get("okr_scope") or "week"
+        okr_txt, okr_meta = okr_block_with_scope(okr_scope, [kr]) if kr else ("", {})
+        parts = [
+            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
+            ("locale", settings.get("locale_block") or locale_block(locale)),
+            ("context", context_block("tuesday", "micro-check", timeframe=timeframe)),
+            ("history", history_block("recent check-ins", history_text.splitlines()) if history_text else ""),
+            ("scores", scores_block(scores_payload, combined=data.get("combined_score")) if scores_payload else ""),
+            ("habit", habit_readiness_block(psych_payload) if psych_payload else ""),
+            ("okr", okr_txt),
+            (
+                "task",
+                task_block(
+                    "Write a very short check-in asking how they’re doing on this goal. "
+                    "Ask for a simple yes/no or number. Offer one actionable nudge. "
+                    "Keep it friendly, low-burden, WhatsApp length, plain language (no OKR/KR terms).",
+                    constraints="Avoid medical advice; avoid jargon; focus on one goal; be concise.",
+                ),
+            ),
+        ]
+        parts, order_override = _apply_prompt_template(parts, template)
+        return _prompt_assembly(
+            "tuesday",
+            "tuesday_micro_check",
+            parts,
+            meta=_merge_template_meta(okr_meta, template),
+            block_order_override=order_override or settings.get("default_block_order"),
+        )
+    if tp == "midweek":
+        kr = primary_kr_payload(user_id)
+        timeframe = data.get("timeframe", "midweek check")
+        history_text = data.get("history_text", "")
+        scores_payload = data.get("scores") or []
+        psych_payload = data.get("psych_payload") or {}
+        okr_scope = (template or {}).get("okr_scope") or "week"
+        okr_txt, okr_meta = okr_block_with_scope(okr_scope, [kr]) if kr else ("", {})
+        parts = [
+            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
+            ("locale", settings.get("locale_block") or locale_block(locale)),
+            ("context", context_block("midweek", "single-KR check-in", timeframe=timeframe)),
+            ("history", history_block("recent check-ins", history_text.splitlines()) if history_text else ""),
+            ("scores", scores_block(scores_payload, combined=data.get("combined_score")) if scores_payload else ""),
+            ("habit", habit_readiness_block(psych_payload) if psych_payload else ""),
+            ("okr", okr_txt),
+            (
+                "task",
+                task_block(
+                    "Write one short midweek message that: 1) asks how they’re getting on; "
+                    "2) asks ONE focused question on this KR; 3) asks about blockers; "
+                    "4) suggests one micro-adjustment; 5) encourages consistency.",
+                    constraints="Keep it concise and conversational. Do not ask about other KRs.",
+                ),
+            ),
+        ]
+        parts, order_override = _apply_prompt_template(parts, template)
+        return _prompt_assembly(
+            "midweek",
+            "midweek_checkin",
+            parts,
+            meta=_merge_template_meta(okr_meta, template),
+            block_order_override=order_override or settings.get("default_block_order"),
+        )
+    if tp == "sunday":
+        krs = kr_payload_list(user_id, max_krs=3)
+        history_text = data.get("history_text", "")
+        scores_payload = data.get("scores") or []
+        psych_payload = data.get("psych_payload") or {}
+        okr_scope = (template or {}).get("okr_scope") or "week"
+        okr_txt, okr_meta = okr_block_with_scope(okr_scope, krs)
+        parts = [
+            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
+            ("locale", settings.get("locale_block") or locale_block(locale)),
+            ("context", context_block("sunday", "weekly review", timeframe=data.get("timeframe", "Sunday"))),
+            ("okr", okr_txt),
+            ("scores", scores_block(scores_payload, combined=data.get("combined_score")) if scores_payload else ""),
+            ("habit", habit_readiness_block(psych_payload) if psych_payload else ""),
+            ("history", history_block("recent check-ins", history_text.splitlines()) if history_text else ""),
+            (
+                "task",
+                task_block(
+                    "Write a short Sunday review message that: "
+                    "1) asks for a 1–5 update on each KR; "
+                    "2) asks what worked well this week; "
+                    "3) asks what didn't work well or made things harder. "
+                    "End by saying you'll summarise and prep Monday’s kickoff.",
+                    constraints="Keep it concise, friendly, and plain language; no OKR/KR jargon to user; no medical advice.",
+                ),
+            ),
+        ]
+        parts, order_override = _apply_prompt_template(parts, template)
+        return _prompt_assembly(
+            "sunday",
+            "sunday_review",
+            parts,
+            meta=_merge_template_meta(okr_meta, template),
+            block_order_override=order_override or settings.get("default_block_order"),
+        )
+    raise ValueError(f"Unsupported touchpoint: {touchpoint}")
+
+
+def run_llm_prompt(
+    prompt: str,
+    user_id: Optional[int] = None,
+    touchpoint: Optional[str] = None,
+    model: Optional[str] = None,
+    context_meta: Optional[Dict[str, Any]] = None,
+    prompt_variant: Optional[str] = None,
+    task_label: Optional[str] = None,
+    prompt_blocks: Optional[Dict[str, str]] = None,
+    block_order: Optional[List[str]] = None,
+    log: Optional[bool] = None,
+) -> str:
+    """
+    Invoke the shared LLM client and optionally log the prompt/preview to DB.
+    Logging is controlled via the `log` flag OR env LOG_LLM_PROMPTS=true.
+    """
+    client = getattr(shared_llm, "_llm", None)
+    content = ""
+    duration = None
+    model_name = model
+    if client and not model_name:
+        model_name = getattr(client, "model", None) or getattr(client, "model_name", None)
+    if client:
+        try:
+            import time
+            t0 = time.perf_counter()
+            resp = client.invoke(prompt)
+            duration = time.perf_counter() - t0
+            content = (getattr(resp, "content", None) or "").strip()
+        except Exception as e:
+            print(f"[prompts] LLM invoke failed for touchpoint={touchpoint}: {e}")
+            content = ""
+    else:
+        print(f"[prompts] LLM client missing; skipping invoke for touchpoint={touchpoint}")
+
+    env_val = os.getenv("LOG_LLM_PROMPTS")
+    env_flag = True if env_val is None else env_val.lower() in {"1", "true", "yes", "on"}
+    should_log = env_flag if log is None else bool(log)
+    if should_log and touchpoint:
+        preview = content or None  # store full response for reviewer visibility
+        log_llm_prompt(
+            user_id=user_id,
+            touchpoint=touchpoint,
+            prompt_text=prompt,
+            model=model_name,
+            response_preview=preview,
+            context_meta=context_meta,
+            prompt_variant=prompt_variant or touchpoint,
+            task_label=task_label,
+            prompt_blocks=prompt_blocks,
+            block_order=block_order,
+            duration_ms=int(duration * 1000) if duration is not None else None,
+        )
+    elif should_log and not touchpoint:
+        print(f"[prompts] logging skipped: touchpoint not provided for user_id={user_id}")
+    return content
+
+
+def log_llm_prompt(
+    user_id: Optional[int],
+    touchpoint: str,
+    prompt_text: str,
+    model: Optional[str] = None,
+    duration_ms: Optional[int] = None,
+    response_preview: Optional[str] = None,
+    context_meta: Optional[Dict[str, Any]] = None,
+    prompt_variant: Optional[str] = None,
+    task_label: Optional[str] = None,
+    prompt_blocks: Optional[Dict[str, str]] = None,
+    block_order: Optional[List[str]] = None,
+) -> None:
+    """
+    Persist the prompt sent to the LLM (optional response preview) with structured blocks.
+    Enable by calling explicitly where needed; kept separate from run_llm_prompt for control.
+    """
+    debug = os.getenv("LOG_LLM_PROMPTS_DEBUG", "").lower() in {"1", "true", "yes", "on"}
+    print(f"[prompts] logging LLM prompt touchpoint={touchpoint} user_id={user_id}")
+    try:
+        _ensure_llm_prompt_log_schema()
+        known_blocks, extra_blocks, resolved_order, assembled_from_blocks = _normalize_prompt_blocks(
+            prompt_blocks, preferred_order=block_order
+        )
+        template_state = extra_blocks.pop("template_state", None)
+        template_version = extra_blocks.pop("template_version", None)
+        if context_meta:
+            template_state = template_state or context_meta.get("template_state")
+            template_version = template_version or context_meta.get("template_version")
+        try:
+            template_version_int = int(template_version) if template_version not in {None, ""} else None
+        except Exception:
+            template_version_int = None
+        final_prompt = prompt_text or assembled_from_blocks
+        # Keep legacy prompt_text column populated for back-compat.
+        prompt_text_value = final_prompt or ""
+        block_order_value = block_order or resolved_order or DEFAULT_PROMPT_BLOCK_ORDER
+
+        with SessionLocal() as s:
+            s.add(
+                LLMPromptLog(
+                    user_id=user_id,
+                    touchpoint=touchpoint,
+                    model=model,
+                    duration_ms=duration_ms,
+                    prompt_variant=prompt_variant,
+                    task_label=task_label,
+                    system_block=known_blocks.get("system"),
+                    locale_block=known_blocks.get("locale"),
+                    okr_block=known_blocks.get("okr"),
+                    okr_scope=extra_blocks.pop("okr_scope", None),
+                    scores_block=known_blocks.get("scores"),
+                    habit_block=known_blocks.get("habit"),
+                    task_block=known_blocks.get("task"),
+                    template_state=template_state,
+                    template_version=template_version_int,
+                    user_block=known_blocks.get("user"),
+                    extra_blocks=extra_blocks or None,
+                    block_order=block_order_value or None,
+                    prompt_text=prompt_text_value,
+                    assembled_prompt=final_prompt,
+                    response_preview=response_preview,
+                    context_meta=context_meta,
+                )
+            )
+            s.commit()
+            if debug:
+                try:
+                    total = s.query(func.count(LLMPromptLog.id)).scalar()
+                    print(f"[prompts] logged LLM prompt touchpoint={touchpoint} user_id={user_id} (count={total})")
+                except Exception as e:
+                    print(f"[prompts] logged but count check failed: {e}")
+            else:
+                print(f"[prompts] logged LLM prompt touchpoint={touchpoint} user_id={user_id}")
+    except Exception as e:
+        # Best-effort: surface failures for missing tables or permissions
+        print(f"[prompts] failed to log LLM prompt ({touchpoint}): {e}")
+
+
 # ---------------------------------------------------------------------------
 # Podcast prompts (kickoff/weekstart) built from blocks
 # ---------------------------------------------------------------------------
@@ -116,33 +1251,41 @@ def podcast_prompt(
     mode: str,
     coach_name: str,
     user_name: str,
-    scores: List[Dict[str, Any]],
-    psych_payload: Dict[str, Any],
-    programme: List[Dict[str, Any]],
-    first_block: Optional[Dict[str, Any]],
-    okrs_by_pillar: Dict[str, List[str]],
+    history_text: str = "",
+    scores: Optional[List[Dict[str, Any]]] = None,
+    psych_payload: Optional[Dict[str, Any]] = None,
+    programme: Optional[List[Dict[str, Any]]] = None,
+    first_block: Optional[Dict[str, Any]] = None,
+    okrs_by_pillar: Optional[Dict[str, List[str]]] = None,
+    focus_pillar: Optional[str] = None,
+    week_no: Optional[int] = None,
+    krs: Optional[List[Dict[str, Any]]] = None,
+    timeframe: str = "",
+    locale: str = "UK",
 ) -> str:
     """
-    Build the podcast transcript prompt.
-    mode: "kickoff" or "weekstart"
-    okrs_by_pillar: {pillar_key: [kr_desc, ...]}
+    Build podcast transcript prompts for all podcast flows.
+    mode: kickoff | weekstart | thursday | friday
+    okrs_by_pillar: {pillar_key: [kr_desc, ...]} (kickoff/weekstart)
+    krs: list of KR dicts (thursday/friday)
     """
+    scores = scores or []
+    psych_payload = psych_payload or {}
+    programme = programme or []
+    okrs_by_pillar = okrs_by_pillar or {}
+    locale_txt = LOCALE_GUIDANCE_UK if locale.upper() == "UK" else ""
+    history_block_txt = f"\nHistory: {history_text}" if history_text else ""
+
     common_header = (
-        "Tone: supportive, conversational; speak directly to the user as their coach. "
-        "Do not mention background music or sound effects. "
-        "Do not read out section headers; speak naturally as a flowing message.\n"
-        f"Coach name: {coach_name}\n"
-        f"User: {user_name}\n"
-        f"Assessment scores: {scores}\n"
-        f"Habit readiness: {psych_payload}\n"
+        common_prompt_header(coach_name, user_name, locale)
+        + f"\nAssessment scores: {scores}\nHabit readiness: {psych_payload}{history_block_txt}\n"
     )
     okr_str = f"Key Results: {okrs_by_pillar}"
 
     if mode == "weekstart":
         return (
             "You are a warm, concise wellbeing coach creating a 1–2 minute weekly audio brief. "
-            "Focus on the current 3-week block (Weeks 1–3) for Nutrition: explain why each KR matters, "
-            "and give 2–3 simple suggestions to start this week. "
+            "Focus on the current 3-week block: explain why each KR matters, and give 2–3 simple suggestions to start this week. "
             "Include: welcome, quick assessment nod, habit readiness nod, this block’s dates and pillar, "
             "KR highlights for this block, practical Week 1 ideas, and a short motivational close. "
             + common_header
@@ -166,258 +1309,361 @@ def podcast_prompt(
             + okr_str
         )
 
+    if mode == "thursday":
+        krs = krs or []
+        return (
+            "You are a warm, concise wellbeing coach creating a ~60s Thursday podcast-style script. "
+            "Output exactly two labeled sections (labels for routing only; do NOT speak the labels):\n"
+            "Education: short welcome, why the goal matters, and one practical mini-challenge.\n"
+            "Motivation: brief encouragement/next step.\n"
+            "Keep educational content in Education and encouragement in Motivation. Plain habit language (no OKR/KR terms). "
+            "No medical advice; avoid jargon; concise and actionable.\n"
+            + common_header +
+            f"KRs: {krs}"
+        )
+
+    if mode == "friday":
+        krs = krs or []
+        return (
+            "You are a warm, concise wellbeing coach creating a short Friday boost podcast (~45–60s). "
+            "Write a script that: 1) friendly check-in; 2) encourage ONE focus goal in plain language (no OKR/KR terms); "
+            "3) give ONE simple, realistic action they can do over the weekend; 4) keep it brief, motivating, and specific; 5) no medical advice. "
+            + common_header +
+            f"KRs: {krs}"
+        )
+
     raise ValueError(f"Unsupported podcast mode: {mode}")
 
 
 # ---------------------------------------------------------------------------
-# Message prompts (weekstart, assessment/OKR/psych, assessor)
+# Coaching text prompts (dispatcher + mode-specific builder)
 # ---------------------------------------------------------------------------
 
 
+def coaching_prompt(
+    mode: str,
+    coach_name: str,
+    user_name: str,
+    locale: str = "UK",
+    **data,
+) -> str:
+    """
+    Central builder for interactive coaching text prompts.
+    Modes: weekstart_support | kickoff_support | weekstart_actions | midweek | tuesday | sunday
+    """
+    m = mode.lower()
+    header = common_prompt_header(coach_name, user_name, locale)
+    scores_payload = data.get("scores") or []
+    psych_payload = data.get("psych_payload") or {}
+    extra_blocks: List[str] = []
+    if scores_payload:
+        extra_blocks.append(scores_block(scores_payload, combined=data.get("combined_score")))
+    if psych_payload:
+        extra_blocks.append(habit_readiness_block(psych_payload))
+
+    if m == "weekstart_support":
+        history = "\n".join(data.get("history", []))
+        krs_payload = data.get("krs_payload", [])
+        blocks = [
+            header,
+            context_block("weekstart", "support chat"),
+            okr_block(krs_payload),
+            *extra_blocks,
+            task_block(
+                "Reply with 2-3 practical ideas or next steps for this week; include a couple of follow-ups that advance the plan.",
+                constraints="Do not assume progress; avoid praise/commands; do not suggest more sessions than KR targets; keep it conversational.",
+            ),
+            f"Conversation so far:\n{history}",
+        ]
+        return assemble_prompt(blocks)
+
+    if m == "kickoff_support":
+        krs_payload = data.get("krs_payload", [])
+        transcript_history = data.get("transcript_history", "")
+        user_message = data.get("user_message", "")
+        blocks = [
+            header,
+            *extra_blocks,
+            (
+                "You are a concise wellbeing coach in a kickoff support chat. "
+                "Context: the user already completed an assessment; objectives and KRs exist. "
+                "These KRs are the agreed focus for this week, and this kickoff is to help them plan and feel supported. "
+                "Do NOT assume progress yet; stay focused on planning and making the week doable. "
+                "Acknowledge what they just shared, build on it, and avoid repeating the same ask. "
+                "Offer 2-3 practical ideas or next steps for this week and feel free to include a couple of follow-ups that logically advance the plan "
+                "(e.g., which idea they want to try, and whether they need a resource/schedule). "
+                "Do not suggest more sessions than the KR targets unless the user asked for it. "
+                "Avoid praise, avoid commands, keep it conversational and forward-looking."
+            ),
+            f"KRs: {krs_payload}",
+            f"Conversation so far:\n{transcript_history}",
+            f"Latest user note: {user_message or ''}",
+        ]
+        return assemble_prompt(blocks)
+
+    if m == "weekstart_actions":
+        transcript = data.get("transcript", "")
+        krs = data.get("krs", [])
+        return (
+            f"{header}\n"
+            "You are a concise wellbeing coach. Using the podcast transcript and the KR context, "
+            "write a short intro plus 2-3 bullet-style actions for this week. "
+            "Intro should say: 'As per the podcast, here are practical actions for this week:' "
+            "Keep bullets tight. "
+            "Use British English spelling and phrasing; avoid Americanisms. "
+            "End with an invitation for questions and note they can ask about the podcast.\n"
+            f"Transcript: {transcript}\n"
+            f"KRs: {krs}"
+        )
+
+    if m == "midweek":
+        kr = data.get("kr", {})
+        timeframe = data.get("timeframe", "")
+        history_text = data.get("history_text", "")
+        blocks = [
+            header,
+            context_block("midweek", "single-KR check-in", timeframe=timeframe),
+        ]
+        if history_text:
+            blocks.append(history_block("recent check-ins", history_text.splitlines()))
+        blocks.extend(extra_blocks)
+        blocks.extend(
+            [
+                okr_block([kr]),
+                task_block(
+                    "Write one short midweek message that: 1) asks how they’re getting on; "
+                    "2) asks ONE focused question on this KR; 3) asks about blockers; "
+                    "4) suggests one micro-adjustment; 5) encourages consistency.",
+                    constraints="Keep it concise and conversational. Do not ask about other KRs.",
+                ),
+            ]
+        )
+        return assemble_prompt(blocks)
+
+    if m == "tuesday":
+        kr = data.get("kr", {})
+        timeframe = data.get("timeframe", "Tuesday")
+        history_text = data.get("history_text", "")
+        blocks = [
+            header,
+            context_block("tuesday", "micro-check", timeframe=timeframe),
+        ]
+        if history_text:
+            blocks.append(history_block("recent check-ins", history_text.splitlines()))
+        blocks.extend(extra_blocks)
+        blocks.extend(
+            [
+                okr_block([kr]),
+                task_block(
+                    "Write a very short check-in asking how they’re doing on this goal. "
+                    "Ask for a simple yes/no or number. Offer one actionable nudge. "
+                    "Keep it friendly, low-burden, WhatsApp length, plain language (no OKR/KR terms).",
+                    constraints="Avoid medical advice; avoid jargon; focus on one goal; be concise.",
+                ),
+            ]
+        )
+        return assemble_prompt(blocks)
+
+    if m == "sunday":
+        krs = data.get("krs", [])
+        timeframe = data.get("timeframe", "Sunday")
+        blocks = [
+            header,
+            context_block("sunday", "weekly review", timeframe=timeframe),
+            okr_block(krs),
+            *extra_blocks,
+            task_block(
+                "Write a short Sunday review message that: "
+                "1) asks for a 1–5 update on each KR; "
+                "2) asks what worked well this week; "
+                "3) asks what didn't work well or made things harder. "
+                "End by saying you'll summarise and prep Monday’s kickoff.",
+                constraints="Keep it concise, friendly, and plain language; no OKR/KR jargon to user; no medical advice.",
+            ),
+        ]
+        return assemble_prompt(blocks)
+
+    raise ValueError(f"Unsupported coaching prompt mode: {mode}")
+
+
+# Legacy convenience wrappers (used by callers expecting specific helpers)
 def weekstart_support_prompt(
     krs_payload: List[Dict[str, Any]],
     transcript_history: List[str],
     coach_name: str,
     user_name: str,
+    locale: str = "UK",
 ) -> str:
-    history = "\n".join(transcript_history)
-    blocks = [
-        coach_block(coach_name),
-        user_block(user_name),
-        context_block("weekstart", "support chat"),
-        okr_block(krs_payload),
-        task_block(
-            "Reply with 2-3 practical ideas or next steps for this week; include a couple of follow-ups that advance the plan.",
-            constraints="Do not assume progress; avoid praise/commands; do not suggest more sessions than KR targets; keep it conversational.",
-        ),
-        f"Conversation so far:\n{history}",
-    ]
-    return assemble_prompt(blocks)
-
-
-def weekstart_actions_prompt(transcript: str, krs: List[str]) -> str:
-    return (
-        "You are a concise wellbeing coach. Using the podcast transcript and the KR context, "
-        "write a short intro plus 2-3 bullet-style actions for this week. "
-        "Intro should say: 'As per the podcast, here are practical actions for this week:' "
-        "Keep bullets tight. Do NOT mention background music. "
-        "End with an invitation for questions and note they can ask about the podcast.\n"
-        f"Transcript: {transcript}\n"
-        f"KRs: {krs}"
+    return coaching_prompt(
+        "weekstart_support",
+        coach_name=coach_name,
+        user_name=user_name,
+        locale=locale,
+        krs_payload=krs_payload,
+        history=transcript_history,
     )
 
 
-def midweek_prompt(
-    coach_name: str,
-    user_name: str,
-    kr: Dict[str, Any],
-    timeframe: str = "",
-    history_text: str = "",
-) -> str:
-    """Midweek check-in: single KR, blockers, micro-adjustment, consistency."""
-    blocks = [
-        coach_block(coach_name),
-        user_block(user_name),
-        context_block("midweek", "single-KR check-in", timeframe=timeframe),
-    ]
-    if history_text:
-        blocks.append(context_block("history", "recent check-ins", extras=f"Recent check-ins:\\n{history_text}"))
-    blocks.extend(
-        [
-            okr_block([kr]),
-            task_block(
-                "Write one short midweek message that: 1) asks how they’re getting on; "
-                "2) asks ONE focused question on this KR; 3) asks about blockers; "
-                "4) suggests one micro-adjustment; 5) encourages consistency.",
-                constraints="Keep it concise and conversational. Do not ask about other KRs.",
-            ),
-        ]
-    )
-    return assemble_prompt(blocks)
-
-
-def boost_prompt(
-    coach_name: str,
-    user_name: str,
-    kr: Dict[str, Any],
-    timeframe: str = "Friday–Sunday",
-) -> str:
-    """Friday boost: single-KR motivational nudge with one practical weekend action."""
-    blocks = [
-        coach_block(coach_name),
-        user_block(user_name),
-        context_block("boost", "weekend nudge", timeframe=timeframe),
-        okr_block([kr]),
-        task_block(
-            "Write a short WhatsApp-friendly Friday boost message: "
-            "1) friendly check-in; 2) encourage ONE focus goal in plain language (no OKR/KR terms); "
-            "3) give ONE simple, realistic action they can do between Friday and Sunday; "
-            "4) keep it brief, motivating, and specific; 5) no medical advice.",
-            constraints="Avoid technical jargon; avoid long teaching; keep it positive and doable.",
-        ),
-    ]
-    return assemble_prompt(blocks)
-
-
-def thursday_prompt(
-    coach_name: str,
-    user_name: str,
-    krs: List[Dict[str, Any]],
-    timeframe: str = "Thursday",
-) -> str:
-    """Thursday educational boost: lightweight ~60s podcast script tied to active KRs."""
-    blocks = [
-        coach_block(coach_name),
-        user_block(user_name),
-        context_block("thursday", "educational boost", timeframe=timeframe),
-        okr_block(krs),
-        task_block(
-            "Write a friendly 60-second podcast-style script (about 120 words) for Thursday, split into two parts:\n"
-            "Education: start with 'Hi <user_name>, <coach_name> here.' then explain why this goal matters and give one practical tip/mini-challenge.\n"
-            "Motivation: short encouragement/next-step.\n"
-            "Output exactly two labeled sections (labels for routing only; do NOT say 'Education' or 'Motivation' in the spoken text):\n"
-            "Education: ...\n"
-            "Motivation: ...\n"
-            "Keep all educational content in the Education section and all encouragement in Motivation.\n"
-            "Use plain habit language (no OKR/KR terms).",
-            length_hint="~60 seconds / ~120 words total",
-            constraints="No medical advice; avoid jargon; keep concise and actionable; only the two labeled sections.",
-        ),
-    ]
-    return assemble_prompt(blocks)
-
-
-def tuesday_prompt(
-    coach_name: str,
-    user_name: str,
-    kr: Dict[str, Any],
-    timeframe: str = "Tuesday",
-    history_text: str = "",
-) -> str:
-    """Tuesday micro-check: light prompt with a simple nudge."""
-    blocks = [
-        coach_block(coach_name),
-        user_block(user_name),
-        context_block("tuesday", "micro-check", timeframe=timeframe),
-    ]
-    if history_text:
-        blocks.append(context_block("history", "recent check-ins", extras=f"Recent check-ins:\\n{history_text}"))
-    blocks.extend(
-        [
-            okr_block([kr]),
-            task_block(
-                "Write a very short check-in asking how they’re doing on this goal. "
-                "Ask for a simple yes/no or number. Offer one actionable nudge. "
-                "Keep it friendly, low-burden, WhatsApp length, plain language (no OKR/KR terms).",
-                constraints="Avoid medical advice; avoid jargon; focus on one goal; be concise.",
-            ),
-        ]
-    )
-    return assemble_prompt(blocks)
-
-
-def sunday_prompt(
-    coach_name: str,
-    user_name: str,
-    krs: List[Dict[str, Any]],
-    timeframe: str = "Sunday",
-) -> str:
-    """Sunday weekly review: capture KR progress and blockers, set up next week."""
-    blocks = [
-        coach_block(coach_name),
-        user_block(user_name),
-        context_block("sunday", "weekly review", timeframe=timeframe),
-        okr_block(krs),
-        task_block(
-            "Write a short Sunday review message that: "
-            "1) asks for a 1–5 update on each KR; "
-            "2) asks what worked well this week; "
-            "3) asks what didn't work well or made things harder. "
-            "End by saying you'll summarise and prep Monday’s kickoff.",
-            constraints="Keep it concise, friendly, and plain language; no OKR/KR jargon to user; no medical advice.",
-        ),
-    ]
-    return assemble_prompt(blocks)
-
-
-def psych_coaching_prompt(user_name: str, psych_payload: Dict[str, Any]) -> str:
-    sec = psych_payload.get("section_averages")
-    flags = psych_payload.get("flags")
-    params = psych_payload.get("parameters")
-    return (
-        "You are a wellbeing coach. Generate a short coaching approach for this person based on their habit readiness profile. "
-        "Keep it to 2-3 sentences, direct second-person voice. "
-        f"User: {user_name}\n"
-        f"Section averages: {sec}\nFlags: {flags}\nParameters: {params}"
+def weekstart_actions_prompt(transcript: str, krs: List[str], coach_name: str = "Coach", user_name: str = "User", locale: str = "UK") -> str:
+    return coaching_prompt(
+        "weekstart_actions",
+        coach_name=coach_name,
+        user_name=user_name,
+        locale=locale,
+        transcript=transcript,
+        krs=krs,
     )
 
 
-def assessment_narrative_prompt(user_name: str, combined: int, payload: List[Dict[str, Any]]) -> str:
-    return (
-        "You are a supportive wellbeing coach writing a concise summary of assessment scores.\n"
-        f"Person's preferred name: {user_name}.\n"
-        f"Combined score: {combined}/100.\n"
-        "Data (JSON):\n"
-        f"{json.dumps(payload, ensure_ascii=False)}\n\n"
-        "Payload entries may include an optional 'focus_note'; weave it in when present.\n"
-        "Write two short paragraphs (under 140 words total) that:\n"
-        "- explain what the combined score and per-pillar scores suggest\n"
-        "- reference notable answers when helpful\n"
-        "- treat Resilience gently and encourage small next steps\n"
-        "- use second-person voice ('you')\n"
-        "Return plain text."
+def coaching_approach_prompt(
+    user_name: str,
+    section_averages: Dict[str, Any],
+    flags: Dict[str, Any],
+    parameters: Dict[str, Any],
+    locale: str = "UK",
+) -> PromptAssembly:
+    """Habit-readiness coaching approach (2–3 sentences) — template-driven."""
+    data_payload = {
+        "section_averages": section_averages,
+        "flags": flags,
+        "parameters": parameters,
+    }
+    default_task = (
+        "You are a concise wellbeing coach writing directly to the user. "
+        "In 2–3 sentences, explain how you'll tailor support based on their habit readiness profile. "
+        "Use 'you', keep it plain text, no bullets."
     )
+    settings = _load_prompt_settings()
+    template = _load_prompt_template("assessment_approach") or _load_prompt_template("coaching_approach")
+    sys_block = settings.get("system_block") or common_prompt_header("Coach", user_name, locale)
+    loc_block = settings.get("locale_block") or locale_block(locale)
+    parts = [
+        ("system", sys_block),
+        ("locale", loc_block),
+        ("context", "Context: habit readiness approach"),
+        ("habit", f"Habit readiness: {json.dumps(data_payload, ensure_ascii=False)}"),
+        ("task", (template or {}).get("task_block") or default_task),
+    ]
+    parts, order_override = _apply_prompt_template(parts, template)
+    assembly = _prompt_assembly(
+        "assessment_approach",
+        "assessment_approach",
+        parts,
+        meta=_merge_template_meta({}, template),
+        block_order_override=order_override or settings.get("default_block_order"),
+    )
+    return assembly
 
 
-def okr_narrative_prompt(user_name: str, payload: List[Dict[str, Any]]) -> str:
-    return (
-        "You are a wellbeing performance coach. Explain why each Objective and Key Result matters "
-        f"for {user_name}'s wellbeing.\n"
-        "Data (JSON):\n"
-        f"{json.dumps(payload, ensure_ascii=False)}\n\n"
+def assessment_scores_prompt(
+    user_name: str,
+    combined: int,
+    payload: list[dict],
+    locale: str = "UK",
+) -> PromptAssembly:
+    """Assessment score narrative (2 short paragraphs) — now template-driven."""
+    data_payload = {"combined": combined, "scores": payload}
+    default_task = (
+        "You are a supportive wellbeing coach writing a concise summary of assessment scores. "
+        "Write two short paragraphs (under 140 words total) that explain what the combined score and per-pillar scores suggest, "
+        "reference notable answers when helpful, treat Resilience gently, and encourage small next steps. "
+        "Use second-person voice ('you'). Return plain text."
+    )
+    settings = _load_prompt_settings()
+    template = _load_prompt_template("assessment_scores")
+    sys_block = settings.get("system_block") or common_prompt_header("Coach", user_name, locale)
+    loc_block = settings.get("locale_block") or locale_block(locale)
+    parts = [
+        ("system", sys_block),
+        ("locale", loc_block),
+        ("context", "Context: assessment scores summary"),
+        ("scores", f"Assessment scores: {json.dumps(data_payload, ensure_ascii=False)}"),
+        ("task", (template or {}).get("task_block") or default_task),
+    ]
+    parts, order_override = _apply_prompt_template(parts, template)
+    assembly = _prompt_assembly(
+        "assessment_scores",
+        "assessment_scores",
+        parts,
+        meta=_merge_template_meta({}, template),
+        block_order_override=order_override or settings.get("default_block_order"),
+    )
+    return assembly
+
+
+def okr_narrative_prompt(
+    user_name: str,
+    payload: list[dict],
+    locale: str = "UK",
+) -> PromptAssembly:
+    """OKR narrative prompt tying objectives to scores."""
+    default_task = (
+        "You are a wellbeing performance coach. Explain why each Objective and Key Result matters for the user’s wellbeing. "
         "Write two short paragraphs that tie the objectives to the scores, highlight where focus is needed, "
-        "and keep the tone gentle but action-oriented. Use second-person voice. If 'focus_note' is present, reference it when explaining priorities."
+        "keep the tone gentle but action-oriented, and use second-person voice. Reference 'focus_note' when present."
     )
+    settings = _load_prompt_settings()
+    template = _load_prompt_template("assessment_okr") or _load_prompt_template("okr_narrative")
+    sys_block = settings.get("system_block") or common_prompt_header("Coach", user_name, locale)
+    loc_block = settings.get("locale_block") or locale_block(locale)
+    parts = [
+        ("system", sys_block),
+        ("locale", loc_block),
+        ("context", "Context: okr narrative"),
+        ("okr", f"OKRs: {json.dumps(payload, ensure_ascii=False)}"),
+        ("task", (template or {}).get("task_block") or default_task),
+    ]
+    parts, order_override = _apply_prompt_template(parts, template)
+    assembly = _prompt_assembly(
+        "assessment_okr",
+        "assessment_okr",
+        parts,
+        meta=_merge_template_meta({}, template),
+        block_order_override=order_override or settings.get("default_block_order"),
+    )
+    return assembly
+
+
+def assessment_narrative_prompt(user_name: str, combined: int, payload: List[Dict[str, Any]], locale: str = "UK") -> PromptAssembly:
+    # Deprecated: assessment_narrative touchpoint removed
+    raise RuntimeError("assessment_narrative prompt is deprecated; use assessment_scores instead.")
 
 
 def assessor_system_prompt(pillar: str, concept: str) -> str:
     """Render the assessor system prompt for a pillar/concept."""
-    return (
-        "You are a concise WhatsApp assessor for __PILLAR__.\n"
-        "Active concept: __CONCEPT__.\n"
-        "Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. "
-        "You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.\n"
-        "If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., 'daily', 'every evening', 'twice daily', 'each morning'), "
-        "you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.\n"
-        "Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).\n"
-        "Return JSON only with these fields:\n"
-        '{"action":"ask"|"finish","question":"","level":"Low"|"Moderate"|"High","confidence":<float 0.0–1.0>,\n'
-        '"rationale":"","scores":{},\n'
-        '"status":"scorable"|"needs_clarifier"|"insufficient",\n'
-        '"why":"",\n'
-        '"missing":[],\n'
-        '"parsed_value":{"value":null,"unit":"","timeframe_ok":false}}\n'
-        "Notes:\n"
-        "- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. "
-        "Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.\n"
-        "- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.\n"
-        "- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. "
-        "When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.\n"
-        "- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.\n"
-        "- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., 'daily'/'every evening' in a 7-day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.\n"
-        "- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.\n"
-        "- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.\n"
-        "- missing: list the specific fields you need (e.g., ['unit','days_per_week']).\n"
-        "- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.\n"
-        "- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.\n"
-        "- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., 'every evening'), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.\n"
-        "- If uncertain, ask a clarifier instead of finishing.\n"
-        "- Do NOT copy example values; set confidence per these rules.\n"
-    ).replace("__PILLAR__", pillar).replace("__CONCEPT__", concept)
+    data_payload = {"pillar": pillar, "concept": concept}
+    default_task = (
+        "You are a concise WhatsApp assessor. Ask a main question (<=300 chars) or a clarifier (<=320 chars) when the user's answer is vague. "
+        "If the reply contains a NUMBER or strongly implies a count/timeframe, you may treat it as sufficient and finish with a score. "
+        "Only finish once you can assign a 0–100 score. Return JSON only with fields: "
+        "{action:ask|finish, question, level:Low|Moderate|High, confidence:float, rationale, scores:{}, status:scorable|needs_clarifier|insufficient, why, missing:[], parsed_value:{value,unit,timeframe_ok}}. "
+        "Use polarity inference and bounds when provided; map habitual phrases to counts; prefer clarifiers if uncertain."
+    )
+    settings = _load_prompt_settings()
+    template = _load_prompt_template("assessor_system")
+    sys_block = settings.get("system_block") or common_prompt_header("Assessor", "User", "UK")
+    loc_block = settings.get("locale_block") or locale_block("UK")
+    parts = [
+        ("system", sys_block),
+        ("locale", loc_block),
+        ("context", f"Context: assessment system prompt for pillar={pillar}, concept={concept}"),
+        ("assessor", json.dumps(data_payload, ensure_ascii=False)),
+        ("task", (template or {}).get("task_block") or default_task),
+    ]
+    parts, order_override = _apply_prompt_template(parts, template)
+    assembly = _prompt_assembly(
+        "assessor_system",
+        "assessor_system",
+        parts,
+        meta=_merge_template_meta({}, template),
+        block_order_override=order_override or settings.get("default_block_order"),
+    )
+    return assembly.text
 
 
 def assessor_feedback_prompt() -> str:
     return (
+        f"{common_prompt_header('Assessor', 'User', 'UK')}\n"
         "Write one short feedback line and two short next steps based on pillar dialog.\n"
         "Format:\n"
         "- 1 short feedback line (what they do well + gap)\n"
@@ -429,15 +1675,12 @@ __all__ = [
     "podcast_prompt",
     "weekstart_support_prompt",
     "weekstart_actions_prompt",
-    "midweek_prompt",
-    "boost_prompt",
-    "psych_coaching_prompt",
-    "assessment_narrative_prompt",
+    "coaching_prompt",
+    "coaching_approach_prompt",
+    "assessment_scores_prompt",
     "okr_narrative_prompt",
     "assessor_system_prompt",
     "assessor_feedback_prompt",
-    "coach_block",
-    "user_block",
     "context_block",
     "okr_block",
     "scores_block",

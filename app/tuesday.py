@@ -8,10 +8,9 @@ from sqlalchemy.orm import Session
 
 from .db import SessionLocal
 from .nudges import send_whatsapp
-from .models import WeeklyFocus, WeeklyFocusKR, OKRKeyResult, User
+from .models import WeeklyFocus, User
 from .kickoff import COACH_NAME
-from .prompts import tuesday_prompt, format_checkin_history
-from . import llm as shared_llm
+from .prompts import format_checkin_history, primary_kr_payload, build_prompt, run_llm_prompt
 from .touchpoints import log_touchpoint
 from .checkins import fetch_recent_checkins
 from .checkins import record_checkin
@@ -26,56 +25,53 @@ def _latest_weekly_focus(session: Session, user_id: int) -> Optional[WeeklyFocus
     )
 
 
-def _pick_primary_kr(session: Session, wf_id: int) -> Optional[OKRKeyResult]:
-    row = (
-        session.query(WeeklyFocusKR, OKRKeyResult)
-        .join(OKRKeyResult, WeeklyFocusKR.kr_id == OKRKeyResult.id)
-        .filter(WeeklyFocusKR.weekly_focus_id == wf_id)
-        .order_by(WeeklyFocusKR.priority_order.asc())
-        .first()
-    )
-    return row[1] if row else None
-
-
 def send_tuesday_check(user: User, coach_name: str = COACH_NAME) -> None:
     with SessionLocal() as s:
         wf = _latest_weekly_focus(s, user.id)
         if not wf:
             send_whatsapp(to=user.phone, text="No weekly plan found. Say monday to plan your week first.")
             return
-        kr = _pick_primary_kr(s, wf.id)
+        kr = primary_kr_payload(user.id, session=s)
         if not kr:
             send_whatsapp(to=user.phone, text="No key results found for this week. Say monday to set them up.")
             return
 
-        client = getattr(shared_llm, "_llm", None)
-        message = None
         history_text = ""
         try:
             hist = fetch_recent_checkins(user.id, limit=3, weekly_focus_id=wf.id)
             history_text = format_checkin_history(hist)
         except Exception:
             history_text = ""
-        if client:
-            try:
-                prompt = tuesday_prompt(
-                    coach_name=coach_name,
-                    user_name=user.first_name or "there",
-                    kr={"description": kr.description, "target": kr.target_num, "actual": kr.actual_num},
-                    history_text=history_text,
-                )
-                resp = client.invoke(prompt)
-                message = (getattr(resp, "content", None) or "").strip()
-                if message and not message.lower().startswith("*tuesday*"):
-                    message = "*Tuesday* " + message
-            except Exception:
-                message = None
+
+        message = None
+        prompt_assembly = build_prompt(
+            "tuesday",
+            user_id=user.id,
+            coach_name=coach_name,
+            user_name=user.first_name or "there",
+            locale=getattr(user, "tz", "UK") or "UK",
+            history_text=history_text,
+            timeframe="Tuesday",
+        )
+        candidate = run_llm_prompt(
+            prompt_assembly.text,
+            user_id=user.id,
+            touchpoint="tuesday",
+            context_meta={"wf_id": wf.id if wf else None},
+            prompt_variant=prompt_assembly.variant,
+            task_label=prompt_assembly.task_label,
+            prompt_blocks={**prompt_assembly.blocks, **(prompt_assembly.meta or {})},
+            block_order=prompt_assembly.block_order,
+            log=True,
+        )
+        if candidate:
+            message = candidate if candidate.lower().startswith("*tuesday*") else "*Tuesday* " + candidate
 
         if not message:
-            tgt = kr.target_num if kr.target_num is not None else ""
+            tgt = kr["target"] if kr.get("target") is not None else ""
             message = (
                 f"*Tuesday* Quick check-in, { (user.first_name or 'there').strip().title() }. "
-                f"How’s {kr.description} going? Target {tgt}. "
+                f"How’s {kr['description']} going? Target {tgt}. "
                 "Give me a quick yes/no or a number, and try one small nudge today to keep it moving."
             )
 
@@ -98,7 +94,7 @@ def send_tuesday_check(user: User, coach_name: str = COACH_NAME) -> None:
             tp_type="tuesday",
             weekly_focus_id=wf.id,
             week_no=getattr(wf, "week_no", None),
-            kr_ids=[kr.id] if kr else [],
+            kr_ids=[kr["id"]] if kr else [],
             meta={"source": "tuesday", "label": "tuesday"},
             generated_text=message,
             source_check_in_id=check_in_id,

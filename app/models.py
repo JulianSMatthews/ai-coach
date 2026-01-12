@@ -73,6 +73,84 @@ class MessageLog(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# LLM prompt logging
+# ──────────────────────────────────────────────────────────────────────────────
+class LLMPromptLog(Base):
+    __tablename__ = "llm_prompt_logs"
+    id               = Column(Integer, primary_key=True)
+    user_id          = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    touchpoint       = Column(String(64), nullable=False, index=True)
+    model            = Column(String(64), nullable=True)
+    duration_ms      = Column(Integer, nullable=True)
+    prompt_variant   = Column(String(160), nullable=True)  # e.g. named prompt set / variant
+    task_label       = Column(String(160), nullable=True)  # short task summary
+    # Prompt composition (stored per block for reviewer readability)
+    system_block     = Column(Text, nullable=True)
+    locale_block     = Column(Text, nullable=True)
+    okr_block        = Column(Text, nullable=True)
+    okr_scope        = Column(String(32), nullable=True)  # all | pillar | week | single
+    scores_block     = Column(Text, nullable=True)
+    habit_block      = Column(Text, nullable=True)
+    task_block       = Column(Text, nullable=True)
+    template_state   = Column(String(32), nullable=True)
+    template_version = Column(Integer, nullable=True)
+    user_block       = Column(Text, nullable=True)
+    extra_blocks     = Column(JSONType, nullable=True)   # map of other labeled blocks
+    block_order      = Column(JSONType, nullable=True)   # ordered list of labels used in assembly
+    prompt_text      = Column(Text, nullable=False)      # final assembled prompt (legacy name)
+    assembled_prompt = Column(Text, nullable=True)       # duplicate field for clarity / future rename
+    response_preview = Column(Text, nullable=True)
+    context_meta     = Column(JSONType, nullable=True)
+    created_at       = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("User")
+
+
+class PromptTemplate(Base):
+    __tablename__ = "prompt_templates"
+    id            = Column(Integer, primary_key=True)
+    touchpoint    = Column(String(120), nullable=False, index=True)
+    parent_id     = Column(Integer, nullable=True)  # optional linkage to source template when promoted
+    version       = Column(Integer, nullable=False, server_default="1")
+    state         = Column(String(32), nullable=False, server_default="develop")  # develop|beta|live
+    note          = Column(Text, nullable=True)
+    task_block    = Column(Text, nullable=True)
+    block_order   = Column(JSONType, nullable=True)   # ordered list of labels
+    include_blocks = Column(JSONType, nullable=True)  # list of labels to include
+    okr_scope     = Column(String(32), nullable=True) # all|pillar|week|single
+    programme_scope = Column(String(32), nullable=True) # full|pillar|none
+    response_format = Column(String(32), nullable=True) # e.g., text|json
+    is_active     = Column(Boolean, nullable=False, server_default="true")
+    updated_at    = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("touchpoint", "state", "version", name="uq_prompt_templates_touchpoint_state_version"),
+    )
+
+
+class PromptSettings(Base):
+    __tablename__ = "prompt_settings"
+    id                = Column(Integer, primary_key=True)
+    system_block      = Column(Text, nullable=True)
+    developer_block   = Column(Text, nullable=True)
+    locale_block      = Column(Text, nullable=True)
+    policy_block      = Column(Text, nullable=True)
+    tool_block        = Column(Text, nullable=True)
+    default_block_order = Column(JSONType, nullable=True)
+    updated_at        = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class PromptTemplateVersionLog(Base):
+    __tablename__ = "prompt_template_versions"
+    id            = Column(Integer, primary_key=True)
+    version       = Column(Integer, nullable=False)
+    from_state    = Column(String(32), nullable=False)
+    to_state      = Column(String(32), nullable=False)
+    note          = Column(Text, nullable=True)
+    created_at    = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 class JobAudit(Base):
     __tablename__ = "job_audits"
     id         = Column(Integer, primary_key=True)
