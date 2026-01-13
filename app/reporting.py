@@ -36,6 +36,9 @@ from .models import (
     UserPreference,
     Club,
     OKRKrEntry,
+    PromptTemplate,
+    PromptSettings,
+    LLMPromptLog,
 )
 from . import llm as shared_llm
 from .prompts import (
@@ -45,6 +48,9 @@ from .prompts import (
     log_llm_prompt,
     _ensure_llm_prompt_log_schema,
     build_prompt,
+    kr_payload_list,
+    _canonical_state,
+    PromptAssembly,
 )
 
 # For raw SQL fallback when OKR models are unavailable
@@ -122,6 +128,118 @@ def _reports_root_global() -> str:
     base = os.getenv("REPORTS_DIR") or os.path.join(os.getcwd(), "public", "reports")
     os.makedirs(base, exist_ok=True)
     return base
+
+def _date_from_str(val: str | None) -> date | None:
+    if not val:
+        return None
+    try:
+        return date.fromisoformat(val)
+    except Exception:
+        return None
+
+def _assemble_prompt_for_report(touchpoint: str, user_id: int, as_of_date: date | None = None, state: str = "live") -> PromptAssembly:
+    """
+    Assemble a prompt for reporting purposes using the same builder/tester data sources.
+    """
+    try:
+        from .kickoff import (
+            _latest_assessment as kickoff_latest_assessment,
+            _latest_psych as kickoff_latest_psych,
+            _okr_by_pillar as kickoff_okr_by_pillar,
+            _programme_blocks as kickoff_programme_blocks,
+        )
+        from .okr import okr_payload_list, okr_payload, okr_payload_primary
+
+        tp_lower = touchpoint.lower()
+        extra_kwargs = {}
+        run, pillars = kickoff_latest_assessment(user_id)
+        psych = kickoff_latest_psych(user_id)
+        scores_payload = [
+            {"pillar": getattr(p, "pillar_key", ""), "score": int(getattr(p, "overall", 0) or 0)}
+            for p in (pillars or [])
+        ]
+        psych_payload = {}
+        if psych:
+            psych_payload = {
+                "section_averages": getattr(psych, "section_averages", None),
+                "flags": getattr(psych, "flags", None),
+                "parameters": getattr(psych, "parameters", None),
+            }
+        programme = kickoff_programme_blocks(getattr(run, "started_at", None) or getattr(run, "created_at", None))
+        first_block = programme[0] if programme else None
+
+        if tp_lower in {"podcast_kickoff", "podcast_weekstart"}:
+            extra_kwargs.update(
+                {"scores": scores_payload, "psych_payload": psych_payload, "programme": programme, "first_block": first_block}
+            )
+            if tp_lower == "podcast_kickoff":
+                extra_kwargs["okrs_by_pillar"] = {
+                    k: [kr.description for kr in v] for k, v in (kickoff_okr_by_pillar(int(user_id)) or {}).items()
+                }
+            if tp_lower == "podcast_weekstart":
+                extra_kwargs["week_no"] = 1
+                if first_block and first_block.get("pillar_key"):
+                    extra_kwargs["focus_pillar"] = first_block.get("pillar_key")
+
+        krs_payload = kr_payload_list(int(user_id), max_krs=3)
+        if tp_lower in {"weekstart_support"}:
+            extra_kwargs.update({"scores": scores_payload, "psych_payload": psych_payload, "krs_payload": krs_payload, "history": []})
+        if tp_lower == "weekstart_actions":
+            extra_kwargs.update({"krs": krs_payload, "transcript": ""})
+        if tp_lower in {"tuesday", "midweek", "sunday"}:
+            # include KR payload for OKR block; history placeholder
+            extra_kwargs.update({"scores": scores_payload, "psych_payload": psych_payload, "history_text": "", "krs": krs_payload})
+        if tp_lower in {"podcast_thursday", "podcast_friday"}:
+            extra_kwargs.update({"history_text": "", "krs": krs_payload})
+        # Assessment/report prompts: build via dedicated helpers
+        if tp_lower == "assessment_scores":
+            from .prompts import assessment_scores_prompt
+            combined = int(round(sum((p.get("score") or 0) for p in scores_payload) / max(len(scores_payload), 1))) if scores_payload else 0
+            return assessment_scores_prompt("User", combined, scores_payload)
+        if tp_lower == "assessment_approach":
+            from .prompts import coaching_approach_prompt
+            return coaching_approach_prompt(
+                "User",
+                section_averages=psych_payload.get("section_averages", {}) if psych_payload else {},
+                flags=psych_payload.get("flags", {}) if psych_payload else {},
+                parameters=psych_payload.get("parameters", {}) if psych_payload else {},
+                locale="UK",
+            )
+        if tp_lower == "assessment_okr":
+            from .prompts import okr_narrative_prompt
+            okr_payload = okr_payload_list(user_id, week_no=None, max_krs=None)
+            return okr_narrative_prompt("User", okr_payload)
+        if tp_lower == "assessor_system":
+            # No assembly; return placeholder
+            return PromptAssembly(
+                text="(assessor system prompts are generated at runtime per concept)",
+                blocks={"system": "(assessor system prompt)"},
+                variant=touchpoint,
+                task_label=touchpoint,
+                block_order=["system"],
+                meta={},
+            )
+
+        assembly = build_prompt(
+            touchpoint=touchpoint,
+            user_id=int(user_id),
+            coach_name="Coach",
+            user_name="User",
+            locale="UK",
+            use_state=state,
+            as_of_date=as_of_date,
+            **extra_kwargs,
+        )
+        return assembly
+    except Exception as e:
+        return PromptAssembly(
+            text=f"(failed to assemble prompt: {e})",
+            blocks={},
+            variant=touchpoint,
+            task_label=touchpoint,
+            block_order=[],
+            meta={"error": str(e)},
+        )
 
 
 def _report_link(user_id: int, filename: str) -> str:
@@ -1826,6 +1944,101 @@ def generate_okr_summary_report_llm(start: date | str | None = None, end: date |
     except Exception:
         pass
     return generate_okr_summary_html(start, end, include_llm_prompt=True, club_id=club_id)
+
+
+# ---------------------------------------------------------------------------
+# Prompt audit report
+# ---------------------------------------------------------------------------
+def generate_prompt_audit_report(user_id: int, as_of_date: date | str | None = None, state: str = "live", include_logs: bool = True, logs_limit: int = 3) -> str:
+    """
+    Generate an HTML report of all prompt templates (by state) with assembled prompts for a given user/date.
+    Includes recent prompt logs per touchpoint if requested.
+    """
+    _ensure_llm_prompt_log_schema()
+    state = _canonical_state(state or "live")
+    as_of_date = _date_from_str(as_of_date) if isinstance(as_of_date, str) else (as_of_date or date.today())
+
+    with SessionLocal() as s:
+        templates = (
+            s.query(PromptTemplate)
+            .filter(PromptTemplate.state.in_([state, "stage" if state == "beta" else state, "production" if state == "live" else state]))
+            .order_by(PromptTemplate.touchpoint.asc(), PromptTemplate.version.desc(), PromptTemplate.id.desc())
+            .all()
+        )
+        s.query(PromptSettings).order_by(PromptSettings.id.asc()).first()
+
+        rows = []
+        for tpl in templates:
+            assembly = _assemble_prompt_for_report(tpl.touchpoint, user_id, as_of_date=as_of_date, state=state)
+            recent = []
+            if include_logs:
+                recent = (
+                    s.query(LLMPromptLog)
+                    .filter(LLMPromptLog.touchpoint == tpl.touchpoint)
+                    .order_by(LLMPromptLog.created_at.desc())
+                    .limit(logs_limit)
+                    .all()
+                )
+            rows.append((tpl, assembly, recent))
+
+    def _esc(val):
+        return html.escape("" if val is None else str(val))
+
+    table_rows = []
+    for tpl, assembly, recent in rows:
+        blocks_html = "<ul>" + "".join(f"<li><strong>{_esc(lbl)}:</strong> {_esc(txt)}</li>" for lbl, txt in (assembly.blocks or {}).items()) + "</ul>"
+        logs_html = ""
+        if recent:
+            log_items = []
+            for log in recent:
+                log_items.append(
+                    "<details><summary>"
+                    f"#{log.id} @ {_esc(log.created_at)} (state={_esc(log.template_state)}, v={_esc(log.template_version)}, model={_esc(log.model)}, ms={_esc(log.duration_ms)})"
+                    "</summary>"
+                    f"<div><strong>Prompt</strong><pre style='white-space:pre-wrap;'>{_esc(log.assembled_prompt)}</pre></div>"
+                    f"<div><strong>Response</strong><pre style='white-space:pre-wrap;'>{_esc(log.response_preview)}</pre></div>"
+                    "</details>"
+                )
+            logs_html = "<div>" + "".join(log_items) + "</div>"
+        table_rows.append(
+            "<tr>"
+            f"<td>{_esc(tpl.touchpoint)}</td>"
+            f"<td>{_esc(tpl.state)}</td>"
+            f"<td>{_esc(tpl.version)}</td>"
+            f"<td>{_esc(tpl.okr_scope or '')}</td>"
+            f"<td>{_esc(tpl.programme_scope or '')}</td>"
+            f"<td>{blocks_html}</td>"
+            f"<td><pre style='white-space:pre-wrap;'>{_esc(assembly.text)}</pre></td>"
+            f"<td>{logs_html or '<em>No logs</em>'}</td>"
+            "</tr>"
+        )
+
+    report_html = f"""
+    <html><head><meta charset="utf-8"><title>Prompt Audit</title>
+    <style>
+      body {{ font-family: 'Inter', system-ui, sans-serif; margin: 20px; }}
+      table {{ width: 100%; border-collapse: collapse; }}
+      th, td {{ border: 1px solid #ddd; padding: 8px; vertical-align: top; }}
+      th {{ background: #f5f7fb; }}
+      pre {{ margin: 0; white-space: pre-wrap; word-break: break-word; }}
+      details summary {{ cursor: pointer; font-weight: 600; }}
+    </style>
+    </head><body>
+    <h2>Prompt Audit</h2>
+    <div>State: {_esc(state)} · User: {_esc(user_id)} · As of: {_esc(as_of_date)}</div>
+    <table>
+      <tr><th>Touchpoint</th><th>State</th><th>Version</th><th>OKR Scope</th><th>Programme Scope</th><th>Blocks</th><th>Assembled Prompt</th><th>Recent Logs</th></tr>
+      {''.join(table_rows)}
+    </table>
+    </body></html>
+    """
+    out_base = _reports_root_for_user(user_id)
+    out_name = f"prompt_audit_user{user_id}_{state}_{as_of_date}.html"
+    out_path = os.path.join(out_base, out_name)
+    os.makedirs(out_base, exist_ok=True)
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(report_html)
+    return out_path
 
 def _collect_report_data(run_id: int) -> Tuple[Optional[User], Optional[AssessmentRun], List[PillarResult]]:
     with SessionLocal() as s:

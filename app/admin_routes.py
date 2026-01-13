@@ -1,5 +1,6 @@
 # app/admin_routes.py
 import html
+import os
 
 import json
 from types import SimpleNamespace
@@ -140,6 +141,19 @@ def _wrap_page(title: str, body_html: str) -> HTMLResponse:
 </html>
 """
     return HTMLResponse(html_out)
+
+def _build_version_label() -> str:
+    commit = (
+        os.getenv("APP_VERSION")
+        or os.getenv("RENDER_GIT_COMMIT")
+        or os.getenv("GIT_COMMIT")
+        or os.getenv("COMMIT_SHA")
+    )
+    if not commit:
+        return ""
+    commit = str(commit).strip()
+    short = commit[:8] if len(commit) > 8 else commit
+    return f"<div class='meta'>Build: {html.escape(short)}</div>"
 
 def _ensure_prompt_template_table():
     try:
@@ -300,7 +314,9 @@ def _parse_list_field(val: str | None) -> list[str] | None:
             return [str(x).strip() for x in parsed if str(x).strip()]
     except Exception:
         pass
-    return [p.strip() for p in txt.split(",") if p.strip()]
+    # Tolerate legacy/py-list strings like "['system', 'locale']".
+    cleaned = txt.replace("[", "").replace("]", "").replace('"', "").replace("'", "")
+    return [p.strip() for p in cleaned.split(",") if p.strip()]
 
 
 def _clone_template(row: PromptTemplate, target_state: str, version: int) -> PromptTemplate:
@@ -574,6 +590,7 @@ def list_prompt_templates(state: str | None = None, q: str | None = None, active
 
     body = (
         "<h2>Prompt Templates</h2>"
+        f"{_build_version_label()}"
         "<div class='nav'><a href='/admin/prompt-settings'>Edit global prompt settings</a> · "
         "<a href='/admin/prompt-templates/edit'>Create new</a></div>"
         "<div class='card' style='margin-bottom:12px;'>"
@@ -690,6 +707,7 @@ def test_prompt_template(
         default_model_name = "default"
     form = """
     <h2>Test Prompt Template</h2>
+    {version_label}
     <div class='card'>
       <form method="get" action="/admin/prompt-templates/test">
         <div class="field">Touchpoint: <input name="touchpoint" value="{tp}" required /></div>
@@ -725,6 +743,7 @@ def test_prompt_template(
       </form>
     </div>
     """.format(
+        version_label=_build_version_label(),
         tp=html.escape(touchpoint or ""),
         user_opts=users_options,
         uf=html.escape(user_filter or ""),
@@ -930,9 +949,9 @@ def test_prompt_template(
         "user": "(user input at runtime)",
     }
     blocks_map = dict(assembly.blocks or {})
-    order_list = list(assembly.block_order or [])
+    order_list = [lbl for lbl in list(assembly.block_order or []) if lbl in blocks_map]
     if not order_list:
-        order_list = [lbl for lbl in prompts_module.DEFAULT_PROMPT_BLOCK_ORDER if lbl in blocks_map]
+        order_list = [lbl for lbl in prompts_module.DEFAULT_PROMPT_BLOCK_ORDER if lbl in blocks_map] or list(blocks_map.keys())
     # Fill placeholders only for blocks referenced in the order list
     for lbl in order_list:
         if not blocks_map.get(lbl):
@@ -1082,12 +1101,13 @@ def edit_prompt_template(id: int | None = None, mode: str | None = None):
         // merged field: order == include; we still allow defaults fallback
         const include = parseList(f.block_order.value).filter(lbl => !banned.includes(lbl));
         const baseOrder = include.length ? include : {default_order};
-        const effectiveOrder = baseOrder.filter(lbl => !banned.includes(lbl));
+        const effectiveOrder = baseOrder.filter(lbl => !banned.includes(lbl) && blocks[lbl]);
         const text = effectiveOrder
           .map(lbl => blocks[lbl] ? lbl.toUpperCase() + "\\n" + blocks[lbl] : '')
           .filter(Boolean)
           .join("\\n\\n");
-        document.getElementById('preview-content').textContent = text || '(nothing to preview)';
+        const finalText = text || Object.keys(blocks).map(lbl => lbl.toUpperCase() + "\\n" + blocks[lbl]).join("\\n\\n");
+        document.getElementById('preview-content').textContent = finalText || '(nothing to preview)';
         document.getElementById('preview-modal').style.display = 'block';
       }}
       function closePreview() {{
@@ -1108,6 +1128,7 @@ def edit_prompt_template(id: int | None = None, mode: str | None = None):
     title_text += f" — {state_label}"
     html_out = f"""
     <h2>{title_text}</h2>
+    {_build_version_label()}
     <div class='card'>
     <form method="post" action="/admin/prompt-templates/save" id="tpl-form">
       <input type="hidden" name="id" value="{_val('id')}" />
@@ -1236,6 +1257,21 @@ async def save_prompt_template(
         row.is_active = active_flag
         s.commit()
     return RedirectResponse(url="/admin/prompt-templates", status_code=303)
+
+
+@admin.get("/reports/prompt-audit", response_class=HTMLResponse)
+def admin_prompt_audit(user_id: int, as_of_date: str, state: str = "live", logs: int = 3):
+    """Generate a prompt audit report and return a link."""
+    from .reporting import generate_prompt_audit_report, _report_link
+    path = generate_prompt_audit_report(user_id=user_id, as_of_date=as_of_date, state=state, include_logs=True, logs_limit=logs)
+    fname = os.path.basename(path)
+    try:
+        url = _report_link(user_id, fname)
+        link_html = f"<a href='{html.escape(url)}' target='_blank' rel='noopener'>{html.escape(url)}</a>"
+    except Exception:
+        link_html = html.escape(path)
+    body = f"<div class='card'><p>Prompt audit ready for user {user_id} @ {html.escape(as_of_date)} (state={html.escape(state)}).</p><p>{link_html}</p></div>"
+    return _wrap_page("Prompt Audit", body)
 
 @admin.get("/runs/{run_id}", response_class=HTMLResponse)
 def run_detail(run_id: int):

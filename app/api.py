@@ -90,6 +90,7 @@ ADMIN_USAGE = (
     "admin coaching <phone> on|off|faston|reset    # toggle scheduled coaching prompts (faston=every 2m test; reset clears jobs)\n"
     "admin schedule <phone>           # show scheduled coaching prompts for user (HTML + summary)\n"
     "admin beta <phone> [live|beta|develop|clear]   # set prompt state override for testing\n"
+    "admin prompt-audit <phone> <YYYY-MM-DD> [state] # generate prompt audit report for that user/date\n"
     "\nWeekly touchpoints (by day):\n"
     "admin monday <phone>\n"
     "admin tuesday <phone>\n"
@@ -675,6 +676,35 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                     to=admin_user.phone,
                     text=f"Prompt state override for {display_full_name(u)} ({u.phone}) set to {desired_state}.",
                 )
+            return True
+
+        if cmd == "prompt-audit":
+            if len(args) < 2:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin prompt-audit <phone> <YYYY-MM-DD> [state]")
+                return True
+            target_phone_raw = args[0]
+            as_of_date = args[1]
+            state = args[2].lower() if len(args) > 2 else "live"
+            with SessionLocal() as s:
+                u = _admin_lookup_user_by_phone(s, target_phone_raw, admin_user)
+                if not u:
+                    send_whatsapp(to=admin_user.phone, text=f"User not found for {target_phone_raw}")
+                    return True
+                try:
+                    from .reporting import generate_prompt_audit_report, _report_link
+                    path = generate_prompt_audit_report(u.id, as_of_date=as_of_date, state=state, include_logs=True, logs_limit=3)
+                    filename = os.path.basename(path)
+                    url = _report_link(u.id, filename)
+                    # Fallback if link generation failed to include the file
+                    if filename not in url:
+                        base = url.rstrip("/")
+                        url = f"{base}/reports/{u.id}/{filename}" if base else f"/reports/{u.id}/{filename}"
+                    send_whatsapp(
+                        to=admin_user.phone,
+                        text=f"Prompt audit report ready for {display_full_name(u)} ({u.phone}) @ {as_of_date} [{state}]: {url}",
+                    )
+                except Exception as e:
+                    send_whatsapp(to=admin_user.phone, text=f"Failed to generate prompt audit: {e}")
             return True
 
         if cmd == "create":

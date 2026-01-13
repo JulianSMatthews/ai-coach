@@ -260,6 +260,22 @@ DEFAULT_PROMPT_BLOCK_ORDER = [
 
 _BANNED_BLOCKS = {"developer", "policy", "tool"}
 
+def _normalize_block_labels(labels: Any) -> list[str]:
+    if not labels or not isinstance(labels, list):
+        return []
+    cleaned: list[str] = []
+    for lbl in labels:
+        if lbl is None:
+            continue
+        txt = str(lbl).strip()
+        if not txt:
+            continue
+        # Tolerate legacy stringified list items like "['system'".
+        txt = txt.replace("[", "").replace("]", "").replace('"', "").replace("'", "").strip()
+        if txt:
+            cleaned.append(txt)
+    return cleaned
+
 def _canonical_state(state: Optional[str]) -> Optional[str]:
     if not state:
         return None
@@ -303,8 +319,12 @@ def _apply_prompt_template(parts: List[tuple[str, str]], template: Optional[Dict
     if not template:
         return parts, None
 
-    include_blocks = [b for b in (template.get("include_blocks") or []) if b not in _BANNED_BLOCKS] or None
-    order_override = [b for b in (template.get("block_order") or []) if b not in _BANNED_BLOCKS]
+    include_blocks = _normalize_block_labels(template.get("include_blocks")) or None
+    if include_blocks:
+        include_blocks = [b for b in include_blocks if b not in _BANNED_BLOCKS] or None
+    order_override = _normalize_block_labels(template.get("block_order"))
+    if order_override:
+        order_override = [b for b in order_override if b not in _BANNED_BLOCKS]
     programme_scope = template.get("programme_scope")
     overrides: Dict[str, Optional[str]] = {
         "task": template.get("task_block"),
