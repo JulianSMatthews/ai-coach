@@ -1,0 +1,88 @@
+services:
+  - type: web
+    name: healthsense-api
+    env: python
+    plan: starter
+    region: oregon
+    buildCommand: "python scripts/check_env.py --service api --warn-optional && pip install -r requirements.txt"
+    startCommand: "uvicorn app.api:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: ENV
+        value: "production"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: healthsense-db
+          property: connectionString
+      - key: OPENAI_API_KEY
+        value: ""
+        sync: false
+      - key: ADMIN_API_TOKEN
+        value: ""
+        sync: false
+      - key: TWILIO_ACCOUNT_SID
+        value: ""
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        value: ""
+        sync: false
+      - key: TWILIO_FROM
+        value: ""
+        sync: false
+      - key: PUBLIC_BASE_URL
+        value: ""
+        sync: false
+      - key: COACH_NAME
+        value: "Gia"
+      - key: WEEKSTART_PODCAST_MAX_WORDS
+        value: "420"
+      - key: REPORTS_BASE_URL
+        value: ""
+        sync: false
+      - key: RESET_DB_ON_STARTUP
+        value: "0"
+
+  - type: web
+    name: healthsense-app
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: healthsense-app
+    buildCommand: "node ../scripts/check_env.mjs --service hsapp && npm install && npm run build"
+    startCommand: "npm run start"
+    envVars:
+      - key: API_BASE_URL
+        value: ""
+        sync: false
+      - key: ADMIN_API_TOKEN
+        value: ""
+        sync: false
+      - key: ADMIN_USER_ID
+        value: ""
+        sync: false
+
+  - type: web
+    name: healthsense-admin
+    env: node
+    plan: starter
+    region: oregon
+    rootDir: healthsense-admin
+    buildCommand: "node ../scripts/check_env.mjs --service hsadmin && npm install && npm run build"
+    startCommand: "npm run start"
+    envVars:
+      - key: API_BASE_URL
+        value: ""
+        sync: false
+      - key: ADMIN_API_TOKEN
+        value: ""
+        sync: false
+      - key: ADMIN_USER_ID
+        value: ""
+        sync: false
+      - key: NEXT_PUBLIC_HSAPP_BASE_URL
+        value: ""
+        sync: false
+
+databases:
+  - name: healthsense-db
+    plan: starter
+    region: oregon
