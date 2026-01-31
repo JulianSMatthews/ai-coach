@@ -59,6 +59,7 @@ from .llm import _llm
 # ==============================================================================
 
 from .okr import make_quarterly_okr_llm
+from .job_queue import enqueue_job, should_use_worker
 from .seed import PILLAR_PREAMBLE_QUESTIONS
 
 # --- Unified helper -----------------------------------------------------------
@@ -2514,6 +2515,19 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 try:
                     schedule_day3_followup(user.id)
                     schedule_week2_followup(user.id)
+                except Exception:
+                    pass
+
+                # Enqueue assessment report generation (narrative + reports)
+                try:
+                    run_id = state.get("run_id")
+                    if should_use_worker() and run_id:
+                        job_id = enqueue_job(
+                            "assessment_report",
+                            {"run_id": int(run_id), "user_id": user.id},
+                            user_id=user.id,
+                        )
+                        print(f"[assessment] enqueued report run_id={run_id} user_id={user.id} job={job_id}")
                 except Exception:
                     pass
 

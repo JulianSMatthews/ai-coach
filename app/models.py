@@ -817,6 +817,27 @@ class EngagementEvent(Base):
         Index("ix_engagement_events_touchpoint_channel", "touchpoint_id", "channel"),
     )
 
+
+class BackgroundJob(Base):
+    __tablename__ = "background_jobs"
+
+    id         = Column(Integer, primary_key=True)
+    kind       = Column(String(64), nullable=False, index=True)
+    user_id    = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    status     = Column(String(32), nullable=False, server_default=text("'pending'"))  # pending|running|retry|done|error
+    payload    = Column(JSONType, nullable=True)
+    result     = Column(JSONType, nullable=True)
+    error      = Column(Text, nullable=True)
+    attempts   = Column(Integer, nullable=False, server_default=text("0"))
+    locked_at  = Column(DateTime, nullable=True)
+    locked_by  = Column(String(120), nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_background_jobs_status_kind", "status", "kind"),
+    )
+
 class WeeklyFocus(Base):
     __tablename__ = "weekly_focus"
 

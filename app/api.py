@@ -106,6 +106,7 @@ from .reporting import (
     build_assessment_dashboard_data,
     build_progress_report_data,
 )
+from .job_queue import ensure_job_table, enqueue_job, should_use_worker
 
 # Lazy import holder to avoid startup/reload ImportError if symbol is added later
 _gen_okr_summary_report = None
@@ -306,8 +307,43 @@ def _drop_all_except(keep_tables: set[str]) -> None:
                 print(f"⚠️  Drop warning for {table.name}: {e}")
 
 
+def _cleanup_reports_on_reset(*, keep_content: bool) -> None:
+    reports_dir = os.getenv("REPORTS_DIR") or os.path.join(os.getcwd(), "public", "reports")
+    if not os.path.isdir(reports_dir):
+        return
+    removed = 0
+    kept = 0
+    for root, _dirs, files in os.walk(reports_dir):
+        for name in files:
+            path = os.path.join(root, name)
+            if keep_content and name.lower().startswith("content"):
+                kept += 1
+                continue
+            try:
+                os.remove(path)
+                removed += 1
+            except Exception as e:
+                print(f"⚠️  Could not remove report file {path}: {e}")
+    # Prune empty directories (except the root)
+    for root, _dirs, _files in os.walk(reports_dir, topdown=False):
+        if root == reports_dir:
+            continue
+        try:
+            if not os.listdir(root):
+                os.rmdir(root)
+        except Exception:
+            pass
+    if removed or kept:
+        print(f"📄 Reports cleanup: removed={removed} kept={kept} keep_content={keep_content}")
+
+
 @app.on_event("startup")
 def on_startup():
+    # Ensure job queue table exists (non-destructive)
+    try:
+        ensure_job_table()
+    except Exception as e:
+        print(f"⚠️  Could not ensure job table: {e!r}")
     if os.getenv("RESET_DB_ON_STARTUP") == "1":
         keep_prompt_templates = os.getenv("KEEP_PROMPT_TEMPLATES_ON_RESET") == "1"
         keep_content = os.getenv("KEEP_CONTENT_ON_RESET") == "1"
@@ -338,6 +374,12 @@ def on_startup():
 
         # Seed
         run_seed()
+
+        # Clean reports after reset (optionally keep content files)
+        try:
+            _cleanup_reports_on_reset(keep_content=keep_content)
+        except Exception as e:
+            print(f"⚠️  Reports cleanup error: {e!r}")
 
         # Clear any persisted scheduler jobs so the job store is fresh
         try:
@@ -406,6 +448,32 @@ def _record_freeform_checkin(user, body: str) -> None:
         )
     except Exception:
         pass
+
+
+def _start_assessment_async(user: User, *, force_intro: bool = False) -> bool:
+    if should_use_worker():
+        job_id = enqueue_job(
+            "assessment_start",
+            {"user_id": user.id, "force_intro": bool(force_intro)},
+            user_id=user.id,
+        )
+        print(f"[assessment] enqueued start user_id={user.id} job={job_id} force_intro={force_intro}")
+        return True
+    start_combined_assessment(user, force_intro=force_intro)
+    return False
+
+
+def _continue_assessment_async(user: User, user_text: str) -> bool:
+    if should_use_worker():
+        job_id = enqueue_job(
+            "assessment_continue",
+            {"user_id": user.id, "text": user_text},
+            user_id=user.id,
+        )
+        print(f"[assessment] enqueued continue user_id={user.id} job={job_id}")
+        return True
+    continue_combined_assessment(user, user_text)
+    return False
 
 def _maybe_set_public_base_via_ngrok() -> None:
     """
@@ -1014,7 +1082,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 s.add(u); s.commit(); s.refresh(u)
             # trigger consent/intro
             try:
-                start_combined_assessment(u)
+                _start_assessment_async(u)
             except Exception as e:
                 print(f"[wa admin create] start failed: {e!r}")
             send_whatsapp(to=admin_user.phone, text=f"Created user id={u.id} {display_full_name(u)} ({u.phone})")
@@ -1344,7 +1412,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                         text=f"User with phone {target_phone} not found{scope_txt}."
                     )
                     return True
-            start_combined_assessment(u)
+            _start_assessment_async(u)
             send_whatsapp(to=admin_user.phone, text=f"Started assessment for {display_full_name(u)} ({u.phone})")
             return True
         elif cmd == "status":
@@ -1895,7 +1963,7 @@ async def twilio_inbound(request: Request):
         # Explicit assessment entry
         if lower_body in {"start", "hi", "hello"}:
             # Clear any stale active session and force fresh consent/name capture
-            start_combined_assessment(user, force_intro=True)
+            _start_assessment_async(user, force_intro=True)
             return Response(content="", media_type="text/plain", status_code=200)
 
         # Active assessment session handling (consent/name or in-progress)
@@ -1908,14 +1976,14 @@ async def twilio_inbound(request: Request):
                     .first()
                 )
             if active_sess:
-                continue_combined_assessment(user, body)
+                _continue_assessment_async(user, body)
                 return Response(content="", media_type="text/plain", status_code=200)
             # If no active session but consent not recorded, continue assessment flow to capture consent/name
             has_consent = bool(getattr(user, "consent_given", False)) \
                           or bool(getattr(user, "consent_at", None)) \
                           or bool(getattr(user, "consent_yes_at", None))
             if not has_consent:
-                continue_combined_assessment(user, body)
+                _continue_assessment_async(user, body)
                 return Response(content="", media_type="text/plain", status_code=200)
         except Exception:
             pass
@@ -3206,7 +3274,7 @@ def admin_create_user(payload: dict, admin_user: User = Depends(_require_admin))
         s.add(u); s.commit(); s.refresh(u)
     # Fire consent/intro; this will send the WhatsApp message
     try:
-        start_combined_assessment(u)
+        _start_assessment_async(u)
     except Exception as e:
         # Do not fail creation if send fails
         print(f"[admin_create_user] start_combined_assessment failed: {e!r}")
@@ -5725,7 +5793,7 @@ def admin_start_user(user_id: int, admin_user: User = Depends(_require_admin)):
         if not u:
             raise HTTPException(status_code=404, detail="user not found")
         _ensure_club_scope(admin_user, u)
-    start_combined_assessment(u)
+    _start_assessment_async(u)
     return {"status": "started", "user_id": user_id}
 
 @admin.get("/users/{user_id}/status")

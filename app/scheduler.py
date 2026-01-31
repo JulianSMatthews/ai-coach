@@ -30,6 +30,7 @@ from .debug_utils import debug_log
 from . import kickoff
 from .llm import compose_prompt
 from . import monday, tuesday, wednesday, thursday, friday, saturday, sunday
+from .job_queue import enqueue_job, should_use_worker
 
 # ──────────────────────────────────────────────────────────────────────────────
 # APScheduler setup
@@ -432,7 +433,7 @@ def cancel_timeout_followup(user_id: int):
 # Automatic daily prompts (day-specific handlers)
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _run_day_prompt(user_id: int, day: str):
+def _run_day_prompt_inline(user_id: int, day: str):
     """Invoke the day-specific handler for a user."""
     with SessionLocal() as s:
         user = s.get(User, user_id)
@@ -470,6 +471,15 @@ def _run_day_prompt(user_id: int, day: str):
         _audit(user_id, f"auto_prompt_{day}", {})
     except Exception as e:
         print(f"[scheduler] {day} prompt failed for user {user_id}: {e}")
+
+
+def _run_day_prompt(user_id: int, day: str):
+    """Enqueue or run day-specific handler for a user."""
+    if should_use_worker():
+        job_id = enqueue_job("day_prompt", {"user_id": user_id, "day": day}, user_id=user_id)
+        print(f"[scheduler] enqueued {day} prompt for user {user_id} (job={job_id})")
+        return
+    _run_day_prompt_inline(user_id, day)
 
 
 def _next_monday_anchor(user: User, hour: int, minute: int) -> datetime:
