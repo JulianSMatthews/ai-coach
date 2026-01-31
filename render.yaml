@@ -70,5 +70,5 @@ services:
 
 databases:
   - name: healthsense-db
-    plan: starter
+    plan: basic-1gb
     region: oregon
