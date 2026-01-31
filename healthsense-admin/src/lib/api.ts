@@ -287,6 +287,7 @@ export type AdminUserSummary = {
   latest_run_finished_at?: string | null;
   status?: string | null;
   prompt_state_override?: string | null;
+  coaching_enabled?: boolean | null;
 };
 
 function getBaseUrl() {
@@ -709,6 +710,17 @@ export async function setAdminUserPromptState(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ state }),
+  });
+}
+
+export async function setAdminUserCoaching(
+  userId: number,
+  enabled: boolean,
+): Promise<Record<string, unknown>> {
+  return apiAdmin<Record<string, unknown>>(`/api/v1/users/${userId}/preferences`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ auto_prompts: enabled ? "on" : "off" }),
   });
 }
 

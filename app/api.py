@@ -5625,6 +5625,7 @@ def admin_list_users(
         latest_finished: dict[int, datetime | None] = {}
         active_users: set[int] = set()
         prompt_overrides: dict[int, str] = {}
+        coaching_pref: dict[int, tuple[datetime | None, str]] = {}
         if user_ids:
             run_rows = s.execute(
                 select(AssessmentRun.user_id, func.max(AssessmentRun.id))
@@ -5655,6 +5656,20 @@ def admin_list_users(
                 )
             ).all()
             prompt_overrides = {int(uid): (val or "") for uid, val in pref_rows if uid}
+            coaching_rows = s.execute(
+                select(UserPreference.user_id, UserPreference.value, UserPreference.updated_at)
+                .where(
+                    UserPreference.user_id.in_(user_ids),
+                    UserPreference.key.in_(("coaching", "auto_daily_prompts")),
+                )
+            ).all()
+            for uid, val, updated_at in coaching_rows:
+                if not uid:
+                    continue
+                existing = coaching_pref.get(int(uid))
+                if existing and existing[0] and updated_at and updated_at <= existing[0]:
+                    continue
+                coaching_pref[int(uid)] = (updated_at, str(val or ""))
 
     payload = []
     for u in users:
@@ -5679,6 +5694,7 @@ def admin_list_users(
                 "latest_run_finished_at": latest_finished.get(run_id) if run_id else None,
                 "status": status,
                 "prompt_state_override": prompt_overrides.get(u.id, ""),
+                "coaching_enabled": (coaching_pref.get(u.id, (None, "0"))[1].strip() == "1"),
             }
         )
 

@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import AdminNav from "@/components/AdminNav";
-import { createAdminUser, listAdminUsers, resetAdminUser, setAdminUserPromptState, startAdminUser } from "@/lib/api";
+import {
+  createAdminUser,
+  listAdminUsers,
+  resetAdminUser,
+  setAdminUserCoaching,
+  setAdminUserPromptState,
+  startAdminUser,
+} from "@/lib/api";
 
 type UsersPageProps = {
   searchParams: Promise<{ q?: string }>;
@@ -44,6 +51,14 @@ async function resetUserAction(formData: FormData) {
   const confirm = String(formData.get("confirm") || "").trim().toLowerCase();
   if (!userId || confirm !== "reset") return;
   await resetAdminUser(userId);
+  revalidatePath("/admin/users");
+}
+
+async function coachUserAction(formData: FormData) {
+  "use server";
+  const userId = Number(formData.get("user_id") || 0);
+  if (!userId) return;
+  await setAdminUserCoaching(userId, true);
   revalidatePath("/admin/users");
 }
 
@@ -143,12 +158,14 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                   <th className="py-2 pr-6 whitespace-nowrap">Consent at</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Last assessment</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Prompt state</th>
+                  <th className="py-2 pr-6 whitespace-nowrap">Coaching</th>
                   <th className="py-2 whitespace-nowrap">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#efe7db]">
                 {users.map((u) => {
                   const promptState = (u.prompt_state_override || "live").toLowerCase();
+                  const coachingOn = Boolean(u.coaching_enabled);
                   return (
                     <tr key={u.id}>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">#{u.id}</td>
@@ -180,6 +197,9 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                           set
                         </button>
                       </form>
+                    </td>
+                    <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
+                      {coachingOn ? "On" : "Off"}
                     </td>
                     <td className="py-3 whitespace-nowrap">
                       <div className="flex items-center gap-2 whitespace-nowrap">
@@ -216,6 +236,17 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                             reset
                           </button>
                         </form>
+                        {!coachingOn ? (
+                          <form action={coachUserAction}>
+                            <input type="hidden" name="user_id" value={u.id} />
+                            <button
+                              type="submit"
+                              className="rounded-full border border-[#0f766e] px-3 py-1 text-xs text-[#0f766e]"
+                            >
+                              coach
+                            </button>
+                          </form>
+                        ) : null}
                       </div>
                     </td>
                     </tr>
@@ -223,7 +254,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                 })}
                 {!users.length ? (
                   <tr>
-                    <td className="py-6 text-sm text-[#6b6257]" colSpan={11}>
+                    <td className="py-6 text-sm text-[#6b6257]" colSpan={12}>
                       No users found. Try a different search.
                     </td>
                   </tr>
