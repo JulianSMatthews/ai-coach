@@ -2581,6 +2581,10 @@ def send_menu_options(user: User) -> None:
 def _hsapp_base_url() -> str:
     base = (os.getenv("HSAPP_PUBLIC_URL") or "").strip()
     if not base:
+        base = (os.getenv("HSAPP_BASE_URL") or os.getenv("APP_BASE_URL") or "").strip()
+    if not base:
+        base = (os.getenv("NEXT_PUBLIC_HSAPP_BASE_URL") or os.getenv("NEXT_PUBLIC_APP_BASE_URL") or "").strip()
+    if not base:
         base = (os.getenv("HSAPP_NGROK_DOMAIN") or "").strip()
     if not base:
         base = "http://localhost:3000"
