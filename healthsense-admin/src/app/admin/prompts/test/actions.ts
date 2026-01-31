@@ -9,6 +9,8 @@ export type TestState = {
     text?: string;
     blocks?: Record<string, string>;
     block_order?: string[];
+    audio_url?: string | null;
+    podcast_error?: string | null;
   };
 };
 
