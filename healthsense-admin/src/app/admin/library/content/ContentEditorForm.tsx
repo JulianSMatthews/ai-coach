@@ -9,7 +9,7 @@ type ContentEditorFormProps = {
   submitLabel?: string;
 };
 
-const emptyState = { ok: false, error: null as string | null };
+const emptyState = { ok: false, error: undefined as string | undefined };
 const pillarOptions = [
   { value: "nutrition", label: "Nutrition" },
   { value: "recovery", label: "Recovery" },
