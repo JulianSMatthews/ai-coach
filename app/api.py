@@ -6199,7 +6199,18 @@ try:
         if render_host:
             _REPORTS_BASE = f"https://{render_host}"
         else:
-            _REPORTS_BASE = "http://localhost:8000"
+            fallback_base = (
+                os.getenv("API_PUBLIC_BASE_URL")
+                or os.getenv("PUBLIC_BASE_URL")
+                or os.getenv("RENDER_EXTERNAL_URL")
+                or ""
+            ).strip()
+            if fallback_base:
+                if not fallback_base.startswith(("http://", "https://")):
+                    fallback_base = f"https://{fallback_base}"
+                _REPORTS_BASE = fallback_base.rstrip("/")
+            else:
+                _REPORTS_BASE = "http://localhost:8000"
         debug_log(f"🔗 Reports base URL (REPORTS_DIR set): {_REPORTS_BASE}/reports", tag="startup")
     else:
         # Local dev: detect ngrok
