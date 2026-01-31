@@ -40,6 +40,14 @@ def _in_worker_process() -> bool:
     return (os.getenv("PROMPT_WORKER_PROCESS") or "").strip().lower() in {"1", "true", "yes"}
 
 
+def _podcast_worker_enabled() -> bool:
+    return (
+        should_use_worker()
+        and not _in_worker_process()
+        and (os.getenv("PODCAST_WORKER_MODE") or "").strip().lower() in {"1", "true", "yes"}
+    )
+
+
 def _current_focus_pillar(user: User) -> Optional[str]:
     """
     Infer the current pillar from the most recent WeeklyFocus and its top KR.
@@ -840,7 +848,7 @@ def _is_confirm_message(text: str, *, allow_all_good: bool = False) -> bool:
 
 def start_weekstart(user: User, notes: str | None = None, debug: bool = False, set_state: bool = True, week_no: Optional[int] = None) -> None:
     """Create weekly focus, pick KRs, send monday weekstart message, and optionally set state."""
-    if should_use_worker() and not _in_worker_process():
+    if _podcast_worker_enabled():
         job_id = enqueue_job(
             "weekstart_flow",
             {

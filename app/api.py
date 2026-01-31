@@ -86,7 +86,7 @@ from . import monday, wednesday, thursday, friday, saturday, weekflow, tuesday, 
 from . import psych
 from . import coachmycoach
 from . import scheduler
-from .nudges import send_whatsapp, send_sms
+from .nudges import send_whatsapp, send_whatsapp_media, send_sms
 from .checkins import record_checkin
 from . import prompts as prompts_module
 from .prompts import build_prompt, assessment_scores_prompt, okr_narrative_prompt, coaching_approach_prompt, assessor_system_prompt
@@ -1853,12 +1853,17 @@ async def twilio_inbound(request: Request):
                 quick_replies = ["All good", "Need help"]
                 # Twilio text body limit is 1600 chars; chunk if needed
                 if audio_url:
+                    send_whatsapp_media(
+                        to=user.phone,
+                        media_url=audio_url,
+                        caption=(
+                            f"*Kickoff* Hi { (user.first_name or '').strip().title() or 'there' }, {os.getenv('COACH_NAME','Gia')} here. "
+                            "This is your 12-week programme kickoff podcast—give it a listen."
+                        ),
+                    )
                     send_whatsapp(
                         to=user.phone,
-                        text=(
-                            f"*Kickoff* Hi { (user.first_name or '').strip().title() or 'there' }, {os.getenv('COACH_NAME','Gia')} here. "
-                            f"This is your 12-week programme kickoff podcast—give it a listen: {audio_url}\n\n{cta}"
-                        ),
+                        text=cta,
                         quick_replies=quick_replies,
                     )
                 else:

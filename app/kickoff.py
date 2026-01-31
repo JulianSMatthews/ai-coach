@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from .db import SessionLocal
 from .job_queue import enqueue_job, should_use_worker
-from .nudges import send_whatsapp
+from .nudges import send_whatsapp, send_whatsapp_media
 from .debug_utils import debug_enabled
 from .models import (
     User,
@@ -39,6 +39,14 @@ COACH_NAME = os.getenv("COACH_NAME", "Gia")
 
 def _in_worker_process() -> bool:
     return (os.getenv("PROMPT_WORKER_PROCESS") or "").strip().lower() in {"1", "true", "yes"}
+
+
+def _podcast_worker_enabled() -> bool:
+    return (
+        should_use_worker()
+        and not _in_worker_process()
+        and (os.getenv("PODCAST_WORKER_MODE") or "").strip().lower() in {"1", "true", "yes"}
+    )
 
 
 def _fmt_num(val) -> str:
@@ -315,12 +323,20 @@ def send_kickoff_podcast_message(
     cta = "Please always respond by tapping a button (this keeps our support going)."
     if audio_url:
         print(f"[kickoff] sending kickoff message for user={user.id} url={audio_url}")
-        message = (
+        caption = (
             f"*Kickoff* Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. "
-            "This is your 12-week programme kickoff podcast—give it a listen: "
-            f"{audio_url}\n\n{cta}"
+            "This is your 12-week programme kickoff podcast—give it a listen."
         )
-        send_whatsapp(to=user.phone, text=message, quick_replies=quick_replies)
+        send_whatsapp_media(
+            to=user.phone,
+            media_url=audio_url,
+            caption=caption,
+        )
+        send_whatsapp(
+            to=user.phone,
+            text=cta,
+            quick_replies=quick_replies,
+        )
     else:
         print(f"[kickoff] no audio_url for user={user.id}; sending fallback text")
         message = (
@@ -492,7 +508,7 @@ def start_kickoff(user: User, notes: str | None = None, debug: bool = False) -> 
     """
     Create (or reuse) Week 1 focus, generate kickoff podcast, and send it.
     """
-    if should_use_worker() and not _in_worker_process():
+    if _podcast_worker_enabled():
         job_id = enqueue_job(
             "kickoff_flow",
             {"user_id": user.id, "notes": notes, "debug": bool(debug)},

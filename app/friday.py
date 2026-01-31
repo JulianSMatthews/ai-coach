@@ -20,8 +20,16 @@ def _in_worker_process() -> bool:
     return (os.getenv("PROMPT_WORKER_PROCESS") or "").strip().lower() in {"1", "true", "yes"}
 
 
+def _podcast_worker_enabled() -> bool:
+    return (
+        should_use_worker()
+        and not _in_worker_process()
+        and (os.getenv("PODCAST_WORKER_MODE") or "").strip().lower() in {"1", "true", "yes"}
+    )
+
+
 def send_boost(user: User, coach_name: str = COACH_NAME, week_no: int | None = None) -> None:
-    if should_use_worker() and not _in_worker_process():
+    if _podcast_worker_enabled():
         job_id = enqueue_job(
             "friday_flow",
             {"user_id": user.id, "week_no": week_no},
