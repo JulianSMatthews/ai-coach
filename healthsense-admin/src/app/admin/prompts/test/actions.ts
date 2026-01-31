@@ -11,6 +11,12 @@ export type TestState = {
     block_order?: string[];
     audio_url?: string | null;
     podcast_error?: string | null;
+    llm?: {
+      model?: string | null;
+      duration_ms?: number | null;
+      content?: string | null;
+      error?: string | null;
+    };
   };
 };
 
