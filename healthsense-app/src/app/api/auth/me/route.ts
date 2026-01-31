@@ -6,7 +6,7 @@ export async function GET() {
   if (!base) {
     return NextResponse.json({ error: "API_BASE_URL is not set" }, { status: 500 });
   }
-  const cookieHeader = headers().get("cookie") || "";
+  const cookieHeader = (await headers()).get("cookie") || "";
   const match = cookieHeader.match(/(?:^|; )hs_session=([^;]+)/);
   const session = match ? match[1] : null;
   if (!session) {
