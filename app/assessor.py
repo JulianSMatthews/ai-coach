@@ -2528,6 +2528,24 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                             user_id=user.id,
                         )
                         print(f"[assessment] enqueued report run_id={run_id} user_id={user.id} job={job_id}")
+                    elif run_id:
+                        try:
+                            from .reporting import (
+                                generate_assessment_dashboard_html,
+                                generate_assessment_report_pdf,
+                                generate_progress_report_html,
+                            )
+                            generate_assessment_dashboard_html(int(run_id))
+                            try:
+                                generate_assessment_report_pdf(int(run_id))
+                            except Exception:
+                                pass
+                            try:
+                                generate_progress_report_html(int(user.id))
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
                 except Exception:
                     pass
 

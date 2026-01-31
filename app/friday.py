@@ -4,6 +4,7 @@ Friday boost: short podcast/message focusing on one KR with a simple action.
 from __future__ import annotations
 
 from .db import SessionLocal
+from .job_queue import enqueue_job, should_use_worker
 from .nudges import send_whatsapp, send_whatsapp_media, append_button_cta
 from .models import User
 from .kickoff import COACH_NAME
@@ -12,9 +13,22 @@ from .podcast import generate_podcast_audio
 from .touchpoints import log_touchpoint
 from .debug_utils import debug_log
 from . import general_support
+import os
+
+
+def _in_worker_process() -> bool:
+    return (os.getenv("PROMPT_WORKER_PROCESS") or "").strip().lower() in {"1", "true", "yes"}
 
 
 def send_boost(user: User, coach_name: str = COACH_NAME, week_no: int | None = None) -> None:
+    if should_use_worker() and not _in_worker_process():
+        job_id = enqueue_job(
+            "friday_flow",
+            {"user_id": user.id, "week_no": week_no},
+            user_id=user.id,
+        )
+        print(f"[friday] enqueued friday flow user_id={user.id} job={job_id}")
+        return
     general_support.clear(user.id)
     with SessionLocal() as s:
         primary = primary_kr_payload(user.id, session=s, week_no=week_no)

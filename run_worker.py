@@ -7,7 +7,8 @@ import socket
 import traceback
 
 from app.job_queue import claim_job, ensure_job_table, mark_done, mark_error
-from app import scheduler, assessor
+from app import scheduler, assessor, monday, kickoff, thursday, friday
+from app.prompts import run_llm_prompt
 from app.reporting import (
     generate_assessment_dashboard_html,
     generate_assessment_report_pdf,
@@ -70,6 +71,67 @@ def _process_assessment_report(payload: dict) -> None:
             pass
 
 
+def _process_llm_prompt(payload: dict) -> dict:
+    prompt = payload.get("prompt")
+    if not prompt:
+        raise ValueError("llm_prompt requires prompt")
+    text = run_llm_prompt(
+        prompt,
+        user_id=payload.get("user_id"),
+        touchpoint=payload.get("touchpoint"),
+        model=payload.get("model"),
+        context_meta=payload.get("context_meta"),
+        prompt_variant=payload.get("prompt_variant"),
+        task_label=payload.get("task_label"),
+        prompt_blocks=payload.get("prompt_blocks"),
+        block_order=payload.get("block_order"),
+        log=payload.get("log"),
+    )
+    return {"ok": True, "text": text}
+
+
+def _process_weekstart_flow(payload: dict) -> None:
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise ValueError("weekstart_flow requires user_id")
+    user = _load_user(int(user_id))
+    monday.start_weekstart(
+        user,
+        notes=payload.get("notes"),
+        debug=bool(payload.get("debug", False)),
+        set_state=bool(payload.get("set_state", True)),
+        week_no=payload.get("week_no"),
+    )
+
+
+def _process_kickoff_flow(payload: dict) -> None:
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise ValueError("kickoff_flow requires user_id")
+    user = _load_user(int(user_id))
+    kickoff.start_kickoff(
+        user,
+        notes=payload.get("notes"),
+        debug=bool(payload.get("debug", False)),
+    )
+
+
+def _process_thursday_flow(payload: dict) -> None:
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise ValueError("thursday_flow requires user_id")
+    user = _load_user(int(user_id))
+    thursday.send_thursday_boost(user, week_no=payload.get("week_no"))
+
+
+def _process_friday_flow(payload: dict) -> None:
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise ValueError("friday_flow requires user_id")
+    user = _load_user(int(user_id))
+    friday.send_boost(user, week_no=payload.get("week_no"))
+
+
 def process_job(kind: str, payload: dict) -> dict:
     if kind == "day_prompt":
         _process_day_prompt(payload)
@@ -83,10 +145,25 @@ def process_job(kind: str, payload: dict) -> dict:
     if kind == "assessment_report":
         _process_assessment_report(payload)
         return {"ok": True}
+    if kind == "llm_prompt":
+        return _process_llm_prompt(payload)
+    if kind == "weekstart_flow":
+        _process_weekstart_flow(payload)
+        return {"ok": True}
+    if kind == "kickoff_flow":
+        _process_kickoff_flow(payload)
+        return {"ok": True}
+    if kind == "thursday_flow":
+        _process_thursday_flow(payload)
+        return {"ok": True}
+    if kind == "friday_flow":
+        _process_friday_flow(payload)
+        return {"ok": True}
     raise ValueError(f"Unknown job kind: {kind}")
 
 
 def main() -> None:
+    os.environ.setdefault("PROMPT_WORKER_PROCESS", "1")
     ensure_job_table()
     worker_id = os.getenv("WORKER_ID") or socket.gethostname()
     poll_seconds = int(os.getenv("WORKER_POLL_SECONDS", "2") or "2")

@@ -37,6 +37,7 @@ from sqlalchemy import func, text, case
 from .db import SessionLocal, engine, _is_postgres, _table_exists
 from .debug_utils import debug_enabled
 from .focus import select_top_krs_for_user
+from .job_queue import enqueue_job, should_use_worker
 from .models import OKRKeyResult, OKRObjective, OKRKrHabitStep, PromptTemplate, PromptSettings
 from . import llm as shared_llm
 from .models import LLMPromptLog
@@ -1514,6 +1515,94 @@ def run_llm_prompt(
     elif should_log and not touchpoint:
         print(f"[prompts] logging skipped: touchpoint not provided for user_id={user_id}")
     return content
+
+
+def _normalize_job_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        return json.loads(json.dumps(payload, default=str))
+    except Exception:
+        return {"payload_text": str(payload)}
+
+
+def _in_worker_process() -> bool:
+    return (os.getenv("PROMPT_WORKER_PROCESS") or "").strip().lower() in {"1", "true", "yes"}
+
+
+def enqueue_llm_prompt(
+    *,
+    prompt: str,
+    user_id: Optional[int] = None,
+    touchpoint: Optional[str] = None,
+    model: Optional[str] = None,
+    context_meta: Optional[Dict[str, Any]] = None,
+    prompt_variant: Optional[str] = None,
+    task_label: Optional[str] = None,
+    prompt_blocks: Optional[Dict[str, str]] = None,
+    block_order: Optional[List[str]] = None,
+    log: Optional[bool] = None,
+) -> int:
+    payload = _normalize_job_payload(
+        {
+            "prompt": prompt,
+            "user_id": user_id,
+            "touchpoint": touchpoint,
+            "model": model,
+            "context_meta": context_meta,
+            "prompt_variant": prompt_variant,
+            "task_label": task_label,
+            "prompt_blocks": prompt_blocks,
+            "block_order": block_order,
+            "log": log,
+        }
+    )
+    job_id = enqueue_job("llm_prompt", payload, user_id=user_id)
+    print(f"[prompts] queued LLM prompt touchpoint={touchpoint} user_id={user_id} job={job_id}")
+    return job_id
+
+
+def run_llm_prompt_or_enqueue(
+    prompt: str,
+    user_id: Optional[int] = None,
+    touchpoint: Optional[str] = None,
+    model: Optional[str] = None,
+    context_meta: Optional[Dict[str, Any]] = None,
+    prompt_variant: Optional[str] = None,
+    task_label: Optional[str] = None,
+    prompt_blocks: Optional[Dict[str, str]] = None,
+    block_order: Optional[List[str]] = None,
+    log: Optional[bool] = None,
+    *,
+    queue_if_worker: bool = True,
+) -> tuple[str, Optional[int]]:
+    if queue_if_worker and should_use_worker() and not _in_worker_process():
+        job_id = enqueue_llm_prompt(
+            prompt=prompt,
+            user_id=user_id,
+            touchpoint=touchpoint,
+            model=model,
+            context_meta=context_meta,
+            prompt_variant=prompt_variant,
+            task_label=task_label,
+            prompt_blocks=prompt_blocks,
+            block_order=block_order,
+            log=log,
+        )
+        return "", job_id
+    return (
+        run_llm_prompt(
+            prompt,
+            user_id=user_id,
+            touchpoint=touchpoint,
+            model=model,
+            context_meta=context_meta,
+            prompt_variant=prompt_variant,
+            task_label=task_label,
+            prompt_blocks=prompt_blocks,
+            block_order=block_order,
+            log=log,
+        ),
+        None,
+    )
 
 
 def log_llm_prompt(

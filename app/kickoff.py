@@ -5,12 +5,14 @@ from __future__ import annotations
 
 import json
 import re
+import os
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
+from .job_queue import enqueue_job, should_use_worker
 from .nudges import send_whatsapp
 from .debug_utils import debug_enabled
 from .models import (
@@ -30,10 +32,13 @@ from .reporting import _reports_root_for_user
 from .prompts import podcast_prompt, build_prompt, run_llm_prompt, okrs_by_pillar_payload
 from .touchpoints import log_touchpoint
 from . import general_support
-import os
 from .podcast import generate_podcast_audio
 
 COACH_NAME = os.getenv("COACH_NAME", "Gia")
+
+
+def _in_worker_process() -> bool:
+    return (os.getenv("PROMPT_WORKER_PROCESS") or "").strip().lower() in {"1", "true", "yes"}
 
 
 def _fmt_num(val) -> str:
@@ -487,6 +492,14 @@ def start_kickoff(user: User, notes: str | None = None, debug: bool = False) -> 
     """
     Create (or reuse) Week 1 focus, generate kickoff podcast, and send it.
     """
+    if should_use_worker() and not _in_worker_process():
+        job_id = enqueue_job(
+            "kickoff_flow",
+            {"user_id": user.id, "notes": notes, "debug": bool(debug)},
+            user_id=user.id,
+        )
+        print(f"[kickoff] enqueued kickoff flow user_id={user.id} job={job_id}")
+        return
     general_support.clear(user.id)
     week_no = 1
     with SessionLocal() as s:

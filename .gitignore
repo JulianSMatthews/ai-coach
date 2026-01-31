@@ -23,6 +23,4 @@ __pycache__/
 .venv/
 .DS_Store
 .env
-/public/reports/
-/public/reports/**
 app/assessor_LATEST.py

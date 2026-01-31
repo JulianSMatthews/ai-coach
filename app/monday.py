@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
+from .job_queue import enqueue_job, should_use_worker
 from .nudges import send_whatsapp, send_whatsapp_media
 from .debug_utils import debug_enabled
 from .models import (
@@ -33,6 +34,10 @@ from .podcast import generate_podcast_audio
 from .prompts import coaching_prompt, kr_payload_list, build_prompt, run_llm_prompt
 from .touchpoints import log_touchpoint
 from . import general_support
+
+
+def _in_worker_process() -> bool:
+    return (os.getenv("PROMPT_WORKER_PROCESS") or "").strip().lower() in {"1", "true", "yes"}
 
 
 def _current_focus_pillar(user: User) -> Optional[str]:
@@ -835,6 +840,20 @@ def _is_confirm_message(text: str, *, allow_all_good: bool = False) -> bool:
 
 def start_weekstart(user: User, notes: str | None = None, debug: bool = False, set_state: bool = True, week_no: Optional[int] = None) -> None:
     """Create weekly focus, pick KRs, send monday weekstart message, and optionally set state."""
+    if should_use_worker() and not _in_worker_process():
+        job_id = enqueue_job(
+            "weekstart_flow",
+            {
+                "user_id": user.id,
+                "notes": notes,
+                "debug": bool(debug),
+                "set_state": bool(set_state),
+                "week_no": week_no,
+            },
+            user_id=user.id,
+        )
+        print(f"[monday] enqueued weekstart flow user_id={user.id} job={job_id}")
+        return
     general_support.clear(user.id)
     with SessionLocal() as s:
         today = datetime.utcnow().date()
