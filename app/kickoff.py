@@ -4,13 +4,15 @@ Kickoff touchpoint: create/reuse Week 1 focus and send a kickoff podcast.
 from __future__ import annotations
 
 import json
+import re
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
-from .nudges import send_whatsapp, send_whatsapp_media
+from .nudges import send_whatsapp
+from .debug_utils import debug_enabled
 from .models import (
     User,
     UserPreference,
@@ -25,8 +27,9 @@ from .models import (
 from .focus import select_top_krs_for_user
 from . import llm as shared_llm
 from .reporting import _reports_root_for_user
-from .prompts import podcast_prompt, build_prompt, run_llm_prompt
+from .prompts import podcast_prompt, build_prompt, run_llm_prompt, okrs_by_pillar_payload
 from .touchpoints import log_touchpoint
+from . import general_support
 import os
 from .podcast import generate_podcast_audio
 
@@ -155,6 +158,26 @@ def generate_kickoff_podcast_transcript(
     )
     llm_client = getattr(shared_llm, "_llm", None)
 
+    def _trim_to_max_words(text: str, max_words: int) -> str:
+        words = (text or "").split()
+        if not words or len(words) <= max_words:
+            return text
+        # Prefer trimming at sentence boundaries while respecting the word cap.
+        sentences = re.split(r"(?<=[.!?])\\s+", text.strip())
+        trimmed: list[str] = []
+        count = 0
+        for sentence in sentences:
+            if not sentence:
+                continue
+            sentence_words = sentence.split()
+            if count + len(sentence_words) > max_words:
+                break
+            trimmed.append(sentence.strip())
+            count += len(sentence_words)
+        if not trimmed:
+            trimmed = [" ".join(words[:max_words]).strip()]
+        return " ".join(trimmed).strip()
+
     if llm_client:
         if mode == "weekstart":
             prompt_assembly = build_prompt(
@@ -182,7 +205,8 @@ def generate_kickoff_podcast_transcript(
                 log=True,
             )
             if transcript:
-                return transcript
+                max_words = int(os.getenv("WEEKSTART_PODCAST_MAX_WORDS", "420") or "420")
+                return _trim_to_max_words(transcript, max_words)
         else:
             prompt_assembly = build_prompt(
                 "podcast_kickoff",
@@ -282,26 +306,25 @@ def send_kickoff_podcast_message(
     """
     Send kickoff podcast link and log touchpoint (used by automated weekflow kickoff).
     """
+    quick_replies = ["All good", "Need help"]
+    cta = "Please always respond by tapping a button (this keeps our support going)."
     if audio_url:
-        print(f"[kickoff] sending podcast media for user={user.id} url={audio_url}")
-        base_caption = (
+        print(f"[kickoff] sending kickoff message for user={user.id} url={audio_url}")
+        message = (
             f"*Kickoff* Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. "
-            "Here’s your kickoff podcast—give it a listen."
+            "This is your 12-week programme kickoff podcast—give it a listen: "
+            f"{audio_url}\n\n{cta}"
         )
-        message = base_caption
-        try:
-            send_whatsapp_media(to=user.phone, media_url=audio_url, caption=base_caption)
-        except Exception:
-            # Fallback to link if media send fails
-            message = f"{base_caption} {audio_url}"
-            send_whatsapp(to=user.phone, text=message)
+        send_whatsapp(to=user.phone, text=message, quick_replies=quick_replies)
     else:
         print(f"[kickoff] no audio_url for user={user.id}; sending fallback text")
         message = (
             f"*Kickoff* Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. "
-            "I couldn’t generate your kickoff audio just now, but the plan is ready—let’s proceed."
+            "This is your 12-week programme kickoff. "
+            "I couldn’t generate your kickoff audio just now, but the plan is ready—let’s proceed.\n\n"
+            f"{cta}"
         )
-    send_whatsapp(to=user.phone, text=message)
+        send_whatsapp(to=user.phone, text=message, quick_replies=quick_replies)
     try:
         log_touchpoint(
             user_id=user.id,
@@ -464,6 +487,7 @@ def start_kickoff(user: User, notes: str | None = None, debug: bool = False) -> 
     """
     Create (or reuse) Week 1 focus, generate kickoff podcast, and send it.
     """
+    general_support.clear(user.id)
     week_no = 1
     with SessionLocal() as s:
         selected = select_top_krs_for_user(s, user.id, limit=None, week_no=week_no)
@@ -536,8 +560,16 @@ def start_kickoff(user: User, notes: str | None = None, debug: bool = False) -> 
             weekly_focus_id=wf_id,
             kr_ids=kr_ids,
         )
+        general_support.activate(user.id, source="kickoff", week_no=week_no, send_intro=False)
     except Exception as e:
-        send_whatsapp(to=user.phone, text=f"Couldn't start kickoff: {e}")
+        try:
+            print(f"[kickoff] start_kickoff error for user {user.id}: {e}")
+        except Exception:
+            pass
+        send_whatsapp(
+            to=user.phone,
+            text="*Kickoff* Sorry—something went wrong sending your kickoff. Please try again shortly.",
+        )
 
 
 def handle_message(user: User, text: str) -> None:
@@ -545,7 +577,8 @@ def handle_message(user: User, text: str) -> None:
     lower = msg.lower()
     # kickoff keyword starts a new flow
     if lower.startswith("kickoff"):
-        start_kickoff(user, debug=lower.startswith("kickoffdebug"))
+        debug = lower.startswith("kickoffdebug") and debug_enabled()
+        start_kickoff(user, debug=debug)
         return
 
     # No other stateful kickoff chat: politely prompt the user to use the keyword

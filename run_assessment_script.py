@@ -73,8 +73,8 @@ import json
 # --- import your app bits ---
 from app.seed import run_seed, CONCEPTS, CONCEPT_SCORE_BOUNDS
 from app.db import SessionLocal
-from app.models import User, Club, OKRKeyResult, UserPreference
-from app import weekflow, sunday
+from app.models import User, Club, OKRKeyResult, UserPreference, WeeklyFocus, WeeklyFocusKR
+from app import weekflow, sunday, monday
 
 # Optional models for completion/score checks (best-effort)
 try:
@@ -135,6 +135,62 @@ def _patch_weekflow_outbound_noop():
                 setattr(mod, "send_whatsapp", _noop)
     except Exception as _e:
         print(f"[warn] unable to patch weekflow outbound: {_e}")
+
+def _prime_monday_state_for_week(user: "User", week_no: int) -> bool:
+    """
+    Prepare weekstart_state for Monday support without creating a new WeeklyFocus.
+    Uses the WeeklyFocus created by weekflow for the given week.
+    """
+    try:
+        with SessionLocal() as s:
+            wf = (
+                s.query(WeeklyFocus)
+                .filter(WeeklyFocus.user_id == user.id, WeeklyFocus.week_no == week_no)
+                .order_by(WeeklyFocus.starts_on.desc())
+                .first()
+            )
+            if not wf:
+                return False
+            rows = (
+                s.query(WeeklyFocusKR)
+                .filter(WeeklyFocusKR.weekly_focus_id == wf.id)
+                .order_by(WeeklyFocusKR.priority_order.asc())
+                .all()
+            )
+            kr_ids = [row.kr_id for row in rows if row.kr_id]
+            state = {
+                "mode": "support",
+                "wf_id": wf.id,
+                "kr_ids": kr_ids,
+                "history": [],
+                "debug": False,
+            }
+            pref = (
+                s.query(UserPreference)
+                .filter(UserPreference.user_id == user.id, UserPreference.key == "weekstart_state")
+                .one_or_none()
+            )
+            if pref:
+                pref.value = json.dumps(state)
+            else:
+                s.add(UserPreference(user_id=user.id, key="weekstart_state", value=json.dumps(state)))
+            s.commit()
+            return True
+    except Exception:
+        return False
+
+def _simulate_monday_support(user: "User", week_no: int) -> None:
+    """
+    Drive Monday support flow for an existing WeeklyFocus created by weekflow.
+    """
+    if not _prime_monday_state_for_week(user, week_no):
+        print(f"[simulate] Monday state missing for week {week_no}, skipping Monday support.")
+        return
+    try:
+        monday.handle_message(user, "All ok")
+        monday.handle_message(user, "Thanks, keep them as-is.")
+    except Exception as e:
+        print(f"[simulate] Monday support failed (week {week_no}): {e}")
 
 # Optional models (best-effort) for consent/state detection
 try:
@@ -1490,13 +1546,48 @@ def main():
             surname_override=surname_override,
         )
 
+    def _build_sunday_responses(user: User) -> list[str]:
+        try:
+            with SessionLocal() as s:
+                pref = (
+                    s.query(UserPreference)
+                    .filter(UserPreference.user_id == user.id, UserPreference.key == "sunday_state")
+                    .one_or_none()
+                )
+                state = {}
+                if pref and pref.value:
+                    try:
+                        state = json.loads(pref.value)
+                    except Exception:
+                        state = {}
+                review_mode = state.get("review_mode", "kr")
+                kr_ids = state.get("kr_ids") or []
+                if review_mode == "habit":
+                    return [
+                        "Habit steps went well overall. I missed one day midweek but got back on track.",
+                        "All good, keep the steps as-is for next week.",
+                    ]
+                # KR mode: respond with numbers for each KR in a single message
+                numbers = []
+                if kr_ids:
+                    for kr_id in kr_ids:
+                        kr = s.query(OKRKeyResult).get(kr_id)
+                        if kr and kr.target_num is not None:
+                            numbers.append(str(kr.target_num))
+                        else:
+                            numbers.append("1")
+                if not numbers:
+                    numbers = ["1", "1", "1"]
+                return [" ".join(numbers), "All good thanks."]
+        except Exception:
+            return ["1 1 1", "All good thanks."]
+
     if args.simulate_12_weeks:
         _patch_weekflow_outbound_noop()
         if user is None:
             print("[simulate] No user available for 12-week simulation.")
             return
         # Simulate weeks 1–12, sending Sunday answers automatically (mock outbound recommended)
-        sunday_responses = ["1", "1", "1", "Wins: kept meals simple", "Blockers: midweek busy"]
         for wk in range(1, 13):
             print(f"[simulate] week {wk}/12")
             try:
@@ -1504,36 +1595,17 @@ def main():
             except Exception as e:
                 print(f"[simulate] week {wk} failed: {e}")
                 continue
+            # Drive Monday support using the weekflow-created WeeklyFocus
+            try:
+                _simulate_monday_support(user, wk)
+            except Exception as e:
+                print(f"[simulate] Monday support failed (week {wk}): {e}")
             # If Sunday state is active, feed canned answers in the right order
             try:
                 if not sunday.has_active_state(user.id):
                     print(f"[simulate] Sunday state missing for week {wk}, skipping canned answers.")
                     continue
-                with SessionLocal() as s:
-                    pref = (
-                        s.query(UserPreference)
-                        .filter(UserPreference.user_id == user.id, UserPreference.key == "sunday_state")
-                        .one_or_none()
-                    )
-                    responses: list[str] = []
-                    kr_ids: list[int] = []
-                    if pref and pref.value:
-                        try:
-                            data = json.loads(pref.value)
-                            kr_ids = data.get("kr_ids") or []
-                        except Exception:
-                            kr_ids = []
-                    if kr_ids:
-                        for kr_id in kr_ids:
-                            kr = s.query(OKRKeyResult).get(kr_id)
-                            if kr and kr.target_num is not None:
-                                responses.append(str(kr.target_num))
-                            else:
-                                responses.append("1")
-                    else:
-                        # default to three numeric placeholders if we can't resolve kr_ids
-                        responses = ["1", "1", "1"]
-                    responses += ["Wins: kept meals simple", "Blockers: midweek busy"]
+                responses = _build_sunday_responses(user)
                 for resp in responses:
                     sunday.handle_message(user, resp)
             except Exception as e:
@@ -1543,7 +1615,6 @@ def main():
         if user is None:
             print("[simulate] No user available for week-1 simulation.")
             return
-        sunday_responses = ["1", "1", "1", "Wins: kept meals simple", "Blockers: midweek busy"]
         wk = 1
         print(f"[simulate] week {wk}/1")
         try:
@@ -1552,33 +1623,11 @@ def main():
             print(f"[simulate] week {wk} failed: {e}")
             return
         try:
+            _simulate_monday_support(user, wk)
             if not sunday.has_active_state(user.id):
                 print(f"[simulate] Sunday state missing for week {wk}, skipping canned answers.")
                 return
-            with SessionLocal() as s:
-                pref = (
-                    s.query(UserPreference)
-                    .filter(UserPreference.user_id == user.id, UserPreference.key == "sunday_state")
-                    .one_or_none()
-                )
-                responses: list[str] = []
-                kr_ids: list[int] = []
-                if pref and pref.value:
-                    try:
-                        data = json.loads(pref.value)
-                        kr_ids = data.get("kr_ids") or []
-                    except Exception:
-                        kr_ids = []
-                if kr_ids:
-                    for kr_id in kr_ids:
-                        kr = s.query(OKRKeyResult).get(kr_id)
-                        if kr and kr.target_num is not None:
-                            responses.append(str(kr.target_num))
-                        else:
-                            responses.append("1")
-                else:
-                    responses = ["1", "1", "1"]
-                responses += ["Wins: kept meals simple", "Blockers: midweek busy"]
+            responses = _build_sunday_responses(user)
             for resp in responses:
                 sunday.handle_message(user, resp)
         except Exception as e:

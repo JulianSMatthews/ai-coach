@@ -108,7 +108,7 @@ def build_pillar_feedback(
 
 # Report 
 
-from .reporting import generate_assessment_dashboard_html, generate_progress_report_html, _fetch_okrs_for_run
+from .reporting import generate_progress_report_html, _fetch_okrs_for_run
 from . import psych
 
 # Optional integrations (fail-safe no-ops if missing)
@@ -494,9 +494,8 @@ def _compose_final_summary_message(user: User, state: dict) -> str:
     combined_bar = _score_bar("Combined", combined)
     msg = f"{intro} Your combined score is:\n{combined_bar}\n\n{breakdown}"
     try:
-        html_link = _report_url(user.id, "latest.html")
-        bust = int(time.time())
-        msg += f"\n\nYour wellbeing assessment: {html_link}?ts={bust} (type 'assessment' anytime)"
+        app_base = _hsapp_base_url()
+        msg += f"\n\nView your assessment in the HealthSense app: {app_base}/login"
     except Exception:
         pass
     return msg
@@ -701,7 +700,7 @@ def _report_url(user_id: int, filename: str) -> str:
         from .api import _public_report_url  # dynamic import prevents circular imports
         return _public_report_url(user_id, filename)
     except Exception:
-        base = (os.getenv("PUBLIC_BASE_URL") or "").rstrip("/")
+        base = (os.getenv("API_PUBLIC_BASE_URL") or os.getenv("PUBLIC_BASE_URL") or "").rstrip("/")
         path = f"/reports/{user_id}/{filename}"
         return f"{base}{path}" if base else path
 
@@ -1632,11 +1631,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         cmd = (user_text or "").strip().lower()
 
         if cmd in {"report", "pdf", "report please", "send report", "pdf report", "dashboard", "image report", "assessment"}:
-            dash_link = _report_url(user.id, "latest.html")
-            _send_to_user(
-                user,
-                f"Your Wellbeing assessment: {dash_link}\n(*Type 'assessment' any time to view it again.*)",
-            )
+            send_hsapp_assessment_link(user)
             return True
 
         # Quick correction command — "redo last"
@@ -2446,9 +2441,6 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 per_list = [x for x in [n_sc, t_sc, r_sc, rc_sc] if x is not None]
                 combined = round(sum(per_list) / max(1, len(per_list))) if per_list else 0
 
-                # Build assessment link
-                dash_link = _report_url(user.id, "latest.html")
-
                 # Per-pillar breakdown with colored bars
                 bars = []
                 if n_sc is not None: bars.append(_score_bar("Nutrition", n_sc))
@@ -2460,11 +2452,11 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 # Build final message (will be sent after psych check completes)
                 name = (getattr(user, "first_name", "") or "").strip()
                 intro = f"🎯 *Assessment complete, {name}!*" if name else "🎯 *Assessment complete!*"
+                app_base = _hsapp_base_url()
                 final_msg = (
                     f"{intro} Your combined score is *{combined}/100*\n"
                     f"\n{breakdown}\n\n"
-                    f"Your Wellbeing assessment: {dash_link}\n"
-                    f"(*Type 'assessment' any time to view it again.*)"
+                    f"View your assessment in the HealthSense app: {app_base}/login"
                 )
                 # Mark any active assessment sessions as inactive before psych
                 try:
@@ -2490,7 +2482,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
 
                 # Persist combined score + dashboard path onto AssessmentRun (for reporting)
                 try:
-                    rpt_path = f"/reports/{user.id}/latest.html"
+                    rpt_path = f"/reports/{user.id}/assessment.html"
                     s.execute(
                         update(AssessmentRun)
                         .where(AssessmentRun.id == state.get("run_id"))
@@ -2569,33 +2561,26 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         _commit_state(s, sess, state)
         return True
 def send_menu_options(user: User) -> None:
-    _send_to_user(user, "Type 'assessment' anytime to open your interactive tracker link.")
+    _send_to_user(user, "Log into the HealthSense app to view your assessment.")
+
+
+def _hsapp_base_url() -> str:
+    base = (os.getenv("HSAPP_PUBLIC_URL") or "").strip()
+    if not base:
+        base = (os.getenv("HSAPP_NGROK_DOMAIN") or "").strip()
+    if not base:
+        base = "http://localhost:3000"
+    if not base.startswith(("http://", "https://")):
+        base = f"https://{base}"
+    return base.rstrip("/")
+
+
+def send_hsapp_assessment_link(user: User) -> None:
+    base = _hsapp_base_url()
+    _send_to_user(
+        user,
+        f"Your assessment is now in the HealthSense app. Log in here: {base}/login",
+    )
 
 def send_dashboard_link(user: User) -> None:
-    run_id = None
-    try:
-        with SessionLocal() as s:
-            run = (
-                s.query(AssessmentRun)
-                 .filter(AssessmentRun.user_id == user.id)
-                 .order_by(AssessmentRun.finished_at.desc().nullslast(), AssessmentRun.started_at.desc())
-                 .first()
-            )
-            if run:
-                run_id = run.id
-    except Exception:
-        run_id = None
-
-    if not run_id:
-        _send_to_user(user, "No assessment history yet. Start a new assessment to view your tracker.")
-        return
-
-    try:
-        print(f"[assessment] regenerating HTML for run_id={run_id}")
-        generate_assessment_dashboard_html(run_id)
-        print(f"[assessment] wrote HTML for run_id={run_id}")
-    except Exception as e:
-        print(f"[assessment_error] {e}")
-    link = _report_url(user.id, "latest.html")
-    bust = int(time.time())
-    _send_to_user(user, f"Your wellbeing assessment: {link}?ts={bust}")
+    send_hsapp_assessment_link(user)

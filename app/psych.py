@@ -243,25 +243,6 @@ def handle_message(user: User, text: str):
             _set_state(s, user.id, None)
             pending = pop_pending_summary(s, user.id)
             s.commit()
-            # Regenerate dashboard/progress after habit readiness completes so coaching approach is included
-            try:
-                from .reporting import generate_assessment_dashboard_html, generate_progress_report_html
-                from .models import AssessmentRun
-                run_id = state.get("assessment_run_id")
-                if not run_id:
-                    with SessionLocal() as ss:
-                        latest_run = (
-                            ss.query(AssessmentRun)
-                            .filter(AssessmentRun.user_id == user.id)
-                            .order_by(AssessmentRun.id.desc())
-                            .first()
-                        )
-                        run_id = getattr(latest_run, "id", None)
-                if run_id:
-                    generate_assessment_dashboard_html(run_id)
-                generate_progress_report_html(user.id)
-            except Exception:
-                pass
             if pending:
                 _send_safe(user, pending)
             _send_safe(

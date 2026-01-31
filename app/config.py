@@ -25,6 +25,7 @@ class Settings(BaseSettings):
 
     # Dev reset + seed user
     RESET_DB_ON_STARTUP: bool = Field(False, env="RESET_DB_ON_STARTUP")
+    KEEP_PROMPT_TEMPLATES_ON_RESET: bool = Field(False, env="KEEP_PROMPT_TEMPLATES_ON_RESET")
     SEED_TEST_USER: bool = Field(False, env="SEED_TEST_USER")
     SEED_USER_NAME: str = Field("Test User", env="SEED_USER_NAME")
     SEED_USER_PHONE: Optional[str] = Field(None, env="SEED_USER_PHONE")
@@ -35,6 +36,9 @@ class Settings(BaseSettings):
 
     # show OKR feedback after each pillar result or not. 
     SHOW_OKR_FEEDBACK_IMMEDIATE: bool = Field(False, env="SHOW_OKR_FEEDBACK_IMMEDIATE")
+
+    # Debug logging
+    AI_COACH_DEBUG: bool = Field(False, env="AI_COACH_DEBUG")
 
 
     model_config = SettingsConfigDict(

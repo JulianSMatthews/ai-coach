@@ -7,13 +7,14 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
-from .nudges import send_whatsapp
+from .nudges import send_whatsapp, append_button_cta
 from .models import WeeklyFocus, User
 from .kickoff import COACH_NAME
 from .prompts import format_checkin_history, primary_kr_payload, build_prompt, run_llm_prompt
 from .touchpoints import log_touchpoint
 from .checkins import fetch_recent_checkins
 from .checkins import record_checkin
+from . import general_support
 
 
 def _latest_weekly_focus(session: Session, user_id: int) -> Optional[WeeklyFocus]:
@@ -26,6 +27,7 @@ def _latest_weekly_focus(session: Session, user_id: int) -> Optional[WeeklyFocus
 
 
 def send_tuesday_check(user: User, coach_name: str = COACH_NAME) -> None:
+    general_support.clear(user.id)
     with SessionLocal() as s:
         wf = _latest_weekly_focus(s, user.id)
         if not wf:
@@ -75,7 +77,11 @@ def send_tuesday_check(user: User, coach_name: str = COACH_NAME) -> None:
                 "Give me a quick yes/no or a number, and try one small nudge today to keep it moving."
             )
 
-        send_whatsapp(to=user.phone, text=message)
+        send_whatsapp(
+            to=user.phone,
+            text=append_button_cta(message),
+            quick_replies=["All good", "Need help"],
+        )
         check_in_id = None
         try:
             check_in_id = record_checkin(
@@ -99,3 +105,4 @@ def send_tuesday_check(user: User, coach_name: str = COACH_NAME) -> None:
             generated_text=message,
             source_check_in_id=check_in_id,
         )
+        general_support.activate(user.id, source="tuesday", week_no=getattr(wf, "week_no", None), send_intro=False)

@@ -119,7 +119,7 @@ def handle(user: User, body: str) -> None:
                     return
                 _, day, hhmm = tokens
                 day = day.lower()
-                valid_days = {"monday", "tuesday", "wednesday", "thursday", "friday", "sunday"}
+                valid_days = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
                 if day not in valid_days:
                     send_whatsapp(
                         to=user.phone,
@@ -177,7 +177,7 @@ def handle(user: User, body: str) -> None:
         reply += f"\nCoaching: {auto_status}"
         # Show any custom prompt times
         times = {}
-        for d in ("monday", "tuesday", "wednesday", "thursday", "friday", "sunday"):
+        for d in ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"):
             pref = (
                 s.query(UserPreference)
                 .filter(UserPreference.user_id == user.id, UserPreference.key == _time_key(d))

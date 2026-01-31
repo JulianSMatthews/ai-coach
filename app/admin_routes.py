@@ -155,7 +155,12 @@ def _build_version_label() -> str:
     short = commit[:8] if len(commit) > 8 else commit
     return f"<div class='meta'>Build: {html.escape(short)}</div>"
 
+_PROMPT_SCHEMA_READY = False
+
 def _ensure_prompt_template_table():
+    global _PROMPT_SCHEMA_READY
+    if _PROMPT_SCHEMA_READY:
+        return
     try:
         PromptTemplate.__table__.create(bind=engine, checkfirst=True)
     except Exception:
@@ -195,6 +200,7 @@ def _ensure_prompt_template_table():
         PromptTemplateVersionLog.__table__.create(bind=engine, checkfirst=True)
     except Exception:
         pass
+    _PROMPT_SCHEMA_READY = True
 
 @admin.get("/runs", response_class=HTMLResponse)
 def list_runs(limit: int = 50):
@@ -839,7 +845,7 @@ def test_prompt_template(
             )
         if tp_lower == "weekstart_actions":
             extra_kwargs.update({"krs": krs_payload, "transcript": ""})
-        if tp_lower in {"tuesday", "midweek", "sunday"}:
+        if tp_lower in {"tuesday", "midweek", "saturday", "sunday"}:
             extra_kwargs.update(
                 {
                     "scores": scores_payload,

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import time
 from datetime import datetime, date, timedelta, timezone
 import html
 import json
@@ -22,6 +23,7 @@ from .okr import (
 )
 from .models import (
     AssessmentRun,
+    AssessmentNarrative,
     PillarResult,
     User,
     JobAudit,
@@ -30,6 +32,7 @@ from .models import (
     OKRCycle,
     OKRObjective,
     OKRKeyResult,
+    OKRKrHabitStep,
     WeeklyFocus,
     WeeklyFocusKR,
     PsychProfile,
@@ -52,6 +55,7 @@ from .prompts import (
     _canonical_state,
     PromptAssembly,
 )
+from .debug_utils import debug_log
 
 # For raw SQL fallback when OKR models are unavailable
 from sqlalchemy import text, select
@@ -84,7 +88,6 @@ AUDIT_TO_DB = os.getenv("AUDIT_TO_DB", "1") == "1"
 BRAND_NAME = (os.getenv("BRAND_NAME") or "HealthSense").strip()
 BRAND_YEAR = os.getenv("BRAND_YEAR") or str(datetime.utcnow().year)
 BRAND_FOOTER = f"© {BRAND_YEAR} {BRAND_NAME}. All rights reserved." if BRAND_NAME else ""
-DEBUG_PROGRESS_BASELINES = os.getenv("DEBUG_PROGRESS_BASELINES", "0") == "1"
 FONT_FACE = (
     "@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;600&family=Inter:wght@400;500;600&display=swap'); "
     "body { font-family: 'Inter', system-ui, -apple-system, sans-serif; color:#101828; } "
@@ -184,9 +187,20 @@ def _assemble_prompt_for_report(touchpoint: str, user_id: int, as_of_date: date 
         krs_payload = kr_payload_list(int(user_id), max_krs=3)
         if tp_lower in {"weekstart_support"}:
             extra_kwargs.update({"scores": scores_payload, "psych_payload": psych_payload, "krs_payload": krs_payload, "history": []})
+        if tp_lower in {"general_support"}:
+            extra_kwargs.update(
+                {
+                    "scores": scores_payload,
+                    "psych_payload": psych_payload,
+                    "history": [],
+                    "week_no": 1,
+                    "timeframe": "Week 1",
+                    "extras": "flow=monday; week_no=1",
+                }
+            )
         if tp_lower == "weekstart_actions":
             extra_kwargs.update({"krs": krs_payload, "transcript": ""})
-        if tp_lower in {"tuesday", "midweek", "sunday"}:
+        if tp_lower in {"tuesday", "midweek", "saturday", "sunday"}:
             # include KR payload for OKR block; history placeholder
             extra_kwargs.update({"scores": scores_payload, "psych_payload": psych_payload, "history_text": "", "krs": krs_payload})
         if tp_lower in {"podcast_thursday", "podcast_friday"}:
@@ -245,7 +259,7 @@ def _assemble_prompt_for_report(touchpoint: str, user_id: int, as_of_date: date 
 def _report_link(user_id: int, filename: str) -> str:
     """
     Build an HTTP-ish report link to a user report file.
-    Priority: REPORTS_BASE_URL > PUBLIC_REPORT_BASE_URL > PUBLIC_BASE_URL > RENDER_EXTERNAL_URL.
+    Priority: REPORTS_BASE_URL > PUBLIC_REPORT_BASE_URL > API_PUBLIC_BASE_URL > PUBLIC_BASE_URL > RENDER_EXTERNAL_URL.
     Falls back to relative /reports/... if none are set.
     """
     try:
@@ -256,6 +270,7 @@ def _report_link(user_id: int, filename: str) -> str:
     base = (
         os.getenv("REPORTS_BASE_URL")
         or os.getenv("PUBLIC_REPORT_BASE_URL")
+        or os.getenv("API_PUBLIC_BASE_URL")
         or os.getenv("PUBLIC_BASE_URL")
         or os.getenv("RENDER_EXTERNAL_URL")
         or ""
@@ -305,12 +320,17 @@ def _kr_notes_dict(notes: str | None) -> dict:
 
 
 def _progress_debug(message: str, payload: dict | None = None) -> None:
-    if not DEBUG_PROGRESS_BASELINES:
+    if os.getenv("AI_COACH_DEBUG", "").strip().lower() not in {"1", "true", "yes"}:
         return
     try:
-        print(f"[REPORT][KR] {message} :: {payload or {}}")
+        debug_log(message, payload or {}, tag="report")
     except Exception:
         pass
+
+def _report_log(message: str) -> None:
+    if os.getenv("AI_COACH_DEBUG", "").strip().lower() not in {"1", "true", "yes"}:
+        return
+    print(message)
 
 
 def _collect_run_dialogue(run_id: int, limit_per_pillar: int = 3) -> dict[str, list[dict]]:
@@ -622,7 +642,7 @@ def generate_llm_prompt_log_report_html(user_id: int, limit: int = 100) -> str:
     return _report_link(user_id, "llm_review.html")
 
 
-def _coaching_approach_text(user_id: int, first_name: str | None = None) -> str:
+def _coaching_approach_text(user_id: int, first_name: str | None = None, *, allow_llm: bool = True) -> str:
     with SessionLocal() as s:
         prof = (
             s.query(PsychProfile)
@@ -636,19 +656,28 @@ def _coaching_approach_text(user_id: int, first_name: str | None = None) -> str:
     params = getattr(prof, "parameters", {}) or {}
     sec = getattr(prof, "section_averages", {}) or {}
     name = (first_name or "").strip() or "you"
-    client = getattr(shared_llm, "_llm", None)
+    client = getattr(shared_llm, "_llm", None) if allow_llm else None
     text = ""
     if client:
         assembly = coaching_approach_prompt(name, sec, flags, params)
+        debug_log(
+            "assessment_approach template",
+            {
+                "template_state": (assembly.meta or {}).get("template_state"),
+                "template_version": (assembly.meta or {}).get("template_version"),
+            },
+            tag="assessment",
+        )
         prompt = assembly.text
         try:
-            import time
             t0 = time.perf_counter()
+            _report_log(f"[report_llm] coaching_approach start user_id={user_id}")
             resp = client.invoke(prompt)
             duration_ms = int((time.perf_counter() - t0) * 1000)
             candidate = (getattr(resp, "content", None) or "").strip()
             if candidate:
                 text = candidate
+            _report_log(f"[report_llm] coaching_approach done user_id={user_id} ms={duration_ms}")
             try:
                 log_llm_prompt(
                     user_id=user_id,
@@ -690,13 +719,22 @@ def _score_narrative_from_llm(user: User, combined: int, payload: list[dict]) ->
         return ""
     name = (getattr(user, "first_name", None) or "the member").strip()
     assembly = assessment_scores_prompt(name, combined, payload)
+    debug_log(
+        "assessment_scores template",
+        {
+            "template_state": (assembly.meta or {}).get("template_state"),
+            "template_version": (assembly.meta or {}).get("template_version"),
+        },
+        tag="assessment",
+    )
     prompt = assembly.text
     try:
-        import time
         t0 = time.perf_counter()
+        _report_log(f"[report_llm] score_narrative start user_id={getattr(user,'id',None)} combined={combined}")
         resp = _llm.invoke(prompt)
         duration_ms = int((time.perf_counter() - t0) * 1000)
         text = resp.content.strip() if hasattr(resp, "content") else str(resp).strip()
+        _report_log(f"[report_llm] score_narrative done user_id={getattr(user,'id',None)} ms={duration_ms}")
         try:
             log_llm_prompt(
                 user_id=getattr(user, "id", None),
@@ -723,13 +761,22 @@ def _okr_narrative_from_llm(user: User, payload: list[dict]) -> str:
         return ""
     name = (getattr(user, "first_name", None) or "you").strip()
     assembly = okr_narrative_prompt(name, payload)
+    debug_log(
+        "assessment_okr template",
+        {
+            "template_state": (assembly.meta or {}).get("template_state"),
+            "template_version": (assembly.meta or {}).get("template_version"),
+        },
+        tag="assessment",
+    )
     prompt = assembly.text
     try:
-        import time
         t0 = time.perf_counter()
+        _report_log(f"[report_llm] okr_narrative start user_id={getattr(user,'id',None)}")
         resp = _llm.invoke(prompt)
         duration_ms = int((time.perf_counter() - t0) * 1000)
         text = resp.content.strip() if hasattr(resp, "content") else str(resp).strip()
+        _report_log(f"[report_llm] okr_narrative done user_id={getattr(user,'id',None)} ms={duration_ms}")
         try:
             log_llm_prompt(
                 user_id=getattr(user, "id", None),
@@ -847,7 +894,7 @@ def generate_global_users_html() -> str:
             _ensure_dashboard_and_progress(u, latest_run)
             finished = getattr(latest_run, "finished_at", None)
             finished_str = _fmt_dt(finished)
-            dash_link = _report_link(u.id, "latest.html")
+            dash_link = _report_link(u.id, "assessment.html")
             prog_link = _report_link(u.id, "progress.html")
             dash_cell = f"<a href=\"{html.escape(dash_link)}\" target=\"_blank\">assessment</a>" if dash_link else ""
             prog_cell = f"<a href=\"{html.escape(prog_link)}\" target=\"_blank\">progress</a>" if prog_link else ""
@@ -985,7 +1032,7 @@ def generate_club_users_html(club_id: int) -> str:
         if latest_run:
             _ensure_dashboard_and_progress(u, latest_run)
             finished_str = _fmt_dt(getattr(latest_run, "finished_at", None))
-            dash_link = _report_link(u.id, "latest.html")
+            dash_link = _report_link(u.id, "assessment.html")
             prog_link = _report_link(u.id, "progress.html")
             if dash_link:
                 dash_cell = f"<a href=\"{html.escape(dash_link)}\" target=\"_blank\">assessment</a>"
@@ -2195,7 +2242,7 @@ def _write_detailed_pdf(path: str, user: User, run: AssessmentRun, rows: List[Us
     # Fetch OKRs for this run (uses structured OKR tables if available)
     okr_map = _fetch_okrs_for_run(getattr(run, 'id', None))
 
-    coaching_text = _coaching_approach_text(getattr(user, "id", None), first_name)
+    coaching_text = _coaching_approach_text(getattr(user, "id", None), first_name, allow_llm=True)
     coaching_block = ""
     if coaching_text:
         coaching_block = (
@@ -2267,7 +2314,7 @@ def _write_detailed_pdf(path: str, user: User, run: AssessmentRun, rows: List[Us
 # ──────────────────────────────────────────────────────────────────────────────
 def _ensure_dashboard_and_progress(user: User | None, run: AssessmentRun | None) -> None:
     """
-    Ensure dashboard (latest.html) and progress (progress.html) reports exist for the user.
+    Ensure dashboard (assessment.html) and progress (progress.html) reports exist for the user.
     Generates them on demand if missing.
     """
     if not user or not getattr(user, "id", None):
@@ -2277,7 +2324,7 @@ def _ensure_dashboard_and_progress(user: User | None, run: AssessmentRun | None)
     if user_id is None:
         return
     root = _reports_root_for_user(user_id)
-    dash_path = os.path.join(root, "latest.html")
+    dash_path = os.path.join(root, "assessment.html")
     if (not os.path.exists(dash_path)) and run_id:
         try:
             generate_assessment_dashboard_html(run_id)
@@ -2364,7 +2411,7 @@ def _collect_summary_rows(start_dt: datetime, end_dt: datetime, club_id: int | N
                 "recovery": pmap.get("recovery"),
                 "user_id": getattr(user, "id", None),
                 "run_id": getattr(run, "id", None),
-            "dashboard_url": _report_link(user.id, "latest.html"),
+                "dashboard_url": _report_link(user.id, "assessment.html"),
                 "progress_url": _report_link(user.id, "progress.html"),
             })
     return out
@@ -2771,7 +2818,7 @@ def _write_pdf(path: str, user: User, run: AssessmentRun, pillars: List[PillarRe
         pdf.showPage()
         pdf.save()
         _audit("report_pdf_saved", "ok", {"pdf_path": path})
-        print(f"📄 PDF written to {path}")
+        _report_log(f"📄 PDF written to {path}")
     except Exception as e:
         _audit("report_pdf_saved", "error", {"pdf_path": path}, error=str(e))
         raise
@@ -2798,17 +2845,39 @@ def generate_assessment_report_pdf(run_id: int) -> str:
         pass
     return out_path
 
-def generate_assessment_dashboard_html(run_id: int) -> str:
-    _audit("dashboard_html_start", "ok", {"run_id": run_id})
+
+def build_assessment_dashboard_data(run_id: int, *, include_llm: bool = True) -> Dict[str, Any]:
+    t0 = time.perf_counter()
+    _report_log(f"[report_build] start run_id={run_id} include_llm={include_llm}")
     user, run, pillars = _collect_report_data(run_id)
     if not user or not run:
         raise ValueError("Assessment run not found")
+    t1 = time.perf_counter()
+    _report_log(f"[report_build] collected_data run_id={run_id} ms={int((t1 - t0)*1000)}")
 
     okr_map = _fetch_okrs_for_run(run.id)
     qa_by_pillar = _collect_run_dialogue(run.id)
+    t2 = time.perf_counter()
+    _report_log(f"[report_build] okrs_dialogue run_id={run_id} ms={int((t2 - t1)*1000)}")
     ordered_keys = _pillar_order()
     pr_map = {getattr(pr, "pillar_key", ""): pr for pr in pillars}
     user_prefs = _load_user_preferences(getattr(user, "id", None))
+    training_focus = (user_prefs.get("training_focus") or "").strip()
+    training_objective = (okr_map.get("training") or {}).get("objective", "") if isinstance(okr_map.get("training"), dict) else ""
+    training_answer = training_focus or training_objective or ""
+    if training_answer:
+        qa_training = qa_by_pillar.get("training") or []
+        already = any("training objective" in (str(qa.get("question") or "").lower()) for qa in qa_training)
+        if not already:
+            qa_training = [
+                {
+                    "question": "What are your current training objectives?",
+                    "answer": training_answer,
+                    "concept": None,
+                },
+                *qa_training,
+            ]
+            qa_by_pillar["training"] = qa_training[:3]
 
     combined = getattr(run, "combined_overall", None)
     if combined is None:
@@ -2819,6 +2888,8 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
                 vals.append(int(getattr(pr, "overall", 0) or 0))
         combined = round(sum(vals) / max(1, len(vals))) if vals else 0
     combined = int(combined)
+    t3 = time.perf_counter()
+    _report_log(f"[report_build] combined run_id={run_id} combined={combined} ms={int((t3 - t2)*1000)}")
 
     def _score_bucket(pct: int) -> str:
         if pct >= 80:
@@ -2845,6 +2916,313 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
         except Exception:
             return {}
 
+    pillar_payload: list[dict] = []
+    okr_payload: list[dict] = []
+    for key in ordered_keys:
+        pr = pr_map.get(key)
+        if not pr:
+            continue
+        score = int(getattr(pr, "overall", 0) or 0)
+        okr = okr_map.get(key, {})
+        score_pct = max(0, min(100, score))
+        focus_note = ""
+        if key == "training":
+            focus_note = (user_prefs.get("training_focus") or "").strip()
+        concept_scores = _concept_scores_for(pr)
+        concept_labels = {code: _concept_display(code) for code in concept_scores.keys()}
+        pillar_payload.append({
+            "pillar_key": key,
+            "pillar_name": _title_for_pillar(key),
+            "score": score_pct,
+            "bucket": _score_bucket(score_pct),
+            "concept_scores": concept_scores,
+            "concept_labels": concept_labels,
+            "qa_samples": qa_by_pillar.get(key, []),
+            "focus_note": focus_note,
+        })
+        okr_payload.append({
+            "pillar_key": key,
+            "pillar_name": _title_for_pillar(key),
+            "score": score_pct,
+            "objective": okr.get("objective", ""),
+            "key_results": (okr.get("krs") or [])[:3],
+            "focus_note": focus_note,
+        })
+    t4 = time.perf_counter()
+    _report_log(f"[report_build] payloads run_id={run_id} pillars={len(pillar_payload)} okrs={len(okr_payload)} ms={int((t4 - t3)*1000)}")
+
+    readiness = None
+    readiness_breakdown: list[dict] = []
+    readiness_responses: list[dict] = []
+    try:
+        with SessionLocal() as s:
+            prof = (
+                s.query(PsychProfile)
+                .filter(PsychProfile.user_id == user.id)
+                .order_by(PsychProfile.completed_at.desc().nullslast(), PsychProfile.id.desc())
+                .first()
+            )
+        if prof:
+            sec = getattr(prof, "section_averages", {}) or {}
+            scores = getattr(prof, "scores", {}) or {}
+            vals = [v for v in sec.values() if isinstance(v, (int, float))]
+            avg = sum(vals) / len(vals) if vals else None
+            if avg is not None:
+                if avg < 2.6:
+                    label = "Low"
+                    note = "We’ll keep things light, add structure, and focus on simple wins this week."
+                elif avg < 3.6:
+                    label = "Moderate"
+                    note = "We’ll balance guidance with autonomy and check in on any sticking points."
+                else:
+                    label = "High"
+                    note = "You can handle more autonomy; we’ll keep nudges concise and goal-focused."
+                readiness = {
+                    "score": avg,
+                    "label": label,
+                    "note": note,
+                }
+            label_map = {
+                "readiness": "Readiness",
+                "self_reg": "Self regulation",
+                "emotional": "Emotional load",
+                "confidence": "Confidence",
+            }
+            for key, value in sec.items():
+                if not isinstance(value, (int, float)):
+                    continue
+                readiness_breakdown.append(
+                    {
+                        "key": key,
+                        "label": label_map.get(key, key.replace("_", " ").title()),
+                        "value": value,
+                    }
+                )
+            try:
+                from .psych import QUESTIONS  # local import to avoid import-order issues
+                for qkey, qtext in QUESTIONS:
+                    if qkey not in scores:
+                        continue
+                    readiness_responses.append(
+                        {
+                            "key": qkey,
+                            "question": qtext,
+                            "answer": scores.get(qkey),
+                        }
+                    )
+            except Exception:
+                pass
+    except Exception:
+        readiness = None
+
+    narrative_row = None
+    with SessionLocal() as s:
+        narrative_row = (
+            s.query(AssessmentNarrative)
+            .filter(AssessmentNarrative.run_id == run.id)
+            .first()
+        )
+    score_narrative = ""
+    okr_narrative = ""
+    coaching_text = ""
+    run_finished = getattr(run, "finished_at", None) is not None
+    has_pillar_scores = bool(pillars)
+    cached_ok = False
+    narrative_meta = {}
+    score_audio_url = None
+    okr_audio_url = None
+    coaching_audio_url = None
+    narratives_cached_flag = None
+    if run_finished and has_pillar_scores:
+        if narrative_row and (narrative_row.score_html or narrative_row.okr_html or narrative_row.coaching_html):
+            meta = getattr(narrative_row, "meta", None) or {}
+            narrative_meta = dict(meta)
+            score_audio_url = meta.get("score_audio_url")
+            okr_audio_url = meta.get("okr_audio_url")
+            coaching_audio_url = meta.get("coaching_audio_url")
+            cached_ok = True
+            score_narrative = narrative_row.score_html or ""
+            okr_narrative = narrative_row.okr_html or ""
+            coaching_text = narrative_row.coaching_html or ""
+            t5 = time.perf_counter()
+            _report_log(f"[report_build] narratives_cached run_id={run_id} ms={int((t5 - t4)*1000)}")
+            if include_llm and (not score_audio_url or not okr_audio_url or not coaching_audio_url):
+                try:
+                    import html as _html
+                    import re as _re
+                    from .podcast import generate_podcast_audio
+
+                    def _plain(text: str) -> str:
+                        if not text:
+                            return ""
+                        txt = _re.sub(r"<\\s*br\\s*/?>", "\\n", text, flags=_re.IGNORECASE)
+                        txt = _re.sub(r"</p>|</div>|</li>", "\\n", txt, flags=_re.IGNORECASE)
+                        txt = _re.sub(r"<[^>]+>", " ", txt)
+                        txt = " ".join(txt.split())
+                        return _html.unescape(txt).strip()
+
+                    if not score_audio_url and score_narrative:
+                        transcript = _plain(score_narrative)
+                        if transcript:
+                            score_audio_url = generate_podcast_audio(transcript, user.id, filename=f"assessment_{run.id}_score.mp3")
+                    if not okr_audio_url and okr_narrative:
+                        transcript = _plain(okr_narrative)
+                        if transcript:
+                            okr_audio_url = generate_podcast_audio(transcript, user.id, filename=f"assessment_{run.id}_okr.mp3")
+                    if not coaching_audio_url and coaching_text:
+                        transcript = _plain(coaching_text)
+                        if transcript:
+                            coaching_audio_url = generate_podcast_audio(transcript, user.id, filename=f"assessment_{run.id}_coaching.mp3")
+                except Exception as e:
+                    _report_log(f"[report_build] narrative_audio_cached_failed run_id={run_id} err={e!r}")
+        if not cached_ok:
+            score_narrative = _score_narrative_from_llm(user, combined, pillar_payload) if include_llm else ""
+            if not score_narrative:
+                score_narrative = _scores_narrative_fallback(combined, pillar_payload)
+            t5 = time.perf_counter()
+            _report_log(f"[report_build] score_narrative run_id={run_id} llm={include_llm} ms={int((t5 - t4)*1000)}")
+            okr_narrative = _okr_narrative_from_llm(user, okr_payload) if include_llm else ""
+            if not okr_narrative:
+                okr_narrative = _okr_narrative_fallback(okr_payload)
+            t6 = time.perf_counter()
+            _report_log(f"[report_build] okr_narrative run_id={run_id} llm={include_llm} ms={int((t6 - t5)*1000)}")
+            coaching_text = _coaching_approach_text(getattr(user, "id", None), allow_llm=include_llm)
+            t7 = time.perf_counter()
+            _report_log(f"[report_build] coaching_narrative run_id={run_id} llm={include_llm} ms={int((t7 - t6)*1000)}")
+            if include_llm:
+                try:
+                    import html as _html
+                    import re as _re
+                    from .podcast import generate_podcast_audio
+
+                    def _plain(text: str) -> str:
+                        if not text:
+                            return ""
+                        txt = _re.sub(r"<\\s*br\\s*/?>", "\\n", text, flags=_re.IGNORECASE)
+                        txt = _re.sub(r"</p>|</div>|</li>", "\\n", txt, flags=_re.IGNORECASE)
+                        txt = _re.sub(r"<[^>]+>", " ", txt)
+                        txt = " ".join(txt.split())
+                        return _html.unescape(txt).strip()
+
+                    score_plain = _plain(score_narrative)
+                    okr_plain = _plain(okr_narrative)
+                    coaching_plain = _plain(coaching_text)
+                    if score_plain:
+                        score_audio_url = generate_podcast_audio(score_plain, user.id, filename=f"assessment_{run.id}_score.mp3")
+                    if okr_plain:
+                        okr_audio_url = generate_podcast_audio(okr_plain, user.id, filename=f"assessment_{run.id}_okr.mp3")
+                    if coaching_plain:
+                        coaching_audio_url = generate_podcast_audio(coaching_plain, user.id, filename=f"assessment_{run.id}_coaching.mp3")
+                except Exception as e:
+                    _report_log(f"[report_build] narrative_audio_failed run_id={run_id} err={e!r}")
+            try:
+                with SessionLocal() as s:
+                    row = (
+                        s.query(AssessmentNarrative)
+                        .filter(AssessmentNarrative.run_id == run.id)
+                        .first()
+                    )
+                    if not row:
+                        row = AssessmentNarrative(run_id=run.id)
+                        s.add(row)
+                    row.score_html = score_narrative
+                    row.okr_html = okr_narrative
+                    row.coaching_html = coaching_text
+                    row.meta = {
+                        **(narrative_meta or {}),
+                        "source": "llm" if include_llm else "fallback",
+                        "combined": int(combined),
+                        "score_audio_url": score_audio_url,
+                        "okr_audio_url": okr_audio_url,
+                        "coaching_audio_url": coaching_audio_url,
+                    }
+                    s.commit()
+                _report_log(f"[report_build] narratives_saved run_id={run_id}")
+            except Exception as e:
+                _report_log(f"[report_build] narratives_save_failed run_id={run_id} err={e!r}")
+        if cached_ok and include_llm and (score_audio_url or okr_audio_url or coaching_audio_url):
+            try:
+                with SessionLocal() as s:
+                    row = (
+                        s.query(AssessmentNarrative)
+                        .filter(AssessmentNarrative.run_id == run.id)
+                        .first()
+                    )
+                    if row:
+                        row.meta = {
+                            **(narrative_meta or {}),
+                            "score_audio_url": score_audio_url,
+                            "okr_audio_url": okr_audio_url,
+                            "coaching_audio_url": coaching_audio_url,
+                        }
+                        s.commit()
+            except Exception as e:
+                _report_log(f"[report_build] narrative_audio_save_failed run_id={run_id} err={e!r}")
+        narratives_cached_flag = bool(cached_ok)
+
+    score_rows = [
+        {"label": "Combined", "value": combined, "bucket": _score_bucket(combined)},
+        {"label": "Nutrition", "value": int(getattr(pr_map.get("nutrition"), "overall", None) or 0) if pr_map.get("nutrition") else None},
+        {"label": "Training", "value": int(getattr(pr_map.get("training"), "overall", None) or 0) if pr_map.get("training") else None},
+        {"label": "Resilience", "value": int(getattr(pr_map.get("resilience"), "overall", None) or 0) if pr_map.get("resilience") else None},
+        {"label": "Recovery", "value": int(getattr(pr_map.get("recovery"), "overall", None) or 0) if pr_map.get("recovery") else None},
+    ]
+    score_rows = [row for row in score_rows if row.get("value") is not None]
+    for row in score_rows:
+        row["bucket"] = _score_bucket(int(row["value"]))
+
+    return {
+        "user": {
+            "id": getattr(user, "id", None),
+            "first_name": getattr(user, "first_name", None),
+            "surname": getattr(user, "surname", None),
+            "display_name": _display_full_name(user),
+        },
+        "run": {
+            "id": getattr(run, "id", None),
+            "finished_at": getattr(run, "finished_at", None),
+            "combined_overall": combined,
+        },
+        "scores": {
+            "combined": combined,
+            "rows": score_rows,
+            "by_pillar": {p["pillar_key"]: p["score"] for p in pillar_payload},
+        },
+        "pillars": pillar_payload,
+        "okrs": okr_payload,
+        "readiness": readiness,
+        "readiness_breakdown": readiness_breakdown,
+        "readiness_responses": readiness_responses,
+        "narratives": {
+            "score_html": score_narrative,
+            "okr_html": okr_narrative,
+            "coaching_html": _llm_text_to_html(coaching_text) if coaching_text else "",
+            "score_audio_url": score_audio_url,
+            "okr_audio_url": okr_audio_url,
+            "coaching_audio_url": coaching_audio_url,
+        },
+        "meta": {
+            "reported_at": datetime.utcnow().strftime("%d %b %Y %H:%M UTC"),
+            "narratives_cached": narratives_cached_flag,
+            "narratives_source": None
+            if narratives_cached_flag is None
+            else ("cached" if cached_ok else ("llm" if include_llm else "fallback")),
+        },
+    }
+
+def generate_assessment_dashboard_html(run_id: int) -> str:
+    _audit("dashboard_html_start", "ok", {"run_id": run_id})
+    data = build_assessment_dashboard_data(run_id, include_llm=True)
+    user = data.get("user") or {}
+    combined = int((data.get("scores") or {}).get("combined") or 0)
+
+    def _score_bucket(pct: int) -> str:
+        if pct >= 80:
+            return "high"
+        if pct >= 60:
+            return "mid"
+        return "low"
+
     def _score_row(label: str, pct: int | None) -> str:
         if pct is None:
             return ""
@@ -2860,20 +3238,20 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
             "</div>"
         )
 
-    def _concept_block(pr: PillarResult | None) -> str:
-        scores = _concept_scores_for(pr)
+    def _concept_block(scores: Dict[str, float], labels: Dict[str, str]) -> str:
         if not scores:
             return ""
         rows = []
-        for code in sorted(scores.keys(), key=lambda c: _concept_display(c).lower()):
+        for code in sorted(scores.keys(), key=lambda c: (labels.get(c) or c).lower()):
             val = scores.get(code)
             if val is None:
                 continue
             pct = max(0, min(100, int(round(float(val)))))
             bucket = _score_bucket(pct)
+            label = labels.get(code) or _concept_display(code)
             rows.append(
                 "<div class='concept-row'>"
-                f"<div class='concept-name'>{html.escape(_concept_display(code))}</div>"
+                f"<div class='concept-name'>{html.escape(label)}</div>"
                 "<div class='concept-track'>"
                 f"<span class='concept-fill {bucket}' style='width:{pct}%;'></span>"
                 "</div>"
@@ -2884,52 +3262,22 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
             return ""
         return f"<div class='concept-block'>{''.join(rows)}</div>"
 
-    def _bucket_label(pct: int) -> tuple[str, str]:
-        if pct >= 80:
-            return "strong", "great momentum here—keep reinforcing the habits that already work."
-        if pct >= 60:
-            return "steady", "you’re on track; a few consistent tweaks will lift this pillar."
-        return "emerging", "this pillar needs extra care; pick one doable habit to stabilise it."
-
     sections = []
-    pillar_payload: list[dict] = []
-    okr_payload: list[dict] = []
     today = _today_str()
-    for key in ordered_keys:
-        pr = pr_map.get(key)
-        if not pr:
-            continue
-        score = int(getattr(pr, "overall", 0) or 0)
-        okr = okr_map.get(key, {})
+    okr_payload = data.get("okrs") or []
+    pillar_payload = data.get("pillars") or []
+    okr_lookup = {o.get("pillar_key"): o for o in okr_payload}
+    for p in pillar_payload:
+        key = p.get("pillar_key") or ""
+        score_pct = int(p.get("score") or 0)
+        okr = okr_lookup.get(key, {})
         objective = html.escape(okr.get("objective", "") or "Not available yet.")
-        krs = okr.get("krs") or []
+        krs = okr.get("key_results") or []
         kr_lines = "".join(f"<li>{html.escape(kr)}</li>" for kr in krs[:3] if kr) or "<li>No key results yet.</li>"
-
-        score_pct = max(0, min(100, score))
-        focus_note = ""
-        if key == "training":
-            focus_note = (user_prefs.get("training_focus") or "").strip()
-        pillar_payload.append({
-            "pillar_key": key,
-            "pillar_name": _title_for_pillar(key),
-            "score": score_pct,
-            "concept_scores": _concept_scores_for(pr),
-            "qa_samples": qa_by_pillar.get(key, []),
-            "focus_note": focus_note,
-        })
-        okr_payload.append({
-            "pillar_key": key,
-            "pillar_name": _title_for_pillar(key),
-            "score": score_pct,
-            "objective": okr.get("objective", ""),
-            "key_results": krs[:3],
-            "focus_note": focus_note,
-        })
-
         sections.append(
             f"<section data-pillar='{html.escape(key)}'>"
             "<div class='pillar-head'>"
-            f"<h2>{html.escape(_title_for_pillar(key))}</h2>"
+            f"<h2>{html.escape(p.get('pillar_name') or _title_for_pillar(key))}</h2>"
             "<div class='pillar-score'>"
             f"<span class='score-value'>{score_pct}%</span>"
             "<div class='score-track'>"
@@ -2937,7 +3285,7 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
             "</div>"
             "</div>"
             "</div>"
-            f"{_concept_block(pr)}"
+            f"{_concept_block(p.get('concept_scores') or {}, p.get('concept_labels') or {})}"
             "<div class='okr-card'>"
             "<h3>This Quarter Objective</h3>"
             f"<p>{objective}</p>"
@@ -2947,31 +3295,26 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
             "</section>"
         )
 
-    first_name = (getattr(user, "first_name", None) or "").strip()
+    first_name = (user.get("first_name") or "").strip()
     first = first_name or "there"
 
-    score_narrative = _score_narrative_from_llm(user, combined, pillar_payload) \
-        or _scores_narrative_fallback(combined, pillar_payload)
-    okr_narrative = _okr_narrative_from_llm(user, okr_payload) \
-        or _okr_narrative_fallback(okr_payload)
-    coaching_text = _coaching_approach_text(getattr(user, "id", None))
+    narratives = data.get("narratives") or {}
+    score_narrative = narratives.get("score_html") or ""
+    okr_narrative = narratives.get("okr_html") or ""
+    coaching_text = narratives.get("coaching_html") or ""
     coaching_block = ""
     if coaching_text:
         coaching_block = (
             "<div class='card coach-card'>"
             "<h2>Coaching approach</h2>"
-            f"{_llm_text_to_html(coaching_text)}"
+            f"{coaching_text}"
             "</div>"
         )
-    score_rows = [
-        _score_row("Combined", combined),
-        _score_row("Nutrition", int(getattr(pr_map.get("nutrition"), "overall", None) or 0) if pr_map.get("nutrition") else None),
-        _score_row("Training", int(getattr(pr_map.get("training"), "overall", None) or 0) if pr_map.get("training") else None),
-        _score_row("Resilience", int(getattr(pr_map.get("resilience"), "overall", None) or 0) if pr_map.get("resilience") else None),
-        _score_row("Recovery", int(getattr(pr_map.get("recovery"), "overall", None) or 0) if pr_map.get("recovery") else None),
-    ]
+    score_rows = []
+    for row in (data.get("scores") or {}).get("rows", []):
+        score_rows.append(_score_row(row.get("label", ""), row.get("value")))
     score_panel = "".join([row for row in score_rows if row]) or "<p class='score-empty'>Scores will appear here once available.</p>"
-    reported_at = datetime.utcnow().strftime("%d %b %Y %H:%M UTC")
+    reported_at = (data.get("meta") or {}).get("reported_at") or datetime.utcnow().strftime("%d %b %Y %H:%M UTC")
     html_doc = f"""<!DOCTYPE html>
 <html lang='en'>
 <head>
@@ -3022,6 +3365,7 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
     .section {{ display: flex; flex-direction: column; gap: 16px; margin-bottom: 24px; }}
     .coach-card h2 {{ margin-top: 0; font-size: 1.15rem; color: #0f172a; }}
     .coach-card p {{ margin: 0; color: #1f2933; line-height: 1.5; }}
+    .report-footer {{ margin-top: 12px; font-size: 0.85rem; color: #98a2b3; text-align: right; }}
     @media (min-width: 720px) {{
       .section {{ flex-direction: row; align-items: flex-start; }}
       .section .narrative-card {{ flex: 1; }}
@@ -3038,7 +3382,7 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
   </style>
  </head>
  <body>
-  <div class='section scores-section'>
+ <div class='section scores-section'>
     <div class='card summary-card'>
      <div class='summary-main'>
        <h1>HealthSense Wellbeing Assessment</h1>
@@ -3064,12 +3408,12 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
     </div>
   </div>
   {coaching_block}
-</body>
-<div class='report-footer'>Positives on {reported_at} · {BRAND_FOOTER}</div>
+  <div class='report-footer'>Positives on {reported_at} · {BRAND_FOOTER}</div>
+ </body>
 </html>"""
 
-    out_dir = _reports_root_for_user(user.id)
-    out_path = os.path.join(out_dir, "latest.html")
+    out_dir = _reports_root_for_user(int((user.get("id") or 0)))
+    out_path = os.path.join(out_dir, "assessment.html")
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(html_doc)
     return out_path
@@ -3116,7 +3460,7 @@ def generate_assessment_summary_pdf(start: date | str, end: date | str, *, club_
         _audit("summary_report_generate", "error", {"start": start_str, "end": end_str}, error=str(e))
         raise
 from .llm import _llm
-def _collect_progress_rows(user_id: int) -> list[dict]:
+def _collect_progress_rows(user_id: int, programme_blocks: dict[str, dict[str, Any]] | None = None) -> list[dict]:
     rows: list[dict] = []
     with SessionLocal() as s:
         objectives = (
@@ -3126,6 +3470,35 @@ def _collect_progress_rows(user_id: int) -> list[dict]:
              .order_by(OKRObjective.cycle_id.asc(), OKRObjective.pillar_key.asc(), OKRObjective.created_at.asc())
              .all()
         )
+        all_kr_ids: list[int] = []
+        for obj in objectives:
+            for kr in (getattr(obj, "key_results", []) or []):
+                if getattr(kr, "id", None):
+                    all_kr_ids.append(int(kr.id))
+        step_rows: list[OKRKrHabitStep] = []
+        steps_by_kr: dict[int, list[dict[str, Any]]] = {}
+        if all_kr_ids:
+            step_rows = (
+                s.query(OKRKrHabitStep)
+                .filter(OKRKrHabitStep.user_id == user_id, OKRKrHabitStep.kr_id.in_(all_kr_ids))
+                .filter(OKRKrHabitStep.status != "archived")
+                .order_by(
+                    OKRKrHabitStep.kr_id.asc(),
+                    OKRKrHabitStep.week_no.asc().nullslast(),
+                    OKRKrHabitStep.sort_order.asc(),
+                    OKRKrHabitStep.id.asc(),
+                )
+                .all()
+            )
+            for step in step_rows:
+                steps_by_kr.setdefault(step.kr_id, []).append(
+                    {
+                        "id": step.id,
+                        "text": step.step_text,
+                        "status": step.status,
+                        "week_no": step.week_no,
+                    }
+                )
         state_cache: dict[int, dict[str, float]] = {}
         for obj in objectives:
             cycle = obj.cycle
@@ -3201,15 +3574,24 @@ def _collect_progress_rows(user_id: int) -> list[dict]:
                     "unit": kr.unit,
                     "metric_label": kr.metric_label,
                     "actual": actual_val,
+                    "habit_steps": steps_by_kr.get(int(kr.id), []),
                 })
 
+            cycle_label = getattr(cycle, "title", None) or f"FY{getattr(cycle, 'year', '')} {getattr(cycle, 'quarter', '')}"
+            cycle_start = getattr(cycle, "starts_on", None)
+            cycle_end = getattr(cycle, "ends_on", None)
+            block = programme_blocks.get(obj.pillar_key) if programme_blocks else None
+            if block:
+                cycle_label = block.get("label") or cycle_label
+                cycle_start = block.get("start") or cycle_start
+                cycle_end = block.get("end") or cycle_end
             rows.append({
                 "pillar": obj.pillar_key,
                 "objective": obj.objective or "",
                 "krs": kr_payload,
-                "cycle_label": getattr(cycle, "title", None) or f"FY{getattr(cycle, 'year', '')} {getattr(cycle, 'quarter', '')}",
-                "cycle_start": getattr(cycle, "starts_on", None),
-                "cycle_end": getattr(cycle, "ends_on", None),
+                "cycle_label": cycle_label,
+                "cycle_start": cycle_start,
+                "cycle_end": cycle_end,
             })
     rows.sort(key=lambda r: (r.get("cycle_start") or datetime.min, r.get("pillar")))
     return rows
@@ -3222,6 +3604,28 @@ def _format_cycle_range(start: datetime | None, end: datetime | None) -> str:
     if isinstance(end, datetime):
         return end.strftime("%d %b %Y")
     return ""
+
+def _programme_block_map(start_dt: datetime | date | None) -> dict[str, dict[str, Any]]:
+    if not start_dt:
+        return {}
+    base = start_dt.date() if isinstance(start_dt, datetime) else start_dt
+    pillars = [
+        ("nutrition", "Nutrition"),
+        ("recovery", "Recovery"),
+        ("training", "Training"),
+        ("resilience", "Resilience"),
+    ]
+    blocks: dict[str, dict[str, Any]] = {}
+    for idx, (key, label) in enumerate(pillars):
+        blk_start = base + timedelta(days=idx * 21)
+        blk_end = blk_start + timedelta(days=20)
+        blocks[key] = {
+            "label": f"Weeks {idx * 3 + 1}–{idx * 3 + 3}",
+            "start": blk_start,
+            "end": blk_end,
+            "pillar_label": label,
+        }
+    return blocks
 
 def _format_number(val: float | None) -> str:
     if val is None:
@@ -3304,39 +3708,29 @@ def _render_kr_table(krs: list[dict], focus_ids: set[int] | None = None, future_
     )
 
 def generate_progress_report_html(user_id: int, anchor_date: date | None = None) -> str:
+    data = build_progress_report_data(user_id, anchor_date=anchor_date)
     anchor_today = anchor_date or datetime.utcnow().date()
-    anchor_label = anchor_today.strftime("%d %b %Y")
-    def _habit_readiness_panel(u_id: int, first_name: str) -> str:
-        with SessionLocal() as ss:
-            prof = (
-                ss.query(PsychProfile)
-                .filter(PsychProfile.user_id == u_id)
-                .order_by(PsychProfile.completed_at.desc().nullslast(), PsychProfile.id.desc())
-                .first()
-            )
-        if not prof:
+    anchor_label = (data.get("meta") or {}).get("anchor_label") or anchor_today.strftime("%d %b %Y")
+    reported_at = (data.get("meta") or {}).get("reported_at") or datetime.utcnow().strftime("%d %b %Y %H:%M UTC")
+    rows = data.get("rows") or []
+    focus_kr_ids = set((data.get("focus") or {}).get("kr_ids") or [])
+
+    def _habit_readiness_panel(readiness: dict | None) -> str:
+        if not readiness:
             return ""
-        sec = getattr(prof, "section_averages", {}) or {}
-        vals = [v for v in sec.values() if isinstance(v, (int, float))]
-        avg = sum(vals) / len(vals) if vals else None
-        if avg is None:
-            return ""
-        if avg < 2.6:
-            label = "Low"
+        label = readiness.get("label") or ""
+        note = readiness.get("note") or ""
+        score = readiness.get("score")
+        if label == "Low":
             tint = "#fff4e5"
             border = "#f8b84a"
-            note = "We’ll keep things light, add structure, and focus on simple wins this week."
-        elif avg < 3.6:
-            label = "Moderate"
+        elif label == "Moderate":
             tint = "#e6f4ff"
             border = "#8ac2ff"
-            note = "We’ll balance guidance with autonomy and check in on any sticking points."
         else:
-            label = "High"
             tint = "#e8f7f0"
             border = "#5cbf82"
-            note = "You can handle more autonomy; we’ll keep nudges concise and goal-focused."
-        readiness_str = f"{int(round(avg))}/5" if isinstance(avg, (int, float)) else "N/A"
+        readiness_str = f"{int(round(score))}/5" if isinstance(score, (int, float)) else "N/A"
         return (
             f"<div class='readiness-card' style='border:1px solid {border}; background:{tint}; border-radius:12px; padding:12px; margin:16px 0;'>"
             f"<div style='display:flex; justify-content:space-between; align-items:center;'>"
@@ -3346,31 +3740,6 @@ def generate_progress_report_html(user_id: int, anchor_date: date | None = None)
             f"<div style='color:#475467; margin-top:6px;'>Profile: {readiness_str} · Tailoring: {note}</div>"
             "</div>"
         )
-
-    with SessionLocal() as s:
-        user = s.query(User).filter(User.id == user_id).one_or_none()
-        if not user:
-            raise RuntimeError("User not found")
-        # Latest weekly focus for this user (use anchor_today to pick current)
-        today = anchor_today
-        wf = (
-            s.query(WeeklyFocus)
-            .filter(WeeklyFocus.user_id == user.id, WeeklyFocus.starts_on <= today, WeeklyFocus.ends_on >= today)
-            .order_by(WeeklyFocus.starts_on.desc())
-            .first()
-        ) or (
-            s.query(WeeklyFocus)
-            .filter(WeeklyFocus.user_id == user.id)
-            .order_by(WeeklyFocus.starts_on.desc())
-            .first()
-        )
-        focus_kr_ids = []
-        if wf:
-            focus_kr_ids = [
-                row.kr_id for row in s.query(WeeklyFocusKR).filter(WeeklyFocusKR.weekly_focus_id == wf.id).all()
-            ]
-    rows = _collect_progress_rows(user_id)
-    reported_at = datetime.utcnow().strftime("%d %b %Y %H:%M UTC")
     css = """
     <style>
       {FONT_FACE}
@@ -3437,42 +3806,19 @@ def generate_progress_report_html(user_id: int, anchor_date: date | None = None)
     def _coaching_approach_text(user_id: int) -> str:
         return ""
     # Simple scorecard summary (counts by status)
-    programme_offsets = {"nutrition": 0, "recovery": 3, "training": 6, "resilience": 9}
-    def _future_block(pillar_key: str, start_dt):
-        blk_start = None
+    def _future_block(start_dt):
         if isinstance(start_dt, datetime):
-            blk_start = (start_dt + timedelta(weeks=programme_offsets.get(pillar_key, 0))).date()
+            blk_start = start_dt.date()
         elif isinstance(start_dt, date):
-            blk_start = start_dt + timedelta(weeks=programme_offsets.get(pillar_key, 0))
+            blk_start = start_dt
+        else:
+            blk_start = None
         if blk_start is None:
             return False
         return anchor_today < blk_start
 
-    status_counts = {"on track": 0, "at risk": 0, "off track": 0, "not started": 0}
-    total_krs = 0
-    for row in rows:
-        future = _future_block(row.get("pillar") or "", row.get("cycle_start"))
-        for kr in row.get("krs") or []:
-            total_krs += 1
-            if future:
-                status_counts["not started"] += 1
-                continue
-            target_val = kr.get("target")
-            actual_val = kr.get("actual") if kr.get("actual") is not None else kr.get("baseline")
-            pct = None
-            if target_val is not None and actual_val is not None and target_val not in (0, "0"):
-                try:
-                    pct = max(0, min(1, float(actual_val) / float(target_val)))
-                except Exception:
-                    pct = None
-            if pct is None:
-                status_counts["not started"] += 1
-            elif pct >= 0.9:
-                status_counts["on track"] += 1
-            elif pct >= 0.5:
-                status_counts["at risk"] += 1
-            else:
-                status_counts["off track"] += 1
+    status_counts = data.get("status_counts") or {"on track": 0, "at risk": 0, "off track": 0, "not started": 0}
+    total_krs = int(data.get("total_krs") or 0)
 
     # Programme overview (12-week, 3-week blocks by pillar)
     blocks = [
@@ -3496,20 +3842,13 @@ def generate_progress_report_html(user_id: int, anchor_date: date | None = None)
         + "</div></div>"
     )
 
-    focus_titles = []
+    focus_titles = list((data.get("focus") or {}).get("kr_titles") or [])
     items = []
     # Group rows by pillar for ordering and cycle labeling
     by_pillar: dict[str, list[dict]] = defaultdict(list)
     for row in rows:
         by_pillar[row.get("pillar", "")].append(row)
     programme_order = ["nutrition", "recovery", "training", "resilience"]
-    # Programme weeks and static date labels (can be adjusted to actual calendar if available)
-    weeks_map = {
-        "nutrition": "Weeks 1–3",
-        "recovery": "Weeks 4–6",
-        "training": "Weeks 7–9",
-        "resilience": "Weeks 10–12",
-    }
     ordered_rows = []
     for p in programme_order:
         ordered_rows.extend(by_pillar.get(p, []))
@@ -3518,33 +3857,14 @@ def generate_progress_report_html(user_id: int, anchor_date: date | None = None)
         if p not in programme_order:
             ordered_rows.extend(vals)
 
-    programme_offsets = {"nutrition": 0, "recovery": 3, "training": 6, "resilience": 9}
     for row in ordered_rows:
         cycle_bits = [row.get("cycle_label"), _format_cycle_range(row.get("cycle_start"), row.get("cycle_end"))]
-        default_cycle = " · ".join([b for b in cycle_bits if b])
+        cycle_text = " · ".join([b for b in cycle_bits if b])
         pillar_key = row.get("pillar") or ""
-        # Show week window + dates if we have them
-        week_label = weeks_map.get(pillar_key)
-        date_label = ""
         start_dt = row.get("cycle_start")
-        future_block = False
-        blk_start = None
-        if isinstance(start_dt, datetime):
-            offset_weeks = programme_offsets.get(pillar_key, 0)
-            blk_start = (start_dt + timedelta(weeks=offset_weeks)).date()
-        elif isinstance(start_dt, date):
-            blk_start = start_dt + timedelta(weeks=programme_offsets.get(pillar_key, 0))
-        if blk_start:
-            blk_end = blk_start + timedelta(days=20)  # 3-week block
-            date_label = f"{blk_start.strftime('%d %b %Y')} – {blk_end.strftime('%d %b %Y')}"
-            if anchor_today < blk_start:
-                future_block = True
-        cycle_text = " · ".join([lbl for lbl in [week_label, date_label] if lbl]) or default_cycle
+        future_block = _future_block(start_dt)
         krs = row.get("krs") or []
         kr_block = _render_kr_table(krs, focus_ids=set(focus_kr_ids), future_block=future_block)
-        for kr in krs:
-            if kr.get("id") in focus_kr_ids:
-                focus_titles.append(kr.get("description") or "")
         items.append(
             f"<div class='entry {html.escape(pillar_key)}'>"
             f"<div class='cycle'>{html.escape(cycle_text or '')}</div>"
@@ -3557,8 +3877,8 @@ def generate_progress_report_html(user_id: int, anchor_date: date | None = None)
     if focus_titles:
         pills = "".join(f"<span class='focus-pill'>{html.escape(t)}</span>" for t in focus_titles)
         focus_strip = f"<div class='focus-strip'><strong>This week’s focus KRs:</strong> {pills}</div>"
-    display_name = (getattr(user, "first_name", None) or "").strip() or "there"
-    readiness_html = _habit_readiness_panel(user_id, display_name)
+    display_name = (data.get("user") or {}).get("first_name") or "there"
+    readiness_html = _habit_readiness_panel(data.get("readiness"))
     programme_html = (
         "<div class='programme'>"
         "<h3>12-week programme (3-week focus blocks)</h3>"
@@ -3569,7 +3889,7 @@ def generate_progress_report_html(user_id: int, anchor_date: date | None = None)
         "<div class='programme-pill resilience'><div class='label'>Resilience</div><div class='weeks'>Weeks 10–12</div><div class='focus'>Focus: Resilience</div></div>"
         "</div></div>"
     )
-    display_name = (getattr(user, "first_name", None) or "").strip() or "there"
+    display_name = (data.get("user") or {}).get("first_name") or "there"
     html_doc = f"""<!doctype html>
 <html lang="en">
 <meta charset="utf-8">
@@ -3602,3 +3922,154 @@ def generate_progress_report_html(user_id: int, anchor_date: date | None = None)
     with open(out_path, "w", encoding="utf-8") as f:
         f.write(html_doc)
     return out_path
+
+
+def build_progress_report_data(user_id: int, anchor_date: date | None = None) -> Dict[str, Any]:
+    anchor_today = anchor_date or datetime.utcnow().date()
+    anchor_label = anchor_today.strftime("%d %b %Y")
+    programme_blocks: dict[str, dict[str, Any]] = {}
+
+    with SessionLocal() as s:
+        user = s.query(User).filter(User.id == user_id).one_or_none()
+        if not user:
+            raise RuntimeError("User not found")
+        run = (
+            s.query(AssessmentRun)
+            .filter(AssessmentRun.user_id == user_id)
+            .order_by(AssessmentRun.id.desc())
+            .first()
+        )
+        if run:
+            programme_blocks = _programme_block_map(getattr(run, "started_at", None) or getattr(run, "created_at", None))
+        # Latest weekly focus for this user (use anchor_today to pick current)
+        wf_current = (
+            s.query(WeeklyFocus)
+            .filter(
+                WeeklyFocus.user_id == user.id,
+                WeeklyFocus.starts_on <= anchor_today,
+                WeeklyFocus.ends_on >= anchor_today,
+            )
+            .order_by(WeeklyFocus.starts_on.desc())
+            .first()
+        )
+        wf_latest = (
+            s.query(WeeklyFocus)
+            .filter(WeeklyFocus.user_id == user.id)
+            .order_by(WeeklyFocus.starts_on.desc())
+            .first()
+        )
+        wf = wf_current or wf_latest
+        focus_kr_ids = []
+        if wf:
+            focus_kr_ids = [
+                row.kr_id for row in s.query(WeeklyFocusKR).filter(WeeklyFocusKR.weekly_focus_id == wf.id).all()
+            ]
+        prof = (
+            s.query(PsychProfile)
+            .filter(PsychProfile.user_id == user.id)
+            .order_by(PsychProfile.completed_at.desc().nullslast(), PsychProfile.id.desc())
+            .first()
+        )
+
+    rows = _collect_progress_rows(user_id, programme_blocks=programme_blocks)
+    reported_at = datetime.utcnow().strftime("%d %b %Y %H:%M UTC")
+
+    status_counts = {"on track": 0, "at risk": 0, "off track": 0, "not started": 0}
+    total_krs = 0
+    def _future_block(start_dt):
+        if isinstance(start_dt, datetime):
+            blk_start = start_dt.date()
+        elif isinstance(start_dt, date):
+            blk_start = start_dt
+        else:
+            blk_start = None
+        if blk_start is None:
+            return False
+        return anchor_today < blk_start
+    def _finished_block(end_dt):
+        if isinstance(end_dt, datetime):
+            blk_end = end_dt.date()
+        elif isinstance(end_dt, date):
+            blk_end = end_dt
+        else:
+            blk_end = None
+        if blk_end is None:
+            return False
+        return anchor_today > blk_end
+
+    focus_titles = []
+    for row in rows:
+        future = _future_block(row.get("cycle_start"))
+        finished = _finished_block(row.get("cycle_end"))
+        for kr in row.get("krs") or []:
+            total_krs += 1
+            if kr.get("id") in focus_kr_ids:
+                focus_titles.append(kr.get("description") or "")
+            if future:
+                status_counts["not started"] += 1
+                continue
+            if not finished:
+                status_counts["on track"] += 1
+                continue
+            target_val = kr.get("target")
+            actual_val = kr.get("actual") if kr.get("actual") is not None else kr.get("baseline")
+            pct = None
+            if target_val is not None and actual_val is not None and target_val not in (0, "0"):
+                try:
+                    pct = max(0, min(1, float(actual_val) / float(target_val)))
+                except Exception:
+                    pct = None
+            if pct is None:
+                status_counts["off track"] += 1
+            elif pct >= 0.9:
+                status_counts["on track"] += 1
+            else:
+                status_counts["off track"] += 1
+
+    readiness = None
+    if prof:
+        sec = getattr(prof, "section_averages", {}) or {}
+        vals = [v for v in sec.values() if isinstance(v, (int, float))]
+        avg = sum(vals) / len(vals) if vals else None
+        if avg is not None:
+            if avg < 2.6:
+                label = "Low"
+                note = "We’ll keep things light, add structure, and focus on simple wins this week."
+            elif avg < 3.6:
+                label = "Moderate"
+                note = "We’ll balance guidance with autonomy and check in on any sticking points."
+            else:
+                label = "High"
+                note = "You can handle more autonomy; we’ll keep nudges concise and goal-focused."
+            readiness = {
+                "score": avg,
+                "label": label,
+                "note": note,
+            }
+
+    return {
+        "user": {
+            "id": getattr(user, "id", None),
+            "first_name": getattr(user, "first_name", None),
+            "surname": getattr(user, "surname", None),
+            "display_name": _display_full_name(user),
+        },
+        "meta": {
+            "anchor_date": anchor_today.isoformat(),
+            "anchor_label": anchor_label,
+            "reported_at": reported_at,
+        },
+        "status_counts": status_counts,
+        "total_krs": total_krs,
+        "focus": {
+            "kr_ids": focus_kr_ids,
+            "kr_titles": focus_titles,
+        },
+        "week_window": {
+            "start": getattr(wf_current, "starts_on", None).isoformat() if getattr(wf_current, "starts_on", None) else None,
+            "end": getattr(wf_current, "ends_on", None).isoformat() if getattr(wf_current, "ends_on", None) else None,
+            "is_current": bool(wf_current),
+        },
+        "readiness": readiness,
+        "rows": rows,
+    }

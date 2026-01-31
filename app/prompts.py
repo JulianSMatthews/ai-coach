@@ -8,7 +8,7 @@ Sections:
 
 Index (helper → purpose → used by):
 - podcast_prompt: kickoff, weekstart, Thursday, Friday podcast transcripts → kickoff.py, monday.py, thursday.py, friday.py
-- coaching_prompt: unified coaching text prompts (weekstart_support, kickoff_support, weekstart_actions, midweek, tuesday, sunday)
+- coaching_prompt: unified coaching text prompts (weekstart_support, kickoff_support, weekstart_actions, midweek, tuesday, saturday, sunday)
 - weekstart_support_prompt (legacy): weekstart support chat → monday.py
 - kickoff_support_prompt (legacy): kickoff support chat → kickoff.py
 - weekstart_actions_prompt (legacy): actions summary from podcast transcript → monday.py
@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -34,8 +35,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func, text, case
 
 from .db import SessionLocal, engine, _is_postgres, _table_exists
+from .debug_utils import debug_enabled
 from .focus import select_top_krs_for_user
-from .models import OKRKeyResult, OKRObjective, PromptTemplate, PromptSettings
+from .models import OKRKeyResult, OKRObjective, OKRKrHabitStep, PromptTemplate, PromptSettings
 from . import llm as shared_llm
 from .models import LLMPromptLog
 
@@ -141,6 +143,19 @@ def okr_block(okrs_by_pillar: Dict[str, List[str]] | List[Dict[str, Any]], targe
             bits.append(f"target {tgt}")
         if actual is not None:
             bits.append(f"now {actual}")
+        steps = d.get("habit_steps") or []
+        step_bits: List[str] = []
+        if isinstance(steps, list):
+            for step in steps:
+                if isinstance(step, dict):
+                    text_val = step.get("text") or step.get("step") or ""
+                else:
+                    text_val = str(step)
+                text_val = text_val.strip()
+                if text_val:
+                    step_bits.append(text_val)
+        if step_bits:
+            bits.append("steps: " + "; ".join(step_bits))
         suffix = f" ({'; '.join(bits)})" if bits else ""
         return f"{desc}{suffix}".strip()
 
@@ -322,9 +337,17 @@ def _apply_prompt_template(parts: List[tuple[str, str]], template: Optional[Dict
     include_blocks = _normalize_block_labels(template.get("include_blocks")) or None
     if include_blocks:
         include_blocks = [b for b in include_blocks if b not in _BANNED_BLOCKS] or None
+        # Always include foundational blocks if a template specifies an include list.
+        if include_blocks:
+            for required in ("system", "locale"):
+                if required not in include_blocks:
+                    include_blocks = [required, *include_blocks]
     order_override = _normalize_block_labels(template.get("block_order"))
     if order_override:
         order_override = [b for b in order_override if b not in _BANNED_BLOCKS]
+        for required in ("system", "locale"):
+            if required not in order_override:
+                order_override = [required, *order_override]
     programme_scope = template.get("programme_scope")
     overrides: Dict[str, Optional[str]] = {
         "task": template.get("task_block"),
@@ -575,131 +598,145 @@ def _normalize_prompt_blocks(
     return known_blocks, extra_blocks, ordered_labels, assembled
 
 
+# Avoid running schema alterations on every prompt log.
+_LLM_PROMPT_SCHEMA_READY = False
+_LLM_PROMPT_SCHEMA_LOCK = threading.Lock()
+
+
 def _ensure_llm_prompt_log_schema() -> None:
     """
     Idempotently add new prompt-block columns and a reviewer-friendly view.
     Keeps compatibility for existing deployments without migrations.
     """
-    try:
-        LLMPromptLog.__table__.create(bind=engine, checkfirst=True)
-    except Exception as e:
-        print(f"[prompts] ensure llm_prompt_logs failed: {e}")
-
-    with engine.begin() as conn:
-        if not _table_exists(conn, "llm_prompt_logs"):
+    global _LLM_PROMPT_SCHEMA_READY
+    if _LLM_PROMPT_SCHEMA_READY:
+        return
+    with _LLM_PROMPT_SCHEMA_LOCK:
+        if _LLM_PROMPT_SCHEMA_READY:
             return
-
-        is_pg = _is_postgres()
-        alterations = [
-            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS prompt_variant varchar(160);",
-            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS task_label varchar(160);",
-            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS system_block text;",
-            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS locale_block text;",
-            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS okr_block text;",
-            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS okr_scope varchar(32);",
-            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS scores_block text;",
-            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS habit_block text;",
-            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS task_block text;",
-            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS user_block text;",
-            (
-                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS extra_blocks jsonb;"
-                if is_pg
-                else "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS extra_blocks text;"
-            ),
-            (
-                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS block_order jsonb;"
-                if is_pg
-                else "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS block_order text;"
-            ),
-            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS assembled_prompt text;",
-            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS template_state varchar(32);",
-            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS template_version integer;",
-            "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS duration_ms integer;",
-        ]
-
-        for stmt in alterations:
-            try:
-                conn.execute(text(stmt))
-            except Exception as e:
-                # Ignore duplicate-column or dialect errors; log for visibility.
-                print(f"[prompts] WARN: alter llm_prompt_logs skipped ({stmt}): {e}")
-
-        # Attempt to drop deprecated columns (best-effort; ignore failures)
-        for drop_col in ["developer_block", "policy_block", "tool_block"]:
-            try:
-                conn.execute(text(f"ALTER TABLE llm_prompt_logs DROP COLUMN IF EXISTS {drop_col};"))
-            except Exception as e:
-                print(f"[prompts] WARN: drop column skipped ({drop_col}): {e}")
-
-        if is_pg:
-            view_sql = """
-                CREATE OR REPLACE VIEW llm_prompt_logs_view AS
-                SELECT
-                    l.id,
-                    l.created_at,
-                    l.touchpoint,
-                    l.user_id,
-                    l.model,
-                    l.duration_ms,
-                    l.prompt_variant,
-                    l.task_label,
-                    COALESCE(l.block_order, '["system","locale","context","history","programme","okr","scores","habit","assessor","task","user"]'::jsonb) AS block_order,
-                    l.system_block,
-                    l.locale_block,
-                    l.okr_block,
-                    l.okr_scope,
-                    l.scores_block,
-                    l.habit_block,
-                    l.task_block,
-                    l.template_state,
-                    l.template_version,
-                    l.user_block,
-                    l.extra_blocks,
-                    COALESCE(l.assembled_prompt, l.prompt_text) AS assembled_prompt,
-                    l.response_preview,
-                    l.context_meta
-                FROM llm_prompt_logs l
-                ORDER BY l.created_at DESC;
-            """
-        else:
-            sqlite_view_sql = """
-                CREATE VIEW IF NOT EXISTS llm_prompt_logs_view AS
-                SELECT
-                    l.id,
-                    l.created_at,
-                    l.touchpoint,
-                    l.user_id,
-                    l.model,
-                    l.duration_ms,
-                    l.prompt_variant,
-                    l.task_label,
-                    COALESCE(l.block_order, json('["system","locale","context","history","programme","okr","scores","habit","assessor","task","user"]')) AS block_order,
-                    l.system_block,
-                    l.locale_block,
-                    l.okr_block,
-                    l.okr_scope,
-                    l.scores_block,
-                    l.habit_block,
-                    l.task_block,
-                    l.template_state,
-                    l.template_version,
-                    l.user_block,
-                    l.extra_blocks,
-                    COALESCE(l.assembled_prompt, l.prompt_text) AS assembled_prompt,
-                    l.response_preview,
-                    l.context_meta
-                FROM llm_prompt_logs l
-                ORDER BY l.created_at DESC;
-            """
-
         try:
-            if is_pg:
-                conn.execute(text(view_sql))
-            else:
-                conn.execute(text("DROP VIEW IF EXISTS llm_prompt_logs_view;"))
-                conn.execute(text(sqlite_view_sql))
+            LLMPromptLog.__table__.create(bind=engine, checkfirst=True)
         except Exception as e:
-            print(f"[prompts] WARN: could not create llm_prompt_logs_view: {e}")
+            print(f"[prompts] ensure llm_prompt_logs failed: {e}")
+
+        with engine.begin() as conn:
+            if not _table_exists(conn, "llm_prompt_logs"):
+                _LLM_PROMPT_SCHEMA_READY = True
+                return
+
+            is_pg = _is_postgres()
+            alterations = [
+                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS prompt_variant varchar(160);",
+                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS task_label varchar(160);",
+                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS system_block text;",
+                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS locale_block text;",
+                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS okr_block text;",
+                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS okr_scope varchar(32);",
+                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS scores_block text;",
+                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS habit_block text;",
+                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS task_block text;",
+                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS user_block text;",
+                (
+                    "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS extra_blocks jsonb;"
+                    if is_pg
+                    else "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS extra_blocks text;"
+                ),
+                (
+                    "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS block_order jsonb;"
+                    if is_pg
+                    else "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS block_order text;"
+                ),
+                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS assembled_prompt text;",
+                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS template_state varchar(32);",
+                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS template_version integer;",
+                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS duration_ms integer;",
+            ]
+
+            for stmt in alterations:
+                try:
+                    conn.execute(text(stmt))
+                except Exception as e:
+                    # Ignore duplicate-column or dialect errors; log for visibility.
+                    print(f"[prompts] WARN: alter llm_prompt_logs skipped ({stmt}): {e}")
+
+            # Attempt to drop deprecated columns (best-effort; ignore failures)
+            for drop_col in ["developer_block", "policy_block", "tool_block"]:
+                try:
+                    conn.execute(text(f"ALTER TABLE llm_prompt_logs DROP COLUMN IF EXISTS {drop_col};"))
+                except Exception as e:
+                    print(f"[prompts] WARN: drop column skipped ({drop_col}): {e}")
+
+            if is_pg:
+                view_sql = """
+                    CREATE OR REPLACE VIEW llm_prompt_logs_view AS
+                    SELECT
+                        l.id,
+                        l.created_at,
+                        l.touchpoint,
+                        l.user_id,
+                        l.model,
+                        l.duration_ms,
+                        l.prompt_variant,
+                        l.task_label,
+                        COALESCE(l.block_order, '["system","locale","context","history","programme","okr","scores","habit","assessor","task","user"]'::jsonb) AS block_order,
+                        l.system_block,
+                        l.locale_block,
+                        l.okr_block,
+                        l.okr_scope,
+                        l.scores_block,
+                        l.habit_block,
+                        l.task_block,
+                        l.template_state,
+                        l.template_version,
+                        l.user_block,
+                        l.extra_blocks,
+                        COALESCE(l.assembled_prompt, l.prompt_text) AS assembled_prompt,
+                        l.response_preview,
+                        l.context_meta
+                    FROM llm_prompt_logs l
+                    ORDER BY l.created_at DESC;
+                """
+            else:
+                sqlite_view_sql = """
+                    CREATE VIEW IF NOT EXISTS llm_prompt_logs_view AS
+                    SELECT
+                        l.id,
+                        l.created_at,
+                        l.touchpoint,
+                        l.user_id,
+                        l.model,
+                        l.duration_ms,
+                        l.prompt_variant,
+                        l.task_label,
+                        COALESCE(l.block_order, json('["system","locale","context","history","programme","okr","scores","habit","assessor","task","user"]')) AS block_order,
+                        l.system_block,
+                        l.locale_block,
+                        l.okr_block,
+                        l.okr_scope,
+                        l.scores_block,
+                        l.habit_block,
+                        l.task_block,
+                        l.template_state,
+                        l.template_version,
+                        l.user_block,
+                        l.extra_blocks,
+                        COALESCE(l.assembled_prompt, l.prompt_text) AS assembled_prompt,
+                        l.response_preview,
+                        l.context_meta
+                    FROM llm_prompt_logs l
+                    ORDER BY l.created_at DESC;
+                """
+
+            try:
+                if is_pg:
+                    conn.execute(text(view_sql))
+                else:
+                    conn.execute(text("DROP VIEW IF EXISTS llm_prompt_logs_view;"))
+                    conn.execute(text(sqlite_view_sql))
+            except Exception as e:
+                print(f"[prompts] WARN: could not create llm_prompt_logs_view: {e}")
+
+        _LLM_PROMPT_SCHEMA_READY = True
 
 
 # ---------------------------------------------------------------------------
@@ -731,6 +768,24 @@ def current_krs_context(
                 .filter(OKRKeyResult.id.in_(kr_ids))
                 .all()
             )
+        steps_by_kr: Dict[int, List[str]] = {}
+        if kr_ids:
+            step_rows = (
+                session.query(OKRKrHabitStep)
+                .filter(OKRKrHabitStep.user_id == user_id, OKRKrHabitStep.kr_id.in_(kr_ids))
+                .filter(OKRKrHabitStep.status != "archived")
+                .order_by(
+                    OKRKrHabitStep.kr_id.asc(),
+                    OKRKrHabitStep.week_no.asc().nullslast(),
+                    OKRKrHabitStep.sort_order.asc(),
+                    OKRKrHabitStep.id.asc(),
+                )
+                .all()
+            )
+            for step in step_rows:
+                if not step.step_text:
+                    continue
+                steps_by_kr.setdefault(step.kr_id, []).append(step.step_text)
 
         order_map = {kr_id: idx for idx, kr_id in enumerate(kr_ids)}
         krs: List[Dict[str, Any]] = []
@@ -747,14 +802,22 @@ def current_krs_context(
                     "status": getattr(kr, "status", None),
                     "pillar": pillar,
                     "priority": priority,
+                    "habit_steps": steps_by_kr.get(int(kr.id), []),
                 }
             )
         krs.sort(key=lambda x: x["priority"])
         if max_krs is not None:
             krs = krs[:max_krs]
-        krs_by_pillar: Dict[str, List[str]] = {}
+        krs_by_pillar: Dict[str, List[Dict[str, Any]]] = {}
         for kr in krs:
-            krs_by_pillar.setdefault(kr["pillar"], []).append(kr["description"])
+            krs_by_pillar.setdefault(kr["pillar"], []).append(
+                {
+                    "description": kr.get("description"),
+                    "target": kr.get("target"),
+                    "actual": kr.get("actual"),
+                    "habit_steps": kr.get("habit_steps") or [],
+                }
+            )
         primary = krs[0] if krs else None
         return {
             "krs": krs,
@@ -798,6 +861,29 @@ def okrs_by_pillar_payload(
     return ctx.get("krs_by_pillar", {})
 
 
+def _krs_for_okr_scope(
+    *,
+    okr_scope: str,
+    user_id: int,
+    week_no: Optional[int] = None,
+    primary: Optional[Dict[str, Any]] = None,
+    max_krs: Optional[int] = None,
+    fallback_krs: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    if okr_scope == "week":
+        return kr_payload_list(user_id, week_no=week_no, max_krs=None)
+    if okr_scope == "pillar" and primary:
+        pillar_key = (primary.get("pillar") or "").lower()
+        if pillar_key:
+            all_krs = kr_payload_list(user_id, week_no=week_no, max_krs=None)
+            pillar_krs = [item for item in all_krs if (item.get("pillar") or "").lower() == pillar_key]
+            if pillar_krs:
+                return pillar_krs
+    if fallback_krs is not None:
+        return fallback_krs
+    return kr_payload_list(user_id, week_no=week_no, max_krs=max_krs)
+
+
 # ---------------------------------------------------------------------------
 # Central dispatcher / LLM runner
 # ---------------------------------------------------------------------------
@@ -818,10 +904,14 @@ def build_prompt(
     - podcast_thursday
     - podcast_friday
     - weekstart_support
+    - general_support
     - kickoff_support
     - weekstart_actions
+    - sunday_actions
+    - sunday_support
     - tuesday
     - midweek
+    - saturday
     - sunday
     """
     tp = touchpoint.lower()
@@ -851,10 +941,11 @@ def build_prompt(
         programme_scope = (template or {}).get("programme_scope") or "pillar"
         programme_txt = programme_block_with_scope(programme_scope, data.get("programme"), first_block)
         instruction = (
-            "You are a warm, concise wellbeing coach creating a 1–2 minute weekly audio brief. "
+            "You are a warm, concise wellbeing coach creating a 2–3 minute weekly audio brief (around 300–450 words). "
             "Focus on the current 3-week block: explain why each KR matters, and give 2–3 simple suggestions to start this week. "
             "Include: welcome, quick assessment nod, habit readiness nod, this block’s dates and pillar, "
-            "KR highlights for this block, practical Week 1 ideas, and a short motivational close."
+            "KR highlights for this block, practical Week 1 ideas, and a short motivational close. "
+            "Keep it tight; do not exceed 450 words."
         )
         parts = [
             ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
@@ -910,8 +1001,14 @@ def build_prompt(
         )
     if tp == "podcast_thursday":
         kr = primary_kr_payload(user_id, week_no=data.get("week_no"))
-        krs = [kr] if kr else []
         okr_scope = (template or {}).get("okr_scope") or "week"
+        krs = _krs_for_okr_scope(
+            okr_scope=okr_scope,
+            user_id=user_id,
+            week_no=data.get("week_no"),
+            primary=kr or None,
+            fallback_krs=[kr] if kr else [],
+        )
         okr_txt, okr_meta = okr_block_with_scope(okr_scope, krs)
         instruction = (
             "You are a warm, concise wellbeing coach creating a short Thursday check-in podcast (~45–60s). "
@@ -936,8 +1033,14 @@ def build_prompt(
         )
     if tp == "podcast_friday":
         kr = primary_kr_payload(user_id, week_no=data.get("week_no"))
-        krs = [kr] if kr else []
         okr_scope = (template or {}).get("okr_scope") or "week"
+        krs = _krs_for_okr_scope(
+            okr_scope=okr_scope,
+            user_id=user_id,
+            week_no=data.get("week_no"),
+            primary=kr or None,
+            fallback_krs=[kr] if kr else [],
+        )
         okr_txt, okr_meta = okr_block_with_scope(okr_scope, krs)
         instruction = (
             "You are a warm, concise wellbeing coach creating a short Friday boost podcast (~45–60s). "
@@ -966,7 +1069,15 @@ def build_prompt(
         scores_payload = data.get("scores") or []
         psych_payload = data.get("psych_payload") or {}
         okr_scope = (template or {}).get("okr_scope") or "week"
-        okr_txt, okr_meta = okr_block_with_scope(okr_scope, payload)
+        primary = payload[0] if payload else None
+        krs = _krs_for_okr_scope(
+            okr_scope=okr_scope,
+            user_id=user_id,
+            week_no=data.get("week_no"),
+            primary=primary,
+            fallback_krs=payload,
+        )
+        okr_txt, okr_meta = okr_block_with_scope(okr_scope, krs)
         parts: List[tuple[str, str]] = [
             ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
             ("locale", settings.get("locale_block") or locale_block(locale)),
@@ -978,7 +1089,8 @@ def build_prompt(
             (
                 "task",
                 task_block(
-                    "Reply with 2-3 practical ideas or next steps for this week; include a couple of follow-ups that advance the plan.",
+                    "Reply with 2-3 practical ideas or next steps for this week. "
+                    "If proposed habit steps are shown in the KR context, ask the user to confirm or suggest edits so you can set them.",
                     constraints="Do not assume progress; avoid praise/commands; do not suggest more sessions than KR targets; keep it conversational.",
                 ),
             ),
@@ -991,11 +1103,63 @@ def build_prompt(
             meta=_merge_template_meta(okr_meta, template),
             block_order_override=order_override or settings.get("default_block_order"),
         )
+    if tp == "general_support":
+        history = "\n".join(data.get("history", []))
+        scores_payload = data.get("scores") or []
+        psych_payload = data.get("psych_payload") or {}
+        okr_scope = (template or {}).get("okr_scope") or "week"
+        payload = kr_payload_list(user_id, max_krs=3)
+        primary = payload[0] if payload else None
+        krs = _krs_for_okr_scope(
+            okr_scope=okr_scope,
+            user_id=user_id,
+            week_no=data.get("week_no"),
+            primary=primary,
+            fallback_krs=payload,
+        )
+        okr_txt, okr_meta = okr_block_with_scope(okr_scope, krs)
+        timeframe = data.get("timeframe", "")
+        extras = data.get("extras", "")
+        parts: List[tuple[str, str]] = [
+            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
+            ("locale", settings.get("locale_block") or locale_block(locale)),
+            ("context", context_block("general_support", "open coaching support", timeframe=timeframe, extras=extras)),
+            ("okr", okr_txt),
+            ("scores", scores_block(scores_payload) if scores_payload else ""),
+            ("habit", habit_readiness_block(psych_payload) if psych_payload else ""),
+            ("history", history_block("conversation", history.splitlines()) if history else ""),
+            (
+                "task",
+                task_block(
+                    "Reply with a brief acknowledgement, one practical next step tied to their current habits or goals, "
+                    "and one short follow-up question.",
+                    constraints="Keep it concise (2-4 short sentences), warm, calm, supportive. Avoid OKR/KR jargon; do not introduce new goals unless asked.",
+                ),
+            ),
+        ]
+        parts, order_override = _apply_prompt_template(parts, template)
+        return _prompt_assembly(
+            "general_support",
+            "general_support_reply",
+            parts,
+            meta=_merge_template_meta(okr_meta, template),
+            block_order_override=order_override or settings.get("default_block_order"),
+        )
     if tp == "weekstart_actions":
         transcript = data.get("transcript", "")
         krs = data.get("krs", [])
         okr_scope = (template or {}).get("okr_scope") or "week"
-        okr_txt, okr_meta = okr_block_with_scope(okr_scope, krs)
+        primary = krs[0] if krs else None
+        okr_txt, okr_meta = okr_block_with_scope(
+            okr_scope,
+            _krs_for_okr_scope(
+                okr_scope=okr_scope,
+                user_id=user_id,
+                week_no=data.get("week_no"),
+                primary=primary,
+                fallback_krs=krs,
+            ),
+        )
         parts = [
             ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
             ("locale", settings.get("locale_block") or locale_block(locale)),
@@ -1003,11 +1167,21 @@ def build_prompt(
             ("okr", okr_txt),
             ("task",
                 "You are a concise wellbeing coach. Using the podcast transcript and the KR context, "
-                "write a short intro plus 2-3 bullet-style actions for this week. "
+                "write a short intro plus 3 habit step options per KR using this exact format:\n"
+                "KR1: <short KR description>\n"
+                "1A) <habit step option>\n"
+                "1B) <habit step option>\n"
+                "1C) <habit step option>\n"
+                "KR2: ...\n"
+                "2A) ...\n"
+                "2B) ...\n"
+                "2C) ...\n"
                 "Intro should say: 'As per the podcast, here are practical actions for this week:' "
-                "Keep bullets tight. "
+                "Keep options practical, low-pressure, and easy to start this week. "
+                "Each option must be a concrete, observable habit (avoid meta-instructions like "
+                "'pick the smallest version' or 'schedule one simple step'). "
                 "Use British English spelling and phrasing; avoid Americanisms. "
-                "End with an invitation for questions and note they can ask about the podcast."
+                "Do not add any closing instruction lines."
             ),
             ("history", f"Transcript: {transcript}"),
         ]
@@ -1019,6 +1193,100 @@ def build_prompt(
             meta=_merge_template_meta(okr_meta, template),
             block_order_override=order_override or settings.get("default_block_order"),
         )
+    if tp == "sunday_actions":
+        review_mode = (data.get("review_mode") or "kr").strip().lower()
+        timeframe = data.get("timeframe", "Sunday")
+        okr_scope = (template or {}).get("okr_scope") or "week"
+        fallback_krs = data.get("krs")
+        primary = None
+        if isinstance(fallback_krs, list) and fallback_krs:
+            primary = fallback_krs[0]
+        okr_txt, okr_meta = okr_block_with_scope(
+            okr_scope,
+            _krs_for_okr_scope(
+                okr_scope=okr_scope,
+                user_id=user_id,
+                week_no=data.get("week_no"),
+                primary=primary,
+                fallback_krs=fallback_krs,
+            ),
+        )
+        habit_steps = data.get("habit_steps", "")
+        if review_mode == "habit":
+            task_text = (
+                "Write a short Sunday check-in focused on habit steps for the week. "
+                "Ask how the habit steps went in plain language (no KR/OKR jargon). "
+                "Ask what helped and what got in the way, and invite them to tweak any steps."
+            )
+        else:
+            task_text = (
+                "Write a short Sunday check-in asking for numeric updates on each goal. "
+                "Ask what worked well and what didn’t work well or made things harder. "
+                "End by saying you’ll summarise and prep Monday’s kickoff."
+            )
+        parts = [
+            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
+            ("locale", settings.get("locale_block") or locale_block(locale)),
+            ("context", context_block("sunday", "weekly review", timeframe=timeframe)),
+            ("okr", okr_txt),
+        ]
+        if habit_steps:
+            parts.append(("history", f"Habit steps:\n{habit_steps}"))
+        parts.append(("task", task_text))
+        parts, order_override = _apply_prompt_template(parts, template)
+        return _prompt_assembly(
+            "sunday_actions",
+            "sunday_actions",
+            parts,
+            meta=_merge_template_meta(okr_meta, template),
+            block_order_override=order_override or settings.get("default_block_order"),
+        )
+    if tp == "sunday_support":
+        review_mode = (data.get("review_mode") or "kr").strip().lower()
+        timeframe = data.get("timeframe", "Sunday")
+        history = data.get("history", "")
+        okr_scope = (template or {}).get("okr_scope") or "week"
+        fallback_krs = data.get("krs")
+        primary = None
+        if isinstance(fallback_krs, list) and fallback_krs:
+            primary = fallback_krs[0]
+        okr_txt, okr_meta = okr_block_with_scope(
+            okr_scope,
+            _krs_for_okr_scope(
+                okr_scope=okr_scope,
+                user_id=user_id,
+                week_no=data.get("week_no"),
+                primary=primary,
+                fallback_krs=fallback_krs,
+            ),
+        )
+        if review_mode == "habit":
+            task_text = (
+                "Reply to the user’s habit-step check-in. "
+                "Acknowledge what they shared, suggest one tweak if helpful, and ask one follow-up question. "
+                "Keep it brief, warm, and plain language."
+            )
+        else:
+            task_text = (
+                "Reply to the user’s update on their goals. "
+                "Acknowledge, ask one focused follow-up (blocker or next step), and keep it short and supportive."
+            )
+        parts = [
+            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
+            ("locale", settings.get("locale_block") or locale_block(locale)),
+            ("context", context_block("sunday", "weekly review follow-up", timeframe=timeframe)),
+            ("okr", okr_txt),
+            ("history", history_block("conversation", history.splitlines()) if history else ""),
+            ("task", task_text),
+        ]
+        parts, order_override = _apply_prompt_template(parts, template)
+        return _prompt_assembly(
+            "sunday_support",
+            "sunday_support",
+            parts,
+            meta=_merge_template_meta(okr_meta, template),
+            block_order_override=order_override or settings.get("default_block_order"),
+        )
     if tp == "tuesday":
         kr = primary_kr_payload(user_id)
         timeframe = data.get("timeframe", "Tuesday")
@@ -1026,7 +1294,14 @@ def build_prompt(
         scores_payload = data.get("scores") or []
         psych_payload = data.get("psych_payload") or {}
         okr_scope = (template or {}).get("okr_scope") or "week"
-        okr_txt, okr_meta = okr_block_with_scope(okr_scope, [kr]) if kr else ("", {})
+        krs = _krs_for_okr_scope(
+            okr_scope=okr_scope,
+            user_id=user_id,
+            week_no=data.get("week_no"),
+            primary=kr or None,
+            fallback_krs=[kr] if kr else [],
+        )
+        okr_txt, okr_meta = okr_block_with_scope(okr_scope, krs) if krs else ("", {})
         parts = [
             ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
             ("locale", settings.get("locale_block") or locale_block(locale)),
@@ -1060,7 +1335,14 @@ def build_prompt(
         scores_payload = data.get("scores") or []
         psych_payload = data.get("psych_payload") or {}
         okr_scope = (template or {}).get("okr_scope") or "week"
-        okr_txt, okr_meta = okr_block_with_scope(okr_scope, [kr]) if kr else ("", {})
+        krs_for_okr = _krs_for_okr_scope(
+            okr_scope=okr_scope,
+            user_id=user_id,
+            week_no=data.get("week_no"),
+            primary=kr or None,
+            fallback_krs=[kr] if kr else [],
+        )
+        okr_txt, okr_meta = okr_block_with_scope(okr_scope, krs_for_okr) if krs_for_okr else ("", {})
         parts = [
             ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
             ("locale", settings.get("locale_block") or locale_block(locale)),
@@ -1087,13 +1369,64 @@ def build_prompt(
             meta=_merge_template_meta(okr_meta, template),
             block_order_override=order_override or settings.get("default_block_order"),
         )
+    if tp == "saturday":
+        kr = primary_kr_payload(user_id)
+        timeframe = data.get("timeframe", "Saturday")
+        history_text = data.get("history_text", "")
+        scores_payload = data.get("scores") or []
+        psych_payload = data.get("psych_payload") or {}
+        okr_scope = (template or {}).get("okr_scope") or "week"
+        krs = _krs_for_okr_scope(
+            okr_scope=okr_scope,
+            user_id=user_id,
+            week_no=data.get("week_no"),
+            primary=kr or None,
+            fallback_krs=[kr] if kr else [],
+        )
+        okr_txt, okr_meta = okr_block_with_scope(okr_scope, krs) if krs else ("", {})
+        parts = [
+            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
+            ("locale", settings.get("locale_block") or locale_block(locale)),
+            ("context", context_block("saturday", "keepalive check-in", timeframe=timeframe)),
+            ("history", history_block("recent check-ins", history_text.splitlines()) if history_text else ""),
+            ("scores", scores_block(scores_payload, combined=data.get("combined_score")) if scores_payload else ""),
+            ("habit", habit_readiness_block(psych_payload) if psych_payload else ""),
+            ("okr", okr_txt),
+            (
+                "task",
+                task_block(
+                    "Write a very short Saturday keepalive that feels light and optional. "
+                    "Ask for a one-word or short reply to keep the chat open. "
+                    "Offer help if anything feels unclear. Keep it 1–2 lines.",
+                    constraints="No new actions or goals. Keep it warm and low-pressure.",
+                ),
+            ),
+        ]
+        parts, order_override = _apply_prompt_template(parts, template)
+        return _prompt_assembly(
+            "saturday",
+            "saturday_keepalive",
+            parts,
+            meta=_merge_template_meta(okr_meta, template),
+            block_order_override=order_override or settings.get("default_block_order"),
+        )
     if tp == "sunday":
         krs = kr_payload_list(user_id, max_krs=3)
         history_text = data.get("history_text", "")
         scores_payload = data.get("scores") or []
         psych_payload = data.get("psych_payload") or {}
         okr_scope = (template or {}).get("okr_scope") or "week"
-        okr_txt, okr_meta = okr_block_with_scope(okr_scope, krs)
+        primary = krs[0] if krs else None
+        okr_txt, okr_meta = okr_block_with_scope(
+            okr_scope,
+            _krs_for_okr_scope(
+                okr_scope=okr_scope,
+                user_id=user_id,
+                week_no=data.get("week_no"),
+                primary=primary,
+                fallback_krs=krs,
+            ),
+        )
         parts = [
             ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
             ("locale", settings.get("locale_block") or locale_block(locale)),
@@ -1200,7 +1533,7 @@ def log_llm_prompt(
     Persist the prompt sent to the LLM (optional response preview) with structured blocks.
     Enable by calling explicitly where needed; kept separate from run_llm_prompt for control.
     """
-    debug = os.getenv("LOG_LLM_PROMPTS_DEBUG", "").lower() in {"1", "true", "yes", "on"}
+    debug = debug_enabled()
     print(f"[prompts] logging LLM prompt touchpoint={touchpoint} user_id={user_id}")
     try:
         _ensure_llm_prompt_log_schema()
@@ -1427,11 +1760,17 @@ def coaching_prompt(
         return (
             f"{header}\n"
             "You are a concise wellbeing coach. Using the podcast transcript and the KR context, "
-            "write a short intro plus 2-3 bullet-style actions for this week. "
+            "write a short intro plus 1–2 habit step options per KR using this exact format:\n"
+            "KR1: <short KR description>\n"
+            "1A) <habit step option>\n"
+            "1B) <habit step option>\n"
+            "KR2: ...\n"
+            "2A) ...\n"
+            "2B) ...\n"
             "Intro should say: 'As per the podcast, here are practical actions for this week:' "
-            "Keep bullets tight. "
+            "Keep options practical, low-pressure, and easy to start this week. "
             "Use British English spelling and phrasing; avoid Americanisms. "
-            "End with an invitation for questions and note they can ask about the podcast.\n"
+            "End with a single line instructing: 'Reply with 1A, 2B, etc. or All ok to accept the first option for each KR.'\n"
             f"Transcript: {transcript}\n"
             f"KRs: {krs}"
         )

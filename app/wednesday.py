@@ -7,10 +7,11 @@ from typing import Optional
 
 from .db import SessionLocal
 from .models import WeeklyFocus, User
-from .nudges import send_whatsapp
+from .nudges import send_whatsapp, append_button_cta
 from .prompts import format_checkin_history, primary_kr_payload, build_prompt, run_llm_prompt
 from .touchpoints import log_touchpoint
 from .checkins import fetch_recent_checkins, record_checkin
+from . import general_support
 
 
 def _latest_weekly_focus(session: Session, user_id: int) -> Optional[WeeklyFocus]:
@@ -23,6 +24,7 @@ def _latest_weekly_focus(session: Session, user_id: int) -> Optional[WeeklyFocus
 
 
 def send_midweek_check(user: User, coach_name: str = "Gia") -> None:
+    general_support.clear(user.id)
     with SessionLocal() as s:
         wf = _latest_weekly_focus(s, user.id)
         if not wf:
@@ -74,7 +76,11 @@ def send_midweek_check(user: User, coach_name: str = "Gia") -> None:
                 "Any blockers? Try a small tweak this week—pick one simpler option that keeps you consistent."
             )
 
-    send_whatsapp(to=user.phone, text=message)
+    send_whatsapp(
+        to=user.phone,
+        text=append_button_cta(message),
+        quick_replies=["All good", "Need help"],
+    )
     log_touchpoint(
         user_id=user.id,
         tp_type="wednesday",
@@ -93,3 +99,4 @@ def send_midweek_check(user: User, coach_name: str = "Gia") -> None:
             week_no=getattr(wf, "week_no", None),
         ),
     )
+    general_support.activate(user.id, source="wednesday", week_no=getattr(wf, "week_no", None), send_intro=False)

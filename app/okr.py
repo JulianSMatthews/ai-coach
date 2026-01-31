@@ -28,6 +28,7 @@ import json
 # --- Needed for new state context helper ---
 from sqlalchemy.sql import text as _sql_text
 from app.db import SessionLocal
+from app.debug_utils import debug_log
 from app.models import UserConceptState, Concept, PillarResult, JobAudit, UserPreference, AssessSession
 from . import psych
 
@@ -84,11 +85,11 @@ SYSTEM_MSG = (
 )
 
 def _baseline_debug(reason: str, detail: dict | None = None) -> None:
-    pass
+    debug_log(reason, detail or {}, tag="okr")
 
 
 def _okr_audit(job: str, *, status: str = "ok", payload: dict | None = None, error: str | None = None) -> None:
-    pass
+    debug_log(f"{job} status={status}", {"payload": payload or {}, "error": error}, tag="okr")
 
 
 def _fallback_okr(pillar_slug: str, pillar_score: float | None) -> str:

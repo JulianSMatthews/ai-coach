@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from sqlalchemy import (
-    Column, Integer, String, Text, DateTime, Boolean, Float, ForeignKey,
+    Column, Integer, String, Text, DateTime, Date, Boolean, Float, ForeignKey,
     UniqueConstraint, Index, text
 )
 from sqlalchemy import text as sa_text
@@ -35,6 +35,11 @@ class User(Base):
     first_name = Column(String(120), nullable=True)
     surname    = Column(String(120), nullable=True)
     phone      = Column(String(64), unique=True, nullable=False, index=True)
+    email      = Column(String(255), nullable=True, index=True)
+    password_hash = Column(String(255), nullable=True)
+    phone_verified_at = Column(DateTime, nullable=True)
+    email_verified_at = Column(DateTime, nullable=True)
+    two_factor_enabled = Column(Boolean, nullable=False, server_default=text("false"))
     created_on = Column(DateTime, nullable=True)
     updated_on = Column(DateTime, nullable=True)
     is_superuser = Column(Boolean, nullable=False, server_default=text("false"))
@@ -45,6 +50,36 @@ class User(Base):
 
     sessions   = relationship("AssessSession", back_populates="user", cascade="all, delete-orphan")
     club       =relationship("Club")
+
+
+class AuthOtp(Base):
+    __tablename__ = "auth_otps"
+    id         = Column(Integer, primary_key=True)
+    user_id    = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    channel    = Column(String(32), nullable=False)  # whatsapp|sms|email
+    purpose    = Column(String(32), nullable=False)  # login_2fa|login
+    code_hash  = Column(String(255), nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    consumed_at = Column(DateTime, nullable=True)
+    ip         = Column(String(64), nullable=True)
+    user_agent = Column(String(255), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user = relationship("User")
+
+
+class AuthSession(Base):
+    __tablename__ = "auth_sessions"
+    id         = Column(Integer, primary_key=True)
+    user_id    = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = Column(String(255), nullable=False, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
+    ip         = Column(String(64), nullable=True)
+    user_agent = Column(String(255), nullable=True)
+
+    user = relationship("User")
 
 class AssessSession(Base):
     __tablename__ = "assess_sessions"
@@ -71,6 +106,19 @@ class MessageLog(Base):
     text       = Column(Text, nullable=True)
     meta       = Column(JSONType, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+class ScriptRun(Base):
+    __tablename__ = "script_runs"
+    id          = Column(Integer, primary_key=True)
+    kind        = Column(String(32), nullable=False)  # assessment | coaching
+    status      = Column(String(32), nullable=False, default="running")
+    pid         = Column(Integer, nullable=True)
+    command     = Column(Text, nullable=False)
+    log_path    = Column(Text, nullable=True)
+    exit_code   = Column(Integer, nullable=True)
+    started_at  = Column(DateTime, default=datetime.utcnow, nullable=False)
+    finished_at = Column(DateTime, nullable=True)
+    created_by  = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -242,6 +290,47 @@ class UserPreference(Base):
         UniqueConstraint("user_id", "key", name="uq_user_preferences_user_key"),
     )
 
+
+class GlobalPromptSchedule(Base):
+    __tablename__ = "global_prompt_schedule"
+
+    id         = Column(Integer, primary_key=True)
+    day_key    = Column(String(16), nullable=False, unique=True)  # monday..sunday
+    time_local = Column(String(8), nullable=True)                # HH:MM (local)
+    enabled    = Column(Boolean, nullable=False, server_default=text("true"))
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class TwilioTemplate(Base):
+    __tablename__ = "twilio_templates"
+
+    id            = Column(Integer, primary_key=True)
+    provider      = Column(String(32), nullable=False, server_default="twilio")
+    template_type = Column(String(64), nullable=False)  # quick-reply
+    button_count  = Column(Integer, nullable=True)
+    friendly_name = Column(String(120), nullable=True)
+    sid           = Column(String(64), nullable=True, index=True)
+    language      = Column(String(16), nullable=True, server_default="en")
+    status        = Column(String(32), nullable=True)  # active|missing|error
+    payload       = Column(JSONType, nullable=True)
+    last_synced_at = Column(DateTime, nullable=True)
+    created_at    = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at    = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("provider", "template_type", "button_count", name="uq_twilio_template_type_count"),
+    )
+
+
+class MessagingSettings(Base):
+    __tablename__ = "messaging_settings"
+
+    id                        = Column(Integer, primary_key=True)
+    out_of_session_enabled    = Column(Boolean, nullable=False, server_default=text("false"))
+    out_of_session_message    = Column(Text, nullable=True)
+    updated_at                = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Knowledge Base (retriever)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -269,30 +358,6 @@ class KbVector(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
 
 
-# Educational content (news/updates/longer-form) kept separate from assessment KB
-class EduContent(Base):
-    __tablename__ = "edu_content"
-
-    id            = Column(Integer, primary_key=True)
-    pillar_key    = Column(String(32), nullable=False, index=True)   # nutrition/training/resilience/goals
-    concept_code  = Column(String(64), nullable=True, index=True)    # e.g. 'sleep_quality'
-    title         = Column(String(200), nullable=True)
-    text          = Column(Text, nullable=False)                     # normalized summary/script body
-    source_type   = Column(String(64), nullable=True)                # public_domain|journal|blog|manual
-    source_url    = Column(String(512), nullable=True)
-    license       = Column(String(64), nullable=True)                # e.g., cc0, cc-by, internal
-    published_at  = Column(DateTime, nullable=True)
-    level         = Column(String(32), nullable=True)                # intro|intermediate|advanced
-    tags          = Column(JSONType, nullable=True)                  # ["sleep","cbt-i","chronotype"]
-    beats         = Column(JSONType, nullable=True)                  # talking points for media generation
-    is_active     = Column(Boolean, nullable=False, server_default=sa_text("true"))
-    meta          = Column(JSONType, nullable=True)                  # {"source_confidence":0.9,"reviewed_at":...}
-    created_at    = Column(DateTime, default=datetime.utcnow, nullable=False)
-
-    __table_args__ = (
-        Index("ix_edu_content_pillar_concept_active", "pillar_key", "concept_code", "is_active"),
-    )
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Assessment runs + turns (logging / review)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -308,6 +373,23 @@ class AssessmentRun(Base):
     report_path      = Column(String(255), nullable=True) # filesystem or URL path to generated PDF
 
     turns      = relationship("AssessmentTurn", back_populates="run", cascade="all, delete-orphan")
+    narrative  = relationship("AssessmentNarrative", back_populates="run", uselist=False, cascade="all, delete-orphan")
+
+
+class AssessmentNarrative(Base):
+    __tablename__ = "assessment_narratives"
+    id            = Column(Integer, primary_key=True)
+    run_id        = Column(Integer, ForeignKey("assessment_runs.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    score_html    = Column(Text, nullable=True)
+    okr_html      = Column(Text, nullable=True)
+    coaching_html = Column(Text, nullable=True)
+    model         = Column(String(64), nullable=True)
+    prompt_version = Column(String(64), nullable=True)
+    meta          = Column(JSONType, nullable=True)
+    created_at    = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at    = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    run = relationship("AssessmentRun", back_populates="narrative")
 
 
 class AssessmentTurn(Base):
@@ -439,6 +521,7 @@ class OKRKeyResult(Base):
 
     objective        = relationship("OKRObjective", back_populates="key_results")
     entries          = relationship("OKRKrEntry", back_populates="key_result", cascade="all, delete-orphan")
+    habit_steps      = relationship("OKRKrHabitStep", back_populates="key_result", cascade="all, delete-orphan")
 
     __table_args__   = (
         Index("ix_okr_krs_objective", "objective_id"),
@@ -461,6 +544,29 @@ class OKRKrEntry(Base):
 
     __table_args__   = (
         Index("ix_okr_kr_entries_kr_time", "key_result_id", "occurred_at"),
+    )
+
+
+class OKRKrHabitStep(Base):
+    __tablename__ = "okr_kr_habit_steps"
+
+    id              = Column(Integer, primary_key=True)
+    user_id         = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    kr_id           = Column(Integer, ForeignKey("okr_key_results.id", ondelete="CASCADE"), nullable=False, index=True)
+    weekly_focus_id = Column(Integer, ForeignKey("weekly_focus.id", ondelete="SET NULL"), nullable=True, index=True)
+    week_no         = Column(Integer, nullable=True, index=True)
+    sort_order      = Column(Integer, nullable=False, server_default=text("0"))
+    step_text       = Column(Text, nullable=False)
+    status          = Column(String(16), nullable=False, server_default=text("'active'"))
+    source          = Column(String(64), nullable=True)
+    created_at      = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at      = Column(DateTime, nullable=False, server_default=func.now())
+
+    key_result      = relationship("OKRKeyResult", back_populates="habit_steps")
+
+    __table_args__ = (
+        Index("ix_okr_kr_habit_steps_kr_week_order", "kr_id", "week_no", "sort_order"),
+        Index("ix_okr_kr_habit_steps_user_kr", "user_id", "kr_id"),
     )
 
 
@@ -597,40 +703,99 @@ class OKRFocusStack(Base):
     computed_at    = Column(DateTime, nullable=False, server_default=func.now())
 
 
-class ContentTemplate(Base):
-    __tablename__ = "content_templates"
+class ContentPromptGeneration(Base):
+    __tablename__ = "content_prompt_generations"
 
-    # Versioned templated bodies used to generate personalized touchpoint messages
-    id              = Column(Integer, primary_key=True)
-    name            = Column(String(160), nullable=False)
-    touchpoint_type = Column(String(64), nullable=False)
-    persona_tag     = Column(String(64), nullable=True)
-    status_state    = Column(String(32), nullable=True)              # on_track|off_track|low_energy
-    body            = Column(Text, nullable=False)                   # templated text with slots
-    slots           = Column(JSONType, nullable=True)                # ["kr","metric","deadline"]
-    version         = Column(Integer, nullable=False, server_default=text("1"))
-    is_active       = Column(Boolean, nullable=False, server_default=text("true"))
-    created_at      = Column(DateTime, nullable=False, server_default=func.now())
+    # Stored output for admin content generator based on prompt templates
+    id                = Column(Integer, primary_key=True)
+    user_id           = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    created_by        = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    template_id       = Column(Integer, ForeignKey("content_prompt_templates.id", ondelete="SET NULL"), nullable=True, index=True)
+    touchpoint        = Column(String(64), nullable=False, index=True)
+    prompt_state      = Column(String(32), nullable=True)
+    provider          = Column(String(32), nullable=True)
+    test_date         = Column(Date, nullable=True)
+    model_override    = Column(String(120), nullable=True)
+    run_llm           = Column(Boolean, nullable=False, server_default=text("false"))
+    assembled_prompt  = Column(Text, nullable=True)
+    blocks            = Column(JSONType, nullable=True)
+    block_order       = Column(JSONType, nullable=True)
+    meta              = Column(JSONType, nullable=True)
+    llm_model         = Column(String(120), nullable=True)
+    llm_duration_ms   = Column(Integer, nullable=True)
+    llm_content       = Column(Text, nullable=True)
+    llm_error         = Column(Text, nullable=True)
+    podcast_url       = Column(Text, nullable=True)
+    podcast_voice     = Column(String(120), nullable=True)
+    podcast_error     = Column(Text, nullable=True)
+    status            = Column(String(32), nullable=True)  # assembled|ok|error
+    error             = Column(Text, nullable=True)
+    created_at        = Column(DateTime, nullable=False, server_default=func.now())
 
     __table_args__ = (
-        Index("ix_content_templates_touchpoint_persona", "touchpoint_type", "persona_tag"),
+        Index("ix_content_prompt_generations_touchpoint_state", "touchpoint", "prompt_state"),
     )
 
 
-class GenerationRun(Base):
-    __tablename__ = "generation_runs"
+class ContentPromptTemplate(Base):
+    __tablename__ = "content_prompt_templates"
 
-    # Audit log for LLM/auto-media generation per touchpoint
     id             = Column(Integer, primary_key=True)
-    touchpoint_id  = Column(Integer, ForeignKey("touchpoints.id", ondelete="CASCADE"), nullable=False, index=True)
-    template_id    = Column(Integer, ForeignKey("content_templates.id", ondelete="SET NULL"), nullable=True, index=True)
-    llm_prompt     = Column(JSONType, nullable=True)
-    llm_response   = Column(JSONType, nullable=True)
-    tts_engine     = Column(String(120), nullable=True)
-    video_engine   = Column(String(120), nullable=True)
-    duration_ms    = Column(Integer, nullable=True)
-    status         = Column(String(32), nullable=True)              # started|ok|error
-    created_at     = Column(DateTime, nullable=False, server_default=func.now())
+    template_key   = Column(String(120), nullable=False, index=True)
+    label          = Column(String(160), nullable=True)
+    pillar_key     = Column(String(64), nullable=True, index=True)
+    concept_code   = Column(String(64), nullable=True, index=True)
+    parent_id      = Column(Integer, nullable=True)
+    version        = Column(Integer, nullable=False, server_default="1")
+    state          = Column(String(32), nullable=False, server_default="draft")  # draft|published
+    note           = Column(Text, nullable=True)
+    task_block     = Column(Text, nullable=True)
+    block_order    = Column(JSONType, nullable=True)
+    include_blocks = Column(JSONType, nullable=True)
+    response_format = Column(String(32), nullable=True)
+    is_active      = Column(Boolean, nullable=False, server_default="true")
+    updated_at     = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("template_key", "state", "version", name="uq_content_prompt_templates_key_state_version"),
+    )
+
+
+class ContentPromptSettings(Base):
+    __tablename__ = "content_prompt_settings"
+    id                 = Column(Integer, primary_key=True)
+    system_block       = Column(Text, nullable=True)
+    locale_block       = Column(Text, nullable=True)
+    default_block_order = Column(JSONType, nullable=True)
+    updated_at         = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class ContentLibraryItem(Base):
+    __tablename__ = "content_library_items"
+
+    # Stored library content by pillar/concept
+    id                     = Column(Integer, primary_key=True)
+    pillar_key             = Column(String(64), nullable=False, index=True)
+    concept_code           = Column(String(64), nullable=True, index=True)
+    title                  = Column(String(200), nullable=False)
+    body                   = Column(Text, nullable=False)
+    status                 = Column(String(32), nullable=True)  # draft|published
+    podcast_url            = Column(Text, nullable=True)
+    podcast_voice          = Column(String(64), nullable=True)
+    source_type            = Column(String(64), nullable=True)
+    source_url             = Column(String(512), nullable=True)
+    license                = Column(String(64), nullable=True)
+    published_at           = Column(DateTime, nullable=True)
+    level                  = Column(String(32), nullable=True)
+    tags                   = Column(JSONType, nullable=True)
+    source_generation_id   = Column(Integer, ForeignKey("content_prompt_generations.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_by             = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    created_at             = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at             = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_content_library_items_pillar_concept", "pillar_key", "concept_code"),
+    )
 
 
 class EngagementEvent(Base):

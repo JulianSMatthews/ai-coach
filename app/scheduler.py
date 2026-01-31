@@ -9,18 +9,27 @@ from typing import Any
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.executors.pool import ThreadPoolExecutor
-from sqlalchemy import text
+from sqlalchemy import text, desc
 
 from .config import settings
 from .db import SessionLocal, engine
-from .models import User, JobAudit, AssessSession, UserPreference
+from .models import (
+    User,
+    JobAudit,
+    AssessSession,
+    UserPreference,
+    GlobalPromptSchedule,
+    MessageLog,
+    MessagingSettings,
+)
 
 # Preference key(s) for auto coaching prompts (new primary key: "coaching"; legacy: "auto_daily_prompts")
 AUTO_PROMPT_PREF_KEYS = ("coaching", "auto_daily_prompts")
-from .nudges import send_message
+from .nudges import send_message, send_whatsapp_template, _get_session_reopen_sid
+from .debug_utils import debug_log
 from . import kickoff
 from .llm import compose_prompt
-from . import monday, tuesday, wednesday, thursday, friday, sunday
+from . import monday, tuesday, wednesday, thursday, friday, saturday, sunday
 
 # ──────────────────────────────────────────────────────────────────────────────
 # APScheduler setup
@@ -94,6 +103,103 @@ def _audit(user_id: int, kind: str, payload: dict[str, Any] | None = None):
         s.commit()
 
 
+def _ensure_messaging_settings_table() -> None:
+    try:
+        MessagingSettings.__table__.create(bind=engine, checkfirst=True)
+    except Exception:
+        pass
+
+
+def _get_messaging_settings(session) -> tuple[bool, str | None]:
+    _ensure_messaging_settings_table()
+    row = session.query(MessagingSettings).order_by(MessagingSettings.id.asc()).first()
+    if not row:
+        return False, None
+    return bool(row.out_of_session_enabled), (row.out_of_session_message or None)
+
+
+def _get_user_pref(session, user_id: int, key: str) -> UserPreference | None:
+    return (
+        session.query(UserPreference)
+        .filter(UserPreference.user_id == user_id, UserPreference.key == key)
+        .order_by(UserPreference.updated_at.desc())
+        .first()
+    )
+
+
+def _set_user_pref(session, user_id: int, key: str, value: str) -> None:
+    pref = _get_user_pref(session, user_id, key)
+    if pref:
+        pref.value = value
+    else:
+        session.add(UserPreference(user_id=user_id, key=key, value=value))
+
+
+def _last_inbound_at(session, user_id: int) -> datetime | None:
+    row = (
+        session.query(MessageLog.created_at)
+        .filter(MessageLog.user_id == user_id, MessageLog.direction == "inbound")
+        .order_by(desc(MessageLog.created_at))
+        .first()
+    )
+    return row[0] if row else None
+
+
+def _parse_pref_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except Exception:
+        return None
+
+
+def send_out_of_session_messages() -> None:
+    """
+    Send a template message when a user has been inactive for >24 hours.
+    Uses TWILIO_REOPEN_CONTENT_SID and the admin-configured message body.
+    """
+    after_hours = int(os.getenv("OUT_OF_SESSION_AFTER_HOURS", "24") or "24")
+    cooldown_hours = int(os.getenv("OUT_OF_SESSION_COOLDOWN_HOURS", str(after_hours)) or str(after_hours))
+    now = datetime.utcnow()
+    with SessionLocal() as s:
+        enabled, message = _get_messaging_settings(s)
+        if not enabled or not message:
+            return
+        template_sid = _get_session_reopen_sid()
+        if not template_sid:
+            debug_log("out-of-session skipped: missing TWILIO_REOPEN_CONTENT_SID", tag="scheduler")
+            return
+        users = s.query(User).all()
+        for user in users:
+            if not getattr(user, "phone", None):
+                continue
+            if _user_onboarding_active(user.id):
+                continue
+            if not _coaching_enabled(s, user.id):
+                continue
+            last_inbound = _last_inbound_at(s, user.id)
+            if not last_inbound:
+                continue
+            if now - last_inbound < timedelta(hours=after_hours):
+                continue
+            pref = _get_user_pref(s, user.id, "out_of_session_last_sent_at")
+            last_sent = _parse_pref_datetime(pref.value if pref else None)
+            if last_sent and now - last_sent < timedelta(hours=cooldown_hours):
+                continue
+            try:
+                send_whatsapp_template(
+                    to=user.phone,
+                    template_sid=template_sid,
+                    variables={"1": message},
+                    category="session-reopen",
+                )
+                _set_user_pref(s, user.id, "out_of_session_last_sent_at", now.isoformat())
+                s.commit()
+            except Exception as e:
+                debug_log("out-of-session send failed", {"user_id": user.id, "error": repr(e)}, tag="scheduler")
+
+
 def _tz(user: User) -> zoneinfo.ZoneInfo:
     try:
         return zoneinfo.ZoneInfo(user.tz or "UTC")
@@ -155,8 +261,9 @@ def _user_pref_time(session, user_id: int, day_key: str) -> tuple[int, int] | No
         return None
 
 
-def _default_times() -> dict[str, tuple[int, int]]:
-    # Defaults in 24h: Sunday 18:00, Monday 08:00, Tuesday 19:00, Wednesday 08:00, Thursday 19:00, Friday 08:00
+def _base_default_times() -> dict[str, tuple[int, int]]:
+    # Defaults in 24h: Sunday 18:00, Monday 08:00, Tuesday 19:00, Wednesday 08:00,
+    # Thursday 19:00, Friday 08:00, Saturday 10:00
     return {
         "sunday": (18, 0),
         "monday": (8, 0),
@@ -164,7 +271,59 @@ def _default_times() -> dict[str, tuple[int, int]]:
         "wednesday": (8, 0),
         "thursday": (19, 0),
         "friday": (8, 0),
+        "saturday": (10, 0),
     }
+
+
+def _default_times() -> dict[str, tuple[int, int] | None]:
+    defaults: dict[str, tuple[int, int] | None] = _base_default_times()
+    try:
+        with SessionLocal() as s:
+            rows = s.query(GlobalPromptSchedule).all()
+            for row in rows:
+                day_key = (getattr(row, "day_key", "") or "").strip().lower()
+                if not day_key or day_key not in defaults:
+                    continue
+                if not getattr(row, "enabled", True):
+                    defaults[day_key] = None
+                    continue
+                time_val = (getattr(row, "time_local", "") or "").strip()
+                if not time_val:
+                    continue
+                try:
+                    hh, mm = time_val.split(":")
+                    hh_i = int(hh); mm_i = int(mm)
+                    if not (0 <= hh_i <= 23 and 0 <= mm_i <= 59):
+                        raise ValueError()
+                except Exception:
+                    continue
+                defaults[day_key] = (hh_i, mm_i)
+    except Exception:
+        pass
+    return defaults
+
+
+def ensure_global_schedule_defaults() -> None:
+    try:
+        GlobalPromptSchedule.__table__.create(bind=engine, checkfirst=True)
+    except Exception:
+        return
+    try:
+        with SessionLocal() as s:
+            existing = s.query(GlobalPromptSchedule).count()
+            if existing:
+                return
+            for day_key, (hh, mm) in _base_default_times().items():
+                s.add(
+                    GlobalPromptSchedule(
+                        day_key=day_key,
+                        time_local=f"{hh:02d}:{mm:02d}",
+                        enabled=True,
+                    )
+                )
+            s.commit()
+    except Exception:
+        pass
 
 
 def _coaching_enabled(session, user_id: int) -> bool:
@@ -178,6 +337,22 @@ def _coaching_enabled(session, user_id: int) -> bool:
         .first()
     )
     return bool(pref and str(pref.value).strip() == "1")
+
+
+def _user_fast_minutes(session, user_id: int) -> int | None:
+    pref = (
+        session.query(UserPreference)
+        .filter(UserPreference.user_id == user_id, UserPreference.key == "coaching_fast_minutes")
+        .order_by(UserPreference.updated_at.desc())
+        .first()
+    )
+    if not pref or not pref.value:
+        return None
+    try:
+        n = int(str(pref.value).strip())
+        return max(1, n)
+    except Exception:
+        return None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -283,6 +458,9 @@ def _run_day_prompt(user_id: int, day: str):
         elif day == "friday":
             friday.send_boost(user)
             tp_type = "adjust"
+        elif day == "saturday":
+            saturday.send_saturday_keepalive(user)
+            tp_type = "adjust"
         elif day == "sunday":
             sunday.send_sunday_review(user)
             tp_type = "wrap"
@@ -323,17 +501,23 @@ def _schedule_prompt_for_user(user: User, day: str, dow: str, hour: int, minute:
         start_date=start_date,
     )
     sd_txt = f", start={start_date.isoformat()}" if start_date else ""
-    print(f"[scheduler] scheduled {day} prompt for user {user.id} at {hour:02d}:{minute:02d} ({tz}{sd_txt})")
+    debug_log(
+        f"scheduled {day} prompt for user {user.id} at {hour:02d}:{minute:02d} ({tz}{sd_txt})",
+        tag="scheduler",
+    )
 
 
 def _unschedule_prompts_for_user(user_id: int):
-    job_ids = [f"auto_prompt_{day}_{user_id}" for day in ("monday", "tuesday", "wednesday", "thursday", "friday", "sunday")]
+    job_ids = [
+        f"auto_prompt_{day}_{user_id}"
+        for day in ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+    ]
     for job_id in job_ids:
         try:
             scheduler.remove_job(job_id)
         except Exception:
             pass
-    print(f"[scheduler] unscheduled all prompts for user {user_id}")
+    debug_log(f"unscheduled all prompts for user {user_id}", tag="scheduler")
 
 
 def _run_fast_cycle(user_id: int, start_ts: datetime, fast_minutes: int, offset: int = 0):
@@ -345,7 +529,7 @@ def _run_fast_cycle(user_id: int, start_ts: datetime, fast_minutes: int, offset:
     tz = _tz(user) if user else zoneinfo.ZoneInfo("UTC")
     now = datetime.now(tz)
     elapsed = max(0, (now - start_ts).total_seconds() / 60.0)
-    days = ("monday", "tuesday", "wednesday", "thursday", "friday", "sunday")
+    days = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
     idx = (int(elapsed // fast_minutes) + offset) % len(days)
     day = days[idx]
     _run_day_prompt(user_id, day)
@@ -353,7 +537,7 @@ def _run_fast_cycle(user_id: int, start_ts: datetime, fast_minutes: int, offset:
 
 def _schedule_prompts_for_user(
     user: User,
-    defaults: dict[str, tuple[int, int]],
+    defaults: dict[str, tuple[int, int] | None],
     session,
     fast_minutes: int | None = None,
 ) -> None:
@@ -361,17 +545,18 @@ def _schedule_prompts_for_user(
     if not _coaching_enabled(session, user.id):
         _unschedule_prompts_for_user(user.id)
         return
-    # If fast mode requested, schedule each day as interval jobs (2m) instead of daily cron.
-    if fast_minutes:
+    resolved_fast = fast_minutes or _user_fast_minutes(session, user.id) or _fast_minutes_env()
+    # If fast mode requested, schedule each day as interval jobs instead of daily cron.
+    if resolved_fast:
         _unschedule_prompts_for_user(user.id)
         tz = _tz(user)
         now = datetime.now(tz)
-        days = ("monday", "tuesday", "wednesday", "thursday", "friday", "sunday")
-        interval_minutes = fast_minutes * len(days)
+        days = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+        interval_minutes = resolved_fast * len(days)
         # Kickoff fires immediately; start Monday after fast_minutes, then every fast_minutes thereafter.
         for idx, day in enumerate(days):
             job_id = f"auto_prompt_{day}_{user.id}"
-            start_offset = timedelta(minutes=(idx + 1) * fast_minutes)
+            start_offset = timedelta(minutes=(idx + 1) * resolved_fast)
             scheduler.add_job(
                 _run_day_prompt,
                 trigger="interval",
@@ -383,17 +568,22 @@ def _schedule_prompts_for_user(
                 misfire_grace_time=3600,
                 timezone=tz,
             )
-            print(
-                f"[scheduler] fast job {job_id} start={now + start_offset} interval={interval_minutes}m offset={start_offset}"
+            debug_log(
+                f"fast job {job_id} start={now + start_offset} interval={interval_minutes}m offset={start_offset}",
+                tag="scheduler",
             )
-        print(f"[scheduler] scheduled FAST prompts every {interval_minutes}m (start offset {fast_minutes}m, 2m spacing) for user {user.id} ({tz})")
+        print(f"[scheduler] scheduled FAST prompts every {interval_minutes}m (start offset {resolved_fast}m) for user {user.id} ({tz})")
         return
     # Ensure first scheduled prompt is the Monday weekstart after enabling (avoid midweek out-of-sequence)
-    mon_hour, mon_min = _user_pref_time(session, user.id, "monday") or defaults.get("monday", (8, 0))
+    mon_default = defaults.get("monday") or _base_default_times().get("monday", (8, 0))
+    mon_hour, mon_min = _user_pref_time(session, user.id, "monday") or mon_default
     anchor_monday = _next_monday_anchor(user, mon_hour, mon_min)
-    dow_idx = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "sunday": 6}
+    dow_idx = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
     anchor_date = anchor_monday.date()
-    for day, (hh_default, mm_default) in defaults.items():
+    for day, default_time in defaults.items():
+        if default_time is None:
+            continue
+        hh_default, mm_default = default_time
         pref_time = _user_pref_time(session, user.id, day) or (hh_default, mm_default)
         dow = {
             "monday": "mon",
@@ -401,6 +591,7 @@ def _schedule_prompts_for_user(
             "wednesday": "wed",
             "thursday": "thu",
             "friday": "fri",
+            "saturday": "sat",
             "sunday": "sun",
         }.get(day)
         if not dow:
@@ -417,18 +608,38 @@ def _schedule_prompts_for_user(
             tzinfo=tz,
         )
         _schedule_prompt_for_user(user, day, dow, pref_time[0], pref_time[1], start_date=start_date)
+    tz = _tz(user)
+    print(f"[scheduler] scheduled weekly prompts for user {user.id} ({tz})")
 
 
 def schedule_auto_daily_prompts():
     """Schedule day-specific prompts for all users based on their own preference."""
     defaults = _default_times()
+    fast_minutes = _fast_minutes_env()
     with SessionLocal() as s:
         users = s.query(User).all()
         for u in users:
             # Skip if onboarding not complete
             if _user_onboarding_active(u.id):
                 continue
-            _schedule_prompts_for_user(u, defaults, s)
+            _schedule_prompts_for_user(u, defaults, s, fast_minutes=fast_minutes)
+
+
+def schedule_out_of_session_messages():
+    """Run a periodic check to send out-of-session template messages when needed."""
+    interval_minutes = int(os.getenv("OUT_OF_SESSION_CHECK_MINUTES", "60") or "60")
+    if interval_minutes <= 0:
+        return
+    try:
+        scheduler.add_job(
+            send_out_of_session_messages,
+            "interval",
+            minutes=interval_minutes,
+            id="out_of_session_check",
+            replace_existing=True,
+        )
+    except Exception as e:
+        print(f"[scheduler] failed to schedule out-of-session job: {e}")
 
 
 def enable_coaching(user_id: int, fast_minutes: int | None = None) -> bool:
@@ -450,8 +661,29 @@ def enable_coaching(user_id: int, fast_minutes: int | None = None) -> bool:
             pref.value = "1"
         else:
             s.add(UserPreference(user_id=user_id, key=key, value="1"))
+        # Persist per-user fast mode so it survives restarts and global schedule changes.
+        fast_pref = (
+            s.query(UserPreference)
+            .filter(UserPreference.user_id == user_id, UserPreference.key == "coaching_fast_minutes")
+            .order_by(UserPreference.updated_at.desc())
+            .first()
+        )
+        if fast_minutes:
+            if fast_pref:
+                fast_pref.value = str(max(1, int(fast_minutes)))
+            else:
+                s.add(
+                    UserPreference(
+                        user_id=user_id,
+                        key="coaching_fast_minutes",
+                        value=str(max(1, int(fast_minutes))),
+                    )
+                )
+        else:
+            if fast_pref:
+                s.delete(fast_pref)
         s.commit()
-        # Trigger kickoff before scheduling prompts so the first Monday follows kickoff.
+        # Trigger kickoff at the start of coaching so Monday follows the kickoff baseline.
         try:
             kickoff.start_kickoff(u, notes="auto kickoff: coaching enabled")
         except Exception as e:
@@ -477,6 +709,14 @@ def disable_coaching(user_id: int) -> bool:
         if pref:
             pref.key = key
             pref.value = "0"
+            fast_pref = (
+                s.query(UserPreference)
+                .filter(UserPreference.user_id == user_id, UserPreference.key == "coaching_fast_minutes")
+                .order_by(UserPreference.updated_at.desc())
+                .first()
+            )
+            if fast_pref:
+                s.delete(fast_pref)
             s.commit()
         _unschedule_prompts_for_user(user_id)
     return True

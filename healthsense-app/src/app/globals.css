@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f7f4ee;
+  --foreground: #1e1b16;
+  --accent: #0f766e;
+  --accent-soft: #ccfbf1;
+  --ink-muted: #6b6257;
+  --text-scale: 1;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-body);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #f7f4ee;
+    --foreground: #1e1b16;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-body), system-ui, sans-serif;
+  line-height: 1.5;
+}
+
+body .text-xs { font-size: calc(0.75rem * var(--text-scale)); }
+body .text-sm { font-size: calc(0.875rem * var(--text-scale)); }
+body .text-base { font-size: calc(1rem * var(--text-scale)); }
+body .text-lg { font-size: calc(1.125rem * var(--text-scale)); }
+body .text-xl { font-size: calc(1.25rem * var(--text-scale)); }
+body .text-2xl { font-size: calc(1.5rem * var(--text-scale)); }
+body .text-3xl { font-size: calc(1.875rem * var(--text-scale)); }
+body .text-4xl { font-size: calc(2.25rem * var(--text-scale)); }
+
+h1, h2, h3, h4 {
+  font-family: var(--font-heading), serif;
+}
+
+a {
+  transition: color 0.2s ease, border-color 0.2s ease;
+}
+
+details > summary::-webkit-details-marker {
+  display: none;
+}
+
+@media (max-width: 640px) {
+  body .text-xs { font-size: calc(0.9rem * var(--text-scale)); }
+  body .text-sm { font-size: calc(1.05rem * var(--text-scale)); }
+  body .text-base { font-size: calc(1.15rem * var(--text-scale)); }
+  body .text-lg { font-size: calc(1.35rem * var(--text-scale)); }
+  body .text-xl { font-size: calc(1.55rem * var(--text-scale)); }
+  body .text-2xl { font-size: calc(1.75rem * var(--text-scale)); }
+  body .text-3xl { font-size: calc(2.1rem * var(--text-scale)); }
+  body .text-4xl { font-size: calc(2.4rem * var(--text-scale)); }
+}
