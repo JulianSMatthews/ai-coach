@@ -75,7 +75,11 @@ export default async function HistoryPage(props: PageProps) {
     let group = acc.find((entry) => entry.key === key);
     if (!group) {
       const pillarLabel = weekToPillar(weekNo);
-      const label = kickoff ? "Kickoff" : weekNo ? `Week ${weekNo}${pillarLabel ? ` (${pillarLabel})` : ""}` : item.type;
+      const label = kickoff
+        ? "Kickoff"
+        : weekNo
+          ? `Week ${weekNo}${pillarLabel ? ` (${pillarLabel})` : ""}`
+          : item.type || "Item";
       group = {
         key,
         label,
