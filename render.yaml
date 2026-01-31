@@ -14,29 +14,22 @@ services:
           name: healthsense-db
           property: connectionString
       - key: OPENAI_API_KEY
-        value: ""
         sync: false
       - key: ADMIN_API_TOKEN
-        value: ""
         sync: false
       - key: TWILIO_ACCOUNT_SID
-        value: ""
         sync: false
       - key: TWILIO_AUTH_TOKEN
-        value: ""
         sync: false
       - key: TWILIO_FROM
-        value: ""
         sync: false
       - key: PUBLIC_BASE_URL
-        value: ""
         sync: false
       - key: COACH_NAME
         value: "Gia"
       - key: WEEKSTART_PODCAST_MAX_WORDS
         value: "420"
       - key: REPORTS_BASE_URL
-        value: ""
         sync: false
       - key: RESET_DB_ON_STARTUP
         value: "0"
@@ -51,13 +44,10 @@ services:
     startCommand: "npm run start"
     envVars:
       - key: API_BASE_URL
-        value: ""
         sync: false
       - key: ADMIN_API_TOKEN
-        value: ""
         sync: false
       - key: ADMIN_USER_ID
-        value: ""
         sync: false
 
   - type: web
@@ -70,16 +60,12 @@ services:
     startCommand: "npm run start"
     envVars:
       - key: API_BASE_URL
-        value: ""
         sync: false
       - key: ADMIN_API_TOKEN
-        value: ""
         sync: false
       - key: ADMIN_USER_ID
-        value: ""
         sync: false
       - key: NEXT_PUBLIC_HSAPP_BASE_URL
-        value: ""
         sync: false
 
 databases:
