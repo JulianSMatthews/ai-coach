@@ -226,6 +226,7 @@ export type ContentGenerationSummary = {
   user_name?: string | null;
   touchpoint?: string | null;
   prompt_state?: string | null;
+  provider?: string | null;
   test_date?: string | null;
   run_llm?: boolean | null;
   model_override?: string | null;
