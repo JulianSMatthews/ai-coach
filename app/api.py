@@ -15,7 +15,7 @@ import re
 import subprocess
 import sys
 import threading
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlparse
 from datetime import datetime, timedelta, date
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -120,6 +120,41 @@ try:
     from .reporting import generate_okr_summary_report_llm as _gen_okr_summary_report_llm  # type: ignore
 except Exception:
     _gen_okr_summary_report_llm = None
+
+
+def _normalize_reports_url(raw: str | None) -> str | None:
+    """
+    Normalize /reports URLs to the current reports base.
+    This fixes stale localhost/ngrok/base URLs stored in DB.
+    """
+    if not raw:
+        return None
+    url = str(raw).strip()
+    if not url:
+        return None
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        return url
+    path = parsed.path or ""
+    if not path:
+        return url
+    normalized_path = path if path.startswith("/") else f"/{path}"
+    if "/reports/" not in normalized_path:
+        return url
+    base = (_REPORTS_BASE or "").rstrip("/")
+    if not base:
+        return url
+    if parsed.netloc:
+        base_host = urlparse(base).netloc
+        if base_host and parsed.netloc == base_host:
+            return url
+    suffix = normalized_path
+    if parsed.query:
+        suffix += f"?{parsed.query}"
+    if parsed.fragment:
+        suffix += f"#{parsed.fragment}"
+    return f"{base}{suffix}"
 
 # Utility to robustly resolve the OKR summary generator, with diagnostics
 def _resolve_okr_summary_gen():
@@ -2518,6 +2553,15 @@ def api_user_assessment(
                     raise HTTPException(status_code=404, detail="assessment run not found")
                 rid = latest.id
     data = build_assessment_dashboard_data(int(rid), include_llm=not fast)
+    narratives = data.get("narratives") or {}
+    if isinstance(narratives, dict):
+        narratives = {
+            **narratives,
+            "score_audio_url": _normalize_reports_url(narratives.get("score_audio_url")),
+            "okr_audio_url": _normalize_reports_url(narratives.get("okr_audio_url")),
+            "coaching_audio_url": _normalize_reports_url(narratives.get("coaching_audio_url")),
+        }
+        data["narratives"] = narratives
     data["reports"] = {
         "assessment_html": _public_report_url(user_id, "assessment.html"),
         "assessment_pdf": _public_report_url(user_id, "latest.pdf"),
@@ -2560,6 +2604,15 @@ def api_public_user_assessment(user_id: int, run_id: int | None = None, fast: bo
                     raise HTTPException(status_code=404, detail="assessment run not found")
                 rid = latest.id
     data = build_assessment_dashboard_data(int(rid), include_llm=not fast)
+    narratives = data.get("narratives") or {}
+    if isinstance(narratives, dict):
+        narratives = {
+            **narratives,
+            "score_audio_url": _normalize_reports_url(narratives.get("score_audio_url")),
+            "okr_audio_url": _normalize_reports_url(narratives.get("okr_audio_url")),
+            "coaching_audio_url": _normalize_reports_url(narratives.get("coaching_audio_url")),
+        }
+        data["narratives"] = narratives
     data["reports"] = {
         "assessment_html": _public_report_url(user_id, "assessment.html"),
         "assessment_pdf": _public_report_url(user_id, "latest.pdf"),
@@ -2974,7 +3027,7 @@ def api_user_library_content(
                 "title": row.title,
                 "body": row.body,
                 "created_at": row.created_at,
-                "podcast_url": row.podcast_url,
+                "podcast_url": _normalize_reports_url(row.podcast_url),
                 "podcast_voice": row.podcast_voice,
             }
         )
@@ -4808,7 +4861,7 @@ def admin_content_generation_create(payload: dict, admin_user: User = Depends(_r
             "model_override": gen.model_override,
             "status": gen.status,
             "created_at": gen.created_at,
-            "podcast_url": gen.podcast_url,
+            "podcast_url": _normalize_reports_url(gen.podcast_url),
             "podcast_voice": gen.podcast_voice,
             "podcast_error": gen.podcast_error,
             "result": result,
@@ -4915,7 +4968,7 @@ def admin_content_generation_detail(
         "llm_duration_ms": row.llm_duration_ms,
         "llm_content": row.llm_content,
         "llm_error": row.llm_error,
-        "podcast_url": row.podcast_url,
+        "podcast_url": _normalize_reports_url(row.podcast_url),
         "podcast_voice": row.podcast_voice,
         "podcast_error": row.podcast_error,
     }
@@ -4977,7 +5030,7 @@ def admin_library_content_list(
                 "created_at": row.created_at,
                 "updated_at": row.updated_at,
                 "source_generation_id": row.source_generation_id,
-                "podcast_url": row.podcast_url,
+                "podcast_url": _normalize_reports_url(row.podcast_url),
                 "podcast_voice": row.podcast_voice,
                 "source_type": row.source_type,
                 "source_url": row.source_url,
@@ -5009,7 +5062,7 @@ def admin_library_content_detail(
             "created_at": row.created_at,
             "updated_at": row.updated_at,
             "source_generation_id": row.source_generation_id,
-            "podcast_url": row.podcast_url,
+            "podcast_url": _normalize_reports_url(row.podcast_url),
             "podcast_voice": row.podcast_voice,
             "source_type": row.source_type,
             "source_url": row.source_url,
