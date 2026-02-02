@@ -6298,3 +6298,46 @@ def _public_report_url(user_id: int, filename: str) -> str:
 def _public_report_url_global(filename: str) -> str:
     """Return absolute URL to a global report file located directly under /reports."""
     return f"{_REPORTS_BASE}/reports/{filename}"
+
+
+@api_v1.post("/reports/upload")
+def api_reports_upload(payload: dict, request: Request):
+    """
+    Internal helper to upload report audio bytes from worker to API host.
+    Requires REPORTS_UPLOAD_TOKEN and X-Reports-Token header.
+    """
+    expected = (os.getenv("REPORTS_UPLOAD_TOKEN") or "").strip()
+    if not expected:
+        raise HTTPException(status_code=403, detail="uploads disabled")
+    token = (request.headers.get("X-Reports-Token") or "").strip()
+    if token != expected:
+        raise HTTPException(status_code=401, detail="invalid upload token")
+    user_id = payload.get("user_id")
+    filename = (payload.get("filename") or "").strip()
+    content_b64 = (payload.get("content_b64") or "").strip()
+    try:
+        user_id = int(user_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="user_id must be an integer")
+    if user_id <= 0:
+        raise HTTPException(status_code=400, detail="user_id must be positive")
+    if not filename:
+        raise HTTPException(status_code=400, detail="filename required")
+    if "/" in filename or "\\" in filename or ".." in filename or filename != os.path.basename(filename):
+        raise HTTPException(status_code=400, detail="invalid filename")
+    if not content_b64:
+        raise HTTPException(status_code=400, detail="content_b64 required")
+    try:
+        raw = base64.b64decode(content_b64.encode("ascii"), validate=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid base64 content")
+    reports_dir = os.getenv("REPORTS_DIR") or os.path.join(os.getcwd(), "public", "reports")
+    user_dir = os.path.join(reports_dir, str(user_id))
+    os.makedirs(user_dir, exist_ok=True)
+    out_path = os.path.join(user_dir, filename)
+    try:
+        with open(out_path, "wb") as f:
+            f.write(raw)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"write failed: {e}")
+    return {"ok": True, "url": _public_report_url(user_id, filename), "bytes": len(raw)}

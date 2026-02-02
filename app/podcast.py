@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import requests
+import base64
 from openai import OpenAI  # type: ignore
 from typing import Optional, Tuple
 
@@ -263,6 +264,33 @@ def generate_podcast_audio_for_voice(
         return None if not return_bytes else (None, None)
 
     try:
+        upload_url = (os.getenv("REPORTS_UPLOAD_URL") or "").strip()
+        upload_token = (os.getenv("REPORTS_UPLOAD_TOKEN") or "").strip()
+        if upload_url and upload_token:
+            try:
+                payload = {
+                    "user_id": int(user_id),
+                    "filename": filename,
+                    "content_b64": base64.b64encode(audio_bytes).decode("ascii"),
+                }
+                resp = requests.post(
+                    upload_url,
+                    json=payload,
+                    headers={"X-Reports-Token": upload_token},
+                    timeout=60,
+                )
+                if resp.ok:
+                    data = resp.json() if resp.content else {}
+                    url = data.get("url")
+                    if url:
+                        if return_bytes:
+                            return url, audio_bytes
+                        return url
+                else:
+                    print(f"[TTS] upload failed: {resp.status_code} {resp.text[:200]}")
+            except Exception as e:
+                print(f"[TTS] upload error: {e}")
+
         reports_root = _reports_root_for_user(user_id)
         os.makedirs(reports_root, exist_ok=True)
         out_path = os.path.join(reports_root, filename)
