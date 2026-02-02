@@ -131,7 +131,7 @@ export default function ResetPasswordPage() {
               />
             </div>
             <button
-              className="w-full rounded-full border border-[#0f766e] bg-[#0f766e] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               type="submit"
               disabled={loading}
             >
@@ -183,7 +183,7 @@ export default function ResetPasswordPage() {
               />
             </div>
             <button
-              className="w-full rounded-full border border-[#0f766e] bg-[#0f766e] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               type="submit"
               disabled={loading}
             >
@@ -235,7 +235,7 @@ export default function ResetPasswordPage() {
         )}
 
         {status ? <p className="text-sm text-[#6b6257]">{status}</p> : null}
-        <a className="text-center text-sm text-[#0f766e] underline" href="/login">
+        <a className="text-center text-sm text-[var(--accent)] underline" href="/login">
           Back to sign in
         </a>
       </div>

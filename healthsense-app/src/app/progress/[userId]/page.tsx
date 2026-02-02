@@ -125,7 +125,10 @@ export default async function ProgressPage(props: PageProps) {
   return (
     <PageShell>
       <TextScale defaultScale={textScale} />
-      <nav className="sticky top-0 z-10 -mx-6 mb-4 flex flex-wrap gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
+      <nav className="sticky top-0 z-10 -mx-6 mb-4 flex flex-wrap items-center gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
+        <a href={`/progress/${userId}`} className="flex items-center" aria-label="HealthSense home">
+          <img src="/healthsense-logo.svg" alt="HealthSense" className="h-6 w-auto" />
+        </a>
         <a className="rounded-full border border-[#efe7db] bg-white px-3 py-1" href={`/progress/${userId}`}>
           Home
         </a>
@@ -189,7 +192,7 @@ export default async function ProgressPage(props: PageProps) {
                     <Badge label={group.description} />
                     <details className="mt-2 text-sm text-[#3c332b]">
                       <summary className="flex cursor-pointer items-center justify-end gap-3">
-                        <span className="rounded-full bg-[#e6f4f2] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[#0f766e]">
+                        <span className="rounded-full bg-[#e6f4f2] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-[var(--accent)]">
                           Habit steps
                         </span>
                       </summary>
@@ -198,7 +201,7 @@ export default async function ProgressPage(props: PageProps) {
                           <ul className="space-y-1 text-sm text-[#3c332b]">
                             {group.steps.map((step: any) => (
                               <li key={step.id || step.text} className="flex items-start gap-2">
-                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-[#0f766e]" />
+                                <span className="mt-1 h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
                                 <span>{step.text}</span>
                               </li>
                             ))}

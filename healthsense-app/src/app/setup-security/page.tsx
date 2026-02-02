@@ -153,7 +153,7 @@ export default function SetupSecurityPage() {
             <p className="mt-2 text-xs text-[#6b6257]">You can unsubscribe anytime by replying STOP.</p>
           </div>
           <button
-            className="w-full rounded-full border border-[#0f766e] bg-[#0f766e] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
             type="submit"
             disabled={saving}
           >

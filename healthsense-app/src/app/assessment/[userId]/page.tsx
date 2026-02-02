@@ -65,7 +65,7 @@ export default async function AssessmentPage(props: PageProps) {
     low: "#f76b1c",
   };
   const formatPct = (value: number | null | undefined) => (value === null || value === undefined ? "--" : Math.round(value));
-  const toneFor = (bucket?: string) => (bucket && scoreBucketTone[bucket] ? scoreBucketTone[bucket] : "#0f766e");
+  const toneFor = (bucket?: string) => (bucket && scoreBucketTone[bucket] ? scoreBucketTone[bucket] : "var(--accent)");
   const readinessPct = (value?: number | null) => {
     if (value === null || value === undefined) return null;
     return Math.round((Number(value) / 5) * 100);
@@ -79,7 +79,7 @@ export default async function AssessmentPage(props: PageProps) {
     if (key === "high") return "#0ba360";
     if (key === "moderate") return "#f6d365";
     if (key === "low") return "#f76b1c";
-    return "#0f766e";
+    return "var(--accent)";
   };
   const readinessAnswerLabel = (value: number | string | null | undefined) => {
     const num = typeof value === "number" ? value : Number(value);
@@ -97,7 +97,10 @@ export default async function AssessmentPage(props: PageProps) {
   if (missing) {
     return (
       <PageShell>
-        <nav className="sticky top-0 z-10 -mx-6 mb-4 flex flex-wrap gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
+        <nav className="sticky top-0 z-10 -mx-6 mb-4 flex flex-wrap items-center gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
+          <a href={`/progress/${userId}`} className="flex items-center" aria-label="HealthSense home">
+            <img src="/healthsense-logo.svg" alt="HealthSense" className="h-6 w-auto" />
+          </a>
           <a className="rounded-full border border-[#efe7db] bg-white px-3 py-1" href={`/progress/${userId}`}>
             Home
           </a>
@@ -119,6 +122,7 @@ export default async function AssessmentPage(props: PageProps) {
           eyebrow="Assessment snapshot"
           title="HealthSense assessment"
           subtitle={`${user.display_name || user.first_name || "User"} · No completed assessment yet`}
+          brandMark={<img src="/healthsense-logo.svg" alt="HealthSense" className="h-7 w-auto" />}
           side={<StatPill label="Combined" value="--" />}
         />
         <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
@@ -135,7 +139,10 @@ export default async function AssessmentPage(props: PageProps) {
   return (
     <PageShell>
       <TextScale defaultScale={textScale} />
-      <nav className="sticky top-0 z-10 -mx-6 mb-4 flex flex-wrap gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
+      <nav className="sticky top-0 z-10 -mx-6 mb-4 flex flex-wrap items-center gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
+        <a href={`/progress/${userId}`} className="flex items-center" aria-label="HealthSense home">
+          <img src="/healthsense-logo.svg" alt="HealthSense" className="h-6 w-auto" />
+        </a>
         <a className="rounded-full border border-[#efe7db] bg-white px-3 py-1" href={`/progress/${userId}`}>
           Home
         </a>
@@ -160,6 +167,7 @@ export default async function AssessmentPage(props: PageProps) {
         subtitle={`${user.display_name || user.first_name || "User"} · Combined score ${formatPct(scores.combined)}${
           reportedAtUk ? ` · Updated ${reportedAtUk}` : ""
         }`}
+        brandMark={<img src="/healthsense-logo.svg" alt="HealthSense" className="h-7 w-auto" />}
         side={<StatPill label="Combined" value={formatPct(scores.combined)} />}
       />
       {narrativesCached === false ? (
@@ -181,7 +189,7 @@ export default async function AssessmentPage(props: PageProps) {
           ) : null}
           <div className="mt-4 hidden space-y-3 text-sm text-[#3c332b] md:block" dangerouslySetInnerHTML={{ __html: narratives.score_html || "<p>No narrative available.</p>" }} />
           <details className="mt-4 text-sm text-[#3c332b] md:hidden">
-            <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[#0f766e]">
+            <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[var(--accent)]">
               Read
             </summary>
             <div className="mt-3 space-y-3" dangerouslySetInnerHTML={{ __html: narratives.score_html || "<p>No narrative available.</p>" }} />
@@ -223,7 +231,7 @@ export default async function AssessmentPage(props: PageProps) {
           ) : null}
           <div className="mt-4 hidden space-y-3 text-sm text-[#3c332b] md:block" dangerouslySetInnerHTML={{ __html: narratives.okr_html || "<p>No OKR narrative available.</p>" }} />
           <details className="mt-4 text-sm text-[#3c332b] md:hidden">
-            <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[#0f766e]">
+            <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[var(--accent)]">
               Read
             </summary>
             <div className="mt-3 space-y-3" dangerouslySetInnerHTML={{ __html: narratives.okr_html || "<p>No OKR narrative available.</p>" }} />
@@ -241,7 +249,7 @@ export default async function AssessmentPage(props: PageProps) {
           ) : null}
           <div className="mt-4 hidden space-y-3 text-sm text-[#3c332b] md:block" dangerouslySetInnerHTML={{ __html: narratives.coaching_html || "<p>No habit readiness notes yet.</p>" }} />
           <details className="mt-4 text-sm text-[#3c332b] md:hidden">
-            <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[#0f766e]">
+            <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[var(--accent)]">
               Read
             </summary>
             <div className="mt-3 space-y-3" dangerouslySetInnerHTML={{ __html: narratives.coaching_html || "<p>No habit readiness notes yet.</p>" }} />
@@ -306,7 +314,7 @@ export default async function AssessmentPage(props: PageProps) {
               </div>
               {(pillar.qa_samples || []).length ? (
                 <details className="mt-4 rounded-2xl border border-[#efe7db] bg-white p-4">
-                  <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[#0f766e]">
+                  <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[var(--accent)]">
                     Review your responses
                   </summary>
                   <div className="mt-3 space-y-3 text-sm text-[#3c332b]">
@@ -371,7 +379,7 @@ export default async function AssessmentPage(props: PageProps) {
           ) : null}
           {readinessResponses.length ? (
             <details className="mt-4 rounded-2xl border border-[#efe7db] bg-white p-4">
-              <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[#0f766e]">
+              <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[var(--accent)]">
                 Review your responses
               </summary>
               <div className="mt-3 space-y-3 text-sm text-[#3c332b]">

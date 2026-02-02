@@ -87,7 +87,7 @@ export default function TestPromptClient() {
         <button
           type="submit"
           disabled={pending}
-          className="rounded-full border border-[#0f766e] bg-[#0f766e] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
         >
           {pending ? "Testing…" : "Preview"}
         </button>

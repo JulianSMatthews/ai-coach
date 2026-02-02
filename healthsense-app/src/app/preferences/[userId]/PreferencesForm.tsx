@@ -275,7 +275,7 @@ export default function PreferencesForm({
       <div className="flex items-center gap-3">
         <button
           type="submit"
-          className="rounded-full border border-[#0f766e] bg-[#0f766e] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
           disabled={saving}
         >
           {saving ? "Saving…" : "Save changes"}

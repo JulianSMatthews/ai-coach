@@ -61,7 +61,7 @@ export default function CarouselDots({ containerId, count }: CarouselDotsProps) 
         <span
           key={`dot-${idx}`}
           className="h-2 w-2 rounded-full"
-          style={{ background: idx === activeIndex ? "#0f766e" : "#e7e1d6" }}
+          style={{ background: idx === activeIndex ? "var(--accent)" : "#e7e1d6" }}
         />
       ))}
     </div>

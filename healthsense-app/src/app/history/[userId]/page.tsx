@@ -131,7 +131,10 @@ export default async function HistoryPage(props: PageProps) {
   return (
     <PageShell>
       <TextScale defaultScale={textScale} />
-      <nav className="sticky top-0 z-10 -mx-6 mb-4 flex flex-wrap gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
+      <nav className="sticky top-0 z-10 -mx-6 mb-4 flex flex-wrap items-center gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
+        <a href={`/progress/${userId}`} className="flex items-center" aria-label="HealthSense home">
+          <img src="/healthsense-logo.svg" alt="HealthSense" className="h-6 w-auto" />
+        </a>
         <a className="rounded-full border border-[#efe7db] bg-white px-3 py-1" href={`/progress/${userId}`}>
           Home
         </a>
@@ -185,7 +188,7 @@ export default async function HistoryPage(props: PageProps) {
                         ) : null}
                         {item.is_truncated && item.full_text ? (
                           <details className="mt-3 text-sm text-[#3c332b]">
-                            <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[#0f766e]">
+                            <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[var(--accent)]">
                               Read full message
                             </summary>
                             <div
@@ -197,7 +200,7 @@ export default async function HistoryPage(props: PageProps) {
                         {item.audio_url ? (
                           <div className="mt-4">
                             <a
-                              className="rounded-full border border-[#0f766e] bg-[#0f766e] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white"
+                              className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white"
                               href={item.audio_url}
                               target="_blank"
                               rel="noreferrer"
@@ -244,7 +247,7 @@ export default async function HistoryPage(props: PageProps) {
                       ) : null}
                       {item.is_truncated && item.full_text ? (
                         <details className="mt-3 text-sm text-[#3c332b]">
-                          <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[#0f766e]">
+                          <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[var(--accent)]">
                             Read full message
                           </summary>
                           <div
@@ -256,7 +259,7 @@ export default async function HistoryPage(props: PageProps) {
                       {item.audio_url ? (
                         <div className="mt-4">
                           <a
-                            className="rounded-full border border-[#0f766e] bg-[#0f766e] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white"
+                            className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white"
                             href={item.audio_url}
                             target="_blank"
                             rel="noreferrer"

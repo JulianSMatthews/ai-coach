@@ -12,7 +12,7 @@ export default function HistoryLandingPage() {
         <section className="grid gap-4 md:grid-cols-2">
           <Link
             href="/admin/prompts/history"
-            className="rounded-3xl border border-[#e7e1d6] bg-white p-6 hover:border-[#0f766e]"
+            className="rounded-3xl border border-[#e7e1d6] bg-white p-6 hover:border-[var(--accent)]"
           >
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Prompts</p>
             <h2 className="mt-2 text-lg font-semibold">Prompt history</h2>
@@ -22,7 +22,7 @@ export default function HistoryLandingPage() {
           </Link>
           <Link
             href="/admin/history/touchpoints"
-            className="rounded-3xl border border-[#e7e1d6] bg-white p-6 hover:border-[#0f766e]"
+            className="rounded-3xl border border-[#e7e1d6] bg-white p-6 hover:border-[var(--accent)]"
           >
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Touchpoints</p>
             <h2 className="mt-2 text-lg font-semibold">Dialog history</h2>

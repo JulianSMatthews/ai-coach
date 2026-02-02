@@ -21,7 +21,7 @@ export default async function ScriptRunPage({ params }: ScriptRunPageProps) {
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <a
-              className="rounded-full border border-[#0f766e] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[#0f766e]"
+              className="rounded-full border border-[var(--accent)] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[var(--accent)]"
               href="/admin/scripts"
             >
               Back to scripts

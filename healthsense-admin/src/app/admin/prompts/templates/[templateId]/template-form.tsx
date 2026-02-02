@@ -132,12 +132,12 @@ export default function TemplateForm({ template, userOptions }: TemplateFormProp
         <button
           type="submit"
           disabled={!isDevelop || savePending}
-          className="rounded-full border border-[#0f766e] bg-[#0f766e] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
         >
           {savePending ? "Saving…" : isDevelop ? "Save template" : "Read only (non-develop)"}
         </button>
         {saveState.error ? <p className="text-sm text-red-600">{saveState.error}</p> : null}
-        {saveState.ok ? <p className="text-sm text-[#0f766e]">Saved.</p> : null}
+        {saveState.ok ? <p className="text-sm text-[var(--accent)]">Saved.</p> : null}
       </form>
 
       {template?.id ? (
@@ -165,7 +165,7 @@ export default function TemplateForm({ template, userOptions }: TemplateFormProp
             </button>
           </div>
           {promoteState.error ? <p className="mt-2 text-sm text-red-600">{promoteState.error}</p> : null}
-          {promoteState.ok ? <p className="mt-2 text-sm text-[#0f766e]">Promoted.</p> : null}
+          {promoteState.ok ? <p className="mt-2 text-sm text-[var(--accent)]">Promoted.</p> : null}
         </form>
       ) : null}
 

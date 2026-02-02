@@ -11,7 +11,7 @@ function Result({ state }: { state: TemplateActionState }) {
   if (state.error) {
     return <p className="mt-2 text-sm text-red-600">{state.error}</p>;
   }
-  return <p className="mt-2 text-sm text-[#0f766e]">Promotion complete.</p>;
+  return <p className="mt-2 text-sm text-[var(--accent)]">Promotion complete.</p>;
 }
 
 export default function PromoteAllCard() {
@@ -34,7 +34,7 @@ export default function PromoteAllCard() {
         />
         <button
           type="submit"
-          className="rounded-full border border-[#0f766e] bg-[#0f766e] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white"
+          className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white"
           disabled={devPending}
         >
           {devPending ? "Promoting…" : "Promote develop → beta"}

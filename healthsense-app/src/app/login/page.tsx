@@ -112,8 +112,8 @@ export default function LoginPage() {
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#e9fff9,_#f7f4ee_55%,_#f4efe6)] px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto flex w-full max-w-md flex-col gap-6 rounded-3xl border border-[#e7e1d6] bg-white p-8 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.5)]">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-[#6b6257]">HealthSense</p>
-          <h1 className="mt-2 text-3xl">Sign in</h1>
+          <img src="/healthsense-logo.svg" alt="HealthSense" className="h-8 w-auto" />
+          <h1 className="mt-4 text-3xl">Sign in</h1>
           <p className="mt-2 text-sm text-[#6b6257]">Enter your phone number. We’ll send a code via WhatsApp or SMS.</p>
         </div>
 
@@ -141,13 +141,13 @@ export default function LoginPage() {
                 placeholder="Leave blank if first time"
               />
               <div className="mt-2 text-right">
-                <a className="text-xs text-[#0f766e] underline" href="/reset-password">
+                <a className="text-xs text-[var(--accent)] underline" href="/reset-password">
                   Forgot password?
                 </a>
               </div>
             </div>
             <button
-              className="w-full rounded-full border border-[#0f766e] bg-[#0f766e] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               type="submit"
               disabled={loading}
             >
@@ -180,7 +180,7 @@ export default function LoginPage() {
               <p className="text-sm text-[#6b6257]">First time login — you’ll be prompted to set your security after this step.</p>
             ) : null}
             <button
-              className="w-full rounded-full border border-[#0f766e] bg-[#0f766e] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               type="submit"
               disabled={loading}
             >

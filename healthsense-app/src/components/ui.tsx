@@ -30,17 +30,26 @@ export function SectionHeader({
   title,
   subtitle,
   side,
+  brandMark,
 }: {
-  eyebrow?: string;
+  eyebrow?: React.ReactNode;
   title: string;
   subtitle?: string;
   side?: React.ReactNode;
+  brandMark?: React.ReactNode;
 }) {
   return (
     <div className="rounded-3xl border border-[#e7e1d6] bg-white/70 p-8 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.5)] backdrop-blur">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="space-y-2">
-          {eyebrow ? <p className="text-xs uppercase tracking-[0.3em] text-[#6b6257]">{eyebrow}</p> : null}
+          {brandMark ? <div className="flex items-center gap-3">{brandMark}</div> : null}
+          {eyebrow ? (
+            typeof eyebrow === "string" ? (
+              <p className="text-xs uppercase tracking-[0.3em] text-[#6b6257]">{eyebrow}</p>
+            ) : (
+              eyebrow
+            )
+          ) : null}
           <h1 className="text-3xl md:text-4xl">{title}</h1>
           {subtitle ? <p className="text-sm text-[#6b6257]">{subtitle}</p> : null}
         </div>
@@ -61,7 +70,7 @@ export function Badge({ label }: { label: string }) {
 export function StatPill({
   label,
   value,
-  accent = "#0f766e",
+  accent = "var(--accent)",
   bg = "#ecfdf7",
   border = "#d7efe7",
 }: {
@@ -84,7 +93,7 @@ export function StatPill({
 export function ProgressBar({
   value,
   max = 100,
-  tone = "#0f766e",
+  tone = "var(--accent)",
 }: {
   value: number;
   max?: number;
@@ -101,7 +110,7 @@ export function ProgressBar({
 export function ScoreRing({
   value,
   max = 100,
-  tone = "#0f766e",
+  tone = "var(--accent)",
 }: {
   value: number;
   max?: number;

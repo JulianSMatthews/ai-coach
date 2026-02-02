@@ -34,7 +34,10 @@ export default async function LibraryPage(props: PageProps) {
   return (
     <PageShell>
       <TextScale defaultScale={textScale} />
-      <nav className="sticky top-0 z-10 -mx-6 mb-4 flex flex-wrap gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
+      <nav className="sticky top-0 z-10 -mx-6 mb-4 flex flex-wrap items-center gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
+        <a href={`/progress/${userId}`} className="flex items-center" aria-label="HealthSense home">
+          <img src="/healthsense-logo.svg" alt="HealthSense" className="h-6 w-auto" />
+        </a>
         <a className="rounded-full border border-[#efe7db] bg-white px-3 py-1" href={`/progress/${userId}`}>
           Home
         </a>
@@ -90,7 +93,7 @@ export default async function LibraryPage(props: PageProps) {
                     <p className="mt-2 text-sm text-[#6b6257]">{truncate(item.body || "")}</p>
                     {item.body ? (
                       <details className="mt-3 text-sm text-[#3c332b]">
-                        <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[#0f766e]">
+                        <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[var(--accent)]">
                           Read
                         </summary>
                         <div className="mt-2 rounded-xl border border-[#efe7db] bg-white/80 p-3 text-sm text-[#2f2a21]">

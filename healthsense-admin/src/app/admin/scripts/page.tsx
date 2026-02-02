@@ -232,7 +232,7 @@ export default async function ScriptsPage() {
                 label="Run simulation"
                 pendingLabel="Starting…"
                 pendingText="Starting assessment simulation… check Recent runs below."
-                className="rounded-full border border-[#0f766e] bg-[#0f766e] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:opacity-60"
+                className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:opacity-60"
               />
             </div>
           </form>
@@ -323,7 +323,7 @@ export default async function ScriptsPage() {
                 label="Run coaching"
                 pendingLabel="Starting…"
                 pendingText="Starting coaching simulation… check Recent runs below."
-                className="rounded-full border border-[#0f766e] bg-[#0f766e] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:opacity-60"
+                className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:opacity-60"
               />
             </div>
           </form>
@@ -406,7 +406,7 @@ export default async function ScriptsPage() {
                 label="Run combined"
                 pendingLabel="Starting…"
                 pendingText="Starting combined run… check Recent runs below."
-                className="rounded-full border border-[#0f766e] bg-[#0f766e] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:opacity-60"
+                className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:opacity-60"
               />
             </div>
           </form>
@@ -440,7 +440,7 @@ export default async function ScriptsPage() {
                     <td className="px-4 py-3">{run.finished_at || "—"}</td>
                     <td className="px-4 py-3">
                       <a
-                        className="rounded-full border border-[#0f766e] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[#0f766e]"
+                        className="rounded-full border border-[var(--accent)] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[var(--accent)]"
                         href={`/admin/scripts/runs/${run.id}`}
                       >
                         Log
