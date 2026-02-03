@@ -3,6 +3,7 @@ import { Badge, Card, PageShell, ProgressBar, ScoreRing, SectionHeader, StatPill
 import CarouselDots from "@/components/CarouselDots";
 import TextScale from "@/components/TextScale";
 import LogoutButton from "@/components/LogoutButton";
+import MobileTabBar from "@/components/MobileTabBar";
 
 type PageProps = {
   params: Promise<{ userId: string }>;
@@ -97,7 +98,7 @@ export default async function AssessmentPage(props: PageProps) {
   if (missing) {
     return (
       <PageShell>
-        <nav className="sticky top-0 z-10 -mx-6 mb-4 flex flex-wrap items-center gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
+        <nav className="sticky top-0 z-10 -mx-6 mb-4 hidden flex-wrap items-center gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:flex md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
           <a href={`/progress/${userId}`} className="flex items-center" aria-label="HealthSense home">
             <img src="/healthsense-logo.svg" alt="HealthSense" className="h-6 w-auto" />
           </a>
@@ -118,6 +119,7 @@ export default async function AssessmentPage(props: PageProps) {
           </a>
           <LogoutButton />
         </nav>
+        <MobileTabBar userId={userId} active="assessment" />
         <SectionHeader
           title={
             <span className="flex flex-wrap items-center gap-3">
@@ -141,7 +143,7 @@ export default async function AssessmentPage(props: PageProps) {
   return (
     <PageShell>
       <TextScale defaultScale={textScale} />
-      <nav className="sticky top-0 z-10 -mx-6 mb-4 flex flex-wrap items-center gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
+      <nav className="sticky top-0 z-10 -mx-6 mb-4 hidden flex-wrap items-center gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:flex md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
         <a href={`/progress/${userId}`} className="flex items-center" aria-label="HealthSense home">
           <img src="/healthsense-logo.svg" alt="HealthSense" className="h-6 w-auto" />
         </a>
@@ -163,6 +165,7 @@ export default async function AssessmentPage(props: PageProps) {
         {promptBadge ? <Badge label={promptBadge} /> : null}
         <LogoutButton />
       </nav>
+      <MobileTabBar userId={userId} active="assessment" />
       <SectionHeader
         title={
           <span className="flex flex-wrap items-center gap-3">
