@@ -84,7 +84,7 @@ export default function SetupSecurityPage() {
   };
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#e9fff9,_#f7f4ee_55%,_#f4efe6)] px-6 py-10 text-[#1e1b16]">
+    <main className="min-h-screen bg-white px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto flex w-full max-w-md flex-col gap-6 rounded-3xl border border-[#e7e1d6] bg-white p-8 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.5)]">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-[#6b6257]">First time setup</p>

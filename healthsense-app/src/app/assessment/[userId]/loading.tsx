@@ -4,14 +4,12 @@ export default function LoadingAssessment() {
   return (
     <PageShell>
       <SectionHeader
-        eyebrow="Assessment snapshot"
         title={
           <span className="flex flex-wrap items-center gap-3">
             <img src="/healthsense-logo.svg" alt="HealthSense" className="h-8 w-auto" />
-            <span>Assessment</span>
+            <span>ASSESSMENT</span>
           </span>
         }
-        subtitle="Loading assessment…"
         side={<StatPill label="Combined" value="…" />}
       />
       <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">

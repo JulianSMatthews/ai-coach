@@ -3,7 +3,7 @@ import SessionBootstrap from "./SessionBootstrap";
 
 export function PageShell({ children }: { children: React.ReactNode }) {
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top,_#e9fff9,_#f7f4ee_55%,_#f4efe6)] px-6 py-10 text-[#1e1b16]">
+    <main className="min-h-screen bg-white px-6 py-10 text-[#1e1b16]">
       <SessionBootstrap />
       <div className="mx-auto max-w-6xl space-y-10">{children}</div>
     </main>

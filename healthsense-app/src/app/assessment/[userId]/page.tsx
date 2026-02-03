@@ -119,14 +119,12 @@ export default async function AssessmentPage(props: PageProps) {
           <LogoutButton />
         </nav>
         <SectionHeader
-          eyebrow="Assessment snapshot"
           title={
             <span className="flex flex-wrap items-center gap-3">
               <img src="/healthsense-logo.svg" alt="HealthSense" className="h-8 w-auto" />
-              <span>Assessment</span>
+              <span>ASSESSMENT</span>
             </span>
           }
-          subtitle={`${user.display_name || user.first_name || "User"} · No completed assessment yet`}
           side={<StatPill label="Combined" value="--" />}
         />
         <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
@@ -166,16 +164,12 @@ export default async function AssessmentPage(props: PageProps) {
         <LogoutButton />
       </nav>
       <SectionHeader
-        eyebrow="Assessment snapshot"
         title={
           <span className="flex flex-wrap items-center gap-3">
             <img src="/healthsense-logo.svg" alt="HealthSense" className="h-8 w-auto" />
-            <span>Assessment</span>
+            <span>ASSESSMENT</span>
           </span>
         }
-        subtitle={`${user.display_name || user.first_name || "User"} · Combined score ${formatPct(scores.combined)}${
-          reportedAtUk ? ` · Updated ${reportedAtUk}` : ""
-        }`}
         side={<StatPill label="Combined" value={formatPct(scores.combined)} />}
       />
       {narrativesCached === false ? (
