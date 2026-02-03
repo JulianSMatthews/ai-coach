@@ -36,7 +36,7 @@ export default async function LibraryPage(props: PageProps) {
       <TextScale defaultScale={textScale} />
       <nav className="sticky top-0 z-10 -mx-6 mb-4 flex flex-wrap items-center gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
         <a href={`/progress/${userId}`} className="flex items-center" aria-label="HealthSense home">
-          <img src="/healthsense-logo.svg" alt="HealthSense" className="h-6 w-auto" />
+          <img src="/healthsense-mark.svg" alt="HealthSense" className="h-6 w-auto" />
         </a>
         <a className="rounded-full border border-[#efe7db] bg-white px-3 py-1" href={`/progress/${userId}`}>
           Home
