@@ -5,9 +5,13 @@ export default function LoadingAssessment() {
     <PageShell>
       <SectionHeader
         eyebrow="Assessment snapshot"
-        title="HealthSense assessment"
+        title={
+          <span className="flex flex-wrap items-center gap-3">
+            <img src="/healthsense-logo.svg" alt="HealthSense" className="h-8 w-auto" />
+            <span>Assessment</span>
+          </span>
+        }
         subtitle="Loading assessment…"
-        brandMark={<img src="/healthsense-logo.svg" alt="HealthSense" className="h-7 w-auto" />}
         side={<StatPill label="Combined" value="…" />}
       />
       <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">

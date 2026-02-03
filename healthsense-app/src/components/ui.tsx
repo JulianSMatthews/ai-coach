@@ -33,7 +33,7 @@ export function SectionHeader({
   brandMark,
 }: {
   eyebrow?: React.ReactNode;
-  title: string;
+  title: React.ReactNode;
   subtitle?: string;
   side?: React.ReactNode;
   brandMark?: React.ReactNode;

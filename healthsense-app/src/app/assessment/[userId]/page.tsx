@@ -120,9 +120,13 @@ export default async function AssessmentPage(props: PageProps) {
         </nav>
         <SectionHeader
           eyebrow="Assessment snapshot"
-          title="HealthSense assessment"
+          title={
+            <span className="flex flex-wrap items-center gap-3">
+              <img src="/healthsense-logo.svg" alt="HealthSense" className="h-8 w-auto" />
+              <span>Assessment</span>
+            </span>
+          }
           subtitle={`${user.display_name || user.first_name || "User"} · No completed assessment yet`}
-          brandMark={<img src="/healthsense-logo.svg" alt="HealthSense" className="h-7 w-auto" />}
           side={<StatPill label="Combined" value="--" />}
         />
         <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
@@ -163,11 +167,15 @@ export default async function AssessmentPage(props: PageProps) {
       </nav>
       <SectionHeader
         eyebrow="Assessment snapshot"
-        title="HealthSense assessment"
+        title={
+          <span className="flex flex-wrap items-center gap-3">
+            <img src="/healthsense-logo.svg" alt="HealthSense" className="h-8 w-auto" />
+            <span>Assessment</span>
+          </span>
+        }
         subtitle={`${user.display_name || user.first_name || "User"} · Combined score ${formatPct(scores.combined)}${
           reportedAtUk ? ` · Updated ${reportedAtUk}` : ""
         }`}
-        brandMark={<img src="/healthsense-logo.svg" alt="HealthSense" className="h-7 w-auto" />}
         side={<StatPill label="Combined" value={formatPct(scores.combined)} />}
       />
       {narrativesCached === false ? (
