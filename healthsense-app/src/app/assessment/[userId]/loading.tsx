@@ -6,8 +6,8 @@ export default function LoadingAssessment() {
       <SectionHeader
         title={
           <span className="flex flex-wrap items-center gap-3">
-            <img src="/healthsense-logo.svg" alt="HealthSense" className="h-8 w-auto" />
-            <span>ASSESSMENT</span>
+            <img src="/healthsense-mark.svg" alt="HealthSense" className="h-8 w-auto" />
+            <span>HealthSense Assessment</span>
           </span>
         }
         side={<StatPill label="Combined" value="…" />}
