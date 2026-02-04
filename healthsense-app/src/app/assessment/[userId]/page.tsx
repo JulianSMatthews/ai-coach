@@ -61,13 +61,7 @@ export default async function AssessmentPage(props: PageProps) {
     }).format(parsed);
   };
   const reportedAtUk = reportedAt ? formatUkTimestamp(reportedAt) : "";
-  const scoreBucketTone: Record<string, string> = {
-    high: "#0ba360",
-    mid: "#f6d365",
-    low: "#f76b1c",
-  };
   const formatPct = (value: number | null | undefined) => (value === null || value === undefined ? "--" : Math.round(value));
-  const toneFor = (bucket?: string) => (bucket && scoreBucketTone[bucket] ? scoreBucketTone[bucket] : "var(--accent)");
   const readinessPct = (value?: number | null) => {
     if (value === null || value === undefined) return null;
     return Math.round((Number(value) / 5) * 100);
@@ -172,7 +166,7 @@ export default async function AssessmentPage(props: PageProps) {
             <span>HealthSense Assessment</span>
           </span>
         }
-        side={<StatPill label="Combined" value={formatPct(scores.combined)} />}
+        side={<StatPill label="Combined" value={formatPct(scores.combined)} accent="#d3541b" />}
       />
       {narrativesCached === false ? (
         <Card className="border border-[#e7e1d6] bg-[#fffaf0] text-sm text-[#6b6257]">
@@ -206,15 +200,18 @@ export default async function AssessmentPage(props: PageProps) {
           <h2 className="text-xl">Score breakdown</h2>
           <div className="mt-4 space-y-4 text-sm">
             {(scores.rows || []).length ? (
-              (scores.rows || []).map((row) => (
-                <div key={row.label} className="rounded-2xl border border-[#efe7db] bg-[#fffaf0] px-4 py-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.label}</p>
-                    <p className="text-sm font-semibold text-[#1e1b16]">{formatPct(row.value)}%</p>
+              (scores.rows || []).map((row) => {
+                const palette = getPillarPalette(row.label);
+                return (
+                  <div key={row.label} className="rounded-2xl border border-[#efe7db] bg-[#fffaf0] px-4 py-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.label}</p>
+                      <p className="text-sm font-semibold text-[#1e1b16]">{formatPct(row.value)}%</p>
+                    </div>
+                    <ProgressBar value={Number(row.value ?? 0)} tone={palette.accent} />
                   </div>
-                  <ProgressBar value={Number(row.value ?? 0)} tone={toneFor(row.bucket)} />
-                </div>
-              ))
+                );
+              })
             ) : (
               <p className="text-sm text-[#6b6257]">No score breakdown yet.</p>
             )}
@@ -270,7 +267,6 @@ export default async function AssessmentPage(props: PageProps) {
           const okr = okrs.find((o: any) => o.pillar_key === pillar.pillar_key);
           const conceptScores = pillar.concept_scores || {};
           const conceptLabels = pillar.concept_labels || {};
-          const pillarTone = toneFor(pillar.bucket);
           const palette = getPillarPalette(pillar.pillar_key || pillar.pillar_name);
           const cardStyle = {
             borderColor: palette.border,
@@ -298,7 +294,7 @@ export default async function AssessmentPage(props: PageProps) {
                   <h3 className="text-lg">{pillar.pillar_name}</h3>
                   <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Score</p>
                 </div>
-                <ScoreRing value={Number(pillar.score ?? 0)} tone={pillarTone} />
+                <ScoreRing value={Number(pillar.score ?? 0)} tone={palette.accent} />
               </div>
               <ProgressBar value={Number(pillar.score ?? 0)} tone={palette.accent} />
               {conceptEntries.length ? (

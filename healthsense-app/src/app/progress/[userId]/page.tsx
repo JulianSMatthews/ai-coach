@@ -278,7 +278,7 @@ export default async function ProgressPage(props: PageProps) {
                         const chip = chipPalette[status.status] || { bg: "#f4f4f5", text: "#52525b" };
                         const pctValue = status.pct ?? 0;
                         const barWidth = status.pct === null ? "4%" : `${Math.round(pctValue * 100)}%`;
-                        const barColor = status.status === "not started" ? "#93c5fd" : palette.accent;
+                        const barColor = palette.accent;
                         return (
                           <div key={kr.id} className="rounded-2xl border border-[#eadcc6] bg-white p-3">
                             <p className="text-sm font-semibold text-[#1e1b16]">{kr.description}</p>
