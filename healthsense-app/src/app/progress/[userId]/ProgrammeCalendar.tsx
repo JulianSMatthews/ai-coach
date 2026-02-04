@@ -1,15 +1,9 @@
 "use client";
 
 import { useMemo } from "react";
+import { getPillarPalette } from "@/lib/pillars";
 
 type ProgrammeBlock = { label: string; weeks: string; key: string };
-
-const pillarColors: Record<string, { border: string; bg: string; dot: string }> = {
-  nutrition: { border: "#0ba5ec", bg: "#f0f9ff", dot: "#0ba5ec" },
-  recovery: { border: "#a855f7", bg: "#f8f5ff", dot: "#a855f7" },
-  training: { border: "#22c55e", bg: "#ecfdf3", dot: "#22c55e" },
-  resilience: { border: "#f97316", bg: "#fff7ed", dot: "#f97316" },
-};
 
 type ProgrammeCalendarProps = {
   programmeStart?: string | null;
@@ -71,7 +65,7 @@ export default function ProgrammeCalendar({
     <div className="mt-4 rounded-2xl border border-[#efe7db] bg-white p-4">
       <div className="flex flex-wrap items-center gap-2 text-xs text-[#6b6257]">
         {programmeBlocks.map((block) => {
-          const palette = pillarColors[block.key] || { border: "#e4e7ec", bg: "#f8fafc", dot: "#98a2b3" };
+          const palette = getPillarPalette(block.key);
           return (
             <span
               key={block.key}
@@ -107,7 +101,7 @@ export default function ProgrammeCalendar({
                     <div key={`blank-${month.key}-${idx}`} className="h-9 rounded-lg border border-transparent" />
                   ))}
                   {month.days.map((item) => {
-                    const palette = pillarColors[item.key] || { border: "#e4e7ec", bg: "#f8fafc", dot: "#98a2b3" };
+                    const palette = getPillarPalette(item.key);
                     return (
                       <div
                         key={item.date.toISOString()}

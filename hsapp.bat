@@ -1,0 +1,26 @@
+@echo off
+setlocal
+
+set ROOT=%~dp0
+
+if exist "%ROOT%run-healthsense.bat" (
+  call "%ROOT%run-healthsense.bat"
+  exit /b %ERRORLEVEL%
+)
+
+set APP_DIR=%ROOT%healthsense-app
+
+if not exist "%APP_DIR%" (
+  echo App directory not found: %APP_DIR%
+  exit /b 1
+)
+
+cd /d "%APP_DIR%" || exit /b 1
+
+if not exist node_modules (
+  echo Installing dependencies...
+  npm install || exit /b 1
+)
+
+echo Starting app...
+npm run dev

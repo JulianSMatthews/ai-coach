@@ -1,4 +1,6 @@
+import type { CSSProperties } from "react";
 import { getProgress, getUserStatus } from "@/lib/api";
+import { getPillarPalette } from "@/lib/pillars";
 import { Badge, Card, PageShell, StatPill } from "@/components/ui";
 import CarouselDots from "@/components/CarouselDots";
 import TextScale from "@/components/TextScale";
@@ -42,12 +44,6 @@ export default async function ProgressPage(props: PageProps) {
     "off track": { bg: "#fef2f2", text: "#b42318" },
     "in progress": { bg: "#eff6ff", text: "#1d4ed8" },
     "not started": { bg: "#eff6ff", text: "#1d4ed8" },
-  };
-  const pillarColors: Record<string, { border: string; bg: string; dot: string }> = {
-    nutrition: { border: "#0ba5ec", bg: "#f0f9ff", dot: "#0ba5ec" },
-    recovery: { border: "#a855f7", bg: "#f8f5ff", dot: "#a855f7" },
-    training: { border: "#22c55e", bg: "#ecfdf3", dot: "#22c55e" },
-    resilience: { border: "#f97316", bg: "#fff7ed", dot: "#f97316" },
   };
   const programmeBlocks = [
     { label: "Nutrition", weeks: "Weeks 1–3", key: "nutrition" },
@@ -243,23 +239,34 @@ export default async function ProgressPage(props: PageProps) {
             style={{ scrollSnapType: "x mandatory", scrollPadding: "1.5rem" }}
           >
             {rows.map((row: any, idx: number) => {
-              const palette = pillarColors[row.pillar] || { border: "#e4e7ec", bg: "#f8fafc", dot: "#98a2b3" };
+              const palette = getPillarPalette(row.pillar);
+              const cardStyle = {
+                borderColor: palette.border,
+                background: palette.bg,
+                "--accent": palette.accent,
+              } as CSSProperties;
               return (
                 <Card
                   key={`${row.pillar}-${idx}`}
                   className="min-w-full snap-start sm:min-w-[85%]"
                   style={{
-                    borderColor: palette.border,
-                    background: palette.bg,
                     scrollSnapStop: "always",
                     scrollMarginLeft: "1.5rem",
+                    ...cardStyle,
                   }}
                   data-carousel-item
                 >
                   <div className="flex items-center justify-between gap-4">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">key results</p>
-                      <h3 className="mt-1 text-lg">{row.pillar}</h3>
+                    <div className="flex items-center gap-3">
+                      {palette.icon ? (
+                        <div className="rounded-2xl border border-white/70 bg-white/80 p-2">
+                          <img src={palette.icon} alt={`${row.pillar} icon`} className="h-8 w-8" />
+                        </div>
+                      ) : null}
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">key results</p>
+                        <h3 className="mt-1 text-lg">{row.pillar}</h3>
+                      </div>
                     </div>
                     <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
                       {row.cycle_label || "Current"}
@@ -278,7 +285,7 @@ export default async function ProgressPage(props: PageProps) {
                         const chip = chipPalette[status.status] || { bg: "#f4f4f5", text: "#52525b" };
                         const pctValue = status.pct ?? 0;
                         const barWidth = status.pct === null ? "4%" : `${Math.round(pctValue * 100)}%`;
-                        const barColor = status.status === "not started" ? "#93c5fd" : undefined;
+                        const barColor = status.status === "not started" ? "#93c5fd" : palette.accent;
                         return (
                           <div key={kr.id} className="rounded-2xl border border-[#eadcc6] bg-white p-3">
                             <p className="text-sm font-semibold text-[#1e1b16]">{kr.description}</p>
@@ -315,10 +322,10 @@ export default async function ProgressPage(props: PageProps) {
                               </span>
                               <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#e4e7ec]">
                                 <div
-                                  className="h-full rounded-full bg-gradient-to-r from-[#0ba5ec] to-[#3cba92]"
+                                  className="h-full rounded-full"
                                   style={{
                                     width: barWidth,
-                                    background: barColor ?? undefined,
+                                    background: barColor,
                                   }}
                                 />
                               </div>

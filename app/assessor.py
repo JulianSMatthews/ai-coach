@@ -2521,7 +2521,8 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 # Enqueue assessment report generation (narrative + reports)
                 try:
                     run_id = state.get("run_id")
-                    if should_use_worker() and run_id:
+                    worker_audio_ok = (os.getenv("PODCAST_WORKER_MODE") or "").strip().lower() in {"1", "true", "yes"}
+                    if should_use_worker() and worker_audio_ok and run_id:
                         job_id = enqueue_job(
                             "assessment_report",
                             {"run_id": int(run_id), "user_id": user.id},

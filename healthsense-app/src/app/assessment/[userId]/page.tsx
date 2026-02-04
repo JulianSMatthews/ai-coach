@@ -1,4 +1,6 @@
+import type { CSSProperties } from "react";
 import { getAssessment, getUserStatus } from "@/lib/api";
+import { getPillarPalette } from "@/lib/pillars";
 import { Badge, Card, PageShell, ProgressBar, ScoreRing, SectionHeader, StatPill } from "@/components/ui";
 import CarouselDots from "@/components/CarouselDots";
 import TextScale from "@/components/TextScale";
@@ -269,6 +271,12 @@ export default async function AssessmentPage(props: PageProps) {
           const conceptScores = pillar.concept_scores || {};
           const conceptLabels = pillar.concept_labels || {};
           const pillarTone = toneFor(pillar.bucket);
+          const palette = getPillarPalette(pillar.pillar_key || pillar.pillar_name);
+          const cardStyle = {
+            borderColor: palette.border,
+            background: palette.bg,
+            "--accent": palette.accent,
+          } as CSSProperties;
           const conceptEntries = Object.keys(conceptScores).map((key) => ({
             key,
             label: conceptLabels[key] || key,
@@ -279,12 +287,23 @@ export default async function AssessmentPage(props: PageProps) {
               key={pillar.pillar_key}
               className="min-w-full snap-start sm:min-w-[85%]"
               data-carousel-item
-              style={{ scrollSnapStop: "always", scrollMarginLeft: "1.5rem" }}
+              style={{
+                scrollSnapStop: "always",
+                scrollMarginLeft: "1.5rem",
+                ...cardStyle,
+              }}
             >
               <div className="flex items-start justify-between gap-4">
-                <div>
-                  <h3 className="text-lg">{pillar.pillar_name}</h3>
-                  <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Score</p>
+                <div className="flex items-start gap-3">
+                  {palette.icon ? (
+                    <div className="rounded-2xl border border-white/70 bg-white/80 p-2">
+                      <img src={palette.icon} alt={`${pillar.pillar_name} icon`} className="h-9 w-9" />
+                    </div>
+                  ) : null}
+                  <div>
+                    <h3 className="text-lg">{pillar.pillar_name}</h3>
+                    <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Score</p>
+                  </div>
                 </div>
                 <ScoreRing value={Number(pillar.score ?? 0)} tone={pillarTone} />
               </div>

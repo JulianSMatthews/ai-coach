@@ -24,3 +24,5 @@ __pycache__/
 .DS_Store
 .env
 app/assessor_LATEST.py
+
+reports.tar.gz

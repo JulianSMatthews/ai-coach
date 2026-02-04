@@ -1,0 +1,117 @@
+API (FastAPI) – Reporting JSON Endpoints
+========================================
+
+Versioning
+----------
+- Current version: v1
+- Change strategy: additive only in v1. Breaking changes require /api/v2.
+
+Auth (current)
+--------------
+These endpoints are admin-authenticated (same as existing admin APIs).
+Headers required:
+- X-Admin-Token: value of ADMIN_API_TOKEN
+- X-Admin-User-Id: admin user id (integer)
+
+Base path: /api/v1
+
+
+GET /api/v1/users/{user_id}/assessment
+--------------------------------------
+Description:
+Returns the JSON payload used to render assessment.html, plus report URLs.
+
+Query params:
+- run_id (optional): assessment run id. If omitted, latest run is used.
+
+Response (shape):
+{
+  "user": { "id", "first_name", "surname", "display_name" },
+  "run": { "id", "finished_at", "combined_overall" },
+  "scores": {
+    "combined": <int>,
+    "rows": [{ "label", "value", "bucket" }],
+    "by_pillar": { "nutrition": <int>, ... }
+  },
+  "pillars": [
+    { "pillar_key", "pillar_name", "score", "bucket", "concept_scores", "qa_samples", "focus_note" }
+  ],
+  "okrs": [
+    { "pillar_key", "pillar_name", "score", "objective", "key_results", "focus_note" }
+  ],
+  "narratives": {
+    "score_html": "<p>...</p>",
+    "okr_html": "<p>...</p>",
+    "coaching_html": "<p>...</p>"
+  },
+  "meta": { "reported_at": "DD Mon YYYY HH:MM UTC" },
+  "reports": {
+    "assessment_html": "https://.../reports/{user_id}/assessment.html",
+    "assessment_pdf": "https://.../reports/{user_id}/latest.pdf",
+    "assessment_image": "https://.../reports/{user_id}/latest.jpeg"
+  }
+}
+
+Example:
+curl -H "X-Admin-Token: <token>" \
+     -H "X-Admin-User-Id: 1" \
+     "https://<host>/api/v1/users/2/assessment"
+
+Example response (truncated):
+{
+  "user": {"id": 2, "first_name": "Rhys", "surname": "Carter", "display_name": "Rhys Carter"},
+  "run": {"id": 41, "finished_at": "2026-01-20T09:41:22Z", "combined_overall": 62},
+  "scores": {
+    "combined": 62,
+    "rows": [{"label": "Combined", "value": 62, "bucket": "mid"}],
+    "by_pillar": {"nutrition": 60, "training": 64, "resilience": 58, "recovery": 66}
+  },
+  "pillars": [{"pillar_key": "nutrition", "pillar_name": "Nutrition", "score": 60, "bucket": "mid"}],
+  "okrs": [{"pillar_key": "nutrition", "objective": "Improve daily nutrition habits"}],
+  "narratives": {"score_html": "<p>…</p>", "okr_html": "<p>…</p>", "coaching_html": "<p>…</p>"},
+  "meta": {"reported_at": "20 Jan 2026 09:42 UTC"},
+  "reports": {"assessment_html": "https://.../reports/2/assessment.html"}
+}
+
+
+GET /api/v1/users/{user_id}/progress
+------------------------------------
+Description:
+Returns the JSON payload used to render progress.html, plus report URL.
+
+Query params:
+- anchor_date (optional): YYYY-MM-DD (defaults to today)
+
+Response (shape):
+{
+  "user": { "id", "first_name", "surname", "display_name" },
+  "meta": { "anchor_date", "anchor_label", "reported_at" },
+  "status_counts": { "on track", "at risk", "off track", "not started" },
+  "total_krs": <int>,
+  "focus": { "kr_ids": [..], "kr_titles": [..] },
+  "readiness": { "score", "label", "note" } | null,
+  "rows": [ ... ]  // raw progress rows used by progress.html
+  "reports": { "progress_html": "https://.../reports/{user_id}/progress.html" }
+}
+
+Example:
+curl -H "X-Admin-Token: <token>" \
+     -H "X-Admin-User-Id: 1" \
+     "https://<host>/api/v1/users/2/progress?anchor_date=2026-01-20"
+
+Example response (truncated):
+{
+  "user": {"id": 2, "first_name": "Rhys", "surname": "Carter", "display_name": "Rhys Carter"},
+  "meta": {"anchor_date": "2026-01-20", "anchor_label": "20 Jan 2026", "reported_at": "20 Jan 2026 09:45 UTC"},
+  "status_counts": {"on track": 2, "at risk": 1, "off track": 0, "not started": 1},
+  "total_krs": 4,
+  "focus": {"kr_ids": [123,124], "kr_titles": ["Increase fruit/veg", "Reduce processed food"]},
+  "readiness": {"score": 3.2, "label": "Moderate", "note": "We’ll balance guidance…"},
+  "rows": [],
+  "reports": {"progress_html": "https://.../reports/2/progress.html"}
+}
+
+Notes
+-----
+- The HTML reports now render from these same JSON builders.
+- Narrative fields are returned as HTML strings for direct rendering.
