@@ -259,7 +259,7 @@ export default async function ProgressPage(props: PageProps) {
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">key results</p>
-                      <h3 className="mt-1 text-lg">{row.pillar}</h3>
+                      <h3 className="mt-1 text-lg capitalize">{row.pillar}</h3>
                     </div>
                     <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
                       {row.cycle_label || "Current"}

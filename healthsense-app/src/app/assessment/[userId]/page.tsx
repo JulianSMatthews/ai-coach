@@ -166,7 +166,15 @@ export default async function AssessmentPage(props: PageProps) {
             <span>HealthSense Assessment</span>
           </span>
         }
-        side={<StatPill label="Combined" value={formatPct(scores.combined)} accent="#d3541b" />}
+        side={
+          <StatPill
+            label="Combined"
+            value={formatPct(scores.combined)}
+            accent="#d3541b"
+            bg="#ffe6d1"
+            border="#f5d0a0"
+          />
+        }
       />
       {narrativesCached === false ? (
         <Card className="border border-[#e7e1d6] bg-[#fffaf0] text-sm text-[#6b6257]">
