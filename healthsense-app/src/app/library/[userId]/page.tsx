@@ -28,27 +28,31 @@ export default async function LibraryPage(props: PageProps) {
   return (
     <PageShell>
       <TextScale defaultScale={textScale} />
-      <nav className="sticky top-0 z-10 -mx-6 mb-4 flex flex-wrap items-center gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
-        <a href={`/progress/${userId}`} className="flex items-center" aria-label="HealthSense home">
-          <img src="/healthsense-mark.svg" alt="HealthSense" className="h-6 w-auto" />
-        </a>
-        <a className="rounded-full border border-[#efe7db] bg-white px-3 py-1" href={`/progress/${userId}`}>
-          Home
-        </a>
-        <a className="rounded-full border border-[#efe7db] bg-white px-3 py-1" href={`/assessment/${userId}`}>
-          Assessment
-        </a>
-        <a className="rounded-full border border-[#efe7db] bg-white px-3 py-1" href={`/library/${userId}`}>
-          Library
-        </a>
-        <a className="rounded-full border border-[#efe7db] bg-white px-3 py-1" href={`/preferences/${userId}`}>
-          Preferences
-        </a>
-        <a className="rounded-full border border-[#efe7db] bg-white px-3 py-1" href={`/history/${userId}`}>
-          History
-        </a>
-        {promptBadge ? <Badge label={promptBadge} /> : null}
-        <LogoutButton />
+      <nav className="sticky top-0 z-10 -mx-6 mb-4 flex flex-col gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:flex-row md:flex-wrap md:items-center md:gap-2 md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
+        <div className="flex w-full items-center gap-2 overflow-x-auto pb-1 whitespace-nowrap md:w-auto md:flex-wrap md:overflow-visible md:pb-0 md:whitespace-normal">
+          <a href={`/progress/${userId}`} className="flex items-center" aria-label="HealthSense home">
+            <img src="/healthsense-mark.svg" alt="HealthSense" className="h-6 w-auto" />
+          </a>
+          <a className="rounded-full border border-[#efe7db] bg-white px-3 py-1" href={`/progress/${userId}`}>
+            Home
+          </a>
+          <a className="rounded-full border border-[#efe7db] bg-white px-3 py-1" href={`/assessment/${userId}`}>
+            Assessment
+          </a>
+          <a className="rounded-full border border-[#efe7db] bg-white px-3 py-1" href={`/library/${userId}`}>
+            Library
+          </a>
+          <a className="rounded-full border border-[#efe7db] bg-white px-3 py-1" href={`/preferences/${userId}`}>
+            Preferences
+          </a>
+          <a className="rounded-full border border-[#efe7db] bg-white px-3 py-1" href={`/history/${userId}`}>
+            History
+          </a>
+        </div>
+        <div className="flex w-full items-center gap-2 md:ml-auto md:w-auto">
+          {promptBadge ? <Badge label={promptBadge} /> : null}
+          <LogoutButton />
+        </div>
       </nav>
       <SectionHeader
         eyebrow="Library"
