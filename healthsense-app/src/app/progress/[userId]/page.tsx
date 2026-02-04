@@ -147,12 +147,12 @@ export default async function ProgressPage(props: PageProps) {
         <div
           id="momentum-carousel"
           className="flex flex-nowrap gap-6 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth"
-          style={{ scrollSnapType: "x mandatory", scrollPadding: "1.5rem" }}
+          style={{ scrollSnapType: "x mandatory" }}
         >
           <Card
             className="min-w-full snap-start sm:min-w-[85%]"
             data-carousel-item
-            style={{ scrollSnapStop: "always", scrollMarginLeft: "1.5rem" }}
+            style={{ scrollSnapStop: "always" }}
           >
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Momentum</p>
             <h2 className="mt-1 text-xl">{user.display_name || user.first_name || "User"}</h2>
@@ -177,7 +177,7 @@ export default async function ProgressPage(props: PageProps) {
           <Card
             className="min-w-full snap-start sm:min-w-[85%]"
             data-carousel-item
-            style={{ scrollSnapStop: "always", scrollMarginLeft: "1.5rem" }}
+            style={{ scrollSnapStop: "always" }}
           >
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Focus</p>
             <h2 className="mt-1 text-xl">Key results</h2>
@@ -218,7 +218,7 @@ export default async function ProgressPage(props: PageProps) {
           <Card
             className="min-w-full snap-start sm:min-w-[85%]"
             data-carousel-item
-            style={{ scrollSnapStop: "always", scrollMarginLeft: "1.5rem" }}
+            style={{ scrollSnapStop: "always" }}
           >
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Programme</p>
             <h2 className="mt-1 text-xl">Overview</h2>
@@ -236,7 +236,7 @@ export default async function ProgressPage(props: PageProps) {
           <div
             id="pillar-krs-carousel"
             className="flex flex-nowrap gap-6 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth"
-            style={{ scrollSnapType: "x mandatory", scrollPadding: "1.5rem" }}
+            style={{ scrollSnapType: "x mandatory" }}
           >
             {rows.map((row: any, idx: number) => {
               const palette = getPillarPalette(row.pillar);
@@ -251,7 +251,6 @@ export default async function ProgressPage(props: PageProps) {
                   className="min-w-full snap-start sm:min-w-[85%]"
                   style={{
                     scrollSnapStop: "always",
-                    scrollMarginLeft: "1.5rem",
                     ...cardStyle,
                   }}
                   data-carousel-item

@@ -269,7 +269,7 @@ export default async function AssessmentPage(props: PageProps) {
       <section
         id="pillars"
         className="flex flex-nowrap gap-6 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth"
-        style={{ scrollSnapType: "x mandatory", scrollPadding: "1.5rem" }}
+        style={{ scrollSnapType: "x mandatory" }}
       >
         {pillars.map((pillar: any) => {
           const okr = okrs.find((o: any) => o.pillar_key === pillar.pillar_key);
@@ -293,7 +293,6 @@ export default async function AssessmentPage(props: PageProps) {
               data-carousel-item
               style={{
                 scrollSnapStop: "always",
-                scrollMarginLeft: "1.5rem",
                 ...cardStyle,
               }}
             >
@@ -357,7 +356,7 @@ export default async function AssessmentPage(props: PageProps) {
         <Card
           className="min-w-full snap-start sm:min-w-[85%]"
           data-carousel-item
-          style={{ scrollSnapStop: "always", scrollMarginLeft: "1.5rem" }}
+          style={{ scrollSnapStop: "always" }}
         >
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>

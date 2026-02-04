@@ -58,7 +58,7 @@ export default async function LibraryPage(props: PageProps) {
       <section
         id="library-carousel"
         className="flex flex-nowrap gap-6 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth"
-        style={{ scrollSnapType: "x mandatory", scrollPadding: "1.5rem" }}
+        style={{ scrollSnapType: "x mandatory" }}
       >
         {PILLARS.map((pillar) => {
           const pillarItems = itemsByPillar[pillar.key] || [];
@@ -73,10 +73,9 @@ export default async function LibraryPage(props: PageProps) {
               className="min-w-full snap-start sm:min-w-[85%]"
               data-carousel-item
               style={{
-                scrollSnapStop: "always",
-                scrollMarginLeft: "1.5rem",
-                ...cardStyle,
-              }}
+              scrollSnapStop: "always",
+              ...cardStyle,
+            }}
             >
             <div>
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Pillar</p>
