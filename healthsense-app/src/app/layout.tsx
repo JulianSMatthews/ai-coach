@@ -15,6 +15,11 @@ const bodyFont = Source_Sans_3({
 export const metadata: Metadata = {
   title: "HealthSense App",
   description: "HealthSense assessment and progress dashboards",
+  icons: {
+    icon: "/favicon.png",
+    shortcut: "/favicon.png",
+    apple: "/apple-touch-icon.png",
+  },
 };
 
 export default function RootLayout({
