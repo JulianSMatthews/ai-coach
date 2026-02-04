@@ -257,16 +257,9 @@ export default async function ProgressPage(props: PageProps) {
                   data-carousel-item
                 >
                   <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      {palette.icon ? (
-                        <div className="rounded-2xl border border-white/70 bg-white/80 p-2">
-                          <img src={palette.icon} alt={`${row.pillar} icon`} className="h-8 w-8" />
-                        </div>
-                      ) : null}
-                      <div>
-                        <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">key results</p>
-                        <h3 className="mt-1 text-lg">{row.pillar}</h3>
-                      </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">key results</p>
+                      <h3 className="mt-1 text-lg">{row.pillar}</h3>
                     </div>
                     <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
                       {row.cycle_label || "Current"}

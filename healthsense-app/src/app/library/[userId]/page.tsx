@@ -78,15 +78,10 @@ export default async function LibraryPage(props: PageProps) {
                 ...cardStyle,
               }}
             >
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Pillar</p>
-                  <h2 className="mt-1 text-xl">{pillar.label}</h2>
-                </div>
-                <div className="rounded-2xl border border-white/60 bg-white/80 p-2">
-                <img src={pillar.icon} alt={`${pillar.label} icon`} className="h-10 w-10" />
-                </div>
-              </div>
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Pillar</p>
+              <h2 className="mt-1 text-xl">{pillar.label}</h2>
+            </div>
               <p className="mt-2 text-sm text-[#6b6257]">{pillar.note}</p>
               {pillarItems.length ? (
                 <div className="mt-4 space-y-3">

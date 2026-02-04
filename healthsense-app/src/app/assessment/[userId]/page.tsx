@@ -294,20 +294,13 @@ export default async function AssessmentPage(props: PageProps) {
               }}
             >
               <div className="flex items-start justify-between gap-4">
-                <div className="flex items-start gap-3">
-                  {palette.icon ? (
-                    <div className="rounded-2xl border border-white/70 bg-white/80 p-2">
-                      <img src={palette.icon} alt={`${pillar.pillar_name} icon`} className="h-9 w-9" />
-                    </div>
-                  ) : null}
-                  <div>
-                    <h3 className="text-lg">{pillar.pillar_name}</h3>
-                    <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Score</p>
-                  </div>
+                <div>
+                  <h3 className="text-lg">{pillar.pillar_name}</h3>
+                  <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Score</p>
                 </div>
                 <ScoreRing value={Number(pillar.score ?? 0)} tone={pillarTone} />
               </div>
-              <ProgressBar value={Number(pillar.score ?? 0)} tone={pillarTone} />
+              <ProgressBar value={Number(pillar.score ?? 0)} tone={palette.accent} />
               {conceptEntries.length ? (
                 <div className="mt-4 space-y-3">
                   {conceptEntries.map((concept) => (
@@ -316,7 +309,7 @@ export default async function AssessmentPage(props: PageProps) {
                         <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">{concept.label}</p>
                         <p className="text-sm font-semibold text-[#1e1b16]">{formatPct(concept.value)}%</p>
                       </div>
-                      <ProgressBar value={Number(concept.value ?? 0)} tone={pillarTone} />
+                      <ProgressBar value={Number(concept.value ?? 0)} tone={palette.accent} />
                     </div>
                   ))}
                 </div>
