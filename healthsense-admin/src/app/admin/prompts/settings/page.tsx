@@ -1,5 +1,5 @@
 import AdminNav from "@/components/AdminNav";
-import { getPromptSettings, updatePromptSettings } from "@/lib/api";
+import { getPromptSettings, getWorkerStatus, updatePromptSettings } from "@/lib/api";
 import { revalidatePath } from "next/cache";
 
 export const dynamic = "force-dynamic";
@@ -30,16 +30,38 @@ async function saveSettingsAction(formData: FormData) {
 }
 
 export default async function PromptSettingsPage() {
-  const settings = await getPromptSettings();
+  const [settings, status] = await Promise.all([getPromptSettings(), getWorkerStatus()]);
   const workerDefault =
     settings.worker_mode_override === true ? "on" : settings.worker_mode_override === false ? "off" : "";
   const podcastDefault =
     settings.podcast_worker_mode_override === true ? "on" : settings.podcast_worker_mode_override === false ? "off" : "";
+  const effectiveWorker = status.worker_mode_effective ?? settings.worker_mode_effective;
+  const effectivePodcast = status.podcast_worker_mode_effective ?? settings.podcast_worker_mode_effective;
+  const workerSource = status.worker_mode_source ?? settings.worker_mode_source;
+  const podcastSource = status.podcast_worker_mode_source ?? settings.podcast_worker_mode_source;
+  const envWorker = status.worker_mode_env ?? settings.worker_mode_env;
+  const envPodcast = status.podcast_worker_mode_env ?? settings.podcast_worker_mode_env;
+  const formatBool = (value?: boolean | null) => (value ? "ON" : "OFF");
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto w-full max-w-4xl space-y-6">
         <AdminNav title="Prompt settings" subtitle="Global system/locale blocks and default order." />
+        <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
+          <h2 className="text-lg font-semibold">Worker status</h2>
+          <div className="mt-3 grid gap-2 text-sm text-[#3c332b] sm:grid-cols-2">
+            <div className="rounded-2xl border border-[#efe7db] bg-[#fbf7f0] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Worker mode</p>
+              <p className="mt-2 text-xl font-semibold">{formatBool(effectiveWorker)}</p>
+              <p className="mt-1 text-xs text-[#6b6257]">Source: {workerSource || "env"}</p>
+            </div>
+            <div className="rounded-2xl border border-[#efe7db] bg-[#fbf7f0] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Podcast worker</p>
+              <p className="mt-2 text-xl font-semibold">{formatBool(effectivePodcast)}</p>
+              <p className="mt-1 text-xs text-[#6b6257]">Source: {podcastSource || "env"}</p>
+            </div>
+          </div>
+        </section>
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
           <form action={saveSettingsAction} className="space-y-4">
             <div>
@@ -76,7 +98,7 @@ export default async function PromptSettingsPage() {
                 defaultValue={workerDefault}
                 className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
               >
-                <option value="">Use env</option>
+                <option value="">Use env (currently {formatBool(envWorker)})</option>
                 <option value="on">Force on</option>
                 <option value="off">Force off</option>
               </select>
@@ -89,7 +111,7 @@ export default async function PromptSettingsPage() {
                 defaultValue={podcastDefault}
                 className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
               >
-                <option value="">Use env</option>
+                <option value="">Use env (currently {formatBool(envPodcast)})</option>
                 <option value="on">Force on</option>
                 <option value="off">Force off</option>
               </select>

@@ -39,6 +39,23 @@ export type PromptSettingsPayload = {
   default_block_order?: string[] | null;
   worker_mode_override?: boolean | null;
   podcast_worker_mode_override?: boolean | null;
+  worker_mode_env?: boolean | null;
+  podcast_worker_mode_env?: boolean | null;
+  worker_mode_effective?: boolean | null;
+  podcast_worker_mode_effective?: boolean | null;
+  worker_mode_source?: string | null;
+  podcast_worker_mode_source?: string | null;
+};
+
+export type WorkerStatusPayload = {
+  worker_mode_override?: boolean | null;
+  podcast_worker_mode_override?: boolean | null;
+  worker_mode_env?: boolean | null;
+  podcast_worker_mode_env?: boolean | null;
+  worker_mode_effective?: boolean | null;
+  podcast_worker_mode_effective?: boolean | null;
+  worker_mode_source?: string | null;
+  podcast_worker_mode_source?: string | null;
 };
 
 export type ContentPromptTemplateSummary = {
@@ -447,6 +464,10 @@ export async function updatePromptSettings(payload: PromptSettingsPayload) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+}
+
+export async function getWorkerStatus() {
+  return apiAdmin<WorkerStatusPayload>("/admin/worker/status");
 }
 
 export async function listContentPromptTemplates(

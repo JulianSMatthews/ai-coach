@@ -3624,23 +3624,50 @@ def admin_prompt_templates_promote_all(payload: dict, admin_user: User = Depends
 def admin_prompt_settings(admin_user: User = Depends(_require_admin)):
     admin_routes._ensure_prompt_template_table()  # type: ignore[attr-defined]
     ensure_prompt_settings_schema()
+    def _env_flag(name: str) -> bool:
+        return (os.getenv(name) or "").strip().lower() in {"1", "true", "yes"}
     with SessionLocal() as s:
         row = s.query(PromptSettings).order_by(PromptSettings.id.asc()).first()
     if not row:
+        env_worker = _env_flag("PROMPT_WORKER_MODE")
+        env_podcast = _env_flag("PODCAST_WORKER_MODE")
         return {
             "system_block": None,
             "locale_block": None,
             "default_block_order": prompts_module.DEFAULT_PROMPT_BLOCK_ORDER,
             "worker_mode_override": None,
             "podcast_worker_mode_override": None,
+            "worker_mode_env": env_worker,
+            "podcast_worker_mode_env": env_podcast,
+            "worker_mode_effective": env_worker,
+            "podcast_worker_mode_effective": env_worker and env_podcast,
+            "worker_mode_source": "env",
+            "podcast_worker_mode_source": "env" if env_worker else "disabled_by_worker",
         }
     order = [b for b in (row.default_block_order or prompts_module.DEFAULT_PROMPT_BLOCK_ORDER) if b not in admin_routes.BANNED_BLOCKS]  # type: ignore[attr-defined]
+    worker_override = getattr(row, "worker_mode_override", None)
+    podcast_override = getattr(row, "podcast_worker_mode_override", None)
+    env_worker = _env_flag("PROMPT_WORKER_MODE")
+    env_podcast = _env_flag("PODCAST_WORKER_MODE")
+    effective_worker = worker_override if worker_override is not None else env_worker
+    if effective_worker is False:
+        effective_podcast = False
+        podcast_source = "disabled_by_worker"
+    else:
+        effective_podcast = podcast_override if podcast_override is not None else env_podcast
+        podcast_source = "override" if podcast_override is not None else "env"
     return {
         "system_block": getattr(row, "system_block", None),
         "locale_block": getattr(row, "locale_block", None),
         "default_block_order": order,
-        "worker_mode_override": getattr(row, "worker_mode_override", None),
-        "podcast_worker_mode_override": getattr(row, "podcast_worker_mode_override", None),
+        "worker_mode_override": worker_override,
+        "podcast_worker_mode_override": podcast_override,
+        "worker_mode_env": env_worker,
+        "podcast_worker_mode_env": env_podcast,
+        "worker_mode_effective": effective_worker,
+        "podcast_worker_mode_effective": effective_podcast,
+        "worker_mode_source": "override" if worker_override is not None else "env",
+        "podcast_worker_mode_source": podcast_source,
     }
 
 
@@ -3955,6 +3982,39 @@ def admin_prompt_settings_update(
             row.podcast_worker_mode_override = _parse_override(payload.get("podcast_worker_mode_override"))
         s.commit()
     return {"ok": True}
+
+
+@admin.get("/worker/status")
+def admin_worker_status(admin_user: User = Depends(_require_admin)):
+    admin_routes._ensure_prompt_template_table()  # type: ignore[attr-defined]
+    ensure_prompt_settings_schema()
+
+    def _env_flag(name: str) -> bool:
+        return (os.getenv(name) or "").strip().lower() in {"1", "true", "yes"}
+
+    with SessionLocal() as s:
+        row = s.query(PromptSettings).order_by(PromptSettings.id.asc()).first()
+    worker_override = getattr(row, "worker_mode_override", None) if row else None
+    podcast_override = getattr(row, "podcast_worker_mode_override", None) if row else None
+    env_worker = _env_flag("PROMPT_WORKER_MODE")
+    env_podcast = _env_flag("PODCAST_WORKER_MODE")
+    effective_worker = worker_override if worker_override is not None else env_worker
+    if effective_worker is False:
+        effective_podcast = False
+        podcast_source = "disabled_by_worker"
+    else:
+        effective_podcast = podcast_override if podcast_override is not None else env_podcast
+        podcast_source = "override" if podcast_override is not None else "env"
+    return {
+        "worker_mode_override": worker_override,
+        "podcast_worker_mode_override": podcast_override,
+        "worker_mode_env": env_worker,
+        "podcast_worker_mode_env": env_podcast,
+        "worker_mode_effective": effective_worker,
+        "podcast_worker_mode_effective": effective_podcast,
+        "worker_mode_source": "override" if worker_override is not None else "env",
+        "podcast_worker_mode_source": podcast_source,
+    }
 
 
 @admin.get("/messaging/templates")
