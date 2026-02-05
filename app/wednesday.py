@@ -12,6 +12,36 @@ from .prompts import format_checkin_history, primary_kr_payload, build_prompt, r
 from .touchpoints import log_touchpoint
 from .checkins import fetch_recent_checkins, record_checkin
 from . import general_support
+import os
+
+
+def _in_worker_process() -> bool:
+    return (os.getenv("PROMPT_WORKER_PROCESS") or "").strip().lower() in {"1", "true", "yes"}
+
+
+def _wednesday_label() -> str:
+    return "Wednesday." if _in_worker_process() else "Wednesday"
+
+
+def _wednesday_tag() -> str:
+    return f"*{_wednesday_label()}*"
+
+
+def _apply_wednesday_marker(text: str | None) -> str | None:
+    if not text:
+        return text
+    if text.startswith("*Wednesday*"):
+        return text.replace("*Wednesday*", _wednesday_tag(), 1)
+    return text
+
+
+def _send_wednesday(*, text: str, to: str | None = None, category: str | None = None, quick_replies: list[str] | None = None) -> str:
+    return send_whatsapp(
+        text=_apply_wednesday_marker(text) or text,
+        to=to,
+        category=category,
+        quick_replies=quick_replies,
+    )
 
 
 def _latest_weekly_focus(session: Session, user_id: int) -> Optional[WeeklyFocus]:
@@ -28,11 +58,11 @@ def send_midweek_check(user: User, coach_name: str = "Gia") -> None:
     with SessionLocal() as s:
         wf = _latest_weekly_focus(s, user.id)
         if not wf:
-            send_whatsapp(to=user.phone, text="No weekly plan found. Say monday to plan your week first.")
+            _send_wednesday(to=user.phone, text="No weekly plan found. Say monday to plan your week first.")
             return
         kr = primary_kr_payload(user.id, session=s)
         if not kr:
-            send_whatsapp(to=user.phone, text="No key results found for this week. Say monday to set them up.")
+            _send_wednesday(to=user.phone, text="No key results found for this week. Say monday to set them up.")
             return
 
         history_text = ""
@@ -76,7 +106,7 @@ def send_midweek_check(user: User, coach_name: str = "Gia") -> None:
                 "Any blockers? Try a small tweak this week—pick one simpler option that keeps you consistent."
             )
 
-    send_whatsapp(
+    _send_wednesday(
         to=user.phone,
         text=append_button_cta(message),
         quick_replies=["All good", "Need help"],

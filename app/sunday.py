@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Optional
 from datetime import datetime, timedelta
+import os
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
@@ -19,6 +20,35 @@ from .prompts import kr_payload_list, build_prompt, run_llm_prompt
 from . import general_support
 
 STATE_KEY = "sunday_state"
+
+
+def _in_worker_process() -> bool:
+    return (os.getenv("PROMPT_WORKER_PROCESS") or "").strip().lower() in {"1", "true", "yes"}
+
+
+def _sunday_label() -> str:
+    return "Sunday." if _in_worker_process() else "Sunday"
+
+
+def _sunday_tag() -> str:
+    return f"*{_sunday_label()}*"
+
+
+def _apply_sunday_marker(text: str | None) -> str | None:
+    if not text:
+        return text
+    if text.startswith("*Sunday*"):
+        return text.replace("*Sunday*", _sunday_tag(), 1)
+    return text
+
+
+def _send_sunday(*, text: str, to: str | None = None, category: str | None = None, quick_replies: list[str] | None = None) -> str:
+    return send_whatsapp(
+        text=_apply_sunday_marker(text) or text,
+        to=to,
+        category=category,
+        quick_replies=quick_replies,
+    )
 
 
 def _review_mode_for_week(week_no: int | None) -> str:
@@ -221,7 +251,7 @@ def send_sunday_review(user: User, coach_name: str = COACH_NAME) -> None:
     with SessionLocal() as s:
         wf = _latest_weekly_focus(s, user.id)
         if not wf:
-            send_whatsapp(to=user.phone, text="No weekly plan found. Say monday to plan your week first.")
+            _send_sunday(to=user.phone, text="No weekly plan found. Say monday to plan your week first.")
             return
         wf_id = wf.id
         week_no = getattr(wf, "week_no", None)
@@ -235,7 +265,7 @@ def send_sunday_review(user: User, coach_name: str = COACH_NAME) -> None:
         review_mode = _review_mode_for_week(week_no)
         kr_ids = [kr["id"] for kr in kr_payload_list(user.id, session=s, week_no=week_no, max_krs=3)]
         if not kr_ids:
-            send_whatsapp(to=user.phone, text="No key results found for this week. Say monday to set them up.")
+            _send_sunday(to=user.phone, text="No key results found for this week. Say monday to set them up.")
             return
         habit_steps = _format_habit_steps(s, user.id, kr_ids, week_no) if review_mode == "habit" else ""
         prompt_assembly = build_prompt(
@@ -267,7 +297,7 @@ def send_sunday_review(user: User, coach_name: str = COACH_NAME) -> None:
                 msg = "*Sunday* Quick check-in — please share your actuals for each goal (numbers), plus what worked and what didn’t."
         if not msg.lower().startswith("*sunday*"):
             msg = "*Sunday* " + msg
-        send_whatsapp(
+        _send_sunday(
             to=user.phone,
             text=append_button_cta(msg),
             quick_replies=["All good", "Need help"],
@@ -328,7 +358,7 @@ def handle_message(user: User, body: str) -> None:
                     except Exception:
                         continue
                 if len(numbers) < len(kr_ids):
-                    send_whatsapp(
+                    _send_sunday(
                         to=user.phone,
                         text="*Sunday* Please reply with a number for each goal in order (e.g., 3 4 2).",
                     )
@@ -392,7 +422,7 @@ def handle_message(user: User, body: str) -> None:
 
             history = state.get("history") or []
             support_text, new_history = _support_conversation(history, text, user, review_mode, week_no)
-            send_whatsapp(to=user.phone, text=support_text)
+            _send_sunday(to=user.phone, text=support_text)
             try:
                 tp_id = state.get("tp_id") if isinstance(state, dict) else None
                 if tp_id:
@@ -412,7 +442,7 @@ def handle_message(user: User, body: str) -> None:
         if mode == "support":
             history = state.get("history") or []
             support_text, new_history = _support_conversation(history, text, user, review_mode, week_no)
-            send_whatsapp(to=user.phone, text=support_text)
+            _send_sunday(to=user.phone, text=support_text)
             _set_state(s, user.id, None)
             s.commit()
             general_support.activate(user.id, source="sunday", week_no=week_no, send_intro=False)
