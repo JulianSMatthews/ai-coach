@@ -3283,7 +3283,6 @@ def api_user_coaching_history(
         "items": items,
     }
 
-app.include_router(api_v1)
 
 @admin.post("/users")
 def admin_create_user(payload: dict, admin_user: User = Depends(_require_admin)):
@@ -6341,3 +6340,7 @@ def api_reports_upload(payload: dict, request: Request):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"write failed: {e}")
     return {"ok": True, "url": _public_report_url(user_id, filename), "bytes": len(raw)}
+
+
+# Mount API router after all api_v1 routes are declared.
+app.include_router(api_v1)
