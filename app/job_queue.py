@@ -5,10 +5,10 @@ import socket
 from datetime import datetime, timedelta
 from typing import Any, Iterable
 
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, text as sa_text
 
 from .db import SessionLocal, engine
-from .models import BackgroundJob, Base
+from .models import BackgroundJob, Base, PromptSettings
 
 
 def ensure_job_table() -> None:
@@ -18,9 +18,58 @@ def ensure_job_table() -> None:
         # Fallback: create all if table list not supported
         Base.metadata.create_all(bind=engine)
 
+_PROMPT_SETTINGS_SCHEMA_READY = False
+
+def ensure_prompt_settings_schema() -> None:
+    global _PROMPT_SETTINGS_SCHEMA_READY
+    if _PROMPT_SETTINGS_SCHEMA_READY:
+        return
+    try:
+        PromptSettings.__table__.create(bind=engine, checkfirst=True)
+    except Exception:
+        pass
+    try:
+        with engine.connect() as conn:
+            conn.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS worker_mode_override boolean;"))
+            conn.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS podcast_worker_mode_override boolean;"))
+            conn.commit()
+    except Exception:
+        pass
+    _PROMPT_SETTINGS_SCHEMA_READY = True
+
+def _env_flag(name: str) -> bool:
+    return (os.getenv(name) or "").strip().lower() in {"1", "true", "yes"}
+
+def _get_worker_overrides() -> tuple[bool | None, bool | None]:
+    ensure_prompt_settings_schema()
+    try:
+        with SessionLocal() as s:
+            row = s.query(PromptSettings).order_by(PromptSettings.id.asc()).first()
+            if not row:
+                return None, None
+            return (
+                getattr(row, "worker_mode_override", None),
+                getattr(row, "podcast_worker_mode_override", None),
+            )
+    except Exception:
+        return None, None
+
 
 def should_use_worker() -> bool:
-    return (os.getenv("PROMPT_WORKER_MODE") or "").strip().lower() in {"1", "true", "yes"}
+    worker_override, _ = _get_worker_overrides()
+    if worker_override is not None:
+        return bool(worker_override)
+    return _env_flag("PROMPT_WORKER_MODE")
+
+
+def should_use_podcast_worker() -> bool:
+    worker_override, podcast_override = _get_worker_overrides()
+    if worker_override is not None and not worker_override:
+        return False
+    if podcast_override is not None:
+        return bool(podcast_override) and (worker_override is None or bool(worker_override))
+    worker_enabled = bool(worker_override) if worker_override is not None else _env_flag("PROMPT_WORKER_MODE")
+    return worker_enabled and _env_flag("PODCAST_WORKER_MODE")
 
 
 def enqueue_job(kind: str, payload: dict[str, Any], *, user_id: int | None = None) -> int:

@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
-from .job_queue import enqueue_job, should_use_worker
+from .job_queue import enqueue_job, should_use_podcast_worker
 from .nudges import send_whatsapp, send_whatsapp_media
 from .debug_utils import debug_enabled
 from .models import (
@@ -42,10 +42,31 @@ def _in_worker_process() -> bool:
 
 
 def _podcast_worker_enabled() -> bool:
-    return (
-        should_use_worker()
-        and not _in_worker_process()
-        and (os.getenv("PODCAST_WORKER_MODE") or "").strip().lower() in {"1", "true", "yes"}
+    return should_use_podcast_worker() and not _in_worker_process()
+
+
+def _kickoff_label() -> str:
+    return "Kickoff." if not _in_worker_process() else "Kickoff"
+
+
+def _kickoff_tag() -> str:
+    return f"*{_kickoff_label()}*"
+
+
+def _apply_kickoff_marker(text: str | None) -> str | None:
+    if not text:
+        return text
+    if text.startswith("*Kickoff*"):
+        return text.replace("*Kickoff*", _kickoff_tag(), 1)
+    return text
+
+
+def _send_kickoff(*, text: str, to: str | None = None, category: str | None = None, quick_replies: list[str] | None = None) -> str:
+    return send_whatsapp(
+        text=_apply_kickoff_marker(text) or text,
+        to=to,
+        category=category,
+        quick_replies=quick_replies,
     )
 
 
@@ -324,7 +345,7 @@ def send_kickoff_podcast_message(
     if audio_url:
         print(f"[kickoff] sending kickoff message for user={user.id} url={audio_url}")
         caption = (
-            f"*Kickoff* Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. "
+            f"{_kickoff_tag()} Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. "
             "This is your 12-week programme kickoff podcast—give it a listen."
         )
         send_whatsapp_media(
@@ -332,7 +353,7 @@ def send_kickoff_podcast_message(
             media_url=audio_url,
             caption=caption,
         )
-        send_whatsapp(
+        _send_kickoff(
             to=user.phone,
             text=cta,
             quick_replies=quick_replies,
@@ -340,12 +361,12 @@ def send_kickoff_podcast_message(
     else:
         print(f"[kickoff] no audio_url for user={user.id}; sending fallback text")
         message = (
-            f"*Kickoff* Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. "
+            f"{_kickoff_tag()} Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. "
             "This is your 12-week programme kickoff. "
             "I couldn’t generate your kickoff audio just now, but the plan is ready—let’s proceed.\n\n"
             f"{cta}"
         )
-        send_whatsapp(to=user.phone, text=message, quick_replies=quick_replies)
+        _send_kickoff(to=user.phone, text=message, quick_replies=quick_replies)
     try:
         log_touchpoint(
             user_id=user.id,
@@ -456,7 +477,7 @@ def _support_conversation(
     prompt = _support_prompt(krs, history, user_message)
     if debug:
         try:
-            send_whatsapp(to=user.phone, text="(i Inst) " + prompt)
+            _send_kickoff(to=user.phone, text="(i Inst) " + prompt)
         except Exception:
             pass
     text = None
@@ -522,7 +543,7 @@ def start_kickoff(user: User, notes: str | None = None, debug: bool = False) -> 
         selected = select_top_krs_for_user(s, user.id, limit=None, week_no=week_no)
         kr_ids = [kr_id for kr_id, _ in selected]
         if not kr_ids:
-            send_whatsapp(to=user.phone, text="No active KRs found to propose. Please set OKRs first.")
+            _send_kickoff(to=user.phone, text="No active KRs found to propose. Please set OKRs first.")
             return
 
         today = datetime.utcnow().date()
@@ -595,7 +616,7 @@ def start_kickoff(user: User, notes: str | None = None, debug: bool = False) -> 
             print(f"[kickoff] start_kickoff error for user {user.id}: {e}")
         except Exception:
             pass
-        send_whatsapp(
+        _send_kickoff(
             to=user.phone,
             text="*Kickoff* Sorry—something went wrong sending your kickoff. Please try again shortly.",
         )
@@ -611,4 +632,4 @@ def handle_message(user: User, text: str) -> None:
         return
 
     # No other stateful kickoff chat: politely prompt the user to use the keyword
-    send_whatsapp(to=user.phone, text="Say kickoff to start your weekly focus.")
+    _send_kickoff(to=user.phone, text="Say kickoff to start your weekly focus.")

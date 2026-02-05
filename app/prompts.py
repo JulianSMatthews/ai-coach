@@ -37,7 +37,7 @@ from sqlalchemy import func, text, case
 from .db import SessionLocal, engine, _is_postgres, _table_exists
 from .debug_utils import debug_enabled
 from .focus import select_top_krs_for_user
-from .job_queue import enqueue_job, should_use_worker
+from .job_queue import enqueue_job, should_use_worker, ensure_prompt_settings_schema
 from .models import OKRKeyResult, OKRObjective, OKRKrHabitStep, PromptTemplate, PromptSettings
 from . import llm as shared_llm
 from .models import LLMPromptLog
@@ -521,7 +521,7 @@ def _load_prompt_settings() -> Dict[str, Any]:
         "default_block_order": DEFAULT_PROMPT_BLOCK_ORDER,
     }
     try:
-        PromptSettings.__table__.create(bind=engine, checkfirst=True)
+        ensure_prompt_settings_schema()
     except Exception:
         return defaults
     try:

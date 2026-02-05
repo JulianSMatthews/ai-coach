@@ -931,6 +931,11 @@ def seed_prompt_templates(session: Session) -> int:
     except Exception:
         pass
     try:
+        session.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS worker_mode_override boolean;"))
+        session.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS podcast_worker_mode_override boolean;"))
+    except Exception:
+        pass
+    try:
         PromptTemplateVersionLog.__table__.create(bind=session.bind, checkfirst=True)
     except Exception:
         pass

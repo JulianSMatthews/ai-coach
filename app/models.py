@@ -186,6 +186,8 @@ class PromptSettings(Base):
     policy_block      = Column(Text, nullable=True)
     tool_block        = Column(Text, nullable=True)
     default_block_order = Column(JSONType, nullable=True)
+    worker_mode_override = Column(Boolean, nullable=True)
+    podcast_worker_mode_override = Column(Boolean, nullable=True)
     updated_at        = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 

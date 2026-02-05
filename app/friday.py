@@ -4,7 +4,7 @@ Friday boost: short podcast/message focusing on one KR with a simple action.
 from __future__ import annotations
 
 from .db import SessionLocal
-from .job_queue import enqueue_job, should_use_worker
+from .job_queue import enqueue_job, should_use_podcast_worker
 from .nudges import send_whatsapp, send_whatsapp_media, append_button_cta
 from .models import User
 from .kickoff import COACH_NAME
@@ -21,10 +21,31 @@ def _in_worker_process() -> bool:
 
 
 def _podcast_worker_enabled() -> bool:
-    return (
-        should_use_worker()
-        and not _in_worker_process()
-        and (os.getenv("PODCAST_WORKER_MODE") or "").strip().lower() in {"1", "true", "yes"}
+    return should_use_podcast_worker() and not _in_worker_process()
+
+
+def _friday_label() -> str:
+    return "Friday." if not _in_worker_process() else "Friday"
+
+
+def _friday_tag() -> str:
+    return f"*{_friday_label()}*"
+
+
+def _apply_friday_marker(text: str | None) -> str | None:
+    if not text:
+        return text
+    if text.startswith("*Friday*"):
+        return text.replace("*Friday*", _friday_tag(), 1)
+    return text
+
+
+def _send_friday(*, text: str, to: str | None = None, category: str | None = None, quick_replies: list[str] | None = None) -> str:
+    return send_whatsapp(
+        text=_apply_friday_marker(text) or text,
+        to=to,
+        category=category,
+        quick_replies=quick_replies,
     )
 
 
@@ -42,7 +63,7 @@ def send_boost(user: User, coach_name: str = COACH_NAME, week_no: int | None = N
         primary = primary_kr_payload(user.id, session=s, week_no=week_no)
     if not primary:
         debug_log("friday skipped: no primary KR payload", {"user_id": user.id, "week_no": week_no}, tag="friday")
-        send_whatsapp(to=user.phone, text="No weekly plan found. Say monday to plan your week first.")
+        _send_friday(to=user.phone, text="No weekly plan found. Say monday to plan your week first.")
         return
     touchpoint_week_no = week_no
 
@@ -78,7 +99,7 @@ def send_boost(user: User, coach_name: str = COACH_NAME, week_no: int | None = N
     if audio_url:
         print(f"[friday] sending podcast media for user={user.id} url={audio_url}")
         message = (
-            f"*Friday* Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. "
+            f"{_friday_tag()} Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. "
             "Here’s your boost podcast—give it a quick listen."
         )
         try:
@@ -88,12 +109,12 @@ def send_boost(user: User, coach_name: str = COACH_NAME, week_no: int | None = N
                 caption=message,
             )
         except Exception:
-            send_whatsapp(
+            _send_friday(
                 to=user.phone,
                 text=f"{message} {audio_url}",
             )
-        checkin = "*Friday* Quick check-in: how does this boost feel for today?"
-        send_whatsapp(
+        checkin = f"{_friday_tag()} Quick check-in: how does this boost feel for today?"
+        _send_friday(
             to=user.phone,
             text=append_button_cta(checkin),
             quick_replies=["All good", "Need help"],
@@ -101,7 +122,7 @@ def send_boost(user: User, coach_name: str = COACH_NAME, week_no: int | None = N
     else:
         print(f"[friday] no audio_url for user={user.id}; sending text fallback")
         message = transcript if transcript.startswith("*Friday*") else f"*Friday* {transcript}"
-        send_whatsapp(
+        _send_friday(
             to=user.phone,
             text=append_button_cta(message),
             quick_replies=["All good", "Need help"],

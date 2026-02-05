@@ -12,7 +12,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
-from .job_queue import enqueue_job, should_use_worker
+from .job_queue import enqueue_job, should_use_podcast_worker
 from .nudges import send_whatsapp, send_whatsapp_media
 from .debug_utils import debug_enabled
 from .models import (
@@ -41,10 +41,31 @@ def _in_worker_process() -> bool:
 
 
 def _podcast_worker_enabled() -> bool:
-    return (
-        should_use_worker()
-        and not _in_worker_process()
-        and (os.getenv("PODCAST_WORKER_MODE") or "").strip().lower() in {"1", "true", "yes"}
+    return should_use_podcast_worker() and not _in_worker_process()
+
+
+def _monday_label() -> str:
+    return "Monday." if not _in_worker_process() else "Monday"
+
+
+def _monday_tag() -> str:
+    return f"*{_monday_label()}*"
+
+
+def _apply_monday_marker(text: str | None) -> str | None:
+    if not text:
+        return text
+    if text.startswith("*Monday*"):
+        return text.replace("*Monday*", _monday_tag(), 1)
+    return text
+
+
+def _send_monday(*, text: str, to: str | None = None, category: str | None = None, quick_replies: list[str] | None = None) -> str:
+    return send_whatsapp(
+        text=_apply_monday_marker(text) or text,
+        to=to,
+        category=category,
+        quick_replies=quick_replies,
     )
 
 
@@ -101,7 +122,7 @@ def _send_weekly_briefing(user: User, week_no: int) -> tuple[Optional[str], Opti
             except Exception:
                 pass
             caption = (
-                f"*Monday* Hi { (user.first_name or '').strip().title() or 'there' }. "
+                f"{_monday_tag()} Hi { (user.first_name or '').strip().title() or 'there' }. "
                 f"{COACH_NAME} here. Here’s your Week {week_no} podcast—give it a listen."
             )
             try:
@@ -111,14 +132,14 @@ def _send_weekly_briefing(user: User, week_no: int) -> tuple[Optional[str], Opti
                     caption=caption,
                 )
             except Exception:
-                send_whatsapp(
+                _send_monday(
                     to=user.phone,
                     text=f"{caption} {audio_url}",
                 )
         else:
             # Fallback: send transcript if audio generation failed
             if transcript:
-                send_whatsapp(
+                _send_monday(
                     to=user.phone,
                     text=f"*Monday* Podcast unavailable right now—here’s the briefing:\n\n{transcript}",
                 )
@@ -762,7 +783,7 @@ def _support_conversation(
     prompt = prompt_assembly.text
     if debug:
         try:
-            send_whatsapp(to=user.phone, text="(i Inst) " + prompt)
+            _send_monday(to=user.phone, text="(i Inst) " + prompt)
         except Exception:
             pass
     candidate = run_llm_prompt(
@@ -921,7 +942,7 @@ def start_weekstart(user: User, notes: str | None = None, debug: bool = False, s
         if not kr_ids:
             kr_ids = [kr["id"] for kr in kr_payload_list(user.id, session=s, week_no=label_week, max_krs=3)]
             if not kr_ids:
-                send_whatsapp(to=user.phone, text="No active KRs found to propose. Please set OKRs first.")
+                _send_monday(to=user.phone, text="No active KRs found to propose. Please set OKRs first.")
                 return
 
         if not wf:
@@ -957,7 +978,7 @@ def start_weekstart(user: User, notes: str | None = None, debug: bool = False, s
         if actions_message:
             options_by_index = _refresh_options_from_actions_message(actions_message, krs, options_by_index)
         confirm_msg = _build_podcast_confirm_message(user, COACH_NAME)
-        send_whatsapp(
+        _send_monday(
             to=user.phone,
             text=confirm_msg,
             quick_replies=["Listened", "Later"],
@@ -1020,7 +1041,7 @@ def handle_message(user: User, text: str) -> None:
             return
 
         if state is None:
-            send_whatsapp(to=user.phone, text="Say monday to start your weekly focus.")
+            _send_monday(to=user.phone, text="Say monday to start your weekly focus.")
             return
 
         wf_id = state.get("wf_id")
@@ -1088,7 +1109,7 @@ def handle_message(user: User, text: str) -> None:
                 intro_msg = _extract_intro_from_actions_message(actions_message) or _build_actions_intro()
                 if intro_msg and not intro_msg.lower().startswith("*monday*"):
                     intro_msg = "*Monday* " + intro_msg
-                send_whatsapp(to=user.phone, text=intro_msg)
+                _send_monday(to=user.phone, text=intro_msg)
                 if krs:
                     if actions_message:
                         parsed = _parse_action_options(actions_message, krs)
@@ -1099,7 +1120,7 @@ def handle_message(user: User, text: str) -> None:
                     if not options_by_index or _any_fallback_options(options_by_index):
                         _, options_by_index = _build_weekstart_actions("", krs, user)
                     if not options_by_index or not options_by_index[0]:
-                        send_whatsapp(
+                        _send_monday(
                             to=user.phone,
                             text="*Monday* Sorry — I couldn’t retrieve the habit options from the prompt. Please try again later.",
                         )
@@ -1108,7 +1129,7 @@ def handle_message(user: User, text: str) -> None:
                     kr_msg = _build_actions_for_kr(1, krs[0], options)
                     if kr_msg and not kr_msg.lower().startswith("*monday*"):
                         kr_msg = "*Monday* " + kr_msg
-                    send_whatsapp(
+                    _send_monday(
                         to=user.phone,
                         text=kr_msg,
                         quick_replies=_kr_quick_replies(1, options),
@@ -1129,7 +1150,7 @@ def handle_message(user: User, text: str) -> None:
                 )
                 s.commit()
                 return
-            send_whatsapp(
+            _send_monday(
                 to=user.phone,
                 text="*Monday* No rush — reply “Listened” when you’re ready.",
                 quick_replies=["Listened", "Later"],
@@ -1138,7 +1159,7 @@ def handle_message(user: User, text: str) -> None:
 
         if mode == "proposal":
             if lower.startswith("review"):
-                send_whatsapp(to=user.phone, text="We’re keeping the Nutrition goals as-is for this week. Let’s focus on making them doable.")
+                _send_monday(to=user.phone, text="We’re keeping the Nutrition goals as-is for this week. Let’s focus on making them doable.")
             options_by_index = state.get("options") or []
             current_idx = int(state.get("current_idx") or 0)
             stored_selections = _normalize_state_selections(state.get("selections"), krs, options_by_index)
@@ -1150,7 +1171,7 @@ def handle_message(user: User, text: str) -> None:
                     kr_msg = _build_actions_for_kr(current_idx + 1, krs[current_idx], options)
                     if kr_msg and not kr_msg.lower().startswith("*monday*"):
                         kr_msg = "*Monday* " + kr_msg
-                    send_whatsapp(
+                    _send_monday(
                         to=user.phone,
                         text=kr_msg,
                         quick_replies=_kr_quick_replies(current_idx + 1, options),
@@ -1162,7 +1183,7 @@ def handle_message(user: User, text: str) -> None:
                     kr_msg = _build_actions_for_kr(current_idx + 1, krs[current_idx], options)
                     if kr_msg and not kr_msg.lower().startswith("*monday*"):
                         kr_msg = "*Monday* " + kr_msg
-                    send_whatsapp(
+                    _send_monday(
                         to=user.phone,
                         text=kr_msg,
                         quick_replies=_kr_quick_replies(current_idx + 1, options),
@@ -1179,7 +1200,7 @@ def handle_message(user: User, text: str) -> None:
                 confirm_msg = _confirmation_message(krs, chosen)
                 if confirm_msg and not confirm_msg.lower().startswith("*monday*"):
                     confirm_msg = "*Monday* " + confirm_msg
-                send_whatsapp(to=user.phone, text=confirm_msg)
+                _send_monday(to=user.phone, text=confirm_msg)
                 _set_state(s, user.id, None)
                 s.commit()
                 general_support.activate(user.id, source="monday", week_no=getattr(wf, "week_no", None), send_intro=True)
@@ -1209,7 +1230,7 @@ def handle_message(user: User, text: str) -> None:
                     confirm_msg = _confirmation_message(krs, chosen)
                     if confirm_msg and not confirm_msg.lower().startswith("*monday*"):
                         confirm_msg = "*Monday* " + confirm_msg
-                    send_whatsapp(to=user.phone, text=confirm_msg)
+                    _send_monday(to=user.phone, text=confirm_msg)
                     _set_state(s, user.id, None)
                     s.commit()
                     general_support.activate(user.id, source="monday", week_no=getattr(wf, "week_no", None), send_intro=True)
@@ -1224,7 +1245,7 @@ def handle_message(user: User, text: str) -> None:
                             kr_msg = _build_actions_for_kr(next_idx + 1, krs[next_idx], options)
                             if kr_msg and not kr_msg.lower().startswith("*monday*"):
                                 kr_msg = "*Monday* " + kr_msg
-                            send_whatsapp(
+                            _send_monday(
                                 to=user.phone,
                                 text=kr_msg,
                                 quick_replies=_kr_quick_replies(next_idx + 1, options),
@@ -1253,7 +1274,7 @@ def handle_message(user: User, text: str) -> None:
             support_text, history = _support_conversation(history, msg, user, debug)
             if support_text and not support_text.lower().startswith("*monday*"):
                 support_text = "*Monday* " + support_text
-            send_whatsapp(to=user.phone, text=support_text)
+            _send_monday(to=user.phone, text=support_text)
             _set_state(
                 s,
                 user.id,
@@ -1283,10 +1304,10 @@ def handle_message(user: User, text: str) -> None:
             support_text, new_history = _support_conversation(history, msg, user, debug)
             if support_text and not support_text.lower().startswith("*monday*"):
                 support_text = "*Monday* " + support_text
-            send_whatsapp(to=user.phone, text=support_text)
+            _send_monday(to=user.phone, text=support_text)
             _set_state(s, user.id, {"mode": "support", "wf_id": wf.id, "kr_ids": kr_ids, "history": new_history, "debug": debug})
             s.commit()
             return
 
         _set_state(s, user.id, None); s.commit()
-        send_whatsapp(to=user.phone, text="Session reset. Say monday to start your weekly focus.")
+        _send_monday(to=user.phone, text="Session reset. Say monday to start your weekly focus.")

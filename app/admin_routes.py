@@ -11,6 +11,7 @@ from sqlalchemy import func, text as sa_text, case
 
 from .db import SessionLocal, engine
 from .models import AssessmentRun, AssessmentTurn, PillarResult, PromptTemplate, PromptSettings, PromptTemplateVersionLog
+from .job_queue import ensure_prompt_settings_schema
 from .prompts import _ensure_llm_prompt_log_schema, _canonical_state
 from .prompts import build_prompt
 from . import prompts as prompts_module
@@ -194,6 +195,10 @@ def _ensure_prompt_template_table():
         pass
     try:
         PromptSettings.__table__.create(bind=engine, checkfirst=True)
+    except Exception:
+        pass
+    try:
+        ensure_prompt_settings_schema()
     except Exception:
         pass
     try:
@@ -418,6 +423,7 @@ def _promote_templates_batch(source_state: str, target_state: str, note: str | N
 @admin.get("/prompt-settings", response_class=HTMLResponse)
 def edit_prompt_settings():
     _ensure_prompt_template_table()
+    ensure_prompt_settings_schema()
     with SessionLocal() as s:
         row = s.query(PromptSettings).order_by(PromptSettings.id.asc()).first()
         if not row:
@@ -429,7 +435,14 @@ def edit_prompt_settings():
     def _esc(val):
         return html.escape("" if val is None else str(val))
 
+    def _sel(val, expected):
+        return " selected" if val == expected else ""
+
     display_dbo = [b for b in (getattr(row, "default_block_order", []) or []) if b not in BANNED_BLOCKS]
+    worker_override = getattr(row, "worker_mode_override", None)
+    podcast_override = getattr(row, "podcast_worker_mode_override", None)
+    worker_env = (os.getenv("PROMPT_WORKER_MODE") or "").strip() or "unset"
+    podcast_env = (os.getenv("PODCAST_WORKER_MODE") or "").strip() or "unset"
 
     html_out = f"""
     <h2>Global Prompt Settings</h2>
@@ -441,6 +454,22 @@ def edit_prompt_settings():
       <div class="help">Locale message: language/region guidance (e.g., British English voice).</div>
       <div class="field">Default block order (JSON array or comma list):<br/><input name="default_block_order" value="{_esc(display_dbo)}" /></div>
       <div class="help">Default block order for all prompts; touchpoints can override.</div>
+      <div class="field">Worker mode override:<br/>
+        <select name="worker_mode_override">
+          <option value=""{_sel(worker_override, None)}>Use env (PROMPT_WORKER_MODE={_esc(worker_env)})</option>
+          <option value="on"{_sel(worker_override, True)}>Force ON</option>
+          <option value="off"{_sel(worker_override, False)}>Force OFF</option>
+        </select>
+      </div>
+      <div class="help">Controls whether the API enqueues work to the worker service.</div>
+      <div class="field">Podcast worker override:<br/>
+        <select name="podcast_worker_mode_override">
+          <option value=""{_sel(podcast_override, None)}>Use env (PODCAST_WORKER_MODE={_esc(podcast_env)})</option>
+          <option value="on"{_sel(podcast_override, True)}>Force ON</option>
+          <option value="off"{_sel(podcast_override, False)}>Force OFF</option>
+        </select>
+      </div>
+      <div class="help">Controls whether podcast/voice jobs are queued to the worker. Worker override OFF disables podcasts too.</div>
       <div class="actions"><button type="submit">Save</button></div>
     </form>
     </div>
@@ -454,9 +483,23 @@ async def save_prompt_settings(
     system_block: str | None = Form(default=None),
     locale_block: str | None = Form(default=None),
     default_block_order: str | None = Form(default=None),
+    worker_mode_override: str | None = Form(default=None),
+    podcast_worker_mode_override: str | None = Form(default=None),
 ):
     _ensure_prompt_template_table()
+    ensure_prompt_settings_schema()
     dbo_list = [b for b in _parse_list_field(default_block_order) if b not in BANNED_BLOCKS]
+
+    def _parse_override(val: str | None) -> bool | None:
+        if val is None:
+            return None
+        cleaned = val.strip().lower()
+        if cleaned in {"on", "true", "1", "yes"}:
+            return True
+        if cleaned in {"off", "false", "0", "no"}:
+            return False
+        return None
+
     with SessionLocal() as s:
         row = s.query(PromptSettings).order_by(PromptSettings.id.asc()).first()
         if not row:
@@ -465,6 +508,8 @@ async def save_prompt_settings(
         row.system_block = system_block or None
         row.locale_block = locale_block or None
         row.default_block_order = dbo_list or None
+        row.worker_mode_override = _parse_override(worker_mode_override)
+        row.podcast_worker_mode_override = _parse_override(podcast_worker_mode_override)
         s.commit()
     return RedirectResponse(url="/admin/prompt-settings", status_code=303)
 

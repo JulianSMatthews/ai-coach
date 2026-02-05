@@ -56,6 +56,7 @@ from .prompts import (
     PromptAssembly,
 )
 from .debug_utils import debug_log
+from .job_queue import ensure_prompt_settings_schema
 
 # For raw SQL fallback when OKR models are unavailable
 from sqlalchemy import text, select
@@ -2005,6 +2006,7 @@ def generate_prompt_audit_report(user_id: int, as_of_date: date | str | None = N
     state = _canonical_state(state or "live")
     as_of_date = _date_from_str(as_of_date) if isinstance(as_of_date, str) else (as_of_date or date.today())
 
+    ensure_prompt_settings_schema()
     with SessionLocal() as s:
         templates = (
             s.query(PromptTemplate)
