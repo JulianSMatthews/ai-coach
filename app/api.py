@@ -106,7 +106,7 @@ from .reporting import (
     build_assessment_dashboard_data,
     build_progress_report_data,
 )
-from .job_queue import ensure_job_table, enqueue_job, should_use_worker
+from .job_queue import ensure_job_table, enqueue_job, should_use_worker, ensure_prompt_settings_schema
 
 # Lazy import holder to avoid startup/reload ImportError if symbol is added later
 _gen_okr_summary_report = None
@@ -3623,6 +3623,7 @@ def admin_prompt_templates_promote_all(payload: dict, admin_user: User = Depends
 @admin.get("/prompts/settings")
 def admin_prompt_settings(admin_user: User = Depends(_require_admin)):
     admin_routes._ensure_prompt_template_table()  # type: ignore[attr-defined]
+    ensure_prompt_settings_schema()
     with SessionLocal() as s:
         row = s.query(PromptSettings).order_by(PromptSettings.id.asc()).first()
     if not row:
@@ -3630,12 +3631,16 @@ def admin_prompt_settings(admin_user: User = Depends(_require_admin)):
             "system_block": None,
             "locale_block": None,
             "default_block_order": prompts_module.DEFAULT_PROMPT_BLOCK_ORDER,
+            "worker_mode_override": None,
+            "podcast_worker_mode_override": None,
         }
     order = [b for b in (row.default_block_order or prompts_module.DEFAULT_PROMPT_BLOCK_ORDER) if b not in admin_routes.BANNED_BLOCKS]  # type: ignore[attr-defined]
     return {
         "system_block": getattr(row, "system_block", None),
         "locale_block": getattr(row, "locale_block", None),
         "default_block_order": order,
+        "worker_mode_override": getattr(row, "worker_mode_override", None),
+        "podcast_worker_mode_override": getattr(row, "podcast_worker_mode_override", None),
     }
 
 
@@ -3914,7 +3919,25 @@ def admin_prompt_settings_update(
     admin_user: User = Depends(_require_admin),
 ):
     admin_routes._ensure_prompt_template_table()  # type: ignore[attr-defined]
+    ensure_prompt_settings_schema()
     block_order = [b for b in _parse_block_list(payload.get("default_block_order")) if b not in admin_routes.BANNED_BLOCKS]  # type: ignore[attr-defined]
+
+    def _parse_override(val):
+        if val is None:
+            return None
+        if isinstance(val, bool):
+            return val
+        if isinstance(val, (int, float)):
+            return bool(val)
+        if isinstance(val, str):
+            cleaned = val.strip().lower()
+            if cleaned in {"", "null"}:
+                return None
+            if cleaned in {"on", "true", "1", "yes"}:
+                return True
+            if cleaned in {"off", "false", "0", "no"}:
+                return False
+        return None
     with SessionLocal() as s:
         row = s.query(PromptSettings).order_by(PromptSettings.id.asc()).first()
         if not row:
@@ -3926,6 +3949,10 @@ def admin_prompt_settings_update(
             row.locale_block = payload.get("locale_block") or None
         if block_order:
             row.default_block_order = block_order
+        if "worker_mode_override" in payload:
+            row.worker_mode_override = _parse_override(payload.get("worker_mode_override"))
+        if "podcast_worker_mode_override" in payload:
+            row.podcast_worker_mode_override = _parse_override(payload.get("podcast_worker_mode_override"))
         s.commit()
     return {"ok": True}
 

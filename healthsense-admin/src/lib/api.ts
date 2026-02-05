@@ -37,6 +37,8 @@ export type PromptSettingsPayload = {
   system_block?: string | null;
   locale_block?: string | null;
   default_block_order?: string[] | null;
+  worker_mode_override?: boolean | null;
+  podcast_worker_mode_override?: boolean | null;
 };
 
 export type ContentPromptTemplateSummary = {
