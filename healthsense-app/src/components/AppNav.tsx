@@ -13,7 +13,7 @@ const makeLinks = (userId: string) => [
   { label: "Home", href: `/progress/${userId}` },
   { label: "Assessment", href: `/assessment/${userId}` },
   { label: "Library", href: `/library/${userId}` },
-  { label: "Settings", href: `/preferences/${userId}` },
+  { label: "Preferences", href: `/preferences/${userId}` },
   { label: "History", href: `/history/${userId}` },
 ];
 
@@ -84,34 +84,27 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
           }`}
         >
           <div className="flex items-center justify-between">
-            <a href={`/progress/${userId}`} className="text-base font-semibold text-[#2f2a21] normal-case tracking-normal">
-              HealthSense
+            <a href={`/progress/${userId}`} className="flex items-center" aria-label="HealthSense home">
+              <img src="/healthsense-logo.svg" alt="HealthSense" className="h-7 w-auto" />
             </a>
             <button
               type="button"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-[#efe7db] bg-white text-[#6b6257]"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-[#efe7db] bg-white"
               aria-label="Close menu"
               onClick={() => setOpen(false)}
             >
               <span className="sr-only">Close menu</span>
-              <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-                <path
-                  d="M6 6l12 12M18 6l-12 12"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                />
-              </svg>
+              <img src="/healthsense-mark.svg" alt="" className="h-4 w-4" aria-hidden="true" />
             </button>
           </div>
 
-          <div className="mt-6 divide-y divide-[#e7e1d6] text-[15px] uppercase tracking-[0.18em] text-[#3c332b]">
+          <div className="mt-6 grid gap-3 text-[13px] uppercase tracking-[0.18em] text-[#3c332b]">
             {links.map((link) => (
               <a
                 key={link.label}
                 href={link.href}
                 onClick={() => setOpen(false)}
-                className="block py-5 text-sm"
+                className="rounded-full border border-[#efe7db] bg-white px-5 py-3 text-sm"
               >
                 {link.label}
               </a>
