@@ -89,12 +89,19 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
             </a>
             <button
               type="button"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-[#efe7db] bg-white"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-[#efe7db] bg-white text-[#6b6257]"
               aria-label="Close menu"
               onClick={() => setOpen(false)}
             >
               <span className="sr-only">Close menu</span>
-              <img src="/healthsense-mark.svg" alt="" className="h-4 w-4" aria-hidden="true" />
+              <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
+                <path
+                  d="M4 7h16M4 12h16M4 17h16"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
             </button>
           </div>
 
