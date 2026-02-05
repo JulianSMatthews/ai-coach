@@ -31,45 +31,47 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
   }, [open]);
 
   return (
-    <nav className="sticky top-0 z-30 -mx-6 mb-4 flex flex-col gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:flex-row md:flex-nowrap md:items-center md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
-      <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
-        <a href={`/progress/${userId}`} className="flex items-center" aria-label="HealthSense home">
-          <img src="/healthsense-mark.svg" alt="HealthSense" className="h-6 w-auto" />
-        </a>
-        <button
-          type="button"
-          className="flex h-9 w-9 items-center justify-center rounded-full border border-[#efe7db] bg-white text-[#6b6257] md:hidden"
-          aria-label="Open menu"
-          aria-expanded={open}
-          onClick={() => setOpen(true)}
-        >
-          <span className="sr-only">Open menu</span>
-          <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-            <path
-              d="M4 7h16M4 12h16M4 17h16"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
-      </div>
-      <div className="hidden flex-wrap items-center gap-2 md:flex md:flex-nowrap">
-        {links.map((link) => (
-          <a
-            key={link.label}
-            className="rounded-full border border-[#efe7db] bg-white px-3 py-1"
-            href={link.href}
-          >
-            {link.label}
+    <>
+      <nav className="sticky top-0 z-30 -mx-6 mb-4 flex flex-col gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:flex-row md:flex-nowrap md:items-center md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
+        <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
+          <a href={`/progress/${userId}`} className="flex items-center" aria-label="HealthSense home">
+            <img src="/healthsense-mark.svg" alt="HealthSense" className="h-6 w-auto" />
           </a>
-        ))}
-        {promptBadge ? <Badge label={promptBadge} /> : null}
-        <LogoutButton />
-      </div>
+          <button
+            type="button"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-[#efe7db] bg-white text-[#6b6257] md:hidden"
+            aria-label="Open menu"
+            aria-expanded={open}
+            onClick={() => setOpen(true)}
+          >
+            <span className="sr-only">Open menu</span>
+            <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
+              <path
+                d="M4 7h16M4 12h16M4 17h16"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+          </button>
+        </div>
+        <div className="hidden flex-wrap items-center gap-2 md:flex md:flex-nowrap">
+          {links.map((link) => (
+            <a
+              key={link.label}
+              className="rounded-full border border-[#efe7db] bg-white px-3 py-1"
+              href={link.href}
+            >
+              {link.label}
+            </a>
+          ))}
+          {promptBadge ? <Badge label={promptBadge} /> : null}
+          <LogoutButton />
+        </div>
+      </nav>
 
       <div
-        className={`fixed inset-0 z-40 transition ${open ? "pointer-events-auto" : "pointer-events-none"}`}
+        className={`fixed inset-0 z-50 transition ${open ? "pointer-events-auto" : "pointer-events-none"}`}
         aria-hidden={!open}
       >
         <div
@@ -77,12 +79,12 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
           onClick={() => setOpen(false)}
         />
         <div
-          className={`absolute right-0 top-0 h-full w-full max-w-sm transform bg-[#fbf7f0] px-6 pb-8 pt-6 transition-transform duration-300 ${
+          className={`absolute right-0 top-0 h-full w-full max-w-sm transform bg-[#fbf7f0] px-6 pb-8 pt-6 shadow-2xl transition-transform duration-300 ${
             open ? "translate-x-0" : "translate-x-full"
           }`}
         >
           <div className="flex items-center justify-between">
-            <a href={`/progress/${userId}`} className="text-base font-semibold text-[#2f2a21]">
+            <a href={`/progress/${userId}`} className="text-base font-semibold text-[#2f2a21] normal-case tracking-normal">
               HealthSense
             </a>
             <button
@@ -127,6 +129,6 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
           </div>
         </div>
       </div>
-    </nav>
+    </>
   );
 }
