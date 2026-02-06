@@ -27,7 +27,7 @@ def _in_worker_process() -> bool:
 
 
 def _sunday_label() -> str:
-    return "Sunday." if _in_worker_process() else "Sunday"
+    return "Sunday." if not _in_worker_process() else "Sunday"
 
 
 def _sunday_tag() -> str:

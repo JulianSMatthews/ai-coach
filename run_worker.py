@@ -17,6 +17,8 @@ from app.reporting import (
 from app.db import SessionLocal
 from app.models import User
 
+os.environ.setdefault("PROMPT_WORKER_PROCESS", "1")
+
 
 def _process_day_prompt(payload: dict) -> None:
     user_id = payload.get("user_id")

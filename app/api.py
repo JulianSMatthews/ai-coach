@@ -195,26 +195,26 @@ def _resolve_okr_summary_gen_llm():
 ADMIN_USAGE = (
     "Admin commands:\n"
     "admin create <phone> <first_name> <surname>\n"
-    "admin start <phone>\n"
-    "admin status <phone>\n"
-    "admin assessment <phone>\n"
-    "admin progress <phone>\n"
-    "admin llm-review <phone> [limit]\n"
-    "admin detailed <phone>\n"
-    "admin kickoff <phone>            # send 12-week kickoff podcast/flow\n"
-    "admin coaching <phone> on|off|faston|reset    # toggle scheduled coaching prompts (faston=every 2m test; reset clears jobs)\n"
-    "admin schedule <phone>           # show scheduled coaching prompts for user (HTML + summary)\n"
-    "admin beta <phone> [live|beta|develop|clear]   # set prompt state override for testing\n"
-    "admin prompt-audit <phone> <YYYY-MM-DD> [state] # generate prompt audit report for that user/date\n"
+    "admin start [phone]\n"
+    "admin status [phone]\n"
+    "admin assessment [phone]\n"
+    "admin progress [phone]\n"
+    "admin llm-review [phone] [limit]\n"
+    "admin detailed [phone]\n"
+    "admin kickoff [phone]            # send 12-week kickoff podcast/flow\n"
+    "admin coaching [phone] on|off|faston|reset    # toggle scheduled coaching prompts (faston=every 2m test; reset clears jobs)\n"
+    "admin schedule [phone]           # show scheduled coaching prompts for user (HTML + summary)\n"
+    "admin beta [phone] [live|beta|develop|clear]   # set prompt state override for testing\n"
+    "admin prompt-audit [phone] <YYYY-MM-DD> [state] # generate prompt audit report for that user/date\n"
     "\nWeekly touchpoints (by day):\n"
-    "admin monday <phone>\n"
-    "admin tuesday <phone>\n"
-    "admin wednesday <phone>\n"
-    "admin thursday <phone>\n"
-    "admin friday <phone>\n"
-    "admin saturday <phone>\n"
-    "admin sunday <phone>\n"
-    "admin week <phone> <week_no>      # run full week flow (includes Sunday)\n"
+    "admin monday [phone]\n"
+    "admin tuesday [phone]\n"
+    "admin wednesday [phone]\n"
+    "admin thursday [phone]\n"
+    "admin friday [phone]\n"
+    "admin saturday [phone]\n"
+    "admin sunday [phone]\n"
+    "admin week [phone] <week_no>      # run full week flow (includes Sunday)\n"
     "\nReports:\n"
     "admin summary [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
     "admin okr-summary [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
@@ -975,6 +975,39 @@ def _parse_summary_range(args: list[str]) -> tuple[str, str]:
     return (start.isoformat(), today.isoformat())
 
 
+def _looks_like_phone_token(token: str) -> bool:
+    if not token:
+        return False
+    token = token.strip()
+    if not token:
+        return False
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", token):
+        return False
+    stripped = (
+        token.replace("+", "")
+        .replace("-", "")
+        .replace("(", "")
+        .replace(")", "")
+        .replace(" ", "")
+    )
+    return stripped.isdigit() and len(stripped) >= 7
+
+
+def _resolve_admin_target_phone(admin_user: User, args: list[str], *, allow_notes: bool = False) -> tuple[str, list[str]]:
+    """
+    Resolve target phone for admin commands.
+    If first arg looks like a phone, use it; otherwise default to admin user's phone.
+    If allow_notes is True, any non-phone args are treated as notes.
+    """
+    if not args:
+        return _norm_phone(admin_user.phone), []
+    if _looks_like_phone_token(args[0]):
+        return _norm_phone(args[0]), args[1:]
+    if allow_notes:
+        return _norm_phone(admin_user.phone), args
+    return _norm_phone(admin_user.phone), args
+
+
 def _handle_admin_command(admin_user: User, text: str) -> bool:
     """
     Handle very small set of admin commands sent over WhatsApp by superusers (ids 1 & 2).
@@ -1011,11 +1044,15 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
             return True
 
         if cmd == "beta":
-            if len(args) < 1:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin beta <phone> [live|beta|develop|clear]")
-                return True
-            target_phone_raw = args[0]
-            desired_state = args[1].lower() if len(args) > 1 else "beta"
+            if not args:
+                target_phone_raw = _norm_phone(admin_user.phone)
+                desired_state = "beta"
+            elif _looks_like_phone_token(args[0]):
+                target_phone_raw = args[0]
+                desired_state = args[1].lower() if len(args) > 1 else "beta"
+            else:
+                target_phone_raw = _norm_phone(admin_user.phone)
+                desired_state = args[0].lower()
             if desired_state == "clear":
                 desired_state = "live"
             if desired_state not in {"live", "beta", "develop"}:
@@ -1043,12 +1080,20 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
             return True
 
         if cmd == "prompt-audit":
-            if len(args) < 2:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin prompt-audit <phone> <YYYY-MM-DD> [state]")
+            if not args:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin prompt-audit [phone] <YYYY-MM-DD> [state]")
                 return True
-            target_phone_raw = args[0]
-            as_of_date = args[1]
-            state = args[2].lower() if len(args) > 2 else "live"
+            if _looks_like_phone_token(args[0]):
+                if len(args) < 2:
+                    send_whatsapp(to=admin_user.phone, text="Usage: admin prompt-audit [phone] <YYYY-MM-DD> [state]")
+                    return True
+                target_phone_raw = args[0]
+                as_of_date = args[1]
+                state = args[2].lower() if len(args) > 2 else "live"
+            else:
+                target_phone_raw = _norm_phone(admin_user.phone)
+                as_of_date = args[0]
+                state = args[1].lower() if len(args) > 1 else "live"
             with SessionLocal() as s:
                 u = _admin_lookup_user_by_phone(s, target_phone_raw, admin_user)
                 if not u:
@@ -1123,19 +1168,16 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
             send_whatsapp(to=admin_user.phone, text=f"Created user id={u.id} {display_full_name(u)} ({u.phone})")
             return True
         if cmd == "progress":
-            if len(parts) < 3:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin progress <phone>")
-                return True
-            target_phone = _norm_phone(parts[2])
+            target_phone, _ = _resolve_admin_target_phone(admin_user, args)
             with SessionLocal() as s:
                 u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
                 if not u:
                     scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
-            send_whatsapp(
-                to=admin_user.phone,
-                text=f"User with phone {target_phone} not found{scope_txt}."
-            )
-            return True
+                    send_whatsapp(
+                        to=admin_user.phone,
+                        text=f"User with phone {target_phone} not found{scope_txt}."
+                    )
+                    return True
             try:
                 from .reporting import generate_progress_report_html
                 generate_progress_report_html(u.id)
@@ -1145,12 +1187,9 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to generate progress report: {e}")
             return True
         if cmd in {"llm-review", "llmreview"}:
-            if len(parts) < 3:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin llm-review <phone> [limit]")
-                return True
-            target_phone = _norm_phone(parts[2])
+            target_phone, llm_args = _resolve_admin_target_phone(admin_user, args)
             try:
-                limit = int(parts[3]) if len(parts) > 3 else 100
+                limit = int(llm_args[0]) if llm_args else 100
             except Exception:
                 limit = 100
             with SessionLocal() as s:
@@ -1174,11 +1213,8 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
             return True
         elif cmd in {"weekstart", "monday"}:
             # Usage: admin weekstart <phone> [notes] — auto-select top KRs
-            if len(parts) < 3:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin monday <phone> [notes]")
-                return True
-            target_phone = _norm_phone(parts[2])
-            notes = " ".join(parts[3:]).strip() if len(parts) > 3 else ""
+            target_phone, note_parts = _resolve_admin_target_phone(admin_user, args, allow_notes=True)
+            notes = " ".join(note_parts).strip() if note_parts else ""
             notes = notes or None
 
             try:
@@ -1199,11 +1235,8 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
             return True
         elif cmd == "kickoff":
             # Usage: admin kickoff <phone> [notes] — run 12-week kickoff flow/podcast
-            if len(parts) < 3:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin kickoff <phone> [notes]")
-                return True
-            target_phone = _norm_phone(parts[2])
-            notes = " ".join(parts[3:]).strip() if len(parts) > 3 else ""
+            target_phone, note_parts = _resolve_admin_target_phone(admin_user, args, allow_notes=True)
+            notes = " ".join(note_parts).strip() if note_parts else ""
             notes = notes or None
             with SessionLocal() as s:
                 u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
@@ -1220,10 +1253,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to run kickoff: {e}")
             return True
         elif cmd in {"schedule", "jobs"}:
-            if len(parts) < 3:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin schedule <phone>")
-                return True
-            target_phone = _norm_phone(parts[2])
+            target_phone, _ = _resolve_admin_target_phone(admin_user, args)
             with SessionLocal() as s:
                 u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
                 if not u:
@@ -1257,10 +1287,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
             send_whatsapp(to=admin_user.phone, text=body)
             return True
         elif cmd in {"midweek", "wednesday"}:
-            if len(parts) < 3:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin wednesday <phone>")
-                return True
-            target_phone = _norm_phone(parts[2])
+            target_phone, _ = _resolve_admin_target_phone(admin_user, args)
             with SessionLocal() as s:
                 u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
                 if not u:
@@ -1276,11 +1303,11 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to send midweek: {e}")
             return True
         elif cmd in {"autoprompts", "coaching"}:
-            if len(parts) < 4:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin coaching <phone> on|off|faston")
+            target_phone, toggle_parts = _resolve_admin_target_phone(admin_user, args)
+            if not toggle_parts:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin coaching <phone> on|off|faston|reset")
                 return True
-            target_phone = _norm_phone(parts[2])
-            toggle = parts[3].lower()
+            toggle = toggle_parts[0].lower()
             if toggle not in {"on", "off", "faston", "reset"}:
                 send_whatsapp(to=admin_user.phone, text="Usage: admin coaching <phone> on|off|faston|reset")
                 return True
@@ -1314,10 +1341,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 send_whatsapp(to=admin_user.phone, text="Failed to update coaching prompts (check AUTO_DAILY_PROMPTS env).")
             return True
         elif cmd in {"tuesday"}:
-            if len(parts) < 3:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin tuesday <phone>")
-                return True
-            target_phone = _norm_phone(parts[2])
+            target_phone, _ = _resolve_admin_target_phone(admin_user, args)
             with SessionLocal() as s:
                 u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
                 if not u:
@@ -1333,10 +1357,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to send Tuesday check: {e}")
             return True
         elif cmd in {"boost", "friday"}:
-            if len(parts) < 3:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin friday <phone>")
-                return True
-            target_phone = _norm_phone(parts[2])
+            target_phone, _ = _resolve_admin_target_phone(admin_user, args)
             with SessionLocal() as s:
                 u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
                 if not u:
@@ -1352,10 +1373,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to send boost: {e}")
             return True
         elif cmd in {"saturday"}:
-            if len(parts) < 3:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin saturday <phone>")
-                return True
-            target_phone = _norm_phone(parts[2])
+            target_phone, _ = _resolve_admin_target_phone(admin_user, args)
             with SessionLocal() as s:
                 u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
                 if not u:
@@ -1371,10 +1389,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to send Saturday keepalive: {e}")
             return True
         elif cmd in {"sunday"}:
-            if len(parts) < 3:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin sunday <phone>")
-                return True
-            target_phone = _norm_phone(parts[2])
+            target_phone, _ = _resolve_admin_target_phone(admin_user, args)
             with SessionLocal() as s:
                 u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
                 if not u:
@@ -1390,10 +1405,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to send Sunday review: {e}")
             return True
         elif cmd in {"thursday"}:
-            if len(parts) < 3:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin thursday <phone>")
-                return True
-            target_phone = _norm_phone(parts[2])
+            target_phone, _ = _resolve_admin_target_phone(admin_user, args)
             with SessionLocal() as s:
                 u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
                 if not u:
@@ -1409,12 +1421,12 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to send Thursday boost: {e}")
             return True
         elif cmd == "week":
-            if len(parts) < 4:
+            target_phone, week_args = _resolve_admin_target_phone(admin_user, args)
+            if not week_args:
                 send_whatsapp(to=admin_user.phone, text="Usage: admin week <phone> <week_no>")
                 return True
-            target_phone = _norm_phone(parts[2])
             try:
-                week_no = int(parts[3])
+                week_no = int(week_args[0])
             except Exception:
                 send_whatsapp(to=admin_user.phone, text="Week number must be an integer.")
                 return True
@@ -1434,10 +1446,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to run week flow: {e}")
             return True
         elif cmd == "start":
-            if len(parts) < 3:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin start <phone>")
-                return True
-            target_phone = _norm_phone(parts[2])
+            target_phone, _ = _resolve_admin_target_phone(admin_user, args)
             with SessionLocal() as s:
                 u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
                 if not u:
@@ -1451,10 +1460,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
             send_whatsapp(to=admin_user.phone, text=f"Started assessment for {display_full_name(u)} ({u.phone})")
             return True
         elif cmd == "status":
-            if len(parts) < 3:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin status <phone>")
-                return True
-            target_phone = _norm_phone(parts[2])
+            target_phone, _ = _resolve_admin_target_phone(admin_user, args)
             with SessionLocal() as s:
                 u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
                 if not u:
@@ -1472,10 +1478,7 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
             send_whatsapp(to=admin_user.phone, text=f"Status for {display_full_name(u)} ({u.phone}): {status_txt}")
             return True
         elif cmd == "assessment":
-            if len(parts) < 3:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin assessment <phone>")
-                return True
-            target_phone = _norm_phone(parts[2])
+            target_phone, _ = _resolve_admin_target_phone(admin_user, args)
             print(f"[admin][assessment] start admin_id={admin_user.id} target_phone={target_phone}")
             with SessionLocal() as s:
                 u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
@@ -1529,23 +1532,23 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to generate club users report: {e}")
             return True
         elif cmd == "detailed":
-            if len(parts) < 3:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin detailed <phone|me>")
-                return True
-            arg = parts[2].lower()
-            if arg in {"me", "my", "self"}:
+            if not args:
                 u = admin_user
             else:
-                target_phone = _norm_phone(parts[2])
-                with SessionLocal() as s:
-                    u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
-                if not u:
-                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
-                    send_whatsapp(
-                        to=admin_user.phone,
-                        text=f"User with phone {target_phone} not found{scope_txt}."
-                    )
-                    return True
+                arg = args[0].lower()
+                if arg in {"me", "my", "self"}:
+                    u = admin_user
+                else:
+                    target_phone, _ = _resolve_admin_target_phone(admin_user, args)
+                    with SessionLocal() as s:
+                        u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
+                    if not u:
+                        scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
+                        send_whatsapp(
+                            to=admin_user.phone,
+                            text=f"User with phone {target_phone} not found{scope_txt}."
+                        )
+                        return True
             try:
                 # Generate the detailed (grouped) PDF via reporting module
                 _ = generate_detailed_report_pdf_by_user(u.id)
