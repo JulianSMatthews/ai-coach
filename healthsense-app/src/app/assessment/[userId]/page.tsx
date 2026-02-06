@@ -99,7 +99,7 @@ export default async function AssessmentPage(props: PageProps) {
         <AppNav userId={userId} promptBadge={promptBadge} />
         <SectionHeader
           eyebrow="Assessment"
-          title={`Your assessment ${displayFirstName}`}
+          title={<span className="text-xl">{`Your assessment ${displayFirstName}`}</span>}
           subtitle={assessmentDate}
           side={<StatPill label="Combined" value="--" />}
         />
@@ -120,7 +120,7 @@ export default async function AssessmentPage(props: PageProps) {
       <AppNav userId={userId} promptBadge={promptBadge} />
       <SectionHeader
         eyebrow="Assessment"
-        title={`Your assessment ${displayFirstName}`}
+        title={<span className="text-xl">{`Your assessment ${displayFirstName}`}</span>}
         subtitle={assessmentDate}
         side={
           <StatPill
@@ -166,11 +166,15 @@ export default async function AssessmentPage(props: PageProps) {
             {(scores.rows || []).length ? (
               (scores.rows || []).map((row) => {
                 const palette = getPillarPalette(row.label);
+                const isCombined = (row.label || "").toLowerCase() === "combined";
+                const combinedIcon = "/healthsense-mark.svg";
                 return (
                   <div key={row.label} className="rounded-2xl border border-[#efe7db] bg-[#fffaf0] px-4 py-3">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                        {palette.icon ? (
+                      <p className="flex items-center gap-1 text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                        {isCombined ? (
+                          <img src={combinedIcon} alt="" className="h-[18px] w-[18px]" aria-hidden="true" />
+                        ) : palette.icon ? (
                           <img src={palette.icon} alt="" className="h-[18px] w-[18px]" aria-hidden="true" />
                         ) : null}
                         {row.label}
@@ -259,7 +263,7 @@ export default async function AssessmentPage(props: PageProps) {
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h3 className="flex items-center gap-2 text-lg">
+                  <h3 className="flex items-center gap-1 text-lg">
                     {palette.icon ? (
                       <img src={palette.icon} alt="" className="h-[23px] w-[23px]" aria-hidden="true" />
                     ) : null}

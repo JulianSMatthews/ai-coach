@@ -239,7 +239,7 @@ export default async function ProgressPage(props: PageProps) {
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">key results</p>
-                      <h3 className="mt-1 flex items-center gap-2 text-lg capitalize">
+                      <h3 className="mt-1 flex items-center gap-1 text-lg capitalize">
                         {palette.icon ? (
                           <img src={palette.icon} alt="" className="h-[23px] w-[23px]" aria-hidden="true" />
                         ) : null}

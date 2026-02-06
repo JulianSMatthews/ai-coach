@@ -1,4 +1,5 @@
 import { getCoachingHistory, getUserStatus } from "@/lib/api";
+import { PILLARS } from "@/lib/pillars";
 import { Card, PageShell, SectionHeader } from "@/components/ui";
 import TextScale from "@/components/TextScale";
 import AppNav from "@/components/AppNav";
@@ -64,6 +65,7 @@ export default async function HistoryPage(props: PageProps) {
       label: string;
       weekNo?: number;
       kickoff?: boolean;
+      pillarLabel?: string;
       items: typeof programmeItems;
       latestTs?: string;
     }>
@@ -85,6 +87,7 @@ export default async function HistoryPage(props: PageProps) {
         label,
         weekNo,
         kickoff,
+        pillarLabel: pillarLabel || undefined,
         items: [],
         latestTs: item.ts,
       };
@@ -147,7 +150,32 @@ export default async function HistoryPage(props: PageProps) {
               {programmeGroups.map((group) => (
                 <details key={group.key} className="rounded-2xl border border-[#efe7db] bg-[#fffaf0] p-3">
                   <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3 text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                    <span>{group.label}</span>
+                    <span className="flex flex-wrap items-center gap-2">
+                      {group.weekNo && group.pillarLabel ? (
+                        (() => {
+                          const meta = PILLARS.find(
+                            (pillar) => pillar.label.toLowerCase() === group.pillarLabel?.toLowerCase()
+                          );
+                          return (
+                            <>
+                              <span>{`Week ${group.weekNo}`}</span>
+                              <span className="inline-flex items-center gap-1">
+                                <span>(</span>
+                                {meta?.icon ? (
+                                  <img src={meta.icon} alt="" className="h-[18px] w-[18px]" aria-hidden="true" />
+                                ) : null}
+                                <span style={{ color: meta?.accent || "#6b6257" }}>
+                                  {group.pillarLabel}
+                                </span>
+                                <span>)</span>
+                              </span>
+                            </>
+                          );
+                        })()
+                      ) : (
+                        <span>{group.label}</span>
+                      )}
+                    </span>
                     <span className="text-[11px] normal-case tracking-normal text-[#6b6257]">
                       {formatUk(group.latestTs)}
                     </span>
