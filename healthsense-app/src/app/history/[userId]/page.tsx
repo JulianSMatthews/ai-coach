@@ -130,7 +130,7 @@ export default async function HistoryPage(props: PageProps) {
     const bTs = bItem?.ts ? new Date(bItem.ts).getTime() : 0;
     return bTs - aTs;
   });
-  const displayName = data.user?.display_name || data.user?.first_name || "User";
+  const displayName = data.user?.display_name || "User";
   const displayFirstName = displayName.split(" ")[0];
 
   return (
