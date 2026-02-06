@@ -19,6 +19,8 @@ export default async function PreferencesPage(props: PageProps) {
     promptState && promptState !== "live"
       ? `${promptState.charAt(0).toUpperCase()}${promptState.slice(1)} mode`
       : "";
+  const displayName = user.display_name || user.first_name || "User";
+  const displayFirstName = displayName.split(" ")[0];
 
   return (
     <PageShell>
@@ -27,7 +29,7 @@ export default async function PreferencesPage(props: PageProps) {
       <SectionHeader
         eyebrow="Coaching preferences"
         title="Coach my coach"
-        subtitle={`${user.display_name || user.first_name || "User"} · Preferences & delivery`}
+        subtitle={`${displayFirstName} · Your preferences & delivery`}
       />
 
       <section className="grid gap-6">

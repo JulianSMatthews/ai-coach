@@ -130,6 +130,8 @@ export default async function HistoryPage(props: PageProps) {
     const bTs = bItem?.ts ? new Date(bItem.ts).getTime() : 0;
     return bTs - aTs;
   });
+  const displayName = data.user?.display_name || data.user?.first_name || "User";
+  const displayFirstName = displayName.split(" ")[0];
 
   return (
     <PageShell>
@@ -138,7 +140,7 @@ export default async function HistoryPage(props: PageProps) {
 
       <SectionHeader
         eyebrow="Coaching history"
-        title={data.user?.display_name || "User"}
+        title={<span className="text-xl">{`Your history ${displayFirstName}`}</span>}
         subtitle="Latest activty first"
       />
 
