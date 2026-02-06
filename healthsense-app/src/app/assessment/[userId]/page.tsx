@@ -60,9 +60,9 @@ export default async function AssessmentPage(props: PageProps) {
     }).format(parsed);
   };
   const assessmentDate = reportedAt ? formatDateUk(reportedAt) : "";
-  const displayName =
-    (user.display_name || "").trim() ||
-    [user.first_name, user.surname].filter(Boolean).join(" ").trim() ||
+  const displayFirstName =
+    (user.first_name || "").trim() ||
+    (user.display_name || "").trim().split(" ")[0] ||
     "User";
   const formatPct = (value: number | null | undefined) => (value === null || value === undefined ? "--" : Math.round(value));
   const readinessPct = (value?: number | null) => {
@@ -99,7 +99,7 @@ export default async function AssessmentPage(props: PageProps) {
         <AppNav userId={userId} promptBadge={promptBadge} />
         <SectionHeader
           eyebrow="Assessment"
-          title={displayName}
+          title={`Your assessment ${displayFirstName}`}
           subtitle={assessmentDate}
           side={<StatPill label="Combined" value="--" />}
         />
@@ -120,7 +120,7 @@ export default async function AssessmentPage(props: PageProps) {
       <AppNav userId={userId} promptBadge={promptBadge} />
       <SectionHeader
         eyebrow="Assessment"
-        title={displayName}
+        title={`Your assessment ${displayFirstName}`}
         subtitle={assessmentDate}
         side={
           <StatPill
@@ -171,7 +171,7 @@ export default async function AssessmentPage(props: PageProps) {
                     <div className="flex items-center justify-between gap-3">
                       <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-[#6b6257]">
                         {palette.icon ? (
-                          <img src={palette.icon} alt="" className="h-4 w-4" aria-hidden="true" />
+                          <img src={palette.icon} alt="" className="h-[18px] w-[18px]" aria-hidden="true" />
                         ) : null}
                         {row.label}
                       </p>
@@ -261,7 +261,7 @@ export default async function AssessmentPage(props: PageProps) {
                 <div>
                   <h3 className="flex items-center gap-2 text-lg">
                     {palette.icon ? (
-                      <img src={palette.icon} alt="" className="h-5 w-5" aria-hidden="true" />
+                      <img src={palette.icon} alt="" className="h-[23px] w-[23px]" aria-hidden="true" />
                     ) : null}
                     {pillar.pillar_name}
                   </h3>

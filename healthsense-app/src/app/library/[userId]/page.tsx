@@ -60,7 +60,7 @@ export default async function LibraryPage(props: PageProps) {
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Pillar</p>
               <h2 className="mt-1 flex items-center gap-2 text-xl">
                 {pillar.icon ? (
-                  <img src={pillar.icon} alt="" className="h-5 w-5" aria-hidden="true" />
+                  <img src={pillar.icon} alt="" className="h-[23px] w-[23px]" aria-hidden="true" />
                 ) : null}
                 {pillar.label}
               </h2>

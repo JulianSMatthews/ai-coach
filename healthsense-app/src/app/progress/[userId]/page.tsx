@@ -134,7 +134,9 @@ export default async function ProgressPage(props: PageProps) {
             style={{ scrollSnapStop: "always" }}
           >
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Momentum</p>
-            <h2 className="mt-1 text-xl">{user.display_name || user.first_name || "User"}</h2>
+            <h2 className="mt-1 text-xl">
+              {`Your momentum ${(user.first_name || user.display_name || "User").split(" ")[0]}`}
+            </h2>
             <p className="mt-1 text-xs text-[#6b6257]">{meta.anchor_label || "n/a"}</p>
             <div className="mt-4 grid grid-cols-2 gap-3">
               {Object.entries(data.status_counts || {}).map(([label, value]) => {
@@ -239,7 +241,7 @@ export default async function ProgressPage(props: PageProps) {
                       <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">key results</p>
                       <h3 className="mt-1 flex items-center gap-2 text-lg capitalize">
                         {palette.icon ? (
-                          <img src={palette.icon} alt="" className="h-5 w-5" aria-hidden="true" />
+                          <img src={palette.icon} alt="" className="h-[23px] w-[23px]" aria-hidden="true" />
                         ) : null}
                         {row.pillar}
                       </h3>

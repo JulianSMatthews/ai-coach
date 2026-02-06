@@ -73,7 +73,7 @@ export default function ProgrammeCalendar({
               style={{ borderColor: palette.border, background: palette.bg }}
             >
               {palette.icon ? (
-                <img src={palette.icon} alt="" className="h-4 w-4" aria-hidden="true" />
+                <img src={palette.icon} alt="" className="h-[18px] w-[18px]" aria-hidden="true" />
               ) : (
                 <span className="h-2 w-2 rounded-full" style={{ background: palette.dot }} />
               )}
