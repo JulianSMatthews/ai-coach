@@ -60,8 +60,10 @@ export default async function AssessmentPage(props: PageProps) {
     }).format(parsed);
   };
   const assessmentDate = reportedAt ? formatDateUk(reportedAt) : "";
-  const displayName = [user.display_name, user.first_name, user.surname].filter(Boolean).join(" ").trim() || "User";
-  const displayNameUpper = displayName.toUpperCase();
+  const displayName =
+    (user.display_name || "").trim() ||
+    [user.first_name, user.surname].filter(Boolean).join(" ").trim() ||
+    "User";
   const formatPct = (value: number | null | undefined) => (value === null || value === undefined ? "--" : Math.round(value));
   const readinessPct = (value?: number | null) => {
     if (value === null || value === undefined) return null;
@@ -97,7 +99,7 @@ export default async function AssessmentPage(props: PageProps) {
         <AppNav userId={userId} promptBadge={promptBadge} />
         <SectionHeader
           eyebrow="Assessment"
-          title={displayNameUpper}
+          title={displayName}
           subtitle={assessmentDate}
           side={<StatPill label="Combined" value="--" />}
         />
@@ -118,7 +120,7 @@ export default async function AssessmentPage(props: PageProps) {
       <AppNav userId={userId} promptBadge={promptBadge} />
       <SectionHeader
         eyebrow="Assessment"
-        title={displayNameUpper}
+        title={displayName}
         subtitle={assessmentDate}
         side={
           <StatPill
