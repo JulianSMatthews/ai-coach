@@ -169,7 +169,12 @@ export default async function AssessmentPage(props: PageProps) {
                 return (
                   <div key={row.label} className="rounded-2xl border border-[#efe7db] bg-[#fffaf0] px-4 py-3">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.label}</p>
+                      <p className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                        {palette.icon ? (
+                          <img src={palette.icon} alt="" className="h-4 w-4" aria-hidden="true" />
+                        ) : null}
+                        {row.label}
+                      </p>
                       <p className="text-sm font-semibold text-[#1e1b16]">{formatPct(row.value)}%</p>
                     </div>
                     <ProgressBar value={Number(row.value ?? 0)} tone={palette.accent} />
@@ -254,7 +259,12 @@ export default async function AssessmentPage(props: PageProps) {
             >
               <div className="flex items-start justify-between gap-4">
                 <div>
-                  <h3 className="text-lg">{pillar.pillar_name}</h3>
+                  <h3 className="flex items-center gap-2 text-lg">
+                    {palette.icon ? (
+                      <img src={palette.icon} alt="" className="h-5 w-5" aria-hidden="true" />
+                    ) : null}
+                    {pillar.pillar_name}
+                  </h3>
                   <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Score</p>
                 </div>
                 <ScoreRing value={Number(pillar.score ?? 0)} tone={palette.accent} />

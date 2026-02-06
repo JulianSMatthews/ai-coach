@@ -72,7 +72,11 @@ export default function ProgrammeCalendar({
               className="inline-flex items-center gap-2 rounded-full border px-3 py-1"
               style={{ borderColor: palette.border, background: palette.bg }}
             >
-              <span className="h-2 w-2 rounded-full" style={{ background: palette.dot }} />
+              {palette.icon ? (
+                <img src={palette.icon} alt="" className="h-4 w-4" aria-hidden="true" />
+              ) : (
+                <span className="h-2 w-2 rounded-full" style={{ background: palette.dot }} />
+              )}
               {block.label}
             </span>
           );

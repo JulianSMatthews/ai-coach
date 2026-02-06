@@ -35,7 +35,16 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
       <nav className="sticky top-0 z-30 -mx-6 mb-4 flex flex-col gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:flex-row md:flex-nowrap md:items-center md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
         <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
           <a href={`/progress/${userId}`} className="flex items-center" aria-label="HealthSense home">
-            <img src="/healthsense-mark.svg" alt="HealthSense" className="h-8 w-auto md:h-9" />
+            <img
+              src="/healthsense-logo.svg"
+              alt="HealthSense"
+              className="h-8 w-auto md:hidden"
+            />
+            <img
+              src="/healthsense-mark.svg"
+              alt="HealthSense"
+              className="hidden h-8 w-auto md:block"
+            />
           </a>
           <button
             type="button"
