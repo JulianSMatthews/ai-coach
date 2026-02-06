@@ -112,7 +112,7 @@ export default function LoginPage() {
     <main className="min-h-screen bg-white px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto flex w-full max-w-md flex-col gap-6 rounded-3xl border border-[#e7e1d6] bg-white p-8 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.5)]">
         <div>
-          <img src="/healthsense-logo.svg" alt="HealthSense" className="h-8 w-auto" />
+          <img src="/healthsense-logo.svg" alt="HealthSense" className="h-11 w-auto" />
           <h1 className="mt-4 text-3xl">Sign in</h1>
           <p className="mt-2 text-sm text-[#6b6257]">Enter your phone number. We’ll send a code via WhatsApp or SMS.</p>
         </div>
