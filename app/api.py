@@ -3214,6 +3214,15 @@ def api_user_coaching_history(
             .limit(limit)
             .all()
         )
+        wf_ids = {tp.weekly_focus_id for tp in touchpoints if tp.weekly_focus_id}
+        wf_map = {}
+        if wf_ids:
+            wf_rows = (
+                s.query(WeeklyFocus.id, WeeklyFocus.week_no)
+                .filter(WeeklyFocus.id.in_(list(wf_ids)))
+                .all()
+            )
+            wf_map = {row.id: row.week_no for row in wf_rows if row and row.id}
         messages = (
             s.query(MessageLog)
             .filter(MessageLog.user_id == user_id)
@@ -3242,6 +3251,7 @@ def api_user_coaching_history(
     items = []
     for tp in touchpoints:
         ts = tp.sent_at or tp.created_at
+        inferred_week = tp.week_no or (wf_map.get(tp.weekly_focus_id) if tp.weekly_focus_id else None)
         items.append(
             {
                 "id": tp.id,
@@ -3254,7 +3264,7 @@ def api_user_coaching_history(
                 "audio_url": tp.audio_url,
                 "channel": tp.channel,
                 "touchpoint_type": tp.type,
-                "week_no": tp.week_no,
+                "week_no": inferred_week,
             }
         )
     for msg in messages:

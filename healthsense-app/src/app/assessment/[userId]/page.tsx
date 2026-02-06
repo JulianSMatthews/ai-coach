@@ -50,17 +50,18 @@ export default async function AssessmentPage(props: PageProps) {
   const scoreAudio = narratives.score_audio_url || "";
   const okrAudio = narratives.okr_audio_url || "";
   const coachingAudio = narratives.coaching_audio_url || "";
-  const formatUkTimestamp = (value?: string) => {
+  const formatDateUk = (value?: string) => {
     if (!value) return "";
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return value;
     return new Intl.DateTimeFormat("en-GB", {
       dateStyle: "medium",
-      timeStyle: "short",
       timeZone: "Europe/London",
     }).format(parsed);
   };
-  const reportedAtUk = reportedAt ? formatUkTimestamp(reportedAt) : "";
+  const assessmentDate = reportedAt ? formatDateUk(reportedAt) : "";
+  const displayName = [user.display_name, user.first_name, user.surname].filter(Boolean).join(" ").trim() || "User";
+  const displayNameUpper = displayName.toUpperCase();
   const formatPct = (value: number | null | undefined) => (value === null || value === undefined ? "--" : Math.round(value));
   const readinessPct = (value?: number | null) => {
     if (value === null || value === undefined) return null;
@@ -94,7 +95,12 @@ export default async function AssessmentPage(props: PageProps) {
     return (
       <PageShell>
         <AppNav userId={userId} promptBadge={promptBadge} />
-        <SectionHeader title="HealthSense Assessment" side={<StatPill label="Combined" value="--" />} />
+        <SectionHeader
+          eyebrow="Assessment"
+          title={displayNameUpper}
+          subtitle={assessmentDate}
+          side={<StatPill label="Combined" value="--" />}
+        />
         <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
           <h2 className="text-xl">No assessment run found</h2>
           <p className="mt-2 text-sm text-[#6b6257]">
@@ -111,7 +117,9 @@ export default async function AssessmentPage(props: PageProps) {
       <TextScale defaultScale={textScale} />
       <AppNav userId={userId} promptBadge={promptBadge} />
       <SectionHeader
-        title="HealthSense Assessment"
+        eyebrow="Assessment"
+        title={displayNameUpper}
+        subtitle={assessmentDate}
         side={
           <StatPill
             label="Combined"

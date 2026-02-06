@@ -348,6 +348,7 @@ def send_kickoff_podcast_message(
             f"{_kickoff_tag()} Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. "
             "This is your 12-week programme kickoff podcast—give it a listen."
         )
+        message = caption
         send_whatsapp_media(
             to=user.phone,
             media_url=audio_url,

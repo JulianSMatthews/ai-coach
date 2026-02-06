@@ -3,10 +3,12 @@ Thursday educational boost: short podcast/text tied to active goals.
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from .db import SessionLocal
 from .job_queue import enqueue_job, should_use_podcast_worker
 from .nudges import send_whatsapp, send_whatsapp_media, append_button_cta
-from .models import User
+from .models import User, WeeklyFocus, AssessmentRun
 from .kickoff import COACH_NAME
 from .prompts import primary_kr_payload, build_prompt, run_llm_prompt
 from .podcast import generate_podcast_audio
@@ -47,6 +49,67 @@ def _send_thursday(*, text: str, to: str | None = None, category: str | None = N
         quick_replies=quick_replies,
     )
 
+def _resolve_week_context(session, user_id: int, week_no: int | None) -> tuple[int | None, int | None]:
+    if week_no is not None:
+        wf = (
+            session.query(WeeklyFocus)
+            .filter(WeeklyFocus.user_id == user_id, WeeklyFocus.week_no == week_no)
+            .order_by(WeeklyFocus.starts_on.desc(), WeeklyFocus.id.desc())
+            .first()
+        )
+        return week_no, getattr(wf, "id", None) if wf else None
+    today = datetime.utcnow().date()
+    wf_current = (
+        session.query(WeeklyFocus)
+        .filter(
+            WeeklyFocus.user_id == user_id,
+            WeeklyFocus.starts_on <= today,
+            WeeklyFocus.ends_on >= today,
+        )
+        .order_by(WeeklyFocus.starts_on.desc())
+        .first()
+    )
+    wf_latest = (
+        session.query(WeeklyFocus)
+        .filter(WeeklyFocus.user_id == user_id)
+        .order_by(WeeklyFocus.starts_on.desc())
+        .first()
+    )
+    wf = wf_current or wf_latest
+    if wf and getattr(wf, "week_no", None):
+        return wf.week_no, wf.id
+    base_start = None
+    run = (
+        session.query(AssessmentRun)
+        .filter(AssessmentRun.user_id == user_id)
+        .order_by(AssessmentRun.id.desc())
+        .first()
+    )
+    if run:
+        base_dt = getattr(run, "started_at", None) or getattr(run, "created_at", None)
+        if isinstance(base_dt, datetime):
+            base_start = base_dt.date() - timedelta(days=base_dt.date().weekday())
+    if base_start is None:
+        earliest = (
+            session.query(WeeklyFocus)
+            .filter(WeeklyFocus.user_id == user_id)
+            .order_by(WeeklyFocus.starts_on.asc())
+            .first()
+        )
+        if earliest and getattr(earliest, "starts_on", None):
+            try:
+                base_start = earliest.starts_on.date()
+            except Exception:
+                base_start = None
+    if base_start is None:
+        base_start = today - timedelta(days=today.weekday())
+    current_week_start = today - timedelta(days=today.weekday())
+    try:
+        label_week = max(1, int(((current_week_start - base_start).days // 7) + 1))
+    except Exception:
+        label_week = 1
+    return label_week, getattr(wf, "id", None) if wf else None
+
 
 def send_thursday_boost(user: User, coach_name: str = COACH_NAME, week_no: int | None = None) -> None:
     if _podcast_worker_enabled():
@@ -59,6 +122,8 @@ def send_thursday_boost(user: User, coach_name: str = COACH_NAME, week_no: int |
         return
     general_support.clear(user.id)
     with SessionLocal() as s:
+        resolved_week_no, wf_id = _resolve_week_context(s, user.id, week_no)
+        week_no = resolved_week_no
         primary = primary_kr_payload(user.id, session=s, week_no=week_no)
     if not primary:
         _send_thursday(to=user.phone, text="No weekly plan found. Say monday to plan your week first.")
@@ -128,7 +193,7 @@ def send_thursday_boost(user: User, coach_name: str = COACH_NAME, week_no: int |
     log_touchpoint(
         user_id=user.id,
         tp_type="thursday",
-        weekly_focus_id=None,
+        weekly_focus_id=wf_id,
         week_no=touchpoint_week_no,
         kr_ids=[primary["id"]] if primary else [],
         meta={
