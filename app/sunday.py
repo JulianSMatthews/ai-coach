@@ -10,6 +10,7 @@ import os
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
+from .job_queue import enqueue_job, should_use_worker
 from .nudges import send_whatsapp, append_button_cta
 from .checkins import record_checkin
 from .models import WeeklyFocus, OKRKeyResult, User, UserPreference, OKRKrEntry, OKRKrHabitStep, AssessmentRun
@@ -243,6 +244,10 @@ def _support_conversation(
 
 
 def send_sunday_review(user: User, coach_name: str = COACH_NAME) -> None:
+    if should_use_worker() and not _in_worker_process():
+        job_id = enqueue_job("day_prompt", {"user_id": user.id, "day": "sunday"}, user_id=user.id)
+        print(f"[sunday] enqueued day prompt user_id={user.id} job={job_id}")
+        return
     general_support.clear(user.id)
     wf_id: int | None = None
     kr_ids: list[int] = []

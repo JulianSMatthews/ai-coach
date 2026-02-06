@@ -3251,30 +3251,10 @@ def api_user_coaching_history(
         cleaned = " ".join(str(text).split())
         return len(cleaned) > 180
 
-    def _day_tag_type(text: str | None) -> str | None:
-        if not text:
-            return None
-        m = re.match(r"^\\*(Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)\\.?\\*", text.strip(), re.IGNORECASE)
-        if not m:
-            return None
-        return m.group(1).lower()
-
-    def _near_ts(a, b, *, minutes: int = 20) -> bool:
-        if not a or not b:
-            return False
-        try:
-            delta = abs((a - b).total_seconds())
-            return delta <= minutes * 60
-        except Exception:
-            return False
-
     items = []
-    recent_touchpoints: dict[str, list[datetime]] = {}
     for tp in touchpoints:
         ts = tp.sent_at or tp.created_at
         inferred_week = tp.week_no or (wf_map.get(tp.weekly_focus_id) if tp.weekly_focus_id else None)
-        if ts and tp.type:
-            recent_touchpoints.setdefault(tp.type.lower(), []).append(ts)
         items.append(
             {
                 "id": tp.id,
@@ -3291,12 +3271,6 @@ def api_user_coaching_history(
             }
         )
     for msg in messages:
-        if msg.direction == "outbound":
-            day_type = _day_tag_type(msg.text)
-            if day_type and recent_touchpoints.get(day_type):
-                msg_ts = msg.created_at
-                if any(_near_ts(msg_ts, tp_ts) for tp_ts in recent_touchpoints[day_type]):
-                    continue
         items.append(
             {
                 "id": msg.id,

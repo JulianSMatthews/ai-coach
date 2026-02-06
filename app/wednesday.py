@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Optional
 
 from .db import SessionLocal
+from .job_queue import enqueue_job, should_use_worker
 from .models import WeeklyFocus, User
 from .nudges import send_whatsapp, append_button_cta
 from .prompts import format_checkin_history, primary_kr_payload, build_prompt, run_llm_prompt
@@ -54,6 +55,10 @@ def _latest_weekly_focus(session: Session, user_id: int) -> Optional[WeeklyFocus
 
 
 def send_midweek_check(user: User, coach_name: str = "Gia") -> None:
+    if should_use_worker() and not _in_worker_process():
+        job_id = enqueue_job("day_prompt", {"user_id": user.id, "day": "wednesday"}, user_id=user.id)
+        print(f"[wednesday] enqueued day prompt user_id={user.id} job={job_id}")
+        return
     general_support.clear(user.id)
     with SessionLocal() as s:
         wf = _latest_weekly_focus(s, user.id)

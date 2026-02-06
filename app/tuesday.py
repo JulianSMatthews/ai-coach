@@ -7,6 +7,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
+from .job_queue import enqueue_job, should_use_worker
 from .nudges import send_whatsapp, append_button_cta
 from .models import WeeklyFocus, User
 from .kickoff import COACH_NAME
@@ -57,6 +58,10 @@ def _latest_weekly_focus(session: Session, user_id: int) -> Optional[WeeklyFocus
 
 
 def send_tuesday_check(user: User, coach_name: str = COACH_NAME) -> None:
+    if should_use_worker() and not _in_worker_process():
+        job_id = enqueue_job("day_prompt", {"user_id": user.id, "day": "tuesday"}, user_id=user.id)
+        print(f"[tuesday] enqueued day prompt user_id={user.id} job={job_id}")
+        return
     general_support.clear(user.id)
     with SessionLocal() as s:
         wf = _latest_weekly_focus(s, user.id)
