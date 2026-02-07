@@ -14,6 +14,67 @@ export type AdminStats = {
   interactions?: { total?: number; today?: number; week?: number };
 };
 
+export type UsageWeeklySummary = {
+  as_of_uk?: string;
+  window?: { start_utc?: string; end_utc?: string };
+  weekly_flow?: {
+    events?: number;
+    chars?: number;
+    minutes_est?: number;
+    cost_est_gbp?: number;
+    rate_gbp_per_1m_chars?: number;
+    rate_source?: string;
+    chars_per_min?: number;
+    tag?: string | null;
+  };
+  total_tts?: {
+    events?: number;
+    chars?: number;
+    minutes_est?: number;
+    cost_est_gbp?: number;
+    rate_gbp_per_1m_chars?: number;
+    rate_source?: string;
+    chars_per_min?: number;
+    tag?: string | null;
+  };
+  llm_weekly?: {
+    tokens_in?: number;
+    tokens_out?: number;
+    cost_est_gbp?: number;
+    rate_gbp_per_1m_input_tokens?: number;
+    rate_gbp_per_1m_output_tokens?: number;
+    rate_source?: string;
+    tag?: string | null;
+  };
+  llm_total?: {
+    tokens_in?: number;
+    tokens_out?: number;
+    cost_est_gbp?: number;
+    rate_gbp_per_1m_input_tokens?: number;
+    rate_gbp_per_1m_output_tokens?: number;
+    rate_source?: string;
+    tag?: string | null;
+  };
+  whatsapp_total?: {
+    messages?: number;
+    cost_est_gbp?: number;
+    rate_gbp_per_message?: number;
+    rate_source?: string;
+    tag?: string | null;
+  };
+};
+
+export type UsageSettings = {
+  tts_gbp_per_1m_chars?: number | null;
+  tts_chars_per_min?: number | null;
+  llm_gbp_per_1m_input_tokens?: number | null;
+  llm_gbp_per_1m_output_tokens?: number | null;
+  wa_gbp_per_message?: number | null;
+  wa_gbp_per_media_message?: number | null;
+  wa_gbp_per_template_message?: number | null;
+  meta?: Record<string, unknown> | string | null;
+};
+
 export type PromptTemplateSummary = {
   id: number;
   touchpoint: string;
@@ -403,6 +464,28 @@ export async function getAdminProfile(): Promise<AdminProfile> {
 
 export async function getAdminStats(): Promise<AdminStats> {
   return apiAdmin<AdminStats>("/admin/stats");
+}
+
+export async function getAdminUsageWeekly(): Promise<UsageWeeklySummary> {
+  return apiAdmin<UsageWeeklySummary>("/admin/usage/weekly");
+}
+
+export async function getUsageSettings(): Promise<UsageSettings> {
+  return apiAdmin<UsageSettings>("/admin/usage/settings");
+}
+
+export async function updateUsageSettings(payload: UsageSettings): Promise<UsageSettings> {
+  return apiAdmin<UsageSettings>("/admin/usage/settings", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function fetchUsageSettings(): Promise<UsageSettings> {
+  return apiAdmin<UsageSettings>("/admin/usage/settings/fetch", {
+    method: "POST",
+  });
 }
 
 export async function listPromptTemplates(state?: string, query?: string) {

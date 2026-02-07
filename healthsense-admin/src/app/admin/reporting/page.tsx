@@ -1,0 +1,207 @@
+import AdminNav from "@/components/AdminNav";
+import { fetchUsageSettings, getAdminUsageWeekly, getUsageSettings, updateUsageSettings } from "@/lib/api";
+import { revalidatePath } from "next/cache";
+
+export const dynamic = "force-dynamic";
+
+async function saveUsageSettingsAction(formData: FormData) {
+  "use server";
+  const payload = {
+    tts_gbp_per_1m_chars: formData.get("tts_gbp_per_1m_chars") || null,
+    tts_chars_per_min: formData.get("tts_chars_per_min") || null,
+    llm_gbp_per_1m_input_tokens: formData.get("llm_gbp_per_1m_input_tokens") || null,
+    llm_gbp_per_1m_output_tokens: formData.get("llm_gbp_per_1m_output_tokens") || null,
+    wa_gbp_per_message: formData.get("wa_gbp_per_message") || null,
+    wa_gbp_per_media_message: formData.get("wa_gbp_per_media_message") || null,
+    wa_gbp_per_template_message: formData.get("wa_gbp_per_template_message") || null,
+  };
+  await updateUsageSettings(payload);
+  revalidatePath("/admin/reporting");
+}
+
+async function fetchUsageSettingsAction() {
+  "use server";
+  await fetchUsageSettings();
+  revalidatePath("/admin/reporting");
+}
+
+export default async function ReportingPage() {
+  const [settings, usage] = await Promise.all([getUsageSettings(), getAdminUsageWeekly()]);
+  const meta = (() => {
+    if (!settings?.meta) return null;
+    if (typeof settings.meta === "string") {
+      try {
+        return JSON.parse(settings.meta);
+      } catch {
+        return null;
+      }
+    }
+    return settings.meta;
+  })();
+  const fetchedAt = typeof meta?.fetched_at === "string" ? meta.fetched_at : null;
+  const fx = meta?.fx_usd_to_gbp ?? null;
+  const fxSource = meta?.fx_source ?? null;
+  const warnings = Array.isArray(meta?.warnings) ? meta.warnings : [];
+  const sources = meta?.sources && typeof meta.sources === "object" ? meta.sources : null;
+  const providerLine = sources
+    ? [
+        sources.tts?.provider ? `TTS: ${sources.tts.provider}` : null,
+        sources.llm?.provider ? `LLM: ${sources.llm.provider}` : null,
+        sources.whatsapp?.provider ? `WhatsApp: ${sources.whatsapp.provider}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : null;
+
+  return (
+    <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
+      <div className="mx-auto w-full max-w-5xl space-y-6">
+        <AdminNav
+          title="Reporting & costs"
+          subtitle="Review weekly usage and update cost assumptions."
+        />
+
+        <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
+          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Weekly usage (last 7 days)</p>
+          <div className="mt-4 grid gap-4 lg:grid-cols-3">
+            {[
+              {
+                title: "TTS",
+                rows: [
+                  { label: "Events", value: usage?.total_tts?.events ?? "—" },
+                  { label: "Minutes (est)", value: usage?.total_tts?.minutes_est ?? "—" },
+                  { label: "Cost (est)", value: usage?.total_tts?.cost_est_gbp != null ? `£${usage.total_tts.cost_est_gbp}` : "—" },
+                ],
+              },
+              {
+                title: "LLM",
+                rows: [
+                  { label: "Tokens in", value: usage?.llm_total?.tokens_in ?? "—" },
+                  { label: "Tokens out", value: usage?.llm_total?.tokens_out ?? "—" },
+                  { label: "Cost (est)", value: usage?.llm_total?.cost_est_gbp != null ? `£${usage.llm_total.cost_est_gbp}` : "—" },
+                ],
+              },
+              {
+                title: "WhatsApp",
+                rows: [
+                  { label: "Messages", value: usage?.whatsapp_total?.messages ?? "—" },
+                  { label: "Cost (est)", value: usage?.whatsapp_total?.cost_est_gbp != null ? `£${usage.whatsapp_total.cost_est_gbp}` : "—" },
+                ],
+              },
+            ].map((card) => (
+              <div key={card.title} className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{card.title}</p>
+                <div className="mt-3 space-y-2">
+                  {card.rows.map((row) => (
+                    <div key={row.label} className="flex items-center justify-between rounded-xl bg-white px-3 py-2">
+                      <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.label}</span>
+                      <span className="text-lg font-semibold">{row.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
+          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Cost assumptions</p>
+          <p className="mt-2 text-sm text-[#6b6257]">
+            These values override environment defaults. Leave blank to use env rates.
+          </p>
+          <div className="mt-4 rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Provider rates</p>
+                <p className="mt-1 text-sm text-[#6b6257]">
+                  {fetchedAt ? `Last fetched: ${fetchedAt}` : "Not fetched yet"}
+                </p>
+                {fx ? (
+                  <p className="mt-1 text-xs text-[#8a8176]">FX USD->GBP: {fx} ({fxSource || "default"})</p>
+                ) : null}
+                {providerLine ? <p className="mt-1 text-xs text-[#8a8176]">{providerLine}</p> : null}
+                {warnings.length ? (
+                  <p className="mt-2 text-xs text-[#a24f3c]">Warnings: {warnings.join(", ")}</p>
+                ) : null}
+              </div>
+              <form action={fetchUsageSettingsAction}>
+                <button
+                  type="submit"
+                  className="rounded-full border border-[#3f2e21] bg-[#3f2e21] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white"
+                >
+                  Fetch provider rates
+                </button>
+              </form>
+            </div>
+          </div>
+          <form action={saveUsageSettingsAction} className="mt-6 grid gap-4 lg:grid-cols-2">
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">TTS £ / 1M chars</label>
+              <input
+                name="tts_gbp_per_1m_chars"
+                defaultValue={settings.tts_gbp_per_1m_chars ?? ""}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">TTS chars per min</label>
+              <input
+                name="tts_chars_per_min"
+                defaultValue={settings.tts_chars_per_min ?? ""}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">LLM £ / 1M input tokens</label>
+              <input
+                name="llm_gbp_per_1m_input_tokens"
+                defaultValue={settings.llm_gbp_per_1m_input_tokens ?? ""}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">LLM £ / 1M output tokens</label>
+              <input
+                name="llm_gbp_per_1m_output_tokens"
+                defaultValue={settings.llm_gbp_per_1m_output_tokens ?? ""}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">WhatsApp £ / message</label>
+              <input
+                name="wa_gbp_per_message"
+                defaultValue={settings.wa_gbp_per_message ?? ""}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">WhatsApp £ / media message</label>
+              <input
+                name="wa_gbp_per_media_message"
+                defaultValue={settings.wa_gbp_per_media_message ?? ""}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">WhatsApp £ / template message</label>
+              <input
+                name="wa_gbp_per_template_message"
+                defaultValue={settings.wa_gbp_per_template_message ?? ""}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+              />
+            </div>
+            <div className="flex items-end">
+              <button
+                type="submit"
+                className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-6 py-2 text-xs uppercase tracking-[0.2em] text-white"
+              >
+                Save rates
+              </button>
+            </div>
+          </form>
+        </section>
+      </div>
+    </main>
+  );
+}

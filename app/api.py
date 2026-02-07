@@ -92,6 +92,14 @@ from . import prompts as prompts_module
 from .prompts import build_prompt, assessment_scores_prompt, okr_narrative_prompt, coaching_approach_prompt, assessor_system_prompt
 from .llm import embed_text
 from .podcast import generate_podcast_audio_for_voice
+from .usage import (
+    get_tts_usage_summary,
+    get_llm_usage_summary,
+    get_whatsapp_usage_summary,
+    get_usage_settings,
+    save_usage_settings,
+)
+from .usage_rates import fetch_provider_rates
 from .okr import ensure_cycle
 from .reporting import (
     generate_detailed_report_pdf_by_user,
@@ -3410,6 +3418,75 @@ def admin_stats(admin_user: User = Depends(_require_admin)):
     }
 
 
+@admin.get("/usage/weekly")
+def admin_usage_weekly(admin_user: User = Depends(_require_admin)):
+    """
+    Usage + cost estimates for the last UK week window.
+    Focused on TTS usage (weekly flow + total).
+    """
+    _, _, week_start_utc, week_end_utc = _uk_range_bounds()
+    weekly_flow = get_tts_usage_summary(
+        start_utc=week_start_utc,
+        end_utc=week_end_utc,
+        tag="weekly_flow",
+    )
+    total_tts = get_tts_usage_summary(
+        start_utc=week_start_utc,
+        end_utc=week_end_utc,
+        tag=None,
+    )
+    llm_weekly = get_llm_usage_summary(
+        start_utc=week_start_utc,
+        end_utc=week_end_utc,
+        tag="weekly_flow",
+    )
+    llm_total = get_llm_usage_summary(
+        start_utc=week_start_utc,
+        end_utc=week_end_utc,
+        tag=None,
+    )
+    whatsapp_total = get_whatsapp_usage_summary(
+        start_utc=week_start_utc,
+        end_utc=week_end_utc,
+        tag=None,
+    )
+    return {
+        "as_of_uk": datetime.now(UK_TZ).isoformat(),
+        "window": {"start_utc": week_start_utc.isoformat(), "end_utc": week_end_utc.isoformat()},
+        "weekly_flow": weekly_flow,
+        "total_tts": total_tts,
+        "llm_weekly": llm_weekly,
+        "llm_total": llm_total,
+        "whatsapp_total": whatsapp_total,
+    }
+
+
+@admin.get("/usage/settings")
+def admin_usage_settings(admin_user: User = Depends(_require_admin)):
+    return get_usage_settings()
+
+
+@admin.post("/usage/settings")
+def admin_usage_settings_update(payload: dict, admin_user: User = Depends(_require_admin)):
+    return save_usage_settings(payload)
+
+
+@admin.post("/usage/settings/fetch")
+def admin_usage_settings_fetch(admin_user: User = Depends(_require_admin)):
+    rates = fetch_provider_rates()
+    payload = {
+        "tts_gbp_per_1m_chars": rates.get("tts_gbp_per_1m_chars"),
+        "tts_chars_per_min": rates.get("tts_chars_per_min"),
+        "llm_gbp_per_1m_input_tokens": rates.get("llm_gbp_per_1m_input_tokens"),
+        "llm_gbp_per_1m_output_tokens": rates.get("llm_gbp_per_1m_output_tokens"),
+        "wa_gbp_per_message": rates.get("wa_gbp_per_message"),
+        "wa_gbp_per_media_message": rates.get("wa_gbp_per_media_message"),
+        "wa_gbp_per_template_message": rates.get("wa_gbp_per_template_message"),
+        "meta": rates,
+    }
+    return save_usage_settings(payload)
+
+
 @admin.get("/prompts/templates")
 def admin_prompt_templates_list(
     state: str | None = None,
@@ -4713,6 +4790,7 @@ def admin_prompt_test(payload: dict, admin_user: User = Depends(_require_admin))
                     user_id=user_id_int,
                     filename=filename,
                     voice_override=podcast_voice,
+                    usage_tag="prompt_test",
                 )
                 if audio_url:
                     result["audio_url"] = audio_url
@@ -4938,6 +5016,7 @@ def admin_content_generation_create(payload: dict, admin_user: User = Depends(_r
                             user_id=int(audio_user_id),
                             filename=filename,
                             voice_override=podcast_voice,
+                            usage_tag="content_generation",
                         )
                         if not podcast_url:
                             podcast_error = "Podcast audio generation failed."
