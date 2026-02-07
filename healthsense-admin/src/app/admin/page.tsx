@@ -96,7 +96,7 @@ export default async function AdminHome() {
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{item.title}</p>
               <p className="mt-2 text-sm text-[#6b6257]">{item.desc}</p>
               <div className="mt-4 space-y-3">
-                {("events" in (item.data || {})) && (
+                {item.data && "events" in item.data && (
                   <>
                     {[
                       { label: "Audio events", value: item.data?.events ?? "—" },
@@ -111,7 +111,7 @@ export default async function AdminHome() {
                     ))}
                   </>
                 )}
-                {("tokens_in" in (item.data || {})) && (
+                {item.data && "tokens_in" in item.data && (
                   <>
                     {[
                       { label: "Tokens in", value: item.data?.tokens_in ?? "—" },
@@ -125,7 +125,7 @@ export default async function AdminHome() {
                     ))}
                   </>
                 )}
-                {("messages" in (item.data || {})) && (
+                {item.data && "messages" in item.data && (
                   <>
                     {[
                       { label: "Messages", value: item.data?.messages ?? "—" },
