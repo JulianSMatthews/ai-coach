@@ -98,44 +98,65 @@ export default async function AdminHome() {
               <div className="mt-4 space-y-3">
                 {item.data && "events" in item.data && (
                   <>
-                    {[
-                      { label: "Audio events", value: item.data?.events ?? "—" },
-                      { label: "Minutes (est)", value: item.data?.minutes_est ?? "—" },
-                      { label: "Cost (est)", value: item.data?.cost_est_gbp != null ? `£${item.data.cost_est_gbp}` : "—" },
-                      { label: "Chars", value: item.data?.chars ?? "—" },
-                    ].map((row) => (
-                      <div key={row.label} className="flex items-center justify-between rounded-xl bg-[#f7f4ee] px-3 py-2">
-                        <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.label}</span>
-                        <span className="text-lg font-semibold">{row.value}</span>
-                      </div>
-                    ))}
+                    {(() => {
+                      const data = item.data as {
+                        events?: number;
+                        minutes_est?: number;
+                        cost_est_gbp?: number;
+                        chars?: number;
+                      };
+                      return [
+                        { label: "Audio events", value: data.events ?? "—" },
+                        { label: "Minutes (est)", value: data.minutes_est ?? "—" },
+                        { label: "Cost (est)", value: data.cost_est_gbp != null ? `£${data.cost_est_gbp}` : "—" },
+                        { label: "Chars", value: data.chars ?? "—" },
+                      ].map((row) => (
+                        <div key={row.label} className="flex items-center justify-between rounded-xl bg-[#f7f4ee] px-3 py-2">
+                          <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.label}</span>
+                          <span className="text-lg font-semibold">{row.value}</span>
+                        </div>
+                      ));
+                    })()}
                   </>
                 )}
                 {item.data && "tokens_in" in item.data && (
                   <>
-                    {[
-                      { label: "Tokens in", value: item.data?.tokens_in ?? "—" },
-                      { label: "Tokens out", value: item.data?.tokens_out ?? "—" },
-                      { label: "Cost (est)", value: item.data?.cost_est_gbp != null ? `£${item.data.cost_est_gbp}` : "—" },
-                    ].map((row) => (
-                      <div key={row.label} className="flex items-center justify-between rounded-xl bg-[#f7f4ee] px-3 py-2">
-                        <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.label}</span>
-                        <span className="text-lg font-semibold">{row.value}</span>
-                      </div>
-                    ))}
+                    {(() => {
+                      const data = item.data as {
+                        tokens_in?: number;
+                        tokens_out?: number;
+                        cost_est_gbp?: number;
+                      };
+                      return [
+                        { label: "Tokens in", value: data.tokens_in ?? "—" },
+                        { label: "Tokens out", value: data.tokens_out ?? "—" },
+                        { label: "Cost (est)", value: data.cost_est_gbp != null ? `£${data.cost_est_gbp}` : "—" },
+                      ].map((row) => (
+                        <div key={row.label} className="flex items-center justify-between rounded-xl bg-[#f7f4ee] px-3 py-2">
+                          <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.label}</span>
+                          <span className="text-lg font-semibold">{row.value}</span>
+                        </div>
+                      ));
+                    })()}
                   </>
                 )}
                 {item.data && "messages" in item.data && (
                   <>
-                    {[
-                      { label: "Messages", value: item.data?.messages ?? "—" },
-                      { label: "Cost (est)", value: item.data?.cost_est_gbp != null ? `£${item.data.cost_est_gbp}` : "—" },
-                    ].map((row) => (
-                      <div key={row.label} className="flex items-center justify-between rounded-xl bg-[#f7f4ee] px-3 py-2">
-                        <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.label}</span>
-                        <span className="text-lg font-semibold">{row.value}</span>
-                      </div>
-                    ))}
+                    {(() => {
+                      const data = item.data as {
+                        messages?: number;
+                        cost_est_gbp?: number;
+                      };
+                      return [
+                        { label: "Messages", value: data.messages ?? "—" },
+                        { label: "Cost (est)", value: data.cost_est_gbp != null ? `£${data.cost_est_gbp}` : "—" },
+                      ].map((row) => (
+                        <div key={row.label} className="flex items-center justify-between rounded-xl bg-[#f7f4ee] px-3 py-2">
+                          <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.label}</span>
+                          <span className="text-lg font-semibold">{row.value}</span>
+                        </div>
+                      ));
+                    })()}
                   </>
                 )}
               </div>
