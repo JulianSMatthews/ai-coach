@@ -39,19 +39,19 @@ export default async function ReportingPage() {
     return settings.meta;
   })();
   const fetchedAt = typeof meta?.fetched_at === "string" ? meta.fetched_at : null;
-  const fx = meta?.fx_usd_to_gbp ?? null;
-  const fxSource = meta?.fx_source ?? null;
+  const fx = typeof meta?.fx_usd_to_gbp === "number" ? meta.fx_usd_to_gbp : null;
+  const fxSourceRaw = meta?.fx_source;
+  const fxSourceLabel = typeof fxSourceRaw === "string" ? fxSourceRaw : "default";
   const warnings = Array.isArray(meta?.warnings) ? meta.warnings : [];
-  const sources = meta?.sources && typeof meta.sources === "object" ? meta.sources : null;
-  const providerLine = sources
-    ? [
-        sources.tts?.provider ? `TTS: ${sources.tts.provider}` : null,
-        sources.llm?.provider ? `LLM: ${sources.llm.provider}` : null,
-        sources.whatsapp?.provider ? `WhatsApp: ${sources.whatsapp.provider}` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ")
-    : null;
+  const sources =
+    meta?.sources && typeof meta.sources === "object" ? (meta.sources as Record<string, any>) : null;
+  const ttsProvider = typeof sources?.tts?.provider === "string" ? sources.tts.provider : null;
+  const llmProvider = typeof sources?.llm?.provider === "string" ? sources.llm.provider : null;
+  const waProvider =
+    typeof sources?.whatsapp?.provider === "string" ? sources.whatsapp.provider : null;
+  const providerLine = [ttsProvider ? `TTS: ${ttsProvider}` : null, llmProvider ? `LLM: ${llmProvider}` : null, waProvider ? `WhatsApp: ${waProvider}` : null]
+    .filter(Boolean)
+    .join(" · ");
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -117,7 +117,7 @@ export default async function ReportingPage() {
                   {fetchedAt ? `Last fetched: ${fetchedAt}` : "Not fetched yet"}
                 </p>
                 {fx ? (
-                  <p className="mt-1 text-xs text-[#8a8176]">FX USD->GBP: {fx} ({fxSource || "default"})</p>
+                  <p className="mt-1 text-xs text-[#8a8176]">FX USD-&gt;GBP: {fx} ({fxSourceLabel})</p>
                 ) : null}
                 {providerLine ? <p className="mt-1 text-xs text-[#8a8176]">{providerLine}</p> : null}
                 {warnings.length ? (
