@@ -3066,15 +3066,30 @@ def build_assessment_dashboard_data(run_id: int, *, include_llm: bool = True) ->
                     if not score_audio_url and score_narrative:
                         transcript = _plain(score_narrative)
                         if transcript:
-                            score_audio_url = generate_podcast_audio(transcript, user.id, filename=f"assessment_{run.id}_score.mp3")
+                            score_audio_url = generate_podcast_audio(
+                                transcript,
+                                user.id,
+                                filename=f"assessment_{run.id}_score.mp3",
+                                usage_tag="assessment",
+                            )
                     if not okr_audio_url and okr_narrative:
                         transcript = _plain(okr_narrative)
                         if transcript:
-                            okr_audio_url = generate_podcast_audio(transcript, user.id, filename=f"assessment_{run.id}_okr.mp3")
+                            okr_audio_url = generate_podcast_audio(
+                                transcript,
+                                user.id,
+                                filename=f"assessment_{run.id}_okr.mp3",
+                                usage_tag="assessment",
+                            )
                     if not coaching_audio_url and coaching_text:
                         transcript = _plain(coaching_text)
                         if transcript:
-                            coaching_audio_url = generate_podcast_audio(transcript, user.id, filename=f"assessment_{run.id}_coaching.mp3")
+                            coaching_audio_url = generate_podcast_audio(
+                                transcript,
+                                user.id,
+                                filename=f"assessment_{run.id}_coaching.mp3",
+                                usage_tag="assessment",
+                            )
                 except Exception as e:
                     _report_log(f"[report_build] narrative_audio_cached_failed run_id={run_id} err={e!r}")
         if not cached_ok:
@@ -3110,11 +3125,26 @@ def build_assessment_dashboard_data(run_id: int, *, include_llm: bool = True) ->
                     okr_plain = _plain(okr_narrative)
                     coaching_plain = _plain(coaching_text)
                     if score_plain:
-                        score_audio_url = generate_podcast_audio(score_plain, user.id, filename=f"assessment_{run.id}_score.mp3")
+                        score_audio_url = generate_podcast_audio(
+                            score_plain,
+                            user.id,
+                            filename=f"assessment_{run.id}_score.mp3",
+                            usage_tag="assessment",
+                        )
                     if okr_plain:
-                        okr_audio_url = generate_podcast_audio(okr_plain, user.id, filename=f"assessment_{run.id}_okr.mp3")
+                        okr_audio_url = generate_podcast_audio(
+                            okr_plain,
+                            user.id,
+                            filename=f"assessment_{run.id}_okr.mp3",
+                            usage_tag="assessment",
+                        )
                     if coaching_plain:
-                        coaching_audio_url = generate_podcast_audio(coaching_plain, user.id, filename=f"assessment_{run.id}_coaching.mp3")
+                        coaching_audio_url = generate_podcast_audio(
+                            coaching_plain,
+                            user.id,
+                            filename=f"assessment_{run.id}_coaching.mp3",
+                            usage_tag="assessment",
+                        )
                 except Exception as e:
                     _report_log(f"[report_build] narrative_audio_failed run_id={run_id} err={e!r}")
             try:

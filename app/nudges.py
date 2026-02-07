@@ -17,6 +17,9 @@ from twilio.base.exceptions import TwilioRestException
 from .config import settings
 from .debug_utils import debug_log
 from .message_log import write_log
+from .usage import log_usage_event, estimate_whatsapp_cost
+from .db import SessionLocal
+from .models import User
 from .db import SessionLocal, engine
 
 BUSINESS_START = time(9, 0)
@@ -545,6 +548,18 @@ def _normalize_sms_phone(raw: str | None) -> str | None:
     return None
 
 
+def _lookup_user_id_for_whatsapp(to_norm: str | None) -> int | None:
+    try:
+        if not to_norm:
+            return None
+        phone = to_norm.replace("whatsapp:", "")
+        with SessionLocal() as s:
+            row = s.query(User).filter(User.phone == phone).one_or_none()
+            return getattr(row, "id", None) if row else None
+    except Exception:
+        return None
+
+
 def _twilio_client() -> Client | None:
     try:
         return Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
@@ -790,6 +805,41 @@ def send_whatsapp(
             chunks.append(remaining)
         return chunks
 
+    def _track_usage(
+        *,
+        sid: str,
+        to_norm: str,
+        unit_type: str,
+        text_len: int | None = None,
+        category: str | None = None,
+        meta: dict | None = None,
+    ) -> None:
+        try:
+            user_id = _lookup_user_id_for_whatsapp(to_norm)
+            cost_est, rate, rate_source = estimate_whatsapp_cost(unit_type, units=1.0)
+            payload = {
+                "category": category,
+                "text_len": text_len,
+                "rate": rate,
+                "rate_source": rate_source,
+            }
+            if meta:
+                payload.update(meta)
+            log_usage_event(
+                user_id=user_id,
+                provider="twilio",
+                product="whatsapp",
+                model=None,
+                units=1.0,
+                unit_type=unit_type,
+                cost_estimate=cost_est if cost_est else None,
+                request_id=sid,
+                tag=None,
+                meta=payload,
+            )
+        except Exception as e:
+            print(f"[usage] whatsapp log failed: {e}")
+
     def _send_single(
         message_text: str,
         *,
@@ -812,7 +862,7 @@ def send_whatsapp(
             message_text = _append_quick_replies(message_text, quick_replies) or message_text
         if not message_text or not str(message_text).strip():
             raise ValueError("Message text is empty")
-        return _enqueue_and_send(
+        sid = _enqueue_and_send(
             to_norm=to_norm,
             text=message_text,
             category=category,
@@ -820,6 +870,15 @@ def send_whatsapp(
             content_sid=sid,
             content_variables=content_vars if sid else None,
         )
+        _track_usage(
+            sid=sid,
+            to_norm=to_norm,
+            unit_type="message_text",
+            text_len=len(message_text or ""),
+            category=category,
+            meta={"has_quick_replies": bool(qr_list)},
+        )
+        return sid
 
     if not text or not str(text).strip():
         raise ValueError("Message text is empty")
@@ -893,6 +952,29 @@ def send_whatsapp_media(
         category=category,
         media_urls=[media_url],
     )
+    try:
+        cost_est, rate, rate_source = estimate_whatsapp_cost("message_media", units=1.0)
+        user_id = _lookup_user_id_for_whatsapp(to_norm)
+        log_usage_event(
+            user_id=user_id,
+            provider="twilio",
+            product="whatsapp",
+            model=None,
+            units=1.0,
+            unit_type="message_media",
+            cost_estimate=cost_est if cost_est else None,
+            request_id=result_sid,
+            tag=None,
+            meta={
+                "category": category,
+                "caption_len": len(caption or ""),
+                "rate": rate,
+                "rate_source": rate_source,
+                "media_url": media_url,
+            },
+        )
+    except Exception as e:
+        print(f"[usage] whatsapp media log failed: {e}")
     return result_sid
 
 
@@ -913,13 +995,36 @@ def send_whatsapp_template(
     if not template_sid:
         raise ValueError("template_sid is required for send_whatsapp_template")
     vars_payload = json.dumps(variables or {})
-    return _enqueue_and_send(
+    result_sid = _enqueue_and_send(
         to_norm=to_norm,
         text=None,
         category=category,
         content_sid=template_sid,
         content_variables=vars_payload,
     )
+    try:
+        cost_est, rate, rate_source = estimate_whatsapp_cost("message_template", units=1.0)
+        user_id = _lookup_user_id_for_whatsapp(to_norm)
+        log_usage_event(
+            user_id=user_id,
+            provider="twilio",
+            product="whatsapp",
+            model=None,
+            units=1.0,
+            unit_type="message_template",
+            cost_estimate=cost_est if cost_est else None,
+            request_id=result_sid,
+            tag=None,
+            meta={
+                "category": category,
+                "template_sid": template_sid,
+                "rate": rate,
+                "rate_source": rate_source,
+            },
+        )
+    except Exception as e:
+        print(f"[usage] whatsapp template log failed: {e}")
+    return result_sid
 
 
 # Explicit admin notification helper

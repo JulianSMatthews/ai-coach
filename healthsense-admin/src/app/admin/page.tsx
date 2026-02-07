@@ -1,5 +1,5 @@
 import AdminNav from "@/components/AdminNav";
-import { getAdminProfile, getAdminStats } from "@/lib/api";
+import { getAdminProfile, getAdminStats, getAdminUsageWeekly } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +11,12 @@ export default async function AdminHome() {
     stats = await getAdminStats();
   } catch {
     stats = null;
+  }
+  let usage: Awaited<ReturnType<typeof getAdminUsageWeekly>> | null = null;
+  try {
+    usage = await getAdminUsageWeekly();
+  } catch {
+    usage = null;
   }
 
   return (
@@ -59,6 +65,95 @@ export default async function AdminHome() {
                   </div>
                 ))}
               </div>
+            </div>
+          ))}
+        </section>
+
+        <section className="grid gap-4 lg:grid-cols-2">
+          {[
+            {
+              title: "Reporting analysis",
+              desc: "Weekly flow audio usage (estimated, last 7 days).",
+              data: usage?.weekly_flow,
+            },
+            {
+              title: "All audio usage",
+              desc: "Total TTS usage across all sources (last 7 days).",
+              data: usage?.total_tts,
+            },
+            {
+              title: "LLM usage (weekly flow)",
+              desc: "Estimated tokens for weekly flow prompts (last 7 days).",
+              data: usage?.llm_weekly,
+            },
+            {
+              title: "WhatsApp messages",
+              desc: "Total WhatsApp messages sent (last 7 days).",
+              data: usage?.whatsapp_total,
+            },
+          ].map((item) => (
+            <div key={item.title} className="rounded-2xl border border-[#efe7db] bg-white p-5">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{item.title}</p>
+              <p className="mt-2 text-sm text-[#6b6257]">{item.desc}</p>
+              <div className="mt-4 space-y-3">
+                {("events" in (item.data || {})) && (
+                  <>
+                    {[
+                      { label: "Audio events", value: item.data?.events ?? "—" },
+                      { label: "Minutes (est)", value: item.data?.minutes_est ?? "—" },
+                      { label: "Cost (est)", value: item.data?.cost_est_gbp != null ? `£${item.data.cost_est_gbp}` : "—" },
+                      { label: "Chars", value: item.data?.chars ?? "—" },
+                    ].map((row) => (
+                      <div key={row.label} className="flex items-center justify-between rounded-xl bg-[#f7f4ee] px-3 py-2">
+                        <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.label}</span>
+                        <span className="text-lg font-semibold">{row.value}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {("tokens_in" in (item.data || {})) && (
+                  <>
+                    {[
+                      { label: "Tokens in", value: item.data?.tokens_in ?? "—" },
+                      { label: "Tokens out", value: item.data?.tokens_out ?? "—" },
+                      { label: "Cost (est)", value: item.data?.cost_est_gbp != null ? `£${item.data.cost_est_gbp}` : "—" },
+                    ].map((row) => (
+                      <div key={row.label} className="flex items-center justify-between rounded-xl bg-[#f7f4ee] px-3 py-2">
+                        <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.label}</span>
+                        <span className="text-lg font-semibold">{row.value}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
+                {("messages" in (item.data || {})) && (
+                  <>
+                    {[
+                      { label: "Messages", value: item.data?.messages ?? "—" },
+                      { label: "Cost (est)", value: item.data?.cost_est_gbp != null ? `£${item.data.cost_est_gbp}` : "—" },
+                    ].map((row) => (
+                      <div key={row.label} className="flex items-center justify-between rounded-xl bg-[#f7f4ee] px-3 py-2">
+                        <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.label}</span>
+                        <span className="text-lg font-semibold">{row.value}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </div>
+              {item.data?.rate_gbp_per_1m_chars ? (
+                <p className="mt-3 text-xs text-[#6b6257]">
+                  Rate: £{item.data.rate_gbp_per_1m_chars} / 1M chars ({item.data.rate_source || "env"}).
+                </p>
+              ) : item.data?.rate_gbp_per_1m_input_tokens || item.data?.rate_gbp_per_1m_output_tokens ? (
+                <p className="mt-3 text-xs text-[#6b6257]">
+                  Rate: £{item.data?.rate_gbp_per_1m_input_tokens || "—"} in / £{item.data?.rate_gbp_per_1m_output_tokens || "—"} out (1M tokens).
+                </p>
+              ) : item.data?.rate_gbp_per_message ? (
+                <p className="mt-3 text-xs text-[#6b6257]">
+                  Rate: £{item.data?.rate_gbp_per_message} per message ({item.data?.rate_source || "env"}).
+                </p>
+              ) : (
+                <p className="mt-3 text-xs text-[#6b6257]">Rate not configured yet.</p>
+              )}
             </div>
           ))}
         </section>

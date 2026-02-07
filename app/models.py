@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from sqlalchemy import (
     Column, Integer, String, Text, DateTime, Date, Boolean, Float, ForeignKey,
-    UniqueConstraint, Index, text
+    UniqueConstraint, Index, PrimaryKeyConstraint, text
 )
 from sqlalchemy import text as sa_text
 from sqlalchemy.dialects.postgresql import JSONB as JSONType
@@ -757,6 +757,68 @@ class ContentPromptTemplate(Base):
     response_format = Column(String(32), nullable=True)
     is_active      = Column(Boolean, nullable=False, server_default="true")
     updated_at     = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Usage tracking (cost analytics)
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class UsageEvent(Base):
+    __tablename__ = "usage_events"
+
+    id            = Column(Integer, primary_key=True)
+    created_at    = Column(DateTime, nullable=False, server_default=func.now())
+    user_id       = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    provider      = Column(String(32), nullable=False)
+    product       = Column(String(32), nullable=False)  # tts|stt|llm|whatsapp|storage
+    model         = Column(String(120), nullable=True)
+    units         = Column(Float, nullable=False, default=0.0)
+    unit_type     = Column(String(32), nullable=False)  # tts_chars|audio_seconds|tokens_in|tokens_out|message
+    cost_estimate = Column(Float, nullable=True)
+    currency      = Column(String(8), nullable=False, server_default=text("'GBP'"))
+    request_id    = Column(String(120), nullable=True)
+    duration_ms   = Column(Integer, nullable=True)
+    tag           = Column(String(64), nullable=True)  # weekly_flow|assessment|content_generation|admin_test
+    meta          = Column(JSONType, nullable=True)
+
+    __table_args__ = (
+        Index("ix_usage_events_created", "created_at"),
+        Index("ix_usage_events_provider_product", "provider", "product"),
+    )
+
+
+class UsageRollupDaily(Base):
+    __tablename__ = "usage_rollups_daily"
+
+    day           = Column(Date, nullable=False)
+    user_id       = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    provider      = Column(String(32), nullable=False)
+    product       = Column(String(32), nullable=False)
+    unit_type     = Column(String(32), nullable=False)
+    tag           = Column(String(64), nullable=True)
+    units         = Column(Float, nullable=False, default=0.0)
+    cost_estimate = Column(Float, nullable=True)
+    currency      = Column(String(8), nullable=False, server_default=text("'GBP'"))
+
+    __table_args__ = (
+        PrimaryKeyConstraint("day", "user_id", "provider", "product", "unit_type", "tag", name="pk_usage_rollups_daily"),
+    )
+
+
+class UsageSettings(Base):
+    __tablename__ = "usage_settings"
+
+    id                           = Column(Integer, primary_key=True)
+    tts_gbp_per_1m_chars         = Column(Float, nullable=True)
+    tts_chars_per_min            = Column(Float, nullable=True)
+    llm_gbp_per_1m_input_tokens  = Column(Float, nullable=True)
+    llm_gbp_per_1m_output_tokens = Column(Float, nullable=True)
+    wa_gbp_per_message           = Column(Float, nullable=True)
+    wa_gbp_per_media_message     = Column(Float, nullable=True)
+    wa_gbp_per_template_message  = Column(Float, nullable=True)
+    meta                         = Column(JSONType, nullable=True)
+    updated_at                   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
     __table_args__ = (
         UniqueConstraint("template_key", "state", "version", name="uq_content_prompt_templates_key_state_version"),

@@ -160,7 +160,12 @@ def send_boost(user: User, coach_name: str = COACH_NAME, week_no: int | None = N
         )
 
     fname = f"friday_week{touchpoint_week_no}.mp3" if touchpoint_week_no else "friday.mp3"
-    audio_url = generate_podcast_audio(transcript, user.id, filename=fname)
+    audio_url = generate_podcast_audio(
+        transcript,
+        user.id,
+        filename=fname,
+        usage_tag="weekly_flow",
+    )
     if audio_url:
         print(f"[friday] sending podcast media for user={user.id} url={audio_url}")
         message = (

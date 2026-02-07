@@ -980,7 +980,12 @@ def test_prompt_template(
             from .podcast import generate_podcast_audio
             fname = f"test_podcast_{touchpoint}_{int(time.time())}.mp3"
             audio_source = llm_raw or assembly.text
-            url = generate_podcast_audio(audio_source, int(user_id), filename=fname)
+            url = generate_podcast_audio(
+                audio_source,
+                int(user_id),
+                filename=fname,
+                usage_tag="admin_test",
+            )
             audio_link = url or ""
         except Exception as e:
             audio_link = f"(audio generation failed: {e})"

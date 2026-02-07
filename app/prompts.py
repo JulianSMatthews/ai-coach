@@ -41,6 +41,7 @@ from .job_queue import enqueue_job, should_use_worker, ensure_prompt_settings_sc
 from .models import OKRKeyResult, OKRObjective, OKRKrHabitStep, PromptTemplate, PromptSettings
 from . import llm as shared_llm
 from .models import LLMPromptLog
+from .usage import log_usage_event, estimate_tokens, estimate_llm_cost
 
 PROMPT_STATE_ALIASES = {"production": "live", "stage": "beta"}
 PROMPT_STATE_ORDER = ["live", "beta", "develop"]
@@ -1643,9 +1644,9 @@ def log_llm_prompt(
         prompt_text_value = final_prompt or ""
         block_order_value = block_order or resolved_order or DEFAULT_PROMPT_BLOCK_ORDER
 
+        prompt_log_id = None
         with SessionLocal() as s:
-            s.add(
-                LLMPromptLog(
+            row = LLMPromptLog(
                     user_id=user_id,
                     touchpoint=touchpoint,
                     model=model,
@@ -1669,7 +1670,9 @@ def log_llm_prompt(
                     response_preview=response_preview,
                     context_meta=context_meta,
                 )
-            )
+            s.add(row)
+            s.flush()
+            prompt_log_id = row.id
             s.commit()
             if debug:
                 try:
@@ -1679,9 +1682,82 @@ def log_llm_prompt(
                     print(f"[prompts] logged but count check failed: {e}")
             else:
                 print(f"[prompts] logged LLM prompt touchpoint={touchpoint} user_id={user_id}")
+
+        try:
+            tag = _usage_tag_for_touchpoint(touchpoint)
+            tokens_in = estimate_tokens(final_prompt)
+            tokens_out = estimate_tokens(response_preview or "")
+            _, rate_in, rate_out, rate_source = estimate_llm_cost(tokens_in, tokens_out)
+            request_id = str(prompt_log_id) if prompt_log_id else None
+            meta = {
+                "prompt_log_id": prompt_log_id,
+                "touchpoint": touchpoint,
+                "prompt_variant": prompt_variant,
+                "rate_source": rate_source,
+                "rate_in": rate_in,
+                "rate_out": rate_out,
+            }
+            if tokens_in:
+                log_usage_event(
+                    user_id=user_id,
+                    provider=(os.getenv("LLM_PROVIDER") or "openai").strip() or "openai",
+                    product="llm",
+                    model=model,
+                    units=float(tokens_in),
+                    unit_type="tokens_in",
+                    cost_estimate=(tokens_in / 1_000_000.0) * rate_in if rate_in else None,
+                    request_id=request_id,
+                    tag=tag,
+                    meta=meta,
+                )
+            if tokens_out:
+                log_usage_event(
+                    user_id=user_id,
+                    provider=(os.getenv("LLM_PROVIDER") or "openai").strip() or "openai",
+                    product="llm",
+                    model=model,
+                    units=float(tokens_out),
+                    unit_type="tokens_out",
+                    cost_estimate=(tokens_out / 1_000_000.0) * rate_out if rate_out else None,
+                    request_id=request_id,
+                    tag=tag,
+                    meta=meta,
+                )
+        except Exception as e:
+            print(f"[usage] llm log failed: {e}")
     except Exception as e:
         # Best-effort: surface failures for missing tables or permissions
         print(f"[prompts] failed to log LLM prompt ({touchpoint}): {e}")
+
+
+def _usage_tag_for_touchpoint(touchpoint: str | None) -> str | None:
+    if not touchpoint:
+        return None
+    key = touchpoint.strip().lower()
+    weekly = {
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+        "weekstart",
+        "weekstart_actions",
+        "podcast_weekstart",
+        "podcast_thursday",
+        "podcast_friday",
+        "podcast_kickoff",
+        "kickoff",
+        "week",
+    }
+    if key in weekly:
+        return "weekly_flow"
+    if key.startswith("assessment") or key in {"assessment_scores", "assessment_okr", "assessment_approach"}:
+        return "assessment"
+    if key.startswith("content"):
+        return "content_generation"
+    return None
 
 
 # ---------------------------------------------------------------------------

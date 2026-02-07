@@ -325,7 +325,12 @@ def generate_kickoff_podcast_audio(
     transcript = generate_kickoff_podcast_transcript(
         user_id, coach_name=coach_name, mode=mode, focus_pillar=focus_pillar, week_no=week_no
     )
-    audio_url = generate_podcast_audio(transcript, user_id, filename="kickoff.mp3")
+    audio_url = generate_podcast_audio(
+        transcript,
+        user_id,
+        filename="kickoff.mp3",
+        usage_tag="weekly_flow",
+    )
     return audio_url, transcript
 
 

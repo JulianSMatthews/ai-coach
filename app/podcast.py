@@ -11,6 +11,7 @@ from openai import OpenAI  # type: ignore
 from typing import Optional, Tuple
 
 from .reporting import _reports_root_for_user
+from .usage import log_usage_event
 from .db import SessionLocal
 from .models import UserPreference
 
@@ -177,6 +178,8 @@ def generate_podcast_audio_for_voice(
     voice_override: Optional[str] = None,
     voice_role: Optional[str] = None,
     return_bytes: bool = False,
+    usage_tag: Optional[str] = None,
+    usage_meta: Optional[dict] = None,
 ) -> str | None:
     """
     Generate audio for a given transcript, optionally forcing a specific voice.
@@ -264,6 +267,34 @@ def generate_podcast_audio_for_voice(
         return None if not return_bytes else (None, None)
 
     try:
+        provider_name = None
+        model_name = None
+        if used_provider:
+            parts = used_provider.split(":", 1)
+            provider_name = parts[0]
+            model_name = parts[1] if len(parts) > 1 else None
+        tag = usage_tag or _guess_usage_tag(filename)
+        meta = {
+            "filename": filename,
+            "bytes": len(audio_bytes) if audio_bytes else 0,
+            "voice": model_name,
+        }
+        if usage_meta:
+            meta.update(usage_meta)
+        log_usage_event(
+            user_id=user_id,
+            provider=provider_name or "unknown",
+            product="tts",
+            model=model_name,
+            units=float(len(transcript)),
+            unit_type="tts_chars",
+            tag=tag,
+            meta=meta,
+        )
+    except Exception as e:
+        print(f"[usage] tts log failed: {e}")
+
+    try:
         upload_url = (os.getenv("REPORTS_UPLOAD_URL") or "").strip()
         upload_token = (os.getenv("REPORTS_UPLOAD_TOKEN") or "").strip()
         if upload_url and upload_token:
@@ -311,6 +342,7 @@ def generate_podcast_audio(
     transcript: str,
     user_id: int,
     filename: str = "kickoff.mp3",
+    usage_tag: Optional[str] = None,
 ) -> str | None:
     """Backward-compatible wrapper using the user’s preferred voice."""
     return generate_podcast_audio_for_voice(
@@ -319,7 +351,23 @@ def generate_podcast_audio(
         filename=filename,
         voice_override=None,
         return_bytes=False,
+        usage_tag=usage_tag,
     )
+
+
+def _guess_usage_tag(filename: str | None) -> str | None:
+    if not filename:
+        return None
+    low = filename.lower()
+    if any(key in low for key in ["monday", "weekstart", "thursday", "friday", "kickoff"]):
+        return "weekly_flow"
+    if "assessment" in low:
+        return "assessment"
+    if "content-gen" in low:
+        return "content_generation"
+    if "prompt-test" in low:
+        return "prompt_test"
+    return "other"
 
 
 __all__ = ["generate_podcast_audio"]

@@ -113,7 +113,12 @@ def _send_weekly_briefing(user: User, week_no: int) -> tuple[Optional[str], Opti
             week_no=week_no,
             locale="UK",
         )
-        audio_url = generate_podcast_audio(transcript, user.id, filename=f"monday_week{week_no}.mp3")
+        audio_url = generate_podcast_audio(
+            transcript,
+            user.id,
+            filename=f"monday_week{week_no}.mp3",
+            usage_tag="weekly_flow",
+        )
         if audio_url:
             try:
                 print(f"[monday] podcast url: {audio_url}")
