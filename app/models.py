@@ -820,10 +820,6 @@ class UsageSettings(Base):
     meta                         = Column(JSONType, nullable=True)
     updated_at                   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
-    __table_args__ = (
-        UniqueConstraint("template_key", "state", "version", name="uq_content_prompt_templates_key_state_version"),
-    )
-
 
 class ContentPromptSettings(Base):
     __tablename__ = "content_prompt_settings"
