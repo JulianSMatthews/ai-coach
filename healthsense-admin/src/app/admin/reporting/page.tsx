@@ -1,4 +1,5 @@
 import AdminNav from "@/components/AdminNav";
+import FetchRatesButton from "@/components/FetchRatesButton";
 import { fetchUsageSettings, getAdminUsageSummary, getUsageSettings, updateUsageSettings } from "@/lib/api";
 import { revalidatePath } from "next/cache";
 
@@ -72,6 +73,8 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
   const fxSourceRaw = meta?.fx_source;
   const fxSourceLabel = typeof fxSourceRaw === "string" ? fxSourceRaw : "default";
   const warnings = Array.isArray(meta?.warnings) ? meta.warnings : [];
+  const status = typeof meta?.status === "string" ? meta.status : null;
+  const updatedKeys = Array.isArray(meta?.updated_keys) ? meta.updated_keys : [];
   const sources =
     meta?.sources && typeof meta.sources === "object" ? (meta.sources as Record<string, any>) : null;
   const ttsProvider = typeof sources?.tts?.provider === "string" ? sources.tts.provider : null;
@@ -219,18 +222,18 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
                   <p className="mt-1 text-xs text-[#8a8176]">FX USD-&gt;GBP: {fx} ({fxSourceLabel})</p>
                 ) : null}
                 {providerLine ? <p className="mt-1 text-xs text-[#8a8176]">{providerLine}</p> : null}
+                {status === "failed" ? (
+                  <p className="mt-2 text-xs text-[#a24f3c]">Fetch failed — no provider rates updated.</p>
+                ) : status === "partial" ? (
+                  <p className="mt-2 text-xs text-[#8a8176]">
+                    Partial update: {updatedKeys.length ? updatedKeys.join(", ") : "some rates"}.
+                  </p>
+                ) : null}
                 {warnings.length ? (
                   <p className="mt-2 text-xs text-[#a24f3c]">Warnings: {warnings.join(", ")}</p>
                 ) : null}
               </div>
-              <form action={fetchUsageSettingsAction}>
-                <button
-                  type="submit"
-                  className="rounded-full border border-[#3f2e21] bg-[#3f2e21] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white"
-                >
-                  Fetch provider rates
-                </button>
-              </form>
+              <FetchRatesButton action={fetchUsageSettingsAction} />
             </div>
           </div>
           <form action={saveUsageSettingsAction} className="mt-6 grid gap-4 lg:grid-cols-2">

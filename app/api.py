@@ -3562,6 +3562,22 @@ def admin_usage_summary(
 def admin_usage_settings_fetch(admin_user: User = Depends(_require_admin)):
     current = get_usage_settings()
     rates = fetch_provider_rates()
+    keys = [
+        "tts_gbp_per_1m_chars",
+        "tts_chars_per_min",
+        "llm_gbp_per_1m_input_tokens",
+        "llm_gbp_per_1m_output_tokens",
+        "wa_gbp_per_message",
+        "wa_gbp_per_media_message",
+        "wa_gbp_per_template_message",
+    ]
+    updated_keys = [k for k in keys if rates.get(k) is not None]
+    warnings = rates.get("warnings") or []
+    if updated_keys:
+        rates["status"] = "partial" if warnings else "ok"
+    else:
+        rates["status"] = "failed"
+    rates["updated_keys"] = updated_keys
     def _env_float(name: str) -> float | None:
         raw = (os.getenv(name) or "").strip()
         if not raw:

@@ -9,7 +9,7 @@ export default function AdminNav({ title = "Admin", subtitle }: AdminNavProps) {
   return (
     <header className="rounded-3xl border border-[#e7e1d6] bg-white p-6 shadow-[0_20px_60px_-40px_rgba(30,27,22,0.4)]">
       <div className="flex items-center gap-3">
-        <img src="/healthsense-logo.svg" alt="HealthSense" className="h-10 w-auto" />
+        <img src="/healthsense-logo.svg" alt="HealthSense" className="h-12 w-auto md:h-14" />
         <span className="text-xs uppercase tracking-[0.3em] text-[#6b6257]">Admin</span>
       </div>
       <h1 className="mt-4 text-3xl">{title}</h1>

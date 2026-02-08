@@ -58,6 +58,19 @@ def fetch_openai_pricing(model_name: str | None = None) -> dict[str, Any]:
         # Try to fallback to base name (drop version suffixes)
         base = re.sub(r"-\\d{4}-\\d{2}-\\d{2}$", "", model)
         match = price_map.get(base)
+    if not match and model and model.startswith("gpt-5.2"):
+        fallback = "gpt-5.1"
+        match = price_map.get(fallback)
+        if match:
+            return {
+                "ok": True,
+                "model": model,
+                "fallback_model": fallback,
+                "input_per_1m_usd": match["input"],
+                "output_per_1m_usd": match["output"],
+                "cached_per_1m_usd": match["cached"],
+                "source": url,
+            }
     if not match and not model:
         return {"ok": True, "prices": price_map, "model": None}
     if not match:
