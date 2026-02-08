@@ -14,7 +14,7 @@ DEFAULT_OPENAI_PRICING: dict[str, dict[str, float | None]] = {
     "gpt-5-mini": {"input": 0.25, "cached": 0.025, "output": 2.0},
 }
 
-DEFAULT_OPENAI_FALLBACK_MODEL = "gpt-5.2-pro"
+DEFAULT_OPENAI_FALLBACK_MODEL = "gpt-5.1"
 
 DEFAULT_OPENAI_ALIASES = {
     "gpt-5.2 pro": "gpt-5.2-pro",
