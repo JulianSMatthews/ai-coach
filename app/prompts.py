@@ -1488,7 +1488,7 @@ def run_llm_prompt(
             t0 = time.perf_counter()
             resp = client.invoke(prompt)
             duration = time.perf_counter() - t0
-            content = (getattr(resp, "content", None) or "").strip()
+            content = _coerce_llm_content(getattr(resp, "content", None)).strip()
         except Exception as e:
             print(f"[prompts] LLM invoke failed for touchpoint={touchpoint}: {e}")
             content = ""
@@ -1523,6 +1523,38 @@ def _normalize_job_payload(payload: Dict[str, Any]) -> Dict[str, Any]:
         return json.loads(json.dumps(payload, default=str))
     except Exception:
         return {"payload_text": str(payload)}
+
+
+def _coerce_llm_content(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts: List[str] = []
+        for item in value:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            if isinstance(item, dict):
+                for key in ("text", "content"):
+                    v = item.get(key)
+                    if isinstance(v, str):
+                        parts.append(v)
+                        break
+                else:
+                    parts.append(json.dumps(item, ensure_ascii=False))
+                continue
+            parts.append(str(item))
+        joined = "\n".join(p for p in parts if p)
+        return joined or json.dumps(value, ensure_ascii=False)
+    if isinstance(value, dict):
+        for key in ("text", "content"):
+            v = value.get(key)
+            if isinstance(v, str):
+                return v
+        return json.dumps(value, ensure_ascii=False)
+    return str(value)
 
 
 def _in_worker_process() -> bool:
@@ -1627,6 +1659,8 @@ def log_llm_prompt(
     print(f"[prompts] logging LLM prompt touchpoint={touchpoint} user_id={user_id}")
     try:
         _ensure_llm_prompt_log_schema()
+        if response_preview is not None and not isinstance(response_preview, str):
+            response_preview = _coerce_llm_content(response_preview)
         known_blocks, extra_blocks, resolved_order, assembled_from_blocks = _normalize_prompt_blocks(
             prompt_blocks, preferred_order=block_order
         )

@@ -42,7 +42,7 @@ from .models import (
     OKRKeyResult,
     UserPreference,
 )
-from .prompts import log_llm_prompt
+from .prompts import log_llm_prompt, _coerce_llm_content
 
 # Messaging + LLM
 from .nudges import send_message
@@ -2008,7 +2008,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 {"role": "system", "content": _system_msg},
                 {"role": "user", "content": _user_msg},
             ])
-            raw = getattr(_resp, "content", "") or ""
+            raw = _coerce_llm_content(getattr(_resp, "content", None))
             try:
                 log_llm_prompt(
                     user_id=state.get("user_id"),
