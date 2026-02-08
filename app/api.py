@@ -23,6 +23,7 @@ from fastapi import FastAPI, APIRouter, Request, Response, Depends, Header, HTTP
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text, select, desc, func, or_
+from sqlalchemy import cast, Integer
 from pathlib import Path 
 from typing import Optional
 
@@ -76,6 +77,7 @@ from .models import (
     PromptSettings,
     PromptTemplateVersionLog,
     LLMPromptLog,
+    UsageEvent,
     UserConceptState,
     PillarResult,
     PsychProfile,
@@ -3555,6 +3557,137 @@ def admin_usage_summary(
         "llm_total": llm_total,
         "whatsapp_total": whatsapp_total,
         "combined_cost_gbp": round(combined, 4),
+    }
+
+
+@admin.get("/usage/prompt-costs")
+def admin_usage_prompt_costs(
+    days: int | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    user_id: int | None = None,
+    limit: int | None = None,
+    admin_user: User = Depends(_require_admin),
+):
+    target_user = None
+    if user_id:
+        with SessionLocal() as s:
+            target_user = s.get(User, user_id)
+        if not target_user:
+            raise HTTPException(status_code=404, detail="user not found")
+        _ensure_club_scope(admin_user, target_user)
+
+    end_utc = _parse_uk_date(end, end_of_day=True) if end else None
+    if not end_utc:
+        end_utc = datetime.now(ZoneInfo("UTC")).replace(tzinfo=None)
+    start_utc = _parse_uk_date(start, end_of_day=False) if start else None
+    if not start_utc:
+        try:
+            days_val = int(days or 7)
+        except Exception:
+            days_val = 7
+        days_val = max(1, min(days_val, 365))
+        start_utc = end_utc - timedelta(days=days_val)
+    if end_utc <= start_utc:
+        end_utc = start_utc + timedelta(days=1)
+
+    try:
+        limit_val = int(limit or 50)
+    except Exception:
+        limit_val = 50
+    limit_val = max(1, min(limit_val, 200))
+
+    rates = get_usage_settings()
+    default_rate_in = float(rates.get("llm_gbp_per_1m_input_tokens") or 0.0)
+    default_rate_out = float(rates.get("llm_gbp_per_1m_output_tokens") or 0.0)
+
+    with SessionLocal() as s:
+        q = (
+            s.query(UsageEvent, LLMPromptLog)
+            .join(LLMPromptLog, LLMPromptLog.id == cast(UsageEvent.request_id, Integer))
+            .filter(
+                UsageEvent.product == "llm",
+                UsageEvent.unit_type.in_(["tokens_in", "tokens_out"]),
+                UsageEvent.request_id.isnot(None),
+                UsageEvent.created_at >= start_utc,
+                UsageEvent.created_at < end_utc,
+            )
+        )
+        if user_id:
+            q = q.filter(or_(UsageEvent.user_id == user_id, LLMPromptLog.user_id == user_id))
+        rows = q.all()
+
+    by_prompt: dict[int, dict] = {}
+    for evt, prompt in rows:
+        pid = int(prompt.id)
+        entry = by_prompt.get(pid)
+        if not entry:
+            entry = {
+                "prompt_id": pid,
+                "created_at": prompt.created_at.isoformat() if prompt.created_at else None,
+                "user_id": prompt.user_id,
+                "touchpoint": prompt.touchpoint,
+                "model": prompt.model,
+                "prompt_variant": prompt.prompt_variant,
+                "task_label": prompt.task_label,
+                "prompt_preview": (prompt.assembled_prompt or "")[:400],
+                "response_preview": (prompt.response_preview or "")[:400] if prompt.response_preview else None,
+                "tokens_in": 0.0,
+                "tokens_out": 0.0,
+                "rate_in": None,
+                "rate_out": None,
+                "rate_source": None,
+                "cost_est_gbp": 0.0,
+            }
+            by_prompt[pid] = entry
+        units = float(evt.units or 0.0)
+        if evt.unit_type == "tokens_in":
+            entry["tokens_in"] += units
+        elif evt.unit_type == "tokens_out":
+            entry["tokens_out"] += units
+        if evt.cost_estimate is not None:
+            entry["cost_est_gbp"] += float(evt.cost_estimate)
+        meta = evt.meta if isinstance(evt.meta, dict) else None
+        if meta:
+            if entry.get("rate_in") is None and meta.get("rate_in") is not None:
+                entry["rate_in"] = float(meta.get("rate_in"))
+            if entry.get("rate_out") is None and meta.get("rate_out") is not None:
+                entry["rate_out"] = float(meta.get("rate_out"))
+            if entry.get("rate_source") is None and meta.get("rate_source"):
+                entry["rate_source"] = meta.get("rate_source")
+
+    rows_out = []
+    for entry in by_prompt.values():
+        rate_in = float(entry.get("rate_in") or default_rate_in or 0.0)
+        rate_out = float(entry.get("rate_out") or default_rate_out or 0.0)
+        calc_cost = (entry["tokens_in"] / 1_000_000.0) * rate_in + (entry["tokens_out"] / 1_000_000.0) * rate_out
+        cost_est = entry.get("cost_est_gbp") or 0.0
+        if not cost_est and calc_cost:
+            cost_est = calc_cost
+        entry["rate_in"] = rate_in or None
+        entry["rate_out"] = rate_out or None
+        entry["calc_cost_gbp"] = round(calc_cost, 6)
+        entry["cost_est_gbp"] = round(cost_est, 6)
+        entry["working"] = (
+            f"({entry['tokens_in']:.0f}/1M * £{rate_in:.6f}) + "
+            f"({entry['tokens_out']:.0f}/1M * £{rate_out:.6f}) = £{entry['calc_cost_gbp']:.6f}"
+        )
+        rows_out.append(entry)
+
+    rows_out.sort(key=lambda r: r.get("cost_est_gbp") or 0.0, reverse=True)
+    if len(rows_out) > limit_val:
+        rows_out = rows_out[:limit_val]
+
+    total_cost = round(sum(r.get("cost_est_gbp") or 0.0 for r in rows_out), 6)
+    return {
+        "as_of_uk": datetime.now(UK_TZ).isoformat(),
+        "window": {"start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat()},
+        "user": {"id": target_user.id, "display_name": target_user.display_name, "phone": target_user.phone}
+        if target_user
+        else None,
+        "rows": rows_out,
+        "total_cost_gbp": total_cost,
+        "limit": limit_val,
     }
 
 

@@ -74,6 +74,35 @@ export type UsageSummary = {
   combined_cost_gbp?: number;
 };
 
+export type PromptCostRow = {
+  prompt_id: number;
+  created_at?: string | null;
+  user_id?: number | null;
+  touchpoint?: string | null;
+  model?: string | null;
+  prompt_variant?: string | null;
+  task_label?: string | null;
+  prompt_preview?: string | null;
+  response_preview?: string | null;
+  tokens_in?: number;
+  tokens_out?: number;
+  rate_in?: number | null;
+  rate_out?: number | null;
+  rate_source?: string | null;
+  cost_est_gbp?: number;
+  calc_cost_gbp?: number;
+  working?: string | null;
+};
+
+export type PromptCostReport = {
+  as_of_uk?: string;
+  window?: { start_utc?: string; end_utc?: string };
+  user?: { id?: number; display_name?: string; phone?: string } | null;
+  rows?: PromptCostRow[];
+  total_cost_gbp?: number;
+  limit?: number;
+};
+
 export type UsageSettings = {
   tts_gbp_per_1m_chars?: number | null;
   tts_chars_per_min?: number | null;
@@ -494,6 +523,24 @@ export async function getAdminUsageSummary(params: {
       end: params.end,
       user_id: params.user_id,
       tag: params.tag,
+    },
+  });
+}
+
+export async function getAdminPromptCosts(params: {
+  days?: number;
+  start?: string;
+  end?: string;
+  user_id?: number;
+  limit?: number;
+} = {}): Promise<PromptCostReport> {
+  return apiAdmin<PromptCostReport>("/admin/usage/prompt-costs", {
+    query: {
+      days: params.days,
+      start: params.start,
+      end: params.end,
+      user_id: params.user_id,
+      limit: params.limit,
     },
   });
 }

@@ -1,6 +1,12 @@
 import AdminNav from "@/components/AdminNav";
 import FetchRatesButton from "@/components/FetchRatesButton";
-import { fetchUsageSettings, getAdminUsageSummary, getUsageSettings, updateUsageSettings } from "@/lib/api";
+import {
+  fetchUsageSettings,
+  getAdminPromptCosts,
+  getAdminUsageSummary,
+  getUsageSettings,
+  updateUsageSettings,
+} from "@/lib/api";
 import { revalidatePath } from "next/cache";
 
 export const dynamic = "force-dynamic";
@@ -48,7 +54,7 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
   const userId = userIdRaw ? Number(userIdRaw) : undefined;
   const days = period === "custom" ? undefined : Number(period || 7);
 
-  const [settings, usage] = await Promise.all([
+  const [settings, usage, promptCosts] = await Promise.all([
     getUsageSettings(),
     getAdminUsageSummary({
       days: Number.isFinite(days) ? days : 7,
@@ -56,6 +62,15 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
       end: period === "custom" ? end : undefined,
       user_id: Number.isFinite(userId) ? userId : undefined,
     }),
+    Number.isFinite(userId)
+      ? getAdminPromptCosts({
+          days: Number.isFinite(days) ? days : 7,
+          start: period === "custom" ? start : undefined,
+          end: period === "custom" ? end : undefined,
+          user_id: Number.isFinite(userId) ? userId : undefined,
+          limit: 50,
+        })
+      : Promise.resolve(null),
   ]);
   const meta = (() => {
     if (!settings?.meta) return null;
@@ -204,6 +219,74 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
               </div>
             ))}
           </div>
+        </section>
+
+        <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
+          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Prompt cost breakdown</p>
+          <p className="mt-2 text-sm text-[#6b6257]">
+            Drill into LLM prompt costs for the selected user and period.
+          </p>
+          {!Number.isFinite(userId) ? (
+            <p className="mt-4 text-sm text-[#8a8176]">
+              Enter a User ID above to view prompt-level costs.
+            </p>
+          ) : !promptCosts?.rows?.length ? (
+            <p className="mt-4 text-sm text-[#8a8176]">No LLM prompt costs found in this window.</p>
+          ) : (
+            <div className="mt-4 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#efe7db] bg-[#fdfaf4] px-4 py-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Total prompt cost (est)</p>
+                  <p className="mt-1 text-lg font-semibold">
+                    £{promptCosts.total_cost_gbp ?? "—"}
+                  </p>
+                </div>
+                <p className="text-xs text-[#8a8176]">
+                  Showing top {promptCosts.limit ?? 50} prompts by cost.
+                </p>
+              </div>
+              <div className="overflow-x-auto rounded-2xl border border-[#efe7db] bg-white">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-[#f7f4ee] text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                    <tr>
+                      <th className="px-4 py-3">Prompt</th>
+                      <th className="px-4 py-3">Tokens In</th>
+                      <th className="px-4 py-3">Tokens Out</th>
+                      <th className="px-4 py-3">Rates (GBP/1M)</th>
+                      <th className="px-4 py-3">Cost (est)</th>
+                      <th className="px-4 py-3">Working</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {promptCosts.rows.map((row) => (
+                      <tr key={row.prompt_id} className="border-t border-[#efe7db]">
+                        <td className="px-4 py-3 align-top">
+                          <div className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                            {row.touchpoint || "prompt"} · {row.model || "model"}
+                          </div>
+                          <div className="mt-2 text-sm text-[#1e1b16]">
+                            {row.prompt_preview || "—"}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 align-top">{Math.round(row.tokens_in || 0)}</td>
+                        <td className="px-4 py-3 align-top">{Math.round(row.tokens_out || 0)}</td>
+                        <td className="px-4 py-3 align-top">
+                          <div>In: £{row.rate_in ?? "—"}</div>
+                          <div>Out: £{row.rate_out ?? "—"}</div>
+                        </td>
+                        <td className="px-4 py-3 align-top">
+                          £{row.cost_est_gbp ?? "—"}
+                        </td>
+                        <td className="px-4 py-3 align-top text-xs text-[#6b6257]">
+                          {row.working || "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
