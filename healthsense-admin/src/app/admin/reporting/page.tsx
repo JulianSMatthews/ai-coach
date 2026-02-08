@@ -6,14 +6,21 @@ export const dynamic = "force-dynamic";
 
 async function saveUsageSettingsAction(formData: FormData) {
   "use server";
+  const toNumber = (value: FormDataEntryValue | null) => {
+    if (value == null) return null;
+    const raw = typeof value === "string" ? value.trim() : "";
+    if (!raw) return null;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
   const payload = {
-    tts_gbp_per_1m_chars: formData.get("tts_gbp_per_1m_chars") || null,
-    tts_chars_per_min: formData.get("tts_chars_per_min") || null,
-    llm_gbp_per_1m_input_tokens: formData.get("llm_gbp_per_1m_input_tokens") || null,
-    llm_gbp_per_1m_output_tokens: formData.get("llm_gbp_per_1m_output_tokens") || null,
-    wa_gbp_per_message: formData.get("wa_gbp_per_message") || null,
-    wa_gbp_per_media_message: formData.get("wa_gbp_per_media_message") || null,
-    wa_gbp_per_template_message: formData.get("wa_gbp_per_template_message") || null,
+    tts_gbp_per_1m_chars: toNumber(formData.get("tts_gbp_per_1m_chars")),
+    tts_chars_per_min: toNumber(formData.get("tts_chars_per_min")),
+    llm_gbp_per_1m_input_tokens: toNumber(formData.get("llm_gbp_per_1m_input_tokens")),
+    llm_gbp_per_1m_output_tokens: toNumber(formData.get("llm_gbp_per_1m_output_tokens")),
+    wa_gbp_per_message: toNumber(formData.get("wa_gbp_per_message")),
+    wa_gbp_per_media_message: toNumber(formData.get("wa_gbp_per_media_message")),
+    wa_gbp_per_template_message: toNumber(formData.get("wa_gbp_per_template_message")),
   };
   await updateUsageSettings(payload);
   revalidatePath("/admin/reporting");
