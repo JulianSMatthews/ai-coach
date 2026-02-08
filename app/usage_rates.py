@@ -362,12 +362,40 @@ def fetch_provider_rates() -> dict[str, Any]:
             results["warnings"].append("openai_tts_rate_unavailable")
 
     # LLM
-    model_name = os.getenv("LLM_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-5.1"
+    model_env = (os.getenv("LLM_MODEL") or "").strip()
+    openai_env = (os.getenv("OPENAI_MODEL") or "").strip()
+    if model_env:
+        model_name = model_env
+        model_source = "LLM_MODEL"
+    elif openai_env:
+        model_name = openai_env
+        model_source = "OPENAI_MODEL"
+    else:
+        model_name = "gpt-5.1"
+        model_source = "default"
     openai = fetch_openai_pricing(model_name)
     if openai.get("ok"):
-        results["llm_gbp_per_1m_input_tokens"] = _convert_usd_to_gbp(float(openai["input_per_1m_usd"]))
-        results["llm_gbp_per_1m_output_tokens"] = _convert_usd_to_gbp(float(openai["output_per_1m_usd"]))
-        results["sources"]["llm"] = {"provider": "openai", "detail": openai}
+        input_usd = openai.get("input_per_1m_usd")
+        output_usd = openai.get("output_per_1m_usd")
+        if input_usd is not None:
+            results["llm_gbp_per_1m_input_tokens"] = _convert_usd_to_gbp(float(input_usd))
+        else:
+            results["warnings"].append("openai_llm_input_rate_unavailable")
+        if output_usd is not None:
+            results["llm_gbp_per_1m_output_tokens"] = _convert_usd_to_gbp(float(output_usd))
+        else:
+            results["warnings"].append("openai_llm_output_rate_unavailable")
+        pricing_model = openai.get("fallback_model") or openai.get("model") or model_name
+        results["llm_model"] = model_name
+        results["llm_model_source"] = model_source
+        results["llm_pricing_model"] = pricing_model
+        results["sources"]["llm"] = {
+            "provider": "openai",
+            "detail": openai,
+            "model": model_name,
+            "model_source": model_source,
+            "pricing_model": pricing_model,
+        }
     else:
         results["warnings"].append("openai_llm_rate_unavailable")
 

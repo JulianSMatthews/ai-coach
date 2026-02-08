@@ -98,6 +98,15 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
   const llmProvider = typeof sources?.llm?.provider === "string" ? sources.llm.provider : null;
   const waProvider =
     typeof sources?.whatsapp?.provider === "string" ? sources.whatsapp.provider : null;
+  const llmDetail = sources?.llm?.detail;
+  const llmModel = typeof sources?.llm?.model === "string" ? sources.llm.model : null;
+  const llmModelSource =
+    typeof sources?.llm?.model_source === "string" ? sources.llm.model_source : null;
+  const llmPricingModel =
+    typeof sources?.llm?.pricing_model === "string" ? sources.llm.pricing_model : null;
+  const llmPricingSource = typeof llmDetail?.source === "string" ? llmDetail.source : null;
+  const llmOutputUsd =
+    typeof llmDetail?.output_per_1m_usd === "number" ? llmDetail.output_per_1m_usd : null;
   const providerLine = [ttsProvider ? `TTS: ${ttsProvider}` : null, llmProvider ? `LLM: ${llmProvider}` : null, waProvider ? `WhatsApp: ${waProvider}` : null]
     .filter(Boolean)
     .join(" · ");
@@ -320,6 +329,21 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
                   <p className="mt-1 text-xs text-[#8a8176]">FX USD-&gt;GBP: {fx} ({fxSourceLabel})</p>
                 ) : null}
                 {providerLine ? <p className="mt-1 text-xs text-[#8a8176]">{providerLine}</p> : null}
+                {llmPricingModel ? (
+                  <p className="mt-1 text-xs text-[#8a8176]">
+                    LLM pricing model: {llmPricingModel}
+                    {llmModel && llmModel !== llmPricingModel ? ` (requested ${llmModel})` : ""}
+                    {llmModelSource ? ` · source: ${llmModelSource}` : ""}
+                  </p>
+                ) : null}
+                {llmPricingSource ? (
+                  <p className="mt-1 text-xs text-[#8a8176]">LLM pricing source: {llmPricingSource}</p>
+                ) : null}
+                {llmOutputUsd != null ? (
+                  <p className="mt-1 text-xs text-[#8a8176]">
+                    LLM output rate (USD/1M): {llmOutputUsd}
+                  </p>
+                ) : null}
                 {status === "failed" ? (
                   <p className="mt-2 text-xs text-[#a24f3c]">Fetch failed — no provider rates updated.</p>
                 ) : status === "partial" ? (
