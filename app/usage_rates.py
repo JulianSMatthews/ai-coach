@@ -11,6 +11,8 @@ import requests
 DEFAULT_OPENAI_PRICING: dict[str, dict[str, float | None]] = {
     "gpt-5.2": {"input": 1.75, "cached": 0.175, "output": 14.0},
     "gpt-5.2-pro": {"input": 21.0, "cached": None, "output": 168.0},
+    "gpt-5.1": {"input": 1.25, "cached": 0.125, "output": 10.0},
+    "gpt-5.1-chat-latest": {"input": 1.25, "cached": 0.125, "output": 10.0},
     "gpt-5-mini": {"input": 0.25, "cached": 0.025, "output": 2.0},
 }
 
@@ -19,6 +21,7 @@ DEFAULT_OPENAI_FALLBACK_MODEL = "gpt-5.1"
 DEFAULT_OPENAI_ALIASES = {
     "gpt-5.2 pro": "gpt-5.2-pro",
     "gpt-5.2-chat-latest": "gpt-5.2",
+    "gpt-5.1-chat-latest": "gpt-5.1",
     "gpt-5 mini": "gpt-5-mini",
 }
 
