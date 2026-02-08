@@ -207,7 +207,7 @@ def fetch_provider_rates() -> dict[str, Any]:
             results["warnings"].append("openai_tts_rate_unavailable")
 
     # LLM
-    model_name = os.getenv("LLM_MODEL") or os.getenv("OPENAI_MODEL")
+    model_name = os.getenv("LLM_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-5.2"
     openai = fetch_openai_pricing(model_name)
     if openai.get("ok"):
         results["llm_gbp_per_1m_input_tokens"] = _convert_usd_to_gbp(float(openai["input_per_1m_usd"]))

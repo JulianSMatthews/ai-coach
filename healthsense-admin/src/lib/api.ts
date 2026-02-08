@@ -64,6 +64,16 @@ export type UsageWeeklySummary = {
   };
 };
 
+export type UsageSummary = {
+  as_of_uk?: string;
+  window?: { start_utc?: string; end_utc?: string };
+  user?: { id?: number; display_name?: string; phone?: string } | null;
+  total_tts?: UsageWeeklySummary["total_tts"];
+  llm_total?: UsageWeeklySummary["llm_total"];
+  whatsapp_total?: UsageWeeklySummary["whatsapp_total"];
+  combined_cost_gbp?: number;
+};
+
 export type UsageSettings = {
   tts_gbp_per_1m_chars?: number | null;
   tts_chars_per_min?: number | null;
@@ -468,6 +478,24 @@ export async function getAdminStats(): Promise<AdminStats> {
 
 export async function getAdminUsageWeekly(): Promise<UsageWeeklySummary> {
   return apiAdmin<UsageWeeklySummary>("/admin/usage/weekly");
+}
+
+export async function getAdminUsageSummary(params: {
+  days?: number;
+  start?: string;
+  end?: string;
+  user_id?: number;
+  tag?: string;
+} = {}): Promise<UsageSummary> {
+  return apiAdmin<UsageSummary>("/admin/usage/summary", {
+    query: {
+      days: params.days,
+      start: params.start,
+      end: params.end,
+      user_id: params.user_id,
+      tag: params.tag,
+    },
+  });
 }
 
 export async function getUsageSettings(): Promise<UsageSettings> {

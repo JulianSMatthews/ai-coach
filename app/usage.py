@@ -241,6 +241,7 @@ def get_tts_usage_summary(
     start_utc: datetime,
     end_utc: datetime,
     tag: str | None = None,
+    user_id: int | None = None,
 ) -> dict:
     ensure_usage_schema()
     with SessionLocal() as s:
@@ -265,6 +266,8 @@ def get_tts_usage_summary(
         )
         if tag:
             q = q.filter(UsageEvent.tag == tag)
+        if user_id:
+            q = q.filter(UsageEvent.user_id == user_id)
         row = q.one_or_none()
 
     events = int(row.events or 0) if row else 0
@@ -291,6 +294,7 @@ def get_llm_usage_summary(
     start_utc: datetime,
     end_utc: datetime,
     tag: str | None = None,
+    user_id: int | None = None,
 ) -> dict:
     ensure_usage_schema()
     with SessionLocal() as s:
@@ -305,6 +309,8 @@ def get_llm_usage_summary(
         )
         if tag:
             q = q.filter(UsageEvent.tag == tag)
+        if user_id:
+            q = q.filter(UsageEvent.user_id == user_id)
         row = q.one_or_none()
 
     tokens_in = int(row.tokens_in or 0) if row else 0
@@ -328,6 +334,7 @@ def get_whatsapp_usage_summary(
     start_utc: datetime,
     end_utc: datetime,
     tag: str | None = None,
+    user_id: int | None = None,
 ) -> dict:
     ensure_usage_schema()
     with SessionLocal() as s:
@@ -341,6 +348,8 @@ def get_whatsapp_usage_summary(
         )
         if tag:
             q = q.filter(UsageEvent.tag == tag)
+        if user_id:
+            q = q.filter(UsageEvent.user_id == user_id)
         row = q.one_or_none()
 
     messages = float(row.messages or 0.0) if row else 0.0

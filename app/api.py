@@ -2217,6 +2217,26 @@ def _uk_range_bounds():
         _to_utc_naive(week_end_uk),
     )
 
+def _parse_uk_date(value: str, end_of_day: bool = False) -> datetime | None:
+    if not value:
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    try:
+        if "T" in raw:
+            dt = datetime.fromisoformat(raw)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=UK_TZ)
+        else:
+            d = date.fromisoformat(raw)
+            dt = datetime(d.year, d.month, d.day, tzinfo=UK_TZ)
+            if end_of_day:
+                dt = dt + timedelta(days=1)
+        return dt.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+    except Exception:
+        return None
+
 def _parse_block_list(val: object | None) -> list[str]:
     if val is None:
         return []
@@ -3471,17 +3491,110 @@ def admin_usage_settings_update(payload: dict, admin_user: User = Depends(_requi
     return save_usage_settings(payload)
 
 
+@admin.get("/usage/summary")
+def admin_usage_summary(
+    days: int | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    user_id: int | None = None,
+    tag: str | None = None,
+    admin_user: User = Depends(_require_admin),
+):
+    target_user = None
+    if user_id:
+        with SessionLocal() as s:
+            target_user = s.get(User, user_id)
+        if not target_user:
+            raise HTTPException(status_code=404, detail="user not found")
+        _ensure_club_scope(admin_user, target_user)
+
+    end_utc = _parse_uk_date(end, end_of_day=True) if end else None
+    if not end_utc:
+        end_utc = datetime.now(ZoneInfo("UTC")).replace(tzinfo=None)
+    start_utc = _parse_uk_date(start, end_of_day=False) if start else None
+    if not start_utc:
+        try:
+            days_val = int(days or 7)
+        except Exception:
+            days_val = 7
+        days_val = max(1, min(days_val, 365))
+        start_utc = end_utc - timedelta(days=days_val)
+    if end_utc <= start_utc:
+        end_utc = start_utc + timedelta(days=1)
+
+    total_tts = get_tts_usage_summary(
+        start_utc=start_utc,
+        end_utc=end_utc,
+        tag=tag,
+        user_id=user_id,
+    )
+    llm_total = get_llm_usage_summary(
+        start_utc=start_utc,
+        end_utc=end_utc,
+        tag=tag,
+        user_id=user_id,
+    )
+    whatsapp_total = get_whatsapp_usage_summary(
+        start_utc=start_utc,
+        end_utc=end_utc,
+        tag=tag,
+        user_id=user_id,
+    )
+    combined = (
+        float(total_tts.get("cost_est_gbp") or 0.0)
+        + float(llm_total.get("cost_est_gbp") or 0.0)
+        + float(whatsapp_total.get("cost_est_gbp") or 0.0)
+    )
+    return {
+        "as_of_uk": datetime.now(UK_TZ).isoformat(),
+        "window": {"start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat()},
+        "user": {"id": target_user.id, "display_name": target_user.display_name, "phone": target_user.phone}
+        if target_user
+        else None,
+        "total_tts": total_tts,
+        "llm_total": llm_total,
+        "whatsapp_total": whatsapp_total,
+        "combined_cost_gbp": round(combined, 4),
+    }
+
+
 @admin.post("/usage/settings/fetch")
 def admin_usage_settings_fetch(admin_user: User = Depends(_require_admin)):
+    current = get_usage_settings()
     rates = fetch_provider_rates()
+    def _env_float(name: str) -> float | None:
+        raw = (os.getenv(name) or "").strip()
+        if not raw:
+            return None
+        try:
+            return float(raw)
+        except Exception:
+            return None
+    env_fallbacks = {
+        "tts_gbp_per_1m_chars": _env_float("USAGE_TTS_GBP_PER_1M_CHARS"),
+        "tts_chars_per_min": _env_float("USAGE_TTS_CHARS_PER_MIN"),
+        "llm_gbp_per_1m_input_tokens": _env_float("USAGE_LLM_GBP_PER_1M_INPUT_TOKENS"),
+        "llm_gbp_per_1m_output_tokens": _env_float("USAGE_LLM_GBP_PER_1M_OUTPUT_TOKENS"),
+        "wa_gbp_per_message": _env_float("USAGE_WA_GBP_PER_MESSAGE"),
+        "wa_gbp_per_media_message": _env_float("USAGE_WA_GBP_PER_MEDIA_MESSAGE"),
+        "wa_gbp_per_template_message": _env_float("USAGE_WA_GBP_PER_TEMPLATE_MESSAGE"),
+    }
+    def _pick(key: str):
+        val = rates.get(key)
+        if val is not None:
+            return val
+        current_val = current.get(key)
+        if current_val is not None:
+            return current_val
+        return env_fallbacks.get(key)
     payload = {
-        "tts_gbp_per_1m_chars": rates.get("tts_gbp_per_1m_chars"),
-        "tts_chars_per_min": rates.get("tts_chars_per_min"),
-        "llm_gbp_per_1m_input_tokens": rates.get("llm_gbp_per_1m_input_tokens"),
-        "llm_gbp_per_1m_output_tokens": rates.get("llm_gbp_per_1m_output_tokens"),
-        "wa_gbp_per_message": rates.get("wa_gbp_per_message"),
-        "wa_gbp_per_media_message": rates.get("wa_gbp_per_media_message"),
-        "wa_gbp_per_template_message": rates.get("wa_gbp_per_template_message"),
+        "tts_gbp_per_1m_chars": _pick("tts_gbp_per_1m_chars"),
+        "tts_chars_per_min": _pick("tts_chars_per_min"),
+        "llm_gbp_per_1m_input_tokens": _pick("llm_gbp_per_1m_input_tokens"),
+        "llm_gbp_per_1m_output_tokens": _pick("llm_gbp_per_1m_output_tokens"),
+        "wa_gbp_per_message": _pick("wa_gbp_per_message"),
+        "wa_gbp_per_media_message": _pick("wa_gbp_per_media_message"),
+        "wa_gbp_per_template_message": _pick("wa_gbp_per_template_message"),
         "meta": rates,
     }
     return save_usage_settings(payload)

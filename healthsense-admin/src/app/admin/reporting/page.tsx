@@ -1,5 +1,5 @@
 import AdminNav from "@/components/AdminNav";
-import { fetchUsageSettings, getAdminUsageWeekly, getUsageSettings, updateUsageSettings } from "@/lib/api";
+import { fetchUsageSettings, getAdminUsageSummary, getUsageSettings, updateUsageSettings } from "@/lib/api";
 import { revalidatePath } from "next/cache";
 
 export const dynamic = "force-dynamic";
@@ -32,8 +32,30 @@ async function fetchUsageSettingsAction() {
   revalidatePath("/admin/reporting");
 }
 
-export default async function ReportingPage() {
-  const [settings, usage] = await Promise.all([getUsageSettings(), getAdminUsageWeekly()]);
+type ReportingSearchParams = {
+  period?: string;
+  start?: string;
+  end?: string;
+  user_id?: string;
+};
+
+export default async function ReportingPage({ searchParams }: { searchParams?: ReportingSearchParams }) {
+  const period = typeof searchParams?.period === "string" ? searchParams.period : "7";
+  const start = typeof searchParams?.start === "string" ? searchParams.start : undefined;
+  const end = typeof searchParams?.end === "string" ? searchParams.end : undefined;
+  const userIdRaw = typeof searchParams?.user_id === "string" ? searchParams.user_id : "";
+  const userId = userIdRaw ? Number(userIdRaw) : undefined;
+  const days = period === "custom" ? undefined : Number(period || 7);
+
+  const [settings, usage] = await Promise.all([
+    getUsageSettings(),
+    getAdminUsageSummary({
+      days: Number.isFinite(days) ? days : 7,
+      start: period === "custom" ? start : undefined,
+      end: period === "custom" ? end : undefined,
+      user_id: Number.isFinite(userId) ? userId : undefined,
+    }),
+  ]);
   const meta = (() => {
     if (!settings?.meta) return null;
     if (typeof settings.meta === "string") {
@@ -69,8 +91,69 @@ export default async function ReportingPage() {
         />
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
-          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Weekly usage (last 7 days)</p>
-          <div className="mt-4 grid gap-4 lg:grid-cols-3">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Usage summary</p>
+              <p className="mt-2 text-sm text-[#6b6257]">
+                Window: {usage?.window?.start_utc ?? "—"} → {usage?.window?.end_utc ?? "—"}
+              </p>
+              {usage?.user ? (
+                <p className="mt-1 text-sm text-[#6b6257]">
+                  User: {usage.user.display_name || usage.user.phone || usage.user.id}
+                </p>
+              ) : null}
+            </div>
+            <form method="get" className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Period</label>
+                <select
+                  name="period"
+                  defaultValue={period}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                >
+                  <option value="7">Last 7 days</option>
+                  <option value="14">Last 14 days</option>
+                  <option value="30">Last 30 days</option>
+                  <option value="90">Last 90 days</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Start</label>
+                <input
+                  type="date"
+                  name="start"
+                  defaultValue={start || ""}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">End</label>
+                <input
+                  type="date"
+                  name="end"
+                  defaultValue={end || ""}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">User ID</label>
+                <input
+                  name="user_id"
+                  defaultValue={userIdRaw}
+                  placeholder="All users"
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <button
+                type="submit"
+                className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white"
+              >
+                Run
+              </button>
+            </form>
+          </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-4">
             {[
               {
                 title: "TTS",
@@ -93,6 +176,15 @@ export default async function ReportingPage() {
                 rows: [
                   { label: "Messages", value: usage?.whatsapp_total?.messages ?? "—" },
                   { label: "Cost (est)", value: usage?.whatsapp_total?.cost_est_gbp != null ? `£${usage.whatsapp_total.cost_est_gbp}` : "—" },
+                ],
+              },
+              {
+                title: "Combined",
+                rows: [
+                  {
+                    label: "Total cost (est)",
+                    value: usage?.combined_cost_gbp != null ? `£${usage.combined_cost_gbp}` : "—",
+                  },
                 ],
               },
             ].map((card) => (

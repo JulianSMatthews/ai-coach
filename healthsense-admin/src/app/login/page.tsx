@@ -199,7 +199,7 @@ export default function LoginPage() {
       <div className="mx-auto flex w-full max-w-md flex-col gap-6 rounded-3xl border border-[#e7e1d6] bg-white p-8 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.5)]">
         <div>
           <div className="flex items-center gap-3">
-            <img src="/healthsense-logo.svg" alt="HealthSense" className="h-8 w-auto" />
+            <img src="/healthsense-logo.svg" alt="HealthSense" className="h-10 w-auto" />
             <span className="text-xs uppercase tracking-[0.3em] text-[#6b6257]">Admin</span>
           </div>
           <h1 className="mt-4 text-3xl">Sign in</h1>
