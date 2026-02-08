@@ -99,6 +99,7 @@ from .usage import (
     get_whatsapp_usage_summary,
     get_usage_settings,
     save_usage_settings,
+    estimate_tokens,
 )
 from .usage_rates import fetch_provider_rates
 from .okr import ensure_cycle
@@ -3523,17 +3524,94 @@ def admin_usage_summary(
     if end_utc <= start_utc:
         end_utc = start_utc + timedelta(days=1)
 
+    def _prompt_id_from_event(evt: UsageEvent) -> int | None:
+        raw = evt.request_id
+        meta = evt.meta
+        if raw is None and isinstance(meta, dict):
+            raw = meta.get("prompt_log_id")
+        if raw is None and isinstance(meta, str):
+            try:
+                meta_obj = json.loads(meta)
+                if isinstance(meta_obj, dict):
+                    raw = meta_obj.get("prompt_log_id")
+            except Exception:
+                pass
+        if raw is None:
+            return None
+        try:
+            return int(str(raw).strip())
+        except Exception:
+            return None
+
+    def _llm_summary_for_user() -> dict:
+        rates = get_usage_settings()
+        rate_in = float(rates.get("llm_gbp_per_1m_input_tokens") or 0.0)
+        rate_out = float(rates.get("llm_gbp_per_1m_output_tokens") or 0.0)
+        tokens_in = 0.0
+        tokens_out = 0.0
+        cost_sum = 0.0
+        with SessionLocal() as s:
+            events = (
+                s.query(UsageEvent)
+                .filter(
+                    UsageEvent.created_at >= start_utc,
+                    UsageEvent.created_at < end_utc,
+                    UsageEvent.product == "llm",
+                )
+                .all()
+            )
+            prompt_ids = set()
+            pairs: list[tuple[UsageEvent, int]] = []
+            for evt in events:
+                pid = _prompt_id_from_event(evt)
+                if pid is None:
+                    continue
+                prompt_ids.add(pid)
+                pairs.append((evt, pid))
+            prompt_map: dict[int, LLMPromptLog] = {}
+            if prompt_ids:
+                prompt_rows = s.query(LLMPromptLog).filter(LLMPromptLog.id.in_(prompt_ids)).all()
+                prompt_map = {p.id: p for p in prompt_rows}
+        for evt, pid in pairs:
+            prompt = prompt_map.get(pid)
+            if not prompt:
+                continue
+            if not (evt.user_id == user_id or prompt.user_id == user_id):
+                continue
+            units = float(evt.units or 0.0)
+            if evt.unit_type == "tokens_in":
+                tokens_in += units
+            elif evt.unit_type == "tokens_out":
+                tokens_out += units
+            if evt.cost_estimate is not None:
+                cost_sum += float(evt.cost_estimate)
+        cost_est = (tokens_in / 1_000_000.0) * rate_in + (tokens_out / 1_000_000.0) * rate_out
+        cost_final = cost_sum if cost_sum else cost_est
+        return {
+            "tokens_in": int(tokens_in),
+            "tokens_out": int(tokens_out),
+            "cost_est_gbp": round(cost_final, 4),
+            "rate_gbp_per_1m_input_tokens": rate_in,
+            "rate_gbp_per_1m_output_tokens": rate_out,
+            "rate_source": "db" if rates.get("llm_gbp_per_1m_input_tokens") is not None else "env",
+            "tag": tag,
+        }
+
     total_tts = get_tts_usage_summary(
         start_utc=start_utc,
         end_utc=end_utc,
         tag=tag,
         user_id=user_id,
     )
-    llm_total = get_llm_usage_summary(
-        start_utc=start_utc,
-        end_utc=end_utc,
-        tag=tag,
-        user_id=user_id,
+    llm_total = (
+        _llm_summary_for_user()
+        if user_id
+        else get_llm_usage_summary(
+            start_utc=start_utc,
+            end_utc=end_utc,
+            tag=tag,
+            user_id=user_id,
+        )
     )
     whatsapp_total = get_whatsapp_usage_summary(
         start_utc=start_utc,
@@ -3601,12 +3679,17 @@ def admin_usage_prompt_costs(
     default_rate_out = float(rates.get("llm_gbp_per_1m_output_tokens") or 0.0)
 
     def _prompt_id_from_event(evt: UsageEvent) -> int | None:
-        raw = None
-        if evt.request_id:
-            raw = evt.request_id
+        raw = evt.request_id
         meta = evt.meta
         if raw is None and isinstance(meta, dict):
             raw = meta.get("prompt_log_id")
+        if raw is None and isinstance(meta, str):
+            try:
+                meta_obj = json.loads(meta)
+                if isinstance(meta_obj, dict):
+                    raw = meta_obj.get("prompt_log_id")
+            except Exception:
+                pass
         if raw is None:
             return None
         try:
@@ -3615,6 +3698,16 @@ def admin_usage_prompt_costs(
             return None
 
     with SessionLocal() as s:
+        prompt_query = s.query(LLMPromptLog).filter(
+            LLMPromptLog.created_at >= start_utc,
+            LLMPromptLog.created_at < end_utc,
+        )
+        if user_id:
+            prompt_query = prompt_query.filter(LLMPromptLog.user_id == user_id)
+        prompt_rows = prompt_query.order_by(LLMPromptLog.created_at.desc()).limit(limit_val * 5).all()
+        prompt_map = {p.id: p for p in prompt_rows}
+        prompt_ids = set(prompt_map.keys())
+
         events = (
             s.query(UsageEvent)
             .filter(
@@ -3625,19 +3718,14 @@ def admin_usage_prompt_costs(
             )
             .all()
         )
-        prompt_ids = set()
         event_pairs: list[tuple[UsageEvent, int]] = []
         for evt in events:
             pid = _prompt_id_from_event(evt)
             if pid is None:
                 continue
-            prompt_ids.add(pid)
+            if prompt_ids and pid not in prompt_ids:
+                continue
             event_pairs.append((evt, pid))
-
-        prompt_map: dict[int, LLMPromptLog] = {}
-        if prompt_ids:
-            prompt_rows = s.query(LLMPromptLog).filter(LLMPromptLog.id.in_(prompt_ids)).all()
-            prompt_map = {p.id: p for p in prompt_rows}
 
     rows: list[tuple[UsageEvent, LLMPromptLog]] = []
     for evt, pid in event_pairs:
@@ -3649,28 +3737,31 @@ def admin_usage_prompt_costs(
         rows.append((evt, prompt))
 
     by_prompt: dict[int, dict] = {}
+    for prompt in prompt_map.values():
+        pid = int(prompt.id)
+        by_prompt[pid] = {
+            "prompt_id": pid,
+            "created_at": prompt.created_at.isoformat() if prompt.created_at else None,
+            "user_id": prompt.user_id,
+            "touchpoint": prompt.touchpoint,
+            "model": prompt.model,
+            "prompt_variant": prompt.prompt_variant,
+            "task_label": prompt.task_label,
+            "prompt_preview": (prompt.assembled_prompt or "")[:400],
+            "response_preview": (prompt.response_preview or "")[:400] if prompt.response_preview else None,
+            "tokens_in": 0.0,
+            "tokens_out": 0.0,
+            "rate_in": None,
+            "rate_out": None,
+            "rate_source": None,
+            "cost_est_gbp": 0.0,
+        }
+
     for evt, prompt in rows:
         pid = int(prompt.id)
         entry = by_prompt.get(pid)
         if not entry:
-            entry = {
-                "prompt_id": pid,
-                "created_at": prompt.created_at.isoformat() if prompt.created_at else None,
-                "user_id": prompt.user_id,
-                "touchpoint": prompt.touchpoint,
-                "model": prompt.model,
-                "prompt_variant": prompt.prompt_variant,
-                "task_label": prompt.task_label,
-                "prompt_preview": (prompt.assembled_prompt or "")[:400],
-                "response_preview": (prompt.response_preview or "")[:400] if prompt.response_preview else None,
-                "tokens_in": 0.0,
-                "tokens_out": 0.0,
-                "rate_in": None,
-                "rate_out": None,
-                "rate_source": None,
-                "cost_est_gbp": 0.0,
-            }
-            by_prompt[pid] = entry
+            continue
         units = float(evt.units or 0.0)
         if evt.unit_type == "tokens_in":
             entry["tokens_in"] += units
@@ -3691,6 +3782,10 @@ def admin_usage_prompt_costs(
     for entry in by_prompt.values():
         rate_in = float(entry.get("rate_in") or default_rate_in or 0.0)
         rate_out = float(entry.get("rate_out") or default_rate_out or 0.0)
+        if not entry["tokens_in"] and entry.get("prompt_preview"):
+            entry["tokens_in"] = float(estimate_tokens(entry.get("prompt_preview")))
+        if not entry["tokens_out"] and entry.get("response_preview"):
+            entry["tokens_out"] = float(estimate_tokens(entry.get("response_preview")))
         calc_cost = (entry["tokens_in"] / 1_000_000.0) * rate_in + (entry["tokens_out"] / 1_000_000.0) * rate_out
         cost_est = entry.get("cost_est_gbp") or 0.0
         if not cost_est and calc_cost:
