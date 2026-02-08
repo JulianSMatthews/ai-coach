@@ -5,6 +5,7 @@ import {
   getAdminPromptCosts,
   getAdminUsageSummary,
   getUsageSettings,
+  listAdminUsers,
   updateUsageSettings,
 } from "@/lib/api";
 import { revalidatePath } from "next/cache";
@@ -54,7 +55,7 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
   const userId = userIdRaw ? Number(userIdRaw) : undefined;
   const days = period === "custom" ? undefined : Number(period || 7);
 
-  const [settings, usage, promptCosts] = await Promise.all([
+  const [settings, usage, promptCosts, users] = await Promise.all([
     getUsageSettings(),
     getAdminUsageSummary({
       days: Number.isFinite(days) ? days : 7,
@@ -71,6 +72,7 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
           limit: 50,
         })
       : Promise.resolve(null),
+    listAdminUsers(),
   ]);
   const meta = (() => {
     if (!settings?.meta) return null;
@@ -155,13 +157,26 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
                 />
               </div>
               <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">User ID</label>
-                <input
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">User</label>
+                <select
                   name="user_id"
                   defaultValue={userIdRaw}
-                  placeholder="All users"
                   className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                />
+                >
+                  <option value="">All users</option>
+                  {(users || []).map((user) => {
+                    const label =
+                      user.display_name ||
+                      [user.first_name, user.surname].filter(Boolean).join(" ") ||
+                      user.phone ||
+                      `User ${user.id}`;
+                    return (
+                      <option key={user.id} value={String(user.id)}>
+                        {label} (#{user.id})
+                      </option>
+                    );
+                  })}
+                </select>
               </div>
               <button
                 type="submit"

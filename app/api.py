@@ -34,7 +34,7 @@ try:
 except Exception:
     pass
 
-from .db import engine, SessionLocal
+from .db import engine, SessionLocal, _is_postgres
 from .debug_utils import debug_log
 from .models import (
     Base,
@@ -3613,6 +3613,8 @@ def admin_usage_prompt_costs(
                 UsageEvent.created_at < end_utc,
             )
         )
+        if _is_postgres(engine):
+            q = q.filter(UsageEvent.request_id.op("~")("^[0-9]+$"))
         if user_id:
             q = q.filter(or_(UsageEvent.user_id == user_id, LLMPromptLog.user_id == user_id))
         rows = q.all()
