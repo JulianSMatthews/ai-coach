@@ -207,9 +207,10 @@ def fetch_azure_tts_rate(region: str) -> dict[str, Any]:
     if not region:
         return {"ok": False, "error": "missing_region"}
     debug = _pricing_debug()
+    # Azure serviceName labels are not stable; filter broadly by Speech and refine locally.
     url = (
         "https://prices.azure.com/api/retail/prices?"
-        f"$filter=armRegionName%20eq%20'{region}'%20and%20serviceName%20eq%20'Cognitive%20Services'%20and%20contains(productName,'Text%20to%20Speech')"
+        f"$filter=armRegionName%20eq%20'{region}'%20and%20contains(productName,'Speech')"
     )
     best = None
     next_url = url
