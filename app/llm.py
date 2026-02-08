@@ -12,7 +12,7 @@ if not api_key:
     raise ValueError("OPENAI_API_KEY not found in environment")
 
 # Default to the strongest available family; can be overridden via LLM_MODEL env
-default_model = os.getenv("LLM_MODEL", "gpt-5.1")
+default_model = os.getenv("LLM_MODEL", "gpt-5.2-pro")
 _llm = ChatOpenAI(model=default_model, temperature=0, api_key=api_key)
 
 def compose_prompt(kind: str, context: dict) -> str:

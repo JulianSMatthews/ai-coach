@@ -49,6 +49,8 @@ export default function TestPromptClient() {
           <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">LLM model (optional)</label>
           <select name="model_override" className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm">
             <option value="">Default</option>
+            <option value="gpt-5.2-pro">gpt-5.2-pro</option>
+            <option value="gpt-5.2">gpt-5.2</option>
             <option value="gpt-5.1">gpt-5.1</option>
             <option value="gpt-5-mini">gpt-5-mini</option>
             <option value="gpt-5-nano">gpt-5-nano</option>

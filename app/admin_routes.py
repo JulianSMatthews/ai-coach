@@ -777,6 +777,8 @@ def test_prompt_template(
         <div class="field">Model:
           <select name="model_override">
             <option value="" {mo_default}>Default (current: {default_model})</option>
+            <option value="gpt-5.2-pro" {mo_52pro}>gpt-5.2-pro</option>
+            <option value="gpt-5.2" {mo_52}>gpt-5.2</option>
             <option value="gpt-5.1" {mo_51}>gpt-5.1</option>
             <option value="gpt-5-mini" {mo_5mini}>gpt-5-mini</option>
             <option value="gpt-5-nano" {mo_5nano}>gpt-5-nano</option>
@@ -805,6 +807,8 @@ def test_prompt_template(
         rl="checked" if run_llm else "",
         mo_default="selected" if not model_override else "",
         default_model=html.escape(default_model_name or "default"),
+        mo_52pro="selected" if model_override == "gpt-5.2-pro" else "",
+        mo_52="selected" if model_override == "gpt-5.2" else "",
         mo_51="selected" if model_override == "gpt-5.1" else "",
         mo_5mini="selected" if model_override == "gpt-5-mini" else "",
         mo_5nano="selected" if model_override == "gpt-5-nano" else "",

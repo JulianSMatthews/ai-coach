@@ -1,11 +1,24 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import html
 import os
 import re
 from typing import Any
 
 import requests
+
+DEFAULT_OPENAI_PRICING: dict[str, dict[str, float | None]] = {
+    "gpt-5.2": {"input": 1.75, "cached": 0.175, "output": 14.0},
+    "gpt-5.2-pro": {"input": 21.0, "cached": None, "output": 168.0},
+    "gpt-5-mini": {"input": 0.25, "cached": 0.025, "output": 2.0},
+}
+
+DEFAULT_OPENAI_ALIASES = {
+    "gpt-5.2 pro": "gpt-5.2-pro",
+    "gpt-5.2-chat-latest": "gpt-5.2",
+    "gpt-5 mini": "gpt-5-mini",
+}
 
 
 def _usd_to_gbp() -> tuple[float, str]:
@@ -34,7 +47,27 @@ def _fetch_text(url: str, headers: dict | None = None, auth: tuple[str, str] | N
 
 
 def _strip_html(text: str) -> str:
-    return re.sub(r"<[^>]+>", "\n", text or "")
+    raw = html.unescape(text or "")
+    raw = raw.replace("\xa0", " ")
+    # Normalize common Unicode punctuation to improve regex matching.
+    for ch in ("\u2010", "\u2011", "\u2012", "\u2013", "\u2014", "\u2212"):
+        raw = raw.replace(ch, "-")
+    raw = raw.replace("\u2019", "'").replace("\u2018", "'")
+    for ch in ("\u200b", "\u200c", "\u200d", "\ufeff"):
+        raw = raw.replace(ch, "")
+    return re.sub(r"<[^>]+>", "\n", raw)
+
+
+def _normalize_openai_model_name(model: str) -> str:
+    key = (model or "").strip().lower()
+    key = re.sub(r"\s+", "-", key)
+    return DEFAULT_OPENAI_ALIASES.get(key, key)
+
+
+def _default_openai_pricing(model: str | None) -> dict[str, float | None] | None:
+    if not model:
+        return None
+    return DEFAULT_OPENAI_PRICING.get(model)
 
 
 def fetch_openai_pricing(model_name: str | None = None) -> dict[str, Any]:
@@ -43,36 +76,69 @@ def fetch_openai_pricing(model_name: str | None = None) -> dict[str, Any]:
     Returns input/output USD per 1M tokens if found.
     """
     url = "https://platform.openai.com/pricing"
+    debug = os.getenv("OPENAI_PRICING_DEBUG", "0") == "1"
+    model = _normalize_openai_model_name(model_name or "")
     raw = _fetch_text(url)
     if not raw:
+        if debug:
+            print("[openai-pricing] fetch failed")
+        fallback = _default_openai_pricing(model)
+        if fallback:
+            if debug:
+                print(f"[openai-pricing] using default table for {model}")
+            return {
+                "ok": True,
+                "model": model or None,
+                "input_per_1m_usd": fallback["input"],
+                "output_per_1m_usd": fallback["output"],
+                "cached_per_1m_usd": fallback["cached"],
+                "source": "default_pricing_table",
+            }
+        if not model:
+            return {"ok": True, "prices": DEFAULT_OPENAI_PRICING, "model": None, "source": "default_pricing_table"}
         return {"ok": False, "error": "openai_pricing_fetch_failed"}
     text = _strip_html(raw)
     # Parse table rows like: gpt-4o-mini  | $0.15  | $0.075  | $0.60
-    row_re = re.compile(r"^(gpt-[\\w\\.-]+)\\s*\\|\\s*\\$([0-9.]+)\\s*\\|\\s*\\$([0-9.]+)\\s*\\|\\s*\\$([0-9.]+)", re.M)
+    row_re = re.compile(r"^(gpt-[\w\.-]+)\s*\|\s*\$([0-9.]+)\s*\|\s*\$([0-9.]+)\s*\|\s*\$([0-9.]+)", re.M)
     rows = row_re.findall(text)
+    if debug:
+        print(f"[openai-pricing] rows={len(rows)}")
+        for name, inp, cached, out in rows[:5]:
+            print(f"[openai-pricing] sample {name} in={inp} cached={cached} out={out}")
+        if not rows:
+            sample_lines = [line for line in text.splitlines() if "gpt-" in line][:5]
+            for line in sample_lines:
+                print(f"[openai-pricing] line {line}")
     price_map = {name: {"input": float(inp), "cached": float(cached), "output": float(out)} for name, inp, cached, out in rows}
-    model = model_name or ""
-    model = model.strip()
+    if debug and model:
+        print(f"[openai-pricing] requested={model}")
     match = price_map.get(model) if model else None
     if not match and model:
         # Try to fallback to base name (drop version suffixes)
-        base = re.sub(r"-\\d{4}-\\d{2}-\\d{2}$", "", model)
+    base = re.sub(r"-\d{4}-\d{2}-\d{2}$", "", model)
+        if debug and base != model:
+            print(f"[openai-pricing] fallback_base={base}")
         match = price_map.get(base)
-    if not match and model and model.startswith("gpt-5.2"):
-        fallback = "gpt-5.1"
-        match = price_map.get(fallback)
-        if match:
+    if not match and model:
+        fallback = _default_openai_pricing(base if "base" in locals() else model)
+        if fallback:
+            if debug:
+                print(f"[openai-pricing] using default table for {model}")
             return {
                 "ok": True,
                 "model": model,
-                "fallback_model": fallback,
-                "input_per_1m_usd": match["input"],
-                "output_per_1m_usd": match["output"],
-                "cached_per_1m_usd": match["cached"],
-                "source": url,
+                "input_per_1m_usd": fallback["input"],
+                "output_per_1m_usd": fallback["output"],
+                "cached_per_1m_usd": fallback["cached"],
+                "source": "default_pricing_table",
             }
     if not match and not model:
-        return {"ok": True, "prices": price_map, "model": None}
+        return {
+            "ok": True,
+            "prices": price_map or DEFAULT_OPENAI_PRICING,
+            "model": None,
+            "source": url if price_map else "default_pricing_table",
+        }
     if not match:
         return {"ok": False, "error": "model_not_found", "model": model, "prices": price_map}
     return {
@@ -90,13 +156,21 @@ def fetch_openai_tts_rate() -> dict[str, Any]:
     Best-effort fetch for OpenAI TTS estimated $/minute from pricing page.
     """
     url = "https://platform.openai.com/pricing"
+    debug = os.getenv("OPENAI_TTS_DEBUG", "0") == "1"
     raw = _fetch_text(url)
     if not raw:
+        if debug:
+            print("[openai-tts] fetch failed")
         return {"ok": False, "error": "openai_pricing_fetch_failed"}
     text = _strip_html(raw)
     # Find line like: gpt-4o-mini-tts  | $0.60  | -  | $0.015 / minute
-    m = re.search(r"gpt-4o-mini-tts\\s*\\|\\s*\\$[0-9.]+\\s*\\|\\s*-\\s*\\|\\s*\\$([0-9.]+)\\s*/\\s*minute", text)
+    m = re.search(r"gpt-4o-mini-tts\s*\|\s*\$[0-9.]+\s*\|\s*-\s*\|\s*\$([0-9.]+)\s*/\s*minute", text)
     if not m:
+        if debug:
+            print("[openai-tts] rate pattern not found")
+            sample_lines = [line for line in text.splitlines() if "tts" in line][:5]
+            for line in sample_lines:
+                print(f"[openai-tts] line {line}")
         return {"ok": False, "error": "tts_rate_not_found"}
     return {
         "ok": True,
@@ -113,12 +187,14 @@ def fetch_azure_tts_rate(region: str) -> dict[str, Any]:
     region = (region or "").strip().lower()
     if not region:
         return {"ok": False, "error": "missing_region"}
+    debug = os.getenv("AZURE_TTS_DEBUG", "0") == "1"
     url = (
         "https://prices.azure.com/api/retail/prices?"
         f"$filter=armRegionName%20eq%20'{region}'%20and%20serviceName%20eq%20'Cognitive%20Services'%20and%20contains(productName,'Text%20to%20Speech')"
     )
     best = None
     next_url = url
+    page = 0
     while next_url:
         data = None
         try:
@@ -129,12 +205,30 @@ def fetch_azure_tts_rate(region: str) -> dict[str, Any]:
         except Exception:
             break
         items = data.get("Items") or []
+        page += 1
+        if debug:
+            print(f"[azure-tts] page={page} url={next_url}")
+            print(f"[azure-tts] items={len(items)}")
+            for sample in items[:5]:
+                print(
+                    "[azure-tts] sample",
+                    sample.get("productName"),
+                    sample.get("meterName"),
+                    sample.get("unitOfMeasure"),
+                    sample.get("retailPrice"),
+                )
+        filtered_text = 0
+        filtered_unit = 0
+        filtered_price = 0
+        kept = 0
         for item in items:
             name = f"{item.get('productName','')} {item.get('meterName','')}".lower()
             unit = (item.get("unitOfMeasure") or "").lower()
             if "text to speech" not in name:
+                filtered_text += 1
                 continue
             if "1m" not in unit and "1 m" not in unit:
+                filtered_unit += 1
                 continue
             score = 0
             if "neural" in name:
@@ -143,6 +237,7 @@ def fetch_azure_tts_rate(region: str) -> dict[str, Any]:
                 score += 1
             price = item.get("retailPrice")
             if price is None:
+                filtered_price += 1
                 continue
             candidate = {
                 "price": float(price),
@@ -154,6 +249,15 @@ def fetch_azure_tts_rate(region: str) -> dict[str, Any]:
             }
             if not best or candidate["score"] > best["score"]:
                 best = candidate
+            kept += 1
+        if debug:
+            print(
+                "[azure-tts] filters",
+                f"text={filtered_text}",
+                f"unit={filtered_unit}",
+                f"price={filtered_price}",
+                f"kept={kept}",
+            )
         next_url = data.get("NextPageLink")
     if not best:
         return {"ok": False, "error": "azure_tts_rate_not_found"}
@@ -165,15 +269,33 @@ def fetch_twilio_whatsapp_base_fee() -> dict[str, Any]:
     Best-effort fetch of Twilio's base WhatsApp fee from the public pricing page.
     """
     url = "https://www.twilio.com/en-us/whatsapp/pricing"
+    debug = os.getenv("TWILIO_PRICING_DEBUG", "0") == "1"
     raw = _fetch_text(url)
     if not raw:
+        if debug:
+            print("[twilio-pricing] fetch failed")
         return {"ok": False, "error": "twilio_pricing_fetch_failed"}
     text = _strip_html(raw)
     # Look for "$0.005" per message fee.
-    m = re.search(r"Twilio(?:’|')?s per-message fee for WhatsApp is \\$([0-9.]+)", text, re.IGNORECASE)
+    m = re.search(
+        r"Twilio(?:'|’)?s\s+per[-\s]?message\s+fee\s+for\s+WhatsApp\s+is\s+\$([0-9.]+)",
+        text,
+        re.IGNORECASE,
+    )
     if not m:
-        m = re.search(r"\\$([0-9.]+)\\s*/message Twilio Fee", text, re.IGNORECASE)
+        if debug:
+            print("[twilio-pricing] primary pattern not found")
+            sample_lines = [line for line in text.splitlines() if "whatsapp" in line.lower()][:5]
+            for line in sample_lines:
+                print(f"[twilio-pricing] line {line}")
+        m = re.search(r"Twilio\s+per\s+message\s+fee[^$]{0,80}\$([0-9.]+)", text, re.IGNORECASE)
     if not m:
+        m = re.search(r"Twilio\s*Fee[^$]{0,40}\$([0-9.]+)", text, re.IGNORECASE)
+    if not m:
+        m = re.search(r"\$([0-9.]+)\s*/message\s*Twilio\s*Fee", text, re.IGNORECASE)
+    if not m:
+        if debug:
+            print("[twilio-pricing] fallback pattern not found")
         return {"ok": False, "error": "twilio_whatsapp_fee_not_found"}
     return {
         "ok": True,
@@ -220,7 +342,7 @@ def fetch_provider_rates() -> dict[str, Any]:
             results["warnings"].append("openai_tts_rate_unavailable")
 
     # LLM
-    model_name = os.getenv("LLM_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-5.2"
+    model_name = os.getenv("LLM_MODEL") or os.getenv("OPENAI_MODEL") or "gpt-5.2-pro"
     openai = fetch_openai_pricing(model_name)
     if openai.get("ok"):
         results["llm_gbp_per_1m_input_tokens"] = _convert_usd_to_gbp(float(openai["input_per_1m_usd"]))

@@ -207,6 +207,8 @@ export default function TemplateForm({ template, userOptions }: TemplateFormProp
             disabled={!canPreview}
           >
             <option value="">Default model</option>
+            <option value="gpt-5.2-pro">gpt-5.2-pro</option>
+            <option value="gpt-5.2">gpt-5.2</option>
             <option value="gpt-5.1">gpt-5.1</option>
             <option value="gpt-5-mini">gpt-5-mini</option>
             <option value="gpt-5-nano">gpt-5-nano</option>
