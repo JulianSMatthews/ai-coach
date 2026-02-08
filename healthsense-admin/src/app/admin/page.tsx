@@ -160,32 +160,33 @@ export default async function AdminHome() {
                   </>
                 )}
               </div>
-              {item.data && "rate_gbp_per_1m_chars" in item.data ? (
-                <p className="mt-3 text-xs text-[#6b6257]">
-                  {(() => {
-                    const data = item.data as { rate_gbp_per_1m_chars?: number; rate_source?: string };
-                    return `Rate: £${data.rate_gbp_per_1m_chars} / 1M chars (${data.rate_source || "env"}).`;
-                  })()}
-                </p>
-              ) : item.data && ("rate_gbp_per_1m_input_tokens" in item.data || "rate_gbp_per_1m_output_tokens" in item.data) ? (
-                <p className="mt-3 text-xs text-[#6b6257]">
-                  {(() => {
-                    const data = item.data as { rate_gbp_per_1m_input_tokens?: number; rate_gbp_per_1m_output_tokens?: number };
-                    const inRate = data.rate_gbp_per_1m_input_tokens ?? "—";
-                    const outRate = data.rate_gbp_per_1m_output_tokens ?? "—";
-                    return `Rate: £${inRate} in / £${outRate} out (1M tokens).`;
-                  })()}
-                </p>
-              ) : item.data && "rate_gbp_per_message" in item.data ? (
-                <p className="mt-3 text-xs text-[#6b6257]">
-                  {(() => {
-                    const data = item.data as { rate_gbp_per_message?: number; rate_source?: string };
-                    return `Rate: £${data.rate_gbp_per_message} per message (${data.rate_source || "env"}).`;
-                  })()}
-                </p>
-              ) : (
-                <p className="mt-3 text-xs text-[#6b6257]">Rate not configured yet.</p>
-              )}
+              {(() => {
+                const data = item.data as Record<string, any> | undefined;
+                if (data?.rate_gbp_per_1m_chars != null) {
+                  return (
+                    <p className="mt-3 text-xs text-[#6b6257]">
+                      {`Rate: £${data.rate_gbp_per_1m_chars} / 1M chars (${data.rate_source || "env"}).`}
+                    </p>
+                  );
+                }
+                if (data?.rate_gbp_per_1m_input_tokens != null || data?.rate_gbp_per_1m_output_tokens != null) {
+                  const inRate = data?.rate_gbp_per_1m_input_tokens ?? "—";
+                  const outRate = data?.rate_gbp_per_1m_output_tokens ?? "—";
+                  return (
+                    <p className="mt-3 text-xs text-[#6b6257]">
+                      {`Rate: £${inRate} in / £${outRate} out (1M tokens).`}
+                    </p>
+                  );
+                }
+                if (data?.rate_gbp_per_message != null) {
+                  return (
+                    <p className="mt-3 text-xs text-[#6b6257]">
+                      {`Rate: £${data.rate_gbp_per_message} per message (${data.rate_source || "env"}).`}
+                    </p>
+                  );
+                }
+                return <p className="mt-3 text-xs text-[#6b6257]">Rate not configured yet.</p>;
+              })()}
             </div>
           ))}
         </section>
