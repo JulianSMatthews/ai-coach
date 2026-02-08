@@ -65,7 +65,7 @@ try:
 except Exception:
     _client = None
 
-DEFAULT_OKR_MODEL   = os.getenv("OKR_MODEL", "gpt-4o-mini")
+DEFAULT_OKR_MODEL   = os.getenv("LLM_MODEL") or "gpt-5.1"
 DEFAULT_OKR_QUARTER = os.getenv("OKR_QUARTER_LABEL", "This Quarter")
 
 

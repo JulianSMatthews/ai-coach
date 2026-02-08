@@ -2011,7 +2011,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             raw = _coerce_llm_content(getattr(_resp, "content", None))
             try:
                 log_llm_prompt(
-                    user_id=state.get("user_id"),
+                    user_id=state.get("user_id") or (user.id if user else None),
                     touchpoint="assessor_system",
                     prompt_text=_system_msg + "\n\n" + _user_msg,
                     model=getattr(_resp, "model", None),

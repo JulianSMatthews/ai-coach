@@ -3493,6 +3493,260 @@ def admin_usage_settings_update(payload: dict, admin_user: User = Depends(_requi
     return save_usage_settings(payload)
 
 
+def _meta_to_dict(value):
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else None
+        except Exception:
+            return None
+    return None
+
+
+def _coerce_prompt_text(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        parts: list[str] = []
+        for item in value:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            if isinstance(item, dict):
+                for key in ("text", "content"):
+                    v = item.get(key)
+                    if isinstance(v, str):
+                        parts.append(v)
+                        break
+                else:
+                    parts.append(json.dumps(item))
+                continue
+            parts.append(str(item))
+        joined = "\n".join(p for p in parts if p)
+        return joined or json.dumps(value)
+    if isinstance(value, dict):
+        for key in ("text", "content"):
+            v = value.get(key)
+            if isinstance(v, str):
+                return v
+        return json.dumps(value)
+    return str(value)
+
+
+def _extract_prompt_user_id(prompt: LLMPromptLog) -> int | None:
+    if getattr(prompt, "user_id", None) is not None:
+        try:
+            return int(prompt.user_id)
+        except Exception:
+            return None
+    meta = _meta_to_dict(prompt.context_meta)
+    if meta:
+        for key in ("user_id", "userId", "uid"):
+            if key not in meta:
+                continue
+            raw = meta.get(key)
+            if raw in {None, ""}:
+                continue
+            try:
+                return int(str(raw).strip())
+            except Exception:
+                continue
+    return None
+
+
+def _build_prompt_cost_rows(
+    *,
+    start_utc: datetime,
+    end_utc: datetime,
+    user_id: int | None,
+    limit_val: int,
+    default_rate_in: float,
+    default_rate_out: float,
+    default_rate_source: str,
+    tag: str | None = None,
+    fetch_limit: int | None = None,
+):
+    def _prompt_id_from_event(evt: UsageEvent) -> int | None:
+        raw = evt.request_id
+        meta = evt.meta
+        if raw is None and isinstance(meta, dict):
+            raw = meta.get("prompt_log_id")
+        if raw is None and isinstance(meta, str):
+            try:
+                meta_obj = json.loads(meta)
+                if isinstance(meta_obj, dict):
+                    raw = meta_obj.get("prompt_log_id")
+            except Exception:
+                pass
+        if raw is None:
+            return None
+        try:
+            return int(str(raw).strip())
+        except Exception:
+            return None
+
+    prompt_fetch_limit = fetch_limit if fetch_limit is not None else min(max(limit_val * 20, 200), 2000)
+
+    with SessionLocal() as s:
+        event_query = (
+            s.query(UsageEvent)
+            .filter(
+                UsageEvent.product == "llm",
+                UsageEvent.unit_type.in_(["tokens_in", "tokens_out"]),
+                UsageEvent.created_at >= start_utc,
+                UsageEvent.created_at < end_utc,
+            )
+        )
+        if tag:
+            event_query = event_query.filter(UsageEvent.tag == tag)
+        events = event_query.all()
+        event_pairs: list[tuple[UsageEvent, int]] = []
+        prompt_ids_from_events: set[int] = set()
+        for evt in events:
+            pid = _prompt_id_from_event(evt)
+            if pid is None:
+                continue
+            prompt_ids_from_events.add(pid)
+            event_pairs.append((evt, pid))
+
+        prompt_map: dict[int, LLMPromptLog] = {}
+        if prompt_ids_from_events:
+            prompt_rows = s.query(LLMPromptLog).filter(LLMPromptLog.id.in_(prompt_ids_from_events)).all()
+            prompt_map = {p.id: p for p in prompt_rows}
+
+        if not tag:
+            if user_id:
+                prompt_rows = (
+                    s.query(LLMPromptLog)
+                    .filter(
+                        LLMPromptLog.created_at >= start_utc,
+                        LLMPromptLog.created_at < end_utc,
+                        LLMPromptLog.user_id == user_id,
+                    )
+                    .order_by(LLMPromptLog.created_at.desc())
+                    .limit(prompt_fetch_limit)
+                    .all()
+                )
+                prompt_rows_null = (
+                    s.query(LLMPromptLog)
+                    .filter(
+                        LLMPromptLog.created_at >= start_utc,
+                        LLMPromptLog.created_at < end_utc,
+                        LLMPromptLog.user_id.is_(None),
+                    )
+                    .order_by(LLMPromptLog.created_at.desc())
+                    .limit(prompt_fetch_limit)
+                    .all()
+                )
+                prompt_rows.extend(prompt_rows_null)
+            else:
+                prompt_rows = (
+                    s.query(LLMPromptLog)
+                    .filter(LLMPromptLog.created_at >= start_utc, LLMPromptLog.created_at < end_utc)
+                    .order_by(LLMPromptLog.created_at.desc())
+                    .limit(prompt_fetch_limit)
+                    .all()
+                )
+            for prompt in prompt_rows:
+                prompt_map.setdefault(prompt.id, prompt)
+
+    by_prompt: dict[int, dict] = {}
+    for prompt in prompt_map.values():
+        pid = int(prompt.id)
+        resolved_user_id = _extract_prompt_user_id(prompt)
+        prompt_text_full = _coerce_prompt_text(prompt.assembled_prompt or prompt.prompt_text or "")
+        response_text_full = _coerce_prompt_text(prompt.response_preview) if prompt.response_preview else ""
+        by_prompt[pid] = {
+            "prompt_id": pid,
+            "created_at": prompt.created_at.isoformat() if prompt.created_at else None,
+            "user_id": resolved_user_id,
+            "touchpoint": prompt.touchpoint,
+            "model": prompt.model,
+            "prompt_variant": prompt.prompt_variant,
+            "task_label": prompt.task_label,
+            "prompt_preview": (prompt_text_full or "")[:400],
+            "response_preview": (response_text_full or "")[:400] if response_text_full else None,
+            "prompt_text_full": prompt_text_full,
+            "response_text_full": response_text_full,
+            "tokens_in": 0.0,
+            "tokens_out": 0.0,
+            "rate_in": None,
+            "rate_out": None,
+            "rate_source": None,
+            "cost_est_gbp": 0.0,
+            "match_user": True if user_id is None else (resolved_user_id == user_id),
+        }
+
+    for evt, pid in event_pairs:
+        entry = by_prompt.get(pid)
+        if not entry:
+            continue
+        if user_id is not None and not (entry["match_user"] or evt.user_id == user_id):
+            continue
+        if user_id is not None and evt.user_id == user_id:
+            entry["match_user"] = True
+        units = float(evt.units or 0.0)
+        if evt.unit_type == "tokens_in":
+            entry["tokens_in"] += units
+        elif evt.unit_type == "tokens_out":
+            entry["tokens_out"] += units
+        if evt.cost_estimate is not None:
+            entry["cost_est_gbp"] += float(evt.cost_estimate)
+        meta = _meta_to_dict(evt.meta)
+        if meta:
+            if entry.get("rate_in") is None and meta.get("rate_in") is not None:
+                entry["rate_in"] = float(meta.get("rate_in"))
+            if entry.get("rate_out") is None and meta.get("rate_out") is not None:
+                entry["rate_out"] = float(meta.get("rate_out"))
+            if entry.get("rate_source") is None and meta.get("rate_source"):
+                entry["rate_source"] = meta.get("rate_source")
+
+    rows_out: list[dict] = []
+    for entry in by_prompt.values():
+        if user_id is not None and not entry.get("match_user"):
+            continue
+        rate_in = float(entry.get("rate_in") or default_rate_in or 0.0)
+        rate_out = float(entry.get("rate_out") or default_rate_out or 0.0)
+        if not entry["tokens_in"] and entry.get("prompt_text_full"):
+            entry["tokens_in"] = float(estimate_tokens(entry.get("prompt_text_full")))
+        if not entry["tokens_out"] and entry.get("response_text_full"):
+            entry["tokens_out"] = float(estimate_tokens(entry.get("response_text_full")))
+        calc_cost = (entry["tokens_in"] / 1_000_000.0) * rate_in + (entry["tokens_out"] / 1_000_000.0) * rate_out
+        cost_est = entry.get("cost_est_gbp") or 0.0
+        if not cost_est and calc_cost:
+            cost_est = calc_cost
+        rate_source = entry.get("rate_source") or default_rate_source
+        entry["rate_in"] = rate_in or None
+        entry["rate_out"] = rate_out or None
+        entry["rate_source"] = rate_source
+        entry["calc_cost_gbp"] = round(calc_cost, 6)
+        entry["cost_est_gbp"] = round(cost_est, 6)
+        entry["working"] = (
+            f"({entry['tokens_in']:.0f}/1M * £{rate_in:.6f}) + "
+            f"({entry['tokens_out']:.0f}/1M * £{rate_out:.6f}) = £{entry['calc_cost_gbp']:.6f}"
+        )
+        entry.pop("prompt_text_full", None)
+        entry.pop("response_text_full", None)
+        entry.pop("match_user", None)
+        rows_out.append(entry)
+
+    rows_out.sort(key=lambda r: r.get("cost_est_gbp") or 0.0, reverse=True)
+    total_cost = sum(r.get("cost_est_gbp") or 0.0 for r in rows_out)
+    total_tokens_in = sum(r.get("tokens_in") or 0.0 for r in rows_out)
+    total_tokens_out = sum(r.get("tokens_out") or 0.0 for r in rows_out)
+    return rows_out, {
+        "tokens_in": total_tokens_in,
+        "tokens_out": total_tokens_out,
+        "cost_est_gbp": total_cost,
+    }
+
+
 @admin.get("/usage/summary")
 def admin_usage_summary(
     days: int | None = None,
@@ -3524,76 +3778,32 @@ def admin_usage_summary(
     if end_utc <= start_utc:
         end_utc = start_utc + timedelta(days=1)
 
-    def _prompt_id_from_event(evt: UsageEvent) -> int | None:
-        raw = evt.request_id
-        meta = evt.meta
-        if raw is None and isinstance(meta, dict):
-            raw = meta.get("prompt_log_id")
-        if raw is None and isinstance(meta, str):
-            try:
-                meta_obj = json.loads(meta)
-                if isinstance(meta_obj, dict):
-                    raw = meta_obj.get("prompt_log_id")
-            except Exception:
-                pass
-        if raw is None:
-            return None
-        try:
-            return int(str(raw).strip())
-        except Exception:
-            return None
-
     def _llm_summary_for_user() -> dict:
         rates = get_usage_settings()
         rate_in = float(rates.get("llm_gbp_per_1m_input_tokens") or 0.0)
         rate_out = float(rates.get("llm_gbp_per_1m_output_tokens") or 0.0)
-        tokens_in = 0.0
-        tokens_out = 0.0
-        cost_sum = 0.0
-        with SessionLocal() as s:
-            events = (
-                s.query(UsageEvent)
-                .filter(
-                    UsageEvent.created_at >= start_utc,
-                    UsageEvent.created_at < end_utc,
-                    UsageEvent.product == "llm",
-                )
-                .all()
-            )
-            prompt_ids = set()
-            pairs: list[tuple[UsageEvent, int]] = []
-            for evt in events:
-                pid = _prompt_id_from_event(evt)
-                if pid is None:
-                    continue
-                prompt_ids.add(pid)
-                pairs.append((evt, pid))
-            prompt_map: dict[int, LLMPromptLog] = {}
-            if prompt_ids:
-                prompt_rows = s.query(LLMPromptLog).filter(LLMPromptLog.id.in_(prompt_ids)).all()
-                prompt_map = {p.id: p for p in prompt_rows}
-        for evt, pid in pairs:
-            prompt = prompt_map.get(pid)
-            if not prompt:
-                continue
-            if not (evt.user_id == user_id or prompt.user_id == user_id):
-                continue
-            units = float(evt.units or 0.0)
-            if evt.unit_type == "tokens_in":
-                tokens_in += units
-            elif evt.unit_type == "tokens_out":
-                tokens_out += units
-            if evt.cost_estimate is not None:
-                cost_sum += float(evt.cost_estimate)
-        cost_est = (tokens_in / 1_000_000.0) * rate_in + (tokens_out / 1_000_000.0) * rate_out
-        cost_final = cost_sum if cost_sum else cost_est
+        rate_source = "db" if rates.get("llm_gbp_per_1m_input_tokens") is not None else "env"
+        _rows_all, totals = _build_prompt_cost_rows(
+            start_utc=start_utc,
+            end_utc=end_utc,
+            user_id=user_id,
+            limit_val=200,
+            default_rate_in=rate_in,
+            default_rate_out=rate_out,
+            default_rate_source=rate_source,
+            tag=tag,
+            fetch_limit=5000,
+        )
+        tokens_in = totals.get("tokens_in") or 0.0
+        tokens_out = totals.get("tokens_out") or 0.0
+        cost_final = totals.get("cost_est_gbp") or 0.0
         return {
-            "tokens_in": int(tokens_in),
-            "tokens_out": int(tokens_out),
+            "tokens_in": int(tokens_in or 0.0),
+            "tokens_out": int(tokens_out or 0.0),
             "cost_est_gbp": round(cost_final, 4),
             "rate_gbp_per_1m_input_tokens": rate_in,
             "rate_gbp_per_1m_output_tokens": rate_out,
-            "rate_source": "db" if rates.get("llm_gbp_per_1m_input_tokens") is not None else "env",
+            "rate_source": rate_source,
             "tag": tag,
         }
 
@@ -3677,134 +3887,19 @@ def admin_usage_prompt_costs(
     rates = get_usage_settings()
     default_rate_in = float(rates.get("llm_gbp_per_1m_input_tokens") or 0.0)
     default_rate_out = float(rates.get("llm_gbp_per_1m_output_tokens") or 0.0)
-
-    def _prompt_id_from_event(evt: UsageEvent) -> int | None:
-        raw = evt.request_id
-        meta = evt.meta
-        if raw is None and isinstance(meta, dict):
-            raw = meta.get("prompt_log_id")
-        if raw is None and isinstance(meta, str):
-            try:
-                meta_obj = json.loads(meta)
-                if isinstance(meta_obj, dict):
-                    raw = meta_obj.get("prompt_log_id")
-            except Exception:
-                pass
-        if raw is None:
-            return None
-        try:
-            return int(str(raw).strip())
-        except Exception:
-            return None
-
-    with SessionLocal() as s:
-        prompt_query = s.query(LLMPromptLog).filter(
-            LLMPromptLog.created_at >= start_utc,
-            LLMPromptLog.created_at < end_utc,
-        )
-        if user_id:
-            prompt_query = prompt_query.filter(LLMPromptLog.user_id == user_id)
-        prompt_rows = prompt_query.order_by(LLMPromptLog.created_at.desc()).limit(limit_val * 5).all()
-        prompt_map = {p.id: p for p in prompt_rows}
-        prompt_ids = set(prompt_map.keys())
-
-        events = (
-            s.query(UsageEvent)
-            .filter(
-                UsageEvent.product == "llm",
-                UsageEvent.unit_type.in_(["tokens_in", "tokens_out"]),
-                UsageEvent.created_at >= start_utc,
-                UsageEvent.created_at < end_utc,
-            )
-            .all()
-        )
-        event_pairs: list[tuple[UsageEvent, int]] = []
-        for evt in events:
-            pid = _prompt_id_from_event(evt)
-            if pid is None:
-                continue
-            if prompt_ids and pid not in prompt_ids:
-                continue
-            event_pairs.append((evt, pid))
-
-    rows: list[tuple[UsageEvent, LLMPromptLog]] = []
-    for evt, pid in event_pairs:
-        prompt = prompt_map.get(pid)
-        if not prompt:
-            continue
-        if user_id and not (evt.user_id == user_id or prompt.user_id == user_id):
-            continue
-        rows.append((evt, prompt))
-
-    by_prompt: dict[int, dict] = {}
-    for prompt in prompt_map.values():
-        pid = int(prompt.id)
-        by_prompt[pid] = {
-            "prompt_id": pid,
-            "created_at": prompt.created_at.isoformat() if prompt.created_at else None,
-            "user_id": prompt.user_id,
-            "touchpoint": prompt.touchpoint,
-            "model": prompt.model,
-            "prompt_variant": prompt.prompt_variant,
-            "task_label": prompt.task_label,
-            "prompt_preview": (prompt.assembled_prompt or "")[:400],
-            "response_preview": (prompt.response_preview or "")[:400] if prompt.response_preview else None,
-            "tokens_in": 0.0,
-            "tokens_out": 0.0,
-            "rate_in": None,
-            "rate_out": None,
-            "rate_source": None,
-            "cost_est_gbp": 0.0,
-        }
-
-    for evt, prompt in rows:
-        pid = int(prompt.id)
-        entry = by_prompt.get(pid)
-        if not entry:
-            continue
-        units = float(evt.units or 0.0)
-        if evt.unit_type == "tokens_in":
-            entry["tokens_in"] += units
-        elif evt.unit_type == "tokens_out":
-            entry["tokens_out"] += units
-        if evt.cost_estimate is not None:
-            entry["cost_est_gbp"] += float(evt.cost_estimate)
-        meta = evt.meta if isinstance(evt.meta, dict) else None
-        if meta:
-            if entry.get("rate_in") is None and meta.get("rate_in") is not None:
-                entry["rate_in"] = float(meta.get("rate_in"))
-            if entry.get("rate_out") is None and meta.get("rate_out") is not None:
-                entry["rate_out"] = float(meta.get("rate_out"))
-            if entry.get("rate_source") is None and meta.get("rate_source"):
-                entry["rate_source"] = meta.get("rate_source")
-
-    rows_out = []
-    for entry in by_prompt.values():
-        rate_in = float(entry.get("rate_in") or default_rate_in or 0.0)
-        rate_out = float(entry.get("rate_out") or default_rate_out or 0.0)
-        if not entry["tokens_in"] and entry.get("prompt_preview"):
-            entry["tokens_in"] = float(estimate_tokens(entry.get("prompt_preview")))
-        if not entry["tokens_out"] and entry.get("response_preview"):
-            entry["tokens_out"] = float(estimate_tokens(entry.get("response_preview")))
-        calc_cost = (entry["tokens_in"] / 1_000_000.0) * rate_in + (entry["tokens_out"] / 1_000_000.0) * rate_out
-        cost_est = entry.get("cost_est_gbp") or 0.0
-        if not cost_est and calc_cost:
-            cost_est = calc_cost
-        entry["rate_in"] = rate_in or None
-        entry["rate_out"] = rate_out or None
-        entry["calc_cost_gbp"] = round(calc_cost, 6)
-        entry["cost_est_gbp"] = round(cost_est, 6)
-        entry["working"] = (
-            f"({entry['tokens_in']:.0f}/1M * £{rate_in:.6f}) + "
-            f"({entry['tokens_out']:.0f}/1M * £{rate_out:.6f}) = £{entry['calc_cost_gbp']:.6f}"
-        )
-        rows_out.append(entry)
-
-    rows_out.sort(key=lambda r: r.get("cost_est_gbp") or 0.0, reverse=True)
-    if len(rows_out) > limit_val:
-        rows_out = rows_out[:limit_val]
-
-    total_cost = round(sum(r.get("cost_est_gbp") or 0.0 for r in rows_out), 6)
+    default_rate_source = "db" if rates.get("llm_gbp_per_1m_input_tokens") is not None else "env"
+    rows_all, totals = _build_prompt_cost_rows(
+        start_utc=start_utc,
+        end_utc=end_utc,
+        user_id=user_id,
+        limit_val=limit_val,
+        default_rate_in=default_rate_in,
+        default_rate_out=default_rate_out,
+        default_rate_source=default_rate_source,
+        fetch_limit=None,
+    )
+    rows_out = rows_all[:limit_val] if len(rows_all) > limit_val else rows_all
+    total_cost = round(float(totals.get("cost_est_gbp") or 0.0), 6)
     return {
         "as_of_uk": datetime.now(UK_TZ).isoformat(),
         "window": {"start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat()},

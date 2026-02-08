@@ -28,6 +28,7 @@ from __future__ import annotations
 import json
 import os
 import threading
+from datetime import datetime, timedelta
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -40,7 +41,7 @@ from .focus import select_top_krs_for_user
 from .job_queue import enqueue_job, should_use_worker, ensure_prompt_settings_schema
 from .models import OKRKeyResult, OKRObjective, OKRKrHabitStep, PromptTemplate, PromptSettings
 from . import llm as shared_llm
-from .models import LLMPromptLog
+from .models import LLMPromptLog, UsageEvent
 from .usage import log_usage_event, estimate_tokens, estimate_llm_cost
 
 PROMPT_STATE_ALIASES = {"production": "live", "stage": "beta"}
@@ -1476,6 +1477,39 @@ def run_llm_prompt(
     Invoke the shared LLM client and optionally log the prompt/preview to DB.
     Logging is controlled via the `log` flag OR env LOG_LLM_PROMPTS=true.
     """
+    limit_raw = (os.getenv("MAX_DAILY_LLM_TOKENS") or "").strip()
+    limit_val = None
+    if limit_raw:
+        try:
+            limit_val = int(float(limit_raw))
+        except Exception:
+            limit_val = None
+    if limit_val and limit_val > 0:
+        est_tokens = estimate_tokens(prompt)
+        try:
+            now = datetime.utcnow()
+            day_start = datetime(now.year, now.month, now.day)
+            day_end = day_start + timedelta(days=1)
+            with SessionLocal() as s:
+                q = s.query(func.coalesce(func.sum(UsageEvent.units), 0.0)).filter(
+                    UsageEvent.product == "llm",
+                    UsageEvent.unit_type.in_(["tokens_in", "tokens_out"]),
+                    UsageEvent.created_at >= day_start,
+                    UsageEvent.created_at < day_end,
+                )
+                if user_id is not None:
+                    q = q.filter(UsageEvent.user_id == user_id)
+                used_tokens = float(q.scalar() or 0.0)
+        except Exception as e:
+            used_tokens = None
+            print(f"[prompts] daily token limit check failed: {e}")
+        if used_tokens is not None and (used_tokens + est_tokens) > limit_val:
+            scope = f"user_id={user_id}" if user_id is not None else "global"
+            print(
+                f"[prompts] daily token limit reached ({scope}): "
+                f"used={int(used_tokens)} + est={est_tokens} > limit={limit_val}"
+            )
+            return ""
     client = getattr(shared_llm, "_llm", None)
     content = ""
     duration = None
@@ -1656,6 +1690,9 @@ def log_llm_prompt(
     Enable by calling explicitly where needed; kept separate from run_llm_prompt for control.
     """
     debug = debug_enabled()
+    if model is None:
+        client = getattr(shared_llm, "_llm", None)
+        model = getattr(client, "model", None) or getattr(client, "model_name", None) if client else None
     print(f"[prompts] logging LLM prompt touchpoint={touchpoint} user_id={user_id}")
     try:
         _ensure_llm_prompt_log_schema()
