@@ -23,7 +23,6 @@ from fastapi import FastAPI, APIRouter, Request, Response, Depends, Header, HTTP
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text, select, desc, func, or_
-from sqlalchemy import cast, Integer
 from pathlib import Path 
 from typing import Optional
 
@@ -3601,23 +3600,53 @@ def admin_usage_prompt_costs(
     default_rate_in = float(rates.get("llm_gbp_per_1m_input_tokens") or 0.0)
     default_rate_out = float(rates.get("llm_gbp_per_1m_output_tokens") or 0.0)
 
+    def _prompt_id_from_event(evt: UsageEvent) -> int | None:
+        raw = None
+        if evt.request_id:
+            raw = evt.request_id
+        meta = evt.meta
+        if raw is None and isinstance(meta, dict):
+            raw = meta.get("prompt_log_id")
+        if raw is None:
+            return None
+        try:
+            return int(str(raw).strip())
+        except Exception:
+            return None
+
     with SessionLocal() as s:
-        q = (
-            s.query(UsageEvent, LLMPromptLog)
-            .join(LLMPromptLog, LLMPromptLog.id == cast(UsageEvent.request_id, Integer))
+        events = (
+            s.query(UsageEvent)
             .filter(
                 UsageEvent.product == "llm",
                 UsageEvent.unit_type.in_(["tokens_in", "tokens_out"]),
-                UsageEvent.request_id.isnot(None),
                 UsageEvent.created_at >= start_utc,
                 UsageEvent.created_at < end_utc,
             )
+            .all()
         )
-        if _is_postgres(engine):
-            q = q.filter(UsageEvent.request_id.op("~")("^[0-9]+$"))
-        if user_id:
-            q = q.filter(or_(UsageEvent.user_id == user_id, LLMPromptLog.user_id == user_id))
-        rows = q.all()
+        prompt_ids = set()
+        event_pairs: list[tuple[UsageEvent, int]] = []
+        for evt in events:
+            pid = _prompt_id_from_event(evt)
+            if pid is None:
+                continue
+            prompt_ids.add(pid)
+            event_pairs.append((evt, pid))
+
+        prompt_map: dict[int, LLMPromptLog] = {}
+        if prompt_ids:
+            prompt_rows = s.query(LLMPromptLog).filter(LLMPromptLog.id.in_(prompt_ids)).all()
+            prompt_map = {p.id: p for p in prompt_rows}
+
+    rows: list[tuple[UsageEvent, LLMPromptLog]] = []
+    for evt, pid in event_pairs:
+        prompt = prompt_map.get(pid)
+        if not prompt:
+            continue
+        if user_id and not (evt.user_id == user_id or prompt.user_id == user_id):
+            continue
+        rows.append((evt, prompt))
 
     by_prompt: dict[int, dict] = {}
     for evt, prompt in rows:
