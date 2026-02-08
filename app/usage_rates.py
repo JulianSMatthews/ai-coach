@@ -14,11 +14,17 @@ DEFAULT_OPENAI_PRICING: dict[str, dict[str, float | None]] = {
     "gpt-5-mini": {"input": 0.25, "cached": 0.025, "output": 2.0},
 }
 
+DEFAULT_OPENAI_FALLBACK_MODEL = "gpt-5.2-pro"
+
 DEFAULT_OPENAI_ALIASES = {
     "gpt-5.2 pro": "gpt-5.2-pro",
     "gpt-5.2-chat-latest": "gpt-5.2",
     "gpt-5 mini": "gpt-5-mini",
 }
+
+
+def _pricing_debug() -> bool:
+    return os.getenv("PRICE_FETCH_DEBUG", "0") == "1"
 
 
 def _usd_to_gbp() -> tuple[float, str]:
@@ -70,25 +76,35 @@ def _default_openai_pricing(model: str | None) -> dict[str, float | None] | None
     return DEFAULT_OPENAI_PRICING.get(model)
 
 
+def _fallback_openai_model(model: str | None) -> str | None:
+    if model and model in DEFAULT_OPENAI_PRICING:
+        return model
+    if DEFAULT_OPENAI_FALLBACK_MODEL in DEFAULT_OPENAI_PRICING:
+        return DEFAULT_OPENAI_FALLBACK_MODEL
+    return None
+
+
 def fetch_openai_pricing(model_name: str | None = None) -> dict[str, Any]:
     """
     Best-effort fetch for OpenAI pricing from the public pricing page.
     Returns input/output USD per 1M tokens if found.
     """
     url = "https://platform.openai.com/pricing"
-    debug = os.getenv("OPENAI_PRICING_DEBUG", "0") == "1"
+    debug = _pricing_debug()
     model = _normalize_openai_model_name(model_name or "")
     raw = _fetch_text(url)
     if not raw:
         if debug:
             print("[openai-pricing] fetch failed")
-        fallback = _default_openai_pricing(model)
-        if fallback:
+        fallback_model = _fallback_openai_model(model)
+        fallback = _default_openai_pricing(fallback_model) if fallback_model else None
+        if fallback and fallback_model:
             if debug:
-                print(f"[openai-pricing] using default table for {model}")
+                print(f"[openai-pricing] using default table for {fallback_model}")
             return {
                 "ok": True,
                 "model": model or None,
+                "fallback_model": fallback_model if model and model != fallback_model else None,
                 "input_per_1m_usd": fallback["input"],
                 "output_per_1m_usd": fallback["output"],
                 "cached_per_1m_usd": fallback["cached"],
@@ -115,18 +131,21 @@ def fetch_openai_pricing(model_name: str | None = None) -> dict[str, Any]:
     match = price_map.get(model) if model else None
     if not match and model:
         # Try to fallback to base name (drop version suffixes)
-    base = re.sub(r"-\d{4}-\d{2}-\d{2}$", "", model)
+        base = re.sub(r"-\d{4}-\d{2}-\d{2}$", "", model)
         if debug and base != model:
             print(f"[openai-pricing] fallback_base={base}")
         match = price_map.get(base)
     if not match and model:
-        fallback = _default_openai_pricing(base if "base" in locals() else model)
-        if fallback:
+        candidate_model = base if "base" in locals() else model
+        fallback_model = _fallback_openai_model(candidate_model)
+        fallback = _default_openai_pricing(fallback_model) if fallback_model else None
+        if fallback and fallback_model:
             if debug:
-                print(f"[openai-pricing] using default table for {model}")
+                print(f"[openai-pricing] using default table for {fallback_model}")
             return {
                 "ok": True,
                 "model": model,
+                "fallback_model": fallback_model if model != fallback_model else None,
                 "input_per_1m_usd": fallback["input"],
                 "output_per_1m_usd": fallback["output"],
                 "cached_per_1m_usd": fallback["cached"],
@@ -156,7 +175,7 @@ def fetch_openai_tts_rate() -> dict[str, Any]:
     Best-effort fetch for OpenAI TTS estimated $/minute from pricing page.
     """
     url = "https://platform.openai.com/pricing"
-    debug = os.getenv("OPENAI_TTS_DEBUG", "0") == "1"
+    debug = _pricing_debug()
     raw = _fetch_text(url)
     if not raw:
         if debug:
@@ -187,7 +206,7 @@ def fetch_azure_tts_rate(region: str) -> dict[str, Any]:
     region = (region or "").strip().lower()
     if not region:
         return {"ok": False, "error": "missing_region"}
-    debug = os.getenv("AZURE_TTS_DEBUG", "0") == "1"
+    debug = _pricing_debug()
     url = (
         "https://prices.azure.com/api/retail/prices?"
         f"$filter=armRegionName%20eq%20'{region}'%20and%20serviceName%20eq%20'Cognitive%20Services'%20and%20contains(productName,'Text%20to%20Speech')"
@@ -269,7 +288,7 @@ def fetch_twilio_whatsapp_base_fee() -> dict[str, Any]:
     Best-effort fetch of Twilio's base WhatsApp fee from the public pricing page.
     """
     url = "https://www.twilio.com/en-us/whatsapp/pricing"
-    debug = os.getenv("TWILIO_PRICING_DEBUG", "0") == "1"
+    debug = _pricing_debug()
     raw = _fetch_text(url)
     if not raw:
         if debug:
