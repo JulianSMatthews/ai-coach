@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from typing import Any, Iterable
 
 from sqlalchemy import and_, or_, text as sa_text
+from sqlalchemy.exc import ProgrammingError, OperationalError
 
 from .db import SessionLocal, engine
 from .models import BackgroundJob, Base, PromptSettings
@@ -74,16 +75,36 @@ def should_use_podcast_worker() -> bool:
 
 def enqueue_job(kind: str, payload: dict[str, Any], *, user_id: int | None = None) -> int:
     with SessionLocal() as s:
-        job = BackgroundJob(
-            kind=kind,
-            payload=payload,
-            status="pending",
-            user_id=user_id,
-        )
-        s.add(job)
-        s.commit()
-        s.refresh(job)
-        return int(job.id)
+        try:
+            job = BackgroundJob(
+                kind=kind,
+                payload=payload,
+                status="pending",
+                user_id=user_id,
+            )
+            s.add(job)
+            s.commit()
+            s.refresh(job)
+            return int(job.id)
+        except (ProgrammingError, OperationalError) as e:
+            # Handle missing table (e.g., DB reset) and retry once.
+            if "does not exist" in str(e).lower():
+                try:
+                    s.rollback()
+                except Exception:
+                    pass
+                ensure_job_table()
+                job = BackgroundJob(
+                    kind=kind,
+                    payload=payload,
+                    status="pending",
+                    user_id=user_id,
+                )
+                s.add(job)
+                s.commit()
+                s.refresh(job)
+                return int(job.id)
+            raise
 
 
 def claim_job(
@@ -96,20 +117,30 @@ def claim_job(
     stale = now - timedelta(minutes=max(1, lock_timeout_minutes))
     worker_id = worker_id or socket.gethostname()
     with SessionLocal() as s:
-        q = s.query(BackgroundJob).filter(
-            or_(
-                BackgroundJob.status == "pending",
-                BackgroundJob.status == "retry",
-                and_(BackgroundJob.status == "running", BackgroundJob.locked_at.isnot(None), BackgroundJob.locked_at < stale),
+        try:
+            q = s.query(BackgroundJob).filter(
+                or_(
+                    BackgroundJob.status == "pending",
+                    BackgroundJob.status == "retry",
+                    and_(BackgroundJob.status == "running", BackgroundJob.locked_at.isnot(None), BackgroundJob.locked_at < stale),
+                )
             )
-        )
-        if kinds:
-            q = q.filter(BackgroundJob.kind.in_(list(kinds)))
-        job = (
-            q.order_by(BackgroundJob.created_at.asc(), BackgroundJob.id.asc())
-            .with_for_update(skip_locked=True)
-            .first()
-        )
+            if kinds:
+                q = q.filter(BackgroundJob.kind.in_(list(kinds)))
+            job = (
+                q.order_by(BackgroundJob.created_at.asc(), BackgroundJob.id.asc())
+                .with_for_update(skip_locked=True)
+                .first()
+            )
+        except (ProgrammingError, OperationalError) as e:
+            if "does not exist" in str(e).lower():
+                try:
+                    s.rollback()
+                except Exception:
+                    pass
+                ensure_job_table()
+                return None
+            raise
         if not job:
             return None
         job.status = "running"
@@ -125,24 +156,44 @@ def claim_job(
 
 def mark_done(job_id: int, result: dict[str, Any] | None = None) -> None:
     with SessionLocal() as s:
-        job = s.get(BackgroundJob, job_id)
-        if not job:
-            return
-        job.status = "done"
-        job.result = result
-        job.error = None
-        job.locked_at = None
-        job.locked_by = None
-        s.add(job)
-        s.commit()
+        try:
+            job = s.get(BackgroundJob, job_id)
+            if not job:
+                return
+            job.status = "done"
+            job.result = result
+            job.error = None
+            job.locked_at = None
+            job.locked_by = None
+            s.add(job)
+            s.commit()
+        except (ProgrammingError, OperationalError) as e:
+            if "does not exist" in str(e).lower():
+                try:
+                    s.rollback()
+                except Exception:
+                    pass
+                ensure_job_table()
+                return
+            raise
 
 
 def mark_error(job_id: int, error: str, *, retry: bool) -> None:
     with SessionLocal() as s:
-        job = s.get(BackgroundJob, job_id)
-        if not job:
-            return
-        job.error = error
-        job.status = "retry" if retry else "error"
-        s.add(job)
-        s.commit()
+        try:
+            job = s.get(BackgroundJob, job_id)
+            if not job:
+                return
+            job.error = error
+            job.status = "retry" if retry else "error"
+            s.add(job)
+            s.commit()
+        except (ProgrammingError, OperationalError) as e:
+            if "does not exist" in str(e).lower():
+                try:
+                    s.rollback()
+                except Exception:
+                    pass
+                ensure_job_table()
+                return
+            raise
