@@ -393,27 +393,31 @@ def _cleanup_reports_on_reset(*, keep_content: bool) -> None:
 @app.on_event("startup")
 def on_startup():
     # Ensure logging/usage schemas before handling traffic.
-    try:
-        from .usage import ensure_usage_schema
-        ensure_usage_schema()
-    except Exception as e:
-        print(f"⚠️  Could not ensure usage schema: {e!r}")
-    try:
-        from .prompts import _ensure_llm_prompt_log_schema
-        _ensure_llm_prompt_log_schema()
-    except Exception as e:
-        print(f"⚠️  Could not ensure llm prompt log schema: {e!r}")
-    try:
-        from .message_log import _ensure_message_log_schema
-        _ensure_message_log_schema()
-    except Exception as e:
-        print(f"⚠️  Could not ensure message log schema: {e!r}")
+    def _bootstrap_schemas() -> None:
+        try:
+            from .usage import ensure_usage_schema
+            ensure_usage_schema()
+        except Exception as e:
+            print(f"⚠️  Could not ensure usage schema: {e!r}")
+        try:
+            from .prompts import _ensure_llm_prompt_log_schema
+            _ensure_llm_prompt_log_schema()
+        except Exception as e:
+            print(f"⚠️  Could not ensure llm prompt log schema: {e!r}")
+        try:
+            from .message_log import _ensure_message_log_schema
+            _ensure_message_log_schema()
+        except Exception as e:
+            print(f"⚠️  Could not ensure message log schema: {e!r}")
 
-    # Ensure job queue table exists (non-destructive)
-    try:
-        ensure_job_table()
-    except Exception as e:
-        print(f"⚠️  Could not ensure job table: {e!r}")
+        # Ensure job queue table exists (non-destructive)
+        try:
+            ensure_job_table()
+        except Exception as e:
+            print(f"⚠️  Could not ensure job table: {e!r}")
+
+    # Run schema bootstrap off the startup thread so we don't block port binding.
+    threading.Thread(target=_bootstrap_schemas, daemon=True).start()
     if os.getenv("RESET_DB_ON_STARTUP") == "1":
         keep_prompt_templates = os.getenv("KEEP_PROMPT_TEMPLATES_ON_RESET") == "1"
         keep_content = os.getenv("KEEP_CONTENT_ON_RESET") == "1"
