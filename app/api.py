@@ -384,6 +384,23 @@ def _cleanup_reports_on_reset(*, keep_content: bool) -> None:
 
 @app.on_event("startup")
 def on_startup():
+    # Ensure logging/usage schemas before handling traffic.
+    try:
+        from .usage import ensure_usage_schema
+        ensure_usage_schema()
+    except Exception as e:
+        print(f"⚠️  Could not ensure usage schema: {e!r}")
+    try:
+        from .prompts import _ensure_llm_prompt_log_schema
+        _ensure_llm_prompt_log_schema()
+    except Exception as e:
+        print(f"⚠️  Could not ensure llm prompt log schema: {e!r}")
+    try:
+        from .message_log import _ensure_message_log_schema
+        _ensure_message_log_schema()
+    except Exception as e:
+        print(f"⚠️  Could not ensure message log schema: {e!r}")
+
     # Ensure job queue table exists (non-destructive)
     try:
         ensure_job_table()

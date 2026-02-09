@@ -6,6 +6,7 @@ import os
 import math
 
 from sqlalchemy import func, case, text as sa_text
+from sqlalchemy.orm import Session
 
 from .db import SessionLocal, engine, _is_postgres, _table_exists
 from .models import UsageEvent, UsageRollupDaily, UsageSettings, LLMPromptLog
@@ -193,7 +194,8 @@ def ensure_usage_schema() -> None:
     _USAGE_SCHEMA_READY = True
 
 
-def log_usage_event(
+def _log_usage_event_with_session(
+    s: Session,
     *,
     user_id: int | None,
     provider: str,
@@ -208,55 +210,110 @@ def log_usage_event(
     tag: str | None = None,
     meta: dict | None = None,
 ) -> None:
+    resolved_user_id = user_id
+    resolved_model = model
+    resolved_request_id = request_id
+    if product == "llm" and (resolved_user_id is None or resolved_model is None or resolved_request_id is None):
+        raw = resolved_request_id
+        meta_obj = meta
+        if raw is None and isinstance(meta_obj, dict):
+            raw = meta_obj.get("prompt_log_id")
+        if raw is None and isinstance(meta_obj, str):
+            try:
+                parsed = json.loads(meta_obj)
+                if isinstance(parsed, dict):
+                    raw = parsed.get("prompt_log_id")
+                    meta_obj = parsed
+            except Exception:
+                pass
+        if raw is not None:
+            try:
+                prompt_id = int(str(raw).strip())
+            except Exception:
+                prompt_id = None
+            if prompt_id:
+                prompt = s.get(LLMPromptLog, prompt_id)
+                if prompt:
+                    if resolved_user_id is None and prompt.user_id is not None:
+                        resolved_user_id = prompt.user_id
+                    if resolved_model is None and prompt.model:
+                        resolved_model = prompt.model
+                    if resolved_request_id is None:
+                        resolved_request_id = str(prompt_id)
+    row = UsageEvent(
+        user_id=resolved_user_id,
+        provider=provider,
+        product=product,
+        model=resolved_model,
+        units=units,
+        unit_type=unit_type,
+        cost_estimate=cost_estimate,
+        currency=currency,
+        request_id=resolved_request_id,
+        duration_ms=duration_ms,
+        tag=tag,
+        meta=meta,
+    )
+    s.add(row)
+
+
+def log_usage_event(
+    *,
+    user_id: int | None,
+    provider: str,
+    product: str,
+    model: str | None,
+    units: float,
+    unit_type: str,
+    cost_estimate: float | None = None,
+    currency: str = "GBP",
+    request_id: str | None = None,
+    duration_ms: int | None = None,
+    tag: str | None = None,
+    meta: dict | None = None,
+    session: Session | None = None,
+    commit: bool = True,
+    ensure: bool = True,
+) -> None:
     try:
-        ensure_usage_schema()
-        with SessionLocal() as s:
-            resolved_user_id = user_id
-            resolved_model = model
-            resolved_request_id = request_id
-            if product == "llm" and (resolved_user_id is None or resolved_model is None or resolved_request_id is None):
-                raw = resolved_request_id
-                meta_obj = meta
-                if raw is None and isinstance(meta_obj, dict):
-                    raw = meta_obj.get("prompt_log_id")
-                if raw is None and isinstance(meta_obj, str):
-                    try:
-                        parsed = json.loads(meta_obj)
-                        if isinstance(parsed, dict):
-                            raw = parsed.get("prompt_log_id")
-                            meta_obj = parsed
-                    except Exception:
-                        pass
-                if raw is not None:
-                    try:
-                        prompt_id = int(str(raw).strip())
-                    except Exception:
-                        prompt_id = None
-                    if prompt_id:
-                        prompt = s.get(LLMPromptLog, prompt_id)
-                        if prompt:
-                            if resolved_user_id is None and prompt.user_id is not None:
-                                resolved_user_id = prompt.user_id
-                            if resolved_model is None and prompt.model:
-                                resolved_model = prompt.model
-                            if resolved_request_id is None:
-                                resolved_request_id = str(prompt_id)
-            row = UsageEvent(
-                user_id=resolved_user_id,
+        if ensure:
+            ensure_usage_schema()
+        if session is None:
+            with SessionLocal() as s:
+                _log_usage_event_with_session(
+                    s,
+                    user_id=user_id,
+                    provider=provider,
+                    product=product,
+                    model=model,
+                    units=units,
+                    unit_type=unit_type,
+                    cost_estimate=cost_estimate,
+                    currency=currency,
+                    request_id=request_id,
+                    duration_ms=duration_ms,
+                    tag=tag,
+                    meta=meta,
+                )
+                s.commit()
+        else:
+            _log_usage_event_with_session(
+                session,
+                user_id=user_id,
                 provider=provider,
                 product=product,
-                model=resolved_model,
+                model=model,
                 units=units,
                 unit_type=unit_type,
                 cost_estimate=cost_estimate,
                 currency=currency,
-                request_id=resolved_request_id,
+                request_id=request_id,
                 duration_ms=duration_ms,
                 tag=tag,
                 meta=meta,
             )
-            s.add(row)
-            s.commit()
+            if commit:
+                session.commit()
     except Exception as e:
         print(f"[usage] log failed: {e}")
 

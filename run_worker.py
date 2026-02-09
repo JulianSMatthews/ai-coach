@@ -9,6 +9,9 @@ import traceback
 from app.job_queue import claim_job, ensure_job_table, mark_done, mark_error
 from app import scheduler, assessor, monday, kickoff, thursday, friday
 from app.prompts import run_llm_prompt
+from app.usage import ensure_usage_schema
+from app.prompts import _ensure_llm_prompt_log_schema
+from app.message_log import _ensure_message_log_schema
 from app.reporting import (
     generate_assessment_dashboard_html,
     generate_assessment_report_pdf,
@@ -166,6 +169,18 @@ def process_job(kind: str, payload: dict) -> dict:
 
 def main() -> None:
     os.environ.setdefault("PROMPT_WORKER_PROCESS", "1")
+    try:
+        ensure_usage_schema()
+    except Exception as e:
+        print(f"[worker] WARN: ensure usage schema failed: {e}")
+    try:
+        _ensure_llm_prompt_log_schema()
+    except Exception as e:
+        print(f"[worker] WARN: ensure llm prompt log schema failed: {e}")
+    try:
+        _ensure_message_log_schema()
+    except Exception as e:
+        print(f"[worker] WARN: ensure message log schema failed: {e}")
     ensure_job_table()
     worker_id = os.getenv("WORKER_ID") or socket.gethostname()
     poll_seconds = int(os.getenv("WORKER_POLL_SECONDS", "2") or "2")

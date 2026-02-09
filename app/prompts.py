@@ -1760,6 +1760,61 @@ def log_llm_prompt(
             s.flush()
             prompt_log_id = row.id
             s.commit()
+
+            try:
+                tag = _usage_tag_for_touchpoint(touchpoint)
+                tokens_in = estimate_tokens(final_prompt)
+                tokens_out = estimate_tokens(response_preview or "")
+                _, rate_in, rate_out, rate_source = estimate_llm_cost(tokens_in, tokens_out)
+                request_id = str(prompt_log_id) if prompt_log_id else None
+                meta = {
+                    "prompt_log_id": prompt_log_id,
+                    "touchpoint": touchpoint,
+                    "prompt_variant": prompt_variant,
+                    "rate_source": rate_source,
+                    "rate_in": rate_in,
+                    "rate_out": rate_out,
+                }
+                if tokens_in:
+                    log_usage_event(
+                        user_id=user_id,
+                        provider=(os.getenv("LLM_PROVIDER") or "openai").strip() or "openai",
+                        product="llm",
+                        model=model,
+                        units=float(tokens_in),
+                        unit_type="tokens_in",
+                        cost_estimate=(tokens_in / 1_000_000.0) * rate_in if rate_in else None,
+                        request_id=request_id,
+                        tag=tag,
+                        meta=meta,
+                        session=s,
+                        commit=False,
+                        ensure=False,
+                    )
+                if tokens_out:
+                    log_usage_event(
+                        user_id=user_id,
+                        provider=(os.getenv("LLM_PROVIDER") or "openai").strip() or "openai",
+                        product="llm",
+                        model=model,
+                        units=float(tokens_out),
+                        unit_type="tokens_out",
+                        cost_estimate=(tokens_out / 1_000_000.0) * rate_out if rate_out else None,
+                        request_id=request_id,
+                        tag=tag,
+                        meta=meta,
+                        session=s,
+                        commit=False,
+                        ensure=False,
+                    )
+                s.commit()
+            except Exception as e:
+                try:
+                    s.rollback()
+                except Exception:
+                    pass
+                print(f"[usage] llm log failed: {e}")
+
             if debug:
                 try:
                     total = s.query(func.count(LLMPromptLog.id)).scalar()
@@ -1768,49 +1823,6 @@ def log_llm_prompt(
                     print(f"[prompts] logged but count check failed: {e}")
             else:
                 print(f"[prompts] logged LLM prompt touchpoint={touchpoint} user_id={user_id}")
-
-        try:
-            tag = _usage_tag_for_touchpoint(touchpoint)
-            tokens_in = estimate_tokens(final_prompt)
-            tokens_out = estimate_tokens(response_preview or "")
-            _, rate_in, rate_out, rate_source = estimate_llm_cost(tokens_in, tokens_out)
-            request_id = str(prompt_log_id) if prompt_log_id else None
-            meta = {
-                "prompt_log_id": prompt_log_id,
-                "touchpoint": touchpoint,
-                "prompt_variant": prompt_variant,
-                "rate_source": rate_source,
-                "rate_in": rate_in,
-                "rate_out": rate_out,
-            }
-            if tokens_in:
-                log_usage_event(
-                    user_id=user_id,
-                    provider=(os.getenv("LLM_PROVIDER") or "openai").strip() or "openai",
-                    product="llm",
-                    model=model,
-                    units=float(tokens_in),
-                    unit_type="tokens_in",
-                    cost_estimate=(tokens_in / 1_000_000.0) * rate_in if rate_in else None,
-                    request_id=request_id,
-                    tag=tag,
-                    meta=meta,
-                )
-            if tokens_out:
-                log_usage_event(
-                    user_id=user_id,
-                    provider=(os.getenv("LLM_PROVIDER") or "openai").strip() or "openai",
-                    product="llm",
-                    model=model,
-                    units=float(tokens_out),
-                    unit_type="tokens_out",
-                    cost_estimate=(tokens_out / 1_000_000.0) * rate_out if rate_out else None,
-                    request_id=request_id,
-                    tag=tag,
-                    meta=meta,
-                )
-        except Exception as e:
-            print(f"[usage] llm log failed: {e}")
     except Exception as e:
         # Best-effort: surface failures for missing tables or permissions
         print(f"[prompts] failed to log LLM prompt ({touchpoint}): {e}")
