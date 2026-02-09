@@ -399,6 +399,13 @@ def _cleanup_reports_on_reset(*, keep_content: bool) -> None:
 
 @app.on_event("startup")
 def on_startup():
+    def _env_true(*keys: str) -> bool:
+        for key in keys:
+            val = (os.getenv(key) or "").strip().lower()
+            if val in {"1", "true", "yes"}:
+                return True
+        return False
+
     def _startup_tasks() -> None:
         print("[startup] begin")
         # Ensure logging/usage schemas before handling traffic.
@@ -424,11 +431,13 @@ def on_startup():
         except Exception as e:
             print(f"⚠️  Could not ensure job table: {e!r}")
 
-        reset_requested = os.getenv("RESET_DB_ON_STARTUP") == "1"
-        allow_reset = os.getenv("ALLOW_RESET_DB_ON_STARTUP") == "1" or (os.getenv("ENV") or "").lower() != "production"
-        if reset_requested and not allow_reset:
-            print("[startup] RESET_DB_ON_STARTUP ignored in production (set ALLOW_RESET_DB_ON_STARTUP=1 to override).")
-        if reset_requested and allow_reset:
+        reset_requested = _env_true(
+            "RESET_DB_ON_STARTUP",
+            "RESET_DATABASE_ON_STARTUP",
+            "reset_database_on_startup",
+            "reset_db_on_startup",
+        )
+        if reset_requested:
             keep_prompt_templates = os.getenv("KEEP_PROMPT_TEMPLATES_ON_RESET") == "1"
             keep_content = os.getenv("KEEP_CONTENT_ON_RESET") == "1"
             keep_kb = os.getenv("KEEP_KB_SNIPPETS_ON_RESET") == "1"
