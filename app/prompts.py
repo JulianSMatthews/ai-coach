@@ -48,6 +48,9 @@ from .usage import log_usage_event, estimate_tokens, estimate_llm_cost
 PROMPT_STATE_ALIASES = {"production": "live", "stage": "beta"}
 PROMPT_STATE_ORDER = ["live", "beta", "develop"]
 
+def _prompt_log_debug_enabled() -> bool:
+    return (os.getenv("PROMPT_LOG_DEBUG") or "").strip().lower() in {"1", "true", "yes"}
+
 
 def format_checkin_history(checkins: List[Dict[str, Any]]) -> str:
     """
@@ -634,6 +637,40 @@ def _truncate_text(val: str | None, limit: int) -> str | None:
     if len(val) <= limit:
         return val
     return val[:limit] + " ...[truncated]"
+
+
+def _prompt_log_payload_sizes(
+    *,
+    prompt_text_value: str,
+    final_prompt: str | None,
+    response_preview: str | None,
+    known_blocks: Dict[str, str],
+    extra_blocks: Dict[str, str],
+    block_order_value: List[str] | None,
+    context_meta: Optional[Dict[str, Any]],
+) -> dict:
+    def _len(val) -> int:
+        if val is None:
+            return 0
+        try:
+            return len(str(val))
+        except Exception:
+            return 0
+    return {
+        "prompt_text": _len(prompt_text_value),
+        "assembled_prompt": _len(final_prompt),
+        "response_preview": _len(response_preview),
+        "system_block": _len(known_blocks.get("system")),
+        "locale_block": _len(known_blocks.get("locale")),
+        "okr_block": _len(known_blocks.get("okr")),
+        "scores_block": _len(known_blocks.get("scores")),
+        "habit_block": _len(known_blocks.get("habit")),
+        "task_block": _len(known_blocks.get("task")),
+        "user_block": _len(known_blocks.get("user")),
+        "extra_blocks": _len(extra_blocks),
+        "block_order": _len(block_order_value),
+        "context_meta": _len(context_meta),
+    }
 
 
 def _ensure_llm_prompt_log_schema() -> None:
@@ -1702,6 +1739,16 @@ def run_llm_prompt_or_enqueue(
     )
 
 
+def _should_async_log(touchpoint: str | None) -> bool:
+    env_flag = (os.getenv("PROMPT_LOG_ASYNC") or "").strip().lower() in {"1", "true", "yes"}
+    if env_flag:
+        return True
+    if not touchpoint:
+        return False
+    key = touchpoint.strip().lower()
+    return key.startswith("podcast_") or key in {"kickoff", "weekstart", "weekstart_podcast"}
+
+
 def log_llm_prompt(
     user_id: Optional[int],
     touchpoint: str,
@@ -1719,7 +1766,55 @@ def log_llm_prompt(
     Persist the prompt sent to the LLM (optional response preview) with structured blocks.
     Enable by calling explicitly where needed; kept separate from run_llm_prompt for control.
     """
+    if _should_async_log(touchpoint):
+        threading.Thread(
+            target=_log_llm_prompt_sync,
+            args=(
+                user_id,
+                touchpoint,
+                prompt_text,
+                model,
+                duration_ms,
+                response_preview,
+                context_meta,
+                prompt_variant,
+                task_label,
+                prompt_blocks,
+                block_order,
+            ),
+            daemon=True,
+        ).start()
+        return
+    _log_llm_prompt_sync(
+        user_id,
+        touchpoint,
+        prompt_text,
+        model,
+        duration_ms,
+        response_preview,
+        context_meta,
+        prompt_variant,
+        task_label,
+        prompt_blocks,
+        block_order,
+    )
+
+
+def _log_llm_prompt_sync(
+    user_id: Optional[int],
+    touchpoint: str,
+    prompt_text: str,
+    model: Optional[str] = None,
+    duration_ms: Optional[int] = None,
+    response_preview: Optional[str] = None,
+    context_meta: Optional[Dict[str, Any]] = None,
+    prompt_variant: Optional[str] = None,
+    task_label: Optional[str] = None,
+    prompt_blocks: Optional[Dict[str, str]] = None,
+    block_order: Optional[List[str]] = None,
+) -> None:
     debug = debug_enabled()
+    debug_log = _prompt_log_debug_enabled()
     if model is None:
         client = getattr(shared_llm, "_llm", None)
         model = getattr(client, "model", None) or getattr(client, "model_name", None) if client else None
@@ -1754,6 +1849,17 @@ def log_llm_prompt(
         # Keep legacy prompt_text column populated for back-compat.
         prompt_text_value = final_prompt or ""
         block_order_value = block_order or resolved_order or DEFAULT_PROMPT_BLOCK_ORDER
+        if debug_log:
+            sizes = _prompt_log_payload_sizes(
+                prompt_text_value=prompt_text_value,
+                final_prompt=final_prompt,
+                response_preview=response_preview if isinstance(response_preview, str) else None,
+                known_blocks=known_blocks,
+                extra_blocks=extra_blocks,
+                block_order_value=block_order_value,
+                context_meta=context_meta,
+            )
+            print(f"[prompts][debug] payload sizes touchpoint={touchpoint} user_id={user_id} sizes={sizes}")
 
         prompt_log_id = None
         with SessionLocal() as s:
@@ -1765,6 +1871,8 @@ def log_llm_prompt(
             except Exception:
                 pass
             try:
+                if debug_log:
+                    print(f"[prompts][debug] insert start touchpoint={touchpoint} user_id={user_id}")
                 row = LLMPromptLog(
                         user_id=user_id,
                         touchpoint=touchpoint,
@@ -1790,7 +1898,11 @@ def log_llm_prompt(
                         context_meta=context_meta,
                     )
                 s.add(row)
+                if debug_log:
+                    print(f"[prompts][debug] flush start touchpoint={touchpoint} user_id={user_id}")
                 s.flush()
+                if debug_log:
+                    print(f"[prompts][debug] flush done touchpoint={touchpoint} user_id={user_id}")
             except DBAPIError as e:
                 if _is_statement_timeout(e):
                     try:
@@ -1823,11 +1935,19 @@ def log_llm_prompt(
                         context_meta=context_meta,
                     )
                     s.add(row)
+                    if debug_log:
+                        print(f"[prompts][debug] flush start (trimmed) touchpoint={touchpoint} user_id={user_id}")
                     s.flush()
+                    if debug_log:
+                        print(f"[prompts][debug] flush done (trimmed) touchpoint={touchpoint} user_id={user_id}")
                 else:
                     raise
             prompt_log_id = row.id
+            if debug_log:
+                print(f"[prompts][debug] commit start touchpoint={touchpoint} user_id={user_id}")
             s.commit()
+            if debug_log:
+                print(f"[prompts][debug] commit done touchpoint={touchpoint} user_id={user_id} id={prompt_log_id}")
 
             try:
                 tag = _usage_tag_for_touchpoint(touchpoint)
