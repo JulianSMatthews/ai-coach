@@ -317,6 +317,13 @@ async def _startup_init() -> None:
         threading.Thread(target=_bootstrap_quick_replies, daemon=True).start()
     except Exception as e:
         print(f"[startup] Twilio quick replies bootstrap skipped: {e!r}")
+    # Scheduler must start on the running event loop.
+    try:
+        scheduler.start_scheduler()
+        scheduler.schedule_auto_daily_prompts()
+        scheduler.schedule_out_of_session_messages()
+    except Exception as e:
+        print(f"⚠️  Scheduler start failed: {e!r}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -417,7 +424,11 @@ def on_startup():
         except Exception as e:
             print(f"⚠️  Could not ensure job table: {e!r}")
 
-        if os.getenv("RESET_DB_ON_STARTUP") == "1":
+        reset_requested = os.getenv("RESET_DB_ON_STARTUP") == "1"
+        allow_reset = os.getenv("ALLOW_RESET_DB_ON_STARTUP") == "1" or (os.getenv("ENV") or "").lower() != "production"
+        if reset_requested and not allow_reset:
+            print("[startup] RESET_DB_ON_STARTUP ignored in production (set ALLOW_RESET_DB_ON_STARTUP=1 to override).")
+        if reset_requested and allow_reset:
             keep_prompt_templates = os.getenv("KEEP_PROMPT_TEMPLATES_ON_RESET") == "1"
             keep_content = os.getenv("KEEP_CONTENT_ON_RESET") == "1"
             keep_kb = os.getenv("KEEP_KB_SNIPPETS_ON_RESET") == "1"
@@ -473,13 +484,6 @@ def on_startup():
             scheduler.ensure_global_schedule_defaults()
         except Exception as e:
             print(f"⚠️  Could not init global prompt schedule defaults: {e!r}")
-        # Start scheduler (user-level auto prompts are handled per preference)
-        try:
-            scheduler.start_scheduler()
-            scheduler.schedule_auto_daily_prompts()
-            scheduler.schedule_out_of_session_messages()
-        except Exception as e:
-            print(f"⚠️  Scheduler start failed: {e!r}")
         print("[startup] end")
 
     # Run all startup tasks off-thread so we don't block port binding.
@@ -3654,47 +3658,39 @@ def _build_prompt_cost_rows(
             prompt_map = {p.id: p for p in prompt_rows}
 
         if not tag:
+            prompt_rows = (
+                s.query(LLMPromptLog)
+                .filter(LLMPromptLog.created_at >= start_utc, LLMPromptLog.created_at < end_utc)
+                .order_by(LLMPromptLog.created_at.desc())
+                .limit(prompt_fetch_limit)
+                .all()
+            )
             if user_id:
-                prompt_rows = (
-                    s.query(LLMPromptLog)
-                    .filter(
-                        LLMPromptLog.created_at >= start_utc,
-                        LLMPromptLog.created_at < end_utc,
-                        LLMPromptLog.user_id == user_id,
-                    )
-                    .order_by(LLMPromptLog.created_at.desc())
-                    .limit(prompt_fetch_limit)
-                    .all()
-                )
-                prompt_rows_null = (
-                    s.query(LLMPromptLog)
-                    .filter(
-                        LLMPromptLog.created_at >= start_utc,
-                        LLMPromptLog.created_at < end_utc,
-                        LLMPromptLog.user_id.is_(None),
-                    )
-                    .order_by(LLMPromptLog.created_at.desc())
-                    .limit(prompt_fetch_limit)
-                    .all()
-                )
-                prompt_rows.extend(prompt_rows_null)
-            else:
-                prompt_rows = (
-                    s.query(LLMPromptLog)
-                    .filter(LLMPromptLog.created_at >= start_utc, LLMPromptLog.created_at < end_utc)
-                    .order_by(LLMPromptLog.created_at.desc())
-                    .limit(prompt_fetch_limit)
-                    .all()
-                )
+                prompt_rows = [
+                    row for row in prompt_rows if _extract_prompt_user_id(row) == user_id
+                ]
             for prompt in prompt_rows:
                 prompt_map.setdefault(prompt.id, prompt)
+
+    allowed_prompt_ids: set[int] | None = None
+    if user_id is not None:
+        allowed_prompt_ids = set()
+        for pid, prompt in prompt_map.items():
+            if _extract_prompt_user_id(prompt) == user_id:
+                allowed_prompt_ids.add(pid)
+        for evt, pid in event_pairs:
+            if evt.user_id == user_id:
+                allowed_prompt_ids.add(pid)
 
     by_prompt: dict[int, dict] = {}
     for prompt in prompt_map.values():
         pid = int(prompt.id)
+        if allowed_prompt_ids is not None and pid not in allowed_prompt_ids:
+            continue
         resolved_user_id = _extract_prompt_user_id(prompt)
         prompt_text_full = _coerce_prompt_text(prompt.assembled_prompt or prompt.prompt_text or "")
         response_text_full = _coerce_prompt_text(prompt.response_preview) if prompt.response_preview else ""
+        prompt_title = prompt.task_label or prompt.prompt_variant or prompt.touchpoint or "prompt"
         by_prompt[pid] = {
             "prompt_id": pid,
             "created_at": prompt.created_at.isoformat() if prompt.created_at else None,
@@ -3703,8 +3699,7 @@ def _build_prompt_cost_rows(
             "model": prompt.model,
             "prompt_variant": prompt.prompt_variant,
             "task_label": prompt.task_label,
-            "prompt_preview": (prompt_text_full or "")[:400],
-            "response_preview": (response_text_full or "")[:400] if response_text_full else None,
+            "prompt_title": prompt_title,
             "prompt_text_full": prompt_text_full,
             "response_text_full": response_text_full,
             "tokens_in": 0.0,

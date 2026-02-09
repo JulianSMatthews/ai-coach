@@ -82,8 +82,7 @@ export type PromptCostRow = {
   model?: string | null;
   prompt_variant?: string | null;
   task_label?: string | null;
-  prompt_preview?: string | null;
-  response_preview?: string | null;
+  prompt_title?: string | null;
   tokens_in?: number;
   tokens_out?: number;
   rate_in?: number | null;

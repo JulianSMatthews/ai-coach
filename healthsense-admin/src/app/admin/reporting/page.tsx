@@ -48,6 +48,7 @@ type ReportingSearchParams = {
 };
 
 export default async function ReportingPage({ searchParams }: { searchParams?: ReportingSearchParams }) {
+  const apiBase = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "";
   const period = typeof searchParams?.period === "string" ? searchParams.period : "7";
   const start = typeof searchParams?.start === "string" ? searchParams.start : undefined;
   const end = typeof searchParams?.end === "string" ? searchParams.end : undefined;
@@ -285,8 +286,18 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
                             {row.user_id ? ` · user ${row.user_id}` : ""}
                           </div>
                           <div className="mt-2 text-sm text-[#1e1b16]">
-                            {row.prompt_preview || "—"}
+                            {row.prompt_title || row.task_label || row.prompt_variant || row.touchpoint || "Prompt"}
                           </div>
+                          {apiBase && row.prompt_id ? (
+                            <a
+                              href={`${apiBase}/admin/prompts/history/${row.prompt_id}`}
+                              className="mt-2 inline-flex text-xs uppercase tracking-[0.2em] text-[var(--accent)]"
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              View log
+                            </a>
+                          ) : null}
                         </td>
                         <td className="px-4 py-3 align-top">{Math.round(row.tokens_in || 0)}</td>
                         <td className="px-4 py-3 align-top">{Math.round(row.tokens_out || 0)}</td>
