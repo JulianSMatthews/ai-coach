@@ -606,6 +606,17 @@ _LLM_PROMPT_SCHEMA_READY = False
 _LLM_PROMPT_SCHEMA_LOCK = threading.Lock()
 
 
+def _prompt_log_timeout_ms() -> int | None:
+    raw = (os.getenv("LLM_PROMPT_LOG_TIMEOUT_MS") or "").strip()
+    if not raw:
+        return 20000
+    try:
+        val = int(raw)
+    except Exception:
+        return 20000
+    return None if val <= 0 else val
+
+
 def _ensure_llm_prompt_log_schema() -> None:
     """
     Idempotently add new prompt-block columns and a reviewer-friendly view.
@@ -1729,7 +1740,9 @@ def log_llm_prompt(
         with SessionLocal() as s:
             try:
                 if _is_postgres():
-                    s.execute(text("SET LOCAL statement_timeout = '5000ms'"))
+                    timeout_ms = _prompt_log_timeout_ms()
+                    if timeout_ms is not None:
+                        s.execute(text(f"SET LOCAL statement_timeout = '{int(timeout_ms)}ms'"))
             except Exception:
                 pass
             row = LLMPromptLog(
