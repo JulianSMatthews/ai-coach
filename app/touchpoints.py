@@ -9,7 +9,7 @@ from typing import Iterable
 from .db import SessionLocal
 from sqlalchemy import select
 
-from .models import OKRKeyResult, Touchpoint, TouchpointKR
+from .models import OKRKeyResult, Touchpoint, TouchpointKR, WeeklyFocus
 
 
 def log_touchpoint(
@@ -33,10 +33,15 @@ def log_touchpoint(
     kr_list = list(kr_ids) if kr_ids else []
     with SessionLocal() as s:
         try:
+            resolved_weekly_focus_id = weekly_focus_id
+            if weekly_focus_id:
+                exists = s.query(WeeklyFocus.id).filter(WeeklyFocus.id == weekly_focus_id).first()
+                if not exists:
+                    resolved_weekly_focus_id = None
             tp = Touchpoint(
                 user_id=user_id,
                 type=tp_type,
-                weekly_focus_id=weekly_focus_id,
+                weekly_focus_id=resolved_weekly_focus_id,
                 week_no=week_no,
                 status=status,
                 channel=channel,

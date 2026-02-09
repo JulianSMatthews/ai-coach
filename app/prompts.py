@@ -1698,6 +1698,16 @@ def log_llm_prompt(
         _ensure_llm_prompt_log_schema()
         if response_preview is not None and not isinstance(response_preview, str):
             response_preview = _coerce_llm_content(response_preview)
+        if context_meta is not None and not isinstance(context_meta, dict):
+            try:
+                context_meta = json.loads(json.dumps(context_meta, default=str))
+            except Exception:
+                context_meta = {"_raw": str(context_meta)}
+        elif isinstance(context_meta, dict):
+            try:
+                context_meta = json.loads(json.dumps(context_meta, default=str))
+            except Exception:
+                context_meta = {"_raw": str(context_meta)}
         known_blocks, extra_blocks, resolved_order, assembled_from_blocks = _normalize_prompt_blocks(
             prompt_blocks, preferred_order=block_order
         )
@@ -1717,6 +1727,11 @@ def log_llm_prompt(
 
         prompt_log_id = None
         with SessionLocal() as s:
+            try:
+                if _is_postgres():
+                    s.execute(text("SET LOCAL statement_timeout = '5000ms'"))
+            except Exception:
+                pass
             row = LLMPromptLog(
                     user_id=user_id,
                     touchpoint=touchpoint,

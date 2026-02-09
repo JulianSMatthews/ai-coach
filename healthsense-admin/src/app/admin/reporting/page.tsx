@@ -63,15 +63,13 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
       end: period === "custom" ? end : undefined,
       user_id: Number.isFinite(userId) ? userId : undefined,
     }),
-    Number.isFinite(userId)
-      ? getAdminPromptCosts({
-          days: Number.isFinite(days) ? days : 7,
-          start: period === "custom" ? start : undefined,
-          end: period === "custom" ? end : undefined,
-          user_id: Number.isFinite(userId) ? userId : undefined,
-          limit: 50,
-        })
-      : Promise.resolve(null),
+    getAdminPromptCosts({
+      days: Number.isFinite(days) ? days : 7,
+      start: period === "custom" ? start : undefined,
+      end: period === "custom" ? end : undefined,
+      user_id: Number.isFinite(userId) ? userId : undefined,
+      limit: 50,
+    }),
     listAdminUsers(),
   ]);
   const meta = (() => {
@@ -250,11 +248,7 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
           <p className="mt-2 text-sm text-[#6b6257]">
             Drill into LLM prompt costs for the selected user and period.
           </p>
-          {!Number.isFinite(userId) ? (
-            <p className="mt-4 text-sm text-[#8a8176]">
-              Enter a User ID above to view prompt-level costs.
-            </p>
-          ) : !promptCosts?.rows?.length ? (
+          {!promptCosts?.rows?.length ? (
             <p className="mt-4 text-sm text-[#8a8176]">No LLM prompt costs found in this window.</p>
           ) : (
             <div className="mt-4 space-y-4">
@@ -266,7 +260,8 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
                   </p>
                 </div>
                 <p className="text-xs text-[#8a8176]">
-                  Showing top {promptCosts.limit ?? 50} prompts by cost.
+                  Showing top {promptCosts.limit ?? 50} prompts by cost
+                  {Number.isFinite(userId) ? "" : " (all users)"}.
                 </p>
               </div>
               <div className="overflow-x-auto rounded-2xl border border-[#efe7db] bg-white">
@@ -287,6 +282,7 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
                         <td className="px-4 py-3 align-top">
                           <div className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
                             {row.touchpoint || "prompt"} · {row.model || "model"}
+                            {row.user_id ? ` · user ${row.user_id}` : ""}
                           </div>
                           <div className="mt-2 text-sm text-[#1e1b16]">
                             {row.prompt_preview || "—"}

@@ -1362,7 +1362,13 @@ def get_active_domain(user: User) -> Optional[str]:
 def _start_or_get_run(s, user: User, state: dict) -> int:
     run_id = state.get("run_id")
     if run_id:
-        return run_id
+        existing = s.get(AssessmentRun, run_id)
+        if existing:
+            return run_id
+        # Run was deleted/reset; start fresh to avoid FK violations.
+        print(f"[assessor] run_id {run_id} missing; starting new run for user {user.id}")
+        state["run_id"] = None
+        state["turn_idx"] = 0
     run = AssessmentRun(user_id=user.id, domain="combined")
     s.add(run); s.commit(); s.refresh(run)
     state["run_id"] = run.id
@@ -2184,7 +2190,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                         break
                 concept_dialogue = list(reversed(concept_dialogue))
 
-                run_id = state.get("run_id")
+                run_id = _start_or_get_run(s, user, state)
                 idx_next = int(state.get("turn_idx", 0)) + 1
                 summary = AssessmentTurn(
                     run_id=run_id, idx=idx_next, pillar=pillar, concept_key=concept_code,
@@ -2285,7 +2291,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         })
         concept_progress[pillar][concept_code]["scored"] = True
 
-        run_id = state.get("run_id")
+        run_id = _start_or_get_run(s, user, state)
         idx_next = int(state.get("turn_idx", 0)) + 1
         summary = AssessmentTurn(
             run_id=run_id, idx=idx_next, pillar=pillar, concept_key=concept_code,
