@@ -34,6 +34,7 @@ from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 from sqlalchemy import func, text, case
+from sqlalchemy.exc import DBAPIError
 
 from .db import SessionLocal, engine, _is_postgres, _table_exists
 from .debug_utils import debug_enabled
@@ -615,6 +616,24 @@ def _prompt_log_timeout_ms() -> int | None:
     except Exception:
         return 20000
     return None if val <= 0 else val
+
+
+def _is_statement_timeout(err: Exception) -> bool:
+    msg = str(err).lower()
+    if "statement timeout" in msg or "query canceled" in msg:
+        return True
+    name = err.__class__.__name__.lower()
+    return "querycanceled" in name or "statementtimeout" in name
+
+
+def _truncate_text(val: str | None, limit: int) -> str | None:
+    if val is None:
+        return None
+    if limit <= 0:
+        return val
+    if len(val) <= limit:
+        return val
+    return val[:limit] + " ...[truncated]"
 
 
 def _ensure_llm_prompt_log_schema() -> None:
@@ -1745,32 +1764,68 @@ def log_llm_prompt(
                         s.execute(text(f"SET LOCAL statement_timeout = '{int(timeout_ms)}ms'"))
             except Exception:
                 pass
-            row = LLMPromptLog(
-                    user_id=user_id,
-                    touchpoint=touchpoint,
-                    model=model,
-                    duration_ms=duration_ms,
-                    prompt_variant=prompt_variant,
-                    task_label=task_label,
-                    system_block=known_blocks.get("system"),
-                    locale_block=known_blocks.get("locale"),
-                    okr_block=known_blocks.get("okr"),
-                    okr_scope=extra_blocks.pop("okr_scope", None),
-                    scores_block=known_blocks.get("scores"),
-                    habit_block=known_blocks.get("habit"),
-                    task_block=known_blocks.get("task"),
-                    template_state=template_state,
-                    template_version=template_version_int,
-                    user_block=known_blocks.get("user"),
-                    extra_blocks=extra_blocks or None,
-                    block_order=block_order_value or None,
-                    prompt_text=prompt_text_value,
-                    assembled_prompt=final_prompt,
-                    response_preview=response_preview,
-                    context_meta=context_meta,
-                )
-            s.add(row)
-            s.flush()
+            try:
+                row = LLMPromptLog(
+                        user_id=user_id,
+                        touchpoint=touchpoint,
+                        model=model,
+                        duration_ms=duration_ms,
+                        prompt_variant=prompt_variant,
+                        task_label=task_label,
+                        system_block=known_blocks.get("system"),
+                        locale_block=known_blocks.get("locale"),
+                        okr_block=known_blocks.get("okr"),
+                        okr_scope=extra_blocks.pop("okr_scope", None),
+                        scores_block=known_blocks.get("scores"),
+                        habit_block=known_blocks.get("habit"),
+                        task_block=known_blocks.get("task"),
+                        template_state=template_state,
+                        template_version=template_version_int,
+                        user_block=known_blocks.get("user"),
+                        extra_blocks=extra_blocks or None,
+                        block_order=block_order_value or None,
+                        prompt_text=prompt_text_value,
+                        assembled_prompt=final_prompt,
+                        response_preview=response_preview,
+                        context_meta=context_meta,
+                    )
+                s.add(row)
+                s.flush()
+            except DBAPIError as e:
+                if _is_statement_timeout(e):
+                    try:
+                        s.rollback()
+                    except Exception:
+                        pass
+                    # Retry with trimmed payload to avoid timeouts.
+                    row = LLMPromptLog(
+                        user_id=user_id,
+                        touchpoint=touchpoint,
+                        model=model,
+                        duration_ms=duration_ms,
+                        prompt_variant=prompt_variant,
+                        task_label=task_label,
+                        system_block=_truncate_text(known_blocks.get("system"), 2000),
+                        locale_block=_truncate_text(known_blocks.get("locale"), 2000),
+                        okr_block=_truncate_text(known_blocks.get("okr"), 4000),
+                        okr_scope=extra_blocks.pop("okr_scope", None),
+                        scores_block=_truncate_text(known_blocks.get("scores"), 2000),
+                        habit_block=_truncate_text(known_blocks.get("habit"), 2000),
+                        task_block=_truncate_text(known_blocks.get("task"), 4000),
+                        template_state=template_state,
+                        template_version=template_version_int,
+                        user_block=_truncate_text(known_blocks.get("user"), 2000),
+                        extra_blocks=None,
+                        block_order=block_order_value or None,
+                        prompt_text=_truncate_text(prompt_text_value, 8000),
+                        assembled_prompt=_truncate_text(final_prompt, 8000),
+                        response_preview=_truncate_text(response_preview, 2000) if isinstance(response_preview, str) else None,
+                        context_meta=context_meta,
+                    )
+                    s.add(row)
+                    s.flush()
+                else:
+                    raise
             prompt_log_id = row.id
             s.commit()
 
