@@ -392,8 +392,9 @@ def _cleanup_reports_on_reset(*, keep_content: bool) -> None:
 
 @app.on_event("startup")
 def on_startup():
-    # Ensure logging/usage schemas before handling traffic.
-    def _bootstrap_schemas() -> None:
+    def _startup_tasks() -> None:
+        print("[startup] begin")
+        # Ensure logging/usage schemas before handling traffic.
         try:
             from .usage import ensure_usage_schema
             ensure_usage_schema()
@@ -416,70 +417,73 @@ def on_startup():
         except Exception as e:
             print(f"⚠️  Could not ensure job table: {e!r}")
 
-    # Run schema bootstrap off the startup thread so we don't block port binding.
-    threading.Thread(target=_bootstrap_schemas, daemon=True).start()
-    if os.getenv("RESET_DB_ON_STARTUP") == "1":
-        keep_prompt_templates = os.getenv("KEEP_PROMPT_TEMPLATES_ON_RESET") == "1"
-        keep_content = os.getenv("KEEP_CONTENT_ON_RESET") == "1"
-        keep_kb = os.getenv("KEEP_KB_SNIPPETS_ON_RESET") == "1"
+        if os.getenv("RESET_DB_ON_STARTUP") == "1":
+            keep_prompt_templates = os.getenv("KEEP_PROMPT_TEMPLATES_ON_RESET") == "1"
+            keep_content = os.getenv("KEEP_CONTENT_ON_RESET") == "1"
+            keep_kb = os.getenv("KEEP_KB_SNIPPETS_ON_RESET") == "1"
+            try:
+                _predrop_legacy_tables()
+            except Exception as e:
+                print(f"⚠️  Legacy table pre-drop error: {e}")
+
+            # Recreate schema
+            if keep_prompt_templates or keep_content or keep_kb:
+                keep_tables: set[str] = set()
+                if keep_prompt_templates:
+                    keep_tables.update({"prompt_templates", "prompt_template_versions", "prompt_settings"})
+                if keep_content:
+                    keep_tables.update({
+                        "content_prompt_templates",
+                        "content_prompt_settings",
+                        "content_prompt_generations",
+                        "content_library_items",
+                    })
+                if keep_kb:
+                    keep_tables.update({"kb_snippets", "kb_vectors"})
+                _drop_all_except(keep_tables)
+            else:
+                Base.metadata.drop_all(bind=engine)
+            Base.metadata.create_all(bind=engine)
+
+            # Seed
+            run_seed()
+
+            # Clean reports after reset (optionally keep content files)
+            try:
+                _cleanup_reports_on_reset(keep_content=keep_content)
+            except Exception as e:
+                print(f"⚠️  Reports cleanup error: {e!r}")
+
+            # Clear any persisted scheduler jobs so the job store is fresh
+            try:
+                scheduler.reset_job_store(clear_table=True)
+            except Exception as e:
+                print(f"⚠️  Could not reset APScheduler jobs: {e!r}")
+
+            # Ensure reports dir exists even when not resetting DB
+            try:
+                reports_dir = os.getenv("REPORTS_DIR") or os.path.join(os.getcwd(), "public", "reports")
+                os.makedirs(reports_dir, exist_ok=True)
+            except Exception as e:
+                print(f"⚠️  Could not create reports dir: {e!r}")
+
+        _maybe_set_public_base_via_ngrok()
+        _print_env_banner()
         try:
-            _predrop_legacy_tables()
+            scheduler.ensure_global_schedule_defaults()
         except Exception as e:
-            print(f"⚠️  Legacy table pre-drop error: {e}")
-
-        # Recreate schema
-        if keep_prompt_templates or keep_content or keep_kb:
-            keep_tables: set[str] = set()
-            if keep_prompt_templates:
-                keep_tables.update({"prompt_templates", "prompt_template_versions", "prompt_settings"})
-            if keep_content:
-                keep_tables.update({
-                    "content_prompt_templates",
-                    "content_prompt_settings",
-                    "content_prompt_generations",
-                    "content_library_items",
-                })
-            if keep_kb:
-                keep_tables.update({"kb_snippets", "kb_vectors"})
-            _drop_all_except(keep_tables)
-        else:
-            Base.metadata.drop_all(bind=engine)
-        Base.metadata.create_all(bind=engine)
-
-        # Seed
-        run_seed()
-
-        # Clean reports after reset (optionally keep content files)
+            print(f"⚠️  Could not init global prompt schedule defaults: {e!r}")
+        # Start scheduler (user-level auto prompts are handled per preference)
         try:
-            _cleanup_reports_on_reset(keep_content=keep_content)
+            scheduler.start_scheduler()
+            scheduler.schedule_auto_daily_prompts()
+            scheduler.schedule_out_of_session_messages()
         except Exception as e:
-            print(f"⚠️  Reports cleanup error: {e!r}")
+            print(f"⚠️  Scheduler start failed: {e!r}")
+        print("[startup] end")
 
-        # Clear any persisted scheduler jobs so the job store is fresh
-        try:
-            scheduler.reset_job_store(clear_table=True)
-        except Exception as e:
-            print(f"⚠️  Could not reset APScheduler jobs: {e!r}")
-
-        # Ensure reports dir exists even when not resetting DB
-        try:
-            reports_dir = os.getenv("REPORTS_DIR") or os.path.join(os.getcwd(), "public", "reports")
-            os.makedirs(reports_dir, exist_ok=True)
-        except Exception as e:
-            print(f"⚠️  Could not create reports dir: {e!r}")
-    _maybe_set_public_base_via_ngrok()
-    _print_env_banner()
-    try:
-        scheduler.ensure_global_schedule_defaults()
-    except Exception as e:
-        print(f"⚠️  Could not init global prompt schedule defaults: {e!r}")
-    # Start scheduler (user-level auto prompts are handled per preference)
-    try:
-        scheduler.start_scheduler()
-        scheduler.schedule_auto_daily_prompts()
-        scheduler.schedule_out_of_session_messages()
-    except Exception as e:
-        print(f"⚠️  Scheduler start failed: {e!r}")
+    # Run all startup tasks off-thread so we don't block port binding.
+    threading.Thread(target=_startup_tasks, daemon=True).start()
 
 
 def _record_freeform_checkin(user, body: str) -> None:
