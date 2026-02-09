@@ -306,9 +306,17 @@ router = APIRouter()
 async def _startup_init() -> None:
     try:
         from .nudges import ensure_quick_reply_templates
-        ensure_quick_reply_templates(always_log=True)
-    except Exception:
-        pass
+
+        def _bootstrap_quick_replies() -> None:
+            try:
+                ensure_quick_reply_templates(always_log=True)
+            except Exception as e:
+                print(f"[startup] Twilio quick replies failed: {e!r}")
+
+        # Run bootstrap off the startup thread so we don't block port binding.
+        threading.Thread(target=_bootstrap_quick_replies, daemon=True).start()
+    except Exception as e:
+        print(f"[startup] Twilio quick replies bootstrap skipped: {e!r}")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
