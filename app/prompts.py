@@ -49,7 +49,7 @@ PROMPT_STATE_ALIASES = {"production": "live", "stage": "beta"}
 PROMPT_STATE_ORDER = ["live", "beta", "develop"]
 
 def _prompt_log_debug_enabled() -> bool:
-    return (os.getenv("PROMPT_LOG_DEBUG") or "").strip().lower() in {"1", "true", "yes"}
+    return debug_enabled()
 
 
 def format_checkin_history(checkins: List[Dict[str, Any]]) -> str:

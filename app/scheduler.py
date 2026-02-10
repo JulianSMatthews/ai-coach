@@ -27,7 +27,7 @@ from .models import (
 # Preference key(s) for auto coaching prompts (new primary key: "coaching"; legacy: "auto_daily_prompts")
 AUTO_PROMPT_PREF_KEYS = ("coaching", "auto_daily_prompts")
 from .nudges import send_message, send_whatsapp_template, _get_session_reopen_sid
-from .debug_utils import debug_log
+from .debug_utils import debug_log, debug_enabled
 from . import kickoff
 from .llm import compose_prompt
 from . import monday, tuesday, wednesday, thursday, friday, saturday, sunday
@@ -46,6 +46,10 @@ _APSCHEDULER_TABLES_READY = False
 _APSCHEDULER_TABLES_LOCK = threading.Lock()
 
 
+def _apscheduler_debug() -> bool:
+    return debug_enabled()
+
+
 def ensure_apscheduler_tables() -> None:
     global _APSCHEDULER_TABLES_READY
     if _APSCHEDULER_TABLES_READY:
@@ -53,12 +57,19 @@ def ensure_apscheduler_tables() -> None:
     with _APSCHEDULER_TABLES_LOCK:
         if _APSCHEDULER_TABLES_READY:
             return
+        if _apscheduler_debug():
+            print("[scheduler][debug] ensure_apscheduler_tables start")
         try:
             with engine.begin() as conn:
-                if _table_exists(conn, "apscheduler_jobs"):
+                exists = _table_exists(conn, "apscheduler_jobs")
+                if _apscheduler_debug():
+                    print(f"[scheduler][debug] apscheduler_jobs exists={exists}")
+                if exists:
                     _APSCHEDULER_TABLES_READY = True
                     return
                 if _is_postgres():
+                    if _apscheduler_debug():
+                        print("[scheduler][debug] creating apscheduler_jobs (postgres)")
                     conn.execute(
                         text(
                             """
@@ -72,6 +83,8 @@ def ensure_apscheduler_tables() -> None:
                         )
                     )
                 else:
+                    if _apscheduler_debug():
+                        print("[scheduler][debug] creating apscheduler_jobs (sqlite)")
                     conn.execute(
                         text(
                             """
@@ -96,10 +109,15 @@ def ensure_apscheduler_tables() -> None:
             print(f"[scheduler] failed to ensure apscheduler_jobs table: {e}")
             return
         _APSCHEDULER_TABLES_READY = True
+        if _apscheduler_debug():
+            print("[scheduler][debug] ensure_apscheduler_tables done")
 
 
 def _safe_add_job(*args, **kwargs):
     """Ensure APScheduler tables exist before adding jobs, and retry once if missing."""
+    if _apscheduler_debug():
+        job_id = kwargs.get("id")
+        print(f"[scheduler][debug] add_job start id={job_id}")
     try:
         ensure_apscheduler_tables()
         return scheduler.add_job(*args, **kwargs)
