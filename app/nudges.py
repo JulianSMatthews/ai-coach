@@ -10,7 +10,7 @@ import json
 import base64
 import urllib.request
 import urllib.error
-from datetime import datetime, time, timedelta
+from datetime import datetime, time as dt_time, timedelta
 
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
@@ -22,8 +22,8 @@ from .db import SessionLocal
 from .models import User
 from .db import SessionLocal, engine
 
-BUSINESS_START = time(9, 0)
-BUSINESS_END   = time(19, 0)
+BUSINESS_START = dt_time(9, 0)
+BUSINESS_END   = dt_time(19, 0)
 
 
 def in_business_hours(now_local: datetime) -> bool:

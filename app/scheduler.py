@@ -37,7 +37,8 @@ from .job_queue import enqueue_job, should_use_worker
 # APScheduler setup
 # ──────────────────────────────────────────────────────────────────────────────
 
-jobstores = {"default": SQLAlchemyJobStore(url=settings.DATABASE_URL)}
+# Use the shared SQLAlchemy engine to guarantee the same DB/connection settings.
+jobstores = {"default": SQLAlchemyJobStore(engine=engine)}
 executors = {"default": ThreadPoolExecutor(10)}
 scheduler = AsyncIOScheduler(jobstores=jobstores, executors=executors, timezone="UTC")
 
@@ -53,12 +54,29 @@ def _apscheduler_debug() -> bool:
 def ensure_apscheduler_tables() -> None:
     global _APSCHEDULER_TABLES_READY
     if _APSCHEDULER_TABLES_READY:
-        return
+        try:
+            with engine.begin() as conn:
+                if _table_exists(conn, "apscheduler_jobs"):
+                    return
+        except Exception:
+            return
+        # Table was dropped after we marked ready; force recreate.
+        _APSCHEDULER_TABLES_READY = False
     with _APSCHEDULER_TABLES_LOCK:
         if _APSCHEDULER_TABLES_READY:
-            return
+            try:
+                with engine.begin() as conn:
+                    if _table_exists(conn, "apscheduler_jobs"):
+                        return
+            except Exception:
+                return
+            _APSCHEDULER_TABLES_READY = False
         if _apscheduler_debug():
-            print("[scheduler][debug] ensure_apscheduler_tables start")
+            try:
+                url_safe = engine.url.render_as_string(hide_password=True)
+            except Exception:
+                url_safe = "<unknown>"
+            print(f"[scheduler][debug] ensure_apscheduler_tables start db={url_safe}")
         try:
             with engine.begin() as conn:
                 exists = _table_exists(conn, "apscheduler_jobs")
@@ -169,6 +187,9 @@ def reset_job_store(clear_table: bool = False):
                 conn.execute(text("DROP TABLE IF EXISTS apscheduler_jobs_backup CASCADE"))
         except Exception as e:
             print(f"[scheduler] failed to drop apscheduler_jobs tables: {e}")
+        # Table was dropped; ensure future calls re-create it.
+        global _APSCHEDULER_TABLES_READY
+        _APSCHEDULER_TABLES_READY = False
     if clear_table or removed:
         print("[scheduler] job store reset requested; jobs cleared")
 

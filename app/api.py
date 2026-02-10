@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import json
+import asyncio
 import time
 import urllib.request
 import secrets
@@ -300,6 +301,7 @@ except Exception as e:
 
 app = FastAPI(title="AI Coach")
 router = APIRouter()
+_STARTUP_TASKS_DONE = threading.Event()
 
 
 @app.on_event("startup")
@@ -317,6 +319,19 @@ async def _startup_init() -> None:
         threading.Thread(target=_bootstrap_quick_replies, daemon=True).start()
     except Exception as e:
         print(f"[startup] Twilio quick replies bootstrap skipped: {e!r}")
+    # Wait for startup tasks (e.g., DB reset/seed) to finish before scheduler starts.
+    try:
+        wait_sec_raw = (os.getenv("STARTUP_TASKS_WAIT_SEC") or "30").strip()
+        wait_secs = float(wait_sec_raw or "30")
+    except Exception:
+        wait_secs = 30.0
+    if wait_secs > 0:
+        debug_log(f"waiting for startup tasks (timeout={wait_secs}s)", tag="startup")
+        try:
+            await asyncio.to_thread(_STARTUP_TASKS_DONE.wait, wait_secs)
+        except Exception:
+            pass
+
     # Scheduler must start on the running event loop.
     try:
         try:
@@ -412,93 +427,105 @@ def on_startup():
         return False
 
     def _startup_tasks() -> None:
-        print("[startup] begin")
-        # Ensure logging/usage schemas before handling traffic.
         try:
-            from .usage import ensure_usage_schema
-            ensure_usage_schema()
-        except Exception as e:
-            print(f"⚠️  Could not ensure usage schema: {e!r}")
-        try:
-            from .prompts import _ensure_llm_prompt_log_schema
-            _ensure_llm_prompt_log_schema()
-        except Exception as e:
-            print(f"⚠️  Could not ensure llm prompt log schema: {e!r}")
-        try:
-            from .message_log import _ensure_message_log_schema
-            _ensure_message_log_schema()
-        except Exception as e:
-            print(f"⚠️  Could not ensure message log schema: {e!r}")
-
-        # Ensure job queue table exists (non-destructive)
-        try:
-            ensure_job_table()
-        except Exception as e:
-            print(f"⚠️  Could not ensure job table: {e!r}")
-
-        reset_requested = _env_true(
-            "RESET_DB_ON_STARTUP",
-            "RESET_DATABASE_ON_STARTUP",
-            "reset_database_on_startup",
-            "reset_db_on_startup",
-        )
-        if reset_requested:
-            keep_prompt_templates = os.getenv("KEEP_PROMPT_TEMPLATES_ON_RESET") == "1"
-            keep_content = os.getenv("KEEP_CONTENT_ON_RESET") == "1"
-            keep_kb = os.getenv("KEEP_KB_SNIPPETS_ON_RESET") == "1"
+            print("[startup] begin")
+            # Ensure logging/usage schemas before handling traffic.
             try:
-                _predrop_legacy_tables()
+                from .usage import ensure_usage_schema
+                ensure_usage_schema()
             except Exception as e:
-                print(f"⚠️  Legacy table pre-drop error: {e}")
-
-            # Recreate schema
-            if keep_prompt_templates or keep_content or keep_kb:
-                keep_tables: set[str] = set()
-                if keep_prompt_templates:
-                    keep_tables.update({"prompt_templates", "prompt_template_versions", "prompt_settings"})
-                if keep_content:
-                    keep_tables.update({
-                        "content_prompt_templates",
-                        "content_prompt_settings",
-                        "content_prompt_generations",
-                        "content_library_items",
-                    })
-                if keep_kb:
-                    keep_tables.update({"kb_snippets", "kb_vectors"})
-                _drop_all_except(keep_tables)
-            else:
-                Base.metadata.drop_all(bind=engine)
-            Base.metadata.create_all(bind=engine)
-
-            # Seed
-            run_seed()
-
-            # Clean reports after reset (optionally keep content files)
+                print(f"⚠️  Could not ensure usage schema: {e!r}")
             try:
-                _cleanup_reports_on_reset(keep_content=keep_content)
+                from .prompts import _ensure_llm_prompt_log_schema
+                _ensure_llm_prompt_log_schema()
             except Exception as e:
-                print(f"⚠️  Reports cleanup error: {e!r}")
-
-            # Clear any persisted scheduler jobs so the job store is fresh
+                print(f"⚠️  Could not ensure llm prompt log schema: {e!r}")
             try:
-                scheduler.reset_job_store(clear_table=True)
+                from .message_log import _ensure_message_log_schema
+                _ensure_message_log_schema()
             except Exception as e:
-                print(f"⚠️  Could not reset APScheduler jobs: {e!r}")
+                print(f"⚠️  Could not ensure message log schema: {e!r}")
 
-            # Ensure reports dir exists even when not resetting DB
+            # Ensure job queue table exists (non-destructive)
             try:
-                reports_dir = os.getenv("REPORTS_DIR") or os.path.join(os.getcwd(), "public", "reports")
-                os.makedirs(reports_dir, exist_ok=True)
+                ensure_job_table()
             except Exception as e:
-                print(f"⚠️  Could not create reports dir: {e!r}")
+                print(f"⚠️  Could not ensure job table: {e!r}")
 
-        _maybe_set_public_base_via_ngrok()
-        _print_env_banner()
-        try:
-            scheduler.ensure_global_schedule_defaults()
-        except Exception as e:
-            print(f"⚠️  Could not init global prompt schedule defaults: {e!r}")
-        print("[startup] end")
+            reset_requested = _env_true(
+                "RESET_DB_ON_STARTUP",
+                "RESET_DATABASE_ON_STARTUP",
+                "reset_database_on_startup",
+                "reset_db_on_startup",
+            )
+            if reset_requested:
+                keep_prompt_templates = os.getenv("KEEP_PROMPT_TEMPLATES_ON_RESET") == "1"
+                keep_content = os.getenv("KEEP_CONTENT_ON_RESET") == "1"
+                keep_kb = os.getenv("KEEP_KB_SNIPPETS_ON_RESET") == "1"
+                try:
+                    _predrop_legacy_tables()
+                except Exception as e:
+                    print(f"⚠️  Legacy table pre-drop error: {e}")
+
+                # Recreate schema
+                if keep_prompt_templates or keep_content or keep_kb:
+                    keep_tables: set[str] = set()
+                    if keep_prompt_templates:
+                        keep_tables.update({"prompt_templates", "prompt_template_versions", "prompt_settings"})
+                    if keep_content:
+                        keep_tables.update({
+                            "content_prompt_templates",
+                            "content_prompt_settings",
+                            "content_prompt_generations",
+                            "content_library_items",
+                        })
+                    if keep_kb:
+                        keep_tables.update({"kb_snippets", "kb_vectors"})
+                    _drop_all_except(keep_tables)
+                else:
+                    Base.metadata.drop_all(bind=engine)
+                Base.metadata.create_all(bind=engine)
+
+                # Seed
+                run_seed()
+
+                # Clean reports after reset (optionally keep content files)
+                try:
+                    _cleanup_reports_on_reset(keep_content=keep_content)
+                except Exception as e:
+                    print(f"⚠️  Reports cleanup error: {e!r}")
+
+                # Clear any persisted scheduler jobs so the job store is fresh
+                try:
+                    scheduler.reset_job_store(clear_table=True)
+                except Exception as e:
+                    print(f"⚠️  Could not reset APScheduler jobs: {e!r}")
+                # Recreate APScheduler table after reset so scheduler can resume.
+                try:
+                    scheduler.ensure_apscheduler_tables()
+                    debug_log("apscheduler tables ensured after reset", tag="scheduler")
+                except Exception as e:
+                    print(f"⚠️  ensure_apscheduler_tables after reset failed: {e!r}")
+
+                # Ensure reports dir exists even when not resetting DB
+                try:
+                    reports_dir = os.getenv("REPORTS_DIR") or os.path.join(os.getcwd(), "public", "reports")
+                    os.makedirs(reports_dir, exist_ok=True)
+                except Exception as e:
+                    print(f"⚠️  Could not create reports dir: {e!r}")
+
+            _maybe_set_public_base_via_ngrok()
+            _print_env_banner()
+            try:
+                scheduler.ensure_global_schedule_defaults()
+            except Exception as e:
+                print(f"⚠️  Could not init global prompt schedule defaults: {e!r}")
+            print("[startup] end")
+        finally:
+            try:
+                _STARTUP_TASKS_DONE.set()
+            except Exception:
+                pass
 
     # Run all startup tasks off-thread so we don't block port binding.
     threading.Thread(target=_startup_tasks, daemon=True).start()
