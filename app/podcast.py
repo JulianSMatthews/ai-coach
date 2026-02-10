@@ -9,6 +9,7 @@ import requests
 import base64
 from openai import OpenAI  # type: ignore
 from typing import Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 
 from .reporting import _reports_root_for_user
 from .usage import log_usage_event
@@ -171,7 +172,18 @@ _VALID_CHATGPT_VOICES = {
 }
 
 
-def generate_podcast_audio_for_voice(
+def _tts_generation_timeout_seconds() -> int | None:
+    raw = (os.getenv("TTS_GENERATION_TIMEOUT_SECONDS") or "").strip()
+    if not raw:
+        return 180
+    try:
+        val = int(raw)
+    except Exception:
+        return 180
+    return None if val <= 0 else val
+
+
+def _generate_podcast_audio_for_voice_sync(
     transcript: str,
     user_id: int,
     filename: str = "kickoff.mp3",
@@ -180,7 +192,7 @@ def generate_podcast_audio_for_voice(
     return_bytes: bool = False,
     usage_tag: Optional[str] = None,
     usage_meta: Optional[dict] = None,
-) -> str | None:
+) -> str | None | tuple[str | None, bytes | None]:
     """
     Generate audio for a given transcript, optionally forcing a specific voice.
     - Defaults to OpenAI TTS (ChatGPT). If USE_ELEVENLABS=1 and ELEVENLABS_API_KEY is set,
@@ -336,6 +348,52 @@ def generate_podcast_audio_for_voice(
     except Exception as e:
         print(f"[TTS] failed to write audio file: {e}")
         return None if not return_bytes else (None, None)
+
+
+def generate_podcast_audio_for_voice(
+    transcript: str,
+    user_id: int,
+    filename: str = "kickoff.mp3",
+    voice_override: Optional[str] = None,
+    voice_role: Optional[str] = None,
+    return_bytes: bool = False,
+    usage_tag: Optional[str] = None,
+    usage_meta: Optional[dict] = None,
+) -> str | None | tuple[str | None, bytes | None]:
+    """
+    Generate audio for a given transcript, optionally forcing a specific voice.
+    Uses a configurable timeout to avoid blocking long-running jobs.
+    Set TTS_GENERATION_TIMEOUT_SECONDS=0 to disable the timeout.
+    """
+    timeout_s = _tts_generation_timeout_seconds()
+    if timeout_s is None:
+        return _generate_podcast_audio_for_voice_sync(
+            transcript=transcript,
+            user_id=user_id,
+            filename=filename,
+            voice_override=voice_override,
+            voice_role=voice_role,
+            return_bytes=return_bytes,
+            usage_tag=usage_tag,
+            usage_meta=usage_meta,
+        )
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(
+            _generate_podcast_audio_for_voice_sync,
+            transcript,
+            user_id,
+            filename,
+            voice_override,
+            voice_role,
+            return_bytes,
+            usage_tag,
+            usage_meta,
+        )
+        try:
+            return future.result(timeout=timeout_s)
+        except FutureTimeout:
+            print(f"[TTS] generation timed out after {timeout_s}s (user={user_id}, file={filename})")
+            return None if not return_bytes else (None, None)
 
 
 def generate_podcast_audio(

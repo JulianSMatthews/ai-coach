@@ -16,8 +16,8 @@ export const metadata: Metadata = {
   title: "HealthSense App",
   description: "HealthSense assessment and progress dashboards",
   icons: {
-    icon: "/favicon.png",
-    shortcut: "/favicon.png",
+    icon: "/healthsense-mark.svg",
+    shortcut: "/healthsense-mark.svg",
     apple: "/apple-touch-icon.png",
   },
 };

@@ -10,9 +10,10 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from apscheduler.executors.pool import ThreadPoolExecutor
 from sqlalchemy import text, desc
+import threading
 
 from .config import settings
-from .db import SessionLocal, engine
+from .db import SessionLocal, engine, _table_exists, _is_postgres
 from .models import (
     User,
     JobAudit,
@@ -41,7 +42,64 @@ executors = {"default": ThreadPoolExecutor(10)}
 scheduler = AsyncIOScheduler(jobstores=jobstores, executors=executors, timezone="UTC")
 
 
+_APSCHEDULER_TABLES_READY = False
+_APSCHEDULER_TABLES_LOCK = threading.Lock()
+
+
+def ensure_apscheduler_tables() -> None:
+    global _APSCHEDULER_TABLES_READY
+    if _APSCHEDULER_TABLES_READY:
+        return
+    with _APSCHEDULER_TABLES_LOCK:
+        if _APSCHEDULER_TABLES_READY:
+            return
+        try:
+            with engine.begin() as conn:
+                if _table_exists(conn, "apscheduler_jobs"):
+                    _APSCHEDULER_TABLES_READY = True
+                    return
+                if _is_postgres():
+                    conn.execute(
+                        text(
+                            """
+                            CREATE TABLE IF NOT EXISTS apscheduler_jobs (
+                                id VARCHAR(191) NOT NULL,
+                                next_run_time DOUBLE PRECISION,
+                                job_state BYTEA NOT NULL,
+                                PRIMARY KEY (id)
+                            )
+                            """
+                        )
+                    )
+                else:
+                    conn.execute(
+                        text(
+                            """
+                            CREATE TABLE IF NOT EXISTS apscheduler_jobs (
+                                id VARCHAR(191) NOT NULL,
+                                next_run_time REAL,
+                                job_state BLOB NOT NULL,
+                                PRIMARY KEY (id)
+                            )
+                            """
+                        )
+                    )
+                try:
+                    conn.execute(
+                        text(
+                            "CREATE INDEX IF NOT EXISTS apscheduler_jobs_next_run_time_idx ON apscheduler_jobs (next_run_time)"
+                        )
+                    )
+                except Exception:
+                    pass
+        except Exception as e:
+            print(f"[scheduler] failed to ensure apscheduler_jobs table: {e}")
+            return
+        _APSCHEDULER_TABLES_READY = True
+
+
 def start_scheduler():
+    ensure_apscheduler_tables()
     if not scheduler.running:
         scheduler.start()
 

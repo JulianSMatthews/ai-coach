@@ -5,6 +5,8 @@ import os
 import time
 import socket
 import traceback
+import json
+import urllib.request
 
 from app.job_queue import claim_job, ensure_job_table, mark_done, mark_error
 from app import scheduler, assessor, monday, kickoff, thursday, friday
@@ -17,7 +19,7 @@ from app.reporting import (
     generate_assessment_report_pdf,
     generate_progress_report_html,
 )
-from app.db import SessionLocal
+from app.db import SessionLocal, _table_exists, engine
 from app.models import User
 
 os.environ.setdefault("PROMPT_WORKER_PROCESS", "1")
@@ -169,6 +171,7 @@ def process_job(kind: str, payload: dict) -> dict:
 
 def main() -> None:
     os.environ.setdefault("PROMPT_WORKER_PROCESS", "1")
+    _wait_for_api_ready()
     try:
         ensure_usage_schema()
     except Exception as e:
@@ -206,3 +209,54 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+def _env_true(name: str, default: str = "0") -> bool:
+    raw = (os.getenv(name) or default).strip().lower()
+    return raw in {"1", "true", "yes"}
+
+
+def _api_health_url() -> str | None:
+    explicit = (os.getenv("API_HEALTH_URL") or "").strip()
+    if explicit:
+        return explicit
+    base = (os.getenv("API_BASE_URL") or os.getenv("PUBLIC_BASE_URL") or "").strip()
+    if not base:
+        return None
+    return base.rstrip("/") + "/health"
+
+
+def _wait_for_api_ready() -> None:
+    if not _env_true("WORKER_WAIT_FOR_API", "1"):
+        return
+    timeout_s = int((os.getenv("WORKER_WAIT_FOR_API_TIMEOUT_SECONDS") or "120").strip() or "120")
+    poll_s = int((os.getenv("WORKER_WAIT_FOR_API_POLL_SECONDS") or "3").strip() or "3")
+    deadline = time.time() + max(5, timeout_s)
+    health_url = _api_health_url()
+    print(f"[worker] waiting for API readiness (timeout={timeout_s}s url={health_url or 'db'})")
+    while time.time() < deadline:
+        if health_url:
+            try:
+                req = urllib.request.Request(health_url, headers={"User-Agent": "healthsense-worker"})
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    if 200 <= resp.status < 300:
+                        try:
+                            body = resp.read().decode("utf-8")
+                            data = json.loads(body) if body else {}
+                            if isinstance(data, dict) and data.get("ok") is True:
+                                print("[worker] API health ok")
+                                return
+                        except Exception:
+                            # If response is not JSON but status is OK, accept it.
+                            print("[worker] API health ok (non-JSON)")
+                            return
+            except Exception:
+                pass
+        else:
+            try:
+                with engine.begin() as conn:
+                    if _table_exists(conn, "apscheduler_jobs"):
+                        print("[worker] apscheduler_jobs exists; API likely ready")
+                        return
+            except Exception:
+                pass
+        time.sleep(max(1, poll_s))
+    print("[worker] API wait timeout reached; continuing startup")

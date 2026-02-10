@@ -16,6 +16,10 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "HealthSense Admin",
   description: "HealthSense administration console",
+  icons: {
+    icon: "/healthsense-mark.svg",
+    shortcut: "/healthsense-mark.svg",
+  },
 };
 
 export default function RootLayout({
