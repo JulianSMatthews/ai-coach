@@ -140,7 +140,7 @@ export default async function HistoryPage(props: PageProps) {
 
       <SectionHeader
         eyebrow="Coaching history"
-        title={<span className="text-xl">{`Your history ${displayFirstName}`}</span>}
+        title={<span className="text-xl">{`Your history, ${displayFirstName}`}</span>}
         subtitle="Latest activty first"
       />
 

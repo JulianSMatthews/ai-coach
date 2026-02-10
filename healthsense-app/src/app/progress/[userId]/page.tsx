@@ -135,7 +135,7 @@ export default async function ProgressPage(props: PageProps) {
           >
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Momentum</p>
             <h2 className="mt-1 text-xl">
-              {`Your momentum ${(user.first_name || user.display_name || "User").split(" ")[0]}`}
+              {`Your momentum, ${(user.first_name || user.display_name || "User").split(" ")[0]}`}
             </h2>
             <p className="mt-1 text-xs text-[#6b6257]">{meta.anchor_label || "n/a"}</p>
             <div className="mt-4 grid grid-cols-2 gap-3">

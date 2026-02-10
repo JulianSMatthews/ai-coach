@@ -99,7 +99,7 @@ export default async function AssessmentPage(props: PageProps) {
         <AppNav userId={userId} promptBadge={promptBadge} />
         <SectionHeader
           eyebrow="Assessment"
-          title={<span className="text-xl">{`Your assessment ${displayFirstName}`}</span>}
+          title={<span className="text-xl">{`Your assessment, ${displayFirstName}`}</span>}
           subtitle={assessmentDate}
           side={<StatPill label="Combined" value="--" />}
         />
@@ -120,7 +120,7 @@ export default async function AssessmentPage(props: PageProps) {
       <AppNav userId={userId} promptBadge={promptBadge} />
       <SectionHeader
         eyebrow="Assessment"
-        title={<span className="text-xl">{`Your assessment ${displayFirstName}`}</span>}
+        title={<span className="text-xl">{`Your assessment, ${displayFirstName}`}</span>}
         subtitle={assessmentDate}
         side={
           <StatPill
