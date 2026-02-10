@@ -15,7 +15,7 @@ from datetime import datetime, time, timedelta
 from twilio.rest import Client
 from twilio.base.exceptions import TwilioRestException
 from .config import settings
-from .debug_utils import debug_log
+from .debug_utils import debug_log, debug_enabled
 from .message_log import write_log
 from .usage import log_usage_event, estimate_whatsapp_cost
 from .db import SessionLocal
@@ -48,6 +48,8 @@ _SESSION_REOPEN_ENV = "TWILIO_REOPEN_CONTENT_SID"
 _SESSION_REOPEN_TYPE = "session-reopen"
 _QUICK_REPLY_TYPE = "quick-reply"
 _BUTTON_CTA = "Please always respond by tapping a button (this keeps our support going)."
+_QR_BOOTSTRAP_ATTEMPTS: dict[int, float] = {}
+_QR_BOOTSTRAP_MIN_INTERVAL = 60.0
 
 
 def _clean_quick_replies(replies: list[str] | None) -> list[str]:
@@ -126,6 +128,21 @@ def _quick_reply_content_sid(count: int) -> str | None:
     if count <= 0:
         return None
     return (os.getenv(f"TWILIO_QR_CONTENT_SID_{count}") or "").strip() or None
+
+
+def _maybe_bootstrap_quick_replies(count: int) -> bool:
+    if count <= 0:
+        return False
+    now = time.monotonic()
+    last = _QR_BOOTSTRAP_ATTEMPTS.get(count, 0.0)
+    if now - last < _QR_BOOTSTRAP_MIN_INTERVAL:
+        return False
+    _QR_BOOTSTRAP_ATTEMPTS[count] = now
+    try:
+        ensure_quick_reply_templates(always_log=debug_enabled())
+    except Exception:
+        return True
+    return True
 
 
 def _quick_reply_content_vars(text: str, replies: list[str]) -> dict[str, str]:
@@ -851,9 +868,29 @@ def send_whatsapp(
         content_vars = None
         qr_list = _clean_quick_replies(quick_replies)
         if qr_list:
-            sid = _quick_reply_content_sid(len(qr_list))
+            qr_count = len(qr_list)
+            env_sid = _quick_reply_content_sid(qr_count)
+            db_sid = None if env_sid else _get_twilio_template_sid(_QUICK_REPLY_TYPE, qr_count)
+            sid = env_sid or db_sid
+            bootstrap_attempted = False
             if not sid:
-                sid = _get_twilio_template_sid(_QUICK_REPLY_TYPE, len(qr_list))
+                bootstrap_attempted = _maybe_bootstrap_quick_replies(qr_count)
+                env_sid = _quick_reply_content_sid(qr_count)
+                db_sid = None if env_sid else _get_twilio_template_sid(_QUICK_REPLY_TYPE, qr_count)
+                sid = env_sid or db_sid
+            debug_log(
+                "quick reply selection",
+                {
+                    "to": to_norm,
+                    "count": qr_count,
+                    "env_sid": env_sid,
+                    "db_sid": db_sid,
+                    "selected_sid": sid,
+                    "bootstrap_attempted": bootstrap_attempted,
+                    "titles": [_split_quick_reply(r)[0] for r in qr_list],
+                },
+                tag="twilio",
+            )
         if sid:
             message_text = _sanitize_whatsapp_template_text(message_text) or message_text
             vars_map = _quick_reply_content_vars(message_text, qr_list)
