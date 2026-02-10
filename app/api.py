@@ -319,6 +319,11 @@ async def _startup_init() -> None:
         print(f"[startup] Twilio quick replies bootstrap skipped: {e!r}")
     # Scheduler must start on the running event loop.
     try:
+        try:
+            scheduler.ensure_apscheduler_tables()
+            debug_log("apscheduler tables ensured", tag="scheduler")
+        except Exception as e:
+            print(f"⚠️  ensure_apscheduler_tables failed: {e!r}")
         scheduler.start_scheduler()
         scheduler.schedule_auto_daily_prompts()
         scheduler.schedule_out_of_session_messages()
