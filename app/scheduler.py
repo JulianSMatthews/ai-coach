@@ -98,6 +98,24 @@ def ensure_apscheduler_tables() -> None:
         _APSCHEDULER_TABLES_READY = True
 
 
+def _safe_add_job(*args, **kwargs):
+    """Ensure APScheduler tables exist before adding jobs, and retry once if missing."""
+    try:
+        ensure_apscheduler_tables()
+        return scheduler.add_job(*args, **kwargs)
+    except Exception as e:
+        msg = str(e).lower()
+        if "apscheduler_jobs" in msg or "undefinedtable" in msg or "relation" in msg:
+            try:
+                ensure_apscheduler_tables()
+                return scheduler.add_job(*args, **kwargs)
+            except Exception as e2:
+                print(f"[scheduler] add_job failed after ensuring table: {e2}")
+                raise
+        print(f"[scheduler] add_job failed: {e}")
+        raise
+
+
 def start_scheduler():
     ensure_apscheduler_tables()
     if not scheduler.running:
@@ -445,7 +463,7 @@ def schedule_one_off_nudge(
     context: dict | None = None,
 ):
     run_time = datetime.utcnow() + timedelta(seconds=delay_seconds)
-    scheduler.add_job(
+    _safe_add_job(
         run_nudge,
         trigger="date",
         run_date=run_time,
@@ -468,7 +486,7 @@ def schedule_timeout_followup(
         scheduler.remove_job(job_id)
     except Exception:
         pass
-    scheduler.add_job(
+    _safe_add_job(
         run_nudge,
         trigger="date",
         run_date=run_time,
@@ -555,7 +573,7 @@ def _next_monday_anchor(user: User, hour: int, minute: int) -> datetime:
 def _schedule_prompt_for_user(user: User, day: str, dow: str, hour: int, minute: int, start_date: datetime | None = None):
     tz = _tz(user)
     job_id = f"auto_prompt_{day}_{user.id}"
-    scheduler.add_job(
+    _safe_add_job(
         _run_day_prompt,
         trigger="cron",
         day_of_week=dow,
@@ -625,7 +643,7 @@ def _schedule_prompts_for_user(
         for idx, day in enumerate(days):
             job_id = f"auto_prompt_{day}_{user.id}"
             start_offset = timedelta(minutes=(idx + 1) * resolved_fast)
-            scheduler.add_job(
+            _safe_add_job(
                 _run_day_prompt,
                 trigger="interval",
                 minutes=interval_minutes,
@@ -699,7 +717,7 @@ def schedule_out_of_session_messages():
     if interval_minutes <= 0:
         return
     try:
-        scheduler.add_job(
+        _safe_add_job(
             send_out_of_session_messages,
             "interval",
             minutes=interval_minutes,
@@ -821,7 +839,7 @@ def schedule_daily_micro_nudge(
 
     if n:
         # Every N minutes (testing)
-        scheduler.add_job(
+        _safe_add_job(
             run_nudge,
             trigger="interval",
             minutes=n,
@@ -833,7 +851,7 @@ def schedule_daily_micro_nudge(
         )
     else:
         # Real daily cron
-        scheduler.add_job(
+        _safe_add_job(
             run_nudge,
             trigger="cron",
             hour=hour_local,
@@ -866,7 +884,7 @@ def schedule_weekly_reflection(
     job_id = f"weekly_refl_{user_id}"
 
     if n:
-        scheduler.add_job(
+        _safe_add_job(
             run_nudge,
             trigger="interval",
             minutes=n,
@@ -877,7 +895,7 @@ def schedule_weekly_reflection(
             timezone=tz,
         )
     else:
-        scheduler.add_job(
+        _safe_add_job(
             run_nudge,
             trigger="cron",
             day_of_week=weekday,
@@ -904,7 +922,7 @@ def schedule_review_30d(user_id: int):
                       + timedelta(days=30))
     run_time_utc = run_time_local.astimezone(zoneinfo.ZoneInfo("UTC"))
 
-    scheduler.add_job(
+    _safe_add_job(
         run_nudge,
         trigger="date",
         run_date=run_time_utc,
