@@ -207,8 +207,6 @@ def main() -> None:
             print(traceback.format_exc())
 
 
-if __name__ == "__main__":
-    main()
 def _env_true(name: str, default: str = "0") -> bool:
     raw = (os.getenv(name) or default).strip().lower()
     return raw in {"1", "true", "yes"}
@@ -260,3 +258,7 @@ def _wait_for_api_ready() -> None:
                 pass
         time.sleep(max(1, poll_s))
     print("[worker] API wait timeout reached; continuing startup")
+
+
+if __name__ == "__main__":
+    main()
