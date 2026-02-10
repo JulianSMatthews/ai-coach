@@ -62,6 +62,14 @@ async function coachUserAction(formData: FormData) {
   revalidatePath("/admin/users");
 }
 
+async function stopCoachingAction(formData: FormData) {
+  "use server";
+  const userId = Number(formData.get("user_id") || 0);
+  if (!userId) return;
+  await setAdminUserCoaching(userId, false);
+  revalidatePath("/admin/users");
+}
+
 export default async function UsersPage({ searchParams }: UsersPageProps) {
   const resolvedSearchParams = await searchParams;
   const query = (resolvedSearchParams?.q || "").trim();
@@ -246,7 +254,17 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                               coach
                             </button>
                           </form>
-                        ) : null}
+                        ) : (
+                          <form action={stopCoachingAction}>
+                            <input type="hidden" name="user_id" value={u.id} />
+                            <button
+                              type="submit"
+                              className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
+                            >
+                              stop
+                            </button>
+                          </form>
+                        )}
                       </div>
                     </td>
                     </tr>
