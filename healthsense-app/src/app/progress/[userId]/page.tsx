@@ -215,28 +215,22 @@ export default async function ProgressPage(props: PageProps) {
       ? Math.floor((anchorDate.getTime() - programmeStart.getTime()) / MS_PER_DAY) + 1
       : null;
   const programmeDay = programmeDayRaw === null ? 0 : Math.max(0, Math.min(84, programmeDayRaw));
-  const weekNo = programmeDay > 0 ? Math.min(12, Math.floor((programmeDay - 1) / 7) + 1) : 1;
-  const activeBlockIndex = Math.min(3, Math.max(0, Math.floor((weekNo - 1) / 3)));
-  const activeBlock = programmeBlocks[activeBlockIndex];
-  const activePillarPalette = getPillarPalette(activeBlock?.key);
-  const journeyState =
-    programmeDayRaw === null
-      ? "Journey unavailable"
-      : programmeDayRaw < 1
-        ? `${activeBlock?.label || "Programme"} starts soon`
-        : programmeDayRaw > 84
-          ? "Programme completed"
-          : `${activeBlock?.label || "Programme"} in progress`;
-  const programmePct = Math.round((programmeDay / 84) * 100);
-  const programmeMarkerPct = Math.max(0, Math.min(100, programmePct));
-  const blockSegmentPct = (blockIndex: number) => {
-    const segmentStart = blockIndex * 21 + 1;
-    const segmentEnd = (blockIndex + 1) * 21;
-    if (programmeDay <= 0) return 0;
-    if (programmeDay >= segmentEnd) return 100;
-    if (programmeDay < segmentStart) return 0;
-    return Math.round(((programmeDay - segmentStart + 1) / 21) * 100);
-  };
+  const completedWeeks = Math.max(0, Math.min(12, Math.floor(programmeDay / 7)));
+  const journeyBlocks = programmeBlocks.map((block) => {
+    const palette = getPillarPalette(block.key);
+    const weekIcons = Array.from({ length: 3 }, (_, idx) => {
+      const weekNumber = block.weekStart + idx;
+      return {
+        weekNumber,
+        completed: weekNumber <= completedWeeks,
+      };
+    });
+    return {
+      ...block,
+      palette,
+      weekIcons,
+    };
+  });
   const focusHabitSteps: HabitStep[] = focusHabitGroups.flatMap((group) => group.steps || []);
   const focusHabitDone = focusHabitSteps.filter((step) =>
     ["done", "complete", "completed"].includes(String(step.status || "").toLowerCase()),
@@ -281,7 +275,8 @@ export default async function ProgressPage(props: PageProps) {
             </h2>
             <p className="mt-1 text-xs text-[#6b6257]">{meta.anchor_label || "n/a"}</p>
             <div className="mt-4">
-              <div className="rounded-xl border border-[#efe7db] bg-white p-3">
+              <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Daily streak</p>
+              <div className="mt-2 rounded-xl border border-[#efe7db] bg-white p-3">
                 <div className="grid grid-cols-7 gap-1 sm:grid-cols-14">
                   {streakDays.map((day) => (
                     <div
@@ -305,73 +300,41 @@ export default async function ProgressPage(props: PageProps) {
               </div>
             </div>
             <div className="mt-4 rounded-2xl border border-[#efe7db] bg-[#faf7f1] p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Journey</p>
-                  <p className="text-sm font-semibold text-[#1e1b16]">
-                    Week {weekNo}/12
-                  </p>
-                </div>
-                <span
-                  className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold"
-                  style={{
-                    borderColor: activePillarPalette.border,
-                    background: activePillarPalette.bg,
-                    color: activePillarPalette.accent,
-                  }}
-                >
-                  {activePillarPalette.icon ? (
-                    <img src={activePillarPalette.icon} alt="" className="h-4 w-4" aria-hidden="true" />
-                  ) : null}
-                  {journeyState}
-                </span>
-              </div>
-              <div className="mt-4 border-t border-[#e7e1d6] pt-3">
-                <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Current position on the programme</p>
-                <div className="relative mt-2">
-                  <div className="flex gap-1">
-                    {programmeBlocks.map((block, blockIdx) => {
-                      const palette = getPillarPalette(block.key);
-                      const segmentPct = blockSegmentPct(blockIdx);
-                      return (
-                        <div key={`segment-${block.key}`} className="h-2 flex-1 overflow-hidden rounded-full bg-[#ece9e2]">
-                          <div className="h-full rounded-full" style={{ width: `${segmentPct}%`, background: palette.accent }} />
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {programmeDay > 0 ? (
-                    <span
-                      className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 border-white shadow-sm"
-                      style={{
-                        left: `calc(${programmeMarkerPct}% - 6px)`,
-                        background: activePillarPalette.accent,
-                      }}
-                    />
-                  ) : null}
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {programmeBlocks.map((block, blockIdx) => {
-                    const palette = getPillarPalette(block.key);
-                    const isActive = blockIdx === activeBlockIndex && programmeDay > 0 && programmeDay <= 84;
-                    return (
-                      <div
-                        key={`legend-${block.key}`}
-                        className="rounded-lg border px-2 py-1"
-                        style={{
-                          borderColor: isActive ? palette.border : "#e7e1d6",
-                          background: isActive ? palette.bg : "#fff",
-                        }}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          {palette.icon ? <img src={palette.icon} alt="" className="h-3.5 w-3.5" aria-hidden="true" /> : null}
-                          <p className="text-[11px] font-semibold text-[#1e1b16]">{block.label}</p>
-                        </div>
-                        <p className="text-[10px] uppercase tracking-[0.16em] text-[#8b8074]">{block.weeks}</p>
+              <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Journey</p>
+              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {journeyBlocks.map((block) => (
+                  <div key={`journey-block-${block.key}`} className="rounded-xl border border-[#e7e1d6] bg-white p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        {block.palette.icon ? (
+                          <img src={block.palette.icon} alt="" className="h-4 w-4" aria-hidden="true" />
+                        ) : null}
+                        <p className="text-sm font-semibold text-[#1e1b16]">{block.label}</p>
                       </div>
-                    );
-                  })}
-                </div>
+                      <p className="text-[10px] uppercase tracking-[0.16em] text-[#8b8074]">{block.weeks}</p>
+                    </div>
+                    <div className="mt-2 flex items-center gap-1">
+                      {block.weekIcons.map((weekIcon) => (
+                        <div
+                          key={`journey-week-${block.key}-${weekIcon.weekNumber}`}
+                          className="rounded-lg border p-1"
+                          style={{
+                            borderColor: weekIcon.completed ? block.palette.border : "#e7e1d6",
+                            background: weekIcon.completed ? block.palette.bg : "#f8f6f2",
+                            opacity: weekIcon.completed ? 1 : 0.45,
+                          }}
+                          title={`Week ${weekIcon.weekNumber}`}
+                        >
+                          {block.palette.icon ? (
+                            <img src={block.palette.icon} alt="" className="h-4 w-4" aria-hidden="true" />
+                          ) : (
+                            <span className="block h-4 w-4 rounded-full bg-[#cbd5e1]" aria-hidden="true" />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
             <div className="mt-4 rounded-2xl border border-[#efe7db] bg-white p-4">
