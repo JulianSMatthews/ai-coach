@@ -42,6 +42,12 @@ export default async function ProgressPage(props: PageProps) {
   const status = await getUserStatus(userId);
   const user = data.user || {};
   const meta = data.meta || {};
+  const focus = data.focus || {};
+  const focusIds = new Set(
+    (focus.kr_ids || [])
+      .map((value: unknown) => Number(value))
+      .filter((value: number) => Number.isInteger(value) && value > 0),
+  );
   const rows: ProgressRow[] = data.rows || [];
   const textScale = status.coaching_preferences?.text_scale
     ? Number.parseFloat(status.coaching_preferences.text_scale)
@@ -170,37 +176,7 @@ export default async function ProgressPage(props: PageProps) {
     typeof meta.anchor_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(meta.anchor_date)
       ? meta.anchor_date
       : new Date().toISOString().slice(0, 10);
-  const anchorDayNumber = isoDateToDayNumber(anchorDateKey) ?? Math.floor(Date.now() / MS_PER_DAY);
-
-  const programmeStartDayNumber =
-    programmeStart && !Number.isNaN(programmeStart.getTime())
-      ? Math.floor(
-          Date.UTC(
-            programmeStart.getUTCFullYear(),
-            programmeStart.getUTCMonth(),
-            programmeStart.getUTCDate(),
-          ) / MS_PER_DAY,
-        )
-      : null;
-  const fallbackPillarKey = programmeBlocks[0]?.key || "nutrition";
-  const pillarKeyForDay = (dayNumber: number) => {
-    if (programmeStartDayNumber === null) return fallbackPillarKey;
-    const dayOffset = dayNumber - programmeStartDayNumber;
-    if (dayOffset < 0 || dayOffset >= 84) return fallbackPillarKey;
-    const blockIndex = Math.min(3, Math.max(0, Math.floor(dayOffset / 21)));
-    return programmeBlocks[blockIndex]?.key || fallbackPillarKey;
-  };
-
-  const streakDays = Array.from({ length: streakWindowDays }, (_, idx) => {
-    const dayNumber = anchorDayNumber - idx;
-    const iso = dayNumberToIso(dayNumber);
-    const pillarKey = pillarKeyForDay(dayNumber);
-    return {
-      iso,
-      active: streakActiveDateSet.has(iso),
-      pillar: getPillarPalette(pillarKey),
-    };
-  });
+  const anchorDayNumber = isoDateToDayNumber(anchorDateKey) ?? 0;
 
   const anchorDate = meta.anchor_date ? new Date(meta.anchor_date) : new Date();
   const programmeDayRaw =
@@ -230,12 +206,21 @@ export default async function ProgressPage(props: PageProps) {
     if (!streakActiveDateSet.has(iso)) break;
     activeStreakDays += 1;
   }
+  const lastSevenDays = Array.from({ length: 7 }, (_, idx) => {
+    const dayNumber = anchorDayNumber - (6 - idx);
+    const iso = dayNumberToIso(dayNumber);
+    return {
+      iso,
+      active: streakActiveDateSet.has(iso),
+    };
+  });
   const firstName = (user.first_name || user.display_name || "User").split(" ")[0];
   const dayLabel = activeStreakDays === 1 ? "day" : "days";
   const momentumHeadline =
     activeStreakDays > 0
       ? `You are on week ${weekOfCurrentBlock} of 3 of ${currentBlock.label} and on a ${activeStreakDays} ${dayLabel} streak, keep it up ${firstName}!`
       : `You are on week ${weekOfCurrentBlock} of 3 of ${currentBlock.label}. Start your streak today, ${firstName}.`;
+  const fallbackPillarKey = programmeBlocks[0]?.key || "nutrition";
 
   const normalizePillarKey = (value?: string) => {
     const key = (value || "").toLowerCase();
@@ -288,6 +273,31 @@ export default async function ProgressPage(props: PageProps) {
       barWidth: `${Math.max(4, pct)}%`,
     };
   });
+  const dailyFocusTexts: string[] = [];
+  const seenDailyFocus = new Set<string>();
+  const addDailyFocusSteps = (candidateRows: ProgressRow[], krPredicate?: (kr: ProgressKr) => boolean) => {
+    for (const row of candidateRows) {
+      for (const kr of row.krs || []) {
+        if (krPredicate && !krPredicate(kr)) continue;
+        for (const step of kr.habit_steps || []) {
+          const text = (step.text || "").trim();
+          if (!text) continue;
+          const key = text.toLowerCase();
+          if (seenDailyFocus.has(key)) continue;
+          seenDailyFocus.add(key);
+          dailyFocusTexts.push(text);
+          if (dailyFocusTexts.length >= 4) return;
+        }
+      }
+    }
+  };
+  addDailyFocusSteps(rows, (kr) => typeof kr.id === "number" && focusIds.has(kr.id));
+  if (!dailyFocusTexts.length) {
+    addDailyFocusSteps(rows.filter((row) => normalizePillarKey(row.pillar) === currentBlock.key));
+  }
+  if (!dailyFocusTexts.length) {
+    addDailyFocusSteps(rows);
+  }
 
   const nextAssessmentDue =
     programmeStart && !Number.isNaN(programmeStart.getTime())
@@ -315,27 +325,45 @@ export default async function ProgressPage(props: PageProps) {
 
             <div className="mt-4">
               <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Daily streak</p>
-              <div className="mt-2 rounded-xl border border-[#efe7db] bg-white p-3">
-                <div className="grid grid-cols-7 gap-1 sm:grid-cols-14">
-                  {streakDays.map((day) => (
-                    <div
-                      key={day.iso}
-                      className="rounded-lg border p-1"
-                      style={{
-                        borderColor: day.active ? day.pillar.border : "#e7e1d6",
-                        background: day.active ? day.pillar.bg : "#f8f6f2",
-                        opacity: day.active ? 1 : 0.45,
-                      }}
+              <div
+                className="mt-2 rounded-2xl border p-4 text-center shadow-sm"
+                style={{
+                  borderColor: "#f2dcc4",
+                  background: "#fff6eb",
+                  boxShadow: "0 8px 20px rgba(148, 105, 57, 0.08)",
+                }}
+              >
+                <p className="text-[44px] font-semibold leading-none text-[#1e1b16] sm:text-[48px]">{activeStreakDays}</p>
+                <p className="mt-1 text-[11px] uppercase tracking-[0.24em] text-[#8b8074]">Day streak</p>
+                <div className="mt-3 flex items-center justify-center gap-2">
+                  {lastSevenDays.map((day, idx) => (
+                    <span
+                      key={`streak-dot-${idx}-${day.iso}`}
+                      className="h-2.5 w-2.5 rounded-full"
+                      style={{ background: day.active ? "#22c55e" : "#d1d5db" }}
                       title={day.iso}
-                    >
-                      {day.pillar.icon ? (
-                        <img src={day.pillar.icon} alt="" className="mx-auto h-4 w-4" aria-hidden="true" />
-                      ) : (
-                        <span className="mx-auto block h-4 w-4 rounded-full bg-[#cbd5e1]" aria-hidden="true" />
-                      )}
-                    </div>
+                      aria-hidden="true"
+                    />
                   ))}
                 </div>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Daily Focus</p>
+              <div className="mt-2 rounded-xl border border-[#efe7db] bg-white p-3">
+                {dailyFocusTexts.length ? (
+                  <ul className="space-y-1 text-sm text-[#1e1b16]">
+                    {dailyFocusTexts.map((step, idx) => (
+                      <li key={`daily-focus-${idx}`} className="flex items-start gap-2">
+                        <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[var(--accent,#d65a1f)]" />
+                        <span>{step}</span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-[#6b6257]">No habit steps to focus on yet.</p>
+                )}
               </div>
             </div>
 
