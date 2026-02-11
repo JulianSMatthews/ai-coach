@@ -13,6 +13,31 @@ type PageProps = {
   searchParams: Promise<{ anchor_date?: string }>;
 };
 
+type HabitStep = {
+  id?: number;
+  text?: string;
+  status?: string;
+  week_no?: number | null;
+};
+
+type ProgressKr = {
+  id?: number;
+  description?: string;
+  baseline?: number | null;
+  actual?: number | null;
+  target?: number | null;
+  habit_steps?: HabitStep[];
+};
+
+type ProgressRow = {
+  pillar?: string;
+  cycle_label?: string;
+  cycle_start?: string;
+  cycle_end?: string;
+  objective?: string;
+  krs?: ProgressKr[];
+};
+
 export default async function ProgressPage(props: PageProps) {
   const { userId } = await props.params;
   const { anchor_date } = await props.searchParams;
@@ -21,7 +46,7 @@ export default async function ProgressPage(props: PageProps) {
   const user = data.user || {};
   const meta = data.meta || {};
   const focus = data.focus || {};
-  const rows = data.rows || [];
+  const rows: ProgressRow[] = data.rows || [];
   const focusIds = new Set(focus.kr_ids || []);
   const textScale = status.coaching_preferences?.text_scale
     ? Number.parseFloat(status.coaching_preferences.text_scale)
@@ -52,7 +77,7 @@ export default async function ProgressPage(props: PageProps) {
     { label: "Resilience", weeks: "Weeks 10–12", key: "resilience" },
   ];
   const rowStarts = rows
-    .map((row: any) => (row.cycle_start ? new Date(row.cycle_start) : null))
+    .map((row) => (row.cycle_start ? new Date(row.cycle_start) : null))
     .filter((d: Date | null) => d && !Number.isNaN(d.getTime())) as Date[];
   const programmeStart =
     rowStarts.length > 0
@@ -74,9 +99,26 @@ export default async function ProgressPage(props: PageProps) {
       timeZone: "Europe/London",
     }).format(parsed);
   };
+  const toFiniteNumber = (value?: number | null) => {
+    if (value === null || value === undefined) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const progressRatio = (actual?: number | null, target?: number | null, baseline?: number | null) => {
+    const actualNum = toFiniteNumber(actual);
+    const targetNum = toFiniteNumber(target);
+    const baselineNum = toFiniteNumber(baseline);
+    if (actualNum === null || targetNum === null) return null;
+    if (baselineNum !== null && Math.abs(targetNum - baselineNum) > 1e-9) {
+      return Math.max(0, Math.min(1, (actualNum - baselineNum) / (targetNum - baselineNum)));
+    }
+    if (Math.abs(targetNum) < 1e-9) return null;
+    return Math.max(0, Math.min(1, actualNum / targetNum));
+  };
   const computeStatus = (
     actual?: number | null,
     target?: number | null,
+    baseline?: number | null,
     cycleStart?: string | null,
     cycleEnd?: string | null,
   ) => {
@@ -88,35 +130,47 @@ export default async function ProgressPage(props: PageProps) {
     const inFuture = hasStart ? now < start! : false;
     const finished = hasEnd ? now > end! : false;
 
-    const validTarget = target !== null && target !== undefined && Number(target) !== 0;
-    const validActual = actual !== null && actual !== undefined && Number.isFinite(Number(actual));
-
     if (inFuture) {
       return { status: "not started", pct: null };
     }
-
-    if (!finished) {
-      const ratio =
-        validTarget && validActual ? Math.max(0, Math.min(1, Number(actual) / Number(target))) : null;
-      return { status: "on track", pct: ratio };
+    const ratio = progressRatio(actual, target, baseline);
+    if (ratio === null) {
+      return { status: finished ? "off track" : "not started", pct: null };
     }
-
-    if (!validTarget || !validActual) {
-      return { status: "off track", pct: null };
-    }
-
-    const ratio = Math.max(0, Math.min(1, Number(actual) / Number(target)));
-    return ratio >= 0.9 ? { status: "on track", pct: ratio } : { status: "off track", pct: ratio };
+    if (ratio >= 0.9) return { status: "on track", pct: ratio };
+    if (ratio >= 0.5) return { status: "at risk", pct: ratio };
+    return { status: "off track", pct: ratio };
   };
-  const focusHabitGroups = rows.flatMap((row: any) =>
+  const focusHabitGroups = rows.flatMap((row) =>
     (row.krs || [])
-      .filter((kr: any) => focusIds.has(kr.id))
-      .map((kr: any) => ({
-        id: kr.id,
-        description: kr.description,
+      .filter((kr) => typeof kr.id === "number" && focusIds.has(kr.id))
+      .map((kr) => ({
+        id: kr.id as number,
+        description: kr.description || "Focus KR",
         steps: kr.habit_steps || [],
       })),
   );
+  const statusCounts = data.status_counts || {};
+  const onTrackCount = Number(statusCounts["on track"] || 0);
+  const atRiskCount = Number(statusCounts["at risk"] || 0);
+  const offTrackCount = Number(statusCounts["off track"] || 0);
+  const notStartedCount = Number(statusCounts["not started"] || 0);
+  const totalKrs = Number(data.total_krs || onTrackCount + atRiskCount + offTrackCount + notStartedCount);
+  const momentumScore = totalKrs > 0 ? Math.round(((onTrackCount + atRiskCount * 0.5) / totalKrs) * 100) : 0;
+  const weekWindow = data.week_window || {};
+  const weekEnd = weekWindow.end ? new Date(weekWindow.end) : null;
+  const now = new Date();
+  const weekDaysLeft =
+    weekEnd && !Number.isNaN(weekEnd.getTime())
+      ? Math.max(0, Math.ceil((weekEnd.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)))
+      : null;
+  const focusHabitSteps: HabitStep[] = focusHabitGroups.flatMap((group) => group.steps || []);
+  const focusHabitDone = focusHabitSteps.filter((step) =>
+    ["done", "complete", "completed"].includes(String(step.status || "").toLowerCase()),
+  ).length;
+  const focusHabitTotal = focusHabitSteps.length;
+  const focusHabitPct = focusHabitTotal > 0 ? Math.round((focusHabitDone / focusHabitTotal) * 100) : 0;
+  const focusXp = focusHabitDone * 10;
 
   return (
     <PageShell>
@@ -138,6 +192,17 @@ export default async function ProgressPage(props: PageProps) {
               {`Your momentum, ${(user.first_name || user.display_name || "User").split(" ")[0]}`}
             </h2>
             <p className="mt-1 text-xs text-[#6b6257]">{meta.anchor_label || "n/a"}</p>
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <StatPill label="Momentum score" value={`${momentumScore}%`} />
+              <StatPill label="Total KRs" value={totalKrs} bg="#f5f3ff" border="#ddd6fe" accent="#5b21b6" />
+              <StatPill
+                label="Week window"
+                value={weekWindow.is_current ? `${weekDaysLeft ?? 0}d left` : "Inactive"}
+                bg="#eff6ff"
+                border="#bfdbfe"
+                accent="#1d4ed8"
+              />
+            </div>
             <div className="mt-4 grid grid-cols-2 gap-3">
               {Object.entries(data.status_counts || {}).map(([label, value]) => {
                 const palette = statusPalette[label] || { bg: "#f5f2eb", border: "#e7e1d6", text: "#6b6257" };
@@ -162,6 +227,25 @@ export default async function ProgressPage(props: PageProps) {
           >
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Focus</p>
             <h2 className="mt-1 text-xl">Key results</h2>
+            <div className="mt-4 rounded-2xl border border-[#efe7db] bg-[#faf7f1] p-3">
+              <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                <div className="rounded-xl border border-[#e7e1d6] bg-white px-2 py-2">
+                  <p className="uppercase tracking-[0.2em] text-[#8b8074]">Completed</p>
+                  <p className="mt-1 text-base font-semibold text-[#1e1b16]">{focusHabitDone}/{focusHabitTotal || 0}</p>
+                </div>
+                <div className="rounded-xl border border-[#e7e1d6] bg-white px-2 py-2">
+                  <p className="uppercase tracking-[0.2em] text-[#8b8074]">Focus XP</p>
+                  <p className="mt-1 text-base font-semibold text-[#1e1b16]">{focusXp}</p>
+                </div>
+                <div className="rounded-xl border border-[#e7e1d6] bg-white px-2 py-2">
+                  <p className="uppercase tracking-[0.2em] text-[#8b8074]">Completion</p>
+                  <p className="mt-1 text-base font-semibold text-[#1e1b16]">{focusHabitPct}%</p>
+                </div>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#e4e7ec]">
+                <div className="h-full rounded-full bg-[#0ea5a4]" style={{ width: `${focusHabitPct}%` }} />
+              </div>
+            </div>
             {focusHabitGroups.length ? (
               <div className="mt-4 space-y-3">
                 {focusHabitGroups.map((group) => (
@@ -176,7 +260,7 @@ export default async function ProgressPage(props: PageProps) {
                       <div className="mt-3">
                         {group.steps.length ? (
                           <ul className="space-y-1 text-sm text-[#3c332b]">
-                            {group.steps.map((step: any) => (
+                            {group.steps.map((step: HabitStep) => (
                               <li key={step.id || step.text} className="flex items-start gap-2">
                                 <span className="mt-1 h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
                                 <span>{step.text}</span>
@@ -219,7 +303,7 @@ export default async function ProgressPage(props: PageProps) {
             className="flex flex-nowrap gap-6 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth"
             style={{ scrollSnapType: "x mandatory" }}
           >
-            {rows.map((row: any, idx: number) => {
+            {rows.map((row: ProgressRow, idx: number) => {
               const palette = getPillarPalette(row.pillar);
               const cardStyle = {
                 borderColor: palette.border,
@@ -258,14 +342,21 @@ export default async function ProgressPage(props: PageProps) {
                   <p className="mt-2 text-sm text-[#3c332b]">{row.objective || "No objective yet."}</p>
                   {(row.krs || []).length ? (
                     <div className="mt-4 space-y-3">
-                      {(row.krs || []).map((kr: any) => {
-                        const status = computeStatus(kr.actual, kr.target, row.cycle_start, row.cycle_end);
+                  {(row.krs || []).map((kr: ProgressKr, krIdx: number) => {
+                        const krId = typeof kr.id === "number" ? kr.id : null;
+                        const status = computeStatus(
+                          kr.actual,
+                          kr.target,
+                          kr.baseline,
+                          row.cycle_start,
+                          row.cycle_end,
+                        );
                         const chip = chipPalette[status.status] || { bg: "#f4f4f5", text: "#52525b" };
                         const pctValue = status.pct ?? 0;
                         const barWidth = status.pct === null ? "4%" : `${Math.round(pctValue * 100)}%`;
                         const barColor = palette.accent;
                         return (
-                          <div key={kr.id} className="rounded-2xl border border-[#eadcc6] bg-white p-3">
+                          <div key={krId ?? `${row.pillar || "pillar"}-${idx}-${krIdx}`} className="rounded-2xl border border-[#eadcc6] bg-white p-3">
                             <p className="text-sm font-semibold text-[#1e1b16]">{kr.description}</p>
                             <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[#6b6257]">
                               <span
@@ -274,7 +365,7 @@ export default async function ProgressPage(props: PageProps) {
                               >
                                 {status.status}
                               </span>
-                              {focusIds.has(kr.id) ? (
+                              {krId !== null && focusIds.has(krId) ? (
                                 <span className="rounded-full bg-[#fef3c7] px-2 py-0.5 font-semibold text-[#92400e]">
                                   Focus KR
                                 </span>
@@ -308,11 +399,13 @@ export default async function ProgressPage(props: PageProps) {
                                 />
                               </div>
                             </div>
-                            <HabitStepsEditor
-                              userId={userId}
-                              krId={kr.id}
-                              initialSteps={kr.habit_steps || []}
-                            />
+                            {krId !== null ? (
+                              <HabitStepsEditor
+                                userId={userId}
+                                krId={krId}
+                                initialSteps={kr.habit_steps || []}
+                              />
+                            ) : null}
                           </div>
                         );
                       })}

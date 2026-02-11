@@ -3666,25 +3666,72 @@ def _format_number(val: float | None) -> str:
         return str(int(val))
     return f"{val:.2f}".rstrip("0").rstrip(".")
 
-def _render_progress_bar(current: float | None, target: float | None, baseline: float | None = None) -> str:
+
+def _safe_float(value: Any) -> float | None:
     try:
-        cur = float(current) if current is not None else None
-        tgt = float(target) if target is not None else None
+        if value is None:
+            return None
+        return float(value)
     except Exception:
-        cur = tgt = None
-    percent = 0.0
-    if cur is not None and tgt not in (None, 0, "0"):
-        try:
-            percent = max(0, min(100, (cur / float(tgt)) * 100))
-        except Exception:
-            percent = 0.0
+        return None
+
+
+def _kr_progress_ratio(actual: Any, target: Any, baseline: Any = None) -> float | None:
+    """
+    Return normalized progress in [0, 1] using baseline-aware direction when available.
+    """
+    actual_num = _safe_float(actual)
+    target_num = _safe_float(target)
+    baseline_num = _safe_float(baseline)
+    if actual_num is None or target_num is None:
+        return None
+    try:
+        if baseline_num is not None and abs(target_num - baseline_num) > 1e-9:
+            ratio = (actual_num - baseline_num) / (target_num - baseline_num)
+        else:
+            if abs(target_num) < 1e-9:
+                return None
+            ratio = actual_num / target_num
+        return max(0.0, min(1.0, ratio))
+    except Exception:
+        return None
+
+
+def _kr_status(
+    actual: Any,
+    target: Any,
+    baseline: Any = None,
+    *,
+    future_block: bool = False,
+    finished_block: bool = False,
+) -> tuple[str, float | None]:
+    if future_block:
+        return "not started", None
+    ratio = _kr_progress_ratio(actual, target, baseline)
+    if ratio is None:
+        return ("off track" if finished_block else "not started"), None
+    if ratio >= 0.9:
+        return "on track", ratio
+    if ratio >= 0.5:
+        return "at risk", ratio
+    return "off track", ratio
+
+
+def _render_progress_bar(current: float | None, target: float | None, baseline: float | None = None) -> str:
+    ratio = _kr_progress_ratio(current, target, baseline)
+    percent = 0.0 if ratio is None else max(0.0, min(100.0, ratio * 100.0))
     return (
         "<div class='progress-track'>"
         f"<div class='progress-fill' style='width:{percent}%;'></div>"
         "</div>"
     )
 
-def _render_kr_table(krs: list[dict], focus_ids: set[int] | None = None, future_block: bool = False) -> str:
+def _render_kr_table(
+    krs: list[dict],
+    focus_ids: set[int] | None = None,
+    future_block: bool = False,
+    finished_block: bool = False,
+) -> str:
     if not krs:
         return "<p class='empty-kr'>No key results captured yet.</p>"
     focus_ids = focus_ids or set()
@@ -3697,26 +3744,14 @@ def _render_kr_table(krs: list[dict], focus_ids: set[int] | None = None, future_
         actual_val = kr.get("actual")
         actual = _format_number(actual_val)
         target_val = kr.get("target")
-        pct = None
-        status = "not started"
-        if target_val is not None and actual_val is not None and target_val not in (0, "0"):
-            try:
-                pct = max(0, min(1, float(actual_val) / float(target_val)))
-            except Exception:
-                pct = None
-        if future_block:
-            status = "not started"
-            pct_display = "–"
-        else:
-            if pct is None:
-                status = "not started"
-            elif pct >= 0.9:
-                status = "on track"
-            elif pct >= 0.5:
-                status = "at risk"
-            else:
-                status = "off track"
-            pct_display = f"{int(pct * 100)}%" if pct is not None else "–"
+        status, pct = _kr_status(
+            actual_val,
+            target_val,
+            kr.get("baseline"),
+            future_block=future_block,
+            finished_block=finished_block,
+        )
+        pct_display = f"{int(pct * 100)}%" if pct is not None else "–"
         badge = "<div class='focus-badge'>Focus KR</div>" if is_focus else ""
         rows.append(
             "<tr>"
@@ -3848,6 +3883,16 @@ def generate_progress_report_html(user_id: int, anchor_date: date | None = None)
         if blk_start is None:
             return False
         return anchor_today < blk_start
+    def _finished_block(end_dt):
+        if isinstance(end_dt, datetime):
+            blk_end = end_dt.date()
+        elif isinstance(end_dt, date):
+            blk_end = end_dt
+        else:
+            blk_end = None
+        if blk_end is None:
+            return False
+        return anchor_today > blk_end
 
     status_counts = data.get("status_counts") or {"on track": 0, "at risk": 0, "off track": 0, "not started": 0}
     total_krs = int(data.get("total_krs") or 0)
@@ -3894,9 +3939,16 @@ def generate_progress_report_html(user_id: int, anchor_date: date | None = None)
         cycle_text = " · ".join([b for b in cycle_bits if b])
         pillar_key = row.get("pillar") or ""
         start_dt = row.get("cycle_start")
+        end_dt = row.get("cycle_end")
         future_block = _future_block(start_dt)
+        finished_block = _finished_block(end_dt)
         krs = row.get("krs") or []
-        kr_block = _render_kr_table(krs, focus_ids=set(focus_kr_ids), future_block=future_block)
+        kr_block = _render_kr_table(
+            krs,
+            focus_ids=set(focus_kr_ids),
+            future_block=future_block,
+            finished_block=finished_block,
+        )
         items.append(
             f"<div class='entry {html.escape(pillar_key)}'>"
             f"<div class='cycle'>{html.escape(cycle_text or '')}</div>"
@@ -4037,26 +4089,16 @@ def build_progress_report_data(user_id: int, anchor_date: date | None = None) ->
             total_krs += 1
             if kr.get("id") in focus_kr_ids:
                 focus_titles.append(kr.get("description") or "")
-            if future:
-                status_counts["not started"] += 1
-                continue
-            if not finished:
-                status_counts["on track"] += 1
-                continue
-            target_val = kr.get("target")
-            actual_val = kr.get("actual") if kr.get("actual") is not None else kr.get("baseline")
-            pct = None
-            if target_val is not None and actual_val is not None and target_val not in (0, "0"):
-                try:
-                    pct = max(0, min(1, float(actual_val) / float(target_val)))
-                except Exception:
-                    pct = None
-            if pct is None:
-                status_counts["off track"] += 1
-            elif pct >= 0.9:
-                status_counts["on track"] += 1
-            else:
-                status_counts["off track"] += 1
+            status, _ = _kr_status(
+                kr.get("actual"),
+                kr.get("target"),
+                kr.get("baseline"),
+                future_block=future,
+                finished_block=finished,
+            )
+            if status not in status_counts:
+                status_counts[status] = 0
+            status_counts[status] += 1
 
     readiness = None
     if prof:
