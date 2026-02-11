@@ -311,7 +311,7 @@ export default async function ProgressPage(props: PageProps) {
             style={{ scrollSnapStop: "always" }}
           >
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{meta.anchor_label || "n/a"}</p>
-            <h2 className="mt-1 text-sm leading-relaxed sm:text-base">{momentumHeadline}</h2>
+            <h2 className="mt-1 text-sm font-semibold leading-relaxed text-[#1e1b16]">{momentumHeadline}</h2>
 
             <div className="mt-4">
               <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Daily streak</p>
