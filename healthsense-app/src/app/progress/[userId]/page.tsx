@@ -169,14 +169,8 @@ export default async function ProgressPage(props: PageProps) {
       : null;
   const programmeDay = programmeDayRaw === null ? 0 : Math.max(0, Math.min(84, programmeDayRaw));
   const weekNo = programmeDay > 0 ? Math.min(12, Math.floor((programmeDay - 1) / 7) + 1) : 1;
-  const dayInWeek = programmeDay > 0 ? ((programmeDay - 1) % 7) + 1 : 0;
   const activeBlockIndex = Math.min(3, Math.max(0, Math.floor((weekNo - 1) / 3)));
   const activeBlock = programmeBlocks[activeBlockIndex];
-  const weekInBlock = ((weekNo - 1) % 3) + 1;
-  const dayInBlock = programmeDay > 0 ? (weekInBlock - 1) * 7 + dayInWeek : 0;
-  const weekPct = Math.round((dayInWeek / 7) * 100);
-  const blockPct = Math.round((dayInBlock / 21) * 100);
-  const programmePct = Math.round((programmeDay / 84) * 100);
   const activePillarPalette = getPillarPalette(activeBlock?.key);
   const journeyState =
     programmeDayRaw === null
@@ -186,8 +180,7 @@ export default async function ProgressPage(props: PageProps) {
         : programmeDayRaw > 84
           ? "Programme completed"
           : `${activeBlock?.label || "Programme"} in progress`;
-  const pillarWeekLabel = programmeDay > 0 ? `${weekInBlock}/3` : "0/3";
-  const weekDayLabel = programmeDay > 0 ? `${dayInWeek}/7` : "0/7";
+  const programmePct = Math.round((programmeDay / 84) * 100);
   const programmeMarkerPct = Math.max(0, Math.min(100, programmePct));
   const blockSegmentPct = (blockIndex: number) => {
     const segmentStart = blockIndex * 21 + 1;
@@ -273,26 +266,7 @@ export default async function ProgressPage(props: PageProps) {
                 </span>
               </div>
               <div className="mt-4 border-t border-[#e7e1d6] pt-3">
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div className="px-1">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-[#8b8074]">This Week</p>
-                    <p className="text-sm font-semibold text-[#1e1b16]">Day {weekDayLabel}</p>
-                    <p className="text-xs text-[#6b6257]">{weekPct}% complete</p>
-                  </div>
-                  <div className="px-1">
-                    <p className="text-[10px] uppercase tracking-[0.2em]" style={{ color: activePillarPalette.accent }}>
-                      {activeBlock?.label || "Pillar"}
-                    </p>
-                    <p className="text-sm font-semibold text-[#1e1b16]">Week {pillarWeekLabel}</p>
-                    <p className="text-xs text-[#6b6257]">{blockPct}% of pillar block</p>
-                  </div>
-                  <div className="px-1">
-                    <p className="text-[10px] uppercase tracking-[0.2em] text-[#8b8074]">12-Week Programme</p>
-                    <p className="text-sm font-semibold text-[#1e1b16]">{programmePct}% complete</p>
-                    <p className="text-xs text-[#6b6257]">Week {weekNo} of 12</p>
-                  </div>
-                </div>
-                <p className="mt-3 text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Current position on the programme</p>
+                <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Current position on the programme</p>
                 <div className="relative mt-2">
                   <div className="flex gap-1">
                     {programmeBlocks.map((block, blockIdx) => {
