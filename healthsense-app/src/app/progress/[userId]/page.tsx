@@ -1,3 +1,4 @@
+import type { CSSProperties } from "react";
 import { getProgress, getUserStatus } from "@/lib/api";
 import { getPillarPalette } from "@/lib/pillars";
 import { Card, PageShell } from "@/components/ui";
@@ -12,15 +13,26 @@ type PageProps = {
 };
 
 type ProgressKr = {
+  id?: number;
+  description?: string;
   baseline?: number | null;
   actual?: number | null;
   target?: number | null;
+  habit_steps?: HabitStep[];
 };
 
 type ProgressRow = {
   pillar?: string;
+  cycle_label?: string;
   cycle_start?: string;
+  cycle_end?: string;
+  objective?: string;
   krs?: ProgressKr[];
+};
+
+type HabitStep = {
+  id?: number;
+  text?: string;
 };
 
 export default async function ProgressPage(props: PageProps) {
@@ -39,6 +51,13 @@ export default async function ProgressPage(props: PageProps) {
     promptState && promptState !== "live"
       ? `${promptState.charAt(0).toUpperCase()}${promptState.slice(1)} mode`
       : "";
+  const chipPalette: Record<string, { bg: string; text: string }> = {
+    "on track": { bg: "#ecfdf3", text: "#027a48" },
+    "at risk": { bg: "#fff7ed", text: "#c2410c" },
+    "off track": { bg: "#fef2f2", text: "#b42318" },
+    "in progress": { bg: "#eff6ff", text: "#1d4ed8" },
+    "not started": { bg: "#eff6ff", text: "#1d4ed8" },
+  };
 
   const programmeBlocks = [
     { label: "Nutrition", weeks: "Weeks 1–3", key: "nutrition", weekStart: 1, weekEnd: 3 },
@@ -65,6 +84,16 @@ export default async function ProgressPage(props: PageProps) {
       timeZone: "Europe/London",
     }).format(value);
   };
+  const formatDateUkFromIso = (value?: string | null) => {
+    if (!value) return "";
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? "–" : formatDateUk(parsed);
+  };
+  const formatNumber = (value?: number | null) => {
+    if (value === null || value === undefined) return "–";
+    if (Number.isInteger(value)) return String(value);
+    return value.toFixed(2).replace(/\.?0+$/, "");
+  };
 
   const toFiniteNumber = (value?: number | null) => {
     if (value === null || value === undefined) return null;
@@ -82,6 +111,41 @@ export default async function ProgressPage(props: PageProps) {
     }
     if (Math.abs(targetNum) < 1e-9) return null;
     return Math.max(0, Math.min(1, actualNum / targetNum));
+  };
+  const zeroBaseRatio = (current?: number | null, target?: number | null) => {
+    const currentNum = toFiniteNumber(current);
+    const targetNum = toFiniteNumber(target);
+    if (currentNum === null || targetNum === null || Math.abs(targetNum) < 1e-9) return null;
+    return Math.max(0, Math.min(1, currentNum / targetNum));
+  };
+  const computeStatus = (
+    actual?: number | null,
+    target?: number | null,
+    baseline?: number | null,
+    cycleStart?: string | null,
+    cycleEnd?: string | null,
+  ) => {
+    const now = new Date();
+    const start = cycleStart ? new Date(cycleStart) : null;
+    const end = cycleEnd ? new Date(cycleEnd) : null;
+    const hasStart = start && !Number.isNaN(start.getTime());
+    const hasEnd = end && !Number.isNaN(end.getTime());
+    const inFuture = hasStart ? now < start! : false;
+    const finished = hasEnd ? now > end! : false;
+
+    if (inFuture) {
+      return { status: "not started", pct: null };
+    }
+    const ratio = progressRatio(actual, target, baseline);
+    if (!finished) {
+      return { status: "on track", pct: ratio };
+    }
+    if (ratio === null) {
+      return { status: "off track", pct: null };
+    }
+    if (ratio >= 0.9) return { status: "on track", pct: ratio };
+    if (ratio >= 0.5) return { status: "at risk", pct: ratio };
+    return { status: "off track", pct: ratio };
   };
 
   const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -199,15 +263,42 @@ export default async function ProgressPage(props: PageProps) {
 
   const pillarSummaries = programmeBlocks.map((block) => {
     const totals = pillarTotalsByKey.get(block.key)!;
-    const ratio = totals.krCount ? progressRatio(totals.currentTotal, totals.targetTotal, totals.baselineTotal) : null;
+    const ratio = totals.krCount ? zeroBaseRatio(totals.currentTotal, totals.targetTotal) : null;
     const pct = ratio === null ? 0 : Math.round(ratio * 100);
     return {
       ...totals,
+      ratio,
       pct,
       hasData: totals.krCount > 0,
       barWidth: `${Math.max(4, pct)}%`,
     };
   });
+  const combinedTotals = pillarSummaries.reduce(
+    (acc, item) => {
+      acc.currentTotal += item.currentTotal;
+      acc.targetTotal += item.targetTotal;
+      acc.krCount += item.krCount;
+      return acc;
+    },
+    { currentTotal: 0, targetTotal: 0, krCount: 0 },
+  );
+  const combinedRatio = combinedTotals.krCount ? zeroBaseRatio(combinedTotals.currentTotal, combinedTotals.targetTotal) : null;
+  const combinedSummary = {
+    key: "combined",
+    label: "Combined",
+    palette: {
+      accent: "#d65a1f",
+      bg: "#f9f3e8",
+      border: "#eadcc6",
+      icon: "/icons/pillar-habit-forming.svg",
+    },
+    currentTotal: combinedTotals.currentTotal,
+    targetTotal: combinedTotals.targetTotal,
+    hasData: combinedTotals.krCount > 0,
+    pct: combinedRatio === null ? 0 : Math.round(combinedRatio * 100),
+    barWidth: `${Math.max(4, combinedRatio === null ? 0 : Math.round(combinedRatio * 100))}%`,
+  };
+  const scoreBreakdown = [combinedSummary, ...pillarSummaries];
 
   const nextAssessmentDue =
     programmeStart && !Number.isNaN(programmeStart.getTime())
@@ -306,21 +397,27 @@ export default async function ProgressPage(props: PageProps) {
 
       <section id="timeline" className="space-y-4">
         <Card>
-          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Key results summary</p>
-          <h2 className="mt-1 text-xl">By pillar</h2>
+          <h2 className="text-2xl">Score breakdown</h2>
 
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {pillarSummaries.map((summary) => (
+          <div className="mt-4 space-y-4">
+            {scoreBreakdown.map((summary) => (
               <div
                 key={`pillar-summary-${summary.key}`}
-                className="rounded-2xl border p-3"
+                className="rounded-3xl border p-4 sm:p-5"
                 style={{ borderColor: summary.palette.border, background: summary.palette.bg }}
               >
-                <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Current score</p>
-                <p className="mt-1 text-2xl font-semibold text-[#1e1b16]">
-                  {summary.hasData ? `${summary.pct}%` : "–"}
-                </p>
-                <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#e4e7ec]">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="inline-flex items-center gap-2">
+                    {summary.palette.icon ? (
+                      <img src={summary.palette.icon} alt="" className="h-5 w-5" aria-hidden="true" />
+                    ) : null}
+                    <span className="text-sm uppercase tracking-[0.28em] text-[#6b6257]">{summary.label}</span>
+                  </div>
+                  <span className="rounded bg-[#c7dff8] px-2 py-1 text-2xl font-semibold text-[#1e1b16]">
+                    {summary.hasData ? `${summary.pct}%` : "–"}
+                  </span>
+                </div>
+                <div className="mt-3 h-3 overflow-hidden rounded-full bg-[#e7e1d6]">
                   <div
                     className="h-full rounded-full"
                     style={{
@@ -330,11 +427,9 @@ export default async function ProgressPage(props: PageProps) {
                     }}
                   />
                 </div>
-                <div className="mt-2 flex items-center justify-center gap-2 text-sm font-semibold text-[#1e1b16]">
-                  {summary.palette.icon ? (
-                    <img src={summary.palette.icon} alt="" className="h-4 w-4" aria-hidden="true" />
-                  ) : null}
-                  <span>{summary.label}</span>
+                <div className="mt-2 flex items-center justify-between text-xs text-[#6b6257]">
+                  <span>Current {formatNumber(summary.currentTotal)}</span>
+                  <span>Target {formatNumber(summary.targetTotal)}</span>
                 </div>
               </div>
             ))}
@@ -348,6 +443,136 @@ export default async function ProgressPage(props: PageProps) {
             <p className="mt-1 text-xs text-[#6b6257]">Day after your 12-week programme ends</p>
           </div>
         </Card>
+
+        {rows.length ? (
+          <>
+            <div
+              id="pillar-krs-carousel"
+              className="flex flex-nowrap gap-6 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth"
+              style={{ scrollSnapType: "x mandatory" }}
+            >
+              {rows.map((row: ProgressRow, idx: number) => {
+                const palette = getPillarPalette(row.pillar);
+                const cardStyle = {
+                  borderColor: palette.border,
+                  background: palette.bg,
+                  "--accent": palette.accent,
+                } as CSSProperties;
+                return (
+                  <Card
+                    key={`${row.pillar || "pillar"}-${idx}`}
+                    className="min-w-full snap-start sm:min-w-[85%]"
+                    style={{
+                      scrollSnapStop: "always",
+                      ...cardStyle,
+                    }}
+                    data-carousel-item
+                  >
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Key results</p>
+                        <h3 className="mt-1 flex items-center gap-1 text-lg capitalize">
+                          {palette.icon ? (
+                            <img src={palette.icon} alt="" className="h-[23px] w-[23px]" aria-hidden="true" />
+                          ) : null}
+                          {row.pillar || "Pillar"}
+                        </h3>
+                      </div>
+                      <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                        {row.cycle_label || "Current"}
+                      </span>
+                    </div>
+                    {row.cycle_start || row.cycle_end ? (
+                      <p className="mt-1 text-xs text-[#6b6257]">
+                        {formatDateUkFromIso(row.cycle_start)} – {formatDateUkFromIso(row.cycle_end)}
+                      </p>
+                    ) : null}
+                    <p className="mt-2 text-sm text-[#3c332b]">{row.objective || "No objective yet."}</p>
+                    {(row.krs || []).length ? (
+                      <div className="mt-4 space-y-3">
+                        {(row.krs || []).map((kr: ProgressKr, krIdx: number) => {
+                          const status = computeStatus(
+                            kr.actual,
+                            kr.target,
+                            kr.baseline,
+                            row.cycle_start,
+                            row.cycle_end,
+                          );
+                          const chip = chipPalette[status.status] || { bg: "#f4f4f5", text: "#52525b" };
+                          const pctValue = status.pct ?? 0;
+                          const barWidth = status.pct === null ? "4%" : `${Math.round(pctValue * 100)}%`;
+                          return (
+                            <div key={`${row.pillar || "pillar"}-${idx}-${kr.id || krIdx}`} className="rounded-2xl border border-[#eadcc6] bg-white p-3">
+                              <p className="text-sm font-semibold text-[#1e1b16]">{kr.description || "Key result"}</p>
+                              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-[#6b6257]">
+                                <span
+                                  className="rounded-full px-2 py-0.5"
+                                  style={{ background: chip.bg, color: chip.text }}
+                                >
+                                  {status.status}
+                                </span>
+                              </div>
+                              <div className="mt-2 grid grid-cols-3 gap-2 text-xs text-[#6b6257]">
+                                <div>
+                                  <p className="text-[10px] uppercase tracking-[0.26em] text-[#8b8074]">Baseline</p>
+                                  <p className="text-sm text-[#1e1b16]">{formatNumber(kr.baseline)}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[10px] uppercase tracking-[0.26em] text-[#8b8074]">Current</p>
+                                  <p className="text-sm text-[#1e1b16]">{formatNumber(kr.actual)}</p>
+                                </div>
+                                <div>
+                                  <p className="text-[10px] uppercase tracking-[0.26em] text-[#8b8074]">Target</p>
+                                  <p className="text-sm text-[#1e1b16]">{formatNumber(kr.target)}</p>
+                                </div>
+                              </div>
+                              <div className="mt-2 flex items-center gap-2">
+                                <span className="text-xs font-semibold text-[#101828]">
+                                  {status.pct !== null ? `${Math.round(status.pct * 100)}%` : "–"}
+                                </span>
+                                <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#e4e7ec]">
+                                  <div
+                                    className="h-full rounded-full"
+                                    style={{
+                                      width: barWidth,
+                                      background: palette.accent,
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                              <div className="mt-2">
+                                <p className="text-[11px] uppercase tracking-[0.26em] text-[#8b8074]">Habit steps</p>
+                                {(kr.habit_steps || []).length ? (
+                                  <ul className="mt-1 space-y-1 text-xs text-[#3c332b]">
+                                    {(kr.habit_steps || []).map((step: HabitStep, stepIdx: number) => (
+                                      <li key={`${row.pillar || "pillar"}-${kr.id || krIdx}-${step.id || stepIdx}`} className="flex items-start gap-2">
+                                        <span className="mt-1 h-1.5 w-1.5 rounded-full bg-[var(--accent)]" />
+                                        <span>{step.text}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p className="mt-1 text-xs text-[#6b6257]">No habit steps yet.</p>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-sm text-[#6b6257]">No key results recorded yet.</p>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
+            <CarouselDots containerId="pillar-krs-carousel" count={rows.length} />
+          </>
+        ) : (
+          <Card>
+            <p className="text-sm text-[#6b6257]">No key results recorded yet.</p>
+          </Card>
+        )}
       </section>
     </PageShell>
   );
