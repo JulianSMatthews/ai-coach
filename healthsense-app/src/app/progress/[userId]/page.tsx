@@ -267,38 +267,11 @@ export default async function ProgressPage(props: PageProps) {
     const pct = ratio === null ? 0 : Math.round(ratio * 100);
     return {
       ...totals,
-      ratio,
       pct,
       hasData: totals.krCount > 0,
       barWidth: `${Math.max(4, pct)}%`,
     };
   });
-  const combinedTotals = pillarSummaries.reduce(
-    (acc, item) => {
-      acc.currentTotal += item.currentTotal;
-      acc.targetTotal += item.targetTotal;
-      acc.krCount += item.krCount;
-      return acc;
-    },
-    { currentTotal: 0, targetTotal: 0, krCount: 0 },
-  );
-  const combinedRatio = combinedTotals.krCount ? zeroBaseRatio(combinedTotals.currentTotal, combinedTotals.targetTotal) : null;
-  const combinedSummary = {
-    key: "combined",
-    label: "Combined",
-    palette: {
-      accent: "#d65a1f",
-      bg: "#f9f3e8",
-      border: "#eadcc6",
-      icon: "/icons/pillar-habit-forming.svg",
-    },
-    currentTotal: combinedTotals.currentTotal,
-    targetTotal: combinedTotals.targetTotal,
-    hasData: combinedTotals.krCount > 0,
-    pct: combinedRatio === null ? 0 : Math.round(combinedRatio * 100),
-    barWidth: `${Math.max(4, combinedRatio === null ? 0 : Math.round(combinedRatio * 100))}%`,
-  };
-  const scoreBreakdown = [combinedSummary, ...pillarSummaries];
 
   const nextAssessmentDue =
     programmeStart && !Number.isNaN(programmeStart.getTime())
@@ -377,6 +350,53 @@ export default async function ProgressPage(props: PageProps) {
                 </div>
               </div>
             </div>
+
+            <div className="mt-4">
+              <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Key Results Progress</p>
+              <div className="mt-2 rounded-xl border border-[#efe7db] bg-white p-3">
+                <div className="space-y-3">
+                  {pillarSummaries.map((summary) => (
+                    <div
+                      key={`pillar-summary-${summary.key}`}
+                      className="rounded-2xl border p-3"
+                      style={{ borderColor: summary.palette.border, background: summary.palette.bg }}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="inline-flex items-center gap-2">
+                          {summary.palette.icon ? (
+                            <img src={summary.palette.icon} alt="" className="h-4 w-4" aria-hidden="true" />
+                          ) : null}
+                          <span className="text-[11px] uppercase tracking-[0.24em] text-[#6b6257]">{summary.label}</span>
+                        </div>
+                        <span className="rounded bg-[#c7dff8] px-2 py-0.5 text-base font-semibold text-[#1e1b16]">
+                          {summary.hasData ? `${summary.pct}%` : "–"}
+                        </span>
+                      </div>
+                      <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-[#e7e1d6]">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: summary.barWidth,
+                            background: summary.palette.accent,
+                            opacity: summary.hasData ? 1 : 0.35,
+                          }}
+                        />
+                      </div>
+                      <div className="mt-1 flex items-center justify-between text-[11px] text-[#6b6257]">
+                        <span>Current {formatNumber(summary.currentTotal)}</span>
+                        <span>Target {formatNumber(summary.targetTotal)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 border-t border-[#efe7db] pt-3">
+                  <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Assessment</p>
+                  <p className="mt-1 text-sm font-semibold text-[#1e1b16]">
+                    Next due: {nextAssessmentDue ? formatDateUk(nextAssessmentDue) : "Not available"}
+                  </p>
+                </div>
+              </div>
+            </div>
           </Card>
 
           <Card
@@ -396,54 +416,6 @@ export default async function ProgressPage(props: PageProps) {
       </section>
 
       <section id="timeline" className="space-y-4">
-        <Card>
-          <h2 className="text-2xl">Score breakdown</h2>
-
-          <div className="mt-4 space-y-4">
-            {scoreBreakdown.map((summary) => (
-              <div
-                key={`pillar-summary-${summary.key}`}
-                className="rounded-3xl border p-4 sm:p-5"
-                style={{ borderColor: summary.palette.border, background: summary.palette.bg }}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div className="inline-flex items-center gap-2">
-                    {summary.palette.icon ? (
-                      <img src={summary.palette.icon} alt="" className="h-5 w-5" aria-hidden="true" />
-                    ) : null}
-                    <span className="text-sm uppercase tracking-[0.28em] text-[#6b6257]">{summary.label}</span>
-                  </div>
-                  <span className="rounded bg-[#c7dff8] px-2 py-1 text-2xl font-semibold text-[#1e1b16]">
-                    {summary.hasData ? `${summary.pct}%` : "–"}
-                  </span>
-                </div>
-                <div className="mt-3 h-3 overflow-hidden rounded-full bg-[#e7e1d6]">
-                  <div
-                    className="h-full rounded-full"
-                    style={{
-                      width: summary.barWidth,
-                      background: summary.palette.accent,
-                      opacity: summary.hasData ? 1 : 0.35,
-                    }}
-                  />
-                </div>
-                <div className="mt-2 flex items-center justify-between text-xs text-[#6b6257]">
-                  <span>Current {formatNumber(summary.currentTotal)}</span>
-                  <span>Target {formatNumber(summary.targetTotal)}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-[#efe7db] bg-white p-3">
-            <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Next assessment due</p>
-            <p className="mt-1 text-xl font-semibold text-[#1e1b16]">
-              {nextAssessmentDue ? formatDateUk(nextAssessmentDue) : "Not available"}
-            </p>
-            <p className="mt-1 text-xs text-[#6b6257]">Day after your 12-week programme ends</p>
-          </div>
-        </Card>
-
         {rows.length ? (
           <>
             <div
