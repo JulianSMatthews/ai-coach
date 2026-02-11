@@ -65,7 +65,9 @@ try:
 except Exception:
     _client = None
 
-DEFAULT_OKR_MODEL   = os.getenv("LLM_MODEL") or "gpt-5.1"
+# Assessment model selector for OKR generation.
+# Defaults to gpt-4o-mini when ASS_MODEL is not set.
+DEFAULT_OKR_MODEL   = os.getenv("ASS_MODEL") or "gpt-4o-mini"
 DEFAULT_OKR_QUARTER = os.getenv("OKR_QUARTER_LABEL", "This Quarter")
 
 
@@ -318,6 +320,47 @@ def _guess_concept_from_description(pillar_slug: str, desc: str) -> str | None:
             return key
     return None
 
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _ensure_kr_actionable(pillar_slug: str, kr: dict, concept_scores: dict[str, float] | None = None) -> dict:
+    """
+    Repair noisy model output so each KR is usable:
+    - guarantee non-empty description
+    - infer concept_key when possible
+    - avoid maintenance-only KRs where baseline == target
+    """
+    out = dict(kr or {})
+    concept_scores = concept_scores or {}
+    desc = (out.get("description") or "").strip()
+    ckey = _normalize_concept_key((out.get("concept_key") or "").split(".")[-1]) or _guess_concept_from_description(pillar_slug, desc)
+    if ckey and not out.get("concept_key"):
+        out["concept_key"] = ckey
+
+    guide = _GUIDE.get(pillar_slug, {})
+    meta = guide.get(ckey or "")
+    if not desc:
+        label = (meta or {}).get("label") or (ckey or "weekly health habit").replace("_", " ")
+        out["description"] = f"Improve {label} with one realistic habit step each week."
+
+    base = _safe_float(out.get("baseline_num"))
+    target = _safe_float(out.get("target_num"))
+    if base is not None and (target is None or abs(base - target) < 1e-6):
+        direction = (meta or {}).get("low", "increase")
+        delta = 1.0
+        proposed = max(0.0, base - delta) if direction == "reduce" else base + delta
+        if abs(proposed - base) < 1e-6:
+            proposed = base - 0.5 if direction == "reduce" else base + 0.5
+        out["target_num"] = proposed
+    return out
+
 def _enrich_kr_defaults(pillar_slug: str, kr: dict, concept_scores: dict[str, float], state_answers: dict[str, float]) -> dict:
     guide = _GUIDE.get(pillar_slug, {})
     concept_key = _normalize_concept_key((kr.get("concept_key") or "").split(".")[-1]) or _guess_concept_from_description(pillar_slug, kr.get("description", ""))
@@ -461,36 +504,42 @@ def _fallback_structured_okr(pillar_slug: str, pillar_score: float | None):
         "resilience": "Strengthen stress recovery and emotional regulation",
         "recovery":   "Upgrade sleep and day-to-day recovery routines",
     }.get(pillar_slug, "Improve key behaviours for this pillar")
+    fallback_by_pillar = {
+        "nutrition": [
+            {"kr_key": "fruit_veg_step", "description": "Increase fruit and vegetable portions with one extra serving daily.", "concept_key": "fruit_veg"},
+            {"kr_key": "hydration_step", "description": "Improve hydration consistency across the day.", "concept_key": "hydration"},
+            {"kr_key": "processed_food_step", "description": "Reduce processed food frequency with one whole-food swap per day.", "concept_key": "processed_food"},
+        ],
+        "training": [
+            {"kr_key": "cardio_step", "description": "Add one additional cardio session per week.", "concept_key": "cardio_frequency"},
+            {"kr_key": "strength_step", "description": "Add one additional strength session per week.", "concept_key": "strength_training"},
+            {"kr_key": "mobility_step", "description": "Add one mobility session per week.", "concept_key": "flexibility_mobility"},
+        ],
+        "resilience": [
+            {"kr_key": "stress_step", "description": "Practice one short stress-recovery technique daily.", "concept_key": "stress_recovery"},
+            {"kr_key": "emotion_step", "description": "Use one emotional regulation strategy on challenging days.", "concept_key": "emotional_regulation"},
+            {"kr_key": "connection_step", "description": "Schedule one positive connection action each week.", "concept_key": "positive_connection"},
+        ],
+        "recovery": [
+            {"kr_key": "sleep_duration_step", "description": "Increase average nightly sleep duration with an earlier wind-down.", "concept_key": "sleep_duration"},
+            {"kr_key": "bedtime_step", "description": "Keep a consistent bedtime on more nights each week.", "concept_key": "bedtime_consistency"},
+            {"kr_key": "quality_step", "description": "Improve sleep quality with one recovery habit before bed.", "concept_key": "sleep_quality"},
+        ],
+    }
     return {
         "objective": obj,
-        "krs": [
+        "krs": fallback_by_pillar.get(pillar_slug)
+        or [
             {
-                "kr_key": "KR1",
-                "description": "Complete 3 priority actions per week",
-                "metric_label": "Actions per week",
-                "unit": "actions/week",
+                "kr_key": "habit_step",
+                "description": "Take one practical habit step each week in this pillar.",
+                "concept_key": None,
+                "metric_label": "habit step",
+                "unit": "per week",
                 "baseline_num": None,
-                "target_num": 3,
+                "target_num": None,
                 "score": None,
-            },
-            {
-                "kr_key": "KR2",
-                "description": "Maintain ≥85% adherence to plan",
-                "metric_label": "Adherence",
-                "unit": "%",
-                "baseline_num": None,
-                "target_num": 85,
-                "score": None,
-            },
-            {
-                "kr_key": "KR3",
-                "description": f"Increase {pillar_slug} score by ~{delta}",
-                "metric_label": "Pillar score delta",
-                "unit": "points",
-                "baseline_num": None,
-                "target_num": delta,
-                "score": None,
-            },
+            }
         ],
     }
 
@@ -787,7 +836,11 @@ def make_structured_okr_llm(
                     "concept_key": None,
                 })
         data["krs"] = [
-            _enrich_kr_defaults(pillar_slug, kr, concept_scores or {}, state_answers)
+            _ensure_kr_actionable(
+                pillar_slug,
+                _enrich_kr_defaults(pillar_slug, kr, concept_scores or {}, state_answers),
+                concept_scores or {},
+            )
             for kr in normalized_krs
         ]
         _sanitize_kr_phrasing(pillar_slug, data)
@@ -808,7 +861,11 @@ def make_structured_okr_llm(
         # Store EXACTLY what we intended to send (even though we fell back)
         data["prompt_text"] = prompt_text
         data["krs"] = [
-            _enrich_kr_defaults(pillar_slug, kr, concept_scores or {}, state_answers)
+            _ensure_kr_actionable(
+                pillar_slug,
+                _enrich_kr_defaults(pillar_slug, kr, concept_scores or {}, state_answers),
+                concept_scores or {},
+            )
             for kr in data.get("krs", [])
         ]
         _sanitize_kr_phrasing(pillar_slug, data)
@@ -1244,6 +1301,8 @@ def generate_and_update_okrs_for_pillar(
             normalised_krs.append(_capitalise(kr))
     processed_krs: list = []
     for kr in normalised_krs:
+        if isinstance(kr, dict):
+            kr = _ensure_kr_actionable(pillar_key, kr, concept_scores or {})
         base = kr.get("baseline_num")
         target = kr.get("target_num")
         ckey = _normalize_concept_key((kr.get("concept_key") or "").split(".")[-1])
@@ -1256,11 +1315,24 @@ def generate_and_update_okrs_for_pillar(
         try:
             if ckey and ckey in (concept_scores or {}):
                 sc = concept_scores.get(ckey)
-                if sc is not None and float(sc) >= 99:
+                # For very high-score concepts, skip true maintenance only.
+                if sc is not None and float(sc) >= 99 and base is not None and target is not None and abs(float(base) - float(target)) < 1e-6:
                     continue
         except Exception:
             pass
         processed_krs.append(kr)
+    # Guardrail: never persist an empty KR set.
+    if not processed_krs:
+        recovered: list = []
+        for kr in normalised_krs:
+            if not isinstance(kr, dict):
+                continue
+            fixed = _ensure_kr_actionable(pillar_key, kr, concept_scores or {})
+            if (fixed.get("description") or "").strip():
+                recovered.append(fixed)
+        if recovered:
+            # Keep at least one actionable KR to avoid empty objective sets.
+            processed_krs = recovered[:1]
     okr_struct["krs"] = processed_krs
 
     # Build a nice display block (keeps your current UX)

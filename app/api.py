@@ -1096,7 +1096,7 @@ def _resolve_admin_target_phone(admin_user: User, args: list[str], *, allow_note
     return _norm_phone(admin_user.phone), args
 
 
-def _handle_admin_command(admin_user: User, text: str) -> bool:
+def _handle_admin_command(admin_user: User, text: str, *, source_phone: str | None = None) -> bool:
     """
     Handle very small set of admin commands sent over WhatsApp by superusers (ids 1 & 2).
     Commands:
@@ -1391,13 +1391,19 @@ def _handle_admin_command(admin_user: User, text: str) -> bool:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to send midweek: {e}")
             return True
         elif cmd in {"autoprompts", "coaching"}:
-            target_phone, toggle_parts = _resolve_admin_target_phone(admin_user, args)
+            default_target_phone = _norm_phone(source_phone or admin_user.phone)
+            if args and _looks_like_phone_token(args[0]):
+                target_phone = _norm_phone(args[0])
+                toggle_parts = args[1:]
+            else:
+                target_phone = default_target_phone
+                toggle_parts = args
             if not toggle_parts:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin coaching <phone> on|off|faston|reset")
+                send_whatsapp(to=admin_user.phone, text="Usage: admin coaching [phone] on|off|faston|reset")
                 return True
             toggle = toggle_parts[0].lower()
             if toggle not in {"on", "off", "faston", "reset"}:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin coaching <phone> on|off|faston|reset")
+                send_whatsapp(to=admin_user.phone, text="Usage: admin coaching [phone] on|off|faston|reset")
                 return True
             with SessionLocal() as s:
                 u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
@@ -1912,7 +1918,7 @@ async def twilio_inbound(request: Request):
         # Admin commands must never fall through to normal flow
         if body.lower().startswith("admin"):
             if _is_admin_user(user):
-                if _handle_admin_command(user, body):
+                if _handle_admin_command(user, body, source_phone=phone):
                     return Response(content="", media_type="text/plain", status_code=200)
                 return Response(content="", media_type="text/plain", status_code=200)
             else:
@@ -6586,6 +6592,39 @@ def admin_user_prompt_state(user_id: int, payload: dict, admin_user: User = Depe
         pref.value = state_raw
         s.commit()
     return {"user_id": user_id, "prompt_state_override": state_raw}
+
+@admin.post("/users/{user_id}/coaching")
+def admin_user_coaching(user_id: int, payload: dict, admin_user: User = Depends(_require_admin)):
+    """
+    Enable/disable coaching using scheduler logic (same behavior as admin WhatsApp command).
+    Body: { "enabled": true|false }
+    """
+    enabled_raw = payload.get("enabled")
+    if enabled_raw is None:
+        raise HTTPException(status_code=400, detail="enabled required")
+    if isinstance(enabled_raw, bool):
+        enabled = enabled_raw
+    elif isinstance(enabled_raw, (int, float)):
+        enabled = bool(int(enabled_raw))
+    else:
+        token = str(enabled_raw).strip().lower()
+        if token in {"1", "true", "yes", "on", "enable", "enabled"}:
+            enabled = True
+        elif token in {"0", "false", "no", "off", "disable", "disabled"}:
+            enabled = False
+        else:
+            raise HTTPException(status_code=400, detail="enabled must be boolean")
+
+    with SessionLocal() as s:
+        u = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not u:
+            raise HTTPException(status_code=404, detail="user not found")
+        _ensure_club_scope(admin_user, u)
+
+    ok = scheduler.enable_coaching(user_id) if enabled else scheduler.disable_coaching(user_id)
+    if not ok:
+        raise HTTPException(status_code=500, detail="failed to update coaching schedule")
+    return {"status": "enabled" if enabled else "disabled", "user_id": user_id}
 
 @admin.post("/users/{user_id}/start")
 def admin_start_user(user_id: int, admin_user: User = Depends(_require_admin)):

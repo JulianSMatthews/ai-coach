@@ -897,10 +897,10 @@ export async function setAdminUserCoaching(
   userId: number,
   enabled: boolean,
 ): Promise<Record<string, unknown>> {
-  return apiAdmin<Record<string, unknown>>(`/api/v1/users/${userId}/preferences`, {
+  return apiAdmin<Record<string, unknown>>(`/admin/users/${userId}/coaching`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ auto_prompts: enabled ? "on" : "off" }),
+    body: JSON.stringify({ enabled }),
   });
 }
 

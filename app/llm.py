@@ -11,8 +11,9 @@ api_key = os.getenv("OPENAI_API_KEY")
 if not api_key:
     raise ValueError("OPENAI_API_KEY not found in environment")
 
-# Default to gpt-5.1; can be overridden via LLM_MODEL env
-default_model = os.getenv("LLM_MODEL") or "gpt-5.1"
+# Assessment model selector (assessment Q&A + narratives).
+# Defaults to gpt-4o-mini when ASS_MODEL is not set.
+default_model = os.getenv("ASS_MODEL") or "gpt-4o-mini"
 _llm = ChatOpenAI(model=default_model, temperature=0, api_key=api_key)
 
 def compose_prompt(kind: str, context: dict) -> str:
