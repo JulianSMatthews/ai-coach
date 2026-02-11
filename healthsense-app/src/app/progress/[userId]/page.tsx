@@ -272,24 +272,21 @@ export default async function ProgressPage(props: PageProps) {
                   {journeyState}
                 </span>
               </div>
-              <div className="mt-4 rounded-xl border border-[#e7e1d6] bg-white p-3">
-                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                  <div className="rounded-lg border border-[#e7e1d6] bg-[#faf7f1] px-3 py-2">
+              <div className="mt-4 border-t border-[#e7e1d6] pt-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div className="px-1">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-[#8b8074]">This Week</p>
                     <p className="text-sm font-semibold text-[#1e1b16]">Day {weekDayLabel}</p>
                     <p className="text-xs text-[#6b6257]">{weekPct}% complete</p>
                   </div>
-                  <div
-                    className="rounded-lg border px-3 py-2"
-                    style={{ borderColor: activePillarPalette.border, background: activePillarPalette.bg }}
-                  >
+                  <div className="px-1">
                     <p className="text-[10px] uppercase tracking-[0.2em]" style={{ color: activePillarPalette.accent }}>
                       {activeBlock?.label || "Pillar"}
                     </p>
                     <p className="text-sm font-semibold text-[#1e1b16]">Week {pillarWeekLabel}</p>
                     <p className="text-xs text-[#6b6257]">{blockPct}% of pillar block</p>
                   </div>
-                  <div className="rounded-lg border border-[#e7e1d6] bg-[#faf7f1] px-3 py-2">
+                  <div className="px-1">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-[#8b8074]">12-Week Programme</p>
                     <p className="text-sm font-semibold text-[#1e1b16]">{programmePct}% complete</p>
                     <p className="text-xs text-[#6b6257]">Week {weekNo} of 12</p>
