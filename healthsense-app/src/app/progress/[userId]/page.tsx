@@ -216,19 +216,15 @@ export default async function ProgressPage(props: PageProps) {
       : null;
   const programmeDay = programmeDayRaw === null ? 0 : Math.max(0, Math.min(84, programmeDayRaw));
   const completedWeeks = Math.max(0, Math.min(12, Math.floor(programmeDay / 7)));
-  const journeyBlocks = programmeBlocks.map((block) => {
-    const palette = getPillarPalette(block.key);
-    const weekIcons = Array.from({ length: 3 }, (_, idx) => {
-      const weekNumber = block.weekStart + idx;
-      return {
-        weekNumber,
-        completed: weekNumber <= completedWeeks,
-      };
-    });
+  const journeyWeeks = Array.from({ length: 12 }, (_, idx) => {
+    const weekNumber = idx + 1;
+    const blockIndex = Math.min(programmeBlocks.length - 1, Math.floor(idx / 3));
+    const block = programmeBlocks[blockIndex];
+    const palette = getPillarPalette(block?.key);
     return {
-      ...block,
+      weekNumber,
+      completed: weekNumber <= completedWeeks,
       palette,
-      weekIcons,
     };
   });
   const focusHabitSteps: HabitStep[] = focusHabitGroups.flatMap((group) => group.steps || []);
@@ -269,11 +265,10 @@ export default async function ProgressPage(props: PageProps) {
             data-carousel-item
             style={{ scrollSnapStop: "always" }}
           >
-            <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Momentum</p>
+            <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{meta.anchor_label || "n/a"}</p>
             <h2 className="mt-1 text-xl">
               {`Your momentum, ${(user.first_name || user.display_name || "User").split(" ")[0]}`}
             </h2>
-            <p className="mt-1 text-xs text-[#6b6257]">{meta.anchor_label || "n/a"}</p>
             <div className="mt-4">
               <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Daily streak</p>
               <div className="mt-2 rounded-xl border border-[#efe7db] bg-white p-3">
@@ -299,42 +294,29 @@ export default async function ProgressPage(props: PageProps) {
                 </div>
               </div>
             </div>
-            <div className="mt-4 rounded-2xl border border-[#efe7db] bg-[#faf7f1] p-4">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Journey</p>
-              <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                {journeyBlocks.map((block) => (
-                  <div key={`journey-block-${block.key}`} className="rounded-xl border border-[#e7e1d6] bg-white p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-1.5">
-                        {block.palette.icon ? (
-                          <img src={block.palette.icon} alt="" className="h-4 w-4" aria-hidden="true" />
-                        ) : null}
-                        <p className="text-sm font-semibold text-[#1e1b16]">{block.label}</p>
-                      </div>
-                      <p className="text-[10px] uppercase tracking-[0.16em] text-[#8b8074]">{block.weeks}</p>
+            <div className="mt-4">
+              <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">12 week Journey</p>
+              <div className="mt-2 rounded-xl border border-[#efe7db] bg-white p-3">
+                <div className="grid grid-cols-6 gap-1 sm:grid-cols-12">
+                  {journeyWeeks.map((weekIcon) => (
+                    <div
+                      key={`journey-week-${weekIcon.weekNumber}`}
+                      className="rounded-lg border p-1"
+                      style={{
+                        borderColor: weekIcon.completed ? weekIcon.palette.border : "#e7e1d6",
+                        background: weekIcon.completed ? weekIcon.palette.bg : "#f8f6f2",
+                        opacity: weekIcon.completed ? 1 : 0.45,
+                      }}
+                      title={`Week ${weekIcon.weekNumber}`}
+                    >
+                      {weekIcon.palette.icon ? (
+                        <img src={weekIcon.palette.icon} alt="" className="mx-auto h-4 w-4" aria-hidden="true" />
+                      ) : (
+                        <span className="mx-auto block h-4 w-4 rounded-full bg-[#cbd5e1]" aria-hidden="true" />
+                      )}
                     </div>
-                    <div className="mt-2 flex items-center gap-1">
-                      {block.weekIcons.map((weekIcon) => (
-                        <div
-                          key={`journey-week-${block.key}-${weekIcon.weekNumber}`}
-                          className="rounded-lg border p-1"
-                          style={{
-                            borderColor: weekIcon.completed ? block.palette.border : "#e7e1d6",
-                            background: weekIcon.completed ? block.palette.bg : "#f8f6f2",
-                            opacity: weekIcon.completed ? 1 : 0.45,
-                          }}
-                          title={`Week ${weekIcon.weekNumber}`}
-                        >
-                          {block.palette.icon ? (
-                            <img src={block.palette.icon} alt="" className="h-4 w-4" aria-hidden="true" />
-                          ) : (
-                            <span className="block h-4 w-4 rounded-full bg-[#cbd5e1]" aria-hidden="true" />
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
             <div className="mt-4 rounded-2xl border border-[#efe7db] bg-white p-4">
