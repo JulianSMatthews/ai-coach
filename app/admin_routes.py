@@ -1,4 +1,6 @@
 # app/admin_routes.py
+from __future__ import annotations
+
 import html
 import os
 

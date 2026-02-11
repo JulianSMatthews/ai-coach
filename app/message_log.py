@@ -1,6 +1,7 @@
 # app/message_log.py
 # Canonical message logger — SINGLE SOURCE OF TRUTH.
 # All modules must import and call write_log from here.
+from __future__ import annotations
 
 from typing import Optional
 import json
