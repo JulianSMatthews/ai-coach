@@ -354,23 +354,14 @@ export default async function ProgressPage(props: PageProps) {
             <div className="mt-4">
               <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Key Results Progress</p>
               <div className="mt-2 rounded-xl border border-[#efe7db] bg-white p-3">
-                <div className="space-y-3">
-                  {pillarSummaries.map((summary) => (
-                    <div
-                      key={`pillar-summary-${summary.key}`}
-                      className="rounded-2xl border p-3"
-                      style={{ borderColor: summary.palette.border, background: summary.palette.bg }}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="inline-flex items-center gap-2">
-                          {summary.palette.icon ? (
-                            <img src={summary.palette.icon} alt="" className="h-4 w-4" aria-hidden="true" />
-                          ) : null}
-                          <span className="text-[11px] uppercase tracking-[0.24em] text-[#6b6257]">{summary.label}</span>
-                        </div>
-                        <span className="rounded bg-[#c7dff8] px-2 py-0.5 text-base font-semibold text-[#1e1b16]">
-                          {summary.hasData ? `${summary.pct}%` : "–"}
-                        </span>
+                <div className="space-y-2">
+                  {pillarSummaries.map((summary, idx) => (
+                    <div key={`pillar-summary-${summary.key}`} className={idx > 0 ? "border-t border-[#efe7db] pt-2" : ""}>
+                      <div className="flex items-center gap-2">
+                        {summary.palette.icon ? (
+                          <img src={summary.palette.icon} alt="" className="h-4 w-4" aria-hidden="true" />
+                        ) : null}
+                        <span className="text-[11px] uppercase tracking-[0.24em] text-[#6b6257]">{summary.label}</span>
                       </div>
                       <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-[#e7e1d6]">
                         <div
