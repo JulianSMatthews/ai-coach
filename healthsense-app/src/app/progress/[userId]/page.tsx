@@ -220,6 +220,22 @@ export default async function ProgressPage(props: PageProps) {
       palette,
     };
   });
+  const currentProgrammeWeek = Math.max(1, Math.min(12, Math.ceil(Math.max(programmeDay, 1) / 7)));
+  const currentBlockIndex = Math.min(programmeBlocks.length - 1, Math.floor((currentProgrammeWeek - 1) / 3));
+  const currentBlock = programmeBlocks[currentBlockIndex] || programmeBlocks[0];
+  const weekOfCurrentBlock = ((currentProgrammeWeek - 1) % 3) + 1;
+  let activeStreakDays = 0;
+  for (let offset = 0; offset < streakWindowDays; offset += 1) {
+    const iso = dayNumberToIso(anchorDayNumber - offset);
+    if (!streakActiveDateSet.has(iso)) break;
+    activeStreakDays += 1;
+  }
+  const firstName = (user.first_name || user.display_name || "User").split(" ")[0];
+  const dayLabel = activeStreakDays === 1 ? "day" : "days";
+  const momentumHeadline =
+    activeStreakDays > 0
+      ? `You are on week ${weekOfCurrentBlock} of 3 of ${currentBlock.label} and on a ${activeStreakDays} ${dayLabel} streak, keep it up ${firstName}!`
+      : `You are on week ${weekOfCurrentBlock} of 3 of ${currentBlock.label}. Start your streak today, ${firstName}.`;
 
   const normalizePillarKey = (value?: string) => {
     const key = (value || "").toLowerCase();
@@ -295,9 +311,7 @@ export default async function ProgressPage(props: PageProps) {
             style={{ scrollSnapStop: "always" }}
           >
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{meta.anchor_label || "n/a"}</p>
-            <h2 className="mt-1 text-xl">
-              {`Your momentum, ${(user.first_name || user.display_name || "User").split(" ")[0]}`}
-            </h2>
+            <h2 className="mt-1 text-sm leading-relaxed sm:text-base">{momentumHeadline}</h2>
 
             <div className="mt-4">
               <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Daily streak</p>
