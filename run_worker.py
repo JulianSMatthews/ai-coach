@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from __future__ import annotations
+# Render sync marker: force fresh worker build/deploy from latest commit.
 
 import os
 import time

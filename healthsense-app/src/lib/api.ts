@@ -1,3 +1,4 @@
+// Render sync marker: force fresh HealthSense app build/deploy from latest commit.
 type FetchOptions = RequestInit & { query?: Record<string, string | number | undefined> };
 
 export type AssessmentResponse = {
