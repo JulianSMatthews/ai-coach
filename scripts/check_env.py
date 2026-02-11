@@ -25,6 +25,7 @@ REQUIRED_API: List[Tuple[str, ...]] = [
 
 OPTIONAL_API = [
     "ASS_MODEL",
+    "LLM_MODEL",
     "COACH_NAME",
     "WEEKSTART_PODCAST_MAX_WORDS",
     "REPORTS_BASE_URL",

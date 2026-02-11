@@ -5185,17 +5185,21 @@ def _build_prompt_test_payload(
         if not run_llm:
             return None
         try:
-            from .llm import _llm as shared_llm, api_key as llm_api_key
-            from langchain_openai import ChatOpenAI
+            from . import llm as shared_llm
             t0 = time.perf_counter()
-            client = shared_llm
-            if model_override:
-                client = ChatOpenAI(model=model_override, temperature=0, api_key=llm_api_key)
+            resolved_model = shared_llm.resolve_model_name_for_touchpoint(
+                touchpoint=touchpoint,
+                model_override=model_override,
+            )
+            client = shared_llm.get_llm_client(
+                touchpoint=touchpoint,
+                model_override=model_override,
+            )
             resp = client.invoke(assembly.text)
             duration_ms = int((time.perf_counter() - t0) * 1000)
             content = (getattr(resp, "content", "") or "").strip()
             return {
-                "model": model_override or getattr(shared_llm, "model_name", None),
+                "model": resolved_model,
                 "duration_ms": duration_ms,
                 "content": content,
             }
@@ -5434,17 +5438,21 @@ def _build_content_prompt_payload(
             return result
         llm_result = None
         try:
-            from .llm import _llm as shared_llm, api_key as llm_api_key
-            from langchain_openai import ChatOpenAI
+            from . import llm as shared_llm
             t0 = time.perf_counter()
-            client = shared_llm
-            if model_override:
-                client = ChatOpenAI(model=model_override, temperature=0, api_key=llm_api_key)
+            resolved_model = shared_llm.resolve_model_name_for_touchpoint(
+                touchpoint=template.template_key,
+                model_override=model_override,
+            )
+            client = shared_llm.get_llm_client(
+                touchpoint=template.template_key,
+                model_override=model_override,
+            )
             resp = client.invoke(text)
             duration_ms = int((time.perf_counter() - t0) * 1000)
             content = (getattr(resp, "content", "") or "").strip()
             llm_result = {
-                "model": model_override or getattr(shared_llm, "model_name", None),
+                "model": resolved_model,
                 "duration_ms": duration_ms,
                 "content": content,
             }

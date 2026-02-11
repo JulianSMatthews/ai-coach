@@ -752,10 +752,10 @@ def test_prompt_template(
     except Exception:
         users_options = "<option disabled>(user lookup failed)</option>"
     try:
-        from .llm import _llm as shared_llm
-        default_model_name = getattr(shared_llm, "model_name", "default")
+        from . import llm as shared_llm
+        default_model_name = shared_llm.resolve_model_name_for_touchpoint(touchpoint)
     except Exception:
-        default_model_name = "default"
+        default_model_name = "gpt-5.1"
     form = """
     <h2>Test Prompt Template</h2>
     {version_label}
@@ -962,18 +962,22 @@ def test_prompt_template(
     if run_llm:
         try:
             # Lazy import to avoid cycles
-            from .llm import _llm as shared_llm, api_key as llm_api_key
-            from langchain_openai import ChatOpenAI
+            from . import llm as shared_llm
             import time
             t0 = time.perf_counter()
-            client = shared_llm
-            if model_override:
-                client = ChatOpenAI(model=model_override, temperature=0, api_key=llm_api_key)
+            resolved_model = shared_llm.resolve_model_name_for_touchpoint(
+                touchpoint=touchpoint,
+                model_override=model_override,
+            )
+            client = shared_llm.get_llm_client(
+                touchpoint=touchpoint,
+                model_override=model_override,
+            )
             resp = client.invoke(assembly.text)
             duration = time.perf_counter() - t0
             content = (getattr(resp, "content", "") or "").strip()
             llm_raw = content
-            llm_preview = f"<h3>LLM Response (took {duration:.2f}s, model={html.escape(model_override or getattr(shared_llm, 'model_name', ''))})</h3><pre>{html.escape(content[:1000])}</pre>"
+            llm_preview = f"<h3>LLM Response (took {duration:.2f}s, model={html.escape(resolved_model)})</h3><pre>{html.escape(content[:1000])}</pre>"
         except Exception as e:
             llm_preview = f"<h3>LLM Response</h3><pre>{html.escape(str(e))}</pre>"
 

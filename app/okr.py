@@ -66,8 +66,8 @@ except Exception:
     _client = None
 
 # Assessment model selector for OKR generation.
-# Defaults to gpt-4o-mini when ASS_MODEL is not set.
-DEFAULT_OKR_MODEL   = os.getenv("ASS_MODEL") or "gpt-4o-mini"
+# Defaults to gpt-5.1 when ASS_MODEL is not set.
+DEFAULT_OKR_MODEL   = os.getenv("ASS_MODEL") or "gpt-5.1"
 DEFAULT_OKR_QUARTER = os.getenv("OKR_QUARTER_LABEL", "This Quarter")
 
 

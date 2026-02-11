@@ -1577,12 +1577,10 @@ def run_llm_prompt(
                 f"used={int(used_tokens)} + est={est_tokens} > limit={limit_val}"
             )
             return ""
-    client = getattr(shared_llm, "_llm", None)
+    client = shared_llm.get_llm_client(touchpoint=touchpoint, model_override=model)
     content = ""
     duration = None
-    model_name = model
-    if client and not model_name:
-        model_name = getattr(client, "model", None) or getattr(client, "model_name", None)
+    model_name = shared_llm.resolve_model_name_for_touchpoint(touchpoint=touchpoint, model_override=model)
     if client:
         try:
             import time
@@ -1816,8 +1814,7 @@ def _log_llm_prompt_sync(
     debug = debug_enabled()
     debug_log = _prompt_log_debug_enabled()
     if model is None:
-        client = getattr(shared_llm, "_llm", None)
-        model = getattr(client, "model", None) or getattr(client, "model_name", None) if client else None
+        model = shared_llm.resolve_model_name_for_touchpoint(touchpoint=touchpoint)
     print(f"[prompts] logging LLM prompt touchpoint={touchpoint} user_id={user_id}")
     try:
         _ensure_llm_prompt_log_schema()

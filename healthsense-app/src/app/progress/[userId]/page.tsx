@@ -255,7 +255,7 @@ export default async function ProgressPage(props: PageProps) {
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Journey</p>
                   <p className="text-sm font-semibold text-[#1e1b16]">
-                    Week {weekNo}/12 · {activeBlock?.label || "Programme"} · {journeyState}
+                    Week {weekNo}/12
                   </p>
                 </div>
                 <span
@@ -269,34 +269,33 @@ export default async function ProgressPage(props: PageProps) {
                   {activePillarPalette.icon ? (
                     <img src={activePillarPalette.icon} alt="" className="h-4 w-4" aria-hidden="true" />
                   ) : null}
-                  {activeBlock?.label || "Programme"} in progress
+                  {journeyState}
                 </span>
               </div>
-              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div className="rounded-xl border border-[#e7e1d6] bg-white p-3">
-                  <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Week</p>
-                  <p className="mt-1 text-sm font-semibold text-[#1e1b16]">Day {weekDayLabel}</p>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#ece9e2]">
-                    <div className="h-full rounded-full bg-[#1d4ed8]" style={{ width: `${weekPct}%` }} />
-                  </div>
-                </div>
-                <div className="rounded-xl border border-[#e7e1d6] bg-white p-3">
-                  <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">{activeBlock?.label || "Pillar"}</p>
-                  <p className="mt-1 text-sm font-semibold text-[#1e1b16]">Week {pillarWeekLabel}</p>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#ece9e2]">
-                    <div className="h-full rounded-full" style={{ width: `${blockPct}%`, background: activePillarPalette.accent }} />
-                  </div>
-                </div>
-                <div className="rounded-xl border border-[#e7e1d6] bg-white p-3">
-                  <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">12-Week Programme</p>
-                  <p className="mt-1 text-sm font-semibold text-[#1e1b16]">{programmePct}% complete</p>
-                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#ece9e2]">
-                    <div className="h-full rounded-full bg-[#0f766e]" style={{ width: `${programmePct}%` }} />
-                  </div>
-                </div>
-              </div>
               <div className="mt-4 rounded-xl border border-[#e7e1d6] bg-white p-3">
-                <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Current Position In 12-Week Programme</p>
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                  <div className="rounded-lg border border-[#e7e1d6] bg-[#faf7f1] px-3 py-2">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-[#8b8074]">This Week</p>
+                    <p className="text-sm font-semibold text-[#1e1b16]">Day {weekDayLabel}</p>
+                    <p className="text-xs text-[#6b6257]">{weekPct}% complete</p>
+                  </div>
+                  <div
+                    className="rounded-lg border px-3 py-2"
+                    style={{ borderColor: activePillarPalette.border, background: activePillarPalette.bg }}
+                  >
+                    <p className="text-[10px] uppercase tracking-[0.2em]" style={{ color: activePillarPalette.accent }}>
+                      {activeBlock?.label || "Pillar"}
+                    </p>
+                    <p className="text-sm font-semibold text-[#1e1b16]">Week {pillarWeekLabel}</p>
+                    <p className="text-xs text-[#6b6257]">{blockPct}% of pillar block</p>
+                  </div>
+                  <div className="rounded-lg border border-[#e7e1d6] bg-[#faf7f1] px-3 py-2">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-[#8b8074]">12-Week Programme</p>
+                    <p className="text-sm font-semibold text-[#1e1b16]">{programmePct}% complete</p>
+                    <p className="text-xs text-[#6b6257]">Week {weekNo} of 12</p>
+                  </div>
+                </div>
+                <p className="mt-3 text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Current position on the programme</p>
                 <div className="relative mt-2">
                   <div className="flex gap-1">
                     {programmeBlocks.map((block, blockIdx) => {
@@ -309,13 +308,15 @@ export default async function ProgressPage(props: PageProps) {
                       );
                     })}
                   </div>
-                  <span
-                    className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 border-white shadow-sm"
-                    style={{
-                      left: `calc(${programmeMarkerPct}% - 6px)`,
-                      background: activePillarPalette.accent,
-                    }}
-                  />
+                  {programmeDay > 0 ? (
+                    <span
+                      className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 border-white shadow-sm"
+                      style={{
+                        left: `calc(${programmeMarkerPct}% - 6px)`,
+                        background: activePillarPalette.accent,
+                      }}
+                    />
+                  ) : null}
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {programmeBlocks.map((block, blockIdx) => {

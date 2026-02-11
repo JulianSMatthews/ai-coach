@@ -16,7 +16,9 @@ services:
       - key: OPENAI_API_KEY
         sync: false
       - key: ASS_MODEL
-        value: "gpt-4o-mini"
+        value: "gpt-5.1"
+      - key: LLM_MODEL
+        value: "gpt-5.1"
       - key: ADMIN_API_TOKEN
         sync: false
       - key: TWILIO_ACCOUNT_SID
