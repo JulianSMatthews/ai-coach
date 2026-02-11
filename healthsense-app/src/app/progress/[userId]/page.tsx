@@ -180,12 +180,15 @@ export default async function ProgressPage(props: PageProps) {
   const activePillarPalette = getPillarPalette(activeBlock?.key);
   const journeyState =
     programmeDayRaw === null
-      ? "Programme not started"
+      ? "Journey unavailable"
       : programmeDayRaw < 1
-        ? "Programme starts soon"
+        ? `${activeBlock?.label || "Programme"} starts soon`
         : programmeDayRaw > 84
           ? "Programme completed"
-          : `${activeBlock?.label || "Programme"} block in progress`;
+          : `${activeBlock?.label || "Programme"} in progress`;
+  const pillarWeekLabel = programmeDay > 0 ? `${weekInBlock}/3` : "0/3";
+  const weekDayLabel = programmeDay > 0 ? `${dayInWeek}/7` : "0/7";
+  const programmeMarkerPct = Math.max(0, Math.min(100, programmePct));
   const blockSegmentPct = (blockIndex: number) => {
     const segmentStart = blockIndex * 21 + 1;
     const segmentEnd = (blockIndex + 1) * 21;
@@ -199,8 +202,23 @@ export default async function ProgressPage(props: PageProps) {
     ["done", "complete", "completed"].includes(String(step.status || "").toLowerCase()),
   ).length;
   const focusHabitTotal = focusHabitSteps.length;
+  const focusHabitRemaining = Math.max(0, focusHabitTotal - focusHabitDone);
   const focusHabitPct = focusHabitTotal > 0 ? Math.round((focusHabitDone / focusHabitTotal) * 100) : 0;
   const focusXp = focusHabitDone * 10;
+  const statusOrder = ["on track", "at risk", "off track", "not started"];
+  const statusTotal = statusOrder.reduce((sum, key) => sum + Number(statusCounts[key] || 0), 0);
+  const statusSegments = statusOrder.map((label) => {
+    const count = Number(statusCounts[label] || 0);
+    const palette = statusPalette[label] || { bg: "#f5f2eb", border: "#e7e1d6", text: "#6b6257" };
+    return {
+      label,
+      count,
+      widthPct: statusTotal > 0 ? (count / statusTotal) * 100 : 0,
+      color: palette.text,
+      bg: palette.bg,
+      border: palette.border,
+    };
+  });
 
   return (
     <PageShell>
@@ -222,9 +240,8 @@ export default async function ProgressPage(props: PageProps) {
               {`Your momentum, ${(user.first_name || user.display_name || "User").split(" ")[0]}`}
             </h2>
             <p className="mt-1 text-xs text-[#6b6257]">{meta.anchor_label || "n/a"}</p>
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
               <StatPill label="Momentum score" value={`${momentumScore}%`} />
-              <StatPill label="Total KRs" value={totalKrs} bg="#f5f3ff" border="#ddd6fe" accent="#5b21b6" />
               <StatPill
                 label="Week"
                 value={weekWindow.is_current ? `${weekNo}/12` : "Inactive"}
@@ -237,7 +254,9 @@ export default async function ProgressPage(props: PageProps) {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Journey</p>
-                  <p className="text-sm font-semibold text-[#1e1b16]">{journeyState}</p>
+                  <p className="text-sm font-semibold text-[#1e1b16]">
+                    Week {weekNo}/12 · {activeBlock?.label || "Programme"} · {journeyState}
+                  </p>
                 </div>
                 <span
                   className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold"
@@ -250,73 +269,141 @@ export default async function ProgressPage(props: PageProps) {
                   {activePillarPalette.icon ? (
                     <img src={activePillarPalette.icon} alt="" className="h-4 w-4" aria-hidden="true" />
                   ) : null}
-                  {activeBlock?.label || "Programme"}
+                  {activeBlock?.label || "Programme"} in progress
                 </span>
               </div>
               <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
                 <div className="rounded-xl border border-[#e7e1d6] bg-white p-3">
-                  <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Week Progress</p>
-                  <p className="mt-1 text-sm font-semibold text-[#1e1b16]">Day {dayInWeek}/7</p>
+                  <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Week</p>
+                  <p className="mt-1 text-sm font-semibold text-[#1e1b16]">Day {weekDayLabel}</p>
                   <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#ece9e2]">
                     <div className="h-full rounded-full bg-[#1d4ed8]" style={{ width: `${weekPct}%` }} />
                   </div>
                 </div>
                 <div className="rounded-xl border border-[#e7e1d6] bg-white p-3">
-                  <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">{activeBlock?.label || "Pillar"} Block</p>
-                  <p className="mt-1 text-sm font-semibold text-[#1e1b16]">Week {weekInBlock}/3</p>
+                  <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">{activeBlock?.label || "Pillar"}</p>
+                  <p className="mt-1 text-sm font-semibold text-[#1e1b16]">Week {pillarWeekLabel}</p>
                   <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#ece9e2]">
                     <div className="h-full rounded-full" style={{ width: `${blockPct}%`, background: activePillarPalette.accent }} />
                   </div>
                 </div>
                 <div className="rounded-xl border border-[#e7e1d6] bg-white p-3">
                   <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">12-Week Programme</p>
-                  <p className="mt-1 text-sm font-semibold text-[#1e1b16]">Week {weekNo}/12</p>
+                  <p className="mt-1 text-sm font-semibold text-[#1e1b16]">{programmePct}% complete</p>
                   <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#ece9e2]">
                     <div className="h-full rounded-full bg-[#0f766e]" style={{ width: `${programmePct}%` }} />
                   </div>
                 </div>
               </div>
-              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-4">
-                {programmeBlocks.map((block, blockIdx) => {
-                  const palette = getPillarPalette(block.key);
-                  const isActive = blockIdx === activeBlockIndex && programmeDay > 0 && programmeDay < 84;
-                  const segmentPct = blockSegmentPct(blockIdx);
-                  return (
-                    <div
-                      key={block.key}
-                      className="rounded-xl border p-2"
-                      style={{
-                        borderColor: isActive ? palette.border : "#e7e1d6",
-                        background: isActive ? palette.bg : "#fff",
-                      }}
-                    >
-                      <div className="flex items-center gap-2">
-                        {palette.icon ? <img src={palette.icon} alt="" className="h-4 w-4" aria-hidden="true" /> : null}
-                        <p className="text-[11px] font-semibold text-[#1e1b16]">{block.label}</p>
+              <div className="mt-4 rounded-xl border border-[#e7e1d6] bg-white p-3">
+                <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Current Position In 12-Week Programme</p>
+                <div className="relative mt-2">
+                  <div className="flex gap-1">
+                    {programmeBlocks.map((block, blockIdx) => {
+                      const palette = getPillarPalette(block.key);
+                      const segmentPct = blockSegmentPct(blockIdx);
+                      return (
+                        <div key={`segment-${block.key}`} className="h-2 flex-1 overflow-hidden rounded-full bg-[#ece9e2]">
+                          <div className="h-full rounded-full" style={{ width: `${segmentPct}%`, background: palette.accent }} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <span
+                    className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full border-2 border-white shadow-sm"
+                    style={{
+                      left: `calc(${programmeMarkerPct}% - 6px)`,
+                      background: activePillarPalette.accent,
+                    }}
+                  />
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {programmeBlocks.map((block, blockIdx) => {
+                    const palette = getPillarPalette(block.key);
+                    const isActive = blockIdx === activeBlockIndex && programmeDay > 0 && programmeDay <= 84;
+                    return (
+                      <div
+                        key={`legend-${block.key}`}
+                        className="rounded-lg border px-2 py-1"
+                        style={{
+                          borderColor: isActive ? palette.border : "#e7e1d6",
+                          background: isActive ? palette.bg : "#fff",
+                        }}
+                      >
+                        <div className="flex items-center gap-1.5">
+                          {palette.icon ? <img src={palette.icon} alt="" className="h-3.5 w-3.5" aria-hidden="true" /> : null}
+                          <p className="text-[11px] font-semibold text-[#1e1b16]">{block.label}</p>
+                        </div>
+                        <p className="text-[10px] uppercase tracking-[0.16em] text-[#8b8074]">{block.weeks}</p>
                       </div>
-                      <p className="mt-0.5 text-[10px] uppercase tracking-[0.18em] text-[#8b8074]">{block.weeks}</p>
-                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#ece9e2]">
-                        <div className="h-full rounded-full" style={{ width: `${segmentPct}%`, background: palette.accent }} />
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-3">
-              {Object.entries(data.status_counts || {}).map(([label, value]) => {
-                const palette = statusPalette[label] || { bg: "#f5f2eb", border: "#e7e1d6", text: "#6b6257" };
-                return (
-                  <div
-                    key={label}
-                    className="rounded-2xl border px-4 py-3"
-                    style={{ background: palette.bg, borderColor: palette.border, color: palette.text }}
-                  >
-                    <p className="text-xs uppercase tracking-[0.2em]">{label}</p>
-                    <p className="text-2xl font-semibold">{value as number}</p>
+            <div className="mt-4 rounded-2xl border border-[#efe7db] bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Momentum Console</p>
+                <div className="flex items-center gap-2">
+                  <span className="rounded-full bg-[#f5f3ff] px-3 py-1 text-xs font-semibold text-[#5b21b6]">
+                    Total KRs: {totalKrs}
+                  </span>
+                  <span className="rounded-full bg-[#ecfdf3] px-3 py-1 text-xs font-semibold text-[#027a48]">
+                    Focus XP: {focusXp}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <div className="rounded-xl border border-[#e7e1d6] bg-[#faf7f1] p-3">
+                  <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">KR Status Distribution</p>
+                  <div className="mt-2 h-3 overflow-hidden rounded-full bg-[#ece9e2]">
+                    {statusSegments.map((segment) =>
+                      segment.count > 0 ? (
+                        <div
+                          key={segment.label}
+                          className="h-full float-left"
+                          style={{ width: `${segment.widthPct}%`, background: segment.color }}
+                        />
+                      ) : null,
+                    )}
                   </div>
-                );
-              })}
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                    {statusSegments.map((segment) => (
+                      <div
+                        key={`status-${segment.label}`}
+                        className="rounded-lg border px-2 py-1"
+                        style={{ borderColor: segment.border, background: segment.bg, color: segment.color }}
+                      >
+                        <p className="uppercase tracking-[0.16em]">{segment.label}</p>
+                        <p className="text-base font-semibold">{segment.count}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className="rounded-xl border border-[#e7e1d6] bg-[#faf7f1] p-3">
+                  <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Habit Step Execution</p>
+                  <div className="mt-2 grid grid-cols-3 gap-2 text-center text-xs">
+                    <div className="rounded-lg border border-[#e7e1d6] bg-white px-2 py-2">
+                      <p className="uppercase tracking-[0.15em] text-[#8b8074]">Done</p>
+                      <p className="text-base font-semibold text-[#027a48]">{focusHabitDone}</p>
+                    </div>
+                    <div className="rounded-lg border border-[#e7e1d6] bg-white px-2 py-2">
+                      <p className="uppercase tracking-[0.15em] text-[#8b8074]">To go</p>
+                      <p className="text-base font-semibold text-[#b42318]">{focusHabitRemaining}</p>
+                    </div>
+                    <div className="rounded-lg border border-[#e7e1d6] bg-white px-2 py-2">
+                      <p className="uppercase tracking-[0.15em] text-[#8b8074]">Completion</p>
+                      <p className="text-base font-semibold text-[#0f766e]">{focusHabitPct}%</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#ece9e2]">
+                    <div className="h-full rounded-full bg-[#0ea5a4]" style={{ width: `${focusHabitPct}%` }} />
+                  </div>
+                  <p className="mt-2 text-xs text-[#6b6257]">
+                    {focusHabitDone}/{focusHabitTotal || 0} focus habit steps completed.
+                  </p>
+                </div>
+              </div>
             </div>
           </Card>
 
@@ -327,25 +414,6 @@ export default async function ProgressPage(props: PageProps) {
           >
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Focus</p>
             <h2 className="mt-1 text-xl">Key results</h2>
-            <div className="mt-4 rounded-2xl border border-[#efe7db] bg-[#faf7f1] p-3">
-              <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                <div className="rounded-xl border border-[#e7e1d6] bg-white px-2 py-2">
-                  <p className="uppercase tracking-[0.2em] text-[#8b8074]">Completed</p>
-                  <p className="mt-1 text-base font-semibold text-[#1e1b16]">{focusHabitDone}/{focusHabitTotal || 0}</p>
-                </div>
-                <div className="rounded-xl border border-[#e7e1d6] bg-white px-2 py-2">
-                  <p className="uppercase tracking-[0.2em] text-[#8b8074]">Focus XP</p>
-                  <p className="mt-1 text-base font-semibold text-[#1e1b16]">{focusXp}</p>
-                </div>
-                <div className="rounded-xl border border-[#e7e1d6] bg-white px-2 py-2">
-                  <p className="uppercase tracking-[0.2em] text-[#8b8074]">Completion</p>
-                  <p className="mt-1 text-base font-semibold text-[#1e1b16]">{focusHabitPct}%</p>
-                </div>
-              </div>
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#e4e7ec]">
-                <div className="h-full rounded-full bg-[#0ea5a4]" style={{ width: `${focusHabitPct}%` }} />
-              </div>
-            </div>
             {focusHabitGroups.length ? (
               <div className="mt-4 space-y-3">
                 {focusHabitGroups.map((group) => (
