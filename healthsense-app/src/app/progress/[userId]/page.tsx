@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import { getProgress, getUserStatus } from "@/lib/api";
 import { getPillarPalette } from "@/lib/pillars";
-import { Badge, Card, PageShell, StatPill } from "@/components/ui";
+import { Badge, Card, PageShell } from "@/components/ui";
 import CarouselDots from "@/components/CarouselDots";
 import TextScale from "@/components/TextScale";
 import AppNav from "@/components/AppNav";
@@ -172,8 +172,6 @@ export default async function ProgressPage(props: PageProps) {
   const dayNumberToIso = (dayNumber: number) => {
     return new Date(dayNumber * MS_PER_DAY).toISOString().slice(0, 10);
   };
-  const dailyStreak = Math.max(0, Number(data.engagement?.daily_streak || 0));
-  const streakValue = `${dailyStreak} ${dailyStreak === 1 ? "day" : "days"}`;
   const streakWindowDays = Math.min(14, Math.max(1, Number(data.engagement?.recent_window_days || 14)));
   const streakActiveDateSet = new Set(
     (data.engagement?.recent_active_dates || []).filter((value): value is string => typeof value === "string" && value.length >= 10),
@@ -202,7 +200,7 @@ export default async function ProgressPage(props: PageProps) {
     return programmeBlocks[blockIndex]?.key || fallbackPillarKey;
   };
   const streakDays = Array.from({ length: streakWindowDays }, (_, idx) => {
-    const dayNumber = anchorDayNumber - (streakWindowDays - 1 - idx);
+    const dayNumber = anchorDayNumber - idx;
     const iso = dayNumberToIso(dayNumber);
     const pillarKey = pillarKeyForDay(dayNumber);
     return {
@@ -283,14 +281,7 @@ export default async function ProgressPage(props: PageProps) {
             </h2>
             <p className="mt-1 text-xs text-[#6b6257]">{meta.anchor_label || "n/a"}</p>
             <div className="mt-4">
-              <StatPill
-                label="Daily streak"
-                value={streakValue}
-                bg="#fff7ed"
-                border="#fed7aa"
-                accent="#c2410c"
-              />
-              <div className="mt-3 rounded-xl border border-[#efe7db] bg-white p-3">
+              <div className="rounded-xl border border-[#efe7db] bg-white p-3">
                 <div className="grid grid-cols-7 gap-1 sm:grid-cols-14">
                   {streakDays.map((day) => (
                     <div
