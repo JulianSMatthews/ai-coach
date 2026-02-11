@@ -159,10 +159,59 @@ export default async function ProgressPage(props: PageProps) {
   const offTrackCount = Number(statusCounts["off track"] || 0);
   const notStartedCount = Number(statusCounts["not started"] || 0);
   const totalKrs = Number(data.total_krs || onTrackCount + atRiskCount + offTrackCount + notStartedCount);
-  const momentumScore = totalKrs > 0 ? Math.round(((onTrackCount + atRiskCount * 0.5) / totalKrs) * 100) : 0;
-  const weekWindow = data.week_window || {};
-  const anchorDate = meta.anchor_date ? new Date(meta.anchor_date) : new Date();
   const MS_PER_DAY = 24 * 60 * 60 * 1000;
+  const isoDateToDayNumber = (value?: string | null) => {
+    if (!value) return null;
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+    if (!m) return null;
+    const y = Number(m[1]);
+    const mo = Number(m[2]);
+    const d = Number(m[3]);
+    return Math.floor(Date.UTC(y, mo - 1, d) / MS_PER_DAY);
+  };
+  const dayNumberToIso = (dayNumber: number) => {
+    return new Date(dayNumber * MS_PER_DAY).toISOString().slice(0, 10);
+  };
+  const dailyStreak = Math.max(0, Number(data.engagement?.daily_streak || 0));
+  const streakValue = `${dailyStreak} ${dailyStreak === 1 ? "day" : "days"}`;
+  const streakWindowDays = Math.min(14, Math.max(1, Number(data.engagement?.recent_window_days || 14)));
+  const streakActiveDateSet = new Set(
+    (data.engagement?.recent_active_dates || []).filter((value): value is string => typeof value === "string" && value.length >= 10),
+  );
+  const anchorDateKey =
+    typeof meta.anchor_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(meta.anchor_date)
+      ? meta.anchor_date
+      : new Date().toISOString().slice(0, 10);
+  const anchorDayNumber = isoDateToDayNumber(anchorDateKey) ?? Math.floor(Date.now() / MS_PER_DAY);
+  const programmeStartDayNumber =
+    programmeStart && !Number.isNaN(programmeStart.getTime())
+      ? Math.floor(
+          Date.UTC(
+            programmeStart.getUTCFullYear(),
+            programmeStart.getUTCMonth(),
+            programmeStart.getUTCDate(),
+          ) / MS_PER_DAY,
+        )
+      : null;
+  const fallbackPillarKey = programmeBlocks[0]?.key || "nutrition";
+  const pillarKeyForDay = (dayNumber: number) => {
+    if (programmeStartDayNumber === null) return fallbackPillarKey;
+    const dayOffset = dayNumber - programmeStartDayNumber;
+    if (dayOffset < 0 || dayOffset >= 84) return fallbackPillarKey;
+    const blockIndex = Math.min(3, Math.max(0, Math.floor(dayOffset / 21)));
+    return programmeBlocks[blockIndex]?.key || fallbackPillarKey;
+  };
+  const streakDays = Array.from({ length: streakWindowDays }, (_, idx) => {
+    const dayNumber = anchorDayNumber - (streakWindowDays - 1 - idx);
+    const iso = dayNumberToIso(dayNumber);
+    const pillarKey = pillarKeyForDay(dayNumber);
+    return {
+      iso,
+      active: streakActiveDateSet.has(iso),
+      pillar: getPillarPalette(pillarKey),
+    };
+  });
+  const anchorDate = meta.anchor_date ? new Date(meta.anchor_date) : new Date();
   const programmeDayRaw =
     programmeStart && !Number.isNaN(programmeStart.getTime())
       ? Math.floor((anchorDate.getTime() - programmeStart.getTime()) / MS_PER_DAY) + 1
@@ -233,15 +282,36 @@ export default async function ProgressPage(props: PageProps) {
               {`Your momentum, ${(user.first_name || user.display_name || "User").split(" ")[0]}`}
             </h2>
             <p className="mt-1 text-xs text-[#6b6257]">{meta.anchor_label || "n/a"}</p>
-            <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <StatPill label="Momentum score" value={`${momentumScore}%`} />
+            <div className="mt-4">
               <StatPill
-                label="Week"
-                value={weekWindow.is_current ? `${weekNo}/12` : "Inactive"}
-                bg="#eff6ff"
-                border="#bfdbfe"
-                accent="#1d4ed8"
+                label="Daily streak"
+                value={streakValue}
+                bg="#fff7ed"
+                border="#fed7aa"
+                accent="#c2410c"
               />
+              <div className="mt-3 rounded-xl border border-[#efe7db] bg-white p-3">
+                <div className="grid grid-cols-7 gap-1 sm:grid-cols-14">
+                  {streakDays.map((day) => (
+                    <div
+                      key={day.iso}
+                      className="rounded-lg border p-1"
+                      style={{
+                        borderColor: day.active ? day.pillar.border : "#e7e1d6",
+                        background: day.active ? day.pillar.bg : "#f8f6f2",
+                        opacity: day.active ? 1 : 0.45,
+                      }}
+                      title={day.iso}
+                    >
+                      {day.pillar.icon ? (
+                        <img src={day.pillar.icon} alt="" className="mx-auto h-4 w-4" aria-hidden="true" />
+                      ) : (
+                        <span className="mx-auto block h-4 w-4 rounded-full bg-[#cbd5e1]" aria-hidden="true" />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
             <div className="mt-4 rounded-2xl border border-[#efe7db] bg-[#faf7f1] p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">

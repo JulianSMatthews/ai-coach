@@ -42,6 +42,7 @@ from .models import (
     PromptTemplate,
     PromptSettings,
     LLMPromptLog,
+    MessageLog,
 )
 from . import llm as shared_llm
 from .prompts import (
@@ -4012,10 +4013,107 @@ def generate_progress_report_html(user_id: int, anchor_date: date | None = None)
     return out_path
 
 
+def _as_utc_date(value: Any) -> date | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        dt_val = value
+        if dt_val.tzinfo is not None:
+            try:
+                dt_val = dt_val.astimezone(timezone.utc)
+            except Exception:
+                pass
+        return dt_val.date()
+    if isinstance(value, date):
+        return value
+    return None
+
+
+def _daily_inbound_streak(session, user_id: int, anchor_day: date) -> Dict[str, Any]:
+    """
+    Consecutive-day streak from user inbound interactions in message_logs,
+    anchored to anchor_day. If there is no interaction on anchor_day, streak is 0.
+    """
+    anchor_end = datetime.combine(anchor_day + timedelta(days=1), datetime.min.time())
+    try:
+        rows = (
+            session.query(MessageLog.created_at)
+            .filter(
+                MessageLog.user_id == user_id,
+                MessageLog.direction == "inbound",
+                MessageLog.created_at < anchor_end,
+            )
+            .order_by(MessageLog.created_at.desc())
+            .limit(5000)
+            .all()
+        )
+    except Exception:
+        return {
+            "daily_streak": 0,
+            "active_today": False,
+            "last_interaction_date": None,
+            "recent_window_days": 14,
+            "recent_active_dates": [],
+            "source": "message_logs_inbound",
+        }
+
+    day_set: set[date] = set()
+    for row in rows:
+        ts = None
+        try:
+            ts = row[0]
+        except Exception:
+            ts = getattr(row, "created_at", None)
+        day = _as_utc_date(ts)
+        if day:
+            day_set.add(day)
+
+    if not day_set:
+        return {
+            "daily_streak": 0,
+            "active_today": False,
+            "last_interaction_date": None,
+            "recent_window_days": 14,
+            "recent_active_dates": [],
+            "source": "message_logs_inbound",
+        }
+
+    streak = 0
+    cursor = anchor_day
+    while cursor in day_set:
+        streak += 1
+        cursor = cursor - timedelta(days=1)
+        if streak >= 3650:
+            break
+
+    recent_window_days = 14
+    recent_start = anchor_day - timedelta(days=recent_window_days - 1)
+    recent_active_dates = sorted(
+        d.isoformat() for d in day_set if recent_start <= d <= anchor_day
+    )
+
+    return {
+        "daily_streak": streak,
+        "active_today": anchor_day in day_set,
+        "last_interaction_date": max(day_set).isoformat(),
+        "recent_window_days": recent_window_days,
+        "recent_active_dates": recent_active_dates,
+        "source": "message_logs_inbound",
+    }
+
+
 def build_progress_report_data(user_id: int, anchor_date: date | None = None) -> Dict[str, Any]:
     anchor_today = anchor_date or datetime.utcnow().date()
     anchor_label = anchor_today.strftime("%d %b %Y")
     programme_blocks: dict[str, dict[str, Any]] = {}
+    engagement: Dict[str, Any] = {
+        "daily_streak": 0,
+        "active_today": False,
+        "last_interaction_date": None,
+        "recent_window_days": 14,
+        "recent_active_dates": [],
+        "source": "message_logs_inbound",
+    }
 
     with SessionLocal() as s:
         user = s.query(User).filter(User.id == user_id).one_or_none()
@@ -4052,6 +4150,7 @@ def build_progress_report_data(user_id: int, anchor_date: date | None = None) ->
             focus_kr_ids = [
                 row.kr_id for row in s.query(WeeklyFocusKR).filter(WeeklyFocusKR.weekly_focus_id == wf.id).all()
             ]
+        engagement = _daily_inbound_streak(s, user.id, anchor_today)
         prof = (
             s.query(PsychProfile)
             .filter(PsychProfile.user_id == user.id)
@@ -4143,6 +4242,7 @@ def build_progress_report_data(user_id: int, anchor_date: date | None = None) ->
             "kr_ids": focus_kr_ids,
             "kr_titles": focus_titles,
         },
+        "engagement": engagement,
         "week_window": {
             "start": getattr(wf_current, "starts_on", None).isoformat() if getattr(wf_current, "starts_on", None) else None,
             "end": getattr(wf_current, "ends_on", None).isoformat() if getattr(wf_current, "ends_on", None) else None,

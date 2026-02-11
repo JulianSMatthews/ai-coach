@@ -50,6 +50,14 @@ export type ProgressResponse = {
   meta?: { anchor_date?: string; anchor_label?: string; reported_at?: string };
   status_counts?: Record<string, number>;
   total_krs?: number;
+  engagement?: {
+    daily_streak?: number;
+    active_today?: boolean;
+    last_interaction_date?: string | null;
+    recent_window_days?: number;
+    recent_active_dates?: string[];
+    source?: string;
+  };
   focus?: { kr_ids?: number[]; kr_titles?: string[] };
   week_window?: { start?: string | null; end?: string | null; is_current?: boolean };
   readiness?: { score?: number; label?: string; note?: string } | null;
