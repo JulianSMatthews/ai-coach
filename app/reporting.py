@@ -3707,9 +3707,13 @@ def _kr_status(
 ) -> tuple[str, float | None]:
     if future_block:
         return "not started", None
+    # During an active block, keep KRs on track by default.
+    # Risk/off-track status is evaluated only once the block has finished.
+    if not finished_block:
+        return "on track", _kr_progress_ratio(actual, target, baseline)
     ratio = _kr_progress_ratio(actual, target, baseline)
     if ratio is None:
-        return ("off track" if finished_block else "not started"), None
+        return "off track", None
     if ratio >= 0.9:
         return "on track", ratio
     if ratio >= 0.5:

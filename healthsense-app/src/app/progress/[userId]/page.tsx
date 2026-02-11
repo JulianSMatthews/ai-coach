@@ -134,8 +134,11 @@ export default async function ProgressPage(props: PageProps) {
       return { status: "not started", pct: null };
     }
     const ratio = progressRatio(actual, target, baseline);
+    if (!finished) {
+      return { status: "on track", pct: ratio };
+    }
     if (ratio === null) {
-      return { status: finished ? "off track" : "not started", pct: null };
+      return { status: "off track", pct: null };
     }
     if (ratio >= 0.9) return { status: "on track", pct: ratio };
     if (ratio >= 0.5) return { status: "at risk", pct: ratio };

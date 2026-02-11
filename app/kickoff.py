@@ -347,27 +347,43 @@ def send_kickoff_podcast_message(
     """
     quick_replies = ["All good", "Need help"]
     cta = "Please always respond by tapping a button (this keeps our support going)."
+    name = (user.first_name or "").strip().title() or "there"
+    intro = f"{_kickoff_tag()} Hi {name}, {coach_name} here. This is your 12-week programme kickoff podcast—give it a listen."
     if audio_url:
         print(f"[kickoff] sending kickoff message for user={user.id} url={audio_url}")
-        caption = (
-            f"{_kickoff_tag()} Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. "
-            "This is your 12-week programme kickoff podcast—give it a listen."
-        )
-        message = caption
-        send_whatsapp_media(
-            to=user.phone,
-            media_url=audio_url,
-            caption=caption,
-        )
-        _send_kickoff(
-            to=user.phone,
-            text=cta,
-            quick_replies=quick_replies,
-        )
+        message = f"{intro}\n\n{cta}"
+        media_sent = False
+        try:
+            # For audio media, clients may not reliably render captions.
+            # Send companion text separately so the context is always visible.
+            send_whatsapp_media(
+                to=user.phone,
+                media_url=audio_url,
+                caption=None,
+            )
+            media_sent = True
+        except Exception:
+            media_sent = False
+        if not media_sent:
+            _send_kickoff(
+                to=user.phone,
+                text=f"{intro} {audio_url}",
+            )
+        try:
+            _send_kickoff(
+                to=user.phone,
+                text=message,
+                quick_replies=quick_replies,
+            )
+        except Exception:
+            _send_kickoff(
+                to=user.phone,
+                text=message,
+            )
     else:
         print(f"[kickoff] no audio_url for user={user.id}; sending fallback text")
         message = (
-            f"{_kickoff_tag()} Hi { (user.first_name or '').strip().title() or 'there' }, {coach_name} here. "
+            f"{_kickoff_tag()} Hi {name}, {coach_name} here. "
             "This is your 12-week programme kickoff. "
             "I couldn’t generate your kickoff audio just now, but the plan is ready—let’s proceed.\n\n"
             f"{cta}"
