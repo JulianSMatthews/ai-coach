@@ -71,10 +71,10 @@ export default async function ProgressPage(props: PageProps) {
     "not started": { bg: "#eff6ff", text: "#1d4ed8" },
   };
   const programmeBlocks = [
-    { label: "Nutrition", weeks: "Weeks 1–3", key: "nutrition" },
-    { label: "Recovery", weeks: "Weeks 4–6", key: "recovery" },
-    { label: "Training", weeks: "Weeks 7–9", key: "training" },
-    { label: "Resilience", weeks: "Weeks 10–12", key: "resilience" },
+    { label: "Nutrition", weeks: "Weeks 1–3", key: "nutrition", weekStart: 1, weekEnd: 3 },
+    { label: "Recovery", weeks: "Weeks 4–6", key: "recovery", weekStart: 4, weekEnd: 6 },
+    { label: "Training", weeks: "Weeks 7–9", key: "training", weekStart: 7, weekEnd: 9 },
+    { label: "Resilience", weeks: "Weeks 10–12", key: "resilience", weekStart: 10, weekEnd: 12 },
   ];
   const rowStarts = rows
     .map((row) => (row.cycle_start ? new Date(row.cycle_start) : null))
@@ -161,12 +161,39 @@ export default async function ProgressPage(props: PageProps) {
   const totalKrs = Number(data.total_krs || onTrackCount + atRiskCount + offTrackCount + notStartedCount);
   const momentumScore = totalKrs > 0 ? Math.round(((onTrackCount + atRiskCount * 0.5) / totalKrs) * 100) : 0;
   const weekWindow = data.week_window || {};
-  const weekEnd = weekWindow.end ? new Date(weekWindow.end) : null;
-  const now = new Date();
-  const weekDaysLeft =
-    weekEnd && !Number.isNaN(weekEnd.getTime())
-      ? Math.max(0, Math.ceil((weekEnd.getTime() - now.getTime()) / (24 * 60 * 60 * 1000)))
+  const anchorDate = meta.anchor_date ? new Date(meta.anchor_date) : new Date();
+  const MS_PER_DAY = 24 * 60 * 60 * 1000;
+  const programmeDayRaw =
+    programmeStart && !Number.isNaN(programmeStart.getTime())
+      ? Math.floor((anchorDate.getTime() - programmeStart.getTime()) / MS_PER_DAY) + 1
       : null;
+  const programmeDay = programmeDayRaw === null ? 0 : Math.max(0, Math.min(84, programmeDayRaw));
+  const weekNo = programmeDay > 0 ? Math.min(12, Math.floor((programmeDay - 1) / 7) + 1) : 1;
+  const dayInWeek = programmeDay > 0 ? ((programmeDay - 1) % 7) + 1 : 0;
+  const activeBlockIndex = Math.min(3, Math.max(0, Math.floor((weekNo - 1) / 3)));
+  const activeBlock = programmeBlocks[activeBlockIndex];
+  const weekInBlock = ((weekNo - 1) % 3) + 1;
+  const dayInBlock = programmeDay > 0 ? (weekInBlock - 1) * 7 + dayInWeek : 0;
+  const weekPct = Math.round((dayInWeek / 7) * 100);
+  const blockPct = Math.round((dayInBlock / 21) * 100);
+  const programmePct = Math.round((programmeDay / 84) * 100);
+  const activePillarPalette = getPillarPalette(activeBlock?.key);
+  const journeyState =
+    programmeDayRaw === null
+      ? "Programme not started"
+      : programmeDayRaw < 1
+        ? "Programme starts soon"
+        : programmeDayRaw > 84
+          ? "Programme completed"
+          : `${activeBlock?.label || "Programme"} block in progress`;
+  const blockSegmentPct = (blockIndex: number) => {
+    const segmentStart = blockIndex * 21 + 1;
+    const segmentEnd = (blockIndex + 1) * 21;
+    if (programmeDay <= 0) return 0;
+    if (programmeDay >= segmentEnd) return 100;
+    if (programmeDay < segmentStart) return 0;
+    return Math.round(((programmeDay - segmentStart + 1) / 21) * 100);
+  };
   const focusHabitSteps: HabitStep[] = focusHabitGroups.flatMap((group) => group.steps || []);
   const focusHabitDone = focusHabitSteps.filter((step) =>
     ["done", "complete", "completed"].includes(String(step.status || "").toLowerCase()),
@@ -199,12 +226,82 @@ export default async function ProgressPage(props: PageProps) {
               <StatPill label="Momentum score" value={`${momentumScore}%`} />
               <StatPill label="Total KRs" value={totalKrs} bg="#f5f3ff" border="#ddd6fe" accent="#5b21b6" />
               <StatPill
-                label="Week window"
-                value={weekWindow.is_current ? `${weekDaysLeft ?? 0}d left` : "Inactive"}
+                label="Week"
+                value={weekWindow.is_current ? `${weekNo}/12` : "Inactive"}
                 bg="#eff6ff"
                 border="#bfdbfe"
                 accent="#1d4ed8"
               />
+            </div>
+            <div className="mt-4 rounded-2xl border border-[#efe7db] bg-[#faf7f1] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Journey</p>
+                  <p className="text-sm font-semibold text-[#1e1b16]">{journeyState}</p>
+                </div>
+                <span
+                  className="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold"
+                  style={{
+                    borderColor: activePillarPalette.border,
+                    background: activePillarPalette.bg,
+                    color: activePillarPalette.accent,
+                  }}
+                >
+                  {activePillarPalette.icon ? (
+                    <img src={activePillarPalette.icon} alt="" className="h-4 w-4" aria-hidden="true" />
+                  ) : null}
+                  {activeBlock?.label || "Programme"}
+                </span>
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="rounded-xl border border-[#e7e1d6] bg-white p-3">
+                  <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Week Progress</p>
+                  <p className="mt-1 text-sm font-semibold text-[#1e1b16]">Day {dayInWeek}/7</p>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#ece9e2]">
+                    <div className="h-full rounded-full bg-[#1d4ed8]" style={{ width: `${weekPct}%` }} />
+                  </div>
+                </div>
+                <div className="rounded-xl border border-[#e7e1d6] bg-white p-3">
+                  <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">{activeBlock?.label || "Pillar"} Block</p>
+                  <p className="mt-1 text-sm font-semibold text-[#1e1b16]">Week {weekInBlock}/3</p>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#ece9e2]">
+                    <div className="h-full rounded-full" style={{ width: `${blockPct}%`, background: activePillarPalette.accent }} />
+                  </div>
+                </div>
+                <div className="rounded-xl border border-[#e7e1d6] bg-white p-3">
+                  <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">12-Week Programme</p>
+                  <p className="mt-1 text-sm font-semibold text-[#1e1b16]">Week {weekNo}/12</p>
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#ece9e2]">
+                    <div className="h-full rounded-full bg-[#0f766e]" style={{ width: `${programmePct}%` }} />
+                  </div>
+                </div>
+              </div>
+              <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-4">
+                {programmeBlocks.map((block, blockIdx) => {
+                  const palette = getPillarPalette(block.key);
+                  const isActive = blockIdx === activeBlockIndex && programmeDay > 0 && programmeDay < 84;
+                  const segmentPct = blockSegmentPct(blockIdx);
+                  return (
+                    <div
+                      key={block.key}
+                      className="rounded-xl border p-2"
+                      style={{
+                        borderColor: isActive ? palette.border : "#e7e1d6",
+                        background: isActive ? palette.bg : "#fff",
+                      }}
+                    >
+                      <div className="flex items-center gap-2">
+                        {palette.icon ? <img src={palette.icon} alt="" className="h-4 w-4" aria-hidden="true" /> : null}
+                        <p className="text-[11px] font-semibold text-[#1e1b16]">{block.label}</p>
+                      </div>
+                      <p className="mt-0.5 text-[10px] uppercase tracking-[0.18em] text-[#8b8074]">{block.weeks}</p>
+                      <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#ece9e2]">
+                        <div className="h-full rounded-full" style={{ width: `${segmentPct}%`, background: palette.accent }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
             <div className="mt-4 grid grid-cols-2 gap-3">
               {Object.entries(data.status_counts || {}).map(([label, value]) => {
