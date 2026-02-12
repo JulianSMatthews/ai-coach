@@ -336,65 +336,63 @@ export default async function ProgressPage(props: PageProps) {
       <TextScale defaultScale={textScale} />
       <AppNav userId={userId} promptBadge={promptBadge} />
 
-      <section
-        id="overview"
-        className="space-y-3 rounded-2xl border border-[#d96a3e] bg-[#ad3b11] p-3 shadow-lg"
-        style={{ "--accent": "#ffffff" } as CSSProperties}
-      >
+      <section id="overview" className="space-y-3">
         <div
           id="momentum-carousel"
           className="flex flex-nowrap gap-6 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth"
           style={{ scrollSnapType: "x mandatory" }}
         >
           <Card
-            className="min-w-full snap-start border-[#c95d31] bg-[#ad3b11] text-white shadow-md sm:min-w-[85%]"
+            className="min-w-full snap-start sm:min-w-[85%]"
             data-carousel-item
             style={{ scrollSnapStop: "always" }}
           >
-            <div className="rounded-xl border border-[#d96a3e] bg-[#8f2f0d] p-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-white/80">{anchorLabel}</p>
-              <h2 className="mt-2 rounded-xl border border-[#d96a3e] bg-[#a23810] p-3 text-base font-semibold leading-relaxed text-white">
+            <div className="rounded-xl border border-[#efe7db] bg-white p-3">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{anchorLabel}</p>
+              <h2 className="mt-2 text-sm font-semibold leading-relaxed text-[#1e1b16]">
                 {momentumHeadline}
               </h2>
-              <div className="mt-3 border-t border-white/25 pt-3">
-                <p className="text-[10px] uppercase tracking-[0.24em] text-white">Daily Streak</p>
+              <div className="mt-3 border-t border-[#efe7db] pt-3">
+                <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Daily Streak</p>
                 <div className="mt-2 grid grid-cols-7 gap-1 sm:grid-cols-14">
                   {streakDays.map((day) => (
                     <div
                       key={day.iso}
                       className="rounded-lg border p-1"
                       style={{
-                        borderColor: day.active ? day.pillar.border : "rgba(255,255,255,0.38)",
-                        background: day.active ? day.pillar.bg : "#b94a1a",
+                        borderColor: day.active ? day.pillar.border : "#e7e1d6",
+                        background: day.active ? day.pillar.bg : "#f8f6f2",
+                        opacity: day.active ? 1 : 0.45,
                       }}
                       title={day.iso}
                     >
                       {day.pillar.icon ? (
                         <img src={day.pillar.icon} alt="" className="mx-auto h-4 w-4" aria-hidden="true" />
                       ) : (
-                        <span className="mx-auto block h-4 w-4 rounded-full bg-white/70" aria-hidden="true" />
+                        <span className="mx-auto block h-4 w-4 rounded-full bg-[#cbd5e1]" aria-hidden="true" />
                       )}
                     </div>
                   ))}
                 </div>
               </div>
-              <div className="mt-3 border-t border-white/25 pt-3">
-                <p className="text-[10px] uppercase tracking-[0.24em] text-white">12 Week Journey</p>
+              <div className="mt-3 border-t border-[#efe7db] pt-3">
+                <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">12 Week Journey</p>
                 <div className="mt-2 grid grid-cols-6 gap-1 sm:grid-cols-12">
                   {journeyWeeks.map((weekIcon) => (
                     <div
                       key={`journey-week-${weekIcon.weekNumber}`}
                       className="rounded-lg border p-1"
                       style={{
-                        borderColor: weekIcon.completed ? weekIcon.palette.border : "rgba(255,255,255,0.38)",
-                        background: weekIcon.completed ? weekIcon.palette.bg : "#b94a1a",
+                        borderColor: weekIcon.completed ? weekIcon.palette.border : "#e7e1d6",
+                        background: weekIcon.completed ? weekIcon.palette.bg : "#f8f6f2",
+                        opacity: weekIcon.completed ? 1 : 0.45,
                       }}
                       title={`Week ${weekIcon.weekNumber}`}
                     >
                       {weekIcon.palette.icon ? (
                         <img src={weekIcon.palette.icon} alt="" className="mx-auto h-4 w-4" aria-hidden="true" />
                       ) : (
-                        <span className="mx-auto block h-4 w-4 rounded-full bg-white/70" aria-hidden="true" />
+                        <span className="mx-auto block h-4 w-4 rounded-full bg-[#cbd5e1]" aria-hidden="true" />
                       )}
                     </div>
                   ))}
@@ -403,19 +401,19 @@ export default async function ProgressPage(props: PageProps) {
             </div>
 
             <div className="mt-4">
-              <div className="mt-2 rounded-xl border border-[#d96a3e] bg-[#8f2f0d] p-3">
-                <p className="text-[10px] uppercase tracking-[0.24em] text-white">Daily Focus</p>
+              <div className="mt-2 rounded-xl border border-[#efe7db] bg-white p-3">
+                <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Daily Focus</p>
                 {dailyFocusTexts.length ? (
-                  <ul className="mt-2 space-y-1 text-sm text-white">
+                  <ul className="mt-2 space-y-1 text-sm text-[#1e1b16]">
                     {dailyFocusTexts.map((step, idx) => (
                       <li key={`daily-focus-${idx}`} className="flex items-start gap-2">
-                        <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-white/90" />
+                        <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[var(--accent,#d65a1f)]" />
                         <span>{step}</span>
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <p className="mt-2 text-xs text-white/75">No habit steps to focus on yet.</p>
+                  <p className="mt-2 text-xs text-[#6b6257]">No habit steps to focus on yet.</p>
                 )}
               </div>
             </div>
@@ -451,7 +449,7 @@ export default async function ProgressPage(props: PageProps) {
                 </div>
                 <div className="mt-3 border-t border-[#efe7db] pt-3">
                   <p className="text-[10px] uppercase tracking-[0.24em] text-[#6b6257]">Assessment</p>
-                  <p className="mt-1 inline-block rounded-full bg-[#ffb168] px-3 py-1 text-sm font-semibold text-[#6a2408]">
+                  <p className="mt-1 text-sm font-semibold text-[#1e1b16]">
                     Next due: {nextAssessmentDue ? formatDateUk(nextAssessmentDue) : "Not available"}
                   </p>
                 </div>
@@ -460,12 +458,12 @@ export default async function ProgressPage(props: PageProps) {
           </Card>
 
           <Card
-            className="min-w-full snap-start border-[#c95d31] bg-[#ad3b11] text-white shadow-md sm:min-w-[85%]"
+            className="min-w-full snap-start sm:min-w-[85%]"
             data-carousel-item
             style={{ scrollSnapStop: "always" }}
           >
-            <p className="text-xs uppercase tracking-[0.2em] text-white/80">Programme</p>
-            <h2 className="mt-1 text-xl text-white">Overview</h2>
+            <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Programme</p>
+            <h2 className="mt-1 text-xl">Overview</h2>
             <ProgrammeCalendar
               programmeStart={programmeStart ? programmeStart.toISOString() : null}
               programmeBlocks={programmeBlocks}
