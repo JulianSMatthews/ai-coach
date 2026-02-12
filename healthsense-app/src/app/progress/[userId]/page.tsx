@@ -357,27 +357,49 @@ export default async function ProgressPage(props: PageProps) {
             </h2>
 
             <div className="mt-4">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-white/80">Daily streak</p>
+              <p className="text-[10px] uppercase tracking-[0.24em] text-white">Journey Overview</p>
               <div className="mt-2 rounded-xl border border-[#d96a3e] bg-[#8f2f0d] p-3">
-                <div className="grid grid-cols-7 gap-1 sm:grid-cols-14">
+                <p className="text-[10px] uppercase tracking-[0.24em] text-white">Daily Streak</p>
+                <div className="mt-2 grid grid-cols-7 gap-1 sm:grid-cols-14">
                   {streakDays.map((day) => (
                     <div
                       key={day.iso}
                       className="rounded-lg border p-1"
                       style={{
-                        borderColor: day.active ? day.pillar.border : "#e7e1d6",
-                        background: day.active ? day.pillar.bg : "#f8f6f2",
-                        opacity: day.active ? 1 : 0.45,
+                        borderColor: day.active ? day.pillar.border : "rgba(255,255,255,0.38)",
+                        background: day.active ? day.pillar.bg : "#b94a1a",
                       }}
                       title={day.iso}
                     >
                       {day.pillar.icon ? (
                         <img src={day.pillar.icon} alt="" className="mx-auto h-4 w-4" aria-hidden="true" />
                       ) : (
-                        <span className="mx-auto block h-4 w-4 rounded-full bg-[#cbd5e1]" aria-hidden="true" />
+                        <span className="mx-auto block h-4 w-4 rounded-full bg-white/70" aria-hidden="true" />
                       )}
                     </div>
                   ))}
+                </div>
+                <div className="mt-3 border-t border-white/25 pt-3">
+                  <p className="text-[10px] uppercase tracking-[0.24em] text-white">12 Week Journey</p>
+                  <div className="mt-2 grid grid-cols-6 gap-1 sm:grid-cols-12">
+                    {journeyWeeks.map((weekIcon) => (
+                      <div
+                        key={`journey-week-${weekIcon.weekNumber}`}
+                        className="rounded-lg border p-1"
+                        style={{
+                          borderColor: weekIcon.completed ? weekIcon.palette.border : "rgba(255,255,255,0.38)",
+                          background: weekIcon.completed ? weekIcon.palette.bg : "#b94a1a",
+                        }}
+                        title={`Week ${weekIcon.weekNumber}`}
+                      >
+                        {weekIcon.palette.icon ? (
+                          <img src={weekIcon.palette.icon} alt="" className="mx-auto h-4 w-4" aria-hidden="true" />
+                        ) : (
+                          <span className="mx-auto block h-4 w-4 rounded-full bg-white/70" aria-hidden="true" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -397,32 +419,6 @@ export default async function ProgressPage(props: PageProps) {
                 ) : (
                   <p className="text-xs text-white/75">No habit steps to focus on yet.</p>
                 )}
-              </div>
-            </div>
-
-            <div className="mt-4">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-white/80">12 week Journey</p>
-              <div className="mt-2 rounded-xl border border-[#d96a3e] bg-[#8f2f0d] p-3">
-                <div className="grid grid-cols-6 gap-1 sm:grid-cols-12">
-                  {journeyWeeks.map((weekIcon) => (
-                    <div
-                      key={`journey-week-${weekIcon.weekNumber}`}
-                      className="rounded-lg border p-1"
-                      style={{
-                        borderColor: weekIcon.completed ? weekIcon.palette.border : "#e7e1d6",
-                        background: weekIcon.completed ? weekIcon.palette.bg : "#f8f6f2",
-                        opacity: weekIcon.completed ? 1 : 0.45,
-                      }}
-                      title={`Week ${weekIcon.weekNumber}`}
-                    >
-                      {weekIcon.palette.icon ? (
-                        <img src={weekIcon.palette.icon} alt="" className="mx-auto h-4 w-4" aria-hidden="true" />
-                      ) : (
-                        <span className="mx-auto block h-4 w-4 rounded-full bg-[#cbd5e1]" aria-hidden="true" />
-                      )}
-                    </div>
-                  ))}
-                </div>
               </div>
             </div>
 
