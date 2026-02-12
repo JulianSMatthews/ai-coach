@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from typing import Optional
+from datetime import datetime
 import json
 import threading
 
@@ -172,6 +173,9 @@ def write_log(*args, **kwargs) -> None:
 
     # 4) Persist (never raise)
     try:
+        created_at_override = kwargs.get("created_at")
+        if not isinstance(created_at_override, datetime):
+            created_at_override = None
         with SessionLocal() as s:
             row = MessageLog(
                 user_id=getattr(user_obj, "id", None),
@@ -182,6 +186,7 @@ def write_log(*args, **kwargs) -> None:
                 user_name=getattr(user_obj, "name", None) if hasattr(MessageLog, "user_name") else None,
                 text=str(text) if (text is not None and hasattr(MessageLog, "text")) else None,
                 meta=meta_payload if hasattr(MessageLog, "meta") else None,
+                created_at=created_at_override or datetime.utcnow(),
             )
             s.add(row)
             s.commit()

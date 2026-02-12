@@ -118,12 +118,6 @@ export default async function ProgressPage(props: PageProps) {
     if (Math.abs(targetNum) < 1e-9) return null;
     return Math.max(0, Math.min(1, actualNum / targetNum));
   };
-  const zeroBaseRatio = (current?: number | null, target?: number | null) => {
-    const currentNum = toFiniteNumber(current);
-    const targetNum = toFiniteNumber(target);
-    if (currentNum === null || targetNum === null || Math.abs(targetNum) < 1e-9) return null;
-    return Math.max(0, Math.min(1, currentNum / targetNum));
-  };
   const computeStatus = (
     actual?: number | null,
     target?: number | null,
@@ -240,6 +234,7 @@ export default async function ProgressPage(props: PageProps) {
     activeStreakDays > 0
       ? `You are on week ${weekOfCurrentBlock} of 3 of ${currentBlock.label} and on a ${activeStreakDays} ${dayLabel} streak, keep it up ${firstName}!`
       : `You are on week ${weekOfCurrentBlock} of 3 of ${currentBlock.label}. Start your streak today, ${firstName}.`;
+  const anchorLabel = `${meta.anchor_label || "n/a"}${meta.is_virtual_date ? "*" : ""}`;
 
   const normalizePillarKey = (value?: string) => {
     const key = (value || "").toLowerCase();
@@ -261,6 +256,8 @@ export default async function ProgressPage(props: PageProps) {
         currentTotal: 0,
         targetTotal: 0,
         krCount: 0,
+        progressSum: 0,
+        progressCount: 0,
       },
     ]),
   );
@@ -270,6 +267,17 @@ export default async function ProgressPage(props: PageProps) {
     const totals = pillarTotalsByKey.get(pillarKey);
     if (!totals) return;
     (row.krs || []).forEach((kr) => {
+      const status = computeStatus(
+        kr.actual,
+        kr.target,
+        kr.baseline,
+        row.cycle_start,
+        row.cycle_end,
+      );
+      if (status.pct !== null) {
+        totals.progressSum += status.pct;
+        totals.progressCount += 1;
+      }
       const current = toFiniteNumber(kr.actual);
       const target = toFiniteNumber(kr.target);
       if (current === null || target === null) return;
@@ -283,12 +291,12 @@ export default async function ProgressPage(props: PageProps) {
 
   const pillarSummaries = programmeBlocks.map((block) => {
     const totals = pillarTotalsByKey.get(block.key)!;
-    const ratio = totals.krCount ? zeroBaseRatio(totals.currentTotal, totals.targetTotal) : null;
+    const ratio = totals.progressCount ? totals.progressSum / totals.progressCount : null;
     const pct = ratio === null ? 0 : Math.round(ratio * 100);
     return {
       ...totals,
       pct,
-      hasData: totals.krCount > 0,
+      hasData: totals.progressCount > 0,
       barWidth: `${Math.max(4, pct)}%`,
     };
   });
@@ -328,23 +336,27 @@ export default async function ProgressPage(props: PageProps) {
       <TextScale defaultScale={textScale} />
       <AppNav userId={userId} promptBadge={promptBadge} />
 
-      <section id="overview" className="space-y-3">
+      <section
+        id="overview"
+        className="space-y-3 rounded-2xl border border-[#d96a3e] bg-[#c54817] p-3 shadow-md"
+        style={{ "--accent": "#ffffff" } as CSSProperties}
+      >
         <div
           id="momentum-carousel"
           className="flex flex-nowrap gap-6 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth"
           style={{ scrollSnapType: "x mandatory" }}
         >
           <Card
-            className="min-w-full snap-start sm:min-w-[85%]"
+            className="min-w-full snap-start border-[#d96a3e] bg-[#c54817] text-white shadow-md sm:min-w-[85%]"
             data-carousel-item
             style={{ scrollSnapStop: "always" }}
           >
-            <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{meta.anchor_label || "n/a"}</p>
-            <h2 className="mt-1 text-sm font-semibold leading-relaxed text-[#1e1b16]">{momentumHeadline}</h2>
+            <p className="text-xs uppercase tracking-[0.2em] text-white/80">{anchorLabel}</p>
+            <h2 className="mt-1 text-sm font-semibold leading-relaxed text-white">{momentumHeadline}</h2>
 
             <div className="mt-4">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Daily streak</p>
-              <div className="mt-2 rounded-xl border border-[#efe7db] bg-white p-3">
+              <p className="text-[10px] uppercase tracking-[0.24em] text-white/80">Daily streak</p>
+              <div className="mt-2 rounded-xl border border-white/20 bg-[#b34114] p-3">
                 <div className="grid grid-cols-7 gap-1 sm:grid-cols-14">
                   {streakDays.map((day) => (
                     <div
@@ -369,26 +381,26 @@ export default async function ProgressPage(props: PageProps) {
             </div>
 
             <div className="mt-4">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Daily Focus</p>
-              <div className="mt-2 rounded-xl border border-[#efe7db] bg-white p-3">
+              <p className="text-[10px] uppercase tracking-[0.24em] text-white/80">Daily Focus</p>
+              <div className="mt-2 rounded-xl border border-white/20 bg-[#b34114] p-3">
                 {dailyFocusTexts.length ? (
-                  <ul className="space-y-1 text-sm text-[#1e1b16]">
+                  <ul className="space-y-1 text-sm text-white">
                     {dailyFocusTexts.map((step, idx) => (
                       <li key={`daily-focus-${idx}`} className="flex items-start gap-2">
-                        <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[var(--accent,#d65a1f)]" />
+                        <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-white/90" />
                         <span>{step}</span>
                       </li>
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-xs text-[#6b6257]">No habit steps to focus on yet.</p>
+                  <p className="text-xs text-white/75">No habit steps to focus on yet.</p>
                 )}
               </div>
             </div>
 
             <div className="mt-4">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">12 week Journey</p>
-              <div className="mt-2 rounded-xl border border-[#efe7db] bg-white p-3">
+              <p className="text-[10px] uppercase tracking-[0.24em] text-white/80">12 week Journey</p>
+              <div className="mt-2 rounded-xl border border-white/20 bg-[#b34114] p-3">
                 <div className="grid grid-cols-6 gap-1 sm:grid-cols-12">
                   {journeyWeeks.map((weekIcon) => (
                     <div
@@ -413,18 +425,18 @@ export default async function ProgressPage(props: PageProps) {
             </div>
 
             <div className="mt-4">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Key Results Progress</p>
-              <div className="mt-2 rounded-xl border border-[#efe7db] bg-white p-3">
+              <p className="text-[10px] uppercase tracking-[0.24em] text-white/80">Key Results Progress</p>
+              <div className="mt-2 rounded-xl border border-white/20 bg-[#b34114] p-3 text-white shadow-sm">
                 <div className="space-y-2">
                   {pillarSummaries.map((summary, idx) => (
-                    <div key={`pillar-summary-${summary.key}`} className={idx > 0 ? "border-t border-[#efe7db] pt-2" : ""}>
+                    <div key={`pillar-summary-${summary.key}`} className={idx > 0 ? "border-t border-white/25 pt-2" : ""}>
                       <div className="flex items-center gap-2">
                         {summary.palette.icon ? (
                           <img src={summary.palette.icon} alt="" className="h-4 w-4" aria-hidden="true" />
                         ) : null}
-                        <span className="text-[11px] uppercase tracking-[0.24em] text-[#6b6257]">{summary.label}</span>
+                        <span className="text-[11px] uppercase tracking-[0.24em] text-white">{summary.label}</span>
                       </div>
-                      <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-[#e7e1d6]">
+                      <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-white/30">
                         <div
                           className="h-full rounded-full"
                           style={{
@@ -434,16 +446,16 @@ export default async function ProgressPage(props: PageProps) {
                           }}
                         />
                       </div>
-                      <div className="mt-1 flex items-center justify-between text-[11px] text-[#6b6257]">
+                      <div className="mt-1 flex items-center justify-between text-[11px] text-white/90">
                         <span>Current {formatNumber(summary.currentTotal)}</span>
                         <span>Target {formatNumber(summary.targetTotal)}</span>
                       </div>
                     </div>
                   ))}
                 </div>
-                <div className="mt-3 border-t border-[#efe7db] pt-3">
-                  <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Assessment</p>
-                  <p className="mt-1 text-sm font-semibold text-[#1e1b16]">
+                <div className="mt-3 border-t border-white/25 pt-3">
+                  <p className="text-[10px] uppercase tracking-[0.24em] text-white/80">Assessment</p>
+                  <p className="mt-1 text-sm font-semibold text-white">
                     Next due: {nextAssessmentDue ? formatDateUk(nextAssessmentDue) : "Not available"}
                   </p>
                 </div>
@@ -452,12 +464,12 @@ export default async function ProgressPage(props: PageProps) {
           </Card>
 
           <Card
-            className="min-w-full snap-start sm:min-w-[85%]"
+            className="min-w-full snap-start border-[#d96a3e] bg-[#c54817] text-white shadow-md sm:min-w-[85%]"
             data-carousel-item
             style={{ scrollSnapStop: "always" }}
           >
-            <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Programme</p>
-            <h2 className="mt-1 text-xl">Overview</h2>
+            <p className="text-xs uppercase tracking-[0.2em] text-white/80">Programme</p>
+            <h2 className="mt-1 text-xl text-white">Overview</h2>
             <ProgrammeCalendar
               programmeStart={programmeStart ? programmeStart.toISOString() : null}
               programmeBlocks={programmeBlocks}

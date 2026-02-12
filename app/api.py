@@ -119,6 +119,7 @@ from .reporting import (
     build_progress_report_data,
 )
 from .job_queue import ensure_job_table, enqueue_job, should_use_worker, ensure_prompt_settings_schema
+from .virtual_clock import get_virtual_now_for_user
 
 # Lazy import holder to avoid startup/reload ImportError if symbol is added later
 _gen_okr_summary_report = None
@@ -775,6 +776,11 @@ def _log_inbound_direct(user: User, channel: str, body: str, from_raw: str) -> N
         phone = getattr(user, "phone", None) or (from_raw.replace("whatsapp:", "") if from_raw else None)
 
 
+        virtual_now = get_virtual_now_for_user(int(getattr(user, "id", 0) or 0))
+        meta_payload = {"from": from_raw}
+        if virtual_now is not None:
+            meta_payload["virtual_date"] = virtual_now.date().isoformat()
+
         # Canonical logging (category/sid omitted for inbound unless you have them)
         write_log(
             phone_e164=phone,
@@ -784,7 +790,8 @@ def _log_inbound_direct(user: User, channel: str, body: str, from_raw: str) -> N
             twilio_sid=None,
             user=user,
             channel=channel,  # harmless if model lacks 'channel'
-            meta={"from": from_raw}  # harmless if model lacks 'meta'
+            meta=meta_payload,  # harmless if model lacks 'meta'
+            created_at=virtual_now,
         )
     except Exception as e:
         print(f"⚠️ inbound direct-log failed (non-fatal): {e!r}")

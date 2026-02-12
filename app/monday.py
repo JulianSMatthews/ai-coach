@@ -34,6 +34,7 @@ from .podcast import generate_podcast_audio
 from .prompts import coaching_prompt, kr_payload_list, build_prompt, run_llm_prompt
 from .touchpoints import log_touchpoint
 from . import general_support
+from .virtual_clock import get_effective_today
 
 
 def _in_worker_process() -> bool:
@@ -890,7 +891,7 @@ def start_weekstart(user: User, notes: str | None = None, debug: bool = False, s
         return
     general_support.clear(user.id)
     with SessionLocal() as s:
-        today = datetime.utcnow().date()
+        today = get_effective_today(s, user.id, default_today=datetime.utcnow().date())
         base_start = None
         run = (
             s.query(AssessmentRun)

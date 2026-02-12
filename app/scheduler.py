@@ -32,6 +32,11 @@ from . import kickoff
 from .llm import compose_prompt
 from . import monday, tuesday, wednesday, thursday, friday, saturday, sunday
 from .job_queue import enqueue_job, should_use_worker
+from .virtual_clock import (
+    advance_virtual_date_for_user,
+    is_virtual_enabled,
+    set_virtual_mode,
+)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # APScheduler setup
@@ -550,8 +555,14 @@ def cancel_timeout_followup(user_id: int):
 
 def _run_day_prompt_inline(user_id: int, day: str):
     """Invoke the day-specific handler for a user."""
+    virtual_mode = False
     with SessionLocal() as s:
         user = s.get(User, user_id)
+        if user:
+            try:
+                virtual_mode = is_virtual_enabled(s, user_id)
+            except Exception:
+                virtual_mode = False
         if not user:
             return
     if _user_onboarding_active(user_id):
@@ -586,6 +597,17 @@ def _run_day_prompt_inline(user_id: int, day: str):
         _audit(user_id, f"auto_prompt_{day}", {})
     except Exception as e:
         print(f"[scheduler] {day} prompt failed for user {user_id}: {e}")
+    finally:
+        if virtual_mode:
+            try:
+                next_date = advance_virtual_date_for_user(user_id, days=1)
+                if next_date:
+                    debug_log(
+                        f"virtual date advanced for user {user_id} -> {next_date.isoformat()}",
+                        tag="scheduler",
+                    )
+            except Exception as e:
+                print(f"[scheduler] virtual date advance failed for user {user_id}: {e}")
 
 
 def _run_day_prompt(user_id: int, day: str):
@@ -804,9 +826,17 @@ def enable_coaching(user_id: int, fast_minutes: int | None = None) -> bool:
                         value=str(max(1, int(fast_minutes))),
                     )
                 )
+            set_virtual_mode(
+                s,
+                user_id,
+                enabled=True,
+                start_date=datetime.utcnow().date(),
+                keep_existing_date=True,
+            )
         else:
             if fast_pref:
                 s.delete(fast_pref)
+            set_virtual_mode(s, user_id, enabled=False)
         s.commit()
         # Trigger kickoff at the start of coaching so Monday follows the kickoff baseline.
         try:
@@ -834,15 +864,16 @@ def disable_coaching(user_id: int) -> bool:
         if pref:
             pref.key = key
             pref.value = "0"
-            fast_pref = (
-                s.query(UserPreference)
-                .filter(UserPreference.user_id == user_id, UserPreference.key == "coaching_fast_minutes")
-                .order_by(UserPreference.updated_at.desc())
-                .first()
-            )
-            if fast_pref:
-                s.delete(fast_pref)
-            s.commit()
+        fast_pref = (
+            s.query(UserPreference)
+            .filter(UserPreference.user_id == user_id, UserPreference.key == "coaching_fast_minutes")
+            .order_by(UserPreference.updated_at.desc())
+            .first()
+        )
+        if fast_pref:
+            s.delete(fast_pref)
+        set_virtual_mode(s, user_id, enabled=False)
+        s.commit()
         _unschedule_prompts_for_user(user_id)
     return True
 

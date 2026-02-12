@@ -58,6 +58,7 @@ from .prompts import (
 )
 from .debug_utils import debug_log
 from .job_queue import ensure_prompt_settings_schema
+from .virtual_clock import get_effective_today, get_virtual_date
 
 # For raw SQL fallback when OKR models are unavailable
 from sqlalchemy import text, select
@@ -4037,7 +4038,7 @@ def _daily_inbound_streak(session, user_id: int, anchor_day: date) -> Dict[str, 
     anchor_end = datetime.combine(anchor_day + timedelta(days=1), datetime.min.time())
     try:
         rows = (
-            session.query(MessageLog.created_at)
+            session.query(MessageLog.created_at, MessageLog.meta)
             .filter(
                 MessageLog.user_id == user_id,
                 MessageLog.direction == "inbound",
@@ -4060,10 +4061,27 @@ def _daily_inbound_streak(session, user_id: int, anchor_day: date) -> Dict[str, 
     day_set: set[date] = set()
     for row in rows:
         ts = None
+        meta = None
         try:
             ts = row[0]
+            meta = row[1] if len(row) > 1 else None
         except Exception:
             ts = getattr(row, "created_at", None)
+            meta = getattr(row, "meta", None)
+        meta_virtual_day = None
+        try:
+            if isinstance(meta, str):
+                parsed = json.loads(meta)
+                meta = parsed if isinstance(parsed, dict) else None
+            if isinstance(meta, dict):
+                raw_virtual = meta.get("virtual_date")
+                if isinstance(raw_virtual, str):
+                    meta_virtual_day = date.fromisoformat(raw_virtual[:10])
+        except Exception:
+            meta_virtual_day = None
+        if meta_virtual_day is not None:
+            day_set.add(meta_virtual_day)
+            continue
         day = _as_utc_date(ts)
         if day:
             day_set.add(day)
@@ -4105,6 +4123,7 @@ def _daily_inbound_streak(session, user_id: int, anchor_day: date) -> Dict[str, 
 def build_progress_report_data(user_id: int, anchor_date: date | None = None) -> Dict[str, Any]:
     anchor_today = anchor_date or datetime.utcnow().date()
     anchor_label = anchor_today.strftime("%d %b %Y")
+    is_virtual_anchor = False
     programme_blocks: dict[str, dict[str, Any]] = {}
     engagement: Dict[str, Any] = {
         "daily_streak": 0,
@@ -4116,6 +4135,10 @@ def build_progress_report_data(user_id: int, anchor_date: date | None = None) ->
     }
 
     with SessionLocal() as s:
+        if anchor_date is None:
+            anchor_today = get_effective_today(s, user_id, default_today=anchor_today)
+            anchor_label = anchor_today.strftime("%d %b %Y")
+            is_virtual_anchor = get_virtual_date(s, user_id) is not None
         user = s.query(User).filter(User.id == user_id).one_or_none()
         if not user:
             raise RuntimeError("User not found")
@@ -4234,6 +4257,7 @@ def build_progress_report_data(user_id: int, anchor_date: date | None = None) ->
         "meta": {
             "anchor_date": anchor_today.isoformat(),
             "anchor_label": anchor_label,
+            "is_virtual_date": is_virtual_anchor,
             "reported_at": reported_at,
         },
         "status_counts": status_counts,

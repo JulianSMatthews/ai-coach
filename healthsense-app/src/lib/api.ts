@@ -48,7 +48,7 @@ export type AssessmentResponse = {
 
 export type ProgressResponse = {
   user?: { id?: number; first_name?: string; surname?: string; display_name?: string };
-  meta?: { anchor_date?: string; anchor_label?: string; reported_at?: string };
+  meta?: { anchor_date?: string; anchor_label?: string; is_virtual_date?: boolean; reported_at?: string };
   status_counts?: Record<string, number>;
   total_krs?: number;
   engagement?: {
