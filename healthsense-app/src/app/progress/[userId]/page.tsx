@@ -336,18 +336,18 @@ export default async function ProgressPage(props: PageProps) {
       <TextScale defaultScale={textScale} />
       <AppNav userId={userId} promptBadge={promptBadge} />
 
-      <section id="overview" className="space-y-3">
+      <section id="overview" className="space-y-2">
         <div
           id="momentum-carousel"
-          className="flex flex-nowrap gap-6 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth"
+          className="flex flex-nowrap gap-4 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth"
           style={{ scrollSnapType: "x mandatory" }}
         >
           <Card
-            className="min-w-full snap-start sm:min-w-[85%]"
+            className="min-w-full snap-start p-4 sm:min-w-[85%]"
             data-carousel-item
             style={{ scrollSnapStop: "always" }}
           >
-            <div className="rounded-xl border border-[#efe7db] bg-white p-3">
+            <div className="rounded-xl border border-[#efe7db] bg-white p-2.5">
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{anchorLabel}</p>
               <h2 className="mt-2 text-sm font-semibold leading-relaxed text-[#1e1b16]">
                 {momentumHeadline}
@@ -400,8 +400,8 @@ export default async function ProgressPage(props: PageProps) {
               </div>
             </div>
 
-            <div className="mt-4">
-              <div className="mt-2 rounded-xl border border-[#efe7db] bg-white p-3">
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              <div className="rounded-xl border border-[#efe7db] bg-white p-3">
                 <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Daily Focus</p>
                 {dailyFocusTexts.length ? (
                   <ul className="mt-2 space-y-1 text-sm text-[#1e1b16]">
@@ -416,10 +416,7 @@ export default async function ProgressPage(props: PageProps) {
                   <p className="mt-2 text-xs text-[#6b6257]">No habit steps to focus on yet.</p>
                 )}
               </div>
-            </div>
-
-            <div className="mt-4">
-              <div className="mt-2 rounded-xl border border-[#efe7db] bg-white p-3 text-[#1e1b16] shadow-sm">
+              <div className="rounded-xl border border-[#efe7db] bg-white p-3 text-[#1e1b16] shadow-sm">
                 <p className="text-[10px] uppercase tracking-[0.24em] text-[#6b6257]">Key Results Progress</p>
                 <div className="space-y-2">
                   {pillarSummaries.map((summary, idx) => (
@@ -458,7 +455,7 @@ export default async function ProgressPage(props: PageProps) {
           </Card>
 
           <Card
-            className="min-w-full snap-start sm:min-w-[85%]"
+            className="min-w-full snap-start p-4 sm:min-w-[85%]"
             data-carousel-item
             style={{ scrollSnapStop: "always" }}
           >
