@@ -345,7 +345,7 @@ export default async function ProgressPage(props: PageProps) {
             <p className="mt-2 text-[32px] leading-[1.2] text-[#1e1b16]">{weekHeadline}</p>
 
             <div className="mt-3 border-t border-[#efe7db] pt-3">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Daily Streak</p>
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#6b6257]">Daily Streak</p>
               <div className="mt-2 rounded-xl border border-[#f4c9a9] bg-white p-3">
                 {activeStreakIcons.length ? (
                   <div className="flex flex-wrap gap-2">
@@ -400,10 +400,16 @@ export default async function ProgressPage(props: PageProps) {
             <div className="mt-3 border-t border-[#efe7db] pt-3">
               <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#6b6257]">Daily Focus</p>
               {dailyFocusTexts.length ? (
-                <ul className="mt-2 space-y-1 text-sm text-[#1e1b16]">
+                <ul className="mt-2 space-y-2 text-sm text-[#1e1b16]">
                   {dailyFocusTexts.map((step, idx) => (
-                    <li key={`daily-focus-${idx}`} className="flex items-start gap-2">
-                      <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[var(--accent,#d65a1f)]" />
+                    <li
+                      key={`daily-focus-${idx}`}
+                      className="rounded-lg px-3 py-2 font-medium"
+                      style={{
+                        background: currentBlockPalette.accent,
+                        color: "#ffffff",
+                      }}
+                    >
                       <span>{step}</span>
                     </li>
                   ))}
@@ -418,35 +424,23 @@ export default async function ProgressPage(props: PageProps) {
               <div className="mt-3 space-y-3">
                 {pillarSummaries.map((summary, idx) => (
                   <div key={`pillar-summary-${summary.key}`} className={idx > 0 ? "border-t border-[#efe7db] pt-3" : ""}>
-                    <div className="grid grid-cols-[1fr_52%] items-center gap-3">
+                    <div className="flex items-center justify-between gap-3">
                       <div className="flex items-center gap-2.5">
                         {summary.palette.icon ? (
                           <img src={summary.palette.icon} alt="" className="h-6 w-6" aria-hidden="true" />
                         ) : null}
                         <span className="text-sm font-semibold uppercase tracking-[0.2em] text-[#3c332b]">{summary.label}</span>
                       </div>
-                      <div className="h-4 overflow-hidden rounded-full bg-[#e7e1d6]">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: summary.barWidth,
-                            background: summary.palette.accent,
-                            opacity: summary.hasData ? 1 : 0.35,
-                          }}
-                        />
-                      </div>
-                    </div>
-                    <div className="mt-1 grid grid-cols-[1fr_52%] items-center gap-3 text-[12px] text-[#6b6257]">
-                      <span>Current {formatNumber(summary.currentTotal)}</span>
-                      <span className="text-right">Target {formatNumber(summary.targetTotal)}</span>
+                      <span className="text-base font-semibold" style={{ color: summary.palette.accent }}>
+                        {summary.hasData ? `${summary.pct}%` : "0%"}
+                      </span>
                     </div>
                   </div>
                 ))}
               </div>
               <div className="mt-3 border-t border-[#efe7db] pt-3">
-                <p className="text-[10px] uppercase tracking-[0.24em] text-[#6b6257]">Assessment</p>
-                <p className="mt-1 text-sm font-semibold text-[#1e1b16]">
-                  Next due: {nextAssessmentDue ? formatDateUk(nextAssessmentDue) : "Not available"}
+                <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#6b6257]">
+                  Your next assessment is on {nextAssessmentDue ? formatDateUk(nextAssessmentDue) : "Not available"}
                 </p>
               </div>
             </div>
