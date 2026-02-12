@@ -119,7 +119,7 @@ from .reporting import (
     build_progress_report_data,
 )
 from .job_queue import ensure_job_table, enqueue_job, should_use_worker, ensure_prompt_settings_schema
-from .virtual_clock import get_virtual_now_for_user
+from .virtual_clock import get_virtual_date, get_virtual_now_for_user, set_virtual_mode
 
 # Lazy import holder to avoid startup/reload ImportError if symbol is added later
 _gen_okr_summary_report = None
@@ -216,6 +216,7 @@ ADMIN_USAGE = (
     "admin detailed [phone]\n"
     "admin kickoff [phone]            # send 12-week kickoff podcast/flow\n"
     "admin coaching [phone] on|off|faston|reset    # toggle scheduled coaching prompts (faston=every 2m test; reset clears jobs)\n"
+    "admin vdate [phone] <YYYY-MM-DD|today|clear>  # set/clear virtual date for fast testing\n"
     "admin schedule [phone]           # show scheduled coaching prompts for user (HTML + summary)\n"
     "admin beta [phone] [live|beta|develop|clear]   # set prompt state override for testing\n"
     "admin prompt-audit [phone] <YYYY-MM-DD> [state] # generate prompt audit report for that user/date\n"
@@ -1441,6 +1442,48 @@ def _handle_admin_command(admin_user: User, text: str, *, source_phone: str | No
                 send_whatsapp(to=admin_user.phone, text=msg)
             else:
                 send_whatsapp(to=admin_user.phone, text="Failed to update coaching prompts (check AUTO_DAILY_PROMPTS env).")
+            return True
+        elif cmd in {"vdate", "virtualdate", "virtual-date"}:
+            target_phone, v_args = _resolve_admin_target_phone(admin_user, args)
+            if not v_args:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin vdate [phone] <YYYY-MM-DD|today|clear>")
+                return True
+            token = (v_args[0] or "").strip().lower()
+            with SessionLocal() as s:
+                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
+                if not u:
+                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
+                    send_whatsapp(
+                        to=admin_user.phone,
+                        text=f"User with phone {target_phone} not found{scope_txt}."
+                    )
+                    return True
+                if token in {"clear", "off", "reset"}:
+                    set_virtual_mode(s, u.id, enabled=False)
+                    s.commit()
+                    send_whatsapp(to=admin_user.phone, text=f"Virtual date cleared for {target_phone}.")
+                    return True
+                if token in {"today", "now"}:
+                    chosen = date.today()
+                else:
+                    try:
+                        chosen = date.fromisoformat((v_args[0] or "").strip()[:10])
+                    except Exception:
+                        send_whatsapp(to=admin_user.phone, text="Usage: admin vdate [phone] <YYYY-MM-DD|today|clear>")
+                        return True
+                set_virtual_mode(
+                    s,
+                    u.id,
+                    enabled=True,
+                    start_date=chosen,
+                    keep_existing_date=False,
+                )
+                s.commit()
+                current = get_virtual_date(s, u.id)
+            send_whatsapp(
+                to=admin_user.phone,
+                text=f"Virtual date set for {target_phone}: {(current or chosen).isoformat()}",
+            )
             return True
         elif cmd in {"tuesday"}:
             target_phone, _ = _resolve_admin_target_phone(admin_user, args)
