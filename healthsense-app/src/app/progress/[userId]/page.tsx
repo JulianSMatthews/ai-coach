@@ -217,21 +217,12 @@ export default async function ProgressPage(props: PageProps) {
   }
   const activeStreakIcons = streakDays.slice(0, activeStreakDays);
   const currentBlockPalette = getPillarPalette(currentBlock.key);
-  const activePillarWeeks = programmeDay > 0 ? Math.max(1, weekOfCurrentBlock) : 0;
-  const pillarJourneyWeeks = Array.from({ length: 3 }, (_, idx) => {
-    const weekNumber = idx + 1;
-    return {
-      weekNumber,
-      active: weekNumber <= activePillarWeeks,
-      palette: currentBlockPalette,
-    };
-  });
   const firstName = (user.first_name || user.display_name || status.user?.first_name || status.user?.display_name || "User").split(" ")[0];
   const dayLabel = activeStreakDays === 1 ? "day" : "days";
   const weekHeadline =
     activeStreakDays > 0
-      ? `You are on week ${weekOfCurrentBlock} of 3 of ${currentBlock.label} and on a ${activeStreakDays} ${dayLabel} streak, keep it up ${firstName}!`
-      : `You are on week ${weekOfCurrentBlock} of 3 of ${currentBlock.label}. Start your streak today, ${firstName}.`;
+      ? `You on week ${weekOfCurrentBlock} of 3 for ${currentBlock.label} and on a ${activeStreakDays} ${dayLabel} streak, keep it up ${firstName}!`
+      : `You on week ${weekOfCurrentBlock} of 3 for ${currentBlock.label}. Start your streak today, ${firstName}.`;
   const anchorLabel = `${meta.anchor_label || "n/a"}${meta.is_virtual_date ? "*" : ""}`;
 
   const normalizePillarKey = (value?: string) => {
@@ -370,30 +361,6 @@ export default async function ProgressPage(props: PageProps) {
                 ) : (
                   <p className="text-sm text-[#6b6257]">No streak yet.</p>
                 )}
-              </div>
-            </div>
-
-            <div className="mt-3 border-t border-[#efe7db] pt-3">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">{currentBlock.label} Programme</p>
-              <div className="mt-2 grid max-w-[280px] grid-cols-3 gap-2">
-                {pillarJourneyWeeks.map((weekIcon) => (
-                  <div
-                    key={`journey-week-${weekIcon.weekNumber}`}
-                    className="rounded-xl border p-2"
-                    style={{
-                      borderColor: weekIcon.active ? weekIcon.palette.border : "#e7e1d6",
-                      background: weekIcon.active ? weekIcon.palette.bg : "#f8f6f2",
-                      opacity: weekIcon.active ? 1 : 0.45,
-                    }}
-                    title={`Week ${weekIcon.weekNumber}`}
-                  >
-                    {weekIcon.palette.icon ? (
-                      <img src={weekIcon.palette.icon} alt="" className="mx-auto h-6 w-6" aria-hidden="true" />
-                    ) : (
-                      <span className="mx-auto block h-6 w-6 rounded-full bg-[#cbd5e1]" aria-hidden="true" />
-                    )}
-                  </div>
-                ))}
               </div>
             </div>
 
