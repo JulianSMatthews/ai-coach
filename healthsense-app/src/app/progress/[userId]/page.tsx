@@ -161,6 +161,7 @@ export default async function ProgressPage(props: PageProps) {
     return new Date(dayNumber * MS_PER_DAY).toISOString().slice(0, 10);
   };
 
+  const user = data.user || {};
   const streakWindowDays = Math.min(14, Math.max(1, Number(data.engagement?.recent_window_days || 14)));
   const streakActiveDateSet = new Set(
     (data.engagement?.recent_active_dates || []).filter((value): value is string => typeof value === "string" && value.length >= 10),
@@ -205,23 +206,32 @@ export default async function ProgressPage(props: PageProps) {
       ? Math.floor((anchorDate.getTime() - programmeStart.getTime()) / MS_PER_DAY) + 1
       : null;
   const programmeDay = programmeDayRaw === null ? 0 : Math.max(0, Math.min(84, programmeDayRaw));
-  const completedWeeks = Math.max(0, Math.min(12, Math.floor(programmeDay / 7)));
-  const journeyWeeks = Array.from({ length: 12 }, (_, idx) => {
-    const weekNumber = idx + 1;
-    const blockIndex = Math.min(programmeBlocks.length - 1, Math.floor(idx / 3));
-    const block = programmeBlocks[blockIndex];
-    const palette = getPillarPalette(block?.key);
-    return {
-      weekNumber,
-      completed: weekNumber <= completedWeeks,
-      palette,
-    };
-  });
   const currentProgrammeWeek = Math.max(1, Math.min(12, Math.ceil(Math.max(programmeDay, 1) / 7)));
   const currentBlockIndex = Math.min(programmeBlocks.length - 1, Math.floor((currentProgrammeWeek - 1) / 3));
   const currentBlock = programmeBlocks[currentBlockIndex] || programmeBlocks[0];
   const weekOfCurrentBlock = ((currentProgrammeWeek - 1) % 3) + 1;
-  const weekHeadline = `You are on week ${weekOfCurrentBlock} of 3 of ${currentBlock.label}`;
+  let activeStreakDays = 0;
+  for (const day of streakDays) {
+    if (!day.active) break;
+    activeStreakDays += 1;
+  }
+  const activeStreakIcons = streakDays.slice(0, activeStreakDays);
+  const currentBlockPalette = getPillarPalette(currentBlock.key);
+  const activePillarWeeks = programmeDay > 0 ? Math.max(1, weekOfCurrentBlock) : 0;
+  const pillarJourneyWeeks = Array.from({ length: 3 }, (_, idx) => {
+    const weekNumber = idx + 1;
+    return {
+      weekNumber,
+      active: weekNumber <= activePillarWeeks,
+      palette: currentBlockPalette,
+    };
+  });
+  const firstName = (user.first_name || user.display_name || status.user?.first_name || status.user?.display_name || "User").split(" ")[0];
+  const dayLabel = activeStreakDays === 1 ? "day" : "days";
+  const weekHeadline =
+    activeStreakDays > 0
+      ? `You are on week ${weekOfCurrentBlock} of 3 of ${currentBlock.label} and on a ${activeStreakDays} ${dayLabel} streak, keep it up ${firstName}!`
+      : `You are on week ${weekOfCurrentBlock} of 3 of ${currentBlock.label}. Start your streak today, ${firstName}.`;
   const anchorLabel = `${meta.anchor_label || "n/a"}${meta.is_virtual_date ? "*" : ""}`;
 
   const normalizePillarKey = (value?: string) => {
@@ -324,124 +334,134 @@ export default async function ProgressPage(props: PageProps) {
       <TextScale defaultScale={textScale} />
       <AppNav userId={userId} promptBadge={promptBadge} />
 
-      <section id="overview" className="space-y-2">
-        <Card className="p-4">
-          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{anchorLabel}</p>
-          <p className="mt-2 inline-block rounded-full bg-[#c54817] px-3 py-1 text-xs font-semibold text-white">
-            {weekHeadline}
-          </p>
+      <section id="overview" className="space-y-3">
+        <div
+          id="overview-carousel"
+          className="flex flex-nowrap gap-4 overflow-x-auto pb-2 snap-x snap-mandatory scroll-smooth"
+          style={{ scrollSnapType: "x mandatory" }}
+        >
+          <Card className="min-w-full snap-start p-4 sm:min-w-[85%]" style={{ scrollSnapStop: "always" }} data-carousel-item>
+            <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{anchorLabel}</p>
+            <p className="mt-2 text-[32px] leading-[1.2] text-[#1e1b16]">{weekHeadline}</p>
 
-          <div className="mt-3 border-t border-[#efe7db] pt-3">
-            <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Daily Streak</p>
-            <div className="mt-2 rounded-lg border border-[#f4c9a9] bg-white p-2">
-              <div className="grid grid-cols-7 gap-1 sm:grid-cols-14">
-                {streakDays.map((day) => (
+            <div className="mt-3 border-t border-[#efe7db] pt-3">
+              <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Daily Streak</p>
+              <div className="mt-2 rounded-xl border border-[#f4c9a9] bg-white p-3">
+                {activeStreakIcons.length ? (
+                  <div className="flex flex-wrap gap-2">
+                    {activeStreakIcons.map((day) => (
+                      <div
+                        key={day.iso}
+                        className="rounded-xl border p-2"
+                        style={{
+                          borderColor: day.pillar.border,
+                          background: day.pillar.bg,
+                        }}
+                        title={day.iso}
+                      >
+                        {day.pillar.icon ? (
+                          <img src={day.pillar.icon} alt="" className="mx-auto h-6 w-6" aria-hidden="true" />
+                        ) : (
+                          <span className="mx-auto block h-6 w-6 rounded-full bg-[#cbd5e1]" aria-hidden="true" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-[#6b6257]">No streak yet.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-3 border-t border-[#efe7db] pt-3">
+              <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">{currentBlock.label} Programme</p>
+              <div className="mt-2 grid max-w-[280px] grid-cols-3 gap-2">
+                {pillarJourneyWeeks.map((weekIcon) => (
                   <div
-                    key={day.iso}
-                    className="rounded-lg border p-1"
+                    key={`journey-week-${weekIcon.weekNumber}`}
+                    className="rounded-xl border p-2"
                     style={{
-                      borderColor: day.active ? day.pillar.border : "#e7e1d6",
-                      background: day.active ? day.pillar.bg : "#f8f6f2",
-                      opacity: day.active ? 1 : 0.45,
+                      borderColor: weekIcon.active ? weekIcon.palette.border : "#e7e1d6",
+                      background: weekIcon.active ? weekIcon.palette.bg : "#f8f6f2",
+                      opacity: weekIcon.active ? 1 : 0.45,
                     }}
-                    title={day.iso}
+                    title={`Week ${weekIcon.weekNumber}`}
                   >
-                    {day.pillar.icon ? (
-                      <img src={day.pillar.icon} alt="" className="mx-auto h-4 w-4" aria-hidden="true" />
+                    {weekIcon.palette.icon ? (
+                      <img src={weekIcon.palette.icon} alt="" className="mx-auto h-6 w-6" aria-hidden="true" />
                     ) : (
-                      <span className="mx-auto block h-4 w-4 rounded-full bg-[#cbd5e1]" aria-hidden="true" />
+                      <span className="mx-auto block h-6 w-6 rounded-full bg-[#cbd5e1]" aria-hidden="true" />
                     )}
                   </div>
                 ))}
               </div>
             </div>
-          </div>
 
-          <div className="mt-3 border-t border-[#efe7db] pt-3">
-            <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">12 Week Journey</p>
-            <div className="mt-2 grid grid-cols-6 gap-1 sm:grid-cols-12">
-              {journeyWeeks.map((weekIcon) => (
-                <div
-                  key={`journey-week-${weekIcon.weekNumber}`}
-                  className="rounded-lg border p-1"
-                  style={{
-                    borderColor: weekIcon.completed ? weekIcon.palette.border : "#e7e1d6",
-                    background: weekIcon.completed ? weekIcon.palette.bg : "#f8f6f2",
-                    opacity: weekIcon.completed ? 1 : 0.45,
-                  }}
-                  title={`Week ${weekIcon.weekNumber}`}
-                >
-                  {weekIcon.palette.icon ? (
-                    <img src={weekIcon.palette.icon} alt="" className="mx-auto h-4 w-4" aria-hidden="true" />
-                  ) : (
-                    <span className="mx-auto block h-4 w-4 rounded-full bg-[#cbd5e1]" aria-hidden="true" />
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-3 border-t border-[#efe7db] pt-3">
-            <p className="text-[10px] uppercase tracking-[0.24em] text-[#8b8074]">Daily Focus</p>
-            {dailyFocusTexts.length ? (
-              <ul className="mt-2 space-y-1 text-sm text-[#1e1b16]">
-                {dailyFocusTexts.map((step, idx) => (
-                  <li key={`daily-focus-${idx}`} className="flex items-start gap-2">
-                    <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[var(--accent,#d65a1f)]" />
-                    <span>{step}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-2 text-xs text-[#6b6257]">No habit steps to focus on yet.</p>
-            )}
-          </div>
-
-          <div className="mt-3 border-t border-[#efe7db] pt-3 text-[#1e1b16]">
-            <p className="text-[10px] uppercase tracking-[0.24em] text-[#6b6257]">Key Results Progress</p>
-            <div className="mt-2 space-y-2">
-              {pillarSummaries.map((summary, idx) => (
-                <div key={`pillar-summary-${summary.key}`} className={idx > 0 ? "border-t border-[#efe7db] pt-2" : ""}>
-                  <div className="flex items-center gap-2">
-                    {summary.palette.icon ? (
-                      <img src={summary.palette.icon} alt="" className="h-4 w-4" aria-hidden="true" />
-                    ) : null}
-                    <span className="text-[11px] uppercase tracking-[0.24em] text-[#6b6257]">{summary.label}</span>
-                  </div>
-                  <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-[#e7e1d6]">
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: summary.barWidth,
-                        background: summary.palette.accent,
-                        opacity: summary.hasData ? 1 : 0.35,
-                      }}
-                    />
-                  </div>
-                  <div className="mt-1 flex items-center justify-between text-[11px] text-[#6b6257]">
-                    <span>Current {formatNumber(summary.currentTotal)}</span>
-                    <span>Target {formatNumber(summary.targetTotal)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
             <div className="mt-3 border-t border-[#efe7db] pt-3">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-[#6b6257]">Assessment</p>
-              <p className="mt-1 text-sm font-semibold text-[#1e1b16]">
-                Next due: {nextAssessmentDue ? formatDateUk(nextAssessmentDue) : "Not available"}
-              </p>
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#6b6257]">Daily Focus</p>
+              {dailyFocusTexts.length ? (
+                <ul className="mt-2 space-y-1 text-sm text-[#1e1b16]">
+                  {dailyFocusTexts.map((step, idx) => (
+                    <li key={`daily-focus-${idx}`} className="flex items-start gap-2">
+                      <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-[var(--accent,#d65a1f)]" />
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="mt-2 text-xs text-[#6b6257]">No habit steps to focus on yet.</p>
+              )}
             </div>
-          </div>
 
-          <div className="mt-3 border-t border-[#efe7db] pt-3">
+            <div className="mt-3 border-t border-[#efe7db] pt-3 text-[#1e1b16]">
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#6b6257]">Key Results Progress</p>
+              <div className="mt-3 space-y-3">
+                {pillarSummaries.map((summary, idx) => (
+                  <div key={`pillar-summary-${summary.key}`} className={idx > 0 ? "border-t border-[#efe7db] pt-3" : ""}>
+                    <div className="grid grid-cols-[1fr_52%] items-center gap-3">
+                      <div className="flex items-center gap-2.5">
+                        {summary.palette.icon ? (
+                          <img src={summary.palette.icon} alt="" className="h-6 w-6" aria-hidden="true" />
+                        ) : null}
+                        <span className="text-sm font-semibold uppercase tracking-[0.2em] text-[#3c332b]">{summary.label}</span>
+                      </div>
+                      <div className="h-4 overflow-hidden rounded-full bg-[#e7e1d6]">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: summary.barWidth,
+                            background: summary.palette.accent,
+                            opacity: summary.hasData ? 1 : 0.35,
+                          }}
+                        />
+                      </div>
+                    </div>
+                    <div className="mt-1 grid grid-cols-[1fr_52%] items-center gap-3 text-[12px] text-[#6b6257]">
+                      <span>Current {formatNumber(summary.currentTotal)}</span>
+                      <span className="text-right">Target {formatNumber(summary.targetTotal)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-3 border-t border-[#efe7db] pt-3">
+                <p className="text-[10px] uppercase tracking-[0.24em] text-[#6b6257]">Assessment</p>
+                <p className="mt-1 text-sm font-semibold text-[#1e1b16]">
+                  Next due: {nextAssessmentDue ? formatDateUk(nextAssessmentDue) : "Not available"}
+                </p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="min-w-full snap-start p-4 sm:min-w-[85%]" style={{ scrollSnapStop: "always" }} data-carousel-item>
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Programme</p>
             <h2 className="mt-1 text-xl">Overview</h2>
             <ProgrammeCalendar
               programmeStart={programmeStart ? programmeStart.toISOString() : null}
               programmeBlocks={programmeBlocks}
             />
-          </div>
-        </Card>
+          </Card>
+        </div>
+        <CarouselDots containerId="overview-carousel" count={2} />
       </section>
 
       <section id="timeline" className="space-y-4">
