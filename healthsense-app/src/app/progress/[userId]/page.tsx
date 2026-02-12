@@ -338,7 +338,7 @@ export default async function ProgressPage(props: PageProps) {
 
       <section
         id="overview"
-        className="space-y-3 rounded-2xl border border-[#c95d31] bg-[#a23810] p-3 shadow-lg"
+        className="space-y-3 rounded-2xl border border-[#d96a3e] bg-[#ad3b11] p-3 shadow-lg"
         style={{ "--accent": "#ffffff" } as CSSProperties}
       >
         <div
@@ -351,14 +351,12 @@ export default async function ProgressPage(props: PageProps) {
             data-carousel-item
             style={{ scrollSnapStop: "always" }}
           >
-            <p className="text-xs uppercase tracking-[0.2em] text-white/80">{anchorLabel}</p>
-            <h2 className="mt-2 rounded-xl border border-[#d96a3e] bg-[#8f2f0d] p-3 text-base font-semibold leading-relaxed text-white">
-              {momentumHeadline}
-            </h2>
-
-            <div className="mt-4">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-white">Journey Overview</p>
-              <div className="mt-2 rounded-xl border border-[#d96a3e] bg-[#8f2f0d] p-3">
+            <div className="rounded-xl border border-[#d96a3e] bg-[#8f2f0d] p-3">
+              <p className="text-xs uppercase tracking-[0.2em] text-white/80">{anchorLabel}</p>
+              <h2 className="mt-2 rounded-xl border border-[#d96a3e] bg-[#a23810] p-3 text-base font-semibold leading-relaxed text-white">
+                {momentumHeadline}
+              </h2>
+              <div className="mt-3 border-t border-white/25 pt-3">
                 <p className="text-[10px] uppercase tracking-[0.24em] text-white">Daily Streak</p>
                 <div className="mt-2 grid grid-cols-7 gap-1 sm:grid-cols-14">
                   {streakDays.map((day) => (
@@ -379,36 +377,36 @@ export default async function ProgressPage(props: PageProps) {
                     </div>
                   ))}
                 </div>
-                <div className="mt-3 border-t border-white/25 pt-3">
-                  <p className="text-[10px] uppercase tracking-[0.24em] text-white">12 Week Journey</p>
-                  <div className="mt-2 grid grid-cols-6 gap-1 sm:grid-cols-12">
-                    {journeyWeeks.map((weekIcon) => (
-                      <div
-                        key={`journey-week-${weekIcon.weekNumber}`}
-                        className="rounded-lg border p-1"
-                        style={{
-                          borderColor: weekIcon.completed ? weekIcon.palette.border : "rgba(255,255,255,0.38)",
-                          background: weekIcon.completed ? weekIcon.palette.bg : "#b94a1a",
-                        }}
-                        title={`Week ${weekIcon.weekNumber}`}
-                      >
-                        {weekIcon.palette.icon ? (
-                          <img src={weekIcon.palette.icon} alt="" className="mx-auto h-4 w-4" aria-hidden="true" />
-                        ) : (
-                          <span className="mx-auto block h-4 w-4 rounded-full bg-white/70" aria-hidden="true" />
-                        )}
-                      </div>
-                    ))}
-                  </div>
+              </div>
+              <div className="mt-3 border-t border-white/25 pt-3">
+                <p className="text-[10px] uppercase tracking-[0.24em] text-white">12 Week Journey</p>
+                <div className="mt-2 grid grid-cols-6 gap-1 sm:grid-cols-12">
+                  {journeyWeeks.map((weekIcon) => (
+                    <div
+                      key={`journey-week-${weekIcon.weekNumber}`}
+                      className="rounded-lg border p-1"
+                      style={{
+                        borderColor: weekIcon.completed ? weekIcon.palette.border : "rgba(255,255,255,0.38)",
+                        background: weekIcon.completed ? weekIcon.palette.bg : "#b94a1a",
+                      }}
+                      title={`Week ${weekIcon.weekNumber}`}
+                    >
+                      {weekIcon.palette.icon ? (
+                        <img src={weekIcon.palette.icon} alt="" className="mx-auto h-4 w-4" aria-hidden="true" />
+                      ) : (
+                        <span className="mx-auto block h-4 w-4 rounded-full bg-white/70" aria-hidden="true" />
+                      )}
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
 
             <div className="mt-4">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-white/80">Daily Focus</p>
               <div className="mt-2 rounded-xl border border-[#d96a3e] bg-[#8f2f0d] p-3">
+                <p className="text-[10px] uppercase tracking-[0.24em] text-white">Daily Focus</p>
                 {dailyFocusTexts.length ? (
-                  <ul className="space-y-1 text-sm text-white">
+                  <ul className="mt-2 space-y-1 text-sm text-white">
                     {dailyFocusTexts.map((step, idx) => (
                       <li key={`daily-focus-${idx}`} className="flex items-start gap-2">
                         <span className="mt-1.5 h-1.5 w-1.5 rounded-full bg-white/90" />
@@ -417,24 +415,24 @@ export default async function ProgressPage(props: PageProps) {
                     ))}
                   </ul>
                 ) : (
-                  <p className="text-xs text-white/75">No habit steps to focus on yet.</p>
+                  <p className="mt-2 text-xs text-white/75">No habit steps to focus on yet.</p>
                 )}
               </div>
             </div>
 
             <div className="mt-4">
-              <p className="text-[10px] uppercase tracking-[0.24em] text-white/80">Key Results Progress</p>
-              <div className="mt-2 rounded-xl border border-[#d96a3e] bg-[#8f2f0d] p-3 text-white shadow-sm">
+              <div className="mt-2 rounded-xl border border-[#efe7db] bg-white p-3 text-[#1e1b16] shadow-sm">
+                <p className="text-[10px] uppercase tracking-[0.24em] text-[#6b6257]">Key Results Progress</p>
                 <div className="space-y-2">
                   {pillarSummaries.map((summary, idx) => (
-                    <div key={`pillar-summary-${summary.key}`} className={idx > 0 ? "border-t border-white/25 pt-2" : ""}>
+                    <div key={`pillar-summary-${summary.key}`} className={idx > 0 ? "border-t border-[#efe7db] pt-2" : ""}>
                       <div className="flex items-center gap-2">
                         {summary.palette.icon ? (
                           <img src={summary.palette.icon} alt="" className="h-4 w-4" aria-hidden="true" />
                         ) : null}
-                        <span className="text-[11px] uppercase tracking-[0.24em] text-white">{summary.label}</span>
+                        <span className="text-[11px] uppercase tracking-[0.24em] text-[#6b6257]">{summary.label}</span>
                       </div>
-                      <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-white/30">
+                      <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-[#e7e1d6]">
                         <div
                           className="h-full rounded-full"
                           style={{
@@ -444,15 +442,15 @@ export default async function ProgressPage(props: PageProps) {
                           }}
                         />
                       </div>
-                      <div className="mt-1 flex items-center justify-between text-[11px] text-white/90">
+                      <div className="mt-1 flex items-center justify-between text-[11px] text-[#6b6257]">
                         <span>Current {formatNumber(summary.currentTotal)}</span>
                         <span>Target {formatNumber(summary.targetTotal)}</span>
                       </div>
                     </div>
                   ))}
                 </div>
-                <div className="mt-3 border-t border-white/25 pt-3">
-                  <p className="text-[10px] uppercase tracking-[0.24em] text-white/80">Assessment</p>
+                <div className="mt-3 border-t border-[#efe7db] pt-3">
+                  <p className="text-[10px] uppercase tracking-[0.24em] text-[#6b6257]">Assessment</p>
                   <p className="mt-1 inline-block rounded-full bg-[#ffb168] px-3 py-1 text-sm font-semibold text-[#6a2408]">
                     Next due: {nextAssessmentDue ? formatDateUk(nextAssessmentDue) : "Not available"}
                   </p>
