@@ -233,61 +233,17 @@ export default async function ProgressPage(props: PageProps) {
     return fallbackPillarKey;
   };
 
-  const pillarTotalsByKey = new Map(
-    programmeBlocks.map((block) => [
-      block.key,
-      {
-        key: block.key,
-        label: block.label,
-        palette: getPillarPalette(block.key),
-        baselineTotal: 0,
-        currentTotal: 0,
-        targetTotal: 0,
-        krCount: 0,
-        progressSum: 0,
-        progressCount: 0,
-      },
-    ]),
-  );
-
-  rows.forEach((row) => {
-    const pillarKey = normalizePillarKey(row.pillar);
-    const totals = pillarTotalsByKey.get(pillarKey);
-    if (!totals) return;
-    (row.krs || []).forEach((kr) => {
-      const status = computeStatus(
-        kr.actual,
-        kr.target,
-        kr.baseline,
-        row.cycle_start,
-        row.cycle_end,
-      );
-      if (status.pct !== null) {
-        totals.progressSum += status.pct;
-        totals.progressCount += 1;
-      }
-      const current = toFiniteNumber(kr.actual);
-      const target = toFiniteNumber(kr.target);
-      if (current === null || target === null) return;
-      const baseline = toFiniteNumber(kr.baseline) ?? 0;
-      totals.baselineTotal += baseline;
-      totals.currentTotal += current;
-      totals.targetTotal += target;
-      totals.krCount += 1;
-    });
-  });
-
+  const programmeDaysCapped = Math.max(0, Math.min(84, programmeDay));
   const pillarSummaries = programmeBlocks.map((block) => {
-    const totals = pillarTotalsByKey.get(block.key)!;
-    const ratio = totals.progressCount ? totals.progressSum / totals.progressCount : null;
-    const pct = ratio === null ? 0 : Math.round(ratio * 100);
-    const notStarted = currentProgrammeWeek < block.weekStart;
+    const blockStartDay = (block.weekStart - 1) * 7 + 1;
+    const daysIntoBlock = Math.max(0, Math.min(21, programmeDaysCapped - blockStartDay + 1));
+    const pct = Math.round((daysIntoBlock / 21) * 100);
     return {
-      ...totals,
+      key: block.key,
+      label: block.label,
+      palette: getPillarPalette(block.key),
       pct,
-      hasData: totals.progressCount > 0,
-      notStarted,
-      barWidth: `${Math.max(4, pct)}%`,
+      notStarted: daysIntoBlock === 0,
     };
   });
   const dailyFocusTexts: string[] = [];
@@ -346,16 +302,12 @@ export default async function ProgressPage(props: PageProps) {
                         key={day.iso}
                         className="rounded-xl border p-2"
                         style={{
-                          borderColor: day.pillar.border,
-                          background: day.pillar.bg,
+                          borderColor: "#e6a786",
+                          background: "#fff7f1",
                         }}
                         title={day.iso}
                       >
-                        {day.pillar.icon ? (
-                          <img src={day.pillar.icon} alt="" className="mx-auto h-6 w-6" aria-hidden="true" />
-                        ) : (
-                          <span className="mx-auto block h-6 w-6 rounded-full bg-[#cbd5e1]" aria-hidden="true" />
-                        )}
+                        <img src="/healthsense-mark.svg" alt="" className="mx-auto h-7 w-7" aria-hidden="true" />
                       </div>
                     ))}
                   </div>
@@ -388,7 +340,7 @@ export default async function ProgressPage(props: PageProps) {
             </div>
 
             <div className="mt-3 border-t border-[#efe7db] pt-3 text-[#1e1b16]">
-              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#6b6257]">Key Results Progress</p>
+              <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#6b6257]">Programme Progress</p>
               <div className="mt-3 space-y-3">
                 {pillarSummaries.map((summary, idx) => (
                   <div key={`pillar-summary-${summary.key}`} className={idx > 0 ? "border-t border-[#efe7db] pt-3" : ""}>
@@ -400,11 +352,15 @@ export default async function ProgressPage(props: PageProps) {
                         <span className="text-sm font-semibold uppercase tracking-[0.2em] text-[#3c332b]">{summary.label}</span>
                       </div>
                       <span
-                        className="text-base font-semibold"
-                        style={{ color: summary.notStarted ? "#8b8074" : summary.palette.accent }}
+                        className="inline-flex min-w-[52px] items-center justify-center rounded-lg border px-2 py-1 text-base font-semibold"
+                        style={{
+                          borderColor: "#e6a786",
+                          background: "#fff7f1",
+                          color: summary.notStarted ? "#8b8074" : summary.palette.accent,
+                        }}
                         title={summary.notStarted ? "Not started" : undefined}
                       >
-                        {summary.notStarted ? "○" : summary.hasData ? `${summary.pct}%` : "0%"}
+                        {summary.notStarted ? "○" : `${summary.pct}%`}
                       </span>
                     </div>
                   </div>
