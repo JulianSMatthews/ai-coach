@@ -18,8 +18,8 @@ from .config import settings
 from .debug_utils import debug_log, debug_enabled
 from .message_log import write_log
 from .usage import log_usage_event, estimate_whatsapp_cost
-from .db import SessionLocal
 from .models import User
+from .virtual_clock import get_virtual_now_for_user
 from .db import SessionLocal, engine
 
 BUSINESS_START = dt_time(9, 0)
@@ -589,12 +589,23 @@ def _twilio_client() -> Client | None:
 def _try_write_outbound_log(*, phone_e164: str, text: str, category: str | None, twilio_sid: str, to_norm: str):
     """Log using the single canonical write_log from app.message_log; never raise."""
     try:
+        meta_payload: dict[str, str] = {"to": to_norm}
+        created_at_override = None
+        user_id = _lookup_user_id_for_whatsapp(to_norm)
+        if user_id:
+            virtual_now = get_virtual_now_for_user(int(user_id))
+            if virtual_now is not None:
+                meta_payload["virtual_date"] = virtual_now.date().isoformat()
+                created_at_override = virtual_now
         write_log(
             phone_e164=phone_e164,
             direction="outbound",
             text=text,
             category=category,
             twilio_sid=twilio_sid,
+            channel="whatsapp",
+            meta=meta_payload,
+            created_at=created_at_override,
         )
     except Exception as e:
         print(f"⚠️ outbound logging failed (non-fatal): {e!r}")

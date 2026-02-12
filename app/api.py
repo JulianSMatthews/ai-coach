@@ -752,15 +752,21 @@ def _find_club_by_identifier(sess, identifier: str) -> Club | None:
     )
 
 
-def _get_or_create_user(phone_e164: str) -> User:
-    """Find or create a User record by E.164 phone (no whatsapp: prefix)."""
+def _get_or_create_user(
+    phone_e164: str,
+    *,
+    create_if_missing: bool = True,
+    first_name: str | None = None,
+    surname: str | None = None,
+) -> User | None:
+    """Find a user by phone, and optionally create when missing."""
     phone_e164 = _norm_phone(phone_e164)
     with SessionLocal() as s:
         u = s.query(User).filter(User.phone == phone_e164).first()
-        if not u:
+        if not u and create_if_missing:
             club_id = _resolve_default_club_id(s)
             now = datetime.utcnow()
-            u = User(first_name=None, surname=None, phone=phone_e164, club_id=club_id,
+            u = User(first_name=first_name, surname=surname, phone=phone_e164, club_id=club_id,
                      created_on=now, updated_on=now)
             s.add(u)
             s.commit()
@@ -1950,7 +1956,44 @@ async def twilio_inbound(request: Request):
         phone = from_raw.replace("whatsapp:", "") if from_raw.startswith("whatsapp:") else from_raw
         channel = "whatsapp" if from_raw.startswith("whatsapp:") else "sms"
 
-        user = _get_or_create_user(phone)
+        user = _get_or_create_user(phone, create_if_missing=False)
+
+        if not user:
+            unknown_msg = " ".join((body or "").strip().split())
+            unknown_lower = unknown_msg.lower()
+            if unknown_lower.startswith("global") or unknown_lower.startswith("admin"):
+                try:
+                    send_whatsapp(to=phone, text="Sorry, admin commands are restricted to superusers.")
+                except Exception:
+                    pass
+                return Response(content="", media_type="text/plain", status_code=200)
+
+            first_name, surname = _split_name(unknown_msg)
+            if not _require_name_fields(first_name, surname):
+                try:
+                    send_whatsapp(
+                        to=phone,
+                        text=(
+                            "Welcome to HealthSense. Before we begin, please reply with your first and last name "
+                            "(e.g., 'Sam Smith')."
+                        ),
+                    )
+                except Exception:
+                    pass
+                return Response(content="", media_type="text/plain", status_code=200)
+
+            created = _get_or_create_user(
+                phone,
+                create_if_missing=True,
+                first_name=first_name,
+                surname=surname,
+            )
+            if not created:
+                return Response(content="", media_type="text/plain", status_code=200)
+            user = created
+            _log_inbound_direct(user, channel, body, from_raw)
+            _start_assessment_async(user, force_intro=True)
+            return Response(content="", media_type="text/plain", status_code=200)
 
         # Global admin commands (broader scope)
         if body.lower().startswith("global"):
@@ -2148,8 +2191,32 @@ async def twilio_inbound(request: Request):
                 send_whatsapp(to=user.phone, text=f"Couldn't refresh your progress report: {e}")
             return Response(content="", media_type="text/plain", status_code=200)
 
-        # Explicit assessment entry
-        if lower_body in {"start", "hi", "hello"}:
+        # Explicit assessment entry (including marketing CTA replies from WhatsApp/SMS)
+        normalized_body = " ".join(re.sub(r"[^a-z0-9\s]+", " ", (body or "").strip().lower()).split())
+        marketing_start_tokens = {
+            "send",
+            "start",
+            "hit start",
+            "hit send",
+            "tap start",
+            "tap send",
+            "start free assessment",
+            "hit start to start free assessment",
+            "hit send to start free assessment",
+            "free assessment",
+            "start assessment",
+            "hi",
+            "hello",
+        }
+        looks_like_marketing_cta = (
+            normalized_body in marketing_start_tokens
+            or (
+                "hit send" in normalized_body
+                and "start" in normalized_body
+                and "free assessment" in normalized_body
+            )
+        )
+        if looks_like_marketing_cta:
             # Clear any stale active session and force fresh consent/name capture
             _start_assessment_async(user, force_intro=True)
             return Response(content="", media_type="text/plain", status_code=200)
@@ -6517,6 +6584,7 @@ def admin_list_users(
         active_users: set[int] = set()
         prompt_overrides: dict[int, str] = {}
         coaching_pref: dict[int, tuple[datetime | None, str]] = {}
+        coaching_fast_minutes: dict[int, int] = {}
         if user_ids:
             run_rows = s.execute(
                 select(AssessmentRun.user_id, func.max(AssessmentRun.id))
@@ -6554,6 +6622,13 @@ def admin_list_users(
                     UserPreference.key.in_(("coaching", "auto_daily_prompts")),
                 )
             ).all()
+            fast_rows = s.execute(
+                select(UserPreference.user_id, UserPreference.value, UserPreference.updated_at)
+                .where(
+                    UserPreference.user_id.in_(user_ids),
+                    UserPreference.key == "coaching_fast_minutes",
+                )
+            ).all()
             for uid, val, updated_at in coaching_rows:
                 if not uid:
                     continue
@@ -6561,6 +6636,15 @@ def admin_list_users(
                 if existing and existing[0] and updated_at and updated_at <= existing[0]:
                     continue
                 coaching_pref[int(uid)] = (updated_at, str(val or ""))
+            for uid, val, _updated_at in fast_rows:
+                if not uid:
+                    continue
+                try:
+                    parsed = int(str(val or "").strip())
+                    if parsed > 0:
+                        coaching_fast_minutes[int(uid)] = parsed
+                except Exception:
+                    continue
 
     payload = []
     for u in users:
@@ -6586,6 +6670,7 @@ def admin_list_users(
                 "status": status,
                 "prompt_state_override": prompt_overrides.get(u.id, ""),
                 "coaching_enabled": (coaching_pref.get(u.id, (None, "0"))[1].strip() == "1"),
+                "coaching_fast_minutes": coaching_fast_minutes.get(u.id),
             }
         )
 
@@ -6712,16 +6797,31 @@ def admin_user_coaching(user_id: int, payload: dict, admin_user: User = Depends(
         else:
             raise HTTPException(status_code=400, detail="enabled must be boolean")
 
+    fast_minutes: int | None = None
+    fast_minutes_raw = payload.get("fast_minutes")
+    if fast_minutes_raw is not None and str(fast_minutes_raw).strip() != "":
+        try:
+            parsed = int(str(fast_minutes_raw).strip())
+        except Exception:
+            raise HTTPException(status_code=400, detail="fast_minutes must be an integer")
+        if parsed < 1 or parsed > 120:
+            raise HTTPException(status_code=400, detail="fast_minutes must be between 1 and 120")
+        fast_minutes = parsed
+
     with SessionLocal() as s:
         u = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
         if not u:
             raise HTTPException(status_code=404, detail="user not found")
         _ensure_club_scope(admin_user, u)
 
-    ok = scheduler.enable_coaching(user_id) if enabled else scheduler.disable_coaching(user_id)
+    ok = scheduler.enable_coaching(user_id, fast_minutes=fast_minutes) if enabled else scheduler.disable_coaching(user_id)
     if not ok:
         raise HTTPException(status_code=500, detail="failed to update coaching schedule")
-    return {"status": "enabled" if enabled else "disabled", "user_id": user_id}
+    return {
+        "status": "enabled" if enabled else "disabled",
+        "user_id": user_id,
+        "fast_minutes": fast_minutes if enabled else None,
+    }
 
 @admin.post("/users/{user_id}/start")
 def admin_start_user(user_id: int, admin_user: User = Depends(_require_admin)):
@@ -6735,6 +6835,40 @@ def admin_start_user(user_id: int, admin_user: User = Depends(_require_admin)):
         _ensure_club_scope(admin_user, u)
     _start_assessment_async(u)
     return {"status": "started", "user_id": user_id}
+
+@admin.post("/users/{user_id}/app-session")
+def admin_user_app_session(user_id: int, admin_user: User = Depends(_require_admin)):
+    """
+    Mint a short-lived app session token for opening the member app from admin.
+    """
+    ttl_minutes_raw = (os.getenv("ADMIN_APP_SESSION_TTL_MINUTES") or "30").strip()
+    try:
+        ttl_minutes = max(5, min(180, int(ttl_minutes_raw)))
+    except Exception:
+        ttl_minutes = 30
+    now = datetime.utcnow()
+    with SessionLocal() as s:
+        u = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not u:
+            raise HTTPException(status_code=404, detail="user not found")
+        _ensure_club_scope(admin_user, u)
+        session_token = secrets.token_urlsafe(32)
+        auth_session = AuthSession(
+            user_id=u.id,
+            token_hash=_hash_token(session_token),
+            created_at=now,
+            expires_at=now + timedelta(minutes=ttl_minutes),
+            ip=None,
+            user_agent=f"admin-app-session:{getattr(admin_user, 'id', 'unknown')}",
+        )
+        s.add(auth_session)
+        s.commit()
+    return {
+        "user_id": user_id,
+        "session_token": session_token,
+        "expires_at": (now + timedelta(minutes=ttl_minutes)).isoformat(),
+        "ttl_minutes": ttl_minutes,
+    }
 
 @admin.get("/users/{user_id}/status")
 def admin_user_status(user_id: int, admin_user: User = Depends(_require_admin)):
@@ -6891,6 +7025,40 @@ def admin_reset_user(user_id: int, admin_user: User = Depends(_require_admin)):
         s.commit()
 
     return {"status": "reset", "user_id": user_id, "deleted": deleted}
+
+
+@admin.post("/users/{user_id}/delete")
+def admin_delete_user(user_id: int, admin_user: User = Depends(_require_admin)):
+    """
+    Permanently delete a member user and related records.
+    """
+    with SessionLocal() as s:
+        target = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not target:
+            raise HTTPException(status_code=404, detail="user not found")
+        _ensure_club_scope(admin_user, target)
+        if int(getattr(target, "id", 0) or 0) == int(getattr(admin_user, "id", 0) or 0):
+            raise HTTPException(status_code=400, detail="cannot delete your own admin user")
+        if _user_admin_role(target) in {ADMIN_ROLE_CLUB, ADMIN_ROLE_GLOBAL}:
+            raise HTTPException(status_code=400, detail="cannot delete admin users from user management")
+
+    # Unschedule ongoing coaching jobs and clear fast mode before deletion.
+    try:
+        scheduler.disable_coaching(user_id)
+    except Exception:
+        pass
+
+    reset_result = admin_reset_user(user_id=user_id, admin_user=admin_user)
+    deleted_rows = reset_result.get("deleted", {}) if isinstance(reset_result, dict) else {}
+
+    with SessionLocal() as s:
+        target = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not target:
+            return {"status": "deleted", "user_id": user_id, "deleted": deleted_rows}
+        s.delete(target)
+        s.commit()
+
+    return {"status": "deleted", "user_id": user_id, "deleted": deleted_rows}
 
 
 

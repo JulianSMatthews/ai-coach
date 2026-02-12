@@ -406,6 +406,7 @@ export type AdminUserSummary = {
   status?: string | null;
   prompt_state_override?: string | null;
   coaching_enabled?: boolean | null;
+  coaching_fast_minutes?: number | null;
 };
 
 function getBaseUrl() {
@@ -882,6 +883,10 @@ export async function resetAdminUser(userId: number): Promise<Record<string, unk
   return apiAdmin<Record<string, unknown>>(`/admin/users/${userId}/reset`, { method: "POST" });
 }
 
+export async function deleteAdminUser(userId: number): Promise<Record<string, unknown>> {
+  return apiAdmin<Record<string, unknown>>(`/admin/users/${userId}/delete`, { method: "POST" });
+}
+
 export async function setAdminUserPromptState(
   userId: number,
   state: string,
@@ -896,12 +901,26 @@ export async function setAdminUserPromptState(
 export async function setAdminUserCoaching(
   userId: number,
   enabled: boolean,
+  fastMinutes?: number,
 ): Promise<Record<string, unknown>> {
+  const payload: { enabled: boolean; fast_minutes?: number } = { enabled };
+  if (typeof fastMinutes === "number" && Number.isFinite(fastMinutes) && fastMinutes > 0) {
+    payload.fast_minutes = Math.trunc(fastMinutes);
+  }
   return apiAdmin<Record<string, unknown>>(`/admin/users/${userId}/coaching`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ enabled }),
+    body: JSON.stringify(payload),
   });
+}
+
+export async function createAdminUserAppSession(
+  userId: number,
+): Promise<{ user_id?: number; session_token?: string; expires_at?: string; ttl_minutes?: number }> {
+  return apiAdmin<{ user_id?: number; session_token?: string; expires_at?: string; ttl_minutes?: number }>(
+    `/admin/users/${userId}/app-session`,
+    { method: "POST" },
+  );
 }
 
 export async function createContentGeneration(payload: {

@@ -1,8 +1,11 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import AdminNav from "@/components/AdminNav";
 import {
+  createAdminUserAppSession,
   createAdminUser,
+  deleteAdminUser,
   listAdminUsers,
   resetAdminUser,
   setAdminUserCoaching,
@@ -15,6 +18,19 @@ type UsersPageProps = {
 };
 
 export const dynamic = "force-dynamic";
+
+function resolveHsAppBase(): string {
+  const appBaseRaw =
+    process.env.NEXT_PUBLIC_HSAPP_BASE_URL ||
+    process.env.NEXT_PUBLIC_APP_BASE_URL ||
+    process.env.HSAPP_PUBLIC_URL ||
+    process.env.HSAPP_PUBLIC_DEFAULT_URL ||
+    process.env.HSAPP_NGROK_DOMAIN ||
+    "https://app.healthsense.coach";
+  return (appBaseRaw.startsWith("http://") || appBaseRaw.startsWith("https://")
+    ? appBaseRaw
+    : `https://${appBaseRaw}`).replace(/\/+$/, "");
+}
 
 async function createUserAction(formData: FormData) {
   "use server";
@@ -54,11 +70,31 @@ async function resetUserAction(formData: FormData) {
   revalidatePath("/admin/users");
 }
 
+async function deleteUserAction(formData: FormData) {
+  "use server";
+  const userId = Number(formData.get("user_id") || 0);
+  const confirm = String(formData.get("confirm") || "").trim().toLowerCase();
+  if (!userId || confirm !== "delete") return;
+  await deleteAdminUser(userId);
+  revalidatePath("/admin/users");
+}
+
 async function coachUserAction(formData: FormData) {
   "use server";
   const userId = Number(formData.get("user_id") || 0);
   if (!userId) return;
   await setAdminUserCoaching(userId, true);
+  revalidatePath("/admin/users");
+}
+
+async function fastCoachUserAction(formData: FormData) {
+  "use server";
+  const userId = Number(formData.get("user_id") || 0);
+  const fastMinutesRaw = String(formData.get("fast_minutes") || "").trim();
+  const fastMinutesParsed = Number.parseInt(fastMinutesRaw || "2", 10);
+  if (!userId || !Number.isFinite(fastMinutesParsed)) return;
+  const fastMinutes = Math.max(1, Math.min(120, fastMinutesParsed));
+  await setAdminUserCoaching(userId, true, fastMinutes);
   revalidatePath("/admin/users");
 }
 
@@ -70,19 +106,26 @@ async function stopCoachingAction(formData: FormData) {
   revalidatePath("/admin/users");
 }
 
+async function openAppAction(formData: FormData) {
+  "use server";
+  const userId = Number(formData.get("user_id") || 0);
+  if (!userId) return;
+  const appBase = resolveHsAppBase();
+  const session = await createAdminUserAppSession(userId);
+  const token = String(session.session_token || "").trim();
+  if (!token) return;
+  const nextPath = `/progress/${userId}`;
+  const url =
+    `${appBase}/api/auth/admin-app-login?session_token=${encodeURIComponent(token)}` +
+    `&user_id=${encodeURIComponent(String(userId))}` +
+    `&next=${encodeURIComponent(nextPath)}`;
+  redirect(url);
+}
+
 export default async function UsersPage({ searchParams }: UsersPageProps) {
   const resolvedSearchParams = await searchParams;
   const query = (resolvedSearchParams?.q || "").trim();
   const users = await listAdminUsers(query || undefined);
-  const appBaseRaw =
-    process.env.NEXT_PUBLIC_HSAPP_BASE_URL ||
-    process.env.NEXT_PUBLIC_APP_BASE_URL ||
-    process.env.HSAPP_PUBLIC_URL ||
-    process.env.HSAPP_NGROK_DOMAIN ||
-    "http://localhost:3000";
-  const appBase = (appBaseRaw.startsWith("http://") || appBaseRaw.startsWith("https://")
-    ? appBaseRaw
-    : `https://${appBaseRaw}`).replace(/\/+$/, "");
   const formatDate = (value?: string | null) => {
     if (!value) return "—";
     try {
@@ -174,6 +217,10 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                 {users.map((u) => {
                   const promptState = (u.prompt_state_override || "live").toLowerCase();
                   const coachingOn = Boolean(u.coaching_enabled);
+                  const fastMinutes =
+                    typeof u.coaching_fast_minutes === "number" && u.coaching_fast_minutes > 0
+                      ? u.coaching_fast_minutes
+                      : null;
                   return (
                     <tr key={u.id}>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">#{u.id}</td>
@@ -207,18 +254,19 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                       </form>
                     </td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
-                      {coachingOn ? "On" : "Off"}
+                      {coachingOn ? (fastMinutes ? `Fast (${fastMinutes}m)` : "On") : "Off"}
                     </td>
                     <td className="py-3 whitespace-nowrap">
                       <div className="flex items-center gap-2 whitespace-nowrap">
-                        <Link
-                          href={`${appBase}/progress/${u.id}`}
-                          className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          app
-                        </Link>
+                        <form action={openAppAction} target="_blank">
+                          <input type="hidden" name="user_id" value={u.id} />
+                          <button
+                            type="submit"
+                            className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
+                          >
+                            app
+                          </button>
+                        </form>
                         <Link
                           href={`/admin/users/${u.id}`}
                           className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
@@ -242,6 +290,34 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                             className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
                           >
                             reset
+                          </button>
+                        </form>
+                        <form action={fastCoachUserAction} className="flex items-center gap-1">
+                          <input type="hidden" name="user_id" value={u.id} />
+                          <input
+                            type="number"
+                            name="fast_minutes"
+                            min={1}
+                            max={120}
+                            defaultValue={fastMinutes || 2}
+                            className="w-14 rounded-full border border-[#efe7db] px-2 py-1 text-xs"
+                            aria-label={`Fast coaching minutes for user ${u.id}`}
+                          />
+                          <button
+                            type="submit"
+                            className="rounded-full border border-[var(--accent)] px-3 py-1 text-xs text-[var(--accent)]"
+                          >
+                            fast on
+                          </button>
+                        </form>
+                        <form action={deleteUserAction}>
+                          <input type="hidden" name="user_id" value={u.id} />
+                          <input type="hidden" name="confirm" value="delete" />
+                          <button
+                            type="submit"
+                            className="rounded-full border border-[#c43e1c] px-3 py-1 text-xs text-[#c43e1c]"
+                          >
+                            delete
                           </button>
                         </form>
                         {!coachingOn ? (

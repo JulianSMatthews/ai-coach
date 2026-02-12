@@ -93,7 +93,7 @@ export default async function HistoryPage(props: PageProps) {
     }>
   >((acc, item) => {
     const kickoff = isKickoffItem(item);
-    const weekNo = item.week_no ? Number(item.week_no) : undefined;
+    const weekNo = kickoff ? undefined : item.week_no ? Number(item.week_no) : undefined;
     const key = kickoff ? "programme-kickoff" : weekNo ? `week-${weekNo}` : `item-${item.id}`;
     let group = acc.find((entry) => entry.key === key);
     if (!group) {
@@ -174,7 +174,9 @@ export default async function HistoryPage(props: PageProps) {
                 <details key={group.key} className="rounded-2xl border border-[#efe7db] bg-[#fffaf0] p-3">
                   <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-3 text-xs uppercase tracking-[0.2em] text-[#6b6257]">
                     <span className="flex flex-wrap items-center gap-2">
-                      {group.weekNo && group.pillarLabel ? (
+                      {group.kickoff ? (
+                        <span>{group.label}</span>
+                      ) : group.weekNo && group.pillarLabel ? (
                         (() => {
                           const meta = PILLARS.find(
                             (pillar) => pillar.label.toLowerCase() === group.pillarLabel?.toLowerCase()
