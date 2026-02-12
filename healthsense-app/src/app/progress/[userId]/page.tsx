@@ -216,7 +216,6 @@ export default async function ProgressPage(props: PageProps) {
     activeStreakDays += 1;
   }
   const activeStreakIcons = streakDays.slice(0, activeStreakDays);
-  const currentBlockPalette = getPillarPalette(currentBlock.key);
   const firstName = (user.first_name || user.display_name || status.user?.first_name || status.user?.display_name || "User").split(" ")[0];
   const dayLabel = activeStreakDays === 1 ? "day" : "days";
   const weekHeadline =
@@ -282,10 +281,12 @@ export default async function ProgressPage(props: PageProps) {
     const totals = pillarTotalsByKey.get(block.key)!;
     const ratio = totals.progressCount ? totals.progressSum / totals.progressCount : null;
     const pct = ratio === null ? 0 : Math.round(ratio * 100);
+    const notStarted = currentProgrammeWeek < block.weekStart;
     return {
       ...totals,
       pct,
       hasData: totals.progressCount > 0,
+      notStarted,
       barWidth: `${Math.max(4, pct)}%`,
     };
   });
@@ -373,7 +374,7 @@ export default async function ProgressPage(props: PageProps) {
                       key={`daily-focus-${idx}`}
                       className="rounded-lg px-3 py-2 font-medium"
                       style={{
-                        background: currentBlockPalette.accent,
+                        background: "#c54817",
                         color: "#ffffff",
                       }}
                     >
@@ -398,8 +399,12 @@ export default async function ProgressPage(props: PageProps) {
                         ) : null}
                         <span className="text-sm font-semibold uppercase tracking-[0.2em] text-[#3c332b]">{summary.label}</span>
                       </div>
-                      <span className="text-base font-semibold" style={{ color: summary.palette.accent }}>
-                        {summary.hasData ? `${summary.pct}%` : "0%"}
+                      <span
+                        className="text-base font-semibold"
+                        style={{ color: summary.notStarted ? "#8b8074" : summary.palette.accent }}
+                        title={summary.notStarted ? "Not started" : undefined}
+                      >
+                        {summary.notStarted ? "○" : summary.hasData ? `${summary.pct}%` : "0%"}
                       </span>
                     </div>
                   </div>
