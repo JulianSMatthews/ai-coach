@@ -52,14 +52,36 @@ export default async function HistoryPage(props: PageProps) {
       ? `${promptState.charAt(0).toUpperCase()}${promptState.slice(1)} mode`
       : "";
   const items = data.items || [];
+  const isKickoffItem = (item: (typeof items)[number]) => {
+    const touchpoint = (item.touchpoint_type || "").toLowerCase();
+    const text = `${item.full_text || ""} ${item.preview || ""}`.toLowerCase();
+    return touchpoint.includes("kickoff") || text.includes("12-week programme kickoff");
+  };
   const programmeItems = items.filter((item) => {
     if (item.week_no) return true;
+    if (isKickoffItem(item)) return true;
     const touchpoint = (item.touchpoint_type || "").toLowerCase();
-    if (touchpoint.includes("kickoff")) return true;
     if (touchpoint.includes("weekstart")) return true;
     return item.type === "podcast" || item.type === "prompt";
   });
-  const programmeGroups = programmeItems.reduce<
+  const seenKickoffItems = new Set<string>();
+  const dedupedProgrammeItems = [...programmeItems]
+    .sort((a, b) => {
+      const aTs = a.ts ? new Date(a.ts).getTime() : 0;
+      const bTs = b.ts ? new Date(b.ts).getTime() : 0;
+      return bTs - aTs;
+    })
+    .filter((item) => {
+      const kickoff = isKickoffItem(item);
+      if (!kickoff) return true;
+      const norm = `${item.full_text || item.preview || ""}`.replace(/\s+/g, " ").trim().toLowerCase();
+      const day = (item.ts || "").slice(0, 10);
+      const key = `kickoff|${day}|${item.audio_url || ""}|${norm}`;
+      if (seenKickoffItems.has(key)) return false;
+      seenKickoffItems.add(key);
+      return true;
+    });
+  const programmeGroups = dedupedProgrammeItems.reduce<
     Array<{
       key: string;
       label: string;
@@ -70,15 +92,14 @@ export default async function HistoryPage(props: PageProps) {
       latestTs?: string;
     }>
   >((acc, item) => {
-    const touchpoint = (item.touchpoint_type || "").toLowerCase();
-    const kickoff = touchpoint.includes("kickoff");
+    const kickoff = isKickoffItem(item);
     const weekNo = item.week_no ? Number(item.week_no) : undefined;
-    const key = kickoff ? "kickoff" : weekNo ? `week-${weekNo}` : `item-${item.id}`;
+    const key = kickoff ? "programme-kickoff" : weekNo ? `week-${weekNo}` : `item-${item.id}`;
     let group = acc.find((entry) => entry.key === key);
     if (!group) {
       const pillarLabel = weekToPillar(weekNo);
       const label = kickoff
-        ? "Kickoff"
+        ? "Programme kickoff"
         : weekNo
           ? `Week ${weekNo}${pillarLabel ? ` (${pillarLabel})` : ""}`
           : item.type || "Item";
@@ -107,11 +128,11 @@ export default async function HistoryPage(props: PageProps) {
     });
   });
   programmeGroups.sort((a, b) => {
+    if (a.kickoff && !b.kickoff) return -1;
+    if (!a.kickoff && b.kickoff) return 1;
     if (a.weekNo != null && b.weekNo != null) return b.weekNo - a.weekNo;
     if (a.weekNo != null) return -1;
     if (b.weekNo != null) return 1;
-    if (a.kickoff && !b.kickoff) return 1;
-    if (!a.kickoff && b.kickoff) return -1;
     const aTs = a.latestTs ? new Date(a.latestTs).getTime() : 0;
     const bTs = b.latestTs ? new Date(b.latestTs).getTime() : 0;
     return bTs - aTs;

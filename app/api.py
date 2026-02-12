@@ -3416,6 +3416,42 @@ def api_user_coaching_history(
         cleaned = " ".join(str(text).split())
         return len(cleaned) > 180
 
+    def _meta_dict(value) -> dict:
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            raw = value.strip()
+            if not raw:
+                return {}
+            try:
+                parsed = json.loads(raw)
+                return parsed if isinstance(parsed, dict) else {}
+            except Exception:
+                return {}
+        return {}
+
+    def _message_ts_iso(msg: MessageLog) -> tuple[str | None, str | None]:
+        ts = getattr(msg, "created_at", None)
+        meta = _meta_dict(getattr(msg, "meta", None))
+        raw_virtual = str(meta.get("virtual_date") or "").strip()
+        if raw_virtual:
+            try:
+                vday = date.fromisoformat(raw_virtual[:10])
+                base = ts or datetime.utcnow()
+                virtual_ts = datetime(
+                    vday.year,
+                    vday.month,
+                    vday.day,
+                    base.hour,
+                    base.minute,
+                    base.second,
+                    base.microsecond,
+                )
+                return virtual_ts.isoformat(), vday.isoformat()
+            except Exception:
+                pass
+        return (ts.isoformat() if ts else None), None
+
     items = []
     for tp in touchpoints:
         ts = tp.sent_at or tp.created_at
@@ -3436,10 +3472,11 @@ def api_user_coaching_history(
             }
         )
     for msg in messages:
+        msg_ts, msg_virtual_date = _message_ts_iso(msg)
         items.append(
             {
                 "id": msg.id,
-                "ts": msg.created_at.isoformat() if msg.created_at else None,
+                "ts": msg_ts,
                 "type": "dialog",
                 "title": "Message",
                 "preview": _preview(msg.text),
@@ -3447,6 +3484,7 @@ def api_user_coaching_history(
                 "is_truncated": _is_truncated(msg.text),
                 "direction": msg.direction,
                 "channel": msg.channel,
+                "virtual_date": msg_virtual_date,
             }
         )
 
