@@ -338,7 +338,7 @@ export default async function ProgressPage(props: PageProps) {
 
       <section
         id="overview"
-        className="space-y-3 rounded-2xl border border-[#d96a3e] bg-[#c54817] p-3 shadow-md"
+        className="space-y-3 rounded-2xl border border-[#c95d31] bg-[#a23810] p-3 shadow-lg"
         style={{ "--accent": "#ffffff" } as CSSProperties}
       >
         <div
@@ -347,16 +347,18 @@ export default async function ProgressPage(props: PageProps) {
           style={{ scrollSnapType: "x mandatory" }}
         >
           <Card
-            className="min-w-full snap-start border-[#d96a3e] bg-[#c54817] text-white shadow-md sm:min-w-[85%]"
+            className="min-w-full snap-start border-[#c95d31] bg-[#ad3b11] text-white shadow-md sm:min-w-[85%]"
             data-carousel-item
             style={{ scrollSnapStop: "always" }}
           >
             <p className="text-xs uppercase tracking-[0.2em] text-white/80">{anchorLabel}</p>
-            <h2 className="mt-1 text-sm font-semibold leading-relaxed text-white">{momentumHeadline}</h2>
+            <h2 className="mt-2 rounded-xl border border-[#d96a3e] bg-[#8f2f0d] p-3 text-base font-semibold leading-relaxed text-white">
+              {momentumHeadline}
+            </h2>
 
             <div className="mt-4">
               <p className="text-[10px] uppercase tracking-[0.24em] text-white/80">Daily streak</p>
-              <div className="mt-2 rounded-xl border border-white/20 bg-[#b34114] p-3">
+              <div className="mt-2 rounded-xl border border-[#d96a3e] bg-[#8f2f0d] p-3">
                 <div className="grid grid-cols-7 gap-1 sm:grid-cols-14">
                   {streakDays.map((day) => (
                     <div
@@ -382,7 +384,7 @@ export default async function ProgressPage(props: PageProps) {
 
             <div className="mt-4">
               <p className="text-[10px] uppercase tracking-[0.24em] text-white/80">Daily Focus</p>
-              <div className="mt-2 rounded-xl border border-white/20 bg-[#b34114] p-3">
+              <div className="mt-2 rounded-xl border border-[#d96a3e] bg-[#8f2f0d] p-3">
                 {dailyFocusTexts.length ? (
                   <ul className="space-y-1 text-sm text-white">
                     {dailyFocusTexts.map((step, idx) => (
@@ -400,7 +402,7 @@ export default async function ProgressPage(props: PageProps) {
 
             <div className="mt-4">
               <p className="text-[10px] uppercase tracking-[0.24em] text-white/80">12 week Journey</p>
-              <div className="mt-2 rounded-xl border border-white/20 bg-[#b34114] p-3">
+              <div className="mt-2 rounded-xl border border-[#d96a3e] bg-[#8f2f0d] p-3">
                 <div className="grid grid-cols-6 gap-1 sm:grid-cols-12">
                   {journeyWeeks.map((weekIcon) => (
                     <div
@@ -426,7 +428,7 @@ export default async function ProgressPage(props: PageProps) {
 
             <div className="mt-4">
               <p className="text-[10px] uppercase tracking-[0.24em] text-white/80">Key Results Progress</p>
-              <div className="mt-2 rounded-xl border border-white/20 bg-[#b34114] p-3 text-white shadow-sm">
+              <div className="mt-2 rounded-xl border border-[#d96a3e] bg-[#8f2f0d] p-3 text-white shadow-sm">
                 <div className="space-y-2">
                   {pillarSummaries.map((summary, idx) => (
                     <div key={`pillar-summary-${summary.key}`} className={idx > 0 ? "border-t border-white/25 pt-2" : ""}>
@@ -455,7 +457,7 @@ export default async function ProgressPage(props: PageProps) {
                 </div>
                 <div className="mt-3 border-t border-white/25 pt-3">
                   <p className="text-[10px] uppercase tracking-[0.24em] text-white/80">Assessment</p>
-                  <p className="mt-1 text-sm font-semibold text-white">
+                  <p className="mt-1 inline-block rounded-full bg-[#ffb168] px-3 py-1 text-sm font-semibold text-[#6a2408]">
                     Next due: {nextAssessmentDue ? formatDateUk(nextAssessmentDue) : "Not available"}
                   </p>
                 </div>
@@ -464,7 +466,7 @@ export default async function ProgressPage(props: PageProps) {
           </Card>
 
           <Card
-            className="min-w-full snap-start border-[#d96a3e] bg-[#c54817] text-white shadow-md sm:min-w-[85%]"
+            className="min-w-full snap-start border-[#c95d31] bg-[#ad3b11] text-white shadow-md sm:min-w-[85%]"
             data-carousel-item
             style={{ scrollSnapStop: "always" }}
           >
