@@ -341,30 +341,28 @@ export default async function ProgressPage(props: PageProps) {
 
             <div className="mt-3 border-t border-[#efe7db] pt-3 text-[#1e1b16]">
               <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#6b6257]">Programme Progress</p>
-              <div className="mt-3 space-y-3">
-                {pillarSummaries.map((summary, idx) => (
-                  <div key={`pillar-summary-${summary.key}`} className={idx > 0 ? "border-t border-[#efe7db] pt-3" : ""}>
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-2.5">
-                        {summary.palette.icon ? (
-                          <img src={summary.palette.icon} alt="" className="h-6 w-6" aria-hidden="true" />
-                        ) : null}
-                        <span className="text-sm font-semibold uppercase tracking-[0.2em] text-[#3c332b]">{summary.label}</span>
+              <div className="mt-3 rounded-xl border border-[#e6a786] bg-[#fff7f1] p-3">
+                <div className="space-y-3">
+                  {pillarSummaries.map((summary, idx) => (
+                    <div key={`pillar-summary-${summary.key}`} className={idx > 0 ? "border-t border-[#efd4bf] pt-3" : ""}>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5">
+                          {summary.palette.icon ? (
+                            <img src={summary.palette.icon} alt="" className="h-6 w-6" aria-hidden="true" />
+                          ) : null}
+                          <span className="text-sm font-semibold uppercase tracking-[0.2em] text-[#3c332b]">{summary.label}</span>
+                        </div>
+                        <span
+                          className="text-base font-semibold"
+                          style={{ color: summary.notStarted ? "#8b8074" : summary.palette.accent }}
+                          title={summary.notStarted ? "Not started" : undefined}
+                        >
+                          {summary.notStarted ? "○" : `${summary.pct}%`}
+                        </span>
                       </div>
-                      <span
-                        className="inline-flex min-w-[52px] items-center justify-center rounded-lg border px-2 py-1 text-base font-semibold"
-                        style={{
-                          borderColor: "#e6a786",
-                          background: "#fff7f1",
-                          color: summary.notStarted ? "#8b8074" : summary.palette.accent,
-                        }}
-                        title={summary.notStarted ? "Not started" : undefined}
-                      >
-                        {summary.notStarted ? "○" : `${summary.pct}%`}
-                      </span>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
               <div className="mt-3 border-t border-[#efe7db] pt-3">
                 <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#6b6257]">
