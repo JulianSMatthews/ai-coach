@@ -336,8 +336,10 @@ def _report_log(message: str) -> None:
     print(message)
 
 
-def _collect_run_dialogue(run_id: int, limit_per_pillar: int = 3) -> dict[str, list[dict]]:
+def _collect_run_dialogue(run_id: int, limit_per_pillar: int | None = None) -> dict[str, list[dict]]:
     out: dict[str, list[dict]] = defaultdict(list)
+    latest_by_concept: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
+    concept_order: dict[str, list[str]] = defaultdict(list)
     with SessionLocal() as s:
         rows = (
             s.query(AssessmentTurn)
@@ -349,14 +351,20 @@ def _collect_run_dialogue(run_id: int, limit_per_pillar: int = 3) -> dict[str, l
         if not getattr(row, "user_a", None):
             continue
         pillar = (getattr(row, "pillar", None) or "combined").lower()
-        bucket = out[pillar]
-        if len(bucket) >= limit_per_pillar:
-            continue
-        bucket.append({
+        raw_concept = getattr(row, "concept_key", None)
+        concept_key = (str(raw_concept).strip().lower() if raw_concept else "") or f"turn_{getattr(row, 'idx', 0)}"
+        if concept_key not in latest_by_concept[pillar]:
+            concept_order[pillar].append(concept_key)
+        latest_by_concept[pillar][concept_key] = {
             "question": _short_text(getattr(row, "assistant_q", ""), 220),
             "answer": _short_text(getattr(row, "user_a", ""), 220),
-            "concept": getattr(row, "concept_key", None)
-        })
+            "concept": raw_concept,
+        }
+    for pillar, order in concept_order.items():
+        samples = [latest_by_concept[pillar][key] for key in order if key in latest_by_concept[pillar]]
+        if isinstance(limit_per_pillar, int) and limit_per_pillar > 0:
+            samples = samples[:limit_per_pillar]
+        out[pillar] = samples
     return out
 
 
@@ -2881,7 +2889,7 @@ def build_assessment_dashboard_data(run_id: int, *, include_llm: bool = True) ->
                 },
                 *qa_training,
             ]
-            qa_by_pillar["training"] = qa_training[:3]
+            qa_by_pillar["training"] = qa_training
 
     combined = getattr(run, "combined_overall", None)
     if combined is None:

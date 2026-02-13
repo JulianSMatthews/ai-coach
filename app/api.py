@@ -483,7 +483,12 @@ def on_startup():
                             "content_library_items",
                         })
                     if keep_kb:
-                        keep_tables.update({"kb_snippets", "kb_vectors"})
+                        keep_tables.update({
+                            "kb_snippets",
+                            "kb_vectors",
+                            "concepts",
+                            "concept_questions",
+                        })
                     _drop_all_except(keep_tables)
                 else:
                     Base.metadata.drop_all(bind=engine)

@@ -19,6 +19,7 @@ from . import llm as shared_llm
 from .touchpoints import log_touchpoint, update_touchpoint
 from .prompts import kr_payload_list, build_prompt, run_llm_prompt
 from . import general_support
+from .virtual_clock import get_effective_today
 
 STATE_KEY = "sunday_state"
 
@@ -59,7 +60,39 @@ def _review_mode_for_week(week_no: int | None) -> str:
     return "kr"
 
 
-def _latest_weekly_focus(session: Session, user_id: int) -> Optional[WeeklyFocus]:
+def _resolve_weekly_focus(session: Session, user_id: int, today_date) -> Optional[WeeklyFocus]:
+    """
+    Resolve the focus for "today" first to avoid jumping to a future week.
+    Fallback order:
+    1) Active focus containing today
+    2) Most recent focus that has started (starts_on <= today)
+    3) Latest focus row
+    """
+    day_start = datetime.combine(today_date, datetime.min.time())
+    day_end = day_start + timedelta(days=1)
+    active = (
+        session.query(WeeklyFocus)
+        .filter(
+            WeeklyFocus.user_id == user_id,
+            WeeklyFocus.starts_on < day_end,
+            WeeklyFocus.ends_on >= day_start,
+        )
+        .order_by(WeeklyFocus.starts_on.desc(), WeeklyFocus.id.desc())
+        .first()
+    )
+    if active:
+        return active
+    latest_started = (
+        session.query(WeeklyFocus)
+        .filter(
+            WeeklyFocus.user_id == user_id,
+            WeeklyFocus.starts_on < day_end,
+        )
+        .order_by(WeeklyFocus.starts_on.desc(), WeeklyFocus.id.desc())
+        .first()
+    )
+    if latest_started:
+        return latest_started
     return (
         session.query(WeeklyFocus)
         .filter(WeeklyFocus.user_id == user_id)
@@ -254,7 +287,8 @@ def send_sunday_review(user: User, coach_name: str = COACH_NAME) -> None:
     week_no: int | None = None
     review_mode = "kr"
     with SessionLocal() as s:
-        wf = _latest_weekly_focus(s, user.id)
+        today = get_effective_today(s, user.id, default_today=datetime.utcnow().date())
+        wf = _resolve_weekly_focus(s, user.id, today)
         if not wf:
             _send_sunday(to=user.phone, text="No weekly plan found. Say monday to plan your week first.")
             return

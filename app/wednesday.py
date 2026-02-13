@@ -3,16 +3,18 @@ Wednesday midweek check-in: single-KR support with blockers and micro-adjustment
 """
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from typing import Optional
 
 from .db import SessionLocal
 from .job_queue import enqueue_job, should_use_worker
-from .models import WeeklyFocus, User
+from .models import WeeklyFocus, User, AssessmentRun
 from .nudges import send_whatsapp, append_button_cta
 from .prompts import format_checkin_history, primary_kr_payload, build_prompt, run_llm_prompt
 from .touchpoints import log_touchpoint
 from .checkins import fetch_recent_checkins, record_checkin
 from . import general_support
+from .virtual_clock import get_effective_today
 import os
 
 
@@ -45,13 +47,76 @@ def _send_wednesday(*, text: str, to: str | None = None, category: str | None = 
     )
 
 
-def _latest_weekly_focus(session: Session, user_id: int) -> Optional[WeeklyFocus]:
+def _resolve_weekly_focus(session, user_id: int, today_date) -> Optional[WeeklyFocus]:
+    day_start = datetime.combine(today_date, datetime.min.time())
+    day_end = day_start + timedelta(days=1)
+    active = (
+        session.query(WeeklyFocus)
+        .filter(
+            WeeklyFocus.user_id == user_id,
+            WeeklyFocus.starts_on < day_end,
+            WeeklyFocus.ends_on >= day_start,
+        )
+        .order_by(WeeklyFocus.starts_on.desc(), WeeklyFocus.id.desc())
+        .first()
+    )
+    if active:
+        return active
+    latest_started = (
+        session.query(WeeklyFocus)
+        .filter(
+            WeeklyFocus.user_id == user_id,
+            WeeklyFocus.starts_on < day_end,
+        )
+        .order_by(WeeklyFocus.starts_on.desc(), WeeklyFocus.id.desc())
+        .first()
+    )
+    if latest_started:
+        return latest_started
     return (
         session.query(WeeklyFocus)
         .filter(WeeklyFocus.user_id == user_id)
         .order_by(WeeklyFocus.starts_on.desc(), WeeklyFocus.id.desc())
         .first()
     )
+
+
+def _infer_week_no(session, user_id: int, wf: WeeklyFocus) -> int:
+    base_start = None
+    run = (
+        session.query(AssessmentRun)
+        .filter(AssessmentRun.user_id == user_id)
+        .order_by(AssessmentRun.id.desc())
+        .first()
+    )
+    if run:
+        base_dt = getattr(run, "started_at", None) or getattr(run, "created_at", None)
+        if isinstance(base_dt, datetime):
+            base_start = base_dt.date() - timedelta(days=base_dt.date().weekday())
+    if base_start is None:
+        earliest = (
+            session.query(WeeklyFocus)
+            .filter(WeeklyFocus.user_id == user_id)
+            .order_by(WeeklyFocus.starts_on.asc())
+            .first()
+        )
+        if earliest and getattr(earliest, "starts_on", None):
+            try:
+                base_start = earliest.starts_on.date()
+            except Exception:
+                base_start = None
+    wf_start = None
+    if getattr(wf, "starts_on", None):
+        try:
+            wf_start = wf.starts_on.date()
+        except Exception:
+            wf_start = None
+    if base_start is None or wf_start is None:
+        return 1
+    try:
+        return max(1, int(((wf_start - base_start).days // 7) + 1))
+    except Exception:
+        return 1
 
 
 def send_midweek_check(user: User, coach_name: str = "Gia") -> None:
@@ -61,11 +126,20 @@ def send_midweek_check(user: User, coach_name: str = "Gia") -> None:
         return
     general_support.clear(user.id)
     with SessionLocal() as s:
-        wf = _latest_weekly_focus(s, user.id)
+        today = get_effective_today(s, user.id, default_today=datetime.utcnow().date())
+        wf = _resolve_weekly_focus(s, user.id, today)
         if not wf:
             _send_wednesday(to=user.phone, text="No weekly plan found. Say monday to plan your week first.")
             return
-        kr = primary_kr_payload(user.id, session=s)
+        week_no = getattr(wf, "week_no", None)
+        if not week_no:
+            week_no = _infer_week_no(s, user.id, wf)
+            try:
+                wf.week_no = week_no
+                s.add(wf)
+            except Exception:
+                pass
+        kr = primary_kr_payload(user.id, session=s, week_no=week_no)
         if not kr:
             _send_wednesday(to=user.phone, text="No key results found for this week. Say monday to set them up.")
             return
@@ -91,7 +165,7 @@ def send_midweek_check(user: User, coach_name: str = "Gia") -> None:
             prompt_assembly.text,
             user_id=user.id,
             touchpoint="midweek",
-            context_meta={"wf_id": wf.id if wf else None},
+            context_meta={"wf_id": wf.id if wf else None, "week_no": week_no},
             prompt_variant=prompt_assembly.variant,
             task_label=prompt_assembly.task_label,
             prompt_blocks={**prompt_assembly.blocks, **(prompt_assembly.meta or {})},
@@ -120,7 +194,7 @@ def send_midweek_check(user: User, coach_name: str = "Gia") -> None:
         user_id=user.id,
         tp_type="wednesday",
         weekly_focus_id=wf.id,
-        week_no=getattr(wf, "week_no", None),
+        week_no=week_no,
         kr_ids=[kr["id"]] if kr else [],
         meta={"source": "wednesday", "label": "wednesday"},
         generated_text=message,
@@ -131,7 +205,7 @@ def send_midweek_check(user: User, coach_name: str = "Gia") -> None:
             blockers=[],
             commitments=[],
             weekly_focus_id=wf.id,
-            week_no=getattr(wf, "week_no", None),
+            week_no=week_no,
         ),
     )
-    general_support.activate(user.id, source="wednesday", week_no=getattr(wf, "week_no", None), send_intro=False)
+    general_support.activate(user.id, source="wednesday", week_no=week_no, send_intro=False)

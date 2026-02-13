@@ -160,9 +160,24 @@ export default async function ProgressPage(props: PageProps) {
   const dayNumberToIso = (dayNumber: number) => {
     return new Date(dayNumber * MS_PER_DAY).toISOString().slice(0, 10);
   };
+  const valueToDayNumber = (value?: string | null) => {
+    if (!value) return null;
+    const trimmed = value.trim();
+    const isoPrefix = /^(\d{4}-\d{2}-\d{2})/.exec(trimmed);
+    if (isoPrefix) return isoDateToDayNumber(isoPrefix[1]);
+    const parsed = new Date(trimmed);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return Math.floor(Date.UTC(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate()) / MS_PER_DAY);
+  };
 
   const user = data.user || {};
-  const streakWindowDays = Math.min(14, Math.max(1, Number(data.engagement?.recent_window_days || 14)));
+  const MAX_STREAK_ICONS = 10;
+  const rawDailyStreak = Number(data.engagement?.daily_streak ?? 0);
+  const totalActiveStreakDays = Number.isFinite(rawDailyStreak) ? Math.max(0, Math.floor(rawDailyStreak)) : 0;
+  const streakWindowDays = Math.min(
+    MAX_STREAK_ICONS,
+    Math.max(1, Number(data.engagement?.recent_window_days || MAX_STREAK_ICONS)),
+  );
   const streakActiveDateSet = new Set(
     (data.engagement?.recent_active_dates || []).filter((value): value is string => typeof value === "string" && value.length >= 10),
   );
@@ -171,16 +186,10 @@ export default async function ProgressPage(props: PageProps) {
       ? meta.anchor_date
       : new Date().toISOString().slice(0, 10);
   const anchorDayNumber = isoDateToDayNumber(anchorDateKey) ?? 0;
-  const programmeStartDayNumber =
-    programmeStart && !Number.isNaN(programmeStart.getTime())
-      ? Math.floor(
-          Date.UTC(
-            programmeStart.getUTCFullYear(),
-            programmeStart.getUTCMonth(),
-            programmeStart.getUTCDate(),
-          ) / MS_PER_DAY,
-        )
-      : null;
+  const programmeStartDayNumbers = rows
+    .map((row) => valueToDayNumber(row.cycle_start || null))
+    .filter((dayNumber): dayNumber is number => dayNumber !== null);
+  const programmeStartDayNumber = programmeStartDayNumbers.length ? Math.min(...programmeStartDayNumbers) : null;
   const fallbackPillarKey = programmeBlocks[0]?.key || "nutrition";
   const pillarKeyForDay = (dayNumber: number) => {
     if (programmeStartDayNumber === null) return fallbackPillarKey;
@@ -200,11 +209,7 @@ export default async function ProgressPage(props: PageProps) {
     };
   });
 
-  const anchorDate = meta.anchor_date ? new Date(meta.anchor_date) : new Date();
-  const programmeDayRaw =
-    programmeStart && !Number.isNaN(programmeStart.getTime())
-      ? Math.floor((anchorDate.getTime() - programmeStart.getTime()) / MS_PER_DAY) + 1
-      : null;
+  const programmeDayRaw = programmeStartDayNumber !== null ? anchorDayNumber - programmeStartDayNumber + 1 : null;
   const programmeDay = programmeDayRaw === null ? 0 : Math.max(0, Math.min(84, programmeDayRaw));
   const currentProgrammeWeek = Math.max(1, Math.min(12, Math.ceil(Math.max(programmeDay, 1) / 7)));
   const currentBlockIndex = Math.min(programmeBlocks.length - 1, Math.floor((currentProgrammeWeek - 1) / 3));
@@ -215,12 +220,12 @@ export default async function ProgressPage(props: PageProps) {
     if (!day.active) break;
     activeStreakDays += 1;
   }
-  const activeStreakIcons = streakDays.slice(0, activeStreakDays);
+  const activeStreakIcons = streakDays.slice(0, Math.min(activeStreakDays, MAX_STREAK_ICONS));
   const firstName = (user.first_name || user.display_name || status.user?.first_name || status.user?.display_name || "User").split(" ")[0];
-  const dayLabel = activeStreakDays === 1 ? "day" : "days";
+  const dayLabel = totalActiveStreakDays === 1 ? "day" : "days";
   const weekHeadline =
-    activeStreakDays > 0
-      ? `You on week ${weekOfCurrentBlock} of 3 for ${currentBlock.label} and on a ${activeStreakDays} ${dayLabel} streak, keep it up ${firstName}!`
+    totalActiveStreakDays > 0
+      ? `You on week ${weekOfCurrentBlock} of 3 for ${currentBlock.label} and on a ${totalActiveStreakDays} ${dayLabel} streak, keep it up ${firstName}!`
       : `You on week ${weekOfCurrentBlock} of 3 for ${currentBlock.label}. Start your streak today, ${firstName}.`;
   const anchorLabel = `${meta.anchor_label || "n/a"}${meta.is_virtual_date ? "*" : ""}`;
 
