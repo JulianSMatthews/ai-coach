@@ -76,7 +76,7 @@ export default async function AdminHome() {
           ))}
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-2">
+        <section className="grid gap-4 lg:grid-cols-3">
           <div className="rounded-2xl border border-[#efe7db] bg-white p-5">
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Combined costs</p>
             <p className="mt-2 text-sm text-[#6b6257]">Estimated total across TTS, LLM, and WhatsApp (last 7 days).</p>
@@ -126,6 +126,68 @@ export default async function AdminHome() {
               <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
                 <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Active alerts</span>
                 <div className="mt-1 text-xl font-semibold">{health?.alerts?.length ?? "—"}</div>
+              </div>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-[#efe7db] bg-white p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Coaching monitoring</p>
+                <p className="mt-2 text-sm text-[#6b6257]">
+                  Weekly flow completion, reply behavior, and coaching reach.
+                </p>
+              </div>
+              <Link
+                href="/admin/monitoring"
+                className="rounded-full border border-[#1d6a4f] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[#1d6a4f]"
+              >
+                Open
+              </Link>
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Users reached</span>
+                <div className="mt-1 text-xl font-semibold">{health?.coaching?.users_reached ?? "—"}</div>
+              </div>
+              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Week completion</span>
+                <div className="mt-1 text-xl font-semibold">
+                  {health?.coaching?.day_funnel?.week_completion_rate_pct != null
+                    ? `${health.coaching.day_funnel.week_completion_rate_pct}%`
+                    : "—"}
+                </div>
+              </div>
+              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Sunday reply</span>
+                <div className="mt-1 text-xl font-semibold">
+                  {health?.coaching?.day_funnel?.sunday_reply_rate_pct != null
+                    ? `${health.coaching.day_funnel.sunday_reply_rate_pct}%`
+                    : "—"}
+                </div>
+              </div>
+              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Outside 24h</span>
+                <div className="mt-1 text-xl font-semibold">
+                  {health?.coaching?.engagement_window?.outside_24h_rate_pct != null
+                    ? `${health.coaching.engagement_window.outside_24h_rate_pct}%`
+                    : "—"}
+                </div>
+              </div>
+              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Streak p50</span>
+                <div className="mt-1 text-xl font-semibold">
+                  {health?.coaching?.engagement_window?.current_streak_days_p50 != null
+                    ? `${health.coaching.engagement_window.current_streak_days_p50} days`
+                    : "—"}
+                </div>
+              </div>
+              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Reply p95</span>
+                <div className="mt-1 text-xl font-semibold">
+                  {health?.coaching?.response_time_minutes?.p95 != null
+                    ? `${Math.round(health.coaching.response_time_minutes.p95)} min`
+                    : "—"}
+                </div>
               </div>
             </div>
           </div>

@@ -3921,6 +3921,7 @@ def admin_assessment_health(
         "coaching_week_completion_pct": {"warn": 60.0, "critical": 40.0, "lower_is_bad": True},
         "coaching_sunday_reply_pct": {"warn": 50.0, "critical": 30.0, "lower_is_bad": True},
         "coaching_response_p95_min": {"warn": 720.0, "critical": 1440.0, "lower_is_bad": False},
+        "coaching_outside_24h_pct": {"warn": 30.0, "critical": 50.0, "lower_is_bad": False},
     }
     coaching_payload = {
         "touchpoints_sent": 0,
@@ -3947,6 +3948,19 @@ def admin_assessment_health(
             "p50": None,
             "p95": None,
             "sample_size": 0,
+        },
+        "engagement_window": {
+            "users_tracked": 0,
+            "inside_24h": 0,
+            "outside_24h": 0,
+            "outside_24h_rate_pct": None,
+            "outside_24h_state": "unknown",
+            "no_inbound_history": 0,
+            "last_inbound_age_hours_p50": None,
+            "last_inbound_age_hours_p95": None,
+            "current_streak_days_p50": None,
+            "current_streak_days_p95": None,
+            "current_streak_days_max": None,
         },
         "day_stats": [],
     }
@@ -4316,6 +4330,95 @@ def admin_assessment_health(
             for uid_i in list(inbound_by_user.keys()):
                 inbound_by_user[uid_i].sort()
 
+        coaching_users = sorted(touchpoint_user_ids)
+        users_tracked = len(coaching_users)
+        inside_24h_count = 0
+        outside_24h_count = 0
+        no_inbound_history_count = 0
+        outside_24h_rate = None
+        last_inbound_age_hours: list[float] = []
+        streak_days: list[float] = []
+
+        def _to_uk_day(ts: datetime) -> date:
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=ZoneInfo("UTC"))
+            else:
+                ts = ts.astimezone(ZoneInfo("UTC"))
+            return ts.astimezone(UK_TZ).date()
+
+        def _daily_streak(day_set: set[date], anchor_day: date) -> int:
+            if anchor_day not in day_set:
+                return 0
+            streak = 0
+            day_cur = anchor_day
+            while day_cur in day_set:
+                streak += 1
+                day_cur = day_cur - timedelta(days=1)
+                if streak >= 3650:
+                    break
+            return streak
+
+        if coaching_users:
+            last_inbound_rows = (
+                s.query(MessageLog.user_id, func.max(MessageLog.created_at))
+                .filter(MessageLog.direction == "inbound")
+                .filter(MessageLog.user_id.in_(coaching_users))
+                .group_by(MessageLog.user_id)
+                .all()
+            )
+            last_inbound_map: dict[int, datetime] = {}
+            for uid, last_ts in last_inbound_rows:
+                if uid is None or last_ts is None:
+                    continue
+                try:
+                    uid_i = int(uid)
+                except Exception:
+                    continue
+                last_inbound_map[uid_i] = last_ts
+
+            streak_lookback_days = max(14, min(90, days_val + 30))
+            streak_start_utc = now_utc - timedelta(days=streak_lookback_days)
+            streak_rows = (
+                s.query(MessageLog.user_id, MessageLog.created_at)
+                .filter(MessageLog.direction == "inbound")
+                .filter(MessageLog.user_id.in_(coaching_users))
+                .filter(MessageLog.created_at >= streak_start_utc, MessageLog.created_at < (end_utc + timedelta(days=1)))
+                .all()
+            )
+            streak_days_by_user: dict[int, set[date]] = {}
+            for uid, created_at in streak_rows:
+                if uid is None or created_at is None:
+                    continue
+                try:
+                    uid_i = int(uid)
+                except Exception:
+                    continue
+                streak_days_by_user.setdefault(uid_i, set()).add(_to_uk_day(created_at))
+
+            anchor_day_uk = _to_uk_day(now_utc)
+            for uid_i in coaching_users:
+                last_ts = last_inbound_map.get(uid_i)
+                if last_ts is None:
+                    no_inbound_history_count += 1
+                    outside_24h_count += 1
+                    streak_days.append(0.0)
+                    continue
+                if last_ts.tzinfo is not None:
+                    last_ts = last_ts.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+                age_hours = (now_utc - last_ts).total_seconds() / 3600.0
+                if age_hours < 0:
+                    age_hours = 0.0
+                last_inbound_age_hours.append(age_hours)
+                if age_hours > 24.0:
+                    outside_24h_count += 1
+                else:
+                    inside_24h_count += 1
+                user_streak = _daily_streak(streak_days_by_user.get(uid_i, set()), anchor_day_uk)
+                streak_days.append(float(user_streak))
+
+            if users_tracked:
+                outside_24h_rate = (outside_24h_count / users_tracked * 100.0)
+
         touchpoints.sort(key=lambda row: (row["user_id"], row["ts"], row["id"]))
         next_ts_by_touchpoint_id: dict[int, datetime | None] = {}
         for idx, row in enumerate(touchpoints):
@@ -4572,6 +4675,10 @@ def admin_assessment_health(
         sunday_reply_rate = (sunday_replied_count / sunday_sent_count * 100.0) if sunday_sent_count else None
         response_p50 = _percentile(response_minutes, 50)
         response_p95 = _percentile(response_minutes, 95)
+        last_inbound_age_p50 = _percentile(last_inbound_age_hours, 50)
+        last_inbound_age_p95 = _percentile(last_inbound_age_hours, 95)
+        streak_p50 = _percentile(streak_days, 50)
+        streak_p95 = _percentile(streak_days, 95)
 
         coaching_payload = {
             "touchpoints_sent": len(touchpoints),
@@ -4598,6 +4705,19 @@ def admin_assessment_health(
                 "p50": round(response_p50, 2) if response_p50 is not None else None,
                 "p95": round(response_p95, 2) if response_p95 is not None else None,
                 "sample_size": len(response_minutes),
+            },
+            "engagement_window": {
+                "users_tracked": int(users_tracked),
+                "inside_24h": int(inside_24h_count),
+                "outside_24h": int(outside_24h_count),
+                "outside_24h_rate_pct": round(outside_24h_rate, 2) if outside_24h_rate is not None else None,
+                "outside_24h_state": "unknown",
+                "no_inbound_history": int(no_inbound_history_count),
+                "last_inbound_age_hours_p50": round(last_inbound_age_p50, 2) if last_inbound_age_p50 is not None else None,
+                "last_inbound_age_hours_p95": round(last_inbound_age_p95, 2) if last_inbound_age_p95 is not None else None,
+                "current_streak_days_p50": round(streak_p50, 2) if streak_p50 is not None else None,
+                "current_streak_days_p95": round(streak_p95, 2) if streak_p95 is not None else None,
+                "current_streak_days_max": int(max(streak_days)) if streak_days else None,
             },
             "day_stats": day_stats_rows,
         }
@@ -4670,6 +4790,11 @@ def admin_assessment_health(
         if isinstance(coaching_payload, dict)
         else None
     )
+    coaching_outside_24h = (
+        ((coaching_payload.get("engagement_window") or {}).get("outside_24h_rate_pct"))
+        if isinstance(coaching_payload, dict)
+        else None
+    )
     coaching_week_completion_state = _threshold_state(
         coaching_week_completion,
         warn=thresholds["coaching_week_completion_pct"]["warn"],
@@ -4687,12 +4812,19 @@ def admin_assessment_health(
         warn=thresholds["coaching_response_p95_min"]["warn"],
         critical=thresholds["coaching_response_p95_min"]["critical"],
     )
+    coaching_outside_24h_state = _threshold_state(
+        coaching_outside_24h,
+        warn=thresholds["coaching_outside_24h_pct"]["warn"],
+        critical=thresholds["coaching_outside_24h_pct"]["critical"],
+    )
     if isinstance(coaching_payload, dict):
         if isinstance(coaching_payload.get("day_funnel"), dict):
             coaching_payload["day_funnel"]["week_completion_state"] = coaching_week_completion_state
             coaching_payload["day_funnel"]["sunday_reply_state"] = coaching_sunday_reply_state
         if isinstance(coaching_payload.get("response_time_minutes"), dict):
             coaching_payload["response_time_minutes"]["state"] = coaching_response_state
+        if isinstance(coaching_payload.get("engagement_window"), dict):
+            coaching_payload["engagement_window"]["outside_24h_state"] = coaching_outside_24h_state
 
     alerts = []
     metric_states = {
@@ -4706,6 +4838,7 @@ def admin_assessment_health(
         "coaching_week_completion_pct": coaching_week_completion_state,
         "coaching_sunday_reply_pct": coaching_sunday_reply_state,
         "coaching_response_p95_min": coaching_response_state,
+        "coaching_outside_24h_pct": coaching_outside_24h_state,
     }
     metric_values = {
         "completion_rate_pct": completion_rate,
@@ -4718,6 +4851,7 @@ def admin_assessment_health(
         "coaching_week_completion_pct": coaching_week_completion,
         "coaching_sunday_reply_pct": coaching_sunday_reply,
         "coaching_response_p95_min": coaching_response_p95,
+        "coaching_outside_24h_pct": coaching_outside_24h,
     }
     for key, state in metric_states.items():
         if state in {"warn", "critical"}:

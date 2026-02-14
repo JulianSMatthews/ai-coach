@@ -290,6 +290,19 @@ export type AssessmentHealthPayload = {
       sample_size?: number;
       state?: string;
     };
+    engagement_window?: {
+      users_tracked?: number;
+      inside_24h?: number;
+      outside_24h?: number;
+      outside_24h_rate_pct?: number | null;
+      outside_24h_state?: string;
+      no_inbound_history?: number;
+      last_inbound_age_hours_p50?: number | null;
+      last_inbound_age_hours_p95?: number | null;
+      current_streak_days_p50?: number | null;
+      current_streak_days_p95?: number | null;
+      current_streak_days_max?: number | null;
+    };
     day_stats?: Array<{
       day?: string;
       sent?: number;

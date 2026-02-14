@@ -142,6 +142,26 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
       subtitle: `p50 ${health?.coaching?.response_time_minutes?.p50 != null ? `${Math.round(health.coaching.response_time_minutes.p50)} min` : "—"} (${health?.coaching?.response_time_minutes?.sample_size ?? 0} samples)`,
       description: "How quickly users typically reply after coaching touchpoints (windowed to 24h).",
     },
+    {
+      title: "Outside 24h window",
+      value:
+        health?.coaching?.engagement_window?.outside_24h_rate_pct != null
+          ? `${formatNum(health.coaching.engagement_window.outside_24h_rate_pct)}%`
+          : "—",
+      state: health?.coaching?.engagement_window?.outside_24h_state,
+      subtitle: `${health?.coaching?.engagement_window?.outside_24h ?? 0} outside / ${health?.coaching?.engagement_window?.users_tracked ?? 0} tracked`,
+      description: "Users whose latest inbound message is older than 24 hours (or has no inbound history).",
+    },
+    {
+      title: "Current streak p50",
+      value:
+        health?.coaching?.engagement_window?.current_streak_days_p50 != null
+          ? `${formatNum(health.coaching.engagement_window.current_streak_days_p50)} days`
+          : "—",
+      state: "unknown",
+      subtitle: `p95 ${health?.coaching?.engagement_window?.current_streak_days_p95 != null ? `${formatNum(health.coaching.engagement_window.current_streak_days_p95)} days` : "—"} | max ${health?.coaching?.engagement_window?.current_streak_days_max ?? "—"} days`,
+      description: "Median consecutive-day inbound streak (UK day), anchored to today.",
+    },
   ];
 
   return (
