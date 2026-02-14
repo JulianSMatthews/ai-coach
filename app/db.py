@@ -22,10 +22,52 @@ if not DATABASE_URL:
     # final fallback: local Postgres without credentials (override via .env)
     DATABASE_URL = "postgresql+psycopg2://localhost/aicoach"
 
+
+def _env_int(name: str, default: int) -> int:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except Exception:
+        return default
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = (os.getenv(name) or "").strip().lower()
+    if not raw:
+        return default
+    return raw in {"1", "true", "yes", "on"}
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # SQLAlchemy engine/session
 # ──────────────────────────────────────────────────────────────────────────────
-engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True)
+_DB_BACKEND = DATABASE_URL.split(":", 1)[0].lower()
+_IS_POSTGRES_URL = _DB_BACKEND.startswith("postgresql") or _DB_BACKEND.startswith("postgres")
+
+if _IS_POSTGRES_URL:
+    # Render/API production defaults. Can be overridden per-service via env.
+    _db_pool_size = max(1, _env_int("DB_POOL_SIZE", 10))
+    _db_max_overflow = max(0, _env_int("DB_MAX_OVERFLOW", 20))
+    _db_pool_timeout = max(1, _env_int("DB_POOL_TIMEOUT_SEC", 30))
+    _db_pool_recycle = max(30, _env_int("DB_POOL_RECYCLE_SEC", 1800))
+    _db_pool_use_lifo = _env_bool("DB_POOL_USE_LIFO", True)
+
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_size=_db_pool_size,
+        max_overflow=_db_max_overflow,
+        pool_timeout=_db_pool_timeout,
+        pool_recycle=_db_pool_recycle,
+        pool_use_lifo=_db_pool_use_lifo,
+        future=True,
+    )
+else:
+    # SQLite/local dev path.
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 # ──────────────────────────────────────────────────────────────────────────────

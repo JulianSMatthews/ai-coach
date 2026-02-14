@@ -39,6 +39,18 @@ services:
         sync: false
       - key: RESET_DB_ON_STARTUP
         value: "0"
+      - key: DB_POOL_SIZE
+        value: "12"
+      - key: DB_MAX_OVERFLOW
+        value: "24"
+      - key: DB_POOL_TIMEOUT_SEC
+        value: "30"
+      - key: DB_POOL_RECYCLE_SEC
+        value: "1800"
+      - key: DB_POOL_USE_LIFO
+        value: "true"
+      - key: SCHEDULER_MAX_WORKERS
+        value: "4"
 
   - type: web
     name: healthsense-app

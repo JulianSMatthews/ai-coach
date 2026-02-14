@@ -1042,6 +1042,74 @@ def _verify_otp(code: str, stored: str) -> bool:
 def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
+
+def _has_recent_whatsapp_inbound(user_id: int, *, lookback_hours: int = 24) -> bool:
+    """Best-effort signal that user has messaged us on WhatsApp recently."""
+    if not user_id:
+        return False
+    hours = max(1, int(lookback_hours or 24))
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    with SessionLocal() as s:
+        row = (
+            s.query(MessageLog.id)
+            .filter(MessageLog.user_id == user_id)
+            .filter(MessageLog.direction == "inbound")
+            .filter(MessageLog.created_at >= cutoff)
+            .filter(or_(MessageLog.channel == "whatsapp", MessageLog.channel.is_(None)))
+            .order_by(MessageLog.created_at.desc(), MessageLog.id.desc())
+            .first()
+        )
+        return row is not None
+
+
+def _send_auth_code(
+    *,
+    user_id: int,
+    user_phone: str,
+    code: str,
+    channel: str,
+    purpose_label: str,
+) -> str:
+    """
+    Send login/reset code using requested channel policy.
+    Returns actual channel used: "whatsapp" or "sms".
+    """
+    chosen = (channel or "auto").strip().lower()
+    if chosen not in {"auto", "whatsapp", "sms"}:
+        raise HTTPException(status_code=400, detail="channel must be auto|whatsapp|sms")
+
+    text = f"Your HealthSense {purpose_label} is {code}. It expires in {_OTP_TTL_MINUTES} minutes."
+    wa_window_hours = int(os.getenv("AUTH_WHATSAPP_OPEN_WINDOW_HOURS", "24") or "24")
+    sms_first_if_wa_closed = (os.getenv("AUTH_SMS_IF_NO_WHATSAPP_WINDOW", "1") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    wa_recent = _has_recent_whatsapp_inbound(user_id, lookback_hours=wa_window_hours)
+
+    if chosen == "sms":
+        send_sms(to=user_phone, text=text)
+        return "sms"
+    if chosen == "whatsapp":
+        send_whatsapp(to=user_phone, text=text)
+        return "whatsapp"
+
+    # auto mode
+    if sms_first_if_wa_closed and not wa_recent:
+        try:
+            send_sms(to=user_phone, text=text)
+            return "sms"
+        except Exception:
+            send_whatsapp(to=user_phone, text=text)
+            return "whatsapp"
+
+    try:
+        send_whatsapp(to=user_phone, text=text)
+        return "whatsapp"
+    except Exception:
+        send_sms(to=user_phone, text=text)
+        return "sms"
+
 def _extract_session_token(request: Request) -> str | None:
     header = request.headers.get("X-Session-Token")
     if header:
@@ -2673,22 +2741,14 @@ def api_auth_login_request(payload: dict, request: Request):
         s.add(otp)
         s.commit()
         s.refresh(otp)
-    if channel not in {"auto", "whatsapp", "sms"}:
-        raise HTTPException(status_code=400, detail="channel must be auto|whatsapp|sms")
     try:
-        channel_used = "whatsapp"
-        if channel == "sms":
-            send_sms(to=user_phone, text=f"Your HealthSense login code is {code}. It expires in {_OTP_TTL_MINUTES} minutes.")
-            channel_used = "sms"
-        else:
-            try:
-                send_whatsapp(to=user_phone, text=f"Your HealthSense login code is {code}. It expires in {_OTP_TTL_MINUTES} minutes.")
-            except Exception:
-                if channel == "auto":
-                    send_sms(to=user_phone, text=f"Your HealthSense login code is {code}. It expires in {_OTP_TTL_MINUTES} minutes.")
-                    channel_used = "sms"
-                else:
-                    raise
+        channel_used = _send_auth_code(
+            user_id=user.id,
+            user_phone=user_phone,
+            code=code,
+            channel=channel,
+            purpose_label="login code",
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"failed to send otp: {e}")
     return {
@@ -2780,31 +2840,14 @@ def api_auth_password_reset_request(payload: dict, request: Request):
         s.add(otp)
         s.commit()
         s.refresh(otp)
-    if channel not in {"auto", "whatsapp", "sms"}:
-        raise HTTPException(status_code=400, detail="channel must be auto|whatsapp|sms")
     try:
-        channel_used = "whatsapp"
-        if channel == "sms":
-            send_sms(
-                to=user_phone,
-                text=f"Your HealthSense password reset code is {code}. It expires in {_OTP_TTL_MINUTES} minutes.",
-            )
-            channel_used = "sms"
-        else:
-            try:
-                send_whatsapp(
-                    to=user_phone,
-                    text=f"Your HealthSense password reset code is {code}. It expires in {_OTP_TTL_MINUTES} minutes.",
-                )
-            except Exception:
-                if channel == "auto":
-                    send_sms(
-                        to=user_phone,
-                        text=f"Your HealthSense password reset code is {code}. It expires in {_OTP_TTL_MINUTES} minutes.",
-                    )
-                    channel_used = "sms"
-                else:
-                    raise
+        channel_used = _send_auth_code(
+            user_id=user.id,
+            user_phone=user_phone,
+            code=code,
+            channel=channel,
+            purpose_label="password reset code",
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"failed to send otp: {e}")
     return {

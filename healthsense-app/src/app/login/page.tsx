@@ -1,11 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { friendlyAuthError } from "@/lib/authErrors";
 
 export default function LoginPage() {
-  const router = useRouter();
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [otpId, setOtpId] = useState<number | null>(null);
@@ -165,7 +163,7 @@ export default function LoginPage() {
         ) : (
           <form onSubmit={verifyOtp} className="space-y-4" autoComplete="off">
             <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">WhatsApp code</label>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Login code</label>
               <input
                 className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm tracking-[0.3em]"
                 inputMode="numeric"

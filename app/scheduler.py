@@ -44,7 +44,11 @@ from .virtual_clock import (
 
 # Use the shared SQLAlchemy engine to guarantee the same DB/connection settings.
 jobstores = {"default": SQLAlchemyJobStore(engine=engine)}
-executors = {"default": ThreadPoolExecutor(10)}
+try:
+    _SCHEDULER_MAX_WORKERS = max(1, int((os.getenv("SCHEDULER_MAX_WORKERS") or "4").strip() or "4"))
+except Exception:
+    _SCHEDULER_MAX_WORKERS = 4
+executors = {"default": ThreadPoolExecutor(_SCHEDULER_MAX_WORKERS)}
 scheduler = AsyncIOScheduler(jobstores=jobstores, executors=executors, timezone="UTC")
 
 

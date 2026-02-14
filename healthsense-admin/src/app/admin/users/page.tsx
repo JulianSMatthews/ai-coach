@@ -20,16 +20,33 @@ type UsersPageProps = {
 export const dynamic = "force-dynamic";
 
 function resolveHsAppBase(): string {
-  const appBaseRaw =
-    process.env.NEXT_PUBLIC_HSAPP_BASE_URL ||
-    process.env.NEXT_PUBLIC_APP_BASE_URL ||
-    process.env.HSAPP_PUBLIC_URL ||
-    process.env.HSAPP_PUBLIC_DEFAULT_URL ||
-    process.env.HSAPP_NGROK_DOMAIN ||
-    "https://app.healthsense.coach";
-  return (appBaseRaw.startsWith("http://") || appBaseRaw.startsWith("https://")
-    ? appBaseRaw
-    : `https://${appBaseRaw}`).replace(/\/+$/, "");
+  const isProd = (process.env.NODE_ENV || "").toLowerCase() === "production";
+  const rawCandidates = [
+    process.env.NEXT_PUBLIC_HSAPP_BASE_URL,
+    process.env.NEXT_PUBLIC_APP_BASE_URL,
+    process.env.HSAPP_PUBLIC_URL,
+    process.env.HSAPP_PUBLIC_DEFAULT_URL,
+    process.env.HSAPP_NGROK_DOMAIN,
+  ];
+
+  const normalized = rawCandidates
+    .map((raw) => (raw || "").trim())
+    .filter(Boolean)
+    .map((raw) => (raw.startsWith("http://") || raw.startsWith("https://") ? raw : `https://${raw}`))
+    .map((url) => url.replace(/\/+$/, ""));
+
+  for (const candidate of normalized) {
+    try {
+      const host = new URL(candidate).hostname.toLowerCase();
+      const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host.endsWith(".local");
+      if (isProd && isLocalHost) continue;
+      return candidate;
+    } catch {
+      continue;
+    }
+  }
+
+  return "https://app.healthsense.coach";
 }
 
 async function createUserAction(formData: FormData) {
