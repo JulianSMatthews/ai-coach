@@ -71,6 +71,17 @@ DEFAULT_OKR_MODEL   = os.getenv("ASS_MODEL") or "gpt-5.1"
 DEFAULT_OKR_QUARTER = os.getenv("OKR_QUARTER_LABEL", "This Quarter")
 
 
+def _resolve_okr_temperature(model_name: str | None, default_temp: float) -> float:
+    """
+    Keep existing deterministic temps for standard models, but force 1.0 for
+    gpt-5-mini variants that only accept the default temperature.
+    """
+    mdl = (model_name or "").strip().lower()
+    if mdl.startswith("gpt-5-mini"):
+        return 1.0
+    return float(default_temp)
+
+
 # Pure-LLM OKR mode (no scaffolding, no clamps, no fallback)
 OKR_RAW_FROM_LLM = os.getenv("OKR_RAW_FROM_LLM", "0") == "1"
 # Explicit override for raw mode (takes precedence if set)
@@ -126,6 +137,7 @@ def make_quarterly_okr_llm(
     mdl    = model or DEFAULT_OKR_MODEL
     qlabel = quarter_label or DEFAULT_OKR_QUARTER
     concept_scores = concept_scores or {}
+    req_temp = _resolve_okr_temperature(mdl, temperature)
 
     user_msg = {
         "role": "user",
@@ -152,7 +164,7 @@ def make_quarterly_okr_llm(
     try:
         resp = _client.chat.completions.create(
             model=mdl,
-            temperature=temperature,
+            temperature=req_temp,
             messages=[
                 {"role": "system", "content": SYSTEM_MSG},
                 user_msg,
@@ -680,6 +692,7 @@ def make_structured_okr_llm(
     """
     concept_scores = concept_scores or {}
     mdl = model or DEFAULT_OKR_MODEL
+    req_temp = _resolve_okr_temperature(mdl, temperature)
     if not _client:
         if OKR_RAW_FROM_LLM:
             raise RuntimeError("LLM client unavailable and OKR_RAW_FROM_LLM=1 (no fallback).")
@@ -773,7 +786,7 @@ def make_structured_okr_llm(
     try:
         resp = _client.chat.completions.create(
             model=mdl,
-            temperature=temperature,
+            temperature=req_temp,
             response_format={"type": "json_object"},
             messages=messages,
         )
