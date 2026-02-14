@@ -10,6 +10,7 @@ import json
 import asyncio
 import time
 import math
+import bisect
 import urllib.request
 import secrets
 import hashlib
@@ -3874,6 +3875,37 @@ def admin_assessment_health(
         "okr_fallback_rate_pct": {"warn": 5.0, "critical": 15.0, "lower_is_bad": False},
         "queue_backlog": {"warn": 20.0, "critical": 50.0, "lower_is_bad": False},
         "twilio_failure_rate_pct": {"warn": 2.0, "critical": 5.0, "lower_is_bad": False},
+        "coaching_week_completion_pct": {"warn": 60.0, "critical": 40.0, "lower_is_bad": True},
+        "coaching_sunday_reply_pct": {"warn": 50.0, "critical": 30.0, "lower_is_bad": True},
+        "coaching_response_p95_min": {"warn": 720.0, "critical": 1440.0, "lower_is_bad": False},
+    }
+    coaching_payload = {
+        "touchpoints_sent": 0,
+        "users_reached": 0,
+        "kickoff": {
+            "sent": 0,
+            "responded_24h": 0,
+            "response_rate_pct": None,
+            "with_audio": 0,
+            "audio_rate_pct": None,
+        },
+        "day_funnel": {
+            "started": 0,
+            "completed_sunday": 0,
+            "sunday_replied": 0,
+            "week_completion_rate_pct": None,
+            "sunday_reply_rate_pct": None,
+            "steps": [],
+        },
+        "week_funnel": {
+            "weeks": [],
+        },
+        "response_time_minutes": {
+            "p50": None,
+            "p95": None,
+            "sample_size": 0,
+        },
+        "day_stats": [],
     }
 
     with SessionLocal() as s:
@@ -4173,6 +4205,360 @@ def admin_assessment_health(
                 tw_failed += 1
         tw_failure_rate = (tw_failed / tw_total * 100.0) if tw_total else None
 
+        coaching_types = ["kickoff", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        weekly_types = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        tp_q = (
+            s.query(
+                Touchpoint.id,
+                Touchpoint.user_id,
+                Touchpoint.type,
+                Touchpoint.week_no,
+                Touchpoint.sent_at,
+                Touchpoint.created_at,
+                Touchpoint.source_check_in_id,
+                Touchpoint.audio_url,
+            )
+            .filter(Touchpoint.type.in_(coaching_types))
+            .filter(func.coalesce(Touchpoint.sent_at, Touchpoint.created_at) >= start_utc)
+            .filter(func.coalesce(Touchpoint.sent_at, Touchpoint.created_at) < end_utc)
+        )
+        if club_scope_id is not None:
+            tp_q = tp_q.join(User, Touchpoint.user_id == User.id).filter(User.club_id == club_scope_id)
+        tp_rows = tp_q.all()
+
+        touchpoints: list[dict] = []
+        touchpoint_user_ids: set[int] = set()
+        for tp_id, user_id, tp_type, week_no, sent_at, created_at, source_check_in_id, audio_url in tp_rows:
+            try:
+                uid = int(user_id)
+            except Exception:
+                continue
+            kind = str(tp_type or "").strip().lower()
+            if kind not in coaching_types:
+                continue
+            ts = sent_at or created_at
+            if ts is None:
+                continue
+            touchpoints.append(
+                {
+                    "id": int(tp_id),
+                    "user_id": uid,
+                    "type": kind,
+                    "week_no": int(week_no) if week_no is not None else None,
+                    "ts": ts,
+                    "source_check_in_id": source_check_in_id,
+                    "audio_url": audio_url,
+                }
+            )
+            touchpoint_user_ids.add(uid)
+
+        inbound_by_user: dict[int, list[datetime]] = {}
+        if touchpoint_user_ids:
+            inbound_rows = (
+                s.query(MessageLog.user_id, MessageLog.created_at)
+                .filter(MessageLog.direction == "inbound")
+                .filter(MessageLog.user_id.in_(touchpoint_user_ids))
+                .filter(MessageLog.created_at >= start_utc)
+                .filter(MessageLog.created_at < (end_utc + timedelta(days=1)))
+                .all()
+            )
+            for uid, created_at in inbound_rows:
+                if uid is None or created_at is None:
+                    continue
+                try:
+                    uid_i = int(uid)
+                except Exception:
+                    continue
+                inbound_by_user.setdefault(uid_i, []).append(created_at)
+            for uid_i in list(inbound_by_user.keys()):
+                inbound_by_user[uid_i].sort()
+
+        touchpoints.sort(key=lambda row: (row["user_id"], row["ts"], row["id"]))
+        next_ts_by_touchpoint_id: dict[int, datetime | None] = {}
+        for idx, row in enumerate(touchpoints):
+            next_ts = None
+            if idx + 1 < len(touchpoints) and touchpoints[idx + 1]["user_id"] == row["user_id"]:
+                next_ts = touchpoints[idx + 1]["ts"]
+            next_ts_by_touchpoint_id[int(row["id"])] = next_ts
+
+        def _first_inbound_between(user_id: int, start_at: datetime, end_at: datetime) -> datetime | None:
+            stamps = inbound_by_user.get(user_id) or []
+            if not stamps:
+                return None
+            pos = bisect.bisect_left(stamps, start_at)
+            if pos < len(stamps) and stamps[pos] < end_at:
+                return stamps[pos]
+            return None
+
+        response_minutes: list[float] = []
+        for row in touchpoints:
+            start_at = row["ts"]
+            end_at = start_at + timedelta(hours=24)
+            next_ts = next_ts_by_touchpoint_id.get(int(row["id"]))
+            if next_ts is not None and next_ts < end_at:
+                end_at = next_ts
+            first_inbound = _first_inbound_between(int(row["user_id"]), start_at, end_at)
+            responded_24h = first_inbound is not None
+            # Sunday may have check-in linkage even if inbound log capture was delayed/missed.
+            if not responded_24h and row["type"] == "sunday" and row.get("source_check_in_id"):
+                responded_24h = True
+            row["responded_24h"] = responded_24h
+            if first_inbound is not None:
+                mins = (first_inbound - start_at).total_seconds() / 60.0
+                if mins >= 0:
+                    row["response_minutes"] = mins
+                    response_minutes.append(mins)
+                else:
+                    row["response_minutes"] = None
+            else:
+                row["response_minutes"] = None
+
+        day_stats_map: dict[str, dict[str, object]] = {
+            day: {"day": day, "sent": 0, "users": set(), "replied_24h": 0, "with_audio": 0}
+            for day in coaching_types
+        }
+        for row in touchpoints:
+            day = str(row["type"])
+            stats = day_stats_map.get(day)
+            if not stats:
+                continue
+            stats["sent"] = int(stats["sent"]) + 1
+            users_set = stats["users"]
+            if isinstance(users_set, set):
+                users_set.add(int(row["user_id"]))
+            if bool(row.get("responded_24h")):
+                stats["replied_24h"] = int(stats["replied_24h"]) + 1
+            if row.get("audio_url"):
+                stats["with_audio"] = int(stats["with_audio"]) + 1
+
+        day_stats_rows = []
+        for day in coaching_types:
+            stats = day_stats_map.get(day) or {}
+            sent_n = int(stats.get("sent") or 0)
+            replied_n = int(stats.get("replied_24h") or 0)
+            with_audio_n = int(stats.get("with_audio") or 0)
+            users_set = stats.get("users")
+            users_n = len(users_set) if isinstance(users_set, set) else 0
+            day_stats_rows.append(
+                {
+                    "day": day,
+                    "sent": sent_n,
+                    "users": users_n,
+                    "replied_24h": replied_n,
+                    "reply_rate_pct": round((replied_n / sent_n * 100.0), 2) if sent_n else None,
+                    "with_audio": with_audio_n,
+                    "audio_rate_pct": round((with_audio_n / sent_n * 100.0), 2) if sent_n else None,
+                }
+            )
+
+        user_weekly_flow: dict[int, dict[str, object]] = {}
+        for row in touchpoints:
+            day = str(row["type"])
+            if day not in weekly_types:
+                continue
+            uid = int(row["user_id"])
+            rec = user_weekly_flow.setdefault(uid, {"days": set(), "sunday_replied": False})
+            days_set = rec["days"]
+            if isinstance(days_set, set):
+                days_set.add(day)
+            if day == "sunday" and bool(row.get("responded_24h")):
+                rec["sunday_replied"] = True
+
+        weekly_step_defs = [
+            {
+                "key": "monday_sent",
+                "label": "Monday sent",
+                "description": "Weekly planning/check-in prompt sent.",
+            },
+            {
+                "key": "tuesday_sent",
+                "label": "Tuesday sent",
+                "description": "Tuesday follow-up prompt sent.",
+            },
+            {
+                "key": "wednesday_sent",
+                "label": "Wednesday sent",
+                "description": "Midweek check prompt sent.",
+            },
+            {
+                "key": "thursday_sent",
+                "label": "Thursday sent",
+                "description": "Thursday boost prompt sent.",
+            },
+            {
+                "key": "friday_sent",
+                "label": "Friday sent",
+                "description": "Friday boost prompt sent.",
+            },
+            {
+                "key": "saturday_sent",
+                "label": "Saturday sent",
+                "description": "Weekend keepalive prompt sent.",
+            },
+            {
+                "key": "sunday_sent",
+                "label": "Sunday sent",
+                "description": "Sunday review prompt sent.",
+            },
+            {
+                "key": "sunday_replied",
+                "label": "Sunday replied (24h)",
+                "description": "User replied within 24 hours of Sunday review.",
+            },
+        ]
+
+        def _reached_stage(days: set[str], sunday_replied: bool) -> int:
+            reached = -1
+            if "monday" in days:
+                reached = 0
+            if reached >= 0 and "tuesday" in days:
+                reached = 1
+            if reached >= 1 and "wednesday" in days:
+                reached = 2
+            if reached >= 2 and "thursday" in days:
+                reached = 3
+            if reached >= 3 and "friday" in days:
+                reached = 4
+            if reached >= 4 and "saturday" in days:
+                reached = 5
+            if reached >= 5 and "sunday" in days:
+                reached = 6
+            if reached >= 6 and sunday_replied:
+                reached = 7
+            return reached
+
+        reached_by_user: dict[int, int] = {}
+        for uid, rec in user_weekly_flow.items():
+            days_set = rec.get("days")
+            if not isinstance(days_set, set):
+                days_set = set()
+            reached_by_user[uid] = _reached_stage(days_set, bool(rec.get("sunday_replied")))
+
+        weekly_started = sum(1 for reached in reached_by_user.values() if reached >= 0)
+        weekly_funnel_steps = []
+        for idx, step in enumerate(weekly_step_defs):
+            count_i = sum(1 for reached in reached_by_user.values() if reached >= idx)
+            prev = weekly_funnel_steps[idx - 1]["count"] if idx > 0 else None
+            conversion = (count_i / prev * 100.0) if (prev is not None and prev > 0) else None
+            dropoff = (prev - count_i) if prev is not None else 0
+            pct_of_start = (count_i / weekly_started * 100.0) if weekly_started else None
+            weekly_funnel_steps.append(
+                {
+                    "key": step["key"],
+                    "label": step["label"],
+                    "description": step["description"],
+                    "count": int(count_i),
+                    "percent_of_start": round(pct_of_start, 2) if pct_of_start is not None else None,
+                    "conversion_pct_from_prev": round(conversion, 2) if conversion is not None else None,
+                    "dropoff_from_prev": int(dropoff),
+                }
+            )
+
+        week_user_flow: dict[int, dict[int, dict[str, object]]] = {}
+        for row in touchpoints:
+            day = str(row["type"])
+            if day not in weekly_types:
+                continue
+            week_no = row.get("week_no")
+            if week_no is None:
+                continue
+            try:
+                week_i = int(week_no)
+            except Exception:
+                continue
+            if week_i <= 0:
+                continue
+            uid = int(row["user_id"])
+            users_for_week = week_user_flow.setdefault(week_i, {})
+            rec = users_for_week.setdefault(uid, {"days": set(), "sunday_replied": False})
+            days_set = rec.get("days")
+            if isinstance(days_set, set):
+                days_set.add(day)
+            if day == "sunday" and bool(row.get("responded_24h")):
+                rec["sunday_replied"] = True
+
+        week_rows = []
+        for week_i in sorted(week_user_flow.keys()):
+            recs = week_user_flow.get(week_i) or {}
+            reached_by_uid: dict[int, int] = {}
+            for uid, rec in recs.items():
+                days_set = rec.get("days")
+                if not isinstance(days_set, set):
+                    days_set = set()
+                reached_by_uid[uid] = _reached_stage(days_set, bool(rec.get("sunday_replied")))
+            started_users = sum(1 for reached in reached_by_uid.values() if reached >= 0)
+            steps = []
+            for idx, step in enumerate(weekly_step_defs):
+                count_i = sum(1 for reached in reached_by_uid.values() if reached >= idx)
+                prev = steps[idx - 1]["count"] if idx > 0 else None
+                conversion = (count_i / prev * 100.0) if (prev is not None and prev > 0) else None
+                dropoff = (prev - count_i) if prev is not None else 0
+                pct_of_start = (count_i / started_users * 100.0) if started_users else None
+                steps.append(
+                    {
+                        "key": step["key"],
+                        "label": step["label"],
+                        "count": int(count_i),
+                        "percent_of_start": round(pct_of_start, 2) if pct_of_start is not None else None,
+                        "conversion_pct_from_prev": round(conversion, 2) if conversion is not None else None,
+                        "dropoff_from_prev": int(dropoff),
+                    }
+                )
+            completed_users = steps[6]["count"] if len(steps) > 6 else 0
+            sunday_replied_users = steps[7]["count"] if len(steps) > 7 else 0
+            completion_rate_pct = (completed_users / started_users * 100.0) if started_users else None
+            sunday_reply_rate_pct = (sunday_replied_users / completed_users * 100.0) if completed_users else None
+            week_rows.append(
+                {
+                    "week_no": int(week_i),
+                    "cohort_users": int(started_users),
+                    "completed_sunday": int(completed_users),
+                    "sunday_replied": int(sunday_replied_users),
+                    "completion_rate_pct": round(completion_rate_pct, 2) if completion_rate_pct is not None else None,
+                    "sunday_reply_rate_pct": round(sunday_reply_rate_pct, 2) if sunday_reply_rate_pct is not None else None,
+                    "steps": steps,
+                }
+            )
+
+        kickoff_sent = next((row["sent"] for row in day_stats_rows if row.get("day") == "kickoff"), 0)
+        kickoff_replied = next((row["replied_24h"] for row in day_stats_rows if row.get("day") == "kickoff"), 0)
+        kickoff_audio = next((row["with_audio"] for row in day_stats_rows if row.get("day") == "kickoff"), 0)
+        sunday_sent_count = weekly_funnel_steps[6]["count"] if len(weekly_funnel_steps) > 6 else 0
+        sunday_replied_count = weekly_funnel_steps[7]["count"] if len(weekly_funnel_steps) > 7 else 0
+        week_completion_rate = (sunday_sent_count / weekly_started * 100.0) if weekly_started else None
+        sunday_reply_rate = (sunday_replied_count / sunday_sent_count * 100.0) if sunday_sent_count else None
+        response_p50 = _percentile(response_minutes, 50)
+        response_p95 = _percentile(response_minutes, 95)
+
+        coaching_payload = {
+            "touchpoints_sent": len(touchpoints),
+            "users_reached": len({int(row["user_id"]) for row in touchpoints}),
+            "kickoff": {
+                "sent": int(kickoff_sent or 0),
+                "responded_24h": int(kickoff_replied or 0),
+                "response_rate_pct": round((kickoff_replied / kickoff_sent * 100.0), 2) if kickoff_sent else None,
+                "with_audio": int(kickoff_audio or 0),
+                "audio_rate_pct": round((kickoff_audio / kickoff_sent * 100.0), 2) if kickoff_sent else None,
+            },
+            "day_funnel": {
+                "started": int(weekly_started),
+                "completed_sunday": int(sunday_sent_count),
+                "sunday_replied": int(sunday_replied_count),
+                "week_completion_rate_pct": round(week_completion_rate, 2) if week_completion_rate is not None else None,
+                "sunday_reply_rate_pct": round(sunday_reply_rate, 2) if sunday_reply_rate is not None else None,
+                "steps": weekly_funnel_steps,
+            },
+            "week_funnel": {
+                "weeks": week_rows,
+            },
+            "response_time_minutes": {
+                "p50": round(response_p50, 2) if response_p50 is not None else None,
+                "p95": round(response_p95, 2) if response_p95 is not None else None,
+                "sample_size": len(response_minutes),
+            },
+            "day_stats": day_stats_rows,
+        }
+
         ps = s.query(PromptSettings).order_by(PromptSettings.id.asc()).first()
 
     def _env_flag(name: str) -> bool:
@@ -4226,6 +4612,44 @@ def admin_assessment_health(
         warn=thresholds["twilio_failure_rate_pct"]["warn"],
         critical=thresholds["twilio_failure_rate_pct"]["critical"],
     )
+    coaching_week_completion = (
+        ((coaching_payload.get("day_funnel") or {}).get("week_completion_rate_pct"))
+        if isinstance(coaching_payload, dict)
+        else None
+    )
+    coaching_sunday_reply = (
+        ((coaching_payload.get("day_funnel") or {}).get("sunday_reply_rate_pct"))
+        if isinstance(coaching_payload, dict)
+        else None
+    )
+    coaching_response_p95 = (
+        ((coaching_payload.get("response_time_minutes") or {}).get("p95"))
+        if isinstance(coaching_payload, dict)
+        else None
+    )
+    coaching_week_completion_state = _threshold_state(
+        coaching_week_completion,
+        warn=thresholds["coaching_week_completion_pct"]["warn"],
+        critical=thresholds["coaching_week_completion_pct"]["critical"],
+        lower_is_bad=True,
+    )
+    coaching_sunday_reply_state = _threshold_state(
+        coaching_sunday_reply,
+        warn=thresholds["coaching_sunday_reply_pct"]["warn"],
+        critical=thresholds["coaching_sunday_reply_pct"]["critical"],
+        lower_is_bad=True,
+    )
+    coaching_response_state = _threshold_state(
+        coaching_response_p95,
+        warn=thresholds["coaching_response_p95_min"]["warn"],
+        critical=thresholds["coaching_response_p95_min"]["critical"],
+    )
+    if isinstance(coaching_payload, dict):
+        if isinstance(coaching_payload.get("day_funnel"), dict):
+            coaching_payload["day_funnel"]["week_completion_state"] = coaching_week_completion_state
+            coaching_payload["day_funnel"]["sunday_reply_state"] = coaching_sunday_reply_state
+        if isinstance(coaching_payload.get("response_time_minutes"), dict):
+            coaching_payload["response_time_minutes"]["state"] = coaching_response_state
 
     alerts = []
     metric_states = {
@@ -4236,6 +4660,9 @@ def admin_assessment_health(
         "okr_fallback_rate_pct": fallback_state,
         "queue_backlog": backlog_state,
         "twilio_failure_rate_pct": twilio_state,
+        "coaching_week_completion_pct": coaching_week_completion_state,
+        "coaching_sunday_reply_pct": coaching_sunday_reply_state,
+        "coaching_response_p95_min": coaching_response_state,
     }
     metric_values = {
         "completion_rate_pct": completion_rate,
@@ -4245,6 +4672,9 @@ def admin_assessment_health(
         "okr_fallback_rate_pct": okr_fallback_rate,
         "queue_backlog": backlog,
         "twilio_failure_rate_pct": tw_failure_rate,
+        "coaching_week_completion_pct": coaching_week_completion,
+        "coaching_sunday_reply_pct": coaching_sunday_reply,
+        "coaching_response_p95_min": coaching_response_p95,
     }
     for key, state in metric_states.items():
         if state in {"warn", "critical"}:
@@ -4341,6 +4771,7 @@ def admin_assessment_health(
             "worker_mode_source": "override" if worker_override is not None else "env",
             "podcast_worker_mode_source": podcast_source,
         },
+        "coaching": coaching_payload,
         "alerts": alerts,
     }
 

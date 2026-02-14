@@ -238,6 +238,68 @@ export type AssessmentHealthPayload = {
     twilio_failure_state?: string;
   };
   worker?: WorkerStatusPayload;
+  coaching?: {
+    touchpoints_sent?: number;
+    users_reached?: number;
+    kickoff?: {
+      sent?: number;
+      responded_24h?: number;
+      response_rate_pct?: number | null;
+      with_audio?: number;
+      audio_rate_pct?: number | null;
+    };
+    day_funnel?: {
+      started?: number;
+      completed_sunday?: number;
+      sunday_replied?: number;
+      week_completion_rate_pct?: number | null;
+      week_completion_state?: string;
+      sunday_reply_rate_pct?: number | null;
+      sunday_reply_state?: string;
+      steps?: Array<{
+        key?: string;
+        label?: string;
+        description?: string;
+        count?: number;
+        percent_of_start?: number | null;
+        conversion_pct_from_prev?: number | null;
+        dropoff_from_prev?: number;
+      }>;
+    };
+    week_funnel?: {
+      weeks?: Array<{
+        week_no?: number;
+        cohort_users?: number;
+        completed_sunday?: number;
+        sunday_replied?: number;
+        completion_rate_pct?: number | null;
+        sunday_reply_rate_pct?: number | null;
+        steps?: Array<{
+          key?: string;
+          label?: string;
+          count?: number;
+          percent_of_start?: number | null;
+          conversion_pct_from_prev?: number | null;
+          dropoff_from_prev?: number;
+        }>;
+      }>;
+    };
+    response_time_minutes?: {
+      p50?: number | null;
+      p95?: number | null;
+      sample_size?: number;
+      state?: string;
+    };
+    day_stats?: Array<{
+      day?: string;
+      sent?: number;
+      users?: number;
+      replied_24h?: number;
+      reply_rate_pct?: number | null;
+      with_audio?: number;
+      audio_rate_pct?: number | null;
+    }>;
+  };
   alerts?: AssessmentHealthAlert[];
 };
 

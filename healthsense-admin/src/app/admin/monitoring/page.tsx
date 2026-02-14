@@ -48,6 +48,9 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
 
   const alerts = health?.alerts || [];
   const funnelSteps = health?.funnel?.steps || [];
+  const coachingFunnelSteps = health?.coaching?.day_funnel?.steps || [];
+  const coachingWeekRows = health?.coaching?.week_funnel?.weeks || [];
+  const coachingDayStats = health?.coaching?.day_stats || [];
   const metrics = [
     {
       title: "Completion rate",
@@ -101,13 +104,52 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
       description: "Share of Twilio status callbacks marked failed/undelivered or with error codes.",
     },
   ];
+  const coachingMetrics = [
+    {
+      title: "Coaching users reached",
+      value: health?.coaching?.users_reached != null ? `${health.coaching.users_reached}` : "—",
+      state: "unknown",
+      subtitle: `${health?.coaching?.touchpoints_sent ?? 0} coaching touchpoints sent`,
+      description: "Unique users who received at least one coaching touchpoint in this window.",
+    },
+    {
+      title: "Weekly flow completion",
+      value:
+        health?.coaching?.day_funnel?.week_completion_rate_pct != null
+          ? `${formatNum(health.coaching.day_funnel.week_completion_rate_pct)}%`
+          : "—",
+      state: health?.coaching?.day_funnel?.week_completion_state,
+      subtitle: `${health?.coaching?.day_funnel?.completed_sunday ?? 0} reached Sunday / ${health?.coaching?.day_funnel?.started ?? 0} Monday starts`,
+      description: "Monday-started coaching users who reached Sunday in the same flow.",
+    },
+    {
+      title: "Sunday reply rate",
+      value:
+        health?.coaching?.day_funnel?.sunday_reply_rate_pct != null
+          ? `${formatNum(health.coaching.day_funnel.sunday_reply_rate_pct)}%`
+          : "—",
+      state: health?.coaching?.day_funnel?.sunday_reply_state,
+      subtitle: `${health?.coaching?.day_funnel?.sunday_replied ?? 0} replied / ${health?.coaching?.day_funnel?.completed_sunday ?? 0} Sunday prompts`,
+      description: "Share of Sunday review prompts that received a user reply within 24 hours.",
+    },
+    {
+      title: "Coach reply latency p95",
+      value:
+        health?.coaching?.response_time_minutes?.p95 != null
+          ? `${Math.round(health.coaching.response_time_minutes.p95)} min`
+          : "—",
+      state: health?.coaching?.response_time_minutes?.state,
+      subtitle: `p50 ${health?.coaching?.response_time_minutes?.p50 != null ? `${Math.round(health.coaching.response_time_minutes.p50)} min` : "—"} (${health?.coaching?.response_time_minutes?.sample_size ?? 0} samples)`,
+      description: "How quickly users typically reply after coaching touchpoints (windowed to 24h).",
+    },
+  ];
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto w-full max-w-6xl space-y-6">
         <AdminNav
-          title="Assessment monitoring"
-          subtitle="Live operational health across funnel, LLM quality, queue, and messaging delivery."
+          title="Operations monitoring"
+          subtitle="Assessment + coaching flow health across funnel, LLM quality, queue, and messaging delivery."
         />
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
@@ -225,6 +267,135 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
               ))}
             </div>
           )}
+        </section>
+
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {coachingMetrics.map((item) => (
+            <div key={item.title} className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{item.title}</p>
+                <span className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.2em] ${stateBadgeClass(item.state)}`}>
+                  {(item.state || "unknown").toUpperCase()}
+                </span>
+              </div>
+              <div className="mt-3 text-3xl font-semibold">{item.value}</div>
+              <p className="mt-2 text-sm text-[#6b6257]">{item.subtitle}</p>
+              <p className="mt-1 text-xs text-[#8a8176]">{item.description}</p>
+            </div>
+          ))}
+        </section>
+
+        <section className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
+          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Coaching day flow funnel</p>
+          <p className="mt-2 text-sm text-[#6b6257]">
+            Monday to Sunday progression for coaching touchpoints. Width is % of Monday starters.
+          </p>
+          {!coachingFunnelSteps.length ? (
+            <p className="mt-4 text-sm text-[#8a8176]">No coaching funnel data in this window.</p>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {coachingFunnelSteps.map((step, idx) => (
+                <div key={step.key || `${idx}`} className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                        {idx + 1}. {step.label || step.key || "step"}
+                      </div>
+                      <div className="mt-1 text-xs text-[#8a8176]">{step.description || "—"}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-semibold">{step.count ?? 0}</div>
+                      <div className="text-xs text-[#6b6257]">
+                        {step.percent_of_start != null ? `${formatNum(step.percent_of_start)}% of Monday starters` : "—"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 h-3 w-full rounded-full bg-[#ece4d8]">
+                    <div className="h-3 rounded-full bg-[#1d6a4f]" style={{ width: barWidth(step.percent_of_start) }} />
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-4 text-xs text-[#6b6257]">
+                    <span>
+                      Conversion from previous:{" "}
+                      {idx === 0
+                        ? "—"
+                        : step.conversion_pct_from_prev != null
+                          ? `${formatNum(step.conversion_pct_from_prev)}%`
+                          : "—"}
+                    </span>
+                    <span>Drop-off from previous: {idx === 0 ? "—" : step.dropoff_from_prev ?? 0}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="grid gap-4 xl:grid-cols-2">
+          <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
+            <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Multi-week funnel</p>
+            <p className="mt-1 text-xs text-[#8a8176]">
+              Per-week conversion through Monday → Sunday so you can spot week-on-week retention drift.
+            </p>
+            <div className="mt-3 space-y-3">
+              {!coachingWeekRows.length ? (
+                <p className="text-sm text-[#8a8176]">No week-level coaching data in this window.</p>
+              ) : (
+                coachingWeekRows.map((week) => (
+                  <div key={`week-${week.week_no ?? "unknown"}`} className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Week {week.week_no ?? "—"}</span>
+                      <span className="text-sm font-semibold">
+                        {week.completion_rate_pct != null ? `${formatNum(week.completion_rate_pct)}%` : "—"} completion
+                      </span>
+                    </div>
+                    <div className="mt-2 text-xs text-[#6b6257]">
+                      Cohort {week.cohort_users ?? 0} | Sunday reached {week.completed_sunday ?? 0} | Sunday replied{" "}
+                      {week.sunday_replied ?? 0}
+                    </div>
+                    <div className="mt-2 h-2 w-full rounded-full bg-[#ece4d8]">
+                      <div
+                        className="h-2 rounded-full bg-[#1d6a4f]"
+                        style={{ width: barWidth(week.completion_rate_pct ?? null) }}
+                      />
+                    </div>
+                    <div className="mt-2 text-xs text-[#8a8176]">
+                      Sunday reply rate:{" "}
+                      {week.sunday_reply_rate_pct != null ? `${formatNum(week.sunday_reply_rate_pct)}%` : "—"}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
+            <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Day-by-day engagement</p>
+            <p className="mt-1 text-xs text-[#8a8176]">
+              Sent volume, 24-hour reply rate, and media usage by coaching touchpoint day.
+            </p>
+            <div className="mt-3 space-y-2">
+              {!coachingDayStats.length ? (
+                <p className="text-sm text-[#8a8176]">No day-level coaching data in this window.</p>
+              ) : (
+                coachingDayStats.map((row) => (
+                  <div key={`day-${row.day || "unknown"}`} className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.day || "unknown"}</span>
+                      <span className="text-sm font-semibold">{row.sent ?? 0} sent</span>
+                    </div>
+                    <div className="mt-1 text-xs text-[#6b6257]">
+                      users {row.users ?? 0} | replies {row.replied_24h ?? 0} (
+                      {row.reply_rate_pct != null ? `${formatNum(row.reply_rate_pct)}%` : "—"})
+                    </div>
+                    <div className="mt-1 text-xs text-[#8a8176]">
+                      with audio {row.with_audio ?? 0} (
+                      {row.audio_rate_pct != null ? `${formatNum(row.audio_rate_pct)}%` : "—"})
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </section>
 
         <section className="grid gap-4 xl:grid-cols-2">
