@@ -157,6 +157,81 @@ export type WorkerStatusPayload = {
   podcast_worker_mode_source?: string | null;
 };
 
+export type AssessmentHealthAlert = {
+  metric?: string;
+  state?: string;
+  value?: number | null;
+  warn?: number | null;
+  critical?: number | null;
+};
+
+export type AssessmentHealthPayload = {
+  as_of_utc?: string;
+  window?: {
+    days?: number;
+    start_utc?: string;
+    end_utc?: string;
+    stale_minutes?: number;
+  };
+  thresholds?: Record<string, { warn?: number; critical?: number; lower_is_bad?: boolean }>;
+  funnel?: {
+    started?: number;
+    completed?: number;
+    incomplete?: number;
+    completion_rate_pct?: number | null;
+    completion_rate_state?: string;
+    median_completion_minutes?: number | null;
+    p95_completion_minutes?: number | null;
+    median_completion_state?: string;
+    stale_runs?: number;
+    stale_runs_state?: string;
+  };
+  dropoff?: {
+    incomplete_runs?: number;
+    avg_last_question_idx?: number | null;
+    question_idx_top?: Array<{ question_idx?: number; count?: number }>;
+    points_top?: Array<{ label?: string; count?: number }>;
+  };
+  llm?: {
+    assessor_prompts?: number;
+    duration_ms_p50?: number | null;
+    duration_ms_p95?: number | null;
+    duration_ms_state?: string;
+    models?: Record<string, number>;
+    slow_over_warn?: number;
+    slow_over_critical?: number;
+    okr_generation?: {
+      calls?: number;
+      success?: number;
+      fallback?: number;
+      errors?: number;
+      fallback_rate_pct?: number | null;
+      fallback_rate_state?: string;
+    };
+  };
+  queue?: {
+    pending?: number;
+    retry?: number;
+    running?: number;
+    error?: number;
+    backlog?: number;
+    backlog_state?: string;
+    oldest_pending_age_min?: number | null;
+    error_rate_1h_pct?: number | null;
+    processed_1h?: number;
+  };
+  messaging?: {
+    outbound_messages?: number;
+    inbound_messages?: number;
+    twilio_callbacks?: number;
+    twilio_failures?: number;
+    twilio_failure_rate_pct?: number | null;
+    twilio_failure_state?: string;
+  };
+  worker?: WorkerStatusPayload;
+  alerts?: AssessmentHealthAlert[];
+};
+
 export type ContentPromptTemplateSummary = {
   id: number;
   template_key: string;
@@ -626,6 +701,18 @@ export async function updatePromptSettings(payload: PromptSettingsPayload) {
 
 export async function getWorkerStatus() {
   return apiAdmin<WorkerStatusPayload>("/admin/worker/status");
+}
+
+export async function getAdminAssessmentHealth(params: {
+  days?: number;
+  stale_minutes?: number;
+} = {}) {
+  return apiAdmin<AssessmentHealthPayload>("/admin/assessment/health", {
+    query: {
+      days: params.days,
+      stale_minutes: params.stale_minutes,
+    },
+  });
 }
 
 export async function listContentPromptTemplates(

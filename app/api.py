@@ -9,6 +9,7 @@ import os
 import json
 import asyncio
 import time
+import math
 import urllib.request
 import secrets
 import hashlib
@@ -79,6 +80,8 @@ from .models import (
     PromptTemplateVersionLog,
     LLMPromptLog,
     UsageEvent,
+    JobAudit,
+    BackgroundJob,
     UserConceptState,
     PillarResult,
     PsychProfile,
@@ -2495,6 +2498,32 @@ async def twilio_status_callback(request: Request):
         "error_message": form.get("ErrorMessage"),
     }
     debug_log("twilio status", payload, tag="twilio")
+    try:
+        to_raw = (payload.get("to") or "").strip()
+        to_phone = to_raw.split("whatsapp:", 1)[1] if to_raw.startswith("whatsapp:") else to_raw
+        user_id = None
+        if to_phone:
+            with SessionLocal() as s:
+                u = s.execute(select(User).where(User.phone == to_phone)).scalar_one_or_none()
+                user_id = getattr(u, "id", None) if u else None
+        status_val = str(payload.get("status") or "").strip().lower()
+        failed_states = {"failed", "undelivered"}
+        audit_status = "error" if payload.get("error_code") or status_val in failed_states else "ok"
+        with SessionLocal() as s:
+            s.add(
+                JobAudit(
+                    job_name="twilio_status",
+                    status=audit_status,
+                    payload={
+                        **payload,
+                        "user_id": user_id,
+                    },
+                    error=str(payload.get("error_message") or "") or None,
+                )
+            )
+            s.commit()
+    except Exception:
+        pass
     return {"ok": True}
 
 
@@ -3759,6 +3788,462 @@ def admin_create_user(payload: dict, admin_user: User = Depends(_require_admin))
         "display_name": display_full_name(u),
         "phone": u.phone
     }
+
+def _percentile(values: list[float], p: float) -> float | None:
+    clean = sorted(float(v) for v in values if v is not None)
+    if not clean:
+        return None
+    if len(clean) == 1:
+        return clean[0]
+    pct = max(0.0, min(100.0, float(p)))
+    rank = (pct / 100.0) * (len(clean) - 1)
+    lo = int(math.floor(rank))
+    hi = int(math.ceil(rank))
+    if lo == hi:
+        return clean[lo]
+    frac = rank - lo
+    return clean[lo] + ((clean[hi] - clean[lo]) * frac)
+
+
+def _threshold_state(
+    value: float | int | None,
+    *,
+    warn: float,
+    critical: float,
+    lower_is_bad: bool = False,
+) -> str:
+    if value is None:
+        return "unknown"
+    val = float(value)
+    if lower_is_bad:
+        if val < critical:
+            return "critical"
+        if val < warn:
+            return "warn"
+        return "ok"
+    if val > critical:
+        return "critical"
+    if val > warn:
+        return "warn"
+    return "ok"
+
+
+def _as_payload_dict(value: object) -> dict:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            return {}
+    return {}
+
+
+@admin.get("/assessment/health")
+def admin_assessment_health(
+    days: int | None = None,
+    stale_minutes: int | None = None,
+    admin_user: User = Depends(_require_admin),
+):
+    """
+    Aggregated operational health metrics for assessment flow monitoring.
+    """
+    try:
+        days_val = int(days or 7)
+    except Exception:
+        days_val = 7
+    days_val = max(1, min(days_val, 30))
+    try:
+        stale_mins = int(stale_minutes or 30)
+    except Exception:
+        stale_mins = 30
+    stale_mins = max(5, min(stale_mins, 240))
+
+    now_utc = datetime.utcnow()
+    start_utc = now_utc - timedelta(days=days_val)
+    end_utc = now_utc
+    club_scope_id = getattr(admin_user, "club_id", None)
+
+    thresholds = {
+        "completion_rate_pct": {"warn": 70.0, "critical": 55.0, "lower_is_bad": True},
+        "median_completion_minutes": {"warn": 18.0, "critical": 25.0, "lower_is_bad": False},
+        "stale_runs": {"warn": 5.0, "critical": 15.0, "lower_is_bad": False},
+        "llm_p95_ms": {"warn": 8000.0, "critical": 15000.0, "lower_is_bad": False},
+        "okr_fallback_rate_pct": {"warn": 5.0, "critical": 15.0, "lower_is_bad": False},
+        "queue_backlog": {"warn": 20.0, "critical": 50.0, "lower_is_bad": False},
+        "twilio_failure_rate_pct": {"warn": 2.0, "critical": 5.0, "lower_is_bad": False},
+    }
+
+    with SessionLocal() as s:
+        run_q = (
+            s.query(AssessmentRun.id, AssessmentRun.user_id, AssessmentRun.started_at, AssessmentRun.finished_at)
+            .filter(AssessmentRun.started_at.isnot(None))
+            .filter(AssessmentRun.started_at >= start_utc, AssessmentRun.started_at < end_utc)
+        )
+        if club_scope_id is not None:
+            run_q = run_q.join(User, AssessmentRun.user_id == User.id).filter(User.club_id == club_scope_id)
+        run_rows = run_q.all()
+
+        started_count = len(run_rows)
+        completed_count = 0
+        completion_minutes: list[float] = []
+        incomplete_run_ids: list[int] = []
+        for run_id, _uid, started_at, finished_at in run_rows:
+            if finished_at is not None:
+                completed_count += 1
+                if started_at is not None and finished_at >= started_at:
+                    completion_minutes.append((finished_at - started_at).total_seconds() / 60.0)
+            else:
+                incomplete_run_ids.append(int(run_id))
+
+        completion_rate = (completed_count / started_count * 100.0) if started_count else None
+        median_completion = _percentile(completion_minutes, 50)
+        p95_completion = _percentile(completion_minutes, 95)
+
+        stale_cutoff = now_utc - timedelta(minutes=stale_mins)
+        stale_q = (
+            s.query(func.count(AssessmentRun.id))
+            .filter(AssessmentRun.finished_at.is_(None))
+            .filter(AssessmentRun.started_at.isnot(None))
+            .filter(AssessmentRun.started_at >= start_utc, AssessmentRun.started_at <= stale_cutoff)
+        )
+        if club_scope_id is not None:
+            stale_q = stale_q.join(User, AssessmentRun.user_id == User.id).filter(User.club_id == club_scope_id)
+        stale_runs = int(stale_q.scalar() or 0)
+
+        question_dropoff: dict[int, int] = {}
+        point_dropoff: dict[str, int] = {}
+        avg_last_question_idx = None
+        if incomplete_run_ids:
+            idx_rows = (
+                s.query(AssessmentTurn.run_id, func.max(AssessmentTurn.idx))
+                .filter(AssessmentTurn.run_id.in_(incomplete_run_ids))
+                .group_by(AssessmentTurn.run_id)
+                .all()
+            )
+            idx_map = {int(rid): int(max_idx or 0) for rid, max_idx in idx_rows}
+            if idx_map:
+                vals = [v for v in idx_map.values() if v > 0]
+                avg_last_question_idx = (sum(vals) / len(vals)) if vals else None
+                for idx in vals:
+                    question_dropoff[idx] = question_dropoff.get(idx, 0) + 1
+
+            last_turn_by_run: dict[int, tuple[str, str]] = {}
+            turn_rows = (
+                s.query(AssessmentTurn.run_id, AssessmentTurn.idx, AssessmentTurn.pillar, AssessmentTurn.concept_key)
+                .filter(AssessmentTurn.run_id.in_(incomplete_run_ids))
+                .order_by(AssessmentTurn.run_id.asc(), AssessmentTurn.idx.desc())
+                .all()
+            )
+            for rid, _idx, pillar, concept_key in turn_rows:
+                rid_i = int(rid)
+                if rid_i in last_turn_by_run:
+                    continue
+                last_turn_by_run[rid_i] = ((pillar or "unknown").strip().lower(), (concept_key or "").strip().lower())
+            for _rid, (pillar, concept_key) in last_turn_by_run.items():
+                label = f"{pillar}.{concept_key}" if concept_key else pillar
+                point_dropoff[label] = point_dropoff.get(label, 0) + 1
+
+        prompt_q = (
+            s.query(LLMPromptLog.duration_ms, LLMPromptLog.model)
+            .filter(LLMPromptLog.touchpoint == "assessor_system")
+            .filter(LLMPromptLog.created_at >= start_utc, LLMPromptLog.created_at < end_utc)
+        )
+        if club_scope_id is not None:
+            prompt_q = prompt_q.join(User, LLMPromptLog.user_id == User.id).filter(User.club_id == club_scope_id)
+        prompt_rows = prompt_q.all()
+        llm_durations_ms = [int(dur) for dur, _model in prompt_rows if dur is not None and int(dur) >= 0]
+        model_counts: dict[str, int] = {}
+        for _dur, model in prompt_rows:
+            key = (model or "unknown").strip()
+            model_counts[key] = model_counts.get(key, 0) + 1
+        llm_p50 = _percentile([float(v) for v in llm_durations_ms], 50)
+        llm_p95 = _percentile([float(v) for v in llm_durations_ms], 95)
+
+        okr_q = (
+            s.query(JobAudit.job_name, JobAudit.payload)
+            .filter(JobAudit.job_name.in_(["okr_llm_call", "okr_llm_success", "okr_llm_fallback", "okr_llm_error"]))
+            .filter(JobAudit.created_at >= start_utc, JobAudit.created_at < end_utc)
+        )
+        okr_rows = okr_q.all()
+        if club_scope_id is not None and okr_rows:
+            scoped_user_ids = {
+                int(uid)
+                for (uid,) in s.query(User.id).filter(User.club_id == club_scope_id).all()
+                if uid is not None
+            }
+            scoped_okr_rows = []
+            for job_name, payload in okr_rows:
+                body = _as_payload_dict(payload)
+                uid = body.get("user_id")
+                try:
+                    uid_i = int(uid)
+                except Exception:
+                    uid_i = None
+                if uid_i is not None and uid_i in scoped_user_ids:
+                    scoped_okr_rows.append((job_name, body))
+            okr_rows = scoped_okr_rows
+        else:
+            okr_rows = [(job_name, _as_payload_dict(payload)) for job_name, payload in okr_rows]
+        okr_call_count = sum(1 for job_name, _payload in okr_rows if job_name == "okr_llm_call")
+        okr_success_count = sum(1 for job_name, _payload in okr_rows if job_name == "okr_llm_success")
+        okr_fallback_count = sum(1 for job_name, _payload in okr_rows if job_name == "okr_llm_fallback")
+        okr_error_count = sum(1 for job_name, _payload in okr_rows if job_name == "okr_llm_error")
+        okr_denom = okr_call_count or (okr_success_count + okr_fallback_count + okr_error_count)
+        okr_fallback_rate = (okr_fallback_count / okr_denom * 100.0) if okr_denom else None
+
+        jobs_q = s.query(BackgroundJob.status, func.count(BackgroundJob.id))
+        if club_scope_id is not None:
+            jobs_q = jobs_q.join(User, BackgroundJob.user_id == User.id).filter(User.club_id == club_scope_id)
+        jobs_rows = jobs_q.group_by(BackgroundJob.status).all()
+        job_counts = {str(status or "unknown"): int(count or 0) for status, count in jobs_rows}
+        pending_count = int(job_counts.get("pending", 0))
+        retry_count = int(job_counts.get("retry", 0))
+        running_count = int(job_counts.get("running", 0))
+        error_count = int(job_counts.get("error", 0))
+        backlog = pending_count + retry_count
+
+        oldest_q = (
+            s.query(func.min(BackgroundJob.created_at))
+            .filter(BackgroundJob.status.in_(["pending", "retry"]))
+        )
+        if club_scope_id is not None:
+            oldest_q = oldest_q.join(User, BackgroundJob.user_id == User.id).filter(User.club_id == club_scope_id)
+        oldest_pending_at = oldest_q.scalar()
+        oldest_pending_age_min = (
+            (now_utc - oldest_pending_at).total_seconds() / 60.0 if oldest_pending_at else None
+        )
+
+        one_hour_ago = now_utc - timedelta(hours=1)
+        recent_q = (
+            s.query(BackgroundJob.status, func.count(BackgroundJob.id))
+            .filter(BackgroundJob.updated_at >= one_hour_ago, BackgroundJob.updated_at < now_utc)
+            .filter(BackgroundJob.status.in_(["done", "error"]))
+        )
+        if club_scope_id is not None:
+            recent_q = recent_q.join(User, BackgroundJob.user_id == User.id).filter(User.club_id == club_scope_id)
+        recent_rows = recent_q.group_by(BackgroundJob.status).all()
+        recent_map = {str(status or "unknown"): int(count or 0) for status, count in recent_rows}
+        recent_done = int(recent_map.get("done", 0))
+        recent_error = int(recent_map.get("error", 0))
+        recent_processed = recent_done + recent_error
+        queue_error_rate_1h = (recent_error / recent_processed * 100.0) if recent_processed else None
+
+        msg_q = (
+            s.query(MessageLog.direction, func.count(MessageLog.id))
+            .filter(MessageLog.created_at >= start_utc, MessageLog.created_at < end_utc)
+        )
+        if club_scope_id is not None:
+            msg_q = msg_q.join(User, MessageLog.user_id == User.id).filter(User.club_id == club_scope_id)
+        msg_rows = msg_q.group_by(MessageLog.direction).all()
+        msg_map = {str(direction or "unknown"): int(count or 0) for direction, count in msg_rows}
+        outbound_messages = int(msg_map.get("outbound", 0))
+        inbound_messages = int(msg_map.get("inbound", 0))
+
+        tw_q = (
+            s.query(JobAudit.payload)
+            .filter(JobAudit.job_name == "twilio_status")
+            .filter(JobAudit.created_at >= start_utc, JobAudit.created_at < end_utc)
+        )
+        tw_rows = tw_q.all()
+        tw_statuses: list[dict] = []
+        if club_scope_id is not None and tw_rows:
+            scoped_user_ids = {
+                int(uid)
+                for (uid,) in s.query(User.id).filter(User.club_id == club_scope_id).all()
+                if uid is not None
+            }
+            for (payload,) in tw_rows:
+                body = _as_payload_dict(payload)
+                uid = body.get("user_id")
+                try:
+                    uid_i = int(uid)
+                except Exception:
+                    uid_i = None
+                if uid_i is not None and uid_i in scoped_user_ids:
+                    tw_statuses.append(body)
+        else:
+            tw_statuses = [_as_payload_dict(payload) for (payload,) in tw_rows]
+        tw_total = len(tw_statuses)
+        tw_failed = 0
+        for body in tw_statuses:
+            status_val = str(body.get("status") or "").strip().lower()
+            if body.get("error_code") or status_val in {"failed", "undelivered"}:
+                tw_failed += 1
+        tw_failure_rate = (tw_failed / tw_total * 100.0) if tw_total else None
+
+        ps = s.query(PromptSettings).order_by(PromptSettings.id.asc()).first()
+
+    def _env_flag(name: str) -> bool:
+        return (os.getenv(name) or "").strip().lower() in {"1", "true", "yes"}
+
+    worker_override = getattr(ps, "worker_mode_override", None) if ps else None
+    podcast_override = getattr(ps, "podcast_worker_mode_override", None) if ps else None
+    env_worker = _env_flag("PROMPT_WORKER_MODE")
+    env_podcast = _env_flag("PODCAST_WORKER_MODE")
+    worker_effective = worker_override if worker_override is not None else env_worker
+    if worker_effective is False:
+        podcast_effective = False
+        podcast_source = "disabled_by_worker"
+    else:
+        podcast_effective = podcast_override if podcast_override is not None else env_podcast
+        podcast_source = "override" if podcast_override is not None else "env"
+
+    completion_state = _threshold_state(
+        completion_rate,
+        warn=thresholds["completion_rate_pct"]["warn"],
+        critical=thresholds["completion_rate_pct"]["critical"],
+        lower_is_bad=True,
+    )
+    median_state = _threshold_state(
+        median_completion,
+        warn=thresholds["median_completion_minutes"]["warn"],
+        critical=thresholds["median_completion_minutes"]["critical"],
+    )
+    stale_state = _threshold_state(
+        stale_runs,
+        warn=thresholds["stale_runs"]["warn"],
+        critical=thresholds["stale_runs"]["critical"],
+    )
+    llm_p95_state = _threshold_state(
+        llm_p95,
+        warn=thresholds["llm_p95_ms"]["warn"],
+        critical=thresholds["llm_p95_ms"]["critical"],
+    )
+    fallback_state = _threshold_state(
+        okr_fallback_rate,
+        warn=thresholds["okr_fallback_rate_pct"]["warn"],
+        critical=thresholds["okr_fallback_rate_pct"]["critical"],
+    )
+    backlog_state = _threshold_state(
+        backlog,
+        warn=thresholds["queue_backlog"]["warn"],
+        critical=thresholds["queue_backlog"]["critical"],
+    )
+    twilio_state = _threshold_state(
+        tw_failure_rate,
+        warn=thresholds["twilio_failure_rate_pct"]["warn"],
+        critical=thresholds["twilio_failure_rate_pct"]["critical"],
+    )
+
+    alerts = []
+    metric_states = {
+        "completion_rate_pct": completion_state,
+        "median_completion_minutes": median_state,
+        "stale_runs": stale_state,
+        "llm_p95_ms": llm_p95_state,
+        "okr_fallback_rate_pct": fallback_state,
+        "queue_backlog": backlog_state,
+        "twilio_failure_rate_pct": twilio_state,
+    }
+    metric_values = {
+        "completion_rate_pct": completion_rate,
+        "median_completion_minutes": median_completion,
+        "stale_runs": stale_runs,
+        "llm_p95_ms": llm_p95,
+        "okr_fallback_rate_pct": okr_fallback_rate,
+        "queue_backlog": backlog,
+        "twilio_failure_rate_pct": tw_failure_rate,
+    }
+    for key, state in metric_states.items():
+        if state in {"warn", "critical"}:
+            alerts.append(
+                {
+                    "metric": key,
+                    "state": state,
+                    "value": metric_values.get(key),
+                    "warn": thresholds.get(key, {}).get("warn"),
+                    "critical": thresholds.get(key, {}).get("critical"),
+                }
+            )
+
+    question_dropoff_rows = [
+        {"question_idx": int(idx), "count": int(count)}
+        for idx, count in sorted(question_dropoff.items(), key=lambda item: (-item[1], item[0]))[:12]
+    ]
+    point_dropoff_rows = [
+        {"label": label, "count": int(count)}
+        for label, count in sorted(point_dropoff.items(), key=lambda item: (-item[1], item[0]))[:12]
+    ]
+
+    return {
+        "as_of_utc": now_utc.replace(microsecond=0).isoformat() + "Z",
+        "window": {
+            "days": days_val,
+            "start_utc": start_utc.replace(microsecond=0).isoformat() + "Z",
+            "end_utc": end_utc.replace(microsecond=0).isoformat() + "Z",
+            "stale_minutes": stale_mins,
+        },
+        "thresholds": thresholds,
+        "funnel": {
+            "started": started_count,
+            "completed": completed_count,
+            "incomplete": max(0, started_count - completed_count),
+            "completion_rate_pct": round(completion_rate, 2) if completion_rate is not None else None,
+            "completion_rate_state": completion_state,
+            "median_completion_minutes": round(median_completion, 2) if median_completion is not None else None,
+            "p95_completion_minutes": round(p95_completion, 2) if p95_completion is not None else None,
+            "median_completion_state": median_state,
+            "stale_runs": stale_runs,
+            "stale_runs_state": stale_state,
+        },
+        "dropoff": {
+            "incomplete_runs": len(incomplete_run_ids),
+            "avg_last_question_idx": round(avg_last_question_idx, 2) if avg_last_question_idx is not None else None,
+            "question_idx_top": question_dropoff_rows,
+            "points_top": point_dropoff_rows,
+        },
+        "llm": {
+            "assessor_prompts": len(prompt_rows),
+            "duration_ms_p50": round(llm_p50, 2) if llm_p50 is not None else None,
+            "duration_ms_p95": round(llm_p95, 2) if llm_p95 is not None else None,
+            "duration_ms_state": llm_p95_state,
+            "models": model_counts,
+            "slow_over_warn": sum(1 for v in llm_durations_ms if float(v) > thresholds["llm_p95_ms"]["warn"]),
+            "slow_over_critical": sum(1 for v in llm_durations_ms if float(v) > thresholds["llm_p95_ms"]["critical"]),
+            "okr_generation": {
+                "calls": okr_call_count,
+                "success": okr_success_count,
+                "fallback": okr_fallback_count,
+                "errors": okr_error_count,
+                "fallback_rate_pct": round(okr_fallback_rate, 2) if okr_fallback_rate is not None else None,
+                "fallback_rate_state": fallback_state,
+            },
+        },
+        "queue": {
+            "pending": pending_count,
+            "retry": retry_count,
+            "running": running_count,
+            "error": error_count,
+            "backlog": backlog,
+            "backlog_state": backlog_state,
+            "oldest_pending_age_min": round(oldest_pending_age_min, 2) if oldest_pending_age_min is not None else None,
+            "error_rate_1h_pct": round(queue_error_rate_1h, 2) if queue_error_rate_1h is not None else None,
+            "processed_1h": recent_processed,
+        },
+        "messaging": {
+            "outbound_messages": outbound_messages,
+            "inbound_messages": inbound_messages,
+            "twilio_callbacks": tw_total,
+            "twilio_failures": tw_failed,
+            "twilio_failure_rate_pct": round(tw_failure_rate, 2) if tw_failure_rate is not None else None,
+            "twilio_failure_state": twilio_state,
+        },
+        "worker": {
+            "worker_mode_override": worker_override,
+            "podcast_worker_mode_override": podcast_override,
+            "worker_mode_env": env_worker,
+            "podcast_worker_mode_env": env_podcast,
+            "worker_mode_effective": worker_effective,
+            "podcast_worker_mode_effective": podcast_effective,
+            "worker_mode_source": "override" if worker_override is not None else "env",
+            "podcast_worker_mode_source": podcast_source,
+        },
+        "alerts": alerts,
+    }
+
 
 @admin.get("/stats")
 def admin_stats(admin_user: User = Depends(_require_admin)):

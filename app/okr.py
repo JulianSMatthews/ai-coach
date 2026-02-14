@@ -102,7 +102,14 @@ def _baseline_debug(reason: str, detail: dict | None = None) -> None:
 
 
 def _okr_audit(job: str, *, status: str = "ok", payload: dict | None = None, error: str | None = None) -> None:
-    debug_log(f"{job} status={status}", {"payload": payload or {}, "error": error}, tag="okr")
+    body = payload or {}
+    debug_log(f"{job} status={status}", {"payload": body, "error": error}, tag="okr")
+    try:
+        with SessionLocal() as s:
+            s.add(JobAudit(job_name=job, status=status, payload=body, error=error))
+            s.commit()
+    except Exception:
+        pass
 
 
 def _fallback_okr(pillar_slug: str, pillar_score: float | None) -> str:
@@ -129,6 +136,7 @@ def make_quarterly_okr_llm(
     model: Optional[str] = None,
     temperature: float = 0.3,
     quarter_label: Optional[str] = None,
+    audit_context: Optional[Dict[str, Any]] = None,
 ) -> str:
     """
     Returns a formatted OKR block string ("🧭 <Quarter> Objective: ...\nKey Results:\n1) ...")
@@ -138,6 +146,15 @@ def make_quarterly_okr_llm(
     qlabel = quarter_label or DEFAULT_OKR_QUARTER
     concept_scores = concept_scores or {}
     req_temp = _resolve_okr_temperature(mdl, temperature)
+    audit_payload = {
+        "pillar": pillar_slug,
+        "model": mdl,
+        "temperature_requested": temperature,
+        "temperature_effective": req_temp,
+        "mode": "legacy_text",
+        **(audit_context or {}),
+    }
+    _okr_audit("okr_llm_call", payload=audit_payload)
 
     user_msg = {
         "role": "user",
@@ -159,6 +176,7 @@ def make_quarterly_okr_llm(
     }
 
     if not _client:
+        _okr_audit("okr_llm_fallback", status="warn", payload={**audit_payload, "reason": "client_unavailable"})
         return _fallback_okr(pillar_slug, pillar_score)
 
     try:
@@ -173,8 +191,11 @@ def make_quarterly_okr_llm(
         txt = (resp.choices[0].message.content or "").strip()
         if txt.startswith("🧭 ") and qlabel != "This Quarter":
             txt = txt.replace("🧭 This Quarter", f"🧭 {qlabel}")
+        _okr_audit("okr_llm_success", payload={**audit_payload, "has_text": bool(txt)})
         return txt or _fallback_okr(pillar_slug, pillar_score)
-    except Exception:
+    except Exception as e:
+        _okr_audit("okr_llm_error", status="error", payload=audit_payload, error=repr(e))
+        _okr_audit("okr_llm_fallback", status="warn", payload={**audit_payload, "reason": "exception"})
         return _fallback_okr(pillar_slug, pillar_score)
 
 
@@ -684,6 +705,7 @@ def make_structured_okr_llm(
     state_context: Optional[List[Dict[str, str]]] = None,
     pillar_preference: Optional[str] = None,
     psych_profile: Optional[dict] = None,
+    audit_context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Returns a dict:
@@ -693,9 +715,19 @@ def make_structured_okr_llm(
     concept_scores = concept_scores or {}
     mdl = model or DEFAULT_OKR_MODEL
     req_temp = _resolve_okr_temperature(mdl, temperature)
+    audit_payload = {
+        "pillar": pillar_slug,
+        "model": mdl,
+        "temperature_requested": temperature,
+        "temperature_effective": req_temp,
+        "mode": "structured_json",
+        **(audit_context or {}),
+    }
+    _okr_audit("okr_llm_call", payload=audit_payload)
     if not _client:
         if OKR_RAW_FROM_LLM:
             raise RuntimeError("LLM client unavailable and OKR_RAW_FROM_LLM=1 (no fallback).")
+        _okr_audit("okr_llm_fallback", status="warn", payload={**audit_payload, "reason": "client_unavailable"})
         return _fallback_structured_okr(pillar_slug, pillar_score)
 
     # Build behavior context (kept) + Q&A from user_con_pt_state (with bounds)
@@ -859,8 +891,17 @@ def make_structured_okr_llm(
         _sanitize_kr_phrasing(pillar_slug, data)
         # Store EXACTLY what we sent to the LLM (no footer, no mutation)
         data["prompt_text"] = prompt_text
+        _okr_audit(
+            "okr_llm_success",
+            payload={
+                **audit_payload,
+                "kr_count": len(data.get("krs", []) or []),
+                "has_objective": bool((data.get("objective") or "").strip()),
+            },
+        )
         return data
     except Exception as e:
+        _okr_audit("okr_llm_error", status="error", payload=audit_payload, error=repr(e))
         # Debug: show why we are falling back (parse/model errors)
         try:
             _preview = (raw[:240] if isinstance(raw, str) else str(raw)[:240]).replace("\n", " ")
@@ -870,6 +911,7 @@ def make_structured_okr_llm(
         if OKR_RAW_FROM_LLM:
             # No fallback in raw mode — surface the error
             raise
+        _okr_audit("okr_llm_fallback", status="warn", payload={**audit_payload, "reason": "parse_or_call_error"})
         data = _fallback_structured_okr(pillar_slug, pillar_score)
         # Store EXACTLY what we intended to send (even though we fell back)
         data["prompt_text"] = prompt_text
@@ -1293,6 +1335,12 @@ def generate_and_update_okrs_for_pillar(
         state_context=state_ctx,
         pillar_preference=pref_value,
         psych_profile=psych_profile,
+        audit_context={
+            "user_id": user_id,
+            "run_id": run_id_for_pillar,
+            "assess_session_id": assess_session_id,
+            "pillar_result_id": pillar_result_id,
+        },
     )
 
     def _capitalise(text: Any) -> str:

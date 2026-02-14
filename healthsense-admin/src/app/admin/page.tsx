@@ -1,5 +1,6 @@
+import Link from "next/link";
 import AdminNav from "@/components/AdminNav";
-import { getAdminProfile, getAdminStats, getAdminUsageSummary } from "@/lib/api";
+import { getAdminAssessmentHealth, getAdminProfile, getAdminStats, getAdminUsageSummary } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +18,12 @@ export default async function AdminHome() {
     usage = await getAdminUsageSummary({ days: 7 });
   } catch {
     usage = null;
+  }
+  let health: Awaited<ReturnType<typeof getAdminAssessmentHealth>> | null = null;
+  try {
+    health = await getAdminAssessmentHealth({ days: 7, stale_minutes: 30 });
+  } catch {
+    health = null;
   }
 
   return (
@@ -77,6 +84,48 @@ export default async function AdminHome() {
               <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Total</span>
               <div className="mt-2 text-3xl font-semibold">
                 {usage?.combined_cost_gbp != null ? `£${usage.combined_cost_gbp}` : "—"}
+              </div>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-[#efe7db] bg-white p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Assessment monitoring</p>
+                <p className="mt-2 text-sm text-[#6b6257]">
+                  Live quality signals from funnel, LLM, queue, and delivery.
+                </p>
+              </div>
+              <Link
+                href="/admin/monitoring"
+                className="rounded-full border border-[var(--accent)] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[var(--accent)]"
+              >
+                Open
+              </Link>
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Completion rate</span>
+                <div className="mt-1 text-xl font-semibold">
+                  {health?.funnel?.completion_rate_pct != null ? `${health.funnel.completion_rate_pct}%` : "—"}
+                </div>
+              </div>
+              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">LLM p95</span>
+                <div className="mt-1 text-xl font-semibold">
+                  {health?.llm?.duration_ms_p95 != null ? `${Math.round(health.llm.duration_ms_p95)} ms` : "—"}
+                </div>
+              </div>
+              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">OKR fallback</span>
+                <div className="mt-1 text-xl font-semibold">
+                  {health?.llm?.okr_generation?.fallback_rate_pct != null
+                    ? `${health.llm.okr_generation.fallback_rate_pct}%`
+                    : "—"}
+                </div>
+              </div>
+              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Active alerts</span>
+                <div className="mt-1 text-xl font-semibold">{health?.alerts?.length ?? "—"}</div>
               </div>
             </div>
           </div>

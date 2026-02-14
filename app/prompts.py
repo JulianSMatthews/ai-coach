@@ -2036,7 +2036,7 @@ def _usage_tag_for_touchpoint(touchpoint: str | None) -> str | None:
     }
     if key in weekly:
         return "weekly_flow"
-    if key.startswith("assessment") or key in {"assessment_scores", "assessment_okr", "assessment_approach"}:
+    if key.startswith("assessment") or key in {"assessment_scores", "assessment_okr", "assessment_approach", "assessor_system"}:
         return "assessment"
     if key.startswith("content"):
         return "content_generation"

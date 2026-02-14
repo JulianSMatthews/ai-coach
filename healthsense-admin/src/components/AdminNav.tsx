@@ -17,6 +17,7 @@ export default function AdminNav({ title = "Admin", subtitle }: AdminNavProps) {
       <nav className="mt-4 flex flex-wrap gap-2 text-xs uppercase tracking-[0.2em] text-[#6b6257]">
         {[
           { href: "/admin", label: "Dashboard" },
+          { href: "/admin/monitoring", label: "Monitoring" },
           { href: "/admin/users", label: "Users" },
           { href: "/admin/messaging", label: "Messaging" },
           { href: "/admin/reporting", label: "Reporting" },
