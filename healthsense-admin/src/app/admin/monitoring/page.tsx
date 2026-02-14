@@ -46,6 +46,7 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
       value: health?.funnel?.completion_rate_pct != null ? `${formatNum(health?.funnel?.completion_rate_pct)}%` : "—",
       state: health?.funnel?.completion_rate_state,
       subtitle: `${health?.funnel?.completed ?? "—"} completed / ${health?.funnel?.started ?? "—"} started`,
+      description: "Share of started assessments that reached completion in the selected window.",
     },
     {
       title: "Median completion",
@@ -55,12 +56,14 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
           : "—",
       state: health?.funnel?.median_completion_state,
       subtitle: `P95 ${health?.funnel?.p95_completion_minutes != null ? `${formatNum(health?.funnel?.p95_completion_minutes)} min` : "—"}`,
+      description: "Typical end-to-end completion time for finished assessments.",
     },
     {
       title: "LLM p95 latency",
       value: health?.llm?.duration_ms_p95 != null ? `${Math.round(health.llm.duration_ms_p95)} ms` : "—",
       state: health?.llm?.duration_ms_state,
       subtitle: `${health?.llm?.assessor_prompts ?? 0} assessor prompts`,
+      description: "95th percentile assessor model response time (worst normal-case latency).",
     },
     {
       title: "OKR fallback rate",
@@ -70,12 +73,14 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
           : "—",
       state: health?.llm?.okr_generation?.fallback_rate_state,
       subtitle: `${health?.llm?.okr_generation?.fallback ?? 0} fallback / ${health?.llm?.okr_generation?.calls ?? 0} calls`,
+      description: "Percentage of OKR generations that used deterministic fallback instead of LLM output.",
     },
     {
       title: "Queue backlog",
       value: health?.queue?.backlog != null ? `${health.queue.backlog}` : "—",
       state: health?.queue?.backlog_state,
       subtitle: `pending ${health?.queue?.pending ?? 0}, retry ${health?.queue?.retry ?? 0}`,
+      description: "Jobs waiting to be processed (pending + retry).",
     },
     {
       title: "Twilio failure rate",
@@ -85,6 +90,7 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
           : "—",
       state: health?.messaging?.twilio_failure_state,
       subtitle: `${health?.messaging?.twilio_failures ?? 0} failed callbacks`,
+      description: "Share of Twilio status callbacks marked failed/undelivered or with error codes.",
     },
   ];
 
@@ -157,6 +163,7 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
               </div>
               <div className="mt-3 text-3xl font-semibold">{item.value}</div>
               <p className="mt-2 text-sm text-[#6b6257]">{item.subtitle}</p>
+              <p className="mt-1 text-xs text-[#8a8176]">{item.description}</p>
             </div>
           ))}
         </section>
@@ -179,6 +186,9 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
                     <p className="mt-1 text-sm text-[#6b6257]">
                       value={alert.value ?? "—"} | warn={alert.warn ?? "—"} | critical={alert.critical ?? "—"}
                     </p>
+                    <p className="mt-1 text-xs text-[#8a8176]">
+                      Triggered because this metric crossed configured warning/critical thresholds.
+                    </p>
                   </div>
                 ))}
               </div>
@@ -189,14 +199,31 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Worker mode</p>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               {[
-                { label: "Worker effective", value: String(health?.worker?.worker_mode_effective ?? "—") },
-                { label: "Podcast effective", value: String(health?.worker?.podcast_worker_mode_effective ?? "—") },
-                { label: "Worker source", value: String(health?.worker?.worker_mode_source ?? "—") },
-                { label: "Podcast source", value: String(health?.worker?.podcast_worker_mode_source ?? "—") },
+                {
+                  label: "Worker effective",
+                  value: String(health?.worker?.worker_mode_effective ?? "—"),
+                  desc: "Whether prompt jobs are currently routed through the worker service.",
+                },
+                {
+                  label: "Podcast effective",
+                  value: String(health?.worker?.podcast_worker_mode_effective ?? "—"),
+                  desc: "Whether podcast/audio tasks are currently routed through the worker service.",
+                },
+                {
+                  label: "Worker source",
+                  value: String(health?.worker?.worker_mode_source ?? "—"),
+                  desc: "Where worker mode came from: admin override or environment variable.",
+                },
+                {
+                  label: "Podcast source",
+                  value: String(health?.worker?.podcast_worker_mode_source ?? "—"),
+                  desc: "Where podcast mode came from: admin override, env, or disabled by worker mode.",
+                },
               ].map((row) => (
                 <div key={row.label} className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
                   <div className="text-[10px] uppercase tracking-[0.2em] text-[#6b6257]">{row.label}</div>
                   <div className="mt-1 text-sm">{row.value}</div>
+                  <div className="mt-1 text-xs text-[#8a8176]">{row.desc}</div>
                 </div>
               ))}
             </div>
@@ -209,6 +236,9 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
             <p className="mt-2 text-sm text-[#6b6257]">
               Incomplete runs: {health?.dropoff?.incomplete_runs ?? 0} | Avg last question idx:{" "}
               {health?.dropoff?.avg_last_question_idx ?? "—"}
+            </p>
+            <p className="mt-1 text-xs text-[#8a8176]">
+              Shows where incomplete assessments most commonly stop by question number.
             </p>
             <div className="mt-3 space-y-2">
               {(health?.dropoff?.question_idx_top || []).length ? (
@@ -226,6 +256,9 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
 
           <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Drop-off by pillar/concept</p>
+            <p className="mt-1 text-xs text-[#8a8176]">
+              Last recorded pillar/concept for incomplete runs, highlighting friction points.
+            </p>
             <div className="mt-3 space-y-2">
               {(health?.dropoff?.points_top || []).length ? (
                 (health?.dropoff?.points_top || []).map((row, idx) => (
@@ -247,15 +280,19 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
             <div className="mt-3 space-y-2">
               <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2 text-sm">
                 p50: {health?.llm?.duration_ms_p50 != null ? `${Math.round(health.llm.duration_ms_p50)} ms` : "—"}
+                <div className="mt-1 text-xs text-[#8a8176]">Median assessor model response time (typical latency).</div>
               </div>
               <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2 text-sm">
                 p95: {health?.llm?.duration_ms_p95 != null ? `${Math.round(health.llm.duration_ms_p95)} ms` : "—"}
+                <div className="mt-1 text-xs text-[#8a8176]">95th percentile response time (slow tail latency).</div>
               </div>
               <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2 text-sm">
                 slow &gt; warn: {health?.llm?.slow_over_warn ?? 0}
+                <div className="mt-1 text-xs text-[#8a8176]">Count of assessor prompts slower than warning threshold.</div>
               </div>
               <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2 text-sm">
                 slow &gt; critical: {health?.llm?.slow_over_critical ?? 0}
+                <div className="mt-1 text-xs text-[#8a8176]">Count of assessor prompts slower than critical threshold.</div>
               </div>
             </div>
           </div>
@@ -265,18 +302,21 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
             <div className="mt-3 space-y-2 text-sm">
               <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
                 pending {health?.queue?.pending ?? 0}, retry {health?.queue?.retry ?? 0}, running {health?.queue?.running ?? 0}, error {health?.queue?.error ?? 0}
+                <div className="mt-1 text-xs text-[#8a8176]">Current job counts by lifecycle state.</div>
               </div>
               <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
                 oldest pending age:{" "}
                 {health?.queue?.oldest_pending_age_min != null
                   ? `${formatNum(health.queue.oldest_pending_age_min)} min`
                   : "—"}
+                <div className="mt-1 text-xs text-[#8a8176]">Age of the oldest unprocessed pending/retry job.</div>
               </div>
               <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
                 error rate (1h):{" "}
                 {health?.queue?.error_rate_1h_pct != null
                   ? `${formatNum(health.queue.error_rate_1h_pct)}%`
                   : "—"}
+                <div className="mt-1 text-xs text-[#8a8176]">Share of recently processed jobs that ended in error.</div>
               </div>
             </div>
           </div>
@@ -286,15 +326,18 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
             <div className="mt-3 space-y-2 text-sm">
               <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
                 outbound {health?.messaging?.outbound_messages ?? 0}, inbound {health?.messaging?.inbound_messages ?? 0}
+                <div className="mt-1 text-xs text-[#8a8176]">Message volume captured in logs for this time window.</div>
               </div>
               <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
                 callbacks {health?.messaging?.twilio_callbacks ?? 0}, failures {health?.messaging?.twilio_failures ?? 0}
+                <div className="mt-1 text-xs text-[#8a8176]">Delivery callbacks received from Twilio and those marked failed.</div>
               </div>
               <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
                 failure rate:{" "}
                 {health?.messaging?.twilio_failure_rate_pct != null
                   ? `${formatNum(health.messaging.twilio_failure_rate_pct)}%`
                   : "—"}
+                <div className="mt-1 text-xs text-[#8a8176]">Failure percentage from Twilio callback outcomes.</div>
               </div>
             </div>
           </div>
