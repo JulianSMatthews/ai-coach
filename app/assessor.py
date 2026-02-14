@@ -2009,11 +2009,14 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 ss.commit()
         except Exception:
             pass
+        llm_duration_ms = None
         try:
+            _llm_started_at = time.perf_counter()
             _resp = _llm.invoke([
                 {"role": "system", "content": _system_msg},
                 {"role": "user", "content": _user_msg},
             ])
+            llm_duration_ms = int((time.perf_counter() - _llm_started_at) * 1000)
             raw = _coerce_llm_content(getattr(_resp, "content", None))
             try:
                 log_llm_prompt(
@@ -2021,6 +2024,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     touchpoint="assessor_system",
                     prompt_text=_system_msg + "\n\n" + _user_msg,
                     model=getattr(_resp, "model", None),
+                    duration_ms=llm_duration_ms,
                     response_preview=raw[:200] if raw else None,
                     context_meta={
                         "pillar": pillar,
@@ -2043,17 +2047,23 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     ss.add(JobAudit(job_name="assessor_llm_response", status="ok",
                                     payload={"pillar": pillar, "concept": concept_code,
                                              "type": type(_resp).__name__,
-                                             "has_content": bool(raw), "content_len": len(raw or ""), "preview": preview}))
+                                             "has_content": bool(raw), "content_len": len(raw or ""),
+                                             "preview": preview, "duration_ms": llm_duration_ms}))
                     ss.commit()
             except Exception:
                 pass
         except Exception as e:
+            if llm_duration_ms is None:
+                try:
+                    llm_duration_ms = int((time.perf_counter() - _llm_started_at) * 1000)
+                except Exception:
+                    llm_duration_ms = None
             raw = ""
             tb = traceback.format_exc(limit=2)
             try:
                 with SessionLocal() as ss:
                     ss.add(JobAudit(job_name="assessor_llm_exception", status="error",
-                                    payload={"pillar": pillar, "concept": concept_code},
+                                    payload={"pillar": pillar, "concept": concept_code, "duration_ms": llm_duration_ms},
                                     error=f"{e!r}\n{tb}"))
                     ss.commit()
             except Exception:
