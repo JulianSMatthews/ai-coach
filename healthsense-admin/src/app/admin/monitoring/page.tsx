@@ -27,6 +27,13 @@ function formatNum(value: number | null | undefined, digits = 2): string {
   return Number(value).toFixed(digits);
 }
 
+function barWidth(percentOfStart: number | null | undefined): string {
+  if (percentOfStart == null || Number.isNaN(percentOfStart)) return "0%";
+  const bounded = Math.max(0, Math.min(100, percentOfStart));
+  if (bounded === 0) return "0%";
+  return `${Math.max(6, bounded)}%`;
+}
+
 export default async function MonitoringPage({ searchParams }: { searchParams?: MonitoringSearchParams }) {
   const days = clampInt(searchParams?.days, 7, 1, 30);
   const staleMinutes = clampInt(searchParams?.stale_minutes, 30, 5, 240);
@@ -40,6 +47,7 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
   }
 
   const alerts = health?.alerts || [];
+  const funnelSteps = health?.funnel?.steps || [];
   const metrics = [
     {
       title: "Completion rate",
@@ -166,6 +174,57 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
               <p className="mt-1 text-xs text-[#8a8176]">{item.description}</p>
             </div>
           ))}
+        </section>
+
+        <section className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
+          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Step-by-step funnel</p>
+          <p className="mt-2 text-sm text-[#6b6257]">
+            Visual conversion through each assessment stage. Width is % of started assessments.
+          </p>
+          {!funnelSteps.length ? (
+            <p className="mt-4 text-sm text-[#8a8176]">No funnel step data in this window.</p>
+          ) : (
+            <div className="mt-4 space-y-3">
+              {funnelSteps.map((step, idx) => (
+                <div key={step.key || `${idx}`} className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                        {idx + 1}. {step.label || step.key || "step"}
+                      </div>
+                      <div className="mt-1 text-xs text-[#8a8176]">{step.description || "—"}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-semibold">{step.count ?? 0}</div>
+                      <div className="text-xs text-[#6b6257]">
+                        {step.percent_of_start != null ? `${formatNum(step.percent_of_start)}% of started` : "—"}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-3 h-3 w-full rounded-full bg-[#ece4d8]">
+                    <div
+                      className="h-3 rounded-full bg-[var(--accent)]"
+                      style={{ width: barWidth(step.percent_of_start) }}
+                    />
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-4 text-xs text-[#6b6257]">
+                    <span>
+                      Conversion from previous:{" "}
+                      {idx === 0
+                        ? "—"
+                        : step.conversion_pct_from_prev != null
+                          ? `${formatNum(step.conversion_pct_from_prev)}%`
+                          : "—"}
+                    </span>
+                    <span>
+                      Drop-off from previous:{" "}
+                      {idx === 0 ? "—" : step.dropoff_from_prev ?? 0}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="grid gap-4 xl:grid-cols-2">

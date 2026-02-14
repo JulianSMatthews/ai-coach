@@ -3885,6 +3885,41 @@ def admin_assessment_health(
         if club_scope_id is not None:
             run_q = run_q.join(User, AssessmentRun.user_id == User.id).filter(User.club_id == club_scope_id)
         run_rows = run_q.all()
+        run_ids = [int(run_id) for run_id, _uid, _started_at, _finished_at in run_rows]
+        user_ids = sorted({int(uid) for _run_id, uid, _started_at, _finished_at in run_rows if uid is not None})
+
+        turn_max_idx_by_run: dict[int, int] = {}
+        if run_ids:
+            turn_idx_rows = (
+                s.query(AssessmentTurn.run_id, func.max(AssessmentTurn.idx))
+                .filter(AssessmentTurn.run_id.in_(run_ids))
+                .group_by(AssessmentTurn.run_id)
+                .all()
+            )
+            turn_max_idx_by_run = {int(rid): int(max_idx or 0) for rid, max_idx in turn_idx_rows}
+
+        pillar_map: dict[int, set[str]] = {}
+        if run_ids:
+            pillar_rows = (
+                s.query(PillarResult.run_id, PillarResult.pillar_key)
+                .filter(PillarResult.run_id.in_(run_ids))
+                .all()
+            )
+            for rid, pillar_key in pillar_rows:
+                rid_i = int(rid)
+                key = str(pillar_key or "").strip().lower()
+                if not key:
+                    continue
+                pillar_map.setdefault(rid_i, set()).add(key)
+
+        consent_map: dict[int, bool] = {}
+        if user_ids:
+            consent_rows = (
+                s.query(User.id, User.consent_given)
+                .filter(User.id.in_(user_ids))
+                .all()
+            )
+            consent_map = {int(uid): bool(consent_given) for uid, consent_given in consent_rows if uid is not None}
 
         started_count = len(run_rows)
         completed_count = 0
@@ -3901,6 +3936,70 @@ def admin_assessment_health(
         completion_rate = (completed_count / started_count * 100.0) if started_count else None
         median_completion = _percentile(completion_minutes, 50)
         p95_completion = _percentile(completion_minutes, 95)
+
+        step_defs = [
+            {"key": "started", "label": "Started assessment", "description": "Run created and assessment flow started."},
+            {"key": "consent", "label": "Consent recorded", "description": "User consent recorded before assessment."},
+            {"key": "q1_answered", "label": "First question answered", "description": "At least one scored assessment turn captured."},
+            {"key": "nutrition_done", "label": "Nutrition completed", "description": "Nutrition pillar result persisted."},
+            {"key": "training_done", "label": "Training completed", "description": "Training pillar result persisted."},
+            {"key": "resilience_done", "label": "Resilience completed", "description": "Resilience pillar result persisted."},
+            {"key": "recovery_done", "label": "Recovery completed", "description": "Recovery pillar result persisted."},
+            {"key": "assessment_done", "label": "Assessment completed", "description": "Assessment run marked finished."},
+        ]
+
+        reached_by_run: dict[int, int] = {}
+        for run_id, uid, _started_at, finished_at in run_rows:
+            rid = int(run_id)
+            pillars = pillar_map.get(rid, set())
+            max_idx = int(turn_max_idx_by_run.get(rid, 0) or 0)
+            q1_answered = max_idx >= 1
+            consented = bool(consent_map.get(int(uid), False)) if uid is not None else False
+            # If answers exist, treat consent as implicitly passed to keep funnel contiguous.
+            if q1_answered and not consented:
+                consented = True
+
+            nutrition_done = "nutrition" in pillars
+            training_done = "training" in pillars
+            resilience_done = "resilience" in pillars
+            recovery_done = "recovery" in pillars
+            assessment_done = finished_at is not None
+
+            reached = 0
+            if consented:
+                reached = 1
+            if reached >= 1 and q1_answered:
+                reached = 2
+            if reached >= 2 and nutrition_done:
+                reached = 3
+            if reached >= 3 and training_done:
+                reached = 4
+            if reached >= 4 and resilience_done:
+                reached = 5
+            if reached >= 5 and recovery_done:
+                reached = 6
+            if reached >= 6 and assessment_done:
+                reached = 7
+            reached_by_run[rid] = reached
+
+        funnel_steps = []
+        for i, step in enumerate(step_defs):
+            count_i = sum(1 for reached in reached_by_run.values() if reached >= i)
+            prev = funnel_steps[i - 1]["count"] if i > 0 else None
+            conversion = (count_i / prev * 100.0) if (prev is not None and prev > 0) else None
+            dropoff = (prev - count_i) if prev is not None else 0
+            percent_of_start = (count_i / started_count * 100.0) if started_count else None
+            funnel_steps.append(
+                {
+                    "key": step["key"],
+                    "label": step["label"],
+                    "description": step["description"],
+                    "count": int(count_i),
+                    "percent_of_start": round(percent_of_start, 2) if percent_of_start is not None else None,
+                    "conversion_pct_from_prev": round(conversion, 2) if conversion is not None else None,
+                    "dropoff_from_prev": int(dropoff),
+                }
+            )
 
         stale_cutoff = now_utc - timedelta(minutes=stale_mins)
         stale_q = (
@@ -4188,6 +4287,7 @@ def admin_assessment_health(
             "median_completion_state": median_state,
             "stale_runs": stale_runs,
             "stale_runs_state": stale_state,
+            "steps": funnel_steps,
         },
         "dropoff": {
             "incomplete_runs": len(incomplete_run_ids),

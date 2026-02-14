@@ -185,6 +185,15 @@ export type AssessmentHealthPayload = {
     median_completion_state?: string;
     stale_runs?: number;
     stale_runs_state?: string;
+    steps?: Array<{
+      key?: string;
+      label?: string;
+      description?: string;
+      count?: number;
+      percent_of_start?: number | null;
+      conversion_pct_from_prev?: number | null;
+      dropoff_from_prev?: number;
+    }>;
   };
   dropoff?: {
     incomplete_runs?: number;
