@@ -209,7 +209,7 @@ DEMO_USERS = [
     {
         "first_name": "Julian",
         "surname": "Matthews",
-        "phone": "+447459954324",
+        "phone": "+447448180196",
         "is_superuser": True,
         "admin_role": ADMIN_ROLE_GLOBAL,
         "club_slug": "healthsense",
