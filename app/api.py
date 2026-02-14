@@ -237,6 +237,15 @@ ADMIN_USAGE = (
     "\nExample: admin create +447700900123 Julian Matthews"
 )
 
+UNKNOWN_USER_NAME_PROMPT = (
+    "Welcome to HealthSense. Before we begin, please reply with your first and last name "
+    "(e.g., 'Sam Smith')."
+)
+UNKNOWN_USER_NAME_CONFIRM_PREFIX = "I captured your name as "
+UNKNOWN_USER_NAME_CONFIRM_SUFFIX = (
+    ". Reply YES to confirm, or reply with your first and last name again."
+)
+
 GLOBAL_USAGE = (
     "Global admin commands:\n"
     "global set club <club_id|slug>\n"
@@ -684,6 +693,86 @@ def _split_name(maybe_name: str) -> tuple[Optional[str], Optional[str]]:
 def _require_name_fields(first: str | None, last: str | None) -> bool:
     return bool(first and first.strip()) and bool(last and last.strip())
 
+
+_NAME_PARTICLES = {
+    "al", "ap", "bin", "da", "de", "del", "della", "di", "du", "la", "le", "van", "von",
+}
+_NAME_TOKEN_RE = re.compile(r"^[A-Za-z][A-Za-z'-]*$")
+
+
+def _is_affirmative_name_confirm(text: str | None) -> bool:
+    norm = " ".join(re.sub(r"[^a-z0-9\s]+", " ", (text or "").strip().lower()).split())
+    yeses = {"yes", "y", "yeah", "yep", "confirm", "yes confirm", "confirmed", "ok", "okay"}
+    return norm in yeses
+
+
+def _extract_valid_name_from_reply(text: str | None) -> tuple[str, str] | tuple[None, None]:
+    """
+    Lightweight validation:
+    - 2-4 words
+    - only letters / apostrophe / hyphen in tokens
+    - reject obvious non-name payloads (digits, URLs, emails)
+    - token len >=2 unless known surname particle
+    """
+    cleaned = " ".join(_strip_invisible(text or "").strip().split())
+    if not cleaned:
+        return None, None
+    low = cleaned.lower()
+    if "http://" in low or "https://" in low or "www." in low or "@" in cleaned:
+        return None, None
+    if any(ch.isdigit() for ch in cleaned):
+        return None, None
+
+    parts = [p for p in cleaned.split(" ") if p]
+    if len(parts) < 2 or len(parts) > 4:
+        return None, None
+
+    for token in parts:
+        if not _NAME_TOKEN_RE.match(token):
+            return None, None
+        letters_only = re.sub(r"[^A-Za-z]", "", token)
+        if len(letters_only) < 2 and token.lower() not in _NAME_PARTICLES:
+            return None, None
+
+    first, surname = _split_name(cleaned)
+    if not _require_name_fields(first, surname):
+        return None, None
+    return first, surname
+
+
+def _unknown_user_name_confirm_text(first_name: str, surname: str) -> str:
+    full_name = f"{(first_name or '').strip()} {(surname or '').strip()}".strip()
+    return f"{UNKNOWN_USER_NAME_CONFIRM_PREFIX}{full_name}{UNKNOWN_USER_NAME_CONFIRM_SUFFIX}"
+
+
+def _extract_pending_confirmed_name(phone_e164: str) -> tuple[str, str] | tuple[None, None]:
+    phone_norm = _norm_phone(phone_e164 or "")
+    if not phone_norm:
+        return None, None
+    try:
+        with SessionLocal() as s:
+            last_row = (
+                s.query(MessageLog)
+                .filter(MessageLog.phone == phone_norm)
+                .order_by(MessageLog.created_at.desc(), MessageLog.id.desc())
+                .first()
+            )
+            if not last_row:
+                return None, None
+            if str(getattr(last_row, "direction", "") or "").lower() != "outbound":
+                return None, None
+            text = str(getattr(last_row, "text", "") or "").strip()
+            if not text.startswith(UNKNOWN_USER_NAME_CONFIRM_PREFIX):
+                return None, None
+            if not text.endswith(UNKNOWN_USER_NAME_CONFIRM_SUFFIX):
+                return None, None
+            full_name = text[
+                len(UNKNOWN_USER_NAME_CONFIRM_PREFIX): len(text) - len(UNKNOWN_USER_NAME_CONFIRM_SUFFIX)
+            ].strip()
+            return _extract_valid_name_from_reply(full_name)
+    except Exception:
+        return None, None
+
 _DEFAULT_CLUB_ID_CACHE: int | None = None
 _FORMAT_CHAR_MAP = {
     ord(ch): None for ch in ("\u202a", "\u202c", "\u202d", "\u202e", "\ufeff", "\u200f", "\u200e")
@@ -807,6 +896,35 @@ def _log_inbound_direct(user: User, channel: str, body: str, from_raw: str) -> N
         )
     except Exception as e:
         print(f"⚠️ inbound direct-log failed (non-fatal): {e!r}")
+
+
+def _awaiting_unknown_user_name_reply(phone_e164: str) -> bool:
+    """
+    True only when the last logged message for this phone is the name-capture prompt.
+    This enforces a strict handshake:
+      1) unknown inbound -> send prompt
+      2) valid name reply -> send confirmation
+      3) YES -> create user
+    """
+    phone_norm = _norm_phone(phone_e164 or "")
+    if not phone_norm:
+        return False
+    try:
+        with SessionLocal() as s:
+            last_row = (
+                s.query(MessageLog)
+                .filter(MessageLog.phone == phone_norm)
+                .order_by(MessageLog.created_at.desc(), MessageLog.id.desc())
+                .first()
+            )
+            if not last_row:
+                return False
+            return (
+                str(getattr(last_row, "direction", "") or "").lower() == "outbound"
+                and str(getattr(last_row, "text", "") or "").strip() == UNKNOWN_USER_NAME_PROMPT
+            )
+    except Exception:
+        return False
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1973,31 +2091,42 @@ async def twilio_inbound(request: Request):
                     pass
                 return Response(content="", media_type="text/plain", status_code=200)
 
-            first_name, surname = _split_name(unknown_msg)
-            if not _require_name_fields(first_name, surname):
+            pending_first, pending_surname = _extract_pending_confirmed_name(phone)
+            if _require_name_fields(pending_first, pending_surname) and _is_affirmative_name_confirm(unknown_msg):
+                created = _get_or_create_user(
+                    phone,
+                    create_if_missing=True,
+                    first_name=pending_first,
+                    surname=pending_surname,
+                )
+                if created:
+                    user = created
+                    _log_inbound_direct(user, channel, body, from_raw)
+                    _start_assessment_async(user, force_intro=True)
+                return Response(content="", media_type="text/plain", status_code=200)
+
+            first_name, surname = _extract_valid_name_from_reply(unknown_msg)
+            awaiting_name_reply = _awaiting_unknown_user_name_reply(phone)
+            if _require_name_fields(first_name, surname) and (
+                awaiting_name_reply or _require_name_fields(pending_first, pending_surname)
+            ):
                 try:
-                    send_whatsapp(
-                        to=phone,
-                        text=(
-                            "Welcome to HealthSense. Before we begin, please reply with your first and last name "
-                            "(e.g., 'Sam Smith')."
-                        ),
-                    )
+                    send_whatsapp(to=phone, text=_unknown_user_name_confirm_text(first_name, surname))
                 except Exception:
                     pass
                 return Response(content="", media_type="text/plain", status_code=200)
 
-            created = _get_or_create_user(
-                phone,
-                create_if_missing=True,
-                first_name=first_name,
-                surname=surname,
-            )
-            if not created:
+            if _require_name_fields(pending_first, pending_surname):
+                try:
+                    send_whatsapp(to=phone, text=_unknown_user_name_confirm_text(pending_first, pending_surname))
+                except Exception:
+                    pass
                 return Response(content="", media_type="text/plain", status_code=200)
-            user = created
-            _log_inbound_direct(user, channel, body, from_raw)
-            _start_assessment_async(user, force_intro=True)
+
+            try:
+                send_whatsapp(to=phone, text=UNKNOWN_USER_NAME_PROMPT)
+            except Exception:
+                pass
             return Response(content="", media_type="text/plain", status_code=200)
 
         # Global admin commands (broader scope)
