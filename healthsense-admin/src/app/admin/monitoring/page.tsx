@@ -4,13 +4,20 @@ import { getAdminAssessmentHealth } from "@/lib/api";
 export const dynamic = "force-dynamic";
 
 type MonitoringSearchParams = {
-  days?: string;
-  stale_minutes?: string;
-  tab?: string;
+  days?: string | string[];
+  stale_minutes?: string | string[];
+  tab?: string | string[];
 };
 
-function clampInt(value: string | undefined, fallback: number, min: number, max: number): number {
-  const parsed = Number(value);
+function firstParam(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) return value[0];
+  return value;
+}
+
+function clampInt(value: string | string[] | undefined, fallback: number, min: number, max: number): number {
+  const raw = firstParam(value);
+  if (raw == null) return fallback;
+  const parsed = Number(raw);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, Math.trunc(parsed)));
 }
@@ -36,9 +43,13 @@ function barWidth(percentOfStart: number | null | undefined): string {
 }
 
 export default async function MonitoringPage({ searchParams }: { searchParams?: MonitoringSearchParams }) {
-  const days = clampInt(searchParams?.days, 7, 1, 30);
-  const staleMinutes = clampInt(searchParams?.stale_minutes, 30, 5, 240);
-  const tabRaw = (searchParams?.tab || "assessment").toLowerCase();
+  const resolvedSearchParams =
+    searchParams && typeof (searchParams as unknown as { then?: unknown }).then === "function"
+      ? await (searchParams as unknown as Promise<MonitoringSearchParams>)
+      : searchParams;
+  const days = clampInt(resolvedSearchParams?.days, 7, 1, 30);
+  const staleMinutes = clampInt(resolvedSearchParams?.stale_minutes, 30, 5, 240);
+  const tabRaw = (firstParam(resolvedSearchParams?.tab) || "assessment").toLowerCase();
   const activeTab: "assessment" | "coaching" = tabRaw === "coaching" ? "coaching" : "assessment";
   const assessmentTabHref = `/admin/monitoring?days=${days}&stale_minutes=${staleMinutes}&tab=assessment`;
   const coachingTabHref = `/admin/monitoring?days=${days}&stale_minutes=${staleMinutes}&tab=coaching`;

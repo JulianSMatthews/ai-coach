@@ -138,7 +138,7 @@ export default async function AdminHome() {
                 </p>
               </div>
               <Link
-                href="/admin/monitoring"
+                href="/admin/monitoring?tab=coaching"
                 className="rounded-full border border-[#1d6a4f] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[#1d6a4f]"
               >
                 Open
