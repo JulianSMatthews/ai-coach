@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Upstream returned invalid response." }, { status: 502 });
   }
   const response = NextResponse.json(data);
-  const token = data.session_token;
+  const token = typeof data.session_token === "string" ? data.session_token : "";
   const userId = data.user_id;
   const rememberDays = Number(data.remember_days || 7);
   const maxAge = rememberDays * 24 * 60 * 60;
