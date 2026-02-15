@@ -42,6 +42,15 @@ export function friendlyAuthError(raw: unknown): string {
   }
   if (lower.includes("channel must be")) return "Choose WhatsApp or SMS.";
   if (lower.includes("failed to send otp")) {
+    if (lower.includes("twilio_sms_from")) {
+      return "We couldn’t send a code because SMS fallback is not configured.";
+    }
+    if (lower.includes("twilio_from")) {
+      return "We couldn’t send a code because WhatsApp sender setup is invalid.";
+    }
+    if (lower.includes("63016")) {
+      return "We couldn’t send a code on WhatsApp (24h session closed) and SMS fallback failed.";
+    }
     return "We couldn’t send a code. Please try again.";
   }
   if (lower.includes("phone, otp_id, code, and password required")) {

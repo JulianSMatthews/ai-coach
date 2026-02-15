@@ -27,6 +27,14 @@ services:
         sync: false
       - key: TWILIO_FROM
         sync: false
+      - key: TWILIO_SMS_FROM
+        sync: false
+      - key: AUTH_SMS_IF_NO_WHATSAPP_WINDOW
+        value: "1"
+      - key: AUTH_WHATSAPP_OPEN_WINDOW_HOURS
+        value: "24"
+      - key: TWILIO_REOPEN_CONTENT_SID
+        sync: false
       - key: PUBLIC_BASE_URL
         sync: false
       - key: HSAPP_PUBLIC_URL

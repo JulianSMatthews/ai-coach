@@ -1049,17 +1049,30 @@ def _has_recent_whatsapp_inbound(user_id: int, *, lookback_hours: int = 24) -> b
         return False
     hours = max(1, int(lookback_hours or 24))
     cutoff = datetime.utcnow() - timedelta(hours=hours)
-    with SessionLocal() as s:
-        row = (
-            s.query(MessageLog.id)
-            .filter(MessageLog.user_id == user_id)
-            .filter(MessageLog.direction == "inbound")
-            .filter(MessageLog.created_at >= cutoff)
-            .filter(or_(MessageLog.channel == "whatsapp", MessageLog.channel.is_(None)))
-            .order_by(MessageLog.created_at.desc(), MessageLog.id.desc())
-            .first()
-        )
-        return row is not None
+
+    def _query_recent(*, include_channel_filter: bool) -> bool:
+        with SessionLocal() as s:
+            q = (
+                s.query(MessageLog.id)
+                .filter(MessageLog.user_id == user_id)
+                .filter(MessageLog.direction == "inbound")
+                .filter(MessageLog.created_at >= cutoff)
+            )
+            if include_channel_filter:
+                q = q.filter(or_(MessageLog.channel == "whatsapp", MessageLog.channel.is_(None)))
+            row = q.order_by(MessageLog.created_at.desc(), MessageLog.id.desc()).first()
+            return row is not None
+
+    try:
+        return _query_recent(include_channel_filter=True)
+    except Exception as e:
+        # Fail-open: if schema drift exists (e.g., missing channel column), retry without channel filter.
+        print(f"[auth][otp] recent_whatsapp_lookup_failed user_id={user_id} include_channel=true error={e}")
+        try:
+            return _query_recent(include_channel_filter=False)
+        except Exception as e2:
+            print(f"[auth][otp] recent_whatsapp_lookup_failed user_id={user_id} include_channel=false error={e2}")
+            return False
 
 
 def _send_auth_code(
@@ -1079,7 +1092,14 @@ def _send_auth_code(
         raise HTTPException(status_code=400, detail="channel must be auto|whatsapp|sms")
 
     text = f"Your HealthSense {purpose_label} is {code}. It expires in {_OTP_TTL_MINUTES} minutes."
-    wa_window_hours = int(os.getenv("AUTH_WHATSAPP_OPEN_WINDOW_HOURS", "24") or "24")
+    wa_window_raw = (os.getenv("AUTH_WHATSAPP_OPEN_WINDOW_HOURS", "24") or "24").strip()
+    try:
+        wa_window_hours = max(1, int(wa_window_raw))
+    except Exception:
+        print(
+            f"[auth][otp] invalid AUTH_WHATSAPP_OPEN_WINDOW_HOURS='{wa_window_raw}', defaulting to 24"
+        )
+        wa_window_hours = 24
     sms_first_if_wa_closed = (os.getenv("AUTH_SMS_IF_NO_WHATSAPP_WINDOW", "0") or "").strip().lower() in {
         "1",
         "true",
@@ -1087,28 +1107,36 @@ def _send_auth_code(
     }
     wa_recent = _has_recent_whatsapp_inbound(user_id, lookback_hours=wa_window_hours)
 
-    if chosen == "sms":
+    def _try_sms() -> str:
         send_sms(to=user_phone, text=text)
         return "sms"
-    if chosen == "whatsapp":
+
+    def _try_whatsapp() -> str:
         send_whatsapp(to=user_phone, text=text)
         return "whatsapp"
+
+    if chosen == "sms":
+        return _try_sms()
+    if chosen == "whatsapp":
+        return _try_whatsapp()
 
     # auto mode
     if sms_first_if_wa_closed and not wa_recent:
         try:
-            send_sms(to=user_phone, text=text)
-            return "sms"
-        except Exception:
-            send_whatsapp(to=user_phone, text=text)
-            return "whatsapp"
+            return _try_sms()
+        except Exception as sms_err:
+            try:
+                return _try_whatsapp()
+            except Exception as wa_err:
+                raise RuntimeError(f"sms send failed: {sms_err}; whatsapp fallback failed: {wa_err}")
 
     try:
-        send_whatsapp(to=user_phone, text=text)
-        return "whatsapp"
-    except Exception:
-        send_sms(to=user_phone, text=text)
-        return "sms"
+        return _try_whatsapp()
+    except Exception as wa_err:
+        try:
+            return _try_sms()
+        except Exception as sms_err:
+            raise RuntimeError(f"whatsapp send failed: {wa_err}; sms fallback failed: {sms_err}")
 
 def _extract_session_token(request: Request) -> str | None:
     header = request.headers.get("X-Session-Token")
@@ -2750,6 +2778,9 @@ def api_auth_login_request(payload: dict, request: Request):
             purpose_label="login code",
         )
     except Exception as e:
+        print(
+            f"[auth][otp] login send failed user_id={user.id} channel={channel} phone={user_phone} error={e}"
+        )
         raise HTTPException(status_code=500, detail=f"failed to send otp: {e}")
     return {
         "otp_id": otp.id,
@@ -2849,6 +2880,9 @@ def api_auth_password_reset_request(payload: dict, request: Request):
             purpose_label="password reset code",
         )
     except Exception as e:
+        print(
+            f"[auth][otp] reset send failed user_id={user.id} channel={channel} phone={user_phone} error={e}"
+        )
         raise HTTPException(status_code=500, detail=f"failed to send otp: {e}")
     return {
         "otp_id": otp.id,
