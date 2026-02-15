@@ -20,7 +20,13 @@ type UsersPageProps = {
 export const dynamic = "force-dynamic";
 
 function resolveHsAppBase(): string {
-  const isProd = (process.env.NODE_ENV || "").toLowerCase() === "production";
+  const nodeEnv = (process.env.NODE_ENV || "").toLowerCase();
+  const isDev = nodeEnv === "development";
+  const isHosted =
+    !isDev ||
+    (process.env.ENV || "").toLowerCase() === "production" ||
+    (process.env.RENDER || "").toLowerCase() === "true" ||
+    Boolean((process.env.RENDER_EXTERNAL_URL || "").trim());
   const rawCandidates = [
     process.env.NEXT_PUBLIC_HSAPP_BASE_URL,
     process.env.NEXT_PUBLIC_APP_BASE_URL,
@@ -39,7 +45,7 @@ function resolveHsAppBase(): string {
     try {
       const host = new URL(candidate).hostname.toLowerCase();
       const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host.endsWith(".local");
-      if (isProd && isLocalHost) continue;
+      if (isHosted && isLocalHost) continue;
       return candidate;
     } catch {
       continue;

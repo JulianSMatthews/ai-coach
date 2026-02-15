@@ -2613,7 +2613,14 @@ def send_menu_options(user: User) -> None:
 
 
 def _hsapp_base_url() -> str:
-    on_render = (os.getenv("RENDER") or "").strip().lower() == "true" or bool((os.getenv("RENDER_EXTERNAL_URL") or "").strip())
+    node_env = (os.getenv("NODE_ENV") or "").strip().lower()
+    is_dev = node_env == "development"
+    is_hosted = (
+        (not is_dev)
+        or (os.getenv("ENV") or "").strip().lower() == "production"
+        or (os.getenv("RENDER") or "").strip().lower() == "true"
+        or bool((os.getenv("RENDER_EXTERNAL_URL") or "").strip())
+    )
 
     def _looks_local(url: str) -> bool:
         low = (url or "").strip().lower()
@@ -2626,10 +2633,10 @@ def _hsapp_base_url() -> str:
         base = (os.getenv("NEXT_PUBLIC_HSAPP_BASE_URL") or os.getenv("NEXT_PUBLIC_APP_BASE_URL") or "").strip()
     if not base:
         base = (os.getenv("HSAPP_NGROK_DOMAIN") or "").strip()
-    if on_render and _looks_local(base):
+    if is_hosted and _looks_local(base):
         base = ""
     if not base:
-        if on_render:
+        if is_hosted:
             base = (os.getenv("HSAPP_PUBLIC_DEFAULT_URL") or "https://app.healthsense.coach").strip()
         else:
             base = "http://localhost:3000"
