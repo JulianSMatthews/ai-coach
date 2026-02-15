@@ -209,6 +209,33 @@ export type AssessmentHealthPayload = {
     models?: Record<string, number>;
     slow_over_warn?: number;
     slow_over_critical?: number;
+    assessment?: {
+      prompts?: number;
+      duration_ms_p50?: number | null;
+      duration_ms_p95?: number | null;
+      duration_ms_state?: string;
+      models?: Record<string, number>;
+      slow_over_warn?: number;
+      slow_over_critical?: number;
+    };
+    coaching?: {
+      prompts?: number;
+      duration_ms_p50?: number | null;
+      duration_ms_p95?: number | null;
+      duration_ms_state?: string;
+      models?: Record<string, number>;
+      slow_over_warn?: number;
+      slow_over_critical?: number;
+    };
+    combined?: {
+      prompts?: number;
+      duration_ms_p50?: number | null;
+      duration_ms_p95?: number | null;
+      duration_ms_state?: string;
+      models?: Record<string, number>;
+      slow_over_warn?: number;
+      slow_over_critical?: number;
+    };
     okr_generation?: {
       calls?: number;
       success?: number;
