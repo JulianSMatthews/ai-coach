@@ -27,7 +27,7 @@ export default function LoginPage() {
     } catch {}
   }, []);
 
-  const requestOtp = async (event: React.FormEvent | null, channel: "auto" | "whatsapp" | "sms" = "auto") => {
+  const requestOtp = async (event: React.FormEvent | null, channel: "auto" | "whatsapp" | "sms" = "whatsapp") => {
     if (event) event.preventDefault();
     setLoading(true);
     setStatus(null);
@@ -116,7 +116,7 @@ export default function LoginPage() {
         </div>
 
         {!otpId ? (
-          <form onSubmit={(e) => requestOtp(e, "auto")} className="space-y-4" autoComplete="off">
+          <form onSubmit={(e) => requestOtp(e, "whatsapp")} className="space-y-4" autoComplete="off">
             <div>
               <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Phone number</label>
               <input
@@ -151,6 +151,24 @@ export default function LoginPage() {
             >
               {loading ? "Sending…" : "Send login code"}
             </button>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => requestOtp(null, "whatsapp")}
+                disabled={loading}
+              >
+                {loading ? "Sending…" : "Send via WhatsApp"}
+              </button>
+              <button
+                type="button"
+                className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-60"
+                onClick={() => requestOtp(null, "sms")}
+                disabled={loading}
+              >
+                {loading ? "Sending…" : "Send via SMS"}
+              </button>
+            </div>
             <label className="flex items-center gap-2 text-sm text-[#6b6257]">
               <input
                 type="checkbox"

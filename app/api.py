@@ -1080,7 +1080,7 @@ def _send_auth_code(
 
     text = f"Your HealthSense {purpose_label} is {code}. It expires in {_OTP_TTL_MINUTES} minutes."
     wa_window_hours = int(os.getenv("AUTH_WHATSAPP_OPEN_WINDOW_HOURS", "24") or "24")
-    sms_first_if_wa_closed = (os.getenv("AUTH_SMS_IF_NO_WHATSAPP_WINDOW", "1") or "").strip().lower() in {
+    sms_first_if_wa_closed = (os.getenv("AUTH_SMS_IF_NO_WHATSAPP_WINDOW", "0") or "").strip().lower() in {
         "1",
         "true",
         "yes",
