@@ -881,7 +881,9 @@ def _log_inbound_direct(user: User, channel: str, body: str, from_raw: str) -> N
         phone = getattr(user, "phone", None) or (from_raw.replace("whatsapp:", "") if from_raw else None)
 
 
-        virtual_now = get_virtual_now_for_user(int(getattr(user, "id", 0) or 0))
+        user_id = int(getattr(user, "id", 0) or 0)
+        virtual_now = get_virtual_now_for_user(user_id)
+        inbound_at = virtual_now or datetime.utcnow()
         meta_payload = {"from": from_raw}
         if virtual_now is not None:
             meta_payload["virtual_date"] = virtual_now.date().isoformat()
@@ -898,6 +900,17 @@ def _log_inbound_direct(user: User, channel: str, body: str, from_raw: str) -> N
             meta=meta_payload,  # harmless if model lacks 'meta'
             created_at=virtual_now,
         )
+
+        # Persist the user's most recent inbound timestamp for admin visibility and channel policy.
+        if user_id:
+            try:
+                with SessionLocal() as s:
+                    db_user = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+                    if db_user:
+                        db_user.last_inbound_message_at = inbound_at
+                        s.commit()
+            except Exception as e2:
+                print(f"⚠️ failed to set last_inbound_message_at user_id={user_id}: {e2!r}")
     except Exception as e:
         print(f"⚠️ inbound direct-log failed (non-fatal): {e!r}")
 
@@ -8094,6 +8107,7 @@ def admin_list_users(
         prompt_overrides: dict[int, str] = {}
         coaching_pref: dict[int, tuple[datetime | None, str]] = {}
         coaching_fast_minutes: dict[int, int] = {}
+        last_template_sent: dict[int, datetime | None] = {}
         if user_ids:
             run_rows = s.execute(
                 select(AssessmentRun.user_id, func.max(AssessmentRun.id))
@@ -8154,6 +8168,17 @@ def admin_list_users(
                         coaching_fast_minutes[int(uid)] = parsed
                 except Exception:
                     continue
+            template_rows = s.execute(
+                select(UsageEvent.user_id, func.max(UsageEvent.created_at))
+                .where(
+                    UsageEvent.user_id.in_(user_ids),
+                    UsageEvent.provider == "twilio",
+                    UsageEvent.product == "whatsapp",
+                    UsageEvent.unit_type == "message_template",
+                )
+                .group_by(UsageEvent.user_id)
+            ).all()
+            last_template_sent = {int(uid): ts for uid, ts in template_rows if uid}
 
     payload = []
     for u in users:
@@ -8174,6 +8199,8 @@ def admin_list_users(
                 "updated_on": getattr(u, "updated_on", None),
                 "consent_given": bool(getattr(u, "consent_given", False)),
                 "consent_at": getattr(u, "consent_at", None),
+                "last_inbound_message_at": getattr(u, "last_inbound_message_at", None),
+                "last_template_message_at": last_template_sent.get(u.id),
                 "latest_run_id": run_id,
                 "latest_run_finished_at": latest_finished.get(run_id) if run_id else None,
                 "status": status,
@@ -8210,6 +8237,14 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
             .filter(UserPreference.user_id == user_id, UserPreference.key == "prompt_state_override")
             .one_or_none()
         )
+        last_template_message_at = s.execute(
+            select(func.max(UsageEvent.created_at)).where(
+                UsageEvent.user_id == user_id,
+                UsageEvent.provider == "twilio",
+                UsageEvent.product == "whatsapp",
+                UsageEvent.unit_type == "message_template",
+            )
+        ).scalar_one_or_none()
 
     status = "idle"
     if active:
@@ -8236,6 +8271,8 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
             "admin_role": getattr(u, "admin_role", None),
             "consent_given": bool(getattr(u, "consent_given", False)),
             "consent_at": getattr(u, "consent_at", None),
+            "last_inbound_message_at": getattr(u, "last_inbound_message_at", None),
+            "last_template_message_at": last_template_message_at,
             "onboard_complete": bool(getattr(u, "onboard_complete", False)),
             "prompt_state_override": (pref.value if pref else "") or "",
         },

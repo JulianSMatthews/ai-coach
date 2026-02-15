@@ -42,6 +42,7 @@ class User(Base):
     two_factor_enabled = Column(Boolean, nullable=False, server_default=text("false"))
     created_on = Column(DateTime, nullable=True)
     updated_on = Column(DateTime, nullable=True)
+    last_inbound_message_at = Column(DateTime, nullable=True, index=True)
     is_superuser = Column(Boolean, nullable=False, server_default=text("false"))
     admin_role  = Column(String(32), nullable=False, server_default=text("'member'"))
     consent_given = Column(Boolean, nullable=False, server_default=text("false"))

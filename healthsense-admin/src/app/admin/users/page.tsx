@@ -160,6 +160,26 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
       return "—";
     }
   };
+  const formatDateTime = (value?: string | null) => {
+    if (!value) return "—";
+    try {
+      const dt = new Date(value);
+      if (Number.isNaN(dt.getTime())) return "—";
+      return dt
+        .toLocaleString("en-GB", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+          timeZone: "Europe/London",
+        })
+        .replace(",", "");
+    } catch {
+      return "—";
+    }
+  };
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -224,6 +244,8 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                   <th className="py-2 pr-6 whitespace-nowrap">Updated on</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Consent given</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Consent at</th>
+                  <th className="py-2 pr-6 whitespace-nowrap">Last inbound</th>
+                  <th className="py-2 pr-6 whitespace-nowrap">Last template sent</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Last assessment</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Prompt state</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Coaching</th>
@@ -248,6 +270,12 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">{formatDate(u.updated_on)}</td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">{u.consent_given ? "Yes" : "No"}</td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">{formatDate(u.consent_at)}</td>
+                    <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
+                      {formatDateTime(u.last_inbound_message_at)}
+                    </td>
+                    <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
+                      {formatDateTime(u.last_template_message_at)}
+                    </td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
                       {formatDate(u.latest_run_finished_at)}
                     </td>
@@ -365,7 +393,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                 })}
                 {!users.length ? (
                   <tr>
-                    <td className="py-6 text-sm text-[#6b6257]" colSpan={12}>
+                    <td className="py-6 text-sm text-[#6b6257]" colSpan={14}>
                       No users found. Try a different search.
                     </td>
                   </tr>

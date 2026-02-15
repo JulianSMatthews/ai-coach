@@ -587,6 +587,8 @@ export type AdminUserSummary = {
   updated_on?: string | null;
   consent_given?: boolean | null;
   consent_at?: string | null;
+  last_inbound_message_at?: string | null;
+  last_template_message_at?: string | null;
   latest_run_id?: number | null;
   latest_run_finished_at?: string | null;
   status?: string | null;
