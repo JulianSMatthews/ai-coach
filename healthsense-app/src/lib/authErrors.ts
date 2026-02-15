@@ -42,7 +42,7 @@ export function friendlyAuthError(raw: unknown): string {
   }
   if (lower.includes("channel must be")) return "Choose WhatsApp or SMS.";
   if (lower.includes("failed to send otp")) {
-    return "We couldn’t send a code. Try again or choose SMS.";
+    return "We couldn’t send a code. Please try again.";
   }
   if (lower.includes("phone, otp_id, code, and password required")) {
     return "Enter the 6-digit code and a new password.";
