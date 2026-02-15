@@ -1106,6 +1106,10 @@ def _send_auth_code(
         "yes",
     }
     wa_recent = _has_recent_whatsapp_inbound(user_id, lookback_hours=wa_window_hours)
+    print(
+        f"[auth][otp] dispatch user_id={user_id} chosen={chosen} "
+        f"sms_first_if_wa_closed={sms_first_if_wa_closed} wa_recent={wa_recent} wa_window_hours={wa_window_hours}"
+    )
 
     def _try_sms() -> str:
         send_sms(to=user_phone, text=text)
@@ -1116,24 +1120,36 @@ def _send_auth_code(
         return "whatsapp"
 
     if chosen == "sms":
+        print(f"[auth][otp] dispatch_result user_id={user_id} channel=sms reason=explicit")
         return _try_sms()
     if chosen == "whatsapp":
+        print(f"[auth][otp] dispatch_result user_id={user_id} channel=whatsapp reason=explicit")
         return _try_whatsapp()
 
     # auto mode
     if sms_first_if_wa_closed and not wa_recent:
         try:
+            print(f"[auth][otp] dispatch_result user_id={user_id} channel=sms reason=wa_window_closed")
             return _try_sms()
         except Exception as sms_err:
             try:
+                print(
+                    f"[auth][otp] dispatch_fallback user_id={user_id} from=sms to=whatsapp "
+                    f"reason=sms_failed error={sms_err}"
+                )
                 return _try_whatsapp()
             except Exception as wa_err:
                 raise RuntimeError(f"sms send failed: {sms_err}; whatsapp fallback failed: {wa_err}")
 
     try:
+        print(f"[auth][otp] dispatch_result user_id={user_id} channel=whatsapp reason=auto_primary")
         return _try_whatsapp()
     except Exception as wa_err:
         try:
+            print(
+                f"[auth][otp] dispatch_fallback user_id={user_id} from=whatsapp to=sms "
+                f"reason=whatsapp_failed error={wa_err}"
+            )
             return _try_sms()
         except Exception as sms_err:
             raise RuntimeError(f"whatsapp send failed: {wa_err}; sms fallback failed: {sms_err}")
