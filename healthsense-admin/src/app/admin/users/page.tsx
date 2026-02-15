@@ -20,6 +20,7 @@ type UsersPageProps = {
 export const dynamic = "force-dynamic";
 
 function resolveHsAppBase(): string {
+  const allowLocal = (process.env.HSAPP_ALLOW_LOCALHOST_URLS || "").trim() === "1";
   const nodeEnv = (process.env.NODE_ENV || "").toLowerCase();
   const isDev = nodeEnv === "development";
   const isHosted =
@@ -45,6 +46,7 @@ function resolveHsAppBase(): string {
     try {
       const host = new URL(candidate).hostname.toLowerCase();
       const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host.endsWith(".local");
+      if (!allowLocal && isLocalHost) continue;
       if (isHosted && isLocalHost) continue;
       return candidate;
     } catch {
