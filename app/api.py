@@ -2755,10 +2755,11 @@ def api_auth_login_request(payload: dict, request: Request):
         if has_password:
             if not password or not _verify_password(str(password), getattr(user, "password_hash", None)):
                 raise HTTPException(status_code=401, detail="invalid credentials")
-        user_phone = user.phone
+        user_id = int(user.id)
+        user_phone = str(user.phone)
         code = f"{secrets.randbelow(1_000_000):06d}"
         otp = AuthOtp(
-            user_id=user.id,
+            user_id=user_id,
             channel=channel,
             purpose="login_2fa",
             code_hash=_hash_otp(code),
@@ -2769,9 +2770,11 @@ def api_auth_login_request(payload: dict, request: Request):
         s.add(otp)
         s.commit()
         s.refresh(otp)
+        otp_id = int(otp.id)
+        otp_expires_at = otp.expires_at
     try:
         channel_used = _send_auth_code(
-            user_id=user.id,
+            user_id=user_id,
             user_phone=user_phone,
             code=code,
             channel=channel,
@@ -2779,12 +2782,12 @@ def api_auth_login_request(payload: dict, request: Request):
         )
     except Exception as e:
         print(
-            f"[auth][otp] login send failed user_id={user.id} channel={channel} phone={user_phone} error={e}"
+            f"[auth][otp] login send failed user_id={user_id} channel={channel} phone={user_phone} error={e}"
         )
         raise HTTPException(status_code=500, detail=f"failed to send otp: {e}")
     return {
-        "otp_id": otp.id,
-        "expires_at": otp.expires_at.isoformat(),
+        "otp_id": otp_id,
+        "expires_at": otp_expires_at.isoformat(),
         "setup_required": not has_password,
         "channel": channel_used,
     }
@@ -2857,10 +2860,11 @@ def api_auth_password_reset_request(payload: dict, request: Request):
         user = s.execute(select(User).where(User.phone.in_(phone_variants))).scalar_one_or_none()
         if not user:
             raise HTTPException(status_code=404, detail="user not found")
-        user_phone = user.phone
+        user_id = int(user.id)
+        user_phone = str(user.phone)
         code = f"{secrets.randbelow(1_000_000):06d}"
         otp = AuthOtp(
-            user_id=user.id,
+            user_id=user_id,
             channel=channel,
             purpose="password_reset",
             code_hash=_hash_otp(code),
@@ -2871,9 +2875,11 @@ def api_auth_password_reset_request(payload: dict, request: Request):
         s.add(otp)
         s.commit()
         s.refresh(otp)
+        otp_id = int(otp.id)
+        otp_expires_at = otp.expires_at
     try:
         channel_used = _send_auth_code(
-            user_id=user.id,
+            user_id=user_id,
             user_phone=user_phone,
             code=code,
             channel=channel,
@@ -2881,12 +2887,12 @@ def api_auth_password_reset_request(payload: dict, request: Request):
         )
     except Exception as e:
         print(
-            f"[auth][otp] reset send failed user_id={user.id} channel={channel} phone={user_phone} error={e}"
+            f"[auth][otp] reset send failed user_id={user_id} channel={channel} phone={user_phone} error={e}"
         )
         raise HTTPException(status_code=500, detail=f"failed to send otp: {e}")
     return {
-        "otp_id": otp.id,
-        "expires_at": otp.expires_at.isoformat(),
+        "otp_id": otp_id,
+        "expires_at": otp_expires_at.isoformat(),
         "channel": channel_used,
     }
 
