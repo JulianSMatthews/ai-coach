@@ -1043,21 +1043,27 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def _has_recent_whatsapp_inbound(user_id: int, *, lookback_hours: int = 24) -> bool:
+def _has_recent_whatsapp_inbound(
+    user_id: int,
+    *,
+    user_phone: str | None = None,
+    lookback_hours: int = 24,
+) -> bool:
     """Best-effort signal that user has messaged us on WhatsApp recently."""
     if not user_id:
         return False
     hours = max(1, int(lookback_hours or 24))
     cutoff = datetime.utcnow() - timedelta(hours=hours)
 
+    phone_norm = _norm_phone(str(user_phone or "")) if user_phone else None
+
     def _query_recent(*, include_channel_filter: bool) -> bool:
         with SessionLocal() as s:
-            q = (
-                s.query(MessageLog.id)
-                .filter(MessageLog.user_id == user_id)
-                .filter(MessageLog.direction == "inbound")
-                .filter(MessageLog.created_at >= cutoff)
-            )
+            q = s.query(MessageLog.id).filter(MessageLog.direction == "inbound").filter(MessageLog.created_at >= cutoff)
+            if phone_norm:
+                q = q.filter(or_(MessageLog.user_id == user_id, MessageLog.phone == phone_norm))
+            else:
+                q = q.filter(MessageLog.user_id == user_id)
             if include_channel_filter:
                 q = q.filter(or_(MessageLog.channel == "whatsapp", MessageLog.channel.is_(None)))
             row = q.order_by(MessageLog.created_at.desc(), MessageLog.id.desc()).first()
@@ -1105,7 +1111,11 @@ def _send_auth_code(
         "true",
         "yes",
     }
-    wa_recent = _has_recent_whatsapp_inbound(user_id, lookback_hours=wa_window_hours)
+    wa_recent = _has_recent_whatsapp_inbound(
+        user_id,
+        user_phone=user_phone,
+        lookback_hours=wa_window_hours,
+    )
     print(
         f"[auth][otp] dispatch user_id={user_id} chosen={chosen} "
         f"sms_first_if_wa_closed={sms_first_if_wa_closed} wa_recent={wa_recent} wa_window_hours={wa_window_hours}"
@@ -2247,6 +2257,7 @@ async def twilio_inbound(request: Request):
 
         # Global admin commands (broader scope)
         if body.lower().startswith("global"):
+            _log_inbound_direct(user, channel, body, from_raw)
             if _is_global_admin(user):
                 if _handle_global_command(user, body):
                     return Response(content="", media_type="text/plain", status_code=200)
@@ -2261,6 +2272,7 @@ async def twilio_inbound(request: Request):
 
         # Admin commands must never fall through to normal flow
         if body.lower().startswith("admin"):
+            _log_inbound_direct(user, channel, body, from_raw)
             if _is_admin_user(user):
                 if _handle_admin_command(user, body, source_phone=phone):
                     return Response(content="", media_type="text/plain", status_code=200)
