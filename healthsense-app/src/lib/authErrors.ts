@@ -32,8 +32,11 @@ export function friendlyAuthError(raw: unknown): string {
   const lower = message.toLowerCase();
   if (!message) return "Something went wrong. Please try again.";
   if (lower.includes("api_base_url")) return "We’re having trouble connecting. Please try again.";
-  if (lower.includes("fetch failed") || lower.includes("timeout")) {
+  if (lower.includes("fetch failed") || lower.includes("timeout") || lower.includes("proxy request failed")) {
     return "We couldn’t reach the server. Please try again.";
+  }
+  if (lower.includes("upstream returned invalid response")) {
+    return "We’re having trouble connecting. Please try again.";
   }
   if (lower.includes("phone required")) return "Enter your phone number to continue.";
   if (lower.includes("user not found")) return "We couldn’t find an account for that phone number.";
@@ -51,6 +54,9 @@ export function friendlyAuthError(raw: unknown): string {
     if (lower.includes("63016")) {
       return "We couldn’t send a code on WhatsApp (24h session closed) and SMS fallback failed.";
     }
+    return "We couldn’t send a code. Please try again.";
+  }
+  if (lower.includes("failed to request otp")) {
     return "We couldn’t send a code. Please try again.";
   }
   if (lower.includes("phone, otp_id, code, and password required")) {
