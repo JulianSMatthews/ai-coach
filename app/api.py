@@ -123,6 +123,7 @@ from .reporting import (
     generate_llm_prompt_log_report_html,
     build_assessment_dashboard_data,
     build_progress_report_data,
+    _reports_root_global,
 )
 from .job_queue import ensure_job_table, enqueue_job, should_use_worker, ensure_prompt_settings_schema
 from .virtual_clock import get_virtual_date, get_virtual_now_for_user, set_virtual_mode
@@ -8275,21 +8276,40 @@ def admin_content_generation_create(payload: dict, admin_user: User = Depends(_r
             if not gen.llm_content:
                 podcast_error = "LLM content is required to generate podcast audio."
             else:
+                is_intro_generation = (
+                    (str(resolved_pillar or "").strip().lower() == INTRO_PILLAR_KEY)
+                    and (str(resolved_concept or "").strip().lower() == INTRO_CONCEPT_CODE)
+                )
                 audio_user_id = gen.user_id or getattr(admin_user, "id", None)
                 if not audio_user_id:
                     podcast_error = "No user available for audio generation."
                 else:
                     filename = f"content-gen-{gen.id}.mp3"
                     try:
-                        podcast_url = generate_podcast_audio_for_voice(
+                        tts_result = generate_podcast_audio_for_voice(
                             transcript=gen.llm_content,
                             user_id=int(audio_user_id),
                             filename=filename,
                             voice_override=podcast_voice,
+                            return_bytes=bool(is_intro_generation),
+                            persist_user_copy=not bool(is_intro_generation),
                             usage_tag="content_generation",
                         )
-                        if not podcast_url:
-                            podcast_error = "Podcast audio generation failed."
+                        if is_intro_generation:
+                            generated_audio_bytes = None
+                            if isinstance(tts_result, tuple):
+                                _discard_url, generated_audio_bytes = tts_result
+                            if generated_audio_bytes:
+                                podcast_url = _write_global_report_bytes(
+                                    f"intro/{filename}",
+                                    generated_audio_bytes,
+                                )
+                            else:
+                                podcast_error = "Podcast audio generation failed."
+                        else:
+                            podcast_url = tts_result if isinstance(tts_result, str) else None
+                            if not podcast_url:
+                                podcast_error = "Podcast audio generation failed."
                     except Exception as e:
                         podcast_error = str(e)
             if podcast_url or podcast_error:
@@ -9338,6 +9358,10 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
             .filter(UserPreference.user_id == user_id, UserPreference.key == "prompt_state_override")
             .one_or_none()
         )
+        onboarding_state = _get_onboarding_state(s, user_id)
+        intro_row = _latest_intro_content_row(s, active_only=True)
+        coaching_pref = _pref_value(s, user_id, "coaching")
+        coaching_enabled = str(coaching_pref or "").strip() == "1"
         last_template_message_at = s.execute(
             select(func.max(UsageEvent.created_at)).where(
                 UsageEvent.user_id == user_id,
@@ -9352,6 +9376,20 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
         status = "in_progress"
     elif latest_run and getattr(latest_run, "finished_at", None):
         status = "completed"
+
+    first_login_at = str(onboarding_state.get("first_app_login_at") or "").strip() or None
+    assessment_reviewed_at = str(onboarding_state.get("assessment_reviewed_at") or "").strip() or None
+    intro_presented_at = str(onboarding_state.get("intro_content_presented_at") or "").strip() or None
+    intro_listened_at = str(onboarding_state.get("intro_content_listened_at") or "").strip() or None
+    intro_read_at = str(onboarding_state.get("intro_content_read_at") or "").strip() or None
+    intro_completed_at = str(onboarding_state.get("intro_content_completed_at") or "").strip() or None
+    coaching_auto_enabled_at = str(onboarding_state.get("coaching_auto_enabled_at") or "").strip() or None
+    intro_active = bool(_intro_flow_enabled())
+    intro_content_published = bool(intro_row)
+    intro_content_has_audio = bool(intro_row and str(getattr(intro_row, "podcast_url", "") or "").strip())
+    intro_content_has_read = bool(intro_row and str(getattr(intro_row, "body", "") or "").strip())
+    intro_should_show = bool(intro_active and intro_content_published and first_login_at and not intro_completed_at)
+    activation_ready = bool(first_login_at and assessment_reviewed_at and intro_completed_at)
 
     return {
         "user": {
@@ -9385,6 +9423,34 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
         }
         if latest_run
         else None,
+        "onboarding": {
+            "first_app_login_at": first_login_at,
+            "assessment_reviewed_at": assessment_reviewed_at,
+            "intro_content_presented_at": intro_presented_at,
+            "intro_content_listened_at": intro_listened_at,
+            "intro_content_read_at": intro_read_at,
+            "intro_content_completed_at": intro_completed_at,
+            "coaching_auto_enabled_at": coaching_auto_enabled_at,
+            "checks": {
+                "intro_flow_enabled": intro_active,
+                "intro_content_published": intro_content_published,
+                "intro_content_has_audio": intro_content_has_audio,
+                "intro_content_has_read": intro_content_has_read,
+                "intro_should_show_now": intro_should_show,
+                "first_login_met": bool(first_login_at),
+                "assessment_review_met": bool(assessment_reviewed_at),
+                "intro_completed_met": bool(intro_completed_at),
+                "coaching_activation_ready": activation_ready,
+                "coaching_enabled_now": coaching_enabled,
+                "coaching_auto_enabled_recorded": bool(coaching_auto_enabled_at),
+            },
+            "intro_content": {
+                "content_id": int(getattr(intro_row, "id", 0)) if intro_row else None,
+                "title": str(getattr(intro_row, "title", "") or "").strip() if intro_row else None,
+                "podcast_url": _normalize_reports_url(getattr(intro_row, "podcast_url", None)) if intro_row else None,
+                "body_present": intro_content_has_read,
+            },
+        },
     }
 
 @admin.post("/users/{user_id}/prompt-state")
@@ -9978,6 +10044,24 @@ def _public_report_url(user_id: int, filename: str) -> str:
 def _public_report_url_global(filename: str) -> str:
     """Return absolute URL to a global report file located directly under /reports."""
     return f"{_REPORTS_BASE}/reports/{filename}"
+
+def _write_global_report_bytes(path_under_reports: str, raw_bytes: bytes) -> str:
+    """
+    Persist bytes to a global path under /reports and return its public URL.
+    """
+    rel_path = str(path_under_reports or "").strip().replace("\\", "/").lstrip("/")
+    if not rel_path or rel_path.endswith("/"):
+        raise ValueError("invalid reports path")
+    if ".." in rel_path.split("/"):
+        raise ValueError("invalid reports path")
+    root = _reports_root_global()
+    out_path = os.path.join(root, *rel_path.split("/"))
+    out_dir = os.path.dirname(out_path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+    with open(out_path, "wb") as f:
+        f.write(raw_bytes)
+    return _public_report_url_global(rel_path)
 
 
 @api_v1.post("/reports/upload")

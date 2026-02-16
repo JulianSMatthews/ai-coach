@@ -105,14 +105,6 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
             </select>
           </div>
           <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">User id (optional)</label>
-            <input
-              name="user_id"
-              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-              placeholder="optional"
-            />
-          </div>
-          <div>
             <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Provider</label>
             <select
               name="provider"

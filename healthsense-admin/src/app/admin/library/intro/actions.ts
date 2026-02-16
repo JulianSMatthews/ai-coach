@@ -20,7 +20,6 @@ export async function generateIntroDraftAction(
 ): Promise<IntroGenerationState> {
   const template_id = Number(formData.get("template_id") || 0) || undefined;
   const template_key = String(formData.get("template_key") || "").trim() || undefined;
-  const user_id = String(formData.get("user_id") || "").trim() || undefined;
   const provider = String(formData.get("provider") || "").trim() || "openai";
   const model_override = String(formData.get("model_override") || "").trim() || undefined;
   const run_llm = Boolean(formData.get("run_llm"));
@@ -39,7 +38,6 @@ export async function generateIntroDraftAction(
     const result = await createContentGeneration({
       template_id,
       template_key,
-      user_id,
       pillar_key: "intro",
       concept_code: "welcome",
       provider,

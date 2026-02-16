@@ -192,6 +192,7 @@ def _generate_podcast_audio_for_voice_sync(
     return_bytes: bool = False,
     usage_tag: Optional[str] = None,
     usage_meta: Optional[dict] = None,
+    persist_user_copy: bool = True,
 ) -> str | None | tuple[str | None, bytes | None]:
     """
     Generate audio for a given transcript, optionally forcing a specific voice.
@@ -306,6 +307,9 @@ def _generate_podcast_audio_for_voice_sync(
     except Exception as e:
         print(f"[usage] tts log failed: {e}")
 
+    if not persist_user_copy:
+        return None if not return_bytes else (None, audio_bytes)
+
     try:
         upload_url = (os.getenv("REPORTS_UPLOAD_URL") or "").strip()
         upload_token = (os.getenv("REPORTS_UPLOAD_TOKEN") or "").strip()
@@ -359,6 +363,7 @@ def generate_podcast_audio_for_voice(
     return_bytes: bool = False,
     usage_tag: Optional[str] = None,
     usage_meta: Optional[dict] = None,
+    persist_user_copy: bool = True,
 ) -> str | None | tuple[str | None, bytes | None]:
     """
     Generate audio for a given transcript, optionally forcing a specific voice.
@@ -376,6 +381,7 @@ def generate_podcast_audio_for_voice(
             return_bytes=return_bytes,
             usage_tag=usage_tag,
             usage_meta=usage_meta,
+            persist_user_copy=persist_user_copy,
         )
     with ThreadPoolExecutor(max_workers=1) as executor:
         future = executor.submit(
@@ -388,6 +394,7 @@ def generate_podcast_audio_for_voice(
             return_bytes,
             usage_tag,
             usage_meta,
+            persist_user_copy,
         )
         try:
             return future.result(timeout=timeout_s)
