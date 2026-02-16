@@ -5,6 +5,7 @@ import { Badge, Card, PageShell, ProgressBar, ScoreRing, SectionHeader, StatPill
 import CarouselDots from "@/components/CarouselDots";
 import TextScale from "@/components/TextScale";
 import AppNav from "@/components/AppNav";
+import TrackedAudio from "@/components/TrackedAudio";
 
 type PageProps = {
   params: Promise<{ userId: string }>;
@@ -144,9 +145,13 @@ export default async function AssessmentPage(props: PageProps) {
           {scoreAudio ? (
             <div className="mt-4">
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Listen</p>
-              <audio controls className="mt-2 w-full">
-                <source src={scoreAudio} />
-              </audio>
+              <TrackedAudio
+                userId={userId}
+                src={scoreAudio}
+                surface="assessment"
+                podcastId="assessment-score"
+                className="mt-2 w-full"
+              />
             </div>
           ) : null}
           <div className="mt-4 hidden space-y-3 text-sm text-[#3c332b] md:block" dangerouslySetInnerHTML={{ __html: narratives.score_html || "<p>No narrative available.</p>" }} />
@@ -198,9 +203,13 @@ export default async function AssessmentPage(props: PageProps) {
           {okrAudio ? (
             <div className="mt-4">
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Listen</p>
-              <audio controls className="mt-2 w-full">
-                <source src={okrAudio} />
-              </audio>
+              <TrackedAudio
+                userId={userId}
+                src={okrAudio}
+                surface="assessment"
+                podcastId="assessment-okr"
+                className="mt-2 w-full"
+              />
             </div>
           ) : null}
           <div className="mt-4 hidden space-y-3 text-sm text-[#3c332b] md:block" dangerouslySetInnerHTML={{ __html: narratives.okr_html || "<p>No OKR narrative available.</p>" }} />
@@ -216,9 +225,13 @@ export default async function AssessmentPage(props: PageProps) {
           {coachingAudio ? (
             <div className="mt-4">
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Listen</p>
-              <audio controls className="mt-2 w-full">
-                <source src={coachingAudio} />
-              </audio>
+              <TrackedAudio
+                userId={userId}
+                src={coachingAudio}
+                surface="assessment"
+                podcastId="assessment-coaching"
+                className="mt-2 w-full"
+              />
             </div>
           ) : null}
           <div className="mt-4 hidden space-y-3 text-sm text-[#3c332b] md:block" dangerouslySetInnerHTML={{ __html: narratives.coaching_html || "<p>No habit readiness notes yet.</p>" }} />

@@ -5,6 +5,7 @@ import { Badge, PageShell, SectionHeader, Card } from "@/components/ui";
 import CarouselDots from "@/components/CarouselDots";
 import TextScale from "@/components/TextScale";
 import AppNav from "@/components/AppNav";
+import TrackedAudio from "@/components/TrackedAudio";
 
 type PageProps = {
   params: Promise<{ userId: string }>;
@@ -93,9 +94,13 @@ export default async function LibraryPage(props: PageProps) {
                       {item.podcast_url ? (
                         <div className="mt-3">
                           <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Listen</p>
-                          <audio controls className="mt-2 w-full">
-                            <source src={item.podcast_url} />
-                          </audio>
+                          <TrackedAudio
+                            userId={userId}
+                            src={item.podcast_url}
+                            surface="library"
+                            podcastId={item.id || `${item.pillar_key || pillar.key}:${item.concept_code || item.title || "podcast"}`}
+                            className="mt-2 w-full"
+                          />
                         </div>
                       ) : null}
                     </div>

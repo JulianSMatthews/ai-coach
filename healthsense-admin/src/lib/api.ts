@@ -74,6 +74,51 @@ export type UsageSummary = {
   combined_cost_gbp?: number;
 };
 
+export type AppEngagementSummary = {
+  as_of_uk?: string;
+  window?: { start_utc?: string; end_utc?: string };
+  user?: { id?: number; display_name?: string; phone?: string } | null;
+  top_kpis?: {
+    active_app_users?: number;
+    home_page_views?: number;
+    avg_home_views_per_active_user?: number;
+    post_assessment_results_view_rate_pct?: number | null;
+    post_assessment_users_completed?: number;
+    post_assessment_users_viewed_results?: number;
+    podcast_listener_rate_pct?: number | null;
+    podcast_listeners?: number;
+  };
+  detail?: {
+    home?: { views?: number; users?: number };
+    assessment_results?: { views?: number; users?: number };
+    library?: { views?: number; users?: number };
+    podcasts?: {
+      plays?: number;
+      completes?: number;
+      listeners?: number;
+      completed_listeners?: number;
+      library_plays?: number;
+      assessment_plays?: number;
+      library_completes?: number;
+      assessment_completes?: number;
+    };
+    post_assessment?: {
+      users_completed?: number;
+      users_viewed_results_after_completion?: number;
+      rate_pct?: number | null;
+    };
+    daily?: Array<{
+      day?: string;
+      home_views?: number;
+      assessment_views?: number;
+      library_views?: number;
+      podcast_plays?: number;
+      podcast_completes?: number;
+      active_users?: number;
+    }>;
+  };
+};
+
 export type PromptCostRow = {
   prompt_id: number;
   created_at?: string | null;
@@ -713,6 +758,22 @@ export async function getAdminUsageSummary(params: {
       end: params.end,
       user_id: params.user_id,
       tag: params.tag,
+    },
+  });
+}
+
+export async function getAdminAppEngagement(params: {
+  days?: number;
+  start?: string;
+  end?: string;
+  user_id?: number;
+} = {}): Promise<AppEngagementSummary> {
+  return apiAdmin<AppEngagementSummary>("/admin/usage/app-engagement", {
+    query: {
+      days: params.days,
+      start: params.start,
+      end: params.end,
+      user_id: params.user_id,
     },
   });
 }

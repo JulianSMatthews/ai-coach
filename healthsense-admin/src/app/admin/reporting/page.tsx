@@ -1,6 +1,7 @@
 import AdminNav from "@/components/AdminNav";
 import FetchRatesButton from "@/components/FetchRatesButton";
 import {
+  getAdminAppEngagement,
   fetchUsageSettings,
   getAdminPromptCosts,
   getAdminUsageSummary,
@@ -71,9 +72,15 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
   const userId = userIdRaw ? Number(userIdRaw) : undefined;
   const days = period === "custom" ? undefined : Number(period || 7);
 
-  const [settings, usage, promptCosts, users] = await Promise.all([
+  const [settings, usage, engagement, promptCosts, users] = await Promise.all([
     getUsageSettings(),
     getAdminUsageSummary({
+      days: Number.isFinite(days) ? days : 7,
+      start: period === "custom" ? start : undefined,
+      end: period === "custom" ? end : undefined,
+      user_id: Number.isFinite(userId) ? userId : undefined,
+    }),
+    getAdminAppEngagement({
       days: Number.isFinite(days) ? days : 7,
       start: period === "custom" ? start : undefined,
       end: period === "custom" ? end : undefined,
@@ -121,63 +128,6 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
   const ttsProvider = typeof ttsSource?.provider === "string" ? ttsSource.provider : null;
   const llmProvider = typeof llmSource?.provider === "string" ? llmSource.provider : null;
   const waProvider = typeof waSource?.provider === "string" ? waSource.provider : null;
-  const llmSourceModels =
-    llmSource?.models && typeof llmSource.models === "object"
-      ? (llmSource.models as Record<string, unknown>)
-      : null;
-  type FetchedModelRateRow = {
-    model: string;
-    inputGbp: number | null;
-    outputGbp: number | null;
-    inputUsd: number | null;
-    outputUsd: number | null;
-    source: string | null;
-    pricingModel: string | null;
-  };
-  const fetchModelOrder = ["gpt-5-mini", "gpt-5.1"];
-  const blankModelRow = (model: string): FetchedModelRateRow => ({
-    model,
-    inputGbp: null,
-    outputGbp: null,
-    inputUsd: null,
-    outputUsd: null,
-    source: null,
-    pricingModel: null,
-  });
-  const fetchedLlmModelRates: FetchedModelRateRow[] = (() => {
-    const rows = fetchModelOrder.map(blankModelRow);
-    if (!meta?.llm_model_rates || typeof meta.llm_model_rates !== "object" || Array.isArray(meta.llm_model_rates)) {
-      return rows;
-    }
-    const rates = meta.llm_model_rates as Record<string, unknown>;
-    return rows.map((row) => {
-      const value = rates[row.model];
-      if (!value || typeof value !== "object" || Array.isArray(value)) {
-        return row;
-      }
-      const rec = value as Record<string, unknown>;
-      const inputRaw = rec.input ?? rec.rate_in ?? rec.in;
-      const outputRaw = rec.output ?? rec.rate_out ?? rec.out;
-      const detailRaw = llmSourceModels?.[row.model];
-      const detail =
-        detailRaw && typeof detailRaw === "object" && !Array.isArray(detailRaw)
-          ? (detailRaw as Record<string, unknown>)
-          : null;
-      const inputUsd = typeof detail?.input_per_1m_usd === "number" ? detail.input_per_1m_usd : null;
-      const outputUsd = typeof detail?.output_per_1m_usd === "number" ? detail.output_per_1m_usd : null;
-      const source = typeof detail?.source === "string" ? detail.source : null;
-      const pricingModel = typeof detail?.pricing_model === "string" ? detail.pricing_model : null;
-      return {
-        model: row.model,
-        inputGbp: typeof inputRaw === "number" ? inputRaw : Number.isFinite(Number(inputRaw)) ? Number(inputRaw) : null,
-        outputGbp: typeof outputRaw === "number" ? outputRaw : Number.isFinite(Number(outputRaw)) ? Number(outputRaw) : null,
-        inputUsd,
-        outputUsd,
-        source,
-        pricingModel,
-      };
-    });
-  })();
   const providerLine = [ttsProvider ? `TTS: ${ttsProvider}` : null, llmProvider ? `LLM: ${llmProvider}` : null, waProvider ? `WhatsApp: ${waProvider}` : null]
     .filter(Boolean)
     .join(" · ");
@@ -186,6 +136,15 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
   const llmMiniOutput = modelRates["gpt-5-mini"]?.output ?? "";
   const llm51Input = modelRates["gpt-5.1"]?.input ?? "";
   const llm51Output = modelRates["gpt-5.1"]?.output ?? "";
+  const engagementKpis = engagement?.top_kpis || {};
+  const engagementDetail = engagement?.detail || {};
+  const engagementDailyRows = engagementDetail.daily || [];
+  const postAssessmentRate =
+    engagementKpis.post_assessment_results_view_rate_pct == null
+      ? "—"
+      : `${engagementKpis.post_assessment_results_view_rate_pct}%`;
+  const podcastListenerRate =
+    engagementKpis.podcast_listener_rate_pct == null ? "—" : `${engagementKpis.podcast_listener_rate_pct}%`;
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -322,6 +281,119 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
         </section>
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
+          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">App engagement</p>
+          <p className="mt-2 text-sm text-[#6b6257]">
+            Track home page usage, library engagement, podcast listening, and post-assessment return behavior.
+          </p>
+          <div className="mt-4 grid gap-4 lg:grid-cols-4">
+            <div className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Active app users</p>
+              <p className="mt-2 text-2xl font-semibold">{engagementKpis.active_app_users ?? 0}</p>
+            </div>
+            <div className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Home page views</p>
+              <p className="mt-2 text-2xl font-semibold">{engagementKpis.home_page_views ?? 0}</p>
+              <p className="mt-1 text-xs text-[#8a8176]">
+                Avg/user: {engagementKpis.avg_home_views_per_active_user ?? 0}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Post-assessment results views</p>
+              <p className="mt-2 text-2xl font-semibold">{postAssessmentRate}</p>
+              <p className="mt-1 text-xs text-[#8a8176]">
+                {engagementKpis.post_assessment_users_viewed_results ?? 0} /{" "}
+                {engagementKpis.post_assessment_users_completed ?? 0} users
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Podcast listener rate</p>
+              <p className="mt-2 text-2xl font-semibold">{podcastListenerRate}</p>
+              <p className="mt-1 text-xs text-[#8a8176]">{engagementKpis.podcast_listeners ?? 0} listeners</p>
+            </div>
+          </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4 text-sm text-[#3c332b]">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Page engagement</p>
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center justify-between rounded-xl bg-white px-3 py-2">
+                  <span>Home page</span>
+                  <span>
+                    {engagementDetail.home?.views ?? 0} views · {engagementDetail.home?.users ?? 0} users
+                  </span>
+                </div>
+                <div className="flex items-center justify-between rounded-xl bg-white px-3 py-2">
+                  <span>Assessment results</span>
+                  <span>
+                    {engagementDetail.assessment_results?.views ?? 0} views ·{" "}
+                    {engagementDetail.assessment_results?.users ?? 0} users
+                  </span>
+                </div>
+                <div className="flex items-center justify-between rounded-xl bg-white px-3 py-2">
+                  <span>Library</span>
+                  <span>
+                    {engagementDetail.library?.views ?? 0} views · {engagementDetail.library?.users ?? 0} users
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4 text-sm text-[#3c332b]">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Podcast engagement</p>
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center justify-between rounded-xl bg-white px-3 py-2">
+                  <span>Total plays</span>
+                  <span>{engagementDetail.podcasts?.plays ?? 0}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-xl bg-white px-3 py-2">
+                  <span>Total completions</span>
+                  <span>{engagementDetail.podcasts?.completes ?? 0}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-xl bg-white px-3 py-2">
+                  <span>Library plays</span>
+                  <span>{engagementDetail.podcasts?.library_plays ?? 0}</span>
+                </div>
+                <div className="flex items-center justify-between rounded-xl bg-white px-3 py-2">
+                  <span>Assessment plays</span>
+                  <span>{engagementDetail.podcasts?.assessment_plays ?? 0}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <details className="mt-4 rounded-2xl border border-[#efe7db] bg-white">
+            <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-[#3c332b]">
+              Show daily engagement trend ({engagementDailyRows.length} days)
+            </summary>
+            <div className="overflow-x-auto border-t border-[#efe7db]">
+              <table className="min-w-full text-left text-sm">
+                <thead className="bg-[#f7f4ee] text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                  <tr>
+                    <th className="px-4 py-3">Day</th>
+                    <th className="px-4 py-3">Active users</th>
+                    <th className="px-4 py-3">Home views</th>
+                    <th className="px-4 py-3">Assessment views</th>
+                    <th className="px-4 py-3">Library views</th>
+                    <th className="px-4 py-3">Podcast plays</th>
+                    <th className="px-4 py-3">Podcast completes</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {engagementDailyRows.map((row) => (
+                    <tr key={row.day} className="border-t border-[#efe7db]">
+                      <td className="px-4 py-3">{row.day || "—"}</td>
+                      <td className="px-4 py-3">{row.active_users ?? 0}</td>
+                      <td className="px-4 py-3">{row.home_views ?? 0}</td>
+                      <td className="px-4 py-3">{row.assessment_views ?? 0}</td>
+                      <td className="px-4 py-3">{row.library_views ?? 0}</td>
+                      <td className="px-4 py-3">{row.podcast_plays ?? 0}</td>
+                      <td className="px-4 py-3">{row.podcast_completes ?? 0}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        </section>
+
+        <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
           <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Prompt cost breakdown</p>
           <p className="mt-2 text-sm text-[#6b6257]">
             Drill into LLM prompt costs for the selected user and period.
@@ -427,40 +499,6 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
                 ) : null}
                 {warnings.length ? (
                   <p className="mt-2 text-xs text-[#a24f3c]">Warnings: {warnings.join(", ")}</p>
-                ) : null}
-                {fetchedLlmModelRates.length ? (
-                  <div className="mt-3 overflow-x-auto rounded-xl border border-[#efe7db] bg-white">
-                    <table className="min-w-full text-left text-xs">
-                      <thead className="bg-[#f7f4ee] uppercase tracking-[0.15em] text-[#6b6257]">
-                        <tr>
-                          <th className="px-3 py-2">Model</th>
-                          <th className="px-3 py-2">GBP in/1M</th>
-                          <th className="px-3 py-2">GBP out/1M</th>
-                          <th className="px-3 py-2">USD in/1M</th>
-                          <th className="px-3 py-2">USD out/1M</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {fetchedLlmModelRates.map((row) => (
-                          <tr key={row.model} className="border-t border-[#efe7db]">
-                            <td className="px-3 py-2">
-                              <div className="font-medium">{row.model}</div>
-                              {row.pricingModel && row.pricingModel !== row.model ? (
-                                <div className="text-[10px] text-[#8a8176]">priced as {row.pricingModel}</div>
-                              ) : null}
-                            </td>
-                            <td className="px-3 py-2">{row.inputGbp ?? "—"}</td>
-                            <td className="px-3 py-2">{row.outputGbp ?? "—"}</td>
-                            <td className="px-3 py-2">{row.inputUsd ?? "—"}</td>
-                            <td className="px-3 py-2">
-                              {row.outputUsd ?? "—"}
-                              {row.source ? <span className="ml-2 text-[10px] text-[#8a8176]">({row.source})</span> : null}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
                 ) : null}
               </div>
               <FetchRatesButton action={fetchUsageSettingsAction} />

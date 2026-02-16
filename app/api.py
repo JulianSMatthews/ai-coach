@@ -107,6 +107,7 @@ from .usage import (
     save_usage_settings,
     estimate_tokens,
     resolve_llm_rates,
+    log_usage_event,
 )
 from .usage_rates import fetch_provider_rates
 from .okr import ensure_cycle
@@ -2844,6 +2845,32 @@ def _parse_kb_tags(val: object | None) -> list[str]:
         return [v.strip() for v in re.split(r"[,\n]+", raw) if v.strip()]
     return [str(val).strip()] if str(val).strip() else []
 
+
+APP_ENGAGEMENT_PROVIDER = "healthsense-app"
+APP_ENGAGEMENT_PRODUCT = "app"
+APP_ENGAGEMENT_TAG = "app_engagement"
+
+
+def _log_app_engagement_event(
+    *,
+    user_id: int,
+    unit_type: str,
+    meta: dict | None = None,
+) -> None:
+    try:
+        log_usage_event(
+            user_id=user_id,
+            provider=APP_ENGAGEMENT_PROVIDER,
+            product=APP_ENGAGEMENT_PRODUCT,
+            model=None,
+            units=1.0,
+            unit_type=unit_type,
+            tag=APP_ENGAGEMENT_TAG,
+            meta=meta or {},
+        )
+    except Exception as e:
+        print(f"[usage] app engagement log failed: {e}")
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Public API (v1) – JSON reporting endpoints (admin-authenticated for now)
 # ──────────────────────────────────────────────────────────────────────────────
@@ -3161,6 +3188,15 @@ def api_user_assessment(
         "assessment_pdf": _public_report_url(user_id, "latest.pdf"),
         "assessment_image": _public_report_url(user_id, "latest.jpeg"),
     }
+    _log_app_engagement_event(
+        user_id=user_id,
+        unit_type="page_view",
+        meta={
+            "page": "assessment_results",
+            "run_id": int(rid),
+            "fast": bool(fast),
+        },
+    )
     debug_log(
         "assessment ok",
         {"user_id": user_id, "run_id": rid, "ms": int((time.perf_counter() - t0) * 1000)},
@@ -3249,6 +3285,14 @@ def api_user_progress(
     data["reports"] = {
         "progress_html": _public_report_url(user_id, "progress.html"),
     }
+    _log_app_engagement_event(
+        user_id=user_id,
+        unit_type="page_view",
+        meta={
+            "page": "progress_home",
+            "anchor_date": anchor_date,
+        },
+    )
     debug_log(
         "progress ok",
         {"user_id": user_id, "ms": int((time.perf_counter() - t0) * 1000)},
@@ -3604,6 +3648,11 @@ def api_user_library_content(
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
 ):
     _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    _log_app_engagement_event(
+        user_id=user_id,
+        unit_type="page_view",
+        meta={"page": "library"},
+    )
     with SessionLocal() as s:
         rows = (
             s.query(ContentLibraryItem)
@@ -3626,6 +3675,39 @@ def api_user_library_content(
             }
         )
     return {"user_id": user_id, "items": grouped}
+
+
+@api_v1.post("/users/{user_id}/engagement")
+def api_user_engagement_event(
+    user_id: int,
+    payload: dict,
+    request: Request,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="payload must be a JSON object")
+
+    event_type = str(payload.get("event_type") or "").strip().lower()
+    if event_type not in {"podcast_play", "podcast_complete"}:
+        raise HTTPException(status_code=400, detail="event_type must be podcast_play or podcast_complete")
+
+    raw_meta = payload.get("meta")
+    event_meta = _meta_to_dict(raw_meta) if raw_meta is not None else None
+    if event_meta is None:
+        event_meta = {}
+    if payload.get("surface") is not None and event_meta.get("surface") is None:
+        event_meta["surface"] = str(payload.get("surface")).strip().lower()
+    if payload.get("podcast_id") is not None and event_meta.get("podcast_id") is None:
+        event_meta["podcast_id"] = str(payload.get("podcast_id")).strip()
+
+    _log_app_engagement_event(
+        user_id=user_id,
+        unit_type=event_type,
+        meta=event_meta,
+    )
+    return {"ok": True}
 
 
 @api_v1.get("/users/{user_id}/krs/{kr_id}/habit-steps")
@@ -5762,6 +5844,230 @@ def admin_usage_summary(
         "llm_total": llm_total,
         "whatsapp_total": whatsapp_total,
         "combined_cost_gbp": round(combined, 4),
+    }
+
+
+@admin.get("/usage/app-engagement")
+def admin_usage_app_engagement(
+    days: int | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    user_id: int | None = None,
+    admin_user: User = Depends(_require_admin),
+):
+    target_user = None
+    if user_id:
+        with SessionLocal() as s:
+            target_user = s.get(User, user_id)
+        if not target_user:
+            raise HTTPException(status_code=404, detail="user not found")
+        _ensure_club_scope(admin_user, target_user)
+
+    end_utc = _parse_uk_date(end, end_of_day=True) if end else None
+    if not end_utc:
+        end_utc = datetime.now(ZoneInfo("UTC")).replace(tzinfo=None)
+    start_utc = _parse_uk_date(start, end_of_day=False) if start else None
+    if not start_utc:
+        try:
+            days_val = int(days or 7)
+        except Exception:
+            days_val = 7
+        days_val = max(1, min(days_val, 365))
+        start_utc = end_utc - timedelta(days=days_val)
+    if end_utc <= start_utc:
+        end_utc = start_utc + timedelta(days=1)
+
+    club_scope_id = getattr(admin_user, "club_id", None)
+    with SessionLocal() as s:
+        event_q = (
+            s.query(UsageEvent.user_id, UsageEvent.created_at, UsageEvent.unit_type, UsageEvent.meta)
+            .filter(
+                UsageEvent.created_at >= start_utc,
+                UsageEvent.created_at < end_utc,
+                UsageEvent.product == APP_ENGAGEMENT_PRODUCT,
+            )
+        )
+        if user_id is not None:
+            event_q = event_q.filter(UsageEvent.user_id == user_id)
+        elif club_scope_id is not None:
+            event_q = event_q.join(User, UsageEvent.user_id == User.id).filter(User.club_id == club_scope_id)
+        event_rows = event_q.order_by(UsageEvent.created_at.asc()).all()
+
+        completion_q = (
+            s.query(AssessmentRun.user_id, AssessmentRun.finished_at)
+            .filter(
+                AssessmentRun.finished_at.isnot(None),
+                AssessmentRun.finished_at >= start_utc,
+                AssessmentRun.finished_at < end_utc,
+            )
+        )
+        if user_id is not None:
+            completion_q = completion_q.filter(AssessmentRun.user_id == user_id)
+        elif club_scope_id is not None:
+            completion_q = completion_q.join(User, AssessmentRun.user_id == User.id).filter(User.club_id == club_scope_id)
+        completion_rows = completion_q.all()
+
+    active_users: set[int] = set()
+    home_users: set[int] = set()
+    library_users: set[int] = set()
+    assessment_users: set[int] = set()
+    podcast_play_users: set[int] = set()
+    podcast_complete_users: set[int] = set()
+
+    home_views = 0
+    library_views = 0
+    assessment_views = 0
+    podcast_plays = 0
+    podcast_completes = 0
+    library_podcast_plays = 0
+    assessment_podcast_plays = 0
+    library_podcast_completes = 0
+    assessment_podcast_completes = 0
+
+    results_views_by_user: dict[int, list[datetime]] = {}
+    daily_map: dict[str, dict] = {}
+    for uid, created_at, unit_type, raw_meta in event_rows:
+        if created_at is None:
+            continue
+        meta = _meta_to_dict(raw_meta) or {}
+        page = str(meta.get("page") or "").strip().lower()
+        surface = str(meta.get("surface") or "").strip().lower()
+        user_id_int = int(uid) if uid is not None else None
+        if user_id_int is not None:
+            active_users.add(user_id_int)
+
+        day_key = created_at.replace(tzinfo=ZoneInfo("UTC")).astimezone(UK_TZ).date().isoformat()
+        day_entry = daily_map.setdefault(
+            day_key,
+            {
+                "day": day_key,
+                "home_views": 0,
+                "assessment_views": 0,
+                "library_views": 0,
+                "podcast_plays": 0,
+                "podcast_completes": 0,
+                "_users": set(),
+            },
+        )
+        if user_id_int is not None:
+            day_entry["_users"].add(user_id_int)
+
+        if unit_type == "page_view":
+            if page == "progress_home":
+                home_views += 1
+                day_entry["home_views"] += 1
+                if user_id_int is not None:
+                    home_users.add(user_id_int)
+            elif page == "assessment_results":
+                assessment_views += 1
+                day_entry["assessment_views"] += 1
+                if user_id_int is not None:
+                    assessment_users.add(user_id_int)
+            elif page == "library":
+                library_views += 1
+                day_entry["library_views"] += 1
+                if user_id_int is not None:
+                    library_users.add(user_id_int)
+
+            if page in {"progress_home", "assessment_results"} and user_id_int is not None:
+                results_views_by_user.setdefault(user_id_int, []).append(created_at)
+            continue
+
+        if unit_type == "podcast_play":
+            podcast_plays += 1
+            day_entry["podcast_plays"] += 1
+            if user_id_int is not None:
+                podcast_play_users.add(user_id_int)
+            if surface == "library":
+                library_podcast_plays += 1
+            elif surface == "assessment":
+                assessment_podcast_plays += 1
+            continue
+
+        if unit_type == "podcast_complete":
+            podcast_completes += 1
+            day_entry["podcast_completes"] += 1
+            if user_id_int is not None:
+                podcast_complete_users.add(user_id_int)
+            if surface == "library":
+                library_podcast_completes += 1
+            elif surface == "assessment":
+                assessment_podcast_completes += 1
+
+    completion_by_user: dict[int, datetime] = {}
+    for uid, finished_at in completion_rows:
+        if uid is None or finished_at is None:
+            continue
+        uid_int = int(uid)
+        prev = completion_by_user.get(uid_int)
+        if prev is None or finished_at > prev:
+            completion_by_user[uid_int] = finished_at
+
+    completed_users = len(completion_by_user)
+    post_assessment_results_view_users = 0
+    for uid_int, finished_at in completion_by_user.items():
+        views = results_views_by_user.get(uid_int) or []
+        if any(viewed_at >= finished_at for viewed_at in views):
+            post_assessment_results_view_users += 1
+
+    active_user_count = len(active_users)
+    avg_home_views_per_active_user = (
+        round(home_views / active_user_count, 2) if active_user_count else 0.0
+    )
+    post_assessment_view_rate_pct = (
+        round((post_assessment_results_view_users / completed_users) * 100.0, 1)
+        if completed_users
+        else None
+    )
+    podcast_listener_rate_pct = (
+        round((len(podcast_play_users) / active_user_count) * 100.0, 1)
+        if active_user_count
+        else None
+    )
+
+    daily_rows = []
+    for row in sorted(daily_map.values(), key=lambda val: val["day"]):
+        users_in_day = row.pop("_users", set())
+        row["active_users"] = len(users_in_day)
+        daily_rows.append(row)
+
+    return {
+        "as_of_uk": datetime.now(UK_TZ).isoformat(),
+        "window": {"start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat()},
+        "user": {"id": target_user.id, "display_name": target_user.display_name, "phone": target_user.phone}
+        if target_user
+        else None,
+        "top_kpis": {
+            "active_app_users": active_user_count,
+            "home_page_views": home_views,
+            "avg_home_views_per_active_user": avg_home_views_per_active_user,
+            "post_assessment_results_view_rate_pct": post_assessment_view_rate_pct,
+            "post_assessment_users_completed": completed_users,
+            "post_assessment_users_viewed_results": post_assessment_results_view_users,
+            "podcast_listener_rate_pct": podcast_listener_rate_pct,
+            "podcast_listeners": len(podcast_play_users),
+        },
+        "detail": {
+            "home": {"views": home_views, "users": len(home_users)},
+            "assessment_results": {"views": assessment_views, "users": len(assessment_users)},
+            "library": {"views": library_views, "users": len(library_users)},
+            "podcasts": {
+                "plays": podcast_plays,
+                "completes": podcast_completes,
+                "listeners": len(podcast_play_users),
+                "completed_listeners": len(podcast_complete_users),
+                "library_plays": library_podcast_plays,
+                "assessment_plays": assessment_podcast_plays,
+                "library_completes": library_podcast_completes,
+                "assessment_completes": assessment_podcast_completes,
+            },
+            "post_assessment": {
+                "users_completed": completed_users,
+                "users_viewed_results_after_completion": post_assessment_results_view_users,
+                "rate_pct": post_assessment_view_rate_pct,
+            },
+            "daily": daily_rows,
+        },
     }
 
 
