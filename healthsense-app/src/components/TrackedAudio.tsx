@@ -59,8 +59,18 @@ export default function TrackedAudio({
   };
 
   return (
-    <audio controls className={className} onPlay={onPlay} onEnded={onEnded}>
-      <source src={src} />
-    </audio>
+    <div>
+      <audio controls className={className} onPlay={onPlay} onEnded={onEnded}>
+        <source src={src} />
+      </audio>
+      <a
+        href={src}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-1 inline-flex text-[11px] uppercase tracking-[0.2em] text-[var(--accent)]"
+      >
+        Open audio
+      </a>
+    </div>
   );
 }

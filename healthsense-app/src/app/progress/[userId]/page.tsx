@@ -5,8 +5,8 @@ import { Card, PageShell } from "@/components/ui";
 import CarouselDots from "@/components/CarouselDots";
 import TextScale from "@/components/TextScale";
 import AppNav from "@/components/AppNav";
+import IntroInlinePanel from "@/components/IntroInlinePanel";
 import KRUpdateEditor from "@/components/KRUpdateEditor";
-import IntroWelcomeModal from "@/components/IntroWelcomeModal";
 import ProgrammeCalendar from "./ProgrammeCalendar";
 
 type PageProps = {
@@ -231,6 +231,10 @@ export default async function ProgressPage(props: PageProps) {
     totalActiveStreakDays > 0
       ? `You on week ${weekOfCurrentBlock} of 3 for ${currentBlock.label} and on a ${totalActiveStreakDays} ${dayLabel} streak, keep it up ${firstName}!`
       : `You on week ${weekOfCurrentBlock} of 3 for ${currentBlock.label}. Start your streak today, ${firstName}.`;
+  const introHeadline = String(status.intro?.message || "").trim();
+  const introIncomplete = !String(status.onboarding?.intro_content_completed_at || "").trim();
+  const headlineText =
+    status.intro?.enabled && introIncomplete && introHeadline ? introHeadline : weekHeadline;
   const anchorLabel = `${meta.anchor_label || "n/a"}${meta.is_virtual_date ? "*" : ""}`;
 
   const normalizePillarKey = (value?: string) => {
@@ -290,7 +294,6 @@ export default async function ProgressPage(props: PageProps) {
     <PageShell>
       <TextScale defaultScale={textScale} />
       <AppNav userId={userId} promptBadge={promptBadge} />
-      <IntroWelcomeModal userId={userId} intro={status.intro} />
 
       <section id="overview" className="space-y-3">
         <div
@@ -300,7 +303,12 @@ export default async function ProgressPage(props: PageProps) {
         >
           <Card className="min-w-full snap-start p-4 sm:min-w-[85%]" style={{ scrollSnapStop: "always" }} data-carousel-item>
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{anchorLabel}</p>
-            <p className="mt-2 text-[32px] leading-[1.2] text-[#1e1b16]">{weekHeadline}</p>
+            <p className="mt-2 text-[32px] leading-[1.2] text-[#1e1b16]">{headlineText}</p>
+            <IntroInlinePanel
+              userId={userId}
+              intro={status.intro}
+              introCompleted={!introIncomplete}
+            />
 
             <div className="mt-3 border-t border-[#efe7db] pt-3">
               <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#6b6257]">Daily Streak</p>

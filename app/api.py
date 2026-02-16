@@ -9932,41 +9932,40 @@ try:
             reports_override = f"https://{reports_override}"
         _REPORTS_BASE = reports_override.rstrip("/")
         debug_log(f"🔗 Reports base URL (override): {_REPORTS_BASE}/reports", tag="startup")
-    elif os.getenv("REPORTS_DIR"):
-        # Production/deployed: prefer Render external hostname
-        render_host = os.getenv("RENDER_EXTERNAL_HOSTNAME")
+    else:
+        # Prefer deployed host envs first (works even when REPORTS_DIR is not explicitly set).
+        render_host = (os.getenv("RENDER_EXTERNAL_HOSTNAME") or "").strip()
+        render_url = (os.getenv("RENDER_EXTERNAL_URL") or "").strip()
+        fallback_base = (
+            os.getenv("API_PUBLIC_BASE_URL")
+            or os.getenv("PUBLIC_BASE_URL")
+            or render_url
+            or ""
+        ).strip()
         if render_host:
             _REPORTS_BASE = f"https://{render_host}"
+            debug_log(f"🔗 Reports base URL (render host): {_REPORTS_BASE}/reports", tag="startup")
+        elif fallback_base:
+            if not fallback_base.startswith(("http://", "https://")):
+                fallback_base = f"https://{fallback_base}"
+            _REPORTS_BASE = fallback_base.rstrip("/")
+            debug_log(f"🔗 Reports base URL (fallback env): {_REPORTS_BASE}/reports", tag="startup")
         else:
-            fallback_base = (
-                os.getenv("API_PUBLIC_BASE_URL")
-                or os.getenv("PUBLIC_BASE_URL")
-                or os.getenv("RENDER_EXTERNAL_URL")
-                or ""
-            ).strip()
-            if fallback_base:
-                if not fallback_base.startswith(("http://", "https://")):
-                    fallback_base = f"https://{fallback_base}"
-                _REPORTS_BASE = fallback_base.rstrip("/")
-            else:
+            # Local dev fallback: detect ngrok
+            try:
+                with urllib.request.urlopen("http://127.0.0.1:4040/api/tunnels", timeout=1.5) as resp:
+                    data = json.load(resp)
+                tunnels = (data or {}).get("tunnels", []) or []
+                https = next((t for t in tunnels if str(t.get("public_url", "")).startswith("https://")), None)
+                if https:
+                    _REPORTS_BASE = str(https.get("public_url", "")).rstrip("/")
+                    debug_log(f"🔗 Reports base URL (ngrok): {_REPORTS_BASE}/reports", tag="startup")
+                else:
+                    _REPORTS_BASE = "http://localhost:8000"
+                    print("⚠️ ngrok https tunnel not found; using localhost.")
+            except Exception as e:
                 _REPORTS_BASE = "http://localhost:8000"
-        debug_log(f"🔗 Reports base URL (REPORTS_DIR set): {_REPORTS_BASE}/reports", tag="startup")
-    else:
-        # Local dev: detect ngrok
-        try:
-            with urllib.request.urlopen("http://127.0.0.1:4040/api/tunnels", timeout=1.5) as resp:
-                data = json.load(resp)
-            tunnels = (data or {}).get("tunnels", []) or []
-            https = next((t for t in tunnels if str(t.get("public_url", "")).startswith("https://")), None)
-            if https:
-                _REPORTS_BASE = str(https.get("public_url", "")).rstrip("/")
-                debug_log(f"🔗 Reports base URL (ngrok): {_REPORTS_BASE}/reports", tag="startup")
-            else:
-                _REPORTS_BASE = "http://localhost:8000"
-                print("⚠️ ngrok https tunnel not found; using localhost.")
-        except Exception as e:
-            _REPORTS_BASE = "http://localhost:8000"
-            print(f"⚠️ ngrok detect failed: {e!r}; using localhost.")
+                print(f"⚠️ ngrok detect failed: {e!r}; using localhost.")
 except Exception as e:
     print(f"⚠️  Failed to mount /reports: {e!r}")
     _REPORTS_BASE = "http://localhost:8000"

@@ -159,7 +159,7 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
           <button
             type="submit"
             disabled={generating}
-            className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-fit rounded-full border border-[var(--accent)] bg-[var(--accent)] px-3 py-1.5 text-[10px] uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
             {generating ? "Generating…" : "Generate draft"}
           </button>
