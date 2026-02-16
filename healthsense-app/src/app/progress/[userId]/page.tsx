@@ -232,9 +232,9 @@ export default async function ProgressPage(props: PageProps) {
       ? `You on week ${weekOfCurrentBlock} of 3 for ${currentBlock.label} and on a ${totalActiveStreakDays} ${dayLabel} streak, keep it up ${firstName}!`
       : `You on week ${weekOfCurrentBlock} of 3 for ${currentBlock.label}. Start your streak today, ${firstName}.`;
   const introHeadline = String(status.intro?.message || "").trim();
-  const introIncomplete = !String(status.onboarding?.intro_content_completed_at || "").trim();
+  const introShouldShow = Boolean(status.intro?.enabled && status.intro?.should_show);
   const headlineText =
-    status.intro?.enabled && introIncomplete && introHeadline ? introHeadline : weekHeadline;
+    introShouldShow && introHeadline ? introHeadline : weekHeadline;
   const anchorLabel = `${meta.anchor_label || "n/a"}${meta.is_virtual_date ? "*" : ""}`;
 
   const normalizePillarKey = (value?: string) => {
@@ -307,7 +307,7 @@ export default async function ProgressPage(props: PageProps) {
             <IntroInlinePanel
               userId={userId}
               intro={status.intro}
-              introCompleted={!introIncomplete}
+              introCompleted={!introShouldShow}
             />
 
             <div className="mt-3 border-t border-[#efe7db] pt-3">

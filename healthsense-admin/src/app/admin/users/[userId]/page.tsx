@@ -20,6 +20,7 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
   const introContent = (onboarding.intro_content || {}) as Record<string, unknown>;
   const fields = user ? Object.entries(user) : [];
   const onboardingFields = [
+    ["assessment_completed_at", onboarding.assessment_completed_at],
     ["first_app_login_at", onboarding.first_app_login_at],
     ["assessment_reviewed_at", onboarding.assessment_reviewed_at],
     ["intro_content_presented_at", onboarding.intro_content_presented_at],
@@ -29,17 +30,14 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
     ["coaching_auto_enabled_at", onboarding.coaching_auto_enabled_at],
   ] as const;
   const checkFields = [
-    ["intro_flow_enabled", onboardingChecks.intro_flow_enabled],
-    ["intro_content_published", onboardingChecks.intro_content_published],
-    ["intro_content_has_audio", onboardingChecks.intro_content_has_audio],
-    ["intro_content_has_read", onboardingChecks.intro_content_has_read],
-    ["intro_should_show_now", onboardingChecks.intro_should_show_now],
+    ["assessment_completed_met", onboardingChecks.assessment_completed_met],
     ["first_login_met", onboardingChecks.first_login_met],
     ["assessment_review_met", onboardingChecks.assessment_review_met],
     ["intro_completed_met", onboardingChecks.intro_completed_met],
     ["coaching_activation_ready", onboardingChecks.coaching_activation_ready],
     ["coaching_enabled_now", onboardingChecks.coaching_enabled_now],
     ["coaching_auto_enabled_recorded", onboardingChecks.coaching_auto_enabled_recorded],
+    ["intro_should_show_now", onboardingChecks.intro_should_show_now],
   ] as const;
 
   const formatValue = (value: unknown) => {

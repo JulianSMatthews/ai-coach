@@ -2909,16 +2909,39 @@ def _set_pref_value(
 
 
 def _coaching_enabled_for_user(session, user_id: int) -> bool:
-    row = (
+    coaching_row = (
         session.query(UserPreference)
-        .filter(
-            UserPreference.user_id == user_id,
-            UserPreference.key.in_(("coaching", "auto_daily_prompts")),
-        )
+        .filter(UserPreference.user_id == user_id, UserPreference.key == "coaching")
         .order_by(UserPreference.updated_at.desc())
         .first()
     )
-    return bool(row and str(row.value or "").strip() == "1")
+    if coaching_row is not None:
+        return str(coaching_row.value or "").strip() == "1"
+    # Backward-compat fallback for older data.
+    legacy_row = (
+        session.query(UserPreference)
+        .filter(UserPreference.user_id == user_id, UserPreference.key == "auto_daily_prompts")
+        .order_by(UserPreference.updated_at.desc())
+        .first()
+    )
+    return bool(legacy_row and str(legacy_row.value or "").strip() == "1")
+
+def _latest_assessment_completed_at(session, user_id: int) -> str | None:
+    finished_at = (
+        session.execute(
+            select(AssessmentRun.finished_at)
+            .where(AssessmentRun.user_id == user_id, AssessmentRun.finished_at.isnot(None))
+            .order_by(desc(AssessmentRun.finished_at), desc(AssessmentRun.id))
+        )
+        .scalars()
+        .first()
+    )
+    if not finished_at:
+        return None
+    try:
+        return finished_at.replace(microsecond=0).isoformat()
+    except Exception:
+        return str(finished_at)
 
 
 def _latest_intro_content_row(session, *, active_only: bool = True) -> ContentLibraryItem | None:
@@ -2962,6 +2985,7 @@ def _render_intro_message(template: str, user: User | None) -> str:
 
 
 def _get_onboarding_state(session, user_id: int) -> dict:
+    assessment_completed_val = _latest_assessment_completed_at(session, user_id)
     first_login_val = _pref_value(session, user_id, ONBOARDING_PREF_KEYS["first_login"])
     assessment_val = _pref_value(session, user_id, ONBOARDING_PREF_KEYS["assessment_reviewed"])
     intro_presented_val = _pref_value(session, user_id, ONBOARDING_PREF_KEYS["intro_presented"])
@@ -2970,6 +2994,7 @@ def _get_onboarding_state(session, user_id: int) -> dict:
     coaching_enabled_at_val = _pref_value(session, user_id, ONBOARDING_PREF_KEYS["coaching_enabled_at"])
     intro_completed_at_val = intro_listened_val or intro_read_val
     return {
+        "assessment_completed_at": assessment_completed_val,
         "first_app_login_at": first_login_val,
         "assessment_reviewed_at": assessment_val,
         "intro_content_presented_at": intro_presented_val,
@@ -2985,8 +3010,8 @@ def _build_intro_payload(session, user: User, onboarding_state: dict | None = No
     enabled = _intro_flow_enabled()
     row = _latest_intro_content_row(session, active_only=True) if enabled else None
     first_login_at = str(onboarding.get("first_app_login_at") or "").strip() or None
-    intro_completed_at = str(onboarding.get("intro_content_completed_at") or "").strip() or None
-    should_show = bool(enabled and first_login_at and not intro_completed_at)
+    coaching_enabled = _coaching_enabled_for_user(session, int(user.id))
+    should_show = bool(enabled and first_login_at and not coaching_enabled)
     title = str(getattr(row, "title", "") or "").strip() or INTRO_TITLE_DEFAULT
     message_template = _intro_message_template_from_row(row)
     message = _render_intro_message(message_template, user)
@@ -3001,20 +3026,20 @@ def _build_intro_payload(session, user: User, onboarding_state: dict | None = No
         "podcast_url": _normalize_reports_url(getattr(row, "podcast_url", None)),
         "podcast_voice": getattr(row, "podcast_voice", None),
         "welcome_message_template": message_template,
+        "coaching_enabled": coaching_enabled,
         "onboarding": onboarding,
     }
 
 
 def evaluate_and_enable_coaching(user_id: int) -> bool:
-    if not _intro_flow_enabled():
-        return False
     with SessionLocal() as s:
+        assessment_completed_at = _latest_assessment_completed_at(s, user_id)
         first_login_at = _pref_value(s, user_id, ONBOARDING_PREF_KEYS["first_login"])
         assessment_reviewed_at = _pref_value(s, user_id, ONBOARDING_PREF_KEYS["assessment_reviewed"])
         intro_listened_at = _pref_value(s, user_id, ONBOARDING_PREF_KEYS["intro_listened"])
         intro_read_at = _pref_value(s, user_id, ONBOARDING_PREF_KEYS["intro_read"])
         intro_completed = bool(intro_listened_at or intro_read_at)
-        if not (first_login_at and assessment_reviewed_at and intro_completed):
+        if not (assessment_completed_at and first_login_at and assessment_reviewed_at and intro_completed):
             return False
         if _coaching_enabled_for_user(s, user_id):
             return False
@@ -9376,6 +9401,7 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
     elif latest_run and getattr(latest_run, "finished_at", None):
         status = "completed"
 
+    assessment_completed_at = str(onboarding_state.get("assessment_completed_at") or "").strip() or None
     first_login_at = str(onboarding_state.get("first_app_login_at") or "").strip() or None
     assessment_reviewed_at = str(onboarding_state.get("assessment_reviewed_at") or "").strip() or None
     intro_presented_at = str(onboarding_state.get("intro_content_presented_at") or "").strip() or None
@@ -9387,8 +9413,8 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
     intro_content_published = bool(intro_row)
     intro_content_has_audio = bool(intro_row and str(getattr(intro_row, "podcast_url", "") or "").strip())
     intro_content_has_read = bool(intro_row and str(getattr(intro_row, "body", "") or "").strip())
-    intro_should_show = bool(intro_active and intro_content_published and first_login_at and not intro_completed_at)
-    activation_ready = bool(first_login_at and assessment_reviewed_at and intro_completed_at)
+    intro_should_show = bool(intro_active and intro_content_published and first_login_at and not coaching_enabled)
+    activation_ready = bool(assessment_completed_at and first_login_at and assessment_reviewed_at and intro_completed_at)
 
     return {
         "user": {
@@ -9423,6 +9449,7 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
         if latest_run
         else None,
         "onboarding": {
+            "assessment_completed_at": assessment_completed_at,
             "first_app_login_at": first_login_at,
             "assessment_reviewed_at": assessment_reviewed_at,
             "intro_content_presented_at": intro_presented_at,
@@ -9431,17 +9458,14 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
             "intro_content_completed_at": intro_completed_at,
             "coaching_auto_enabled_at": coaching_auto_enabled_at,
             "checks": {
-                "intro_flow_enabled": intro_active,
-                "intro_content_published": intro_content_published,
-                "intro_content_has_audio": intro_content_has_audio,
-                "intro_content_has_read": intro_content_has_read,
-                "intro_should_show_now": intro_should_show,
+                "assessment_completed_met": bool(assessment_completed_at),
                 "first_login_met": bool(first_login_at),
                 "assessment_review_met": bool(assessment_reviewed_at),
                 "intro_completed_met": bool(intro_completed_at),
                 "coaching_activation_ready": activation_ready,
                 "coaching_enabled_now": coaching_enabled,
                 "coaching_auto_enabled_recorded": bool(coaching_auto_enabled_at),
+                "intro_should_show_now": intro_should_show,
             },
             "intro_content": {
                 "content_id": int(getattr(intro_row, "id", 0)) if intro_row else None,

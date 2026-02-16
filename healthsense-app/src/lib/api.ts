@@ -113,6 +113,7 @@ export type UserStatusResponse = {
     marketing_opt_in?: string;
   };
   onboarding?: {
+    assessment_completed_at?: string | null;
     first_app_login_at?: string | null;
     assessment_reviewed_at?: string | null;
     intro_content_presented_at?: string | null;
@@ -124,6 +125,7 @@ export type UserStatusResponse = {
   intro?: {
     enabled?: boolean;
     should_show?: boolean;
+    coaching_enabled?: boolean;
     content_id?: number | null;
     title?: string | null;
     message?: string | null;
@@ -132,6 +134,7 @@ export type UserStatusResponse = {
     podcast_voice?: string | null;
     welcome_message_template?: string | null;
     onboarding?: {
+      assessment_completed_at?: string | null;
       first_app_login_at?: string | null;
       assessment_reviewed_at?: string | null;
       intro_content_presented_at?: string | null;
