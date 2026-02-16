@@ -5629,14 +5629,10 @@ def _build_prompt_cost_rows(
         if user_id is not None and not entry.get("match_user"):
             continue
         fallback_in, fallback_out, fallback_source = _fallback_rates_for_model(entry.get("model"))
-        if entry.get("rate_in") is not None:
-            rate_in = float(entry.get("rate_in") or 0.0)
-        else:
-            rate_in = float(fallback_in or default_rate_in or 0.0)
-        if entry.get("rate_out") is not None:
-            rate_out = float(entry.get("rate_out") or 0.0)
-        else:
-            rate_out = float(fallback_out or default_rate_out or 0.0)
+        # Always price prompt rows using CURRENT usage settings so fetched/saved rates
+        # immediately propagate to individual transaction costing.
+        rate_in = float(fallback_in or default_rate_in or 0.0)
+        rate_out = float(fallback_out or default_rate_out or 0.0)
         if not entry["tokens_in"] and entry.get("prompt_text_full"):
             entry["tokens_in"] = float(estimate_tokens(entry.get("prompt_text_full")))
         if not entry["tokens_out"] and entry.get("response_text_full"):
@@ -5644,7 +5640,7 @@ def _build_prompt_cost_rows(
         calc_cost = (entry["tokens_in"] / 1_000_000.0) * rate_in + (entry["tokens_out"] / 1_000_000.0) * rate_out
         logged_cost = float(entry.get("cost_est_gbp") or 0.0)
         cost_est = calc_cost if calc_cost else logged_cost
-        rate_source = entry.get("rate_source") or fallback_source or default_rate_source
+        rate_source = fallback_source or default_rate_source
         entry["rate_in"] = rate_in or None
         entry["rate_out"] = rate_out or None
         entry["rate_source"] = rate_source

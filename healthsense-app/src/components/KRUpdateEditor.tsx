@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 type KRUpdateEditorProps = {
   userId: string | number;
@@ -27,6 +28,7 @@ export default function KRUpdateEditor({
   metricLabel,
   unit,
 }: KRUpdateEditorProps) {
+  const router = useRouter();
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +64,7 @@ export default function KRUpdateEditor({
       setActual(numberToString(data?.actual_num));
       setSuccess("Saved");
       setEditing(false);
+      router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
