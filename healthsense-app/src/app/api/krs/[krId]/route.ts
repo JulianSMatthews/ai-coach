@@ -40,8 +40,6 @@ export async function PUT(request: Request, context: { params: Promise<{ krId: s
     }
 
     const payload = {
-      description: body?.description,
-      target_num: body?.target_num,
       actual_num: body?.actual_num,
       note: body?.note,
     };

@@ -22,46 +22,29 @@ async function saveUsageSettingsAction(formData: FormData) {
     const parsed = Number(raw);
     return Number.isFinite(parsed) ? parsed : null;
   };
-  const toModelRates = (value: unknown): UsageSettings["llm_model_rates"] | undefined => {
-    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-    const input = value as Record<string, unknown>;
-    const out: Record<string, { input?: number; output?: number }> = {};
-    for (const [rawModel, rawRate] of Object.entries(input)) {
-      const model = String(rawModel || "").trim();
-      if (!model || !rawRate || typeof rawRate !== "object" || Array.isArray(rawRate)) continue;
-      const rateObj = rawRate as Record<string, unknown>;
-      const rawIn = rateObj.input ?? rateObj.rate_in ?? rateObj.in;
-      const rawOut = rateObj.output ?? rateObj.rate_out ?? rateObj.out;
-      const inNum = rawIn == null || rawIn === "" ? undefined : Number(rawIn);
-      const outNum = rawOut == null || rawOut === "" ? undefined : Number(rawOut);
-      const clean: { input?: number; output?: number } = {};
-      if (inNum != null && Number.isFinite(inNum)) clean.input = inNum;
-      if (outNum != null && Number.isFinite(outNum)) clean.output = outNum;
-      if (clean.input != null || clean.output != null) out[model] = clean;
-    }
-    return Object.keys(out).length ? out : {};
-  };
+  const miniInput = toNumber(formData.get("llm_gbp_per_1m_input_tokens_gpt_5_mini"));
+  const miniOutput = toNumber(formData.get("llm_gbp_per_1m_output_tokens_gpt_5_mini"));
+  const gpt51Input = toNumber(formData.get("llm_gbp_per_1m_input_tokens_gpt_5_1"));
+  const gpt51Output = toNumber(formData.get("llm_gbp_per_1m_output_tokens_gpt_5_1"));
+  const modelRates: Record<string, { input?: number; output?: number }> = {};
+  if (miniInput != null || miniOutput != null) {
+    modelRates["gpt-5-mini"] = {};
+    if (miniInput != null) modelRates["gpt-5-mini"].input = miniInput;
+    if (miniOutput != null) modelRates["gpt-5-mini"].output = miniOutput;
+  }
+  if (gpt51Input != null || gpt51Output != null) {
+    modelRates["gpt-5.1"] = {};
+    if (gpt51Input != null) modelRates["gpt-5.1"].input = gpt51Input;
+    if (gpt51Output != null) modelRates["gpt-5.1"].output = gpt51Output;
+  }
   const payload: UsageSettings = {
     tts_gbp_per_1m_chars: toNumber(formData.get("tts_gbp_per_1m_chars")),
     tts_chars_per_min: toNumber(formData.get("tts_chars_per_min")),
-    llm_gbp_per_1m_input_tokens: toNumber(formData.get("llm_gbp_per_1m_input_tokens")),
-    llm_gbp_per_1m_output_tokens: toNumber(formData.get("llm_gbp_per_1m_output_tokens")),
+    llm_model_rates: Object.keys(modelRates).length ? modelRates : null,
     wa_gbp_per_message: toNumber(formData.get("wa_gbp_per_message")),
     wa_gbp_per_media_message: toNumber(formData.get("wa_gbp_per_media_message")),
     wa_gbp_per_template_message: toNumber(formData.get("wa_gbp_per_template_message")),
   };
-  const llmModelRatesRaw = String(formData.get("llm_model_rates") || "").trim();
-  if (!llmModelRatesRaw) {
-    payload.llm_model_rates = null;
-  } else {
-    try {
-      const parsed = JSON.parse(llmModelRatesRaw);
-      const clean = toModelRates(parsed);
-      if (clean !== undefined) payload.llm_model_rates = clean;
-    } catch {
-      // Keep existing model rates when JSON is invalid.
-    }
-  }
   await updateUsageSettings(payload);
   revalidatePath("/admin/reporting");
 }
@@ -135,18 +118,9 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
     sources?.whatsapp && typeof sources.whatsapp === "object"
       ? (sources.whatsapp as Record<string, unknown>)
       : null;
-  const llmDetail =
-    llmSource?.detail && typeof llmSource.detail === "object"
-      ? (llmSource.detail as Record<string, unknown>)
-      : null;
   const ttsProvider = typeof ttsSource?.provider === "string" ? ttsSource.provider : null;
   const llmProvider = typeof llmSource?.provider === "string" ? llmSource.provider : null;
   const waProvider = typeof waSource?.provider === "string" ? waSource.provider : null;
-  const llmModel = typeof llmSource?.model === "string" ? llmSource.model : null;
-  const llmModelSource = typeof llmSource?.model_source === "string" ? llmSource.model_source : null;
-  const llmPricingModel = typeof llmSource?.pricing_model === "string" ? llmSource.pricing_model : null;
-  const llmPricingSource = typeof llmDetail?.source === "string" ? llmDetail.source : null;
-  const llmOutputUsd = typeof llmDetail?.output_per_1m_usd === "number" ? llmDetail.output_per_1m_usd : null;
   const llmSourceModels =
     llmSource?.models && typeof llmSource.models === "object"
       ? (llmSource.models as Record<string, unknown>)
@@ -207,9 +181,11 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
   const providerLine = [ttsProvider ? `TTS: ${ttsProvider}` : null, llmProvider ? `LLM: ${llmProvider}` : null, waProvider ? `WhatsApp: ${waProvider}` : null]
     .filter(Boolean)
     .join(" · ");
-  const llmModelRatesText = settings?.llm_model_rates
-    ? JSON.stringify(settings.llm_model_rates, null, 2)
-    : "";
+  const modelRates = settings?.llm_model_rates || {};
+  const llmMiniInput = modelRates["gpt-5-mini"]?.input ?? "";
+  const llmMiniOutput = modelRates["gpt-5-mini"]?.output ?? "";
+  const llm51Input = modelRates["gpt-5.1"]?.input ?? "";
+  const llm51Output = modelRates["gpt-5.1"]?.output ?? "";
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -366,57 +342,62 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
                   {Number.isFinite(userId) ? "" : " (all users)"}.
                 </p>
               </div>
-              <div className="overflow-x-auto rounded-2xl border border-[#efe7db] bg-white">
-                <table className="min-w-full text-left text-sm">
-                  <thead className="bg-[#f7f4ee] text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                    <tr>
-                      <th className="px-4 py-3">Prompt</th>
-                      <th className="px-4 py-3">Tokens In</th>
-                      <th className="px-4 py-3">Tokens Out</th>
-                      <th className="px-4 py-3">Rates (GBP/1M)</th>
-                      <th className="px-4 py-3">Cost (est)</th>
-                      <th className="px-4 py-3">Working</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {promptCosts.rows.map((row) => (
-                      <tr key={row.prompt_id} className="border-t border-[#efe7db]">
-                        <td className="px-4 py-3 align-top">
-                          <div className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                            {row.touchpoint || "prompt"} · {row.model || "model"}
-                            {row.user_id ? ` · user ${row.user_id}` : ""}
-                          </div>
-                          <div className="mt-2 text-sm text-[#1e1b16]">
-                            {row.prompt_title || row.task_label || row.prompt_variant || row.touchpoint || "Prompt"}
-                          </div>
-                          {apiBase && row.prompt_id ? (
-                            <a
-                              href={`${apiBase}/admin/prompts/history/${row.prompt_id}`}
-                              className="mt-2 inline-flex text-xs uppercase tracking-[0.2em] text-[var(--accent)]"
-                              target="_blank"
-                              rel="noreferrer"
-                            >
-                              View log
-                            </a>
-                          ) : null}
-                        </td>
-                        <td className="px-4 py-3 align-top">{Math.round(row.tokens_in || 0)}</td>
-                        <td className="px-4 py-3 align-top">{Math.round(row.tokens_out || 0)}</td>
-                        <td className="px-4 py-3 align-top">
-                          <div>In: £{row.rate_in ?? "—"}</div>
-                          <div>Out: £{row.rate_out ?? "—"}</div>
-                        </td>
-                        <td className="px-4 py-3 align-top">
-                          £{row.cost_est_gbp ?? "—"}
-                        </td>
-                        <td className="px-4 py-3 align-top text-xs text-[#6b6257]">
-                          {row.working || "—"}
-                        </td>
+              <details className="rounded-2xl border border-[#efe7db] bg-white">
+                <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-[#3c332b]">
+                  Show prompt transactions ({promptCosts.rows.length})
+                </summary>
+                <div className="overflow-x-auto border-t border-[#efe7db]">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="bg-[#f7f4ee] text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                      <tr>
+                        <th className="px-4 py-3">Prompt</th>
+                        <th className="px-4 py-3">Tokens In</th>
+                        <th className="px-4 py-3">Tokens Out</th>
+                        <th className="px-4 py-3">Rates (GBP/1M)</th>
+                        <th className="px-4 py-3">Cost (est)</th>
+                        <th className="px-4 py-3">Working</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {promptCosts.rows.map((row) => (
+                        <tr key={row.prompt_id} className="border-t border-[#efe7db]">
+                          <td className="px-4 py-3 align-top">
+                            <div className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                              {row.touchpoint || "prompt"} · {row.model || "model"}
+                              {row.user_id ? ` · user ${row.user_id}` : ""}
+                            </div>
+                            <div className="mt-2 text-sm text-[#1e1b16]">
+                              {row.prompt_title || row.task_label || row.prompt_variant || row.touchpoint || "Prompt"}
+                            </div>
+                            {apiBase && row.prompt_id ? (
+                              <a
+                                href={`${apiBase}/admin/prompts/history/${row.prompt_id}`}
+                                className="mt-2 inline-flex text-xs uppercase tracking-[0.2em] text-[var(--accent)]"
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                View log
+                              </a>
+                            ) : null}
+                          </td>
+                          <td className="px-4 py-3 align-top">{Math.round(row.tokens_in || 0)}</td>
+                          <td className="px-4 py-3 align-top">{Math.round(row.tokens_out || 0)}</td>
+                          <td className="px-4 py-3 align-top">
+                            <div>In: £{row.rate_in ?? "—"}</div>
+                            <div>Out: £{row.rate_out ?? "—"}</div>
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            £{row.cost_est_gbp ?? "—"}
+                          </td>
+                          <td className="px-4 py-3 align-top text-xs text-[#6b6257]">
+                            {row.working || "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
             </div>
           )}
         </section>
@@ -437,21 +418,6 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
                   <p className="mt-1 text-xs text-[#8a8176]">FX USD-&gt;GBP: {fx} ({fxSourceLabel})</p>
                 ) : null}
                 {providerLine ? <p className="mt-1 text-xs text-[#8a8176]">{providerLine}</p> : null}
-                {llmPricingModel ? (
-                  <p className="mt-1 text-xs text-[#8a8176]">
-                    LLM pricing model: {llmPricingModel}
-                    {llmModel && llmModel !== llmPricingModel ? ` (requested ${llmModel})` : ""}
-                    {llmModelSource ? ` · source: ${llmModelSource}` : ""}
-                  </p>
-                ) : null}
-                {llmPricingSource ? (
-                  <p className="mt-1 text-xs text-[#8a8176]">LLM pricing source: {llmPricingSource}</p>
-                ) : null}
-                {llmOutputUsd != null ? (
-                  <p className="mt-1 text-xs text-[#8a8176]">
-                    LLM output rate (USD/1M): {llmOutputUsd}
-                  </p>
-                ) : null}
                 {status === "failed" ? (
                   <p className="mt-2 text-xs text-[#a24f3c]">Fetch failed — no provider rates updated.</p>
                 ) : status === "partial" ? (
@@ -518,36 +484,36 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
               />
             </div>
             <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">LLM £ / 1M input tokens</label>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">LLM (gpt-5-mini) £ / 1M input tokens</label>
               <input
-                name="llm_gbp_per_1m_input_tokens"
-                defaultValue={settings.llm_gbp_per_1m_input_tokens ?? ""}
+                name="llm_gbp_per_1m_input_tokens_gpt_5_mini"
+                defaultValue={llmMiniInput}
                 className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
               />
             </div>
             <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">LLM £ / 1M output tokens</label>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">LLM (gpt-5-mini) £ / 1M output tokens</label>
               <input
-                name="llm_gbp_per_1m_output_tokens"
-                defaultValue={settings.llm_gbp_per_1m_output_tokens ?? ""}
+                name="llm_gbp_per_1m_output_tokens_gpt_5_mini"
+                defaultValue={llmMiniOutput}
                 className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
               />
             </div>
-            <div className="lg:col-span-2">
-              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">LLM model rates (JSON)</label>
-              <textarea
-                name="llm_model_rates"
-                defaultValue={llmModelRatesText}
-                rows={8}
-                className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 font-mono text-xs"
-                placeholder={'{"gpt-5.1":{"input":1.2,"output":3.4},"gpt-5-mini":{"input":0.5,"output":1.0}}'}
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">LLM (gpt-5.1) £ / 1M input tokens</label>
+              <input
+                name="llm_gbp_per_1m_input_tokens_gpt_5_1"
+                defaultValue={llm51Input}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
               />
-              <p className="mt-2 text-xs text-[#6b6257]">
-                Optional per-model overrides in GBP per 1M tokens. Keys should match logged model names.
-              </p>
-              <p className="mt-1 text-xs text-[#8a8176]">
-                Fetch updates this map automatically; you can edit and save here.
-              </p>
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">LLM (gpt-5.1) £ / 1M output tokens</label>
+              <input
+                name="llm_gbp_per_1m_output_tokens_gpt_5_1"
+                defaultValue={llm51Output}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+              />
             </div>
             <div>
               <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">WhatsApp £ / message</label>
@@ -572,6 +538,11 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
                 defaultValue={settings.wa_gbp_per_template_message ?? ""}
                 className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
               />
+            </div>
+            <div className="lg:col-span-2">
+              <p className="text-xs text-[#8a8176]">
+                These two model rates are saved and used directly for per-transaction prompt costing.
+              </p>
             </div>
             <div className="flex items-end">
               <button

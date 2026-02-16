@@ -12,6 +12,8 @@ Index (helper → purpose → used by):
 - weekstart_support_prompt (legacy): weekstart support chat → monday.py
 - kickoff_support_prompt (legacy): kickoff support chat → kickoff.py
 - weekstart_actions_prompt (legacy): actions summary from podcast transcript → monday.py
+- habit_steps_generator: weekly habit-step options (structured text) → habit_steps.py/sunday.py
+- initial_habit_steps_generator: assessment-complete week-1 habit steps (JSON) → okr.py
 - current_krs_context + helpers: fetch current focused KRs and derive payloads (list, primary, okrs_by_pillar) for all prompts
 - coaching_approach_prompt: habit-readiness approach → reporting.py (_coaching_approach_text)
 - assessment_scores_prompt: assessment score narrative → reporting.py (_score_narrative_from_llm)
@@ -982,7 +984,9 @@ def build_prompt(
     - weekstart_support
     - general_support
     - kickoff_support
+    - habit_steps_generator
     - weekstart_actions
+    - initial_habit_steps_generator
     - sunday_actions
     - sunday_support
     - tuesday
@@ -1221,7 +1225,87 @@ def build_prompt(
             meta=_merge_template_meta(okr_meta, template),
             block_order_override=order_override or settings.get("default_block_order"),
         )
-    if tp == "weekstart_actions":
+    if tp == "initial_habit_steps_generator":
+        week_no_raw = data.get("week_no", 1)
+        try:
+            week_no = int(week_no_raw)
+        except Exception:
+            week_no = 1
+        if week_no <= 0:
+            week_no = 1
+
+        raw_krs = data.get("krs", []) or []
+        normalized_krs: List[Dict[str, Any]] = []
+        for item in raw_krs:
+            if isinstance(item, dict):
+                kr_id = item.get("id") or item.get("kr_id")
+                desc = item.get("description") or ""
+                pillar = item.get("pillar") or item.get("pillar_key") or ""
+                unit = item.get("unit")
+                baseline_num = item.get("baseline_num")
+                target_num = item.get("target_num")
+            else:
+                kr_id = getattr(item, "id", None)
+                desc = getattr(item, "description", "") or ""
+                unit = getattr(item, "unit", None)
+                baseline_num = getattr(item, "baseline_num", None)
+                target_num = getattr(item, "target_num", None)
+                obj = getattr(item, "objective", None)
+                pillar = getattr(obj, "pillar_key", "") if obj else ""
+
+            try:
+                kr_id_int = int(kr_id)
+            except Exception:
+                continue
+            desc = str(desc or "").strip()
+            if not desc:
+                continue
+            normalized_krs.append(
+                {
+                    "kr_id": kr_id_int,
+                    "pillar": str(pillar or "").strip().lower(),
+                    "description": desc,
+                    "unit": unit,
+                    "baseline_num": baseline_num,
+                    "target_num": target_num,
+                }
+            )
+
+        payload = {
+            "week_no": week_no,
+            "krs": normalized_krs,
+        }
+        parts = [
+            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
+            ("locale", settings.get("locale_block") or locale_block(locale)),
+            ("context", context_block("assessment_complete", "initial week-1 habit-step generation", timeframe=f"Week {week_no}")),
+            ("okr", f"KRs (JSON): {json.dumps(payload, ensure_ascii=False)}"),
+            (
+                "task",
+                "Generate one practical week-1 habit step for every KR in the payload. "
+                "Return STRICT JSON only in this format:\n"
+                "{\n"
+                "  \"habit_steps\": [\n"
+                "    {\"kr_id\": 123, \"step_text\": \"...\"}\n"
+                "  ]\n"
+                "}\n"
+                "Rules:\n"
+                "- Include each kr_id exactly once.\n"
+                "- step_text must be concrete, observable, low-pressure, and realistic for this week.\n"
+                "- Prefer actions that take <=15 minutes and can be repeated on 2+ days this week.\n"
+                "- Use plain British English.\n"
+                "- Do not include markdown, explanations, or any keys beyond habit_steps, kr_id, step_text."
+            ),
+        ]
+        parts, order_override = _apply_prompt_template(parts, template)
+        return _prompt_assembly(
+            "initial_habit_steps_generator",
+            "initial_habit_steps_generator",
+            parts,
+            meta=_merge_template_meta({}, template),
+            block_order_override=order_override or settings.get("default_block_order"),
+        )
+    if tp in {"habit_steps_generator", "weekstart_actions"}:
         transcript = data.get("transcript", "")
         krs = data.get("krs", [])
         okr_scope = (template or {}).get("okr_scope") or "week"
@@ -1239,7 +1323,7 @@ def build_prompt(
         parts = [
             ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
             ("locale", settings.get("locale_block") or locale_block(locale)),
-            ("context", context_block("weekstart_actions", "actions summary")),
+            ("context", context_block(tp, "weekly habit-step option generation")),
             ("okr", okr_txt),
             ("task",
                 "You are a concise wellbeing coach. Using the podcast transcript and the KR context, "
@@ -1263,8 +1347,8 @@ def build_prompt(
         ]
         parts, order_override = _apply_prompt_template(parts, template)
         return _prompt_assembly(
-            "weekstart_actions",
-            "weekstart_actions",
+            tp,
+            tp,
             parts,
             meta=_merge_template_meta(okr_meta, template),
             block_order_override=order_override or settings.get("default_block_order"),
@@ -2044,6 +2128,7 @@ def _usage_tag_for_touchpoint(touchpoint: str | None) -> str | None:
         "saturday",
         "sunday",
         "weekstart",
+        "habit_steps_generator",
         "weekstart_actions",
         "podcast_weekstart",
         "podcast_thursday",
@@ -2054,7 +2139,7 @@ def _usage_tag_for_touchpoint(touchpoint: str | None) -> str | None:
     }
     if key in weekly:
         return "weekly_flow"
-    if key.startswith("assessment") or key in {"assessment_scores", "assessment_okr", "assessment_approach", "assessor_system"}:
+    if key.startswith("assessment") or key in {"assessment_scores", "assessment_okr", "assessment_approach", "assessor_system", "initial_habit_steps_generator"}:
         return "assessment"
     if key.startswith("content"):
         return "content_generation"
@@ -2168,7 +2253,7 @@ def coaching_prompt(
 ) -> str:
     """
     Central builder for interactive coaching text prompts.
-    Modes: weekstart_support | kickoff_support | weekstart_actions | midweek | tuesday | sunday
+    Modes: weekstart_support | kickoff_support | habit_steps_generator | weekstart_actions | midweek | tuesday | sunday
     """
     m = mode.lower()
     header = common_prompt_header(coach_name, user_name, locale)
@@ -2220,7 +2305,7 @@ def coaching_prompt(
         ]
         return assemble_prompt(blocks)
 
-    if m == "weekstart_actions":
+    if m in {"habit_steps_generator", "weekstart_actions"}:
         transcript = data.get("transcript", "")
         krs = data.get("krs", [])
         return (

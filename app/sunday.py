@@ -14,7 +14,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from . import general_support
-from . import monday as monday_flow
+from . import habit_steps as habit_flow
 from .db import SessionLocal
 from .job_queue import enqueue_job, should_use_worker
 from .kickoff import COACH_NAME
@@ -189,13 +189,13 @@ def _ordered_krs(session: Session, kr_ids: list[int]) -> list[OKRKeyResult]:
 
 
 def _build_habit_options(user: User, krs: list[OKRKeyResult]) -> list[list[str]]:
-    _actions_text, options_by_index = monday_flow._build_weekstart_actions("", krs, user)
+    _actions_text, options_by_index = habit_flow.build_sunday_habit_actions("", krs, user)
     out: list[list[str]] = []
     for idx, kr in enumerate(krs):
         opts = list(options_by_index[idx]) if idx < len(options_by_index) else []
         opts = [opt.strip() for opt in opts if opt and opt.strip()]
         if not opts:
-            opts = monday_flow._fallback_options_for_kr(kr)
+            opts = habit_flow.fallback_options_for_kr(kr)
         if len(opts) > 3:
             opts = opts[:3]
         out.append(opts)
@@ -269,11 +269,11 @@ def send_sunday_review(user: User, coach_name: str = COACH_NAME) -> None:
             "Pick one option for each KR."
         )
         _send_sunday(to=user.phone, text=intro)
-        first_msg = monday_flow._build_actions_for_kr(1, krs[0], options_by_index[0])
+        first_msg = habit_flow.build_actions_for_kr(1, krs[0], options_by_index[0])
         _send_sunday(
             to=user.phone,
             text=first_msg,
-            quick_replies=monday_flow._kr_quick_replies(1, options_by_index[0]),
+            quick_replies=habit_flow.kr_quick_replies(1, options_by_index[0]),
         )
 
         tp_id = log_touchpoint(
@@ -354,23 +354,23 @@ def handle_message(user: User, body: str) -> None:
                 return
             options_by_index = state.get("options") or []
             current_idx = int(state.get("current_idx") or 0)
-            stored_selections = monday_flow._normalize_state_selections(state.get("selections"), krs, options_by_index)
-            stored_edits = monday_flow._normalize_state_edits(state.get("edits"))
-            selections = monday_flow._parse_option_selections(text, options_by_index)
-            edits = monday_flow._extract_step_edits(text, krs)
+            stored_selections = habit_flow.normalize_state_selections(state.get("selections"), krs, options_by_index)
+            stored_edits = habit_flow.normalize_state_edits(state.get("edits"))
+            selections = habit_flow.parse_option_selections(text, options_by_index)
+            edits = habit_flow.extract_step_edits(text, krs)
 
-            if monday_flow._is_confirm_message(text):
+            if habit_flow.is_confirm_message(text):
                 selections = {idx: 0 for idx in range(len(krs))}
                 edits = {}
 
             if not selections and not edits:
                 if 0 <= current_idx < len(krs):
                     options = options_by_index[current_idx] if current_idx < len(options_by_index) else []
-                    kr_msg = monday_flow._build_actions_for_kr(current_idx + 1, krs[current_idx], options)
+                    kr_msg = habit_flow.build_actions_for_kr(current_idx + 1, krs[current_idx], options)
                     _send_sunday(
                         to=user.phone,
                         text=kr_msg,
-                        quick_replies=monday_flow._kr_quick_replies(current_idx + 1, options),
+                        quick_replies=habit_flow.kr_quick_replies(current_idx + 1, options),
                     )
                 else:
                     _send_sunday(to=user.phone, text="Please choose an option (e.g., KR1 A).")
@@ -378,7 +378,7 @@ def handle_message(user: User, body: str) -> None:
 
             merged_selections = {**stored_selections, **selections}
             merged_edits = {**stored_edits, **edits}
-            selected_ids = monday_flow._selected_kr_ids(krs, merged_selections, merged_edits)
+            selected_ids = habit_flow.selected_kr_ids(krs, merged_selections, merged_edits)
 
             if selected_ids and len(selected_ids) == len(krs):
                 edits_to_apply: dict[int, list[str]] = {}
@@ -389,12 +389,12 @@ def handle_message(user: User, body: str) -> None:
                 for kr_id, steps in merged_edits.items():
                     edits_to_apply[kr_id] = steps
                 if edits_to_apply:
-                    monday_flow._apply_habit_step_edits(s, user.id, wf_id, week_no, edits_to_apply)
-                    monday_flow._activate_habit_steps(s, user.id, week_no, list(edits_to_apply.keys()))
+                    habit_flow.apply_habit_step_edits(s, user.id, wf_id, week_no, edits_to_apply)
+                    habit_flow.activate_habit_steps(s, user.id, week_no, list(edits_to_apply.keys()))
                 s.commit()
 
-                chosen = monday_flow._resolve_chosen_steps(krs, options_by_index, merged_selections, merged_edits)
-                confirm_msg = monday_flow._confirmation_message(krs, chosen)
+                chosen = habit_flow.resolve_chosen_steps(krs, options_by_index, merged_selections, merged_edits)
+                confirm_msg = habit_flow.confirmation_message(krs, chosen)
                 if not confirm_msg.lower().startswith("*sunday*"):
                     confirm_msg = "*Sunday* " + confirm_msg
                 _send_sunday(to=user.phone, text=confirm_msg)
@@ -421,11 +421,11 @@ def handle_message(user: User, body: str) -> None:
                 next_idx = current_idx + 1
             if next_idx < len(krs):
                 next_options = options_by_index[next_idx] if next_idx < len(options_by_index) else []
-                next_msg = monday_flow._build_actions_for_kr(next_idx + 1, krs[next_idx], next_options)
+                next_msg = habit_flow.build_actions_for_kr(next_idx + 1, krs[next_idx], next_options)
                 _send_sunday(
                     to=user.phone,
                     text=next_msg,
-                    quick_replies=monday_flow._kr_quick_replies(next_idx + 1, next_options),
+                    quick_replies=habit_flow.kr_quick_replies(next_idx + 1, next_options),
                 )
             _set_state(
                 s,

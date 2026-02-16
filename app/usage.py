@@ -13,6 +13,7 @@ from .models import UsageEvent, UsageRollupDaily, UsageSettings, LLMPromptLog
 
 
 _USAGE_SCHEMA_READY = False
+PRIMARY_LLM_RATE_MODELS = ("gpt-5-mini", "gpt-5.1")
 
 
 def _load_usage_settings() -> UsageSettings | None:
@@ -87,9 +88,24 @@ def _normalize_llm_model_rates(value) -> dict[str, dict[str, float]]:
     return normalized
 
 
+def _primary_llm_model_rates(value) -> dict[str, dict[str, float]]:
+    normalized = _normalize_llm_model_rates(value)
+    if not normalized:
+        return {}
+    selected: dict[str, dict[str, float]] = {}
+    for allowed in PRIMARY_LLM_RATE_MODELS:
+        allowed_norm = _normalize_model_name(allowed)
+        for model_name, rates in normalized.items():
+            if _normalize_model_name(model_name) != allowed_norm:
+                continue
+            selected[allowed] = dict(rates)
+            break
+    return selected
+
+
 def _extract_llm_model_rates(meta) -> dict[str, dict[str, float]]:
     meta_obj = _meta_to_dict(meta)
-    return _normalize_llm_model_rates(meta_obj.get("llm_model_rates"))
+    return _primary_llm_model_rates(meta_obj.get("llm_model_rates"))
 
 
 def _default_llm_rates_from_settings(settings: dict | None) -> tuple[float, str, float, str]:
@@ -126,7 +142,7 @@ def resolve_llm_rates(
 ) -> tuple[float, float, str, str | None]:
     resolved_settings = settings if isinstance(settings, dict) else get_usage_settings()
     default_in, src_in, default_out, src_out = _default_llm_rates_from_settings(resolved_settings)
-    model_rates = _normalize_llm_model_rates((resolved_settings or {}).get("llm_model_rates"))
+    model_rates = _primary_llm_model_rates((resolved_settings or {}).get("llm_model_rates"))
     if not model_rates:
         if "db" in (src_in, src_out):
             source = "db"
@@ -677,7 +693,7 @@ def save_usage_settings(payload: dict) -> dict:
             next_meta = dict(existing_meta)
 
         if "llm_model_rates" in payload:
-            model_rates = _normalize_llm_model_rates(payload.get("llm_model_rates"))
+            model_rates = _primary_llm_model_rates(payload.get("llm_model_rates"))
             if model_rates:
                 next_meta["llm_model_rates"] = model_rates
             else:

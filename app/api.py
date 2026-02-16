@@ -3813,13 +3813,10 @@ def api_user_kr_update(
         except Exception:
             raise HTTPException(status_code=400, detail=f"{field_name} must be numeric")
 
-    description = payload.get("description")
-    target_num, has_target = _parse_optional_number(payload.get("target_num"), field_name="target_num")
     actual_num, has_actual = _parse_optional_number(payload.get("actual_num"), field_name="actual_num")
     note = str(payload.get("note") or "").strip() or "KR updated in app"
-    any_change = ("description" in payload) or has_target or has_actual
-    if not any_change:
-        raise HTTPException(status_code=400, detail="at least one field must be provided")
+    if not has_actual:
+        raise HTTPException(status_code=400, detail="actual_num is required")
 
     with SessionLocal() as s:
         kr = (
@@ -3831,13 +3828,6 @@ def api_user_kr_update(
         if not kr:
             raise HTTPException(status_code=404, detail="kr not found")
 
-        if "description" in payload:
-            desc_val = str(description or "").strip()
-            if not desc_val:
-                raise HTTPException(status_code=400, detail="description cannot be empty")
-            kr.description = desc_val
-        if has_target:
-            kr.target_num = target_num
         if has_actual:
             kr.actual_num = actual_num
             s.add(
@@ -4386,6 +4376,7 @@ def admin_assessment_health(
             "sunday",
             "sunday_actions",
             "sunday_support",
+            "habit_steps_generator",
             "weekstart_actions",
             "weekstart_support",
             "weekstart",
@@ -4396,6 +4387,8 @@ def admin_assessment_health(
             if not key:
                 return None
             if key == "assessor_system":
+                return "assessment"
+            if key == "initial_habit_steps_generator":
                 return "assessment"
             if key.startswith("podcast_"):
                 return "coaching"
@@ -5649,9 +5642,8 @@ def _build_prompt_cost_rows(
         if not entry["tokens_out"] and entry.get("response_text_full"):
             entry["tokens_out"] = float(estimate_tokens(entry.get("response_text_full")))
         calc_cost = (entry["tokens_in"] / 1_000_000.0) * rate_in + (entry["tokens_out"] / 1_000_000.0) * rate_out
-        cost_est = entry.get("cost_est_gbp") or 0.0
-        if not cost_est and calc_cost:
-            cost_est = calc_cost
+        logged_cost = float(entry.get("cost_est_gbp") or 0.0)
+        cost_est = calc_cost if calc_cost else logged_cost
         rate_source = entry.get("rate_source") or fallback_source or default_rate_source
         entry["rate_in"] = rate_in or None
         entry["rate_out"] = rate_out or None
@@ -5907,6 +5899,19 @@ def admin_usage_settings_fetch(admin_user: User = Depends(_require_admin)):
         "meta": rates,
     }
     merged_model_rates: dict[str, dict[str, float]] = {}
+    current_model_rates = current.get("llm_model_rates")
+    if isinstance(current_model_rates, dict):
+        for model_name in fetch_models:
+            existing_rates = current_model_rates.get(model_name)
+            if not isinstance(existing_rates, dict):
+                continue
+            existing_entry: dict[str, float] = {}
+            if existing_rates.get("input") is not None:
+                existing_entry["input"] = float(existing_rates["input"])
+            if existing_rates.get("output") is not None:
+                existing_entry["output"] = float(existing_rates["output"])
+            if existing_entry:
+                merged_model_rates[model_name] = existing_entry
     fetched_model_rates = rates.get("llm_model_rates")
     if isinstance(fetched_model_rates, dict):
         for model_name in fetch_models:

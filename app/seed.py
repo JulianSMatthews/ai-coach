@@ -531,6 +531,69 @@ Keep it to 1–2 lines.
 The desired outcome is a short reply that keeps the conversation open.""",
     },
     {
+        "touchpoint": 'initial_habit_steps_generator',
+        "okr_scope": 'all',
+        "programme_scope": '',
+        "response_format": '',
+        "is_active": True,
+        "block_order": ['system', 'locale', 'context', 'okr', 'task', 'user'],
+        "include_blocks": ['system', 'locale', 'context', 'okr', 'task'],
+        "task_block": """You generate initial week-1 habit steps immediately after assessment completion.
+
+Return STRICT JSON only using this exact shape:
+{
+  "habit_steps": [
+    {"kr_id": 123, "step_text": "..."}
+  ]
+}
+
+Rules:
+- Include every kr_id from the input exactly once.
+- Write one week-1 habit step per KR.
+- Keep each step practical, observable, and low-pressure.
+- Keep each step realistic for this week and usually completable in 15 minutes or less.
+- Prefer actions that can be repeated on at least 2 days this week.
+- Use plain British English.
+- Do not include markdown, prose, or extra keys.
+- Do not mention KR IDs inside step_text.""",
+    },
+    {
+        "touchpoint": 'habit_steps_generator',
+        "okr_scope": 'week',
+        "programme_scope": '',
+        "response_format": '',
+        "is_active": True,
+        "block_order": ['system', 'locale', 'context', 'history', 'okr', 'scores', 'habit', 'task', 'user'],
+        "include_blocks": ['system', 'locale', 'context', 'history', 'okr', 'scores', 'habit', 'task', 'user'],
+        "task_block": """Keep this warm, calm, and easy to read.
+
+This touchpoint is for weekly habit-step selection and is not for initial assessment week-1 seeding.
+
+Start with a brief line acknowledging the podcast and that you’re now turning the OKRs into simple weekly actions.
+Then add one short sentence: you’ll share a few small habit-step options per KR so they can choose what feels most realistic this week.
+
+Using the podcast context, create three habit-step options per KR.
+Keep them practical, low‑pressure, and easy to start this week.
+
+Use this exact format (no extra bullets or commentary):
+
+KR1: <short KR description>
+1A) <habit step option>
+1B) <habit step option>
+1C) <habit step option>
+KR2: <short KR description>
+2A) <habit step option>
+2B) <habit step option>
+2C) <habit step option>
+…
+
+If a KR only needs two options, still include an A and B, but prefer three whenever possible.
+
+End with one short line telling them they’ll be asked to choose an option for each KR.
+
+Tone: steady, supportive, unrushed.""",
+    },
+    {
         "touchpoint": 'weekstart_actions',
         "okr_scope": 'week',
         "programme_scope": '',
@@ -539,6 +602,8 @@ The desired outcome is a short reply that keeps the conversation open.""",
         "block_order": ['system', 'locale', 'context', 'history', 'okr', 'scores', 'habit', 'task', 'user'],
         "include_blocks": ['system', 'locale', 'context', 'history', 'okr', 'scores', 'habit', 'task', 'user'],
         "task_block": """Keep this warm, calm, and easy to read.
+
+This touchpoint is for weekly habit-step selection and is not for initial assessment week-1 seeding.
 
 Start with a brief line acknowledging the podcast and that you’re now turning the OKRs into simple weekly actions.
 Then add one short sentence: you’ll share a few small habit-step options per KR so they can choose what feels most realistic this week.

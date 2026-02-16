@@ -930,6 +930,10 @@ def test_prompt_template(
             )
         if tp_lower == "weekstart_actions":
             extra_kwargs.update({"krs": krs_payload, "transcript": ""})
+        if tp_lower == "habit_steps_generator":
+            extra_kwargs.update({"krs": krs_payload, "transcript": ""})
+        if tp_lower == "initial_habit_steps_generator":
+            extra_kwargs.update({"krs": krs_payload, "week_no": 1})
         if tp_lower in {"tuesday", "midweek", "saturday", "sunday"}:
             extra_kwargs.update(
                 {

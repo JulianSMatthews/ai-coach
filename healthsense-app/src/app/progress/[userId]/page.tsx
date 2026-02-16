@@ -509,6 +509,8 @@ export default async function ProgressPage(props: PageProps) {
                                   initialDescription={kr.description}
                                   initialActual={kr.actual}
                                   initialTarget={kr.target}
+                                  metricLabel={kr.metric_label}
+                                  unit={kr.unit}
                                 />
                               ) : null}
                             </div>

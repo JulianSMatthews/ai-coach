@@ -203,6 +203,10 @@ def _assemble_prompt_for_report(touchpoint: str, user_id: int, as_of_date: date 
             )
         if tp_lower == "weekstart_actions":
             extra_kwargs.update({"krs": krs_payload, "transcript": ""})
+        if tp_lower == "habit_steps_generator":
+            extra_kwargs.update({"krs": krs_payload, "transcript": ""})
+        if tp_lower == "initial_habit_steps_generator":
+            extra_kwargs.update({"krs": krs_payload, "week_no": 1})
         if tp_lower in {"tuesday", "midweek", "saturday", "sunday"}:
             # include KR payload for OKR block; history placeholder
             extra_kwargs.update({"scores": scores_payload, "psych_payload": psych_payload, "history_text": "", "krs": krs_payload})

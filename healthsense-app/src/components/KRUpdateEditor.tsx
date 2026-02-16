@@ -8,6 +8,8 @@ type KRUpdateEditorProps = {
   initialDescription?: string | null;
   initialActual?: number | null;
   initialTarget?: number | null;
+  metricLabel?: string | null;
+  unit?: string | null;
 };
 
 function numberToString(value?: number | null) {
@@ -22,14 +24,17 @@ export default function KRUpdateEditor({
   initialDescription,
   initialActual,
   initialTarget,
+  metricLabel,
+  unit,
 }: KRUpdateEditorProps) {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [description, setDescription] = useState((initialDescription || "").trim());
   const [actual, setActual] = useState(numberToString(initialActual));
-  const [target, setTarget] = useState(numberToString(initialTarget));
+  const target = numberToString(initialTarget);
+  const description = (initialDescription || "").trim();
+  const unitHint = [metricLabel?.trim(), unit?.trim()].filter(Boolean).join(" · ");
 
   const onSave = async () => {
     setSaving(true);
@@ -38,19 +43,11 @@ export default function KRUpdateEditor({
     try {
       const payload = {
         userId,
-        description: description.trim(),
         actual_num: actual.trim() === "" ? null : Number(actual),
-        target_num: target.trim() === "" ? null : Number(target),
         note: "KR updated in app",
       };
       if (payload.actual_num !== null && !Number.isFinite(payload.actual_num)) {
         throw new Error("Current value must be numeric.");
-      }
-      if (payload.target_num !== null && !Number.isFinite(payload.target_num)) {
-        throw new Error("Target value must be numeric.");
-      }
-      if (!payload.description) {
-        throw new Error("Description is required.");
       }
       const res = await fetch(`/api/krs/${krId}`, {
         method: "PUT",
@@ -62,9 +59,7 @@ export default function KRUpdateEditor({
         throw new Error(text || "Failed to update KR");
       }
       const data = await res.json().catch(() => ({}));
-      setDescription(String(data?.description || payload.description));
       setActual(numberToString(data?.actual_num));
-      setTarget(numberToString(data?.target_num));
       setSuccess("Saved");
       setEditing(false);
     } catch (err) {
@@ -96,28 +91,33 @@ export default function KRUpdateEditor({
   return (
     <div className="mt-3 space-y-2 rounded-xl border border-[#efe7db] bg-[#fffaf4] p-3">
       <p className="text-[11px] uppercase tracking-[0.2em] text-[#6b6257]">Update KR</p>
-      <textarea
-        className="w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-xs"
-        rows={2}
-        value={description}
-        onChange={(event) => setDescription(event.target.value)}
-        placeholder="KR description"
-      />
+      <p className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-xs text-[#3c332b]">
+        {description || "Key result"}
+      </p>
+      <p className="text-xs text-[#6b6257]">
+        Enter your latest current value only.
+        {unitHint ? ` Use ${unitHint}.` : " Use the same unit as your target."}
+      </p>
       <div className="grid grid-cols-2 gap-2">
-        <input
-          className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-xs"
-          value={actual}
-          onChange={(event) => setActual(event.target.value)}
-          placeholder="Current value"
-          inputMode="decimal"
-        />
-        <input
-          className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-xs"
-          value={target}
-          onChange={(event) => setTarget(event.target.value)}
-          placeholder="Target value"
-          inputMode="decimal"
-        />
+        <label className="space-y-1">
+          <span className="text-[10px] uppercase tracking-[0.18em] text-[#8b8074]">Current value</span>
+          <input
+            className="w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-xs"
+            value={actual}
+            onChange={(event) => setActual(event.target.value)}
+            placeholder="e.g. 3"
+            inputMode="decimal"
+          />
+        </label>
+        <label className="space-y-1">
+          <span className="text-[10px] uppercase tracking-[0.18em] text-[#8b8074]">Target (fixed)</span>
+          <input
+            className="w-full rounded-xl border border-[#efe7db] bg-[#f8f3ec] px-3 py-2 text-xs text-[#6b6257]"
+            value={target}
+            readOnly
+            disabled
+          />
+        </label>
       </div>
       {error ? <p className="text-xs text-[#b42318]">{error}</p> : null}
       <div className="flex gap-2">

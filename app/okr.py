@@ -30,6 +30,7 @@ from sqlalchemy.sql import text as _sql_text
 from app.db import SessionLocal
 from app.debug_utils import debug_log
 from app.models import UserConceptState, Concept, PillarResult, JobAudit, UserPreference, AssessSession
+from .prompts import build_prompt, run_llm_prompt
 from . import psych
 
 PILLAR_PREF_KEYS = {
@@ -1201,6 +1202,113 @@ def _week1_habit_step_text(kr: OKRKeyResult) -> str:
     return f"Do one simple step toward this KR on two days this week: {desc}."
 
 
+def _extract_json_obj(raw_text: str) -> dict | None:
+    raw = (raw_text or "").strip()
+    if not raw:
+        return None
+    if raw.startswith("```"):
+        raw = raw.strip().lstrip("`").rstrip("`")
+        if raw.lower().startswith("json"):
+            raw = raw[4:].lstrip()
+    try:
+        obj = json.loads(raw)
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        pass
+    start = raw.find("{")
+    end = raw.rfind("}")
+    if start == -1 or end <= start:
+        return None
+    try:
+        obj = json.loads(raw[start : end + 1])
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        return None
+
+
+def _parse_initial_habit_steps(raw_text: str, allowed_kr_ids: set[int]) -> dict[int, str]:
+    data = _extract_json_obj(raw_text)
+    if not data:
+        return {}
+    rows = data.get("habit_steps")
+    if not isinstance(rows, list):
+        return {}
+    out: dict[int, str] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        raw_kr_id = row.get("kr_id")
+        raw_step = row.get("step_text")
+        try:
+            kr_id = int(raw_kr_id)
+        except Exception:
+            continue
+        if kr_id not in allowed_kr_ids:
+            continue
+        step_text = " ".join(str(raw_step or "").split()).strip()
+        if not step_text:
+            continue
+        out[kr_id] = step_text
+    return out
+
+
+def _generate_initial_habit_steps(
+    *,
+    user_id: int,
+    krs: list[OKRKeyResult],
+    week_no: int,
+) -> dict[int, str]:
+    if not user_id or not krs:
+        return {}
+    payload: list[dict[str, Any]] = []
+    allowed_kr_ids: set[int] = set()
+    for kr in krs:
+        if not getattr(kr, "id", None):
+            continue
+        kr_id = int(kr.id)
+        allowed_kr_ids.add(kr_id)
+        objective = getattr(kr, "objective", None)
+        payload.append(
+            {
+                "id": kr_id,
+                "pillar": (getattr(objective, "pillar_key", None) or "").strip().lower(),
+                "description": (getattr(kr, "description", None) or "").strip(),
+                "unit": getattr(kr, "unit", None),
+                "baseline_num": getattr(kr, "baseline_num", None),
+                "target_num": getattr(kr, "target_num", None),
+            }
+        )
+    if not payload:
+        return {}
+    try:
+        prompt_assembly = build_prompt(
+            "initial_habit_steps_generator",
+            user_id=user_id,
+            coach_name="Coach",
+            user_name="User",
+            locale="UK",
+            week_no=week_no,
+            krs=payload,
+        )
+        raw = run_llm_prompt(
+            prompt_assembly.text,
+            user_id=user_id,
+            touchpoint="initial_habit_steps_generator",
+            prompt_variant=prompt_assembly.variant,
+            task_label=prompt_assembly.task_label,
+            prompt_blocks={**prompt_assembly.blocks, **(prompt_assembly.meta or {})},
+            block_order=prompt_assembly.block_order,
+            log=True,
+        )
+    except Exception as e:
+        print(f"[okr] WARN: initial habit-step generation failed user_id={user_id} err={e}")
+        return {}
+    parsed = _parse_initial_habit_steps(str(raw or ""), allowed_kr_ids)
+    if not parsed:
+        print(f"[okr] WARN: initial habit-step generation returned no valid rows user_id={user_id}")
+    return parsed
+
+
 def seed_week1_habit_steps_for_assessment(
     session: Session,
     *,
@@ -1237,6 +1345,7 @@ def seed_week1_habit_steps_for_assessment(
     if not krs:
         return 0
 
+    generated_steps = _generate_initial_habit_steps(user_id=user_id, krs=krs, week_no=week_no)
     seeded = 0
     for kr in krs:
         existing = (
@@ -1251,6 +1360,8 @@ def seed_week1_habit_steps_for_assessment(
         )
         if existing:
             continue
+        kr_id = int(getattr(kr, "id", 0) or 0)
+        generated_step = generated_steps.get(kr_id)
         session.add(
             OKRKrHabitStep(
                 user_id=user_id,
@@ -1258,9 +1369,9 @@ def seed_week1_habit_steps_for_assessment(
                 weekly_focus_id=None,
                 week_no=week_no,
                 sort_order=0,
-                step_text=_week1_habit_step_text(kr),
+                step_text=generated_step or _week1_habit_step_text(kr),
                 status="proposed",
-                source="assessment_auto",
+                source="assessment_initial_habit_prompt" if generated_step else "assessment_auto",
             )
         )
         seeded += 1
