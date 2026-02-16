@@ -24,6 +24,150 @@ def _load_usage_settings() -> UsageSettings | None:
         return None
 
 
+def _meta_to_dict(value) -> dict:
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            return {}
+    return {}
+
+
+def _to_float(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _normalize_model_name(value: str | None) -> str:
+    return (value or "").strip().lower()
+
+
+def _normalize_llm_model_rates(value) -> dict[str, dict[str, float]]:
+    if not isinstance(value, dict):
+        return {}
+    normalized: dict[str, dict[str, float]] = {}
+    for raw_model, raw_rates in value.items():
+        model_key = str(raw_model or "").strip()
+        if not model_key:
+            continue
+        if not isinstance(raw_rates, dict):
+            continue
+        rate_in = _to_float(
+            raw_rates.get("input")
+            if raw_rates.get("input") is not None
+            else raw_rates.get("rate_in")
+            if raw_rates.get("rate_in") is not None
+            else raw_rates.get("in")
+        )
+        rate_out = _to_float(
+            raw_rates.get("output")
+            if raw_rates.get("output") is not None
+            else raw_rates.get("rate_out")
+            if raw_rates.get("rate_out") is not None
+            else raw_rates.get("out")
+        )
+        clean: dict[str, float] = {}
+        if rate_in is not None:
+            clean["input"] = rate_in
+        if rate_out is not None:
+            clean["output"] = rate_out
+        if not clean:
+            continue
+        normalized[model_key] = clean
+    return normalized
+
+
+def _extract_llm_model_rates(meta) -> dict[str, dict[str, float]]:
+    meta_obj = _meta_to_dict(meta)
+    return _normalize_llm_model_rates(meta_obj.get("llm_model_rates"))
+
+
+def _default_llm_rates_from_settings(settings: dict | None) -> tuple[float, str, float, str]:
+    rate_in = _to_float((settings or {}).get("llm_gbp_per_1m_input_tokens"))
+    if rate_in is not None:
+        src_in = "db"
+    else:
+        env_in = _to_float((os.getenv("USAGE_LLM_GBP_PER_1M_INPUT_TOKENS") or "").strip())
+        if env_in is not None:
+            rate_in = env_in
+            src_in = "env"
+        else:
+            rate_in = 0.0
+            src_in = "default"
+
+    rate_out = _to_float((settings or {}).get("llm_gbp_per_1m_output_tokens"))
+    if rate_out is not None:
+        src_out = "db"
+    else:
+        env_out = _to_float((os.getenv("USAGE_LLM_GBP_PER_1M_OUTPUT_TOKENS") or "").strip())
+        if env_out is not None:
+            rate_out = env_out
+            src_out = "env"
+        else:
+            rate_out = 0.0
+            src_out = "default"
+    return float(rate_in), src_in, float(rate_out), src_out
+
+
+def resolve_llm_rates(
+    *,
+    model: str | None = None,
+    settings: dict | None = None,
+) -> tuple[float, float, str, str | None]:
+    resolved_settings = settings if isinstance(settings, dict) else get_usage_settings()
+    default_in, src_in, default_out, src_out = _default_llm_rates_from_settings(resolved_settings)
+    model_rates = _normalize_llm_model_rates((resolved_settings or {}).get("llm_model_rates"))
+    if not model_rates:
+        if "db" in (src_in, src_out):
+            source = "db"
+        elif "env" in (src_in, src_out):
+            source = "env"
+        else:
+            source = "default"
+        return default_in, default_out, source, None
+
+    key_raw = (model or "").strip()
+    key_norm = _normalize_model_name(model)
+    matched_key = None
+    if key_raw and key_raw in model_rates:
+        matched_key = key_raw
+    elif key_norm:
+        for candidate in model_rates.keys():
+            if _normalize_model_name(candidate) == key_norm:
+                matched_key = candidate
+                break
+    if matched_key is None:
+        if "db" in (src_in, src_out):
+            source = "db"
+        elif "env" in (src_in, src_out):
+            source = "env"
+        else:
+            source = "default"
+        return default_in, default_out, source, None
+
+    matched = model_rates.get(matched_key) or {}
+    model_in = _to_float(matched.get("input"))
+    model_out = _to_float(matched.get("output"))
+    rate_in = default_in if model_in is None else float(model_in)
+    rate_out = default_out if model_out is None else float(model_out)
+    if model_in is not None and model_out is not None:
+        source = "model_db"
+    else:
+        fallback_src = src_in if model_in is None else src_out
+        source = f"model_db+{fallback_src}"
+    return rate_in, rate_out, source, matched_key
+
+
 def _tts_rate_gbp_per_1m_chars() -> tuple[float, str]:
     row = _load_usage_settings()
     if row and row.tts_gbp_per_1m_chars is not None:
@@ -55,29 +199,13 @@ def _tts_chars_per_min() -> float:
 
 
 def _llm_rate_gbp_per_1m_input_tokens() -> tuple[float, str]:
-    row = _load_usage_settings()
-    if row and row.llm_gbp_per_1m_input_tokens is not None:
-        return float(row.llm_gbp_per_1m_input_tokens), "db"
-    raw = (os.getenv("USAGE_LLM_GBP_PER_1M_INPUT_TOKENS") or "").strip()
-    if raw:
-        try:
-            return float(raw), "env"
-        except Exception:
-            return 0.0, "default"
-    return 0.0, "default"
+    rate_in, _, source, _ = resolve_llm_rates()
+    return rate_in, source
 
 
 def _llm_rate_gbp_per_1m_output_tokens() -> tuple[float, str]:
-    row = _load_usage_settings()
-    if row and row.llm_gbp_per_1m_output_tokens is not None:
-        return float(row.llm_gbp_per_1m_output_tokens), "db"
-    raw = (os.getenv("USAGE_LLM_GBP_PER_1M_OUTPUT_TOKENS") or "").strip()
-    if raw:
-        try:
-            return float(raw), "env"
-        except Exception:
-            return 0.0, "default"
-    return 0.0, "default"
+    _, rate_out, source, _ = resolve_llm_rates()
+    return rate_out, source
 
 
 def _wa_rate_gbp_per_message() -> tuple[float, str]:
@@ -125,11 +253,14 @@ def estimate_tokens(text: str | None) -> int:
     return max(1, int(math.ceil(len(text) / 4)))
 
 
-def estimate_llm_cost(tokens_in: int, tokens_out: int) -> tuple[float, float, float, str]:
-    rate_in, src_in = _llm_rate_gbp_per_1m_input_tokens()
-    rate_out, src_out = _llm_rate_gbp_per_1m_output_tokens()
+def estimate_llm_cost(
+    tokens_in: int,
+    tokens_out: int,
+    model: str | None = None,
+    settings: dict | None = None,
+) -> tuple[float, float, float, str]:
+    rate_in, rate_out, source, _ = resolve_llm_rates(model=model, settings=settings)
     cost = (tokens_in / 1_000_000.0) * rate_in + (tokens_out / 1_000_000.0) * rate_out
-    source = "env" if src_in == "env" or src_out == "env" else "default"
     return cost, rate_in, rate_out, source
 
 
@@ -386,25 +517,59 @@ def get_llm_usage_summary(
 ) -> dict:
     ensure_usage_schema()
     with SessionLocal() as s:
+        filters = [
+            UsageEvent.created_at >= start_utc,
+            UsageEvent.created_at < end_utc,
+            UsageEvent.product == "llm",
+        ]
+        if tag:
+            filters.append(UsageEvent.tag == tag)
+        if user_id:
+            filters.append(UsageEvent.user_id == user_id)
+
         q = s.query(
             func.sum(case((UsageEvent.unit_type == "tokens_in", UsageEvent.units), else_=0.0)).label("tokens_in"),
             func.sum(case((UsageEvent.unit_type == "tokens_out", UsageEvent.units), else_=0.0)).label("tokens_out"),
             func.sum(UsageEvent.cost_estimate).label("cost_sum"),
-        ).filter(
-            UsageEvent.created_at >= start_utc,
-            UsageEvent.created_at < end_utc,
-            UsageEvent.product == "llm",
-        )
-        if tag:
-            q = q.filter(UsageEvent.tag == tag)
-        if user_id:
-            q = q.filter(UsageEvent.user_id == user_id)
+        ).filter(*filters)
         row = q.one_or_none()
+
+        grouped = (
+            s.query(
+                UsageEvent.model.label("model"),
+                func.sum(case((UsageEvent.unit_type == "tokens_in", UsageEvent.units), else_=0.0)).label("tokens_in"),
+                func.sum(case((UsageEvent.unit_type == "tokens_out", UsageEvent.units), else_=0.0)).label("tokens_out"),
+            )
+            .filter(*filters)
+        )
+        grouped_rows = grouped.group_by(UsageEvent.model).all()
 
     tokens_in = int(row.tokens_in or 0) if row else 0
     tokens_out = int(row.tokens_out or 0) if row else 0
     cost_sum = float(row.cost_sum or 0.0) if row else 0.0
-    cost_est, rate_in, rate_out, source = estimate_llm_cost(tokens_in, tokens_out)
+    rate_settings = get_usage_settings()
+    non_empty_models = []
+    fallback_cost = 0.0
+    for group in grouped_rows:
+        model_name = (group.model or "").strip() or None
+        group_in = int(group.tokens_in or 0)
+        group_out = int(group.tokens_out or 0)
+        if group_in or group_out:
+            non_empty_models.append(model_name or "")
+        group_cost, _, _, _ = estimate_llm_cost(group_in, group_out, model=model_name, settings=rate_settings)
+        fallback_cost += group_cost
+    if len(set(non_empty_models)) == 1 and non_empty_models:
+        _, rate_in, rate_out, source = estimate_llm_cost(
+            0,
+            0,
+            model=non_empty_models[0] or None,
+            settings=rate_settings,
+        )
+    elif len(set(non_empty_models)) > 1:
+        rate_in, rate_out, source = None, None, "mixed_model"
+    else:
+        _, rate_in, rate_out, source = estimate_llm_cost(0, 0, settings=rate_settings)
+    cost_est = fallback_cost
     cost_final = cost_sum if cost_sum else cost_est
     return {
         "tokens_in": tokens_in,
@@ -461,16 +626,19 @@ def get_usage_settings() -> dict:
             "tts_chars_per_min": None,
             "llm_gbp_per_1m_input_tokens": None,
             "llm_gbp_per_1m_output_tokens": None,
+            "llm_model_rates": None,
             "wa_gbp_per_message": None,
             "wa_gbp_per_media_message": None,
             "wa_gbp_per_template_message": None,
             "meta": None,
         }
+    model_rates = _extract_llm_model_rates(row.meta)
     return {
         "tts_gbp_per_1m_chars": row.tts_gbp_per_1m_chars,
         "tts_chars_per_min": row.tts_chars_per_min,
         "llm_gbp_per_1m_input_tokens": row.llm_gbp_per_1m_input_tokens,
         "llm_gbp_per_1m_output_tokens": row.llm_gbp_per_1m_output_tokens,
+        "llm_model_rates": model_rates or None,
         "wa_gbp_per_message": row.wa_gbp_per_message,
         "wa_gbp_per_media_message": row.wa_gbp_per_media_message,
         "wa_gbp_per_template_message": row.wa_gbp_per_template_message,
@@ -486,15 +654,7 @@ def save_usage_settings(payload: dict) -> dict:
             row = UsageSettings()
 
         def _num(key: str):
-            val = payload.get(key)
-            if val is None:
-                return None
-            try:
-                if isinstance(val, str) and not val.strip():
-                    return None
-                return float(val)
-            except Exception:
-                return None
+            return _to_float(payload.get(key))
 
         row.tts_gbp_per_1m_chars = _num("tts_gbp_per_1m_chars")
         row.tts_chars_per_min = _num("tts_chars_per_min")
@@ -503,8 +663,28 @@ def save_usage_settings(payload: dict) -> dict:
         row.wa_gbp_per_message = _num("wa_gbp_per_message")
         row.wa_gbp_per_media_message = _num("wa_gbp_per_media_message")
         row.wa_gbp_per_template_message = _num("wa_gbp_per_template_message")
-        if payload.get("meta") is not None:
-            row.meta = payload.get("meta")
+
+        existing_meta = _meta_to_dict(getattr(row, "meta", None))
+        incoming_meta = payload.get("meta")
+        if incoming_meta is not None:
+            next_meta = _meta_to_dict(incoming_meta)
+            if (
+                "llm_model_rates" not in next_meta
+                and existing_meta.get("llm_model_rates") is not None
+            ):
+                next_meta["llm_model_rates"] = existing_meta.get("llm_model_rates")
+        else:
+            next_meta = dict(existing_meta)
+
+        if "llm_model_rates" in payload:
+            model_rates = _normalize_llm_model_rates(payload.get("llm_model_rates"))
+            if model_rates:
+                next_meta["llm_model_rates"] = model_rates
+            else:
+                next_meta.pop("llm_model_rates", None)
+
+        if incoming_meta is not None or "llm_model_rates" in payload:
+            row.meta = next_meta or None
         s.add(row)
         s.commit()
         s.refresh(row)

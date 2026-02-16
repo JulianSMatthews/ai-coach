@@ -107,6 +107,7 @@ export type UsageSettings = {
   tts_chars_per_min?: number | null;
   llm_gbp_per_1m_input_tokens?: number | null;
   llm_gbp_per_1m_output_tokens?: number | null;
+  llm_model_rates?: Record<string, { input?: number; output?: number }> | null;
   wa_gbp_per_message?: number | null;
   wa_gbp_per_media_message?: number | null;
   wa_gbp_per_template_message?: number | null;

@@ -6,6 +6,7 @@ import {
   getAdminUsageSummary,
   getUsageSettings,
   listAdminUsers,
+  type UsageSettings,
   updateUsageSettings,
 } from "@/lib/api";
 import { revalidatePath } from "next/cache";
@@ -21,7 +22,26 @@ async function saveUsageSettingsAction(formData: FormData) {
     const parsed = Number(raw);
     return Number.isFinite(parsed) ? parsed : null;
   };
-  const payload = {
+  const toModelRates = (value: unknown): UsageSettings["llm_model_rates"] | undefined => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    const input = value as Record<string, unknown>;
+    const out: Record<string, { input?: number; output?: number }> = {};
+    for (const [rawModel, rawRate] of Object.entries(input)) {
+      const model = String(rawModel || "").trim();
+      if (!model || !rawRate || typeof rawRate !== "object" || Array.isArray(rawRate)) continue;
+      const rateObj = rawRate as Record<string, unknown>;
+      const rawIn = rateObj.input ?? rateObj.rate_in ?? rateObj.in;
+      const rawOut = rateObj.output ?? rateObj.rate_out ?? rateObj.out;
+      const inNum = rawIn == null || rawIn === "" ? undefined : Number(rawIn);
+      const outNum = rawOut == null || rawOut === "" ? undefined : Number(rawOut);
+      const clean: { input?: number; output?: number } = {};
+      if (inNum != null && Number.isFinite(inNum)) clean.input = inNum;
+      if (outNum != null && Number.isFinite(outNum)) clean.output = outNum;
+      if (clean.input != null || clean.output != null) out[model] = clean;
+    }
+    return Object.keys(out).length ? out : {};
+  };
+  const payload: UsageSettings = {
     tts_gbp_per_1m_chars: toNumber(formData.get("tts_gbp_per_1m_chars")),
     tts_chars_per_min: toNumber(formData.get("tts_chars_per_min")),
     llm_gbp_per_1m_input_tokens: toNumber(formData.get("llm_gbp_per_1m_input_tokens")),
@@ -30,6 +50,18 @@ async function saveUsageSettingsAction(formData: FormData) {
     wa_gbp_per_media_message: toNumber(formData.get("wa_gbp_per_media_message")),
     wa_gbp_per_template_message: toNumber(formData.get("wa_gbp_per_template_message")),
   };
+  const llmModelRatesRaw = String(formData.get("llm_model_rates") || "").trim();
+  if (!llmModelRatesRaw) {
+    payload.llm_model_rates = null;
+  } else {
+    try {
+      const parsed = JSON.parse(llmModelRatesRaw);
+      const clean = toModelRates(parsed);
+      if (clean !== undefined) payload.llm_model_rates = clean;
+    } catch {
+      // Keep existing model rates when JSON is invalid.
+    }
+  }
   await updateUsageSettings(payload);
   revalidatePath("/admin/reporting");
 }
@@ -92,23 +124,35 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
   const status = typeof meta?.status === "string" ? meta.status : null;
   const updatedKeys = Array.isArray(meta?.updated_keys) ? meta.updated_keys : [];
   const sources =
-    meta?.sources && typeof meta.sources === "object" ? (meta.sources as Record<string, any>) : null;
-  const ttsProvider = typeof sources?.tts?.provider === "string" ? sources.tts.provider : null;
-  const llmProvider = typeof sources?.llm?.provider === "string" ? sources.llm.provider : null;
-  const waProvider =
-    typeof sources?.whatsapp?.provider === "string" ? sources.whatsapp.provider : null;
-  const llmDetail = sources?.llm?.detail;
-  const llmModel = typeof sources?.llm?.model === "string" ? sources.llm.model : null;
-  const llmModelSource =
-    typeof sources?.llm?.model_source === "string" ? sources.llm.model_source : null;
-  const llmPricingModel =
-    typeof sources?.llm?.pricing_model === "string" ? sources.llm.pricing_model : null;
+    meta?.sources && typeof meta.sources === "object"
+      ? (meta.sources as Record<string, unknown>)
+      : null;
+  const ttsSource =
+    sources?.tts && typeof sources.tts === "object" ? (sources.tts as Record<string, unknown>) : null;
+  const llmSource =
+    sources?.llm && typeof sources.llm === "object" ? (sources.llm as Record<string, unknown>) : null;
+  const waSource =
+    sources?.whatsapp && typeof sources.whatsapp === "object"
+      ? (sources.whatsapp as Record<string, unknown>)
+      : null;
+  const llmDetail =
+    llmSource?.detail && typeof llmSource.detail === "object"
+      ? (llmSource.detail as Record<string, unknown>)
+      : null;
+  const ttsProvider = typeof ttsSource?.provider === "string" ? ttsSource.provider : null;
+  const llmProvider = typeof llmSource?.provider === "string" ? llmSource.provider : null;
+  const waProvider = typeof waSource?.provider === "string" ? waSource.provider : null;
+  const llmModel = typeof llmSource?.model === "string" ? llmSource.model : null;
+  const llmModelSource = typeof llmSource?.model_source === "string" ? llmSource.model_source : null;
+  const llmPricingModel = typeof llmSource?.pricing_model === "string" ? llmSource.pricing_model : null;
   const llmPricingSource = typeof llmDetail?.source === "string" ? llmDetail.source : null;
-  const llmOutputUsd =
-    typeof llmDetail?.output_per_1m_usd === "number" ? llmDetail.output_per_1m_usd : null;
+  const llmOutputUsd = typeof llmDetail?.output_per_1m_usd === "number" ? llmDetail.output_per_1m_usd : null;
   const providerLine = [ttsProvider ? `TTS: ${ttsProvider}` : null, llmProvider ? `LLM: ${llmProvider}` : null, waProvider ? `WhatsApp: ${waProvider}` : null]
     .filter(Boolean)
     .join(" · ");
+  const llmModelRatesText = settings?.llm_model_rates
+    ? JSON.stringify(settings.llm_model_rates, null, 2)
+    : "";
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -397,6 +441,19 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
                 defaultValue={settings.llm_gbp_per_1m_output_tokens ?? ""}
                 className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
               />
+            </div>
+            <div className="lg:col-span-2">
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">LLM model rates (JSON)</label>
+              <textarea
+                name="llm_model_rates"
+                defaultValue={llmModelRatesText}
+                rows={8}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 font-mono text-xs"
+                placeholder={'{"gpt-5.1":{"input":1.2,"output":3.4},"gpt-5-mini":{"input":0.5,"output":1.0}}'}
+              />
+              <p className="mt-2 text-xs text-[#6b6257]">
+                Optional per-model overrides in GBP per 1M tokens. Keys should match logged model names.
+              </p>
             </div>
             <div>
               <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">WhatsApp £ / message</label>

@@ -106,6 +106,7 @@ from .usage import (
     get_usage_settings,
     save_usage_settings,
     estimate_tokens,
+    resolve_llm_rates,
 )
 from .usage_rates import fetch_provider_rates
 from .okr import ensure_cycle
@@ -5380,6 +5381,7 @@ def _build_prompt_cost_rows(
     default_rate_in: float,
     default_rate_out: float,
     default_rate_source: str,
+    llm_settings: dict | None = None,
     tag: str | None = None,
     fetch_limit: int | None = None,
 ):
@@ -5509,12 +5511,37 @@ def _build_prompt_cost_rows(
             if entry.get("rate_source") is None and meta.get("rate_source"):
                 entry["rate_source"] = meta.get("rate_source")
 
+    resolved_settings = dict(llm_settings or {})
+    if "llm_gbp_per_1m_input_tokens" not in resolved_settings:
+        resolved_settings["llm_gbp_per_1m_input_tokens"] = default_rate_in
+    if "llm_gbp_per_1m_output_tokens" not in resolved_settings:
+        resolved_settings["llm_gbp_per_1m_output_tokens"] = default_rate_out
+    model_rate_cache: dict[str, tuple[float, float, str]] = {}
+
+    def _fallback_rates_for_model(model_name: str | None) -> tuple[float, float, str]:
+        cache_key = (model_name or "").strip()
+        if cache_key in model_rate_cache:
+            return model_rate_cache[cache_key]
+        rate_in, rate_out, rate_source, _ = resolve_llm_rates(
+            model=model_name,
+            settings=resolved_settings,
+        )
+        model_rate_cache[cache_key] = (float(rate_in or 0.0), float(rate_out or 0.0), rate_source or default_rate_source)
+        return model_rate_cache[cache_key]
+
     rows_out: list[dict] = []
     for entry in by_prompt.values():
         if user_id is not None and not entry.get("match_user"):
             continue
-        rate_in = float(entry.get("rate_in") or default_rate_in or 0.0)
-        rate_out = float(entry.get("rate_out") or default_rate_out or 0.0)
+        fallback_in, fallback_out, fallback_source = _fallback_rates_for_model(entry.get("model"))
+        if entry.get("rate_in") is not None:
+            rate_in = float(entry.get("rate_in") or 0.0)
+        else:
+            rate_in = float(fallback_in or default_rate_in or 0.0)
+        if entry.get("rate_out") is not None:
+            rate_out = float(entry.get("rate_out") or 0.0)
+        else:
+            rate_out = float(fallback_out or default_rate_out or 0.0)
         if not entry["tokens_in"] and entry.get("prompt_text_full"):
             entry["tokens_in"] = float(estimate_tokens(entry.get("prompt_text_full")))
         if not entry["tokens_out"] and entry.get("response_text_full"):
@@ -5523,7 +5550,7 @@ def _build_prompt_cost_rows(
         cost_est = entry.get("cost_est_gbp") or 0.0
         if not cost_est and calc_cost:
             cost_est = calc_cost
-        rate_source = entry.get("rate_source") or default_rate_source
+        rate_source = entry.get("rate_source") or fallback_source or default_rate_source
         entry["rate_in"] = rate_in or None
         entry["rate_out"] = rate_out or None
         entry["rate_source"] = rate_source
@@ -5582,9 +5609,7 @@ def admin_usage_summary(
 
     def _llm_summary_for_user() -> dict:
         rates = get_usage_settings()
-        rate_in = float(rates.get("llm_gbp_per_1m_input_tokens") or 0.0)
-        rate_out = float(rates.get("llm_gbp_per_1m_output_tokens") or 0.0)
-        rate_source = "db" if rates.get("llm_gbp_per_1m_input_tokens") is not None else "env"
+        rate_in, rate_out, rate_source, _ = resolve_llm_rates(settings=rates)
         _rows_all, totals = _build_prompt_cost_rows(
             start_utc=start_utc,
             end_utc=end_utc,
@@ -5593,6 +5618,7 @@ def admin_usage_summary(
             default_rate_in=rate_in,
             default_rate_out=rate_out,
             default_rate_source=rate_source,
+            llm_settings=rates,
             tag=tag,
             fetch_limit=5000,
         )
@@ -5687,9 +5713,7 @@ def admin_usage_prompt_costs(
     limit_val = max(1, min(limit_val, 200))
 
     rates = get_usage_settings()
-    default_rate_in = float(rates.get("llm_gbp_per_1m_input_tokens") or 0.0)
-    default_rate_out = float(rates.get("llm_gbp_per_1m_output_tokens") or 0.0)
-    default_rate_source = "db" if rates.get("llm_gbp_per_1m_input_tokens") is not None else "env"
+    default_rate_in, default_rate_out, default_rate_source, _ = resolve_llm_rates(settings=rates)
     rows_all, totals = _build_prompt_cost_rows(
         start_utc=start_utc,
         end_utc=end_utc,
@@ -5698,6 +5722,7 @@ def admin_usage_prompt_costs(
         default_rate_in=default_rate_in,
         default_rate_out=default_rate_out,
         default_rate_source=default_rate_source,
+        llm_settings=rates,
         fetch_limit=None,
     )
     rows_out = rows_all[:limit_val] if len(rows_all) > limit_val else rows_all
@@ -5769,6 +5794,21 @@ def admin_usage_settings_fetch(admin_user: User = Depends(_require_admin)):
         "wa_gbp_per_template_message": _pick("wa_gbp_per_template_message"),
         "meta": rates,
     }
+    existing_model_rates = current.get("llm_model_rates")
+    merged_model_rates = dict(existing_model_rates) if isinstance(existing_model_rates, dict) else {}
+    fetched_model_name = str(rates.get("llm_pricing_model") or rates.get("llm_model") or "").strip()
+    fetched_in = rates.get("llm_gbp_per_1m_input_tokens")
+    fetched_out = rates.get("llm_gbp_per_1m_output_tokens")
+    if fetched_model_name and (fetched_in is not None or fetched_out is not None):
+        model_entry = dict(merged_model_rates.get(fetched_model_name) or {})
+        if fetched_in is not None:
+            model_entry["input"] = float(fetched_in)
+        if fetched_out is not None:
+            model_entry["output"] = float(fetched_out)
+        if model_entry:
+            merged_model_rates[fetched_model_name] = model_entry
+    if merged_model_rates:
+        payload["llm_model_rates"] = merged_model_rates
     return save_usage_settings(payload)
 
 

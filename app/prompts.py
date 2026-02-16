@@ -1968,7 +1968,7 @@ def _log_llm_prompt_sync(
                 tag = _usage_tag_for_touchpoint(touchpoint)
                 tokens_in = estimate_tokens(final_prompt)
                 tokens_out = estimate_tokens(response_preview or "")
-                _, rate_in, rate_out, rate_source = estimate_llm_cost(tokens_in, tokens_out)
+                _, rate_in, rate_out, rate_source = estimate_llm_cost(tokens_in, tokens_out, model=model)
                 request_id = str(prompt_log_id) if prompt_log_id else None
                 meta = {
                     "prompt_log_id": prompt_log_id,
