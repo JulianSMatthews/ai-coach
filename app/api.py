@@ -19,6 +19,7 @@ import re
 import subprocess
 import sys
 import threading
+import shutil
 from urllib.parse import parse_qs, urlparse
 from datetime import datetime, timedelta, date
 from types import SimpleNamespace
@@ -8276,10 +8277,7 @@ def admin_content_generation_create(payload: dict, admin_user: User = Depends(_r
             if not gen.llm_content:
                 podcast_error = "LLM content is required to generate podcast audio."
             else:
-                is_intro_generation = (
-                    (str(resolved_pillar or "").strip().lower() == INTRO_PILLAR_KEY)
-                    and (str(resolved_concept or "").strip().lower() == INTRO_CONCEPT_CODE)
-                )
+                is_intro_generation = str(resolved_pillar or "").strip().lower() == INTRO_PILLAR_KEY
                 audio_user_id = gen.user_id or getattr(admin_user, "id", None)
                 if not audio_user_id:
                     podcast_error = "No user available for audio generation."
@@ -8550,6 +8548,7 @@ def admin_library_intro_update(
     welcome_template = str(payload.get("welcome_message_template") or "").strip() or INTRO_WELCOME_TEMPLATE_DEFAULT
     body = str(payload.get("body") or "").strip() or INTRO_BODY_DEFAULT
     podcast_url = str(payload.get("podcast_url") or "").strip() or None
+    podcast_url = _promote_intro_podcast_url(podcast_url)
     podcast_voice = str(payload.get("podcast_voice") or "").strip() or None
 
     with SessionLocal() as s:
@@ -10062,6 +10061,45 @@ def _write_global_report_bytes(path_under_reports: str, raw_bytes: bytes) -> str
     with open(out_path, "wb") as f:
         f.write(raw_bytes)
     return _public_report_url_global(rel_path)
+
+def _promote_intro_podcast_url(raw_url: str | None) -> str | None:
+    """
+    Ensure intro podcast URLs use /reports/intro/<filename>.
+    If URL points to /reports/<user_id>/<filename> and the source file exists, copy it to intro/.
+    """
+    if not raw_url:
+        return None
+    normalized = _normalize_reports_url(raw_url) or str(raw_url).strip()
+    if not normalized:
+        return None
+    try:
+        parsed = urlparse(normalized)
+        path = parsed.path or ""
+    except Exception:
+        return normalized
+    m = re.match(r"^/reports/([^/]+)/([^/]+)$", path)
+    if not m:
+        return normalized
+    folder = str(m.group(1) or "").strip()
+    filename = str(m.group(2) or "").strip()
+    if not filename:
+        return normalized
+    if folder == "intro":
+        return normalized
+    reports_root = _reports_root_global()
+    src_path = os.path.join(reports_root, folder, filename)
+    dst_rel = f"intro/{filename}"
+    dst_path = os.path.join(reports_root, "intro", filename)
+    try:
+        os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+        if os.path.isfile(src_path):
+            shutil.copyfile(src_path, dst_path)
+            return _public_report_url_global(dst_rel)
+        if os.path.isfile(dst_path):
+            return _public_report_url_global(dst_rel)
+    except Exception:
+        return normalized
+    return normalized
 
 
 @api_v1.post("/reports/upload")
