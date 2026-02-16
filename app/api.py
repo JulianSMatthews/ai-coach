@@ -1062,13 +1062,36 @@ def _has_recent_whatsapp_inbound(
     user_phone: str | None = None,
     lookback_hours: int = 24,
 ) -> bool:
-    """Best-effort signal that user has messaged us on WhatsApp recently."""
+    """
+    Best-effort signal that the user is inside the auth WhatsApp-style 24h window.
+
+    Primary source is users.last_inbound_message_at (shown in User Management).
+    Fallback source is recent inbound message_logs lookup for backward compatibility.
+    """
     if not user_id:
         return False
     hours = max(1, int(lookback_hours or 24))
     cutoff = datetime.utcnow() - timedelta(hours=hours)
 
     phone_norm = _norm_phone(str(user_phone or "")) if user_phone else None
+
+    # Primary signal: persisted per-user inbound timestamp (same value surfaced in admin user management).
+    try:
+        with SessionLocal() as s:
+            last_inbound = s.execute(
+                select(User.last_inbound_message_at).where(User.id == user_id)
+            ).scalar_one_or_none()
+        if isinstance(last_inbound, datetime):
+            if last_inbound.tzinfo is not None:
+                last_inbound = last_inbound.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+            recent = last_inbound >= cutoff
+            print(
+                f"[auth][otp] wa_window source=user.last_inbound_message_at "
+                f"user_id={user_id} last_inbound={last_inbound.isoformat()} cutoff={cutoff.isoformat()} recent={recent}"
+            )
+            return bool(recent)
+    except Exception as e:
+        print(f"[auth][otp] wa_window user_last_inbound_lookup_failed user_id={user_id} error={e}")
 
     def _query_recent(*, include_channel_filter: bool) -> bool:
         with SessionLocal() as s:
@@ -1083,12 +1106,22 @@ def _has_recent_whatsapp_inbound(
             return row is not None
 
     try:
-        return _query_recent(include_channel_filter=True)
+        recent = _query_recent(include_channel_filter=True)
+        print(
+            f"[auth][otp] wa_window source=message_logs user_id={user_id} include_channel_filter=true "
+            f"cutoff={cutoff.isoformat()} recent={recent}"
+        )
+        return recent
     except Exception as e:
         # Fail-open: if schema drift exists (e.g., missing channel column), retry without channel filter.
         print(f"[auth][otp] recent_whatsapp_lookup_failed user_id={user_id} include_channel=true error={e}")
         try:
-            return _query_recent(include_channel_filter=False)
+            recent = _query_recent(include_channel_filter=False)
+            print(
+                f"[auth][otp] wa_window source=message_logs user_id={user_id} include_channel_filter=false "
+                f"cutoff={cutoff.isoformat()} recent={recent}"
+            )
+            return recent
         except Exception as e2:
             print(f"[auth][otp] recent_whatsapp_lookup_failed user_id={user_id} include_channel=false error={e2}")
             return False
