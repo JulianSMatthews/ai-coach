@@ -1,5 +1,5 @@
 import AdminNav from "@/components/AdminNav";
-import { getAdminAssessmentHealth } from "@/lib/api";
+import { getAdminAppEngagement, getAdminAssessmentHealth } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -50,17 +50,35 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
   const days = clampInt(resolvedSearchParams?.days, 7, 1, 30);
   const staleMinutes = clampInt(resolvedSearchParams?.stale_minutes, 30, 5, 240);
   const tabRaw = (firstParam(resolvedSearchParams?.tab) || "assessment").toLowerCase();
-  const activeTab: "assessment" | "coaching" = tabRaw === "coaching" ? "coaching" : "assessment";
+  const activeTab: "assessment" | "coaching" | "app" =
+    tabRaw === "coaching" ? "coaching" : tabRaw === "app" ? "app" : "assessment";
   const assessmentTabHref = `/admin/monitoring?days=${days}&stale_minutes=${staleMinutes}&tab=assessment`;
   const coachingTabHref = `/admin/monitoring?days=${days}&stale_minutes=${staleMinutes}&tab=coaching`;
+  const appTabHref = `/admin/monitoring?days=${days}&stale_minutes=${staleMinutes}&tab=app`;
 
   let health: Awaited<ReturnType<typeof getAdminAssessmentHealth>> | null = null;
+  let appEngagement: Awaited<ReturnType<typeof getAdminAppEngagement>> | null = null;
   let loadError: string | null = null;
-  try {
-    health = await getAdminAssessmentHealth({ days, stale_minutes: staleMinutes });
-  } catch (error) {
-    loadError = error instanceof Error ? error.message : "Failed to load monitoring data.";
+  const [healthRes, appRes] = await Promise.allSettled([
+    getAdminAssessmentHealth({ days, stale_minutes: staleMinutes }),
+    getAdminAppEngagement({ days }),
+  ]);
+  if (healthRes.status === "fulfilled") {
+    health = healthRes.value;
+  } else if (activeTab !== "app") {
+    loadError = healthRes.reason instanceof Error ? healthRes.reason.message : "Failed to load monitoring data.";
   }
+  if (appRes.status === "fulfilled") {
+    appEngagement = appRes.value;
+  } else if (activeTab === "app" && !loadError) {
+    loadError = appRes.reason instanceof Error ? appRes.reason.message : "Failed to load monitoring data.";
+  }
+
+  const activeWindow =
+    activeTab === "app"
+      ? appEngagement?.window
+      : health?.window;
+  const activeAsOf = activeTab === "app" ? appEngagement?.as_of_uk : health?.as_of_utc;
 
   const alerts = health?.alerts || [];
   const funnelSteps = health?.funnel?.steps || [];
@@ -208,6 +226,35 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
       description: "Median consecutive-day inbound streak (UK day), anchored to today.",
     },
   ];
+  const appKpis = appEngagement?.top_kpis || {};
+  const appDetail = appEngagement?.detail || {};
+  const appDailyRows = appDetail.daily || [];
+  const appMetrics = [
+    {
+      title: "Active app users",
+      value: appKpis.active_app_users ?? 0,
+      subtitle: `${appKpis.home_page_views ?? 0} home views`,
+      description: "Unique users with at least one app event in this window.",
+    },
+    {
+      title: "Avg home views / user",
+      value: appKpis.avg_home_views_per_active_user ?? 0,
+      subtitle: `${appDetail.home?.users ?? 0} users opened home`,
+      description: "Average home page opens per active app user.",
+    },
+    {
+      title: "Post-assessment results view",
+      value: appKpis.post_assessment_results_view_rate_pct != null ? `${formatNum(appKpis.post_assessment_results_view_rate_pct)}%` : "—",
+      subtitle: `${appKpis.post_assessment_users_viewed_results ?? 0} / ${appKpis.post_assessment_users_completed ?? 0} users`,
+      description: "Users who returned to view results after completing assessment.",
+    },
+    {
+      title: "Podcast listener rate",
+      value: appKpis.podcast_listener_rate_pct != null ? `${formatNum(appKpis.podcast_listener_rate_pct)}%` : "—",
+      subtitle: `${appKpis.podcast_listeners ?? 0} listeners`,
+      description: "Active app users who played at least one podcast.",
+    },
+  ];
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -222,9 +269,9 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
             <div>
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Window</p>
               <p className="mt-2 text-sm text-[#6b6257]">
-                {health?.window?.start_utc || "—"} → {health?.window?.end_utc || "—"}
+                {activeWindow?.start_utc || "—"} → {activeWindow?.end_utc || "—"}
               </p>
-              <p className="mt-1 text-sm text-[#6b6257]">As of: {health?.as_of_utc || "—"}</p>
+              <p className="mt-1 text-sm text-[#6b6257]">As of: {activeAsOf || "—"}</p>
             </div>
             <form method="get" className="flex flex-wrap items-end gap-3">
               <input type="hidden" name="tab" value={activeTab} />
@@ -289,6 +336,16 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
               }`}
             >
               Coaching
+            </a>
+            <a
+              href={appTabHref}
+              className={`rounded-full border px-4 py-2 text-xs uppercase tracking-[0.2em] ${
+                activeTab === "app"
+                  ? "border-[#1d4ed8] bg-[#1d4ed8] text-white"
+                  : "border-[#d8d1c4] bg-[#f7f4ee] text-[#6b6257]"
+              }`}
+            >
+              App
             </a>
           </div>
         </section>
@@ -497,7 +554,91 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
           </>
         ) : null}
 
-        <section className="grid gap-4 xl:grid-cols-2">
+        {activeTab === "app" ? (
+          <>
+            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {appMetrics.map((item) => (
+                <div key={item.title} className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
+                  <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{item.title}</p>
+                  <div className="mt-3 text-3xl font-semibold">{item.value}</div>
+                  <p className="mt-2 text-sm text-[#6b6257]">{item.subtitle}</p>
+                  <p className="mt-1 text-xs text-[#8a8176]">{item.description}</p>
+                </div>
+              ))}
+            </section>
+
+            <section className="grid gap-4 xl:grid-cols-2">
+              <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Page engagement</p>
+                <div className="mt-3 space-y-2 text-sm">
+                  <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
+                    Home: {appDetail.home?.views ?? 0} views · {appDetail.home?.users ?? 0} users
+                  </div>
+                  <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
+                    Assessment results: {appDetail.assessment_results?.views ?? 0} views · {appDetail.assessment_results?.users ?? 0} users
+                  </div>
+                  <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
+                    Library: {appDetail.library?.views ?? 0} views · {appDetail.library?.users ?? 0} users
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Podcast engagement</p>
+                <div className="mt-3 space-y-2 text-sm">
+                  <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
+                    Plays: {appDetail.podcasts?.plays ?? 0} · Completes: {appDetail.podcasts?.completes ?? 0}
+                  </div>
+                  <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
+                    Listeners: {appDetail.podcasts?.listeners ?? 0} · Completed listeners: {appDetail.podcasts?.completed_listeners ?? 0}
+                  </div>
+                  <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
+                    Library plays: {appDetail.podcasts?.library_plays ?? 0} · Assessment plays: {appDetail.podcasts?.assessment_plays ?? 0}
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Daily app trend</p>
+              {!appDailyRows.length ? (
+                <p className="mt-4 text-sm text-[#8a8176]">No app engagement events in this window.</p>
+              ) : (
+                <div className="mt-4 overflow-x-auto">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="bg-[#f7f4ee] text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                      <tr>
+                        <th className="px-3 py-2">Day</th>
+                        <th className="px-3 py-2">Active users</th>
+                        <th className="px-3 py-2">Home</th>
+                        <th className="px-3 py-2">Assessment</th>
+                        <th className="px-3 py-2">Library</th>
+                        <th className="px-3 py-2">Plays</th>
+                        <th className="px-3 py-2">Completes</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {appDailyRows.map((row) => (
+                        <tr key={row.day} className="border-t border-[#efe7db]">
+                          <td className="px-3 py-2">{row.day || "—"}</td>
+                          <td className="px-3 py-2">{row.active_users ?? 0}</td>
+                          <td className="px-3 py-2">{row.home_views ?? 0}</td>
+                          <td className="px-3 py-2">{row.assessment_views ?? 0}</td>
+                          <td className="px-3 py-2">{row.library_views ?? 0}</td>
+                          <td className="px-3 py-2">{row.podcast_plays ?? 0}</td>
+                          <td className="px-3 py-2">{row.podcast_completes ?? 0}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </section>
+          </>
+        ) : null}
+
+        {activeTab !== "app" ? (
+          <section className="grid gap-4 xl:grid-cols-2">
           <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Active alerts</p>
             {!alerts.length ? (
@@ -557,7 +698,8 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
               ))}
             </div>
           </div>
-        </section>
+          </section>
+        ) : null}
 
         {activeTab === "assessment" ? (
           <section className="grid gap-4 xl:grid-cols-2">
@@ -605,7 +747,8 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
           </section>
         ) : null}
 
-        <section className="grid gap-4 xl:grid-cols-3">
+        {activeTab !== "app" ? (
+          <section className="grid gap-4 xl:grid-cols-3">
           <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">LLM quality</p>
             <div className="mt-3 space-y-3">
@@ -672,7 +815,8 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
               </div>
             </div>
           </div>
-        </section>
+          </section>
+        ) : null}
       </div>
     </main>
   );

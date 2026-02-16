@@ -1,6 +1,6 @@
 import Link from "next/link";
 import AdminNav from "@/components/AdminNav";
-import { getAdminAssessmentHealth, getAdminProfile, getAdminStats, getAdminUsageSummary } from "@/lib/api";
+import { getAdminAppEngagement, getAdminAssessmentHealth, getAdminProfile, getAdminStats, getAdminUsageSummary } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +25,13 @@ export default async function AdminHome() {
   } catch {
     health = null;
   }
+  let appEngagement: Awaited<ReturnType<typeof getAdminAppEngagement>> | null = null;
+  try {
+    appEngagement = await getAdminAppEngagement({ days: 7 });
+  } catch {
+    appEngagement = null;
+  }
+  const appKpis = appEngagement?.top_kpis || {};
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -76,7 +83,7 @@ export default async function AdminHome() {
           ))}
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-3">
+        <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
           <div className="rounded-2xl border border-[#efe7db] bg-white p-5">
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Combined costs</p>
             <p className="mt-2 text-sm text-[#6b6257]">Estimated total across TTS, LLM, and WhatsApp (last 7 days).</p>
@@ -186,6 +193,48 @@ export default async function AdminHome() {
                 <div className="mt-1 text-xl font-semibold">
                   {health?.coaching?.response_time_minutes?.p95 != null
                     ? `${Math.round(health.coaching.response_time_minutes.p95)} min`
+                    : "—"}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-[#efe7db] bg-white p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">App monitoring</p>
+                <p className="mt-2 text-sm text-[#6b6257]">
+                  Home usage, assessment return behavior, and podcast engagement.
+                </p>
+              </div>
+              <Link
+                href="/admin/monitoring?tab=app"
+                className="rounded-full border border-[#1d4ed8] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[#1d4ed8]"
+              >
+                Open
+              </Link>
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Active users</span>
+                <div className="mt-1 text-xl font-semibold">{appKpis.active_app_users ?? "—"}</div>
+              </div>
+              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Home views</span>
+                <div className="mt-1 text-xl font-semibold">{appKpis.home_page_views ?? "—"}</div>
+              </div>
+              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Results view rate</span>
+                <div className="mt-1 text-xl font-semibold">
+                  {appKpis.post_assessment_results_view_rate_pct != null
+                    ? `${appKpis.post_assessment_results_view_rate_pct}%`
+                    : "—"}
+                </div>
+              </div>
+              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Podcast listener rate</span>
+                <div className="mt-1 text-xl font-semibold">
+                  {appKpis.podcast_listener_rate_pct != null
+                    ? `${appKpis.podcast_listener_rate_pct}%`
                     : "—"}
                 </div>
               </div>
