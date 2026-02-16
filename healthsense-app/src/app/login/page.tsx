@@ -38,8 +38,16 @@ export default function LoginPage() {
         body: JSON.stringify({ phone, password: password || undefined, channel }),
       });
       if (!res.ok) {
+        const fallback = `Failed to request code (HTTP ${res.status}).`;
+        const contentType = (res.headers.get("content-type") || "").toLowerCase();
+        if (contentType.includes("application/json")) {
+          const payload = (await res.json().catch(() => null)) as
+            | { error?: string; detail?: string; message?: string }
+            | null;
+          throw new Error(payload?.error || payload?.detail || payload?.message || fallback);
+        }
         const text = await res.text().catch(() => "");
-        throw new Error(text || "Failed to request code.");
+        throw new Error((text || "").trim() || fallback);
       }
       const data = await res.json();
       setOtpId(Number(data.otp_id));
@@ -72,8 +80,16 @@ export default function LoginPage() {
         body: JSON.stringify({ phone, otp_id: otpId, code, remember_me: rememberMe }),
       });
       if (!res.ok) {
+        const fallback = `Failed to verify code (HTTP ${res.status}).`;
+        const contentType = (res.headers.get("content-type") || "").toLowerCase();
+        if (contentType.includes("application/json")) {
+          const payload = (await res.json().catch(() => null)) as
+            | { error?: string; detail?: string; message?: string }
+            | null;
+          throw new Error(payload?.error || payload?.detail || payload?.message || fallback);
+        }
         const text = await res.text().catch(() => "");
-        throw new Error(text || "Failed to verify code.");
+        throw new Error((text || "").trim() || fallback);
       }
       const data = await res.json();
       const userId = data.user_id || "1";

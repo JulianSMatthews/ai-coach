@@ -113,13 +113,18 @@ export default function PreferencesForm({
   };
 
   return (
-    <form onSubmit={onSubmit} className="space-y-6">
+    <form onSubmit={onSubmit} className="space-y-6" autoComplete="off">
       <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
         <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Email</label>
         <input
           className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
           type="email"
-          autoComplete="email"
+          name="contact_email"
+          autoComplete="section-profile email"
+          inputMode="email"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           placeholder="you@example.com"
@@ -237,6 +242,7 @@ export default function PreferencesForm({
         <input
           className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm disabled:opacity-60"
           type="password"
+          name="new_password"
           autoComplete="new-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
@@ -246,6 +252,7 @@ export default function PreferencesForm({
         <input
           className="mt-3 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm disabled:opacity-60"
           type="password"
+          name="confirm_new_password"
           autoComplete="new-password"
           value={passwordConfirm}
           onChange={(e) => setPasswordConfirm(e.target.value)}

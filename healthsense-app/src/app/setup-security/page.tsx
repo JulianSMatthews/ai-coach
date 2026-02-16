@@ -93,13 +93,18 @@ export default function SetupSecurityPage() {
             Set a password for {user?.display_name || "your account"}.
           </p>
         </div>
-        <form onSubmit={onSubmit} className="space-y-4">
+        <form onSubmit={onSubmit} className="space-y-4" autoComplete="off">
           <div>
             <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Email</label>
             <input
               className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
               type="email"
-              autoComplete="email"
+              name="contact_email"
+              autoComplete="section-security email"
+              inputMode="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
@@ -112,6 +117,8 @@ export default function SetupSecurityPage() {
             <input
               className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
               type="password"
+              name="new_password"
+              autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
@@ -122,6 +129,8 @@ export default function SetupSecurityPage() {
             <input
               className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
               type="password"
+              name="confirm_new_password"
+              autoComplete="new-password"
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
             />
