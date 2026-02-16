@@ -227,9 +227,15 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
           {podcastUrl ? (
             <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] p-3">
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Podcast preview</p>
-              <audio controls className="mt-2 w-full">
-                <source src={podcastUrl} />
-              </audio>
+              <audio key={podcastUrl} controls preload="none" className="mt-2 w-full" src={podcastUrl} />
+              <a
+                href={podcastUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 inline-flex text-[11px] uppercase tracking-[0.2em] text-[var(--accent)]"
+              >
+                Open audio
+              </a>
             </div>
           ) : null}
           <button
