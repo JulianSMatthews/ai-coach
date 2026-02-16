@@ -17,13 +17,15 @@ type IntroInlinePanelProps = {
 
 export default function IntroInlinePanel({ userId, intro, introCompleted }: IntroInlinePanelProps) {
   const [readOpen, setReadOpen] = useState(false);
+  const [audioError, setAudioError] = useState(false);
   const presentedRef = useRef(false);
   const listenedRef = useRef(false);
   const readRef = useRef(false);
 
   const enabled = Boolean(intro?.enabled);
   const completed = Boolean(introCompleted);
-  const hasPodcast = Boolean((intro?.podcast_url || "").trim());
+  const podcastUrl = String(intro?.podcast_url || "").trim();
+  const hasPodcast = Boolean(podcastUrl);
   const hasBody = Boolean((intro?.body || "").trim());
   const show = enabled && !completed && (hasPodcast || hasBody);
 
@@ -62,16 +64,34 @@ export default function IntroInlinePanel({ userId, intro, introCompleted }: Intr
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Intro podcast</p>
           <audio
+            key={podcastUrl}
             controls
+            preload="none"
             className="mt-2 w-full"
+            src={podcastUrl}
+            onPlay={() => {
+              setAudioError(false);
+            }}
+            onError={() => {
+              setAudioError(true);
+            }}
             onEnded={() => {
               if (listenedRef.current) return;
               listenedRef.current = true;
               sendEvent("intro_listened");
             }}
+          />
+          <a
+            href={podcastUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-2 inline-flex text-[11px] uppercase tracking-[0.2em] text-[var(--accent)]"
           >
-            <source src={intro?.podcast_url || ""} />
-          </audio>
+            Open audio
+          </a>
+          {audioError ? (
+            <p className="mt-2 text-xs text-[#b42318]">Audio unavailable. Use Open audio or regenerate intro podcast.</p>
+          ) : null}
         </div>
       ) : null}
       {hasBody ? (

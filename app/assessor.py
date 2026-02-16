@@ -1440,6 +1440,88 @@ def _commit_state(s, sess: AssessSession, state: dict) -> None:
         pass
     s.commit()
 
+def _mark_assessment_run_finished(user_id: int, run_id: int | None, combined: int) -> int | None:
+    """
+    Persist completion fields on AssessmentRun.
+    Uses a fresh DB session so prior errors in the assessor flow do not block this write.
+    Returns the run_id that was updated, or None.
+    """
+    target_run_id = None
+    try:
+        if run_id is not None:
+            target_run_id = int(run_id)
+    except Exception:
+        target_run_id = None
+    now = datetime.utcnow()
+    with SessionLocal() as s:
+        try:
+            if target_run_id:
+                res = s.execute(
+                    update(AssessmentRun)
+                    .where(AssessmentRun.id == target_run_id, AssessmentRun.user_id == user_id)
+                    .values(combined_overall=int(combined), finished_at=now)
+                )
+                if int(res.rowcount or 0) > 0:
+                    s.commit()
+                    print(
+                        f"[assessment] run completion persisted user_id={user_id} "
+                        f"run_id={target_run_id} combined={int(combined)}"
+                    )
+                    return target_run_id
+                s.rollback()
+
+            latest_run_id = (
+                s.execute(
+                    select(AssessmentRun.id)
+                    .where(AssessmentRun.user_id == user_id)
+                    .order_by(AssessmentRun.id.desc())
+                )
+                .scalars()
+                .first()
+            )
+            if not latest_run_id:
+                return None
+            res = s.execute(
+                update(AssessmentRun)
+                .where(AssessmentRun.id == int(latest_run_id))
+                .values(combined_overall=int(combined), finished_at=now)
+            )
+            if int(res.rowcount or 0) > 0:
+                s.commit()
+                print(
+                    f"[assessment] run completion persisted user_id={user_id} "
+                    f"run_id={int(latest_run_id)} combined={int(combined)}"
+                )
+                return int(latest_run_id)
+            s.rollback()
+            return None
+        except Exception as e:
+            s.rollback()
+            print(
+                f"[assessment] WARN: failed to set finished_at user_id={user_id} "
+                f"run_id={run_id} err={e}"
+            )
+            return None
+
+def _mark_user_onboard_complete(user_id: int) -> bool:
+    with SessionLocal() as s:
+        try:
+            res = s.execute(
+                update(User)
+                .where(User.id == user_id)
+                .values(onboard_complete=True)
+            )
+            if int(res.rowcount or 0) <= 0:
+                s.rollback()
+                return False
+            s.commit()
+            print(f"[assessment] onboard_complete persisted user_id={user_id}")
+            return True
+        except Exception as e:
+            s.rollback()
+            print(f"[assessment] WARN: failed to update onboard_complete user_id={user_id} err={e}")
+            return False
+
 
 def _next_pillar(curr: str) -> Optional[str]:
     try:
@@ -2519,28 +2601,20 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     pass
 
                 # Persist combined score + dashboard path onto AssessmentRun (for reporting)
-                try:
-                    rpt_path = f"/reports/{user.id}/assessment.html"
-                    s.execute(
-                        update(AssessmentRun)
-                        .where(AssessmentRun.id == state.get("run_id"))
-                        .values(combined_overall=int(combined),
-                                finished_at=datetime.utcnow(),
-                                report_path=rpt_path)
+                resolved_run_id = _mark_assessment_run_finished(
+                    user_id=int(user.id),
+                    run_id=state.get("run_id"),
+                    combined=int(combined),
+                )
+                if resolved_run_id:
+                    state["run_id"] = int(resolved_run_id)
+                else:
+                    print(
+                        f"[assessment] WARN: run completion not persisted "
+                        f"user_id={user.id} run_id={state.get('run_id')}"
                     )
-                    s.commit()
-                except Exception:
-                    pass
                 # Mark user onboarding as complete (unblocks scheduler-driven prompts)
-                try:
-                    s.execute(
-                        update(User)
-                        .where(User.id == user.id)
-                        .values(onboard_complete=True, updated_on=datetime.utcnow())
-                    )
-                    s.commit()
-                except Exception:
-                    s.rollback()
+                _mark_user_onboard_complete(int(user.id))
 
                 # Finish run in review_log
                 try:
