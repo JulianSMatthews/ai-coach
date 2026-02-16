@@ -151,48 +151,58 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
     llmSource?.models && typeof llmSource.models === "object"
       ? (llmSource.models as Record<string, unknown>)
       : null;
-  const fetchedLlmModelRates = (() => {
+  type FetchedModelRateRow = {
+    model: string;
+    inputGbp: number | null;
+    outputGbp: number | null;
+    inputUsd: number | null;
+    outputUsd: number | null;
+    source: string | null;
+    pricingModel: string | null;
+  };
+  const fetchModelOrder = ["gpt-5-mini", "gpt-5.1"];
+  const blankModelRow = (model: string): FetchedModelRateRow => ({
+    model,
+    inputGbp: null,
+    outputGbp: null,
+    inputUsd: null,
+    outputUsd: null,
+    source: null,
+    pricingModel: null,
+  });
+  const fetchedLlmModelRates: FetchedModelRateRow[] = (() => {
+    const rows = fetchModelOrder.map(blankModelRow);
     if (!meta?.llm_model_rates || typeof meta.llm_model_rates !== "object" || Array.isArray(meta.llm_model_rates)) {
-      return [] as Array<{
-        model: string;
-        inputGbp: number | null;
-        outputGbp: number | null;
-        inputUsd: number | null;
-        outputUsd: number | null;
-        source: string | null;
-        pricingModel: string | null;
-      }>;
+      return rows;
     }
     const rates = meta.llm_model_rates as Record<string, unknown>;
-    const rows = Object.entries(rates)
-      .map(([model, value]) => {
-        if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-        const rec = value as Record<string, unknown>;
-        const inputRaw = rec.input ?? rec.rate_in ?? rec.in;
-        const outputRaw = rec.output ?? rec.rate_out ?? rec.out;
-        const detailRaw = llmSourceModels?.[model];
-        const detail =
-          detailRaw && typeof detailRaw === "object" && !Array.isArray(detailRaw)
-            ? (detailRaw as Record<string, unknown>)
-            : null;
-        const inputUsd = typeof detail?.input_per_1m_usd === "number" ? detail.input_per_1m_usd : null;
-        const outputUsd = typeof detail?.output_per_1m_usd === "number" ? detail.output_per_1m_usd : null;
-        const source = typeof detail?.source === "string" ? detail.source : null;
-        const pricingModel = typeof detail?.pricing_model === "string" ? detail.pricing_model : null;
-        return {
-          model,
-          inputGbp: typeof inputRaw === "number" ? inputRaw : Number.isFinite(Number(inputRaw)) ? Number(inputRaw) : null,
-          outputGbp:
-            typeof outputRaw === "number" ? outputRaw : Number.isFinite(Number(outputRaw)) ? Number(outputRaw) : null,
-          inputUsd,
-          outputUsd,
-          source,
-          pricingModel,
-        };
-      })
-      .filter((row): row is NonNullable<typeof row> => row !== null);
-    rows.sort((a, b) => a.model.localeCompare(b.model));
-    return rows;
+    return rows.map((row) => {
+      const value = rates[row.model];
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return row;
+      }
+      const rec = value as Record<string, unknown>;
+      const inputRaw = rec.input ?? rec.rate_in ?? rec.in;
+      const outputRaw = rec.output ?? rec.rate_out ?? rec.out;
+      const detailRaw = llmSourceModels?.[row.model];
+      const detail =
+        detailRaw && typeof detailRaw === "object" && !Array.isArray(detailRaw)
+          ? (detailRaw as Record<string, unknown>)
+          : null;
+      const inputUsd = typeof detail?.input_per_1m_usd === "number" ? detail.input_per_1m_usd : null;
+      const outputUsd = typeof detail?.output_per_1m_usd === "number" ? detail.output_per_1m_usd : null;
+      const source = typeof detail?.source === "string" ? detail.source : null;
+      const pricingModel = typeof detail?.pricing_model === "string" ? detail.pricing_model : null;
+      return {
+        model: row.model,
+        inputGbp: typeof inputRaw === "number" ? inputRaw : Number.isFinite(Number(inputRaw)) ? Number(inputRaw) : null,
+        outputGbp: typeof outputRaw === "number" ? outputRaw : Number.isFinite(Number(outputRaw)) ? Number(outputRaw) : null,
+        inputUsd,
+        outputUsd,
+        source,
+        pricingModel,
+      };
+    });
   })();
   const providerLine = [ttsProvider ? `TTS: ${ttsProvider}` : null, llmProvider ? `LLM: ${llmProvider}` : null, waProvider ? `WhatsApp: ${waProvider}` : null]
     .filter(Boolean)

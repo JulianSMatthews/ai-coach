@@ -389,16 +389,15 @@ def fetch_provider_rates(model_names: list[str] | None = None) -> dict[str, Any]
         else:
             results["warnings"].append("openai_tts_rate_unavailable")
 
-    # LLM
-    primary_model, model_source = _default_llm_model_from_env()
-    requested_models = _normalize_model_candidates(model_names)
-    if primary_model and primary_model not in requested_models:
-        requested_models.insert(0, primary_model)
-    if not requested_models:
-        requested_models = [primary_model]
-    max_models = 20
-    if len(requested_models) > max_models:
-        requested_models = requested_models[:max_models]
+    # LLM (restricted to core models only for now)
+    baseline_models = ["gpt-5-mini", "gpt-5.1"]
+    primary_model_env, model_source = _default_llm_model_from_env()
+    discovered_models = _normalize_model_candidates(model_names)
+    requested_models = [m for m in discovered_models if m in baseline_models]
+    for model_name in baseline_models:
+        if model_name not in requested_models:
+            requested_models.append(model_name)
+    primary_model = primary_model_env if primary_model_env in requested_models else requested_models[0]
 
     model_rates: dict[str, dict[str, float]] = {}
     model_details: dict[str, dict[str, Any]] = {}
