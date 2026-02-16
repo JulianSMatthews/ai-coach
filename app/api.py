@@ -5742,17 +5742,72 @@ def admin_usage_prompt_costs(
 @admin.post("/usage/settings/fetch")
 def admin_usage_settings_fetch(admin_user: User = Depends(_require_admin)):
     current = get_usage_settings()
-    rates = fetch_provider_rates()
+    model_candidates: list[str] = []
+
+    def _add_models(raw) -> None:
+        if raw is None:
+            return
+        for part in str(raw).split(","):
+            model_name = part.strip()
+            if not model_name:
+                continue
+            if model_name in model_candidates:
+                continue
+            model_candidates.append(model_name)
+
+    _add_models(os.getenv("LLM_MODEL"))
+    _add_models(os.getenv("OPENAI_MODEL"))
+    _add_models(os.getenv("ASS_MODEL"))
+    _add_models(os.getenv("USAGE_LLM_FETCH_MODELS"))
+    existing_model_rates = current.get("llm_model_rates")
+    if isinstance(existing_model_rates, dict):
+        for model_name in existing_model_rates.keys():
+            _add_models(model_name)
+
+    try:
+        with SessionLocal() as s:
+            template_models = (
+                s.query(PromptTemplate.model_override)
+                .filter(PromptTemplate.model_override.isnot(None))
+                .distinct()
+                .all()
+            )
+            for (model_name,) in template_models:
+                _add_models(model_name)
+            recent_prompt_models = (
+                s.query(LLMPromptLog.model)
+                .filter(LLMPromptLog.model.isnot(None))
+                .order_by(LLMPromptLog.created_at.desc())
+                .limit(200)
+                .all()
+            )
+            for (model_name,) in recent_prompt_models:
+                _add_models(model_name)
+    except Exception:
+        pass
+
+    max_models = 20
+    fetch_models = model_candidates[:max_models] if len(model_candidates) > max_models else model_candidates
+    rates = fetch_provider_rates(model_names=fetch_models)
     keys = [
         "tts_gbp_per_1m_chars",
         "tts_chars_per_min",
         "llm_gbp_per_1m_input_tokens",
         "llm_gbp_per_1m_output_tokens",
+        "llm_model_rates",
         "wa_gbp_per_message",
         "wa_gbp_per_media_message",
         "wa_gbp_per_template_message",
     ]
-    updated_keys = [k for k in keys if rates.get(k) is not None]
+    updated_keys = []
+    for key in keys:
+        val = rates.get(key)
+        if isinstance(val, dict):
+            if val:
+                updated_keys.append(key)
+            continue
+        if val is not None:
+            updated_keys.append(key)
     warnings = rates.get("warnings") or []
     if updated_keys:
         rates["status"] = "partial" if warnings else "ok"
@@ -5794,19 +5849,19 @@ def admin_usage_settings_fetch(admin_user: User = Depends(_require_admin)):
         "wa_gbp_per_template_message": _pick("wa_gbp_per_template_message"),
         "meta": rates,
     }
-    existing_model_rates = current.get("llm_model_rates")
     merged_model_rates = dict(existing_model_rates) if isinstance(existing_model_rates, dict) else {}
-    fetched_model_name = str(rates.get("llm_pricing_model") or rates.get("llm_model") or "").strip()
-    fetched_in = rates.get("llm_gbp_per_1m_input_tokens")
-    fetched_out = rates.get("llm_gbp_per_1m_output_tokens")
-    if fetched_model_name and (fetched_in is not None or fetched_out is not None):
-        model_entry = dict(merged_model_rates.get(fetched_model_name) or {})
-        if fetched_in is not None:
-            model_entry["input"] = float(fetched_in)
-        if fetched_out is not None:
-            model_entry["output"] = float(fetched_out)
-        if model_entry:
-            merged_model_rates[fetched_model_name] = model_entry
+    fetched_model_rates = rates.get("llm_model_rates")
+    if isinstance(fetched_model_rates, dict):
+        for model_name, model_rates in fetched_model_rates.items():
+            if not isinstance(model_rates, dict):
+                continue
+            model_entry = dict(merged_model_rates.get(model_name) or {})
+            if model_rates.get("input") is not None:
+                model_entry["input"] = float(model_rates["input"])
+            if model_rates.get("output") is not None:
+                model_entry["output"] = float(model_rates["output"])
+            if model_entry:
+                merged_model_rates[str(model_name)] = model_entry
     if merged_model_rates:
         payload["llm_model_rates"] = merged_model_rates
     return save_usage_settings(payload)

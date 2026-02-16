@@ -327,7 +327,32 @@ def fetch_twilio_whatsapp_base_fee() -> dict[str, Any]:
     }
 
 
-def fetch_provider_rates() -> dict[str, Any]:
+def _default_llm_model_from_env() -> tuple[str, str]:
+    model_env = (os.getenv("LLM_MODEL") or "").strip()
+    openai_env = (os.getenv("OPENAI_MODEL") or "").strip()
+    if model_env:
+        return _normalize_openai_model_name(model_env), "LLM_MODEL"
+    if openai_env:
+        return _normalize_openai_model_name(openai_env), "OPENAI_MODEL"
+    return "gpt-5.1", "default"
+
+
+def _normalize_model_candidates(model_names: list[str] | None) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in model_names or []:
+        if raw is None:
+            continue
+        for part in str(raw).split(","):
+            model = _normalize_openai_model_name(part)
+            if not model or model in seen:
+                continue
+            seen.add(model)
+            out.append(model)
+    return out
+
+
+def fetch_provider_rates(model_names: list[str] | None = None) -> dict[str, Any]:
     fx, fx_source = _usd_to_gbp()
     fetched_at = datetime.now(timezone.utc).isoformat()
     results: dict[str, Any] = {
@@ -365,39 +390,81 @@ def fetch_provider_rates() -> dict[str, Any]:
             results["warnings"].append("openai_tts_rate_unavailable")
 
     # LLM
-    model_env = (os.getenv("LLM_MODEL") or "").strip()
-    openai_env = (os.getenv("OPENAI_MODEL") or "").strip()
-    if model_env:
-        model_name = model_env
-        model_source = "LLM_MODEL"
-    elif openai_env:
-        model_name = openai_env
-        model_source = "OPENAI_MODEL"
-    else:
-        model_name = "gpt-5.1"
-        model_source = "default"
-    openai = fetch_openai_pricing(model_name)
-    if openai.get("ok"):
-        input_usd = openai.get("input_per_1m_usd")
-        output_usd = openai.get("output_per_1m_usd")
-        if input_usd is not None:
-            results["llm_gbp_per_1m_input_tokens"] = _convert_usd_to_gbp(float(input_usd))
+    primary_model, model_source = _default_llm_model_from_env()
+    requested_models = _normalize_model_candidates(model_names)
+    if primary_model and primary_model not in requested_models:
+        requested_models.insert(0, primary_model)
+    if not requested_models:
+        requested_models = [primary_model]
+    max_models = 20
+    if len(requested_models) > max_models:
+        requested_models = requested_models[:max_models]
+
+    model_rates: dict[str, dict[str, float]] = {}
+    model_details: dict[str, dict[str, Any]] = {}
+    primary_detail: dict[str, Any] | None = None
+    for model_name in requested_models:
+        openai = fetch_openai_pricing(model_name)
+        detail = {"requested_model": model_name, **openai}
+        if openai.get("ok"):
+            input_usd = openai.get("input_per_1m_usd")
+            output_usd = openai.get("output_per_1m_usd")
+            pricing_model = openai.get("fallback_model") or openai.get("model") or model_name
+            detail["pricing_model"] = pricing_model
+            if input_usd is not None or output_usd is not None:
+                model_entry = dict(model_rates.get(pricing_model) or {})
+                if input_usd is not None:
+                    model_entry["input"] = _convert_usd_to_gbp(float(input_usd))
+                if output_usd is not None:
+                    model_entry["output"] = _convert_usd_to_gbp(float(output_usd))
+                if model_entry:
+                    model_rates[pricing_model] = model_entry
+                # Keep requested-model alias so runtime model names can match directly.
+                if pricing_model != model_name and model_entry:
+                    model_rates[model_name] = dict(model_entry)
+            else:
+                results["warnings"].append(f"openai_llm_rate_missing:{model_name}")
+        else:
+            results["warnings"].append(f"openai_llm_rate_unavailable:{model_name}")
+        model_details[model_name] = detail
+        if model_name == primary_model:
+            primary_detail = detail
+
+    if model_rates:
+        results["llm_model_rates"] = model_rates
+        resolved_primary_model = primary_model
+        resolved_pricing_model = None
+        if primary_detail and primary_detail.get("ok"):
+            resolved_pricing_model = str(
+                primary_detail.get("pricing_model")
+                or primary_detail.get("fallback_model")
+                or primary_detail.get("model")
+                or resolved_primary_model
+            ).strip() or resolved_primary_model
+        if not resolved_pricing_model:
+            resolved_pricing_model = next(iter(model_rates.keys()))
+        primary_rates = model_rates.get(resolved_pricing_model) or model_rates.get(resolved_primary_model) or {}
+        if primary_rates.get("input") is not None:
+            results["llm_gbp_per_1m_input_tokens"] = float(primary_rates["input"])
         else:
             results["warnings"].append("openai_llm_input_rate_unavailable")
-        if output_usd is not None:
-            results["llm_gbp_per_1m_output_tokens"] = _convert_usd_to_gbp(float(output_usd))
+        if primary_rates.get("output") is not None:
+            results["llm_gbp_per_1m_output_tokens"] = float(primary_rates["output"])
         else:
             results["warnings"].append("openai_llm_output_rate_unavailable")
-        pricing_model = openai.get("fallback_model") or openai.get("model") or model_name
-        results["llm_model"] = model_name
+        if not primary_detail:
+            primary_detail = model_details.get(resolved_primary_model) or model_details.get(resolved_pricing_model)
+        results["llm_model"] = resolved_primary_model
         results["llm_model_source"] = model_source
-        results["llm_pricing_model"] = pricing_model
+        results["llm_pricing_model"] = resolved_pricing_model
         results["sources"]["llm"] = {
             "provider": "openai",
-            "detail": openai,
-            "model": model_name,
+            "detail": primary_detail or {},
+            "model": resolved_primary_model,
             "model_source": model_source,
-            "pricing_model": pricing_model,
+            "pricing_model": resolved_pricing_model,
+            "requested_models": requested_models,
+            "models": model_details,
         }
     else:
         results["warnings"].append("openai_llm_rate_unavailable")

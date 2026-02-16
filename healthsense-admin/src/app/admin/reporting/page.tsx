@@ -147,6 +147,53 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
   const llmPricingModel = typeof llmSource?.pricing_model === "string" ? llmSource.pricing_model : null;
   const llmPricingSource = typeof llmDetail?.source === "string" ? llmDetail.source : null;
   const llmOutputUsd = typeof llmDetail?.output_per_1m_usd === "number" ? llmDetail.output_per_1m_usd : null;
+  const llmSourceModels =
+    llmSource?.models && typeof llmSource.models === "object"
+      ? (llmSource.models as Record<string, unknown>)
+      : null;
+  const fetchedLlmModelRates = (() => {
+    if (!meta?.llm_model_rates || typeof meta.llm_model_rates !== "object" || Array.isArray(meta.llm_model_rates)) {
+      return [] as Array<{
+        model: string;
+        inputGbp: number | null;
+        outputGbp: number | null;
+        inputUsd: number | null;
+        outputUsd: number | null;
+        source: string | null;
+        pricingModel: string | null;
+      }>;
+    }
+    const rates = meta.llm_model_rates as Record<string, unknown>;
+    const rows = Object.entries(rates)
+      .map(([model, value]) => {
+        if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+        const rec = value as Record<string, unknown>;
+        const inputRaw = rec.input ?? rec.rate_in ?? rec.in;
+        const outputRaw = rec.output ?? rec.rate_out ?? rec.out;
+        const detailRaw = llmSourceModels?.[model];
+        const detail =
+          detailRaw && typeof detailRaw === "object" && !Array.isArray(detailRaw)
+            ? (detailRaw as Record<string, unknown>)
+            : null;
+        const inputUsd = typeof detail?.input_per_1m_usd === "number" ? detail.input_per_1m_usd : null;
+        const outputUsd = typeof detail?.output_per_1m_usd === "number" ? detail.output_per_1m_usd : null;
+        const source = typeof detail?.source === "string" ? detail.source : null;
+        const pricingModel = typeof detail?.pricing_model === "string" ? detail.pricing_model : null;
+        return {
+          model,
+          inputGbp: typeof inputRaw === "number" ? inputRaw : Number.isFinite(Number(inputRaw)) ? Number(inputRaw) : null,
+          outputGbp:
+            typeof outputRaw === "number" ? outputRaw : Number.isFinite(Number(outputRaw)) ? Number(outputRaw) : null,
+          inputUsd,
+          outputUsd,
+          source,
+          pricingModel,
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => row !== null);
+    rows.sort((a, b) => a.model.localeCompare(b.model));
+    return rows;
+  })();
   const providerLine = [ttsProvider ? `TTS: ${ttsProvider}` : null, llmProvider ? `LLM: ${llmProvider}` : null, waProvider ? `WhatsApp: ${waProvider}` : null]
     .filter(Boolean)
     .join(" · ");
@@ -405,6 +452,40 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
                 {warnings.length ? (
                   <p className="mt-2 text-xs text-[#a24f3c]">Warnings: {warnings.join(", ")}</p>
                 ) : null}
+                {fetchedLlmModelRates.length ? (
+                  <div className="mt-3 overflow-x-auto rounded-xl border border-[#efe7db] bg-white">
+                    <table className="min-w-full text-left text-xs">
+                      <thead className="bg-[#f7f4ee] uppercase tracking-[0.15em] text-[#6b6257]">
+                        <tr>
+                          <th className="px-3 py-2">Model</th>
+                          <th className="px-3 py-2">GBP in/1M</th>
+                          <th className="px-3 py-2">GBP out/1M</th>
+                          <th className="px-3 py-2">USD in/1M</th>
+                          <th className="px-3 py-2">USD out/1M</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {fetchedLlmModelRates.map((row) => (
+                          <tr key={row.model} className="border-t border-[#efe7db]">
+                            <td className="px-3 py-2">
+                              <div className="font-medium">{row.model}</div>
+                              {row.pricingModel && row.pricingModel !== row.model ? (
+                                <div className="text-[10px] text-[#8a8176]">priced as {row.pricingModel}</div>
+                              ) : null}
+                            </td>
+                            <td className="px-3 py-2">{row.inputGbp ?? "—"}</td>
+                            <td className="px-3 py-2">{row.outputGbp ?? "—"}</td>
+                            <td className="px-3 py-2">{row.inputUsd ?? "—"}</td>
+                            <td className="px-3 py-2">
+                              {row.outputUsd ?? "—"}
+                              {row.source ? <span className="ml-2 text-[10px] text-[#8a8176]">({row.source})</span> : null}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
               </div>
               <FetchRatesButton action={fetchUsageSettingsAction} />
             </div>
@@ -453,6 +534,9 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
               />
               <p className="mt-2 text-xs text-[#6b6257]">
                 Optional per-model overrides in GBP per 1M tokens. Keys should match logged model names.
+              </p>
+              <p className="mt-1 text-xs text-[#8a8176]">
+                Fetch updates this map automatically; you can edit and save here.
               </p>
             </div>
             <div>
