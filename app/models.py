@@ -170,6 +170,7 @@ class PromptTemplate(Base):
     okr_scope     = Column(String(32), nullable=True) # all|pillar|week|single
     programme_scope = Column(String(32), nullable=True) # full|pillar|none
     response_format = Column(String(32), nullable=True) # e.g., text|json
+    model_override = Column(String(120), nullable=True) # optional runtime model override
     is_active     = Column(Boolean, nullable=False, server_default="true")
     updated_at    = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 

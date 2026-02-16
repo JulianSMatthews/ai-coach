@@ -122,6 +122,7 @@ export type PromptTemplateSummary = {
   okr_scope?: string | null;
   programme_scope?: string | null;
   response_format?: string | null;
+  model_override?: string | null;
   note?: string | null;
   updated_at?: string | null;
 };

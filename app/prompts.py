@@ -330,6 +330,9 @@ def _merge_template_meta(meta: Optional[Dict[str, Any]], template: Optional[Dict
         version = template.get("version")
         if version is not None:
             merged["template_version"] = version
+        model_override = str(template.get("model_override") or "").strip() if isinstance(template, dict) else ""
+        if model_override:
+            merged["template_model_override"] = model_override
     return merged
 
 
@@ -422,6 +425,7 @@ def _load_prompt_template(touchpoint: str) -> Optional[Dict[str, Any]]:
             with engine.connect() as conn:
                 conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS programme_scope varchar(32);"))
                 conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS response_format varchar(32);"))
+                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS model_override varchar(120);"))
                 conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS state varchar(32) DEFAULT 'develop';"))
                 conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS version integer DEFAULT 1;"))
                 conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS note text;"))
@@ -468,6 +472,7 @@ def _load_prompt_template(touchpoint: str) -> Optional[Dict[str, Any]]:
                 "okr_scope": getattr(row, "okr_scope", None),
                 "programme_scope": getattr(row, "programme_scope", None),
                 "response_format": getattr(row, "response_format", None),
+                "model_override": getattr(row, "model_override", None),
                 "state": state_val,
                 "version": getattr(row, "version", None),
             }
@@ -510,6 +515,7 @@ def _load_prompt_template_with_state(touchpoint: str, state: str) -> Optional[Di
                 "okr_scope": getattr(row, "okr_scope", None),
                 "programme_scope": getattr(row, "programme_scope", None),
                 "response_format": getattr(row, "response_format", None),
+                "model_override": getattr(row, "model_override", None),
                 "state": state_val,
                 "version": getattr(row, "version", None),
             }
@@ -1577,10 +1583,22 @@ def run_llm_prompt(
                 f"used={int(used_tokens)} + est={est_tokens} > limit={limit_val}"
             )
             return ""
-    client = shared_llm.get_llm_client(touchpoint=touchpoint, model_override=model)
+    template_model = ""
+    if isinstance(prompt_blocks, dict):
+        for key in ("template_model_override", "model_override"):
+            val = prompt_blocks.get(key)
+            if val is None:
+                continue
+            cand = str(val).strip()
+            if cand:
+                template_model = cand
+                break
+    effective_model = (model or "").strip() or template_model or None
+
+    client = shared_llm.get_llm_client(touchpoint=touchpoint, model_override=effective_model)
     content = ""
     duration = None
-    model_name = shared_llm.resolve_model_name_for_touchpoint(touchpoint=touchpoint, model_override=model)
+    model_name = shared_llm.resolve_model_name_for_touchpoint(touchpoint=touchpoint, model_override=effective_model)
     if client:
         try:
             import time

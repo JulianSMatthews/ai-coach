@@ -172,6 +172,7 @@ def _ensure_prompt_template_table():
         with engine.connect() as conn:
             conn.execute(sa_text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS programme_scope varchar(32);"))
             conn.execute(sa_text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS response_format varchar(32);"))
+            conn.execute(sa_text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS model_override varchar(120);"))
             conn.execute(sa_text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS state varchar(32) DEFAULT 'develop';"))
             conn.execute(sa_text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS version integer DEFAULT 1;"))
             conn.execute(sa_text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS note text;"))
@@ -345,6 +346,7 @@ def _clone_template(row: PromptTemplate, target_state: str, version: int) -> Pro
         okr_scope=row.okr_scope,
         programme_scope=row.programme_scope,
         response_format=row.response_format,
+        model_override=getattr(row, "model_override", None),
         is_active=row.is_active,
         note=row.note,
     )
@@ -398,6 +400,7 @@ def _promote_templates_batch(source_state: str, target_state: str, note: str | N
                 existing.okr_scope = row.okr_scope
                 existing.programme_scope = row.programme_scope
                 existing.response_format = row.response_format
+                existing.model_override = getattr(row, "model_override", None)
                 existing.is_active = True
                 existing.note = row.note
                 continue
@@ -623,6 +626,7 @@ def list_prompt_templates(state: str | None = None, q: str | None = None, active
             f"<td>{_esc(r.okr_scope or '')}</td>"
             f"<td>{_esc(getattr(r,'programme_scope','') or '')}</td>"
             f"<td>{_esc(getattr(r,'response_format','') or '')}</td>"
+            f"<td>{_esc(getattr(r,'model_override','') or '')}</td>"
             f"<td>{_esc(merged)}</td>"
             f"<td>{_esc('✓' if getattr(r,'is_active',True) else '✕')}</td>"
             f"<td><a href='{action_href}'>{action_label}</a></td>"
@@ -680,7 +684,7 @@ def list_prompt_templates(state: str | None = None, q: str | None = None, active
         "</div>"
         "<div class='card'>"
         "<table>"
-        "<tr><th>ID</th><th>Touchpoint</th><th>State</th><th>Version</th><th>OKR Scope</th><th>Programme Scope</th><th>Response</th><th>Order/Include</th><th>Active</th><th>Action</th></tr>"
+        "<tr><th>ID</th><th>Touchpoint</th><th>State</th><th>Version</th><th>OKR Scope</th><th>Programme Scope</th><th>Response</th><th>Model</th><th>Order/Include</th><th>Active</th><th>Action</th></tr>"
         + "".join(table_rows)
         + "</table>"
         "</div>"
@@ -1205,6 +1209,8 @@ def edit_prompt_template(id: int | None = None, mode: str | None = None):
       <div class="help">OKR scope controls which OKRs are shown in the prompt (all pillars, a single pillar, the current week, or a single KR).</div>
       <div class="field">Programme scope (full|pillar|none): <input name="programme_scope" value="{_val('programme_scope')}" {readonly} /></div>
       <div class="help">Programme scope: full = show 12-week schedule; pillar = show current block only; none = omit.</div>
+      <div class="field">Default model override (optional): <input name="model_override" value="{_val('model_override')}" {readonly} /></div>
+      <div class="help">If set, this model is used at runtime for this touchpoint unless a request-level override is supplied.</div>
       <div class="field">
         Blocks (order = include) (JSON array or comma list):
         <input name="block_order" id="block_order" style="width:100%" value="{block_order_val}" {readonly} />
@@ -1284,6 +1290,7 @@ async def save_prompt_template(
     okr_scope: str | None = Form(default=None),
     programme_scope: str | None = Form(default=None),
     response_format: str | None = Form(default=None),
+    model_override: str | None = Form(default=None),
     block_order: str | None = Form(default=None),
     include_blocks: str | None = Form(default=None),
     task_block: str | None = Form(default=None),
@@ -1316,6 +1323,7 @@ async def save_prompt_template(
         row.okr_scope = okr_scope or None
         row.programme_scope = programme_scope or None
         row.response_format = response_format or None
+        row.model_override = (model_override or "").strip() or None
         row.block_order = bo_list
         # include_blocks now mirrors block_order (single merged field)
         row.include_blocks = inc_list or bo_list

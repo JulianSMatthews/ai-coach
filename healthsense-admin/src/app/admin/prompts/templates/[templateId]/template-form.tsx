@@ -44,7 +44,7 @@ export default function TemplateForm({ template, userOptions }: TemplateFormProp
             readOnly={Boolean(template?.id)}
           />
         </div>
-        <div className="grid gap-4 md:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-4">
           <div>
             <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">OKR scope</label>
             <select
@@ -94,6 +94,32 @@ export default function TemplateForm({ template, userOptions }: TemplateFormProp
               className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
               placeholder="text | json"
             />
+          </div>
+          <div>
+            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Default model</label>
+            <select
+              name="model_override"
+              defaultValue={template?.model_override || ""}
+              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Env default</option>
+              <option value="gpt-5.2-pro">gpt-5.2-pro</option>
+              <option value="gpt-5.2">gpt-5.2</option>
+              <option value="gpt-5.1">gpt-5.1</option>
+              <option value="gpt-5-mini">gpt-5-mini</option>
+              <option value="gpt-5-nano">gpt-5-nano</option>
+              <option value="gpt-4.1">gpt-4.1</option>
+              <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+              <option value="gpt-4.1-nano">gpt-4.1-nano</option>
+              <option value="gpt-4o">gpt-4o</option>
+              <option value="gpt-4o-mini">gpt-4o-mini</option>
+              <option value="o3">o3</option>
+              <option value="o4-mini">o4-mini</option>
+              <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+            </select>
+            <p className="mt-2 text-xs text-[#6b6257]">
+              Used at runtime for this touchpoint unless a request-level model override is provided.
+            </p>
           </div>
         </div>
         <div>

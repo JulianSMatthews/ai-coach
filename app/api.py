@@ -5813,6 +5813,7 @@ def admin_prompt_templates_list(
                 "okr_scope": getattr(row, "okr_scope", None),
                 "programme_scope": getattr(row, "programme_scope", None),
                 "response_format": getattr(row, "response_format", None),
+                "model_override": getattr(row, "model_override", None),
                 "note": getattr(row, "note", None),
                 "updated_at": getattr(row, "updated_at", None),
             }
@@ -5857,6 +5858,7 @@ def admin_prompt_template_detail(
         "okr_scope": getattr(row, "okr_scope", None),
         "programme_scope": getattr(row, "programme_scope", None),
         "response_format": getattr(row, "response_format", None),
+        "model_override": getattr(row, "model_override", None),
         "block_order": getattr(row, "block_order", None),
         "include_blocks": getattr(row, "include_blocks", None),
         "task_block": getattr(row, "task_block", None),
@@ -5888,6 +5890,7 @@ def admin_prompt_template_create(
         row.okr_scope = (payload.get("okr_scope") or None) or None
         row.programme_scope = (payload.get("programme_scope") or None) or None
         row.response_format = (payload.get("response_format") or None) or None
+        row.model_override = (str(payload.get("model_override") or "").strip() or None)
         row.block_order = block_order or None
         row.include_blocks = include_blocks or block_order or None
         row.task_block = (payload.get("task_block") or None) or None
@@ -5922,6 +5925,8 @@ def admin_prompt_template_update(
             row.programme_scope = payload.get("programme_scope") or None
         if "response_format" in payload:
             row.response_format = payload.get("response_format") or None
+        if "model_override" in payload:
+            row.model_override = (str(payload.get("model_override") or "").strip() or None)
         if "task_block" in payload:
             row.task_block = payload.get("task_block") or None
         if "note" in payload:
@@ -5970,6 +5975,7 @@ def admin_prompt_template_promote(
             okr_scope=row.okr_scope,
             programme_scope=row.programme_scope,
             response_format=row.response_format,
+            model_override=getattr(row, "model_override", None),
             is_active=True,
             parent_id=row.id,
         )
@@ -6913,14 +6919,19 @@ def _build_prompt_test_payload(
             return None
         try:
             from . import llm as shared_llm
+            template_model = ""
+            meta = getattr(assembly, "meta", None)
+            if isinstance(meta, dict):
+                template_model = str(meta.get("template_model_override") or meta.get("model_override") or "").strip()
+            effective_model = (model_override or "").strip() or template_model or None
             t0 = time.perf_counter()
             resolved_model = shared_llm.resolve_model_name_for_touchpoint(
                 touchpoint=touchpoint,
-                model_override=model_override,
+                model_override=effective_model,
             )
             client = shared_llm.get_llm_client(
                 touchpoint=touchpoint,
-                model_override=model_override,
+                model_override=effective_model,
             )
             resp = client.invoke(assembly.text)
             duration_ms = int((time.perf_counter() - t0) * 1000)
@@ -6969,6 +6980,7 @@ def _build_prompt_test_payload(
         if tp_lower == "assessor_system":
             sys_text = assessor_system_prompt("nutrition", "fruit_veg")
             settings = prompts_module._load_prompt_settings()
+            template = prompts_module._load_prompt_template("assessor_system")
             parts = [
                 ("system", settings.get("system_block") or prompts_module.common_prompt_header("Assessor", "User", "UK")),
                 ("locale", settings.get("locale_block") or prompts_module.locale_block("UK")),
@@ -6977,16 +6989,28 @@ def _build_prompt_test_payload(
                 ("task", "(task from template)"),
                 ("user", "(user input)"),
             ]
-            parts, order_override = prompts_module._apply_prompt_template(parts, prompts_module._load_prompt_template("assessor_system"))
+            parts, order_override = prompts_module._apply_prompt_template(parts, template)
             blocks = {lbl: txt for lbl, txt in parts if txt}
             text = prompts_module.assemble_prompt([txt for _, txt in parts if txt])
+            meta = {}
+            if isinstance(template, dict):
+                model_val = str(template.get("model_override") or "").strip()
+                if model_val:
+                    meta["template_model_override"] = model_val
             result = {
                 "text": text,
                 "blocks": blocks,
                 "block_order": order_override or settings.get("default_block_order") or list(blocks.keys()),
-                "meta": {},
+                "meta": meta,
             }
-            llm_result = _maybe_run_llm(SimpleNamespace(text=text, blocks=blocks, block_order=order_override or settings.get("default_block_order"), meta={}))
+            llm_result = _maybe_run_llm(
+                SimpleNamespace(
+                    text=text,
+                    blocks=blocks,
+                    block_order=order_override or settings.get("default_block_order"),
+                    meta=meta,
+                )
+            )
             if llm_result:
                 result["llm"] = llm_result
             return result

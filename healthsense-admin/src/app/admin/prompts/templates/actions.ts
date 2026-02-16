@@ -21,6 +21,7 @@ export async function saveTemplateAction(_: TemplateActionState, formData: FormD
   const okr_scope = String(formData.get("okr_scope") || "").trim() || undefined;
   const programme_scope = String(formData.get("programme_scope") || "").trim() || undefined;
   const response_format = String(formData.get("response_format") || "").trim() || undefined;
+  const model_override = String(formData.get("model_override") || "").trim() || undefined;
   const block_order = String(formData.get("block_order") || "").trim();
   const task_block = String(formData.get("task_block") || "").trim();
   const note = String(formData.get("note") || "").trim();
@@ -32,6 +33,7 @@ export async function saveTemplateAction(_: TemplateActionState, formData: FormD
     okr_scope,
     programme_scope,
     response_format,
+    model_override,
     block_order,
     include_blocks: block_order,
     task_block,
