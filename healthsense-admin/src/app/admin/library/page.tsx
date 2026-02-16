@@ -107,6 +107,12 @@ export default async function LibraryPage({ searchParams }: PageProps) {
                 New content
               </a>
               <a
+                href="/admin/library/intro"
+                className="rounded-full border border-[#efe7db] px-4 py-2 text-xs uppercase tracking-[0.2em]"
+              >
+                Intro setup
+              </a>
+              <a
                 href="/admin/library/settings"
                 className="rounded-full border border-[#efe7db] px-4 py-2 text-xs uppercase tracking-[0.2em]"
               >

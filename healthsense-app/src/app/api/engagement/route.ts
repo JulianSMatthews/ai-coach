@@ -34,8 +34,18 @@ export async function POST(request: Request) {
     }
 
     const eventType = String(body?.event_type || "").trim().toLowerCase();
-    if (!["podcast_play", "podcast_complete"].includes(eventType)) {
-      return NextResponse.json({ error: "event_type must be podcast_play or podcast_complete" }, { status: 400 });
+    const allowedEventTypes = [
+      "podcast_play",
+      "podcast_complete",
+      "intro_presented",
+      "intro_listened",
+      "intro_read",
+    ];
+    if (!allowedEventTypes.includes(eventType)) {
+      return NextResponse.json(
+        { error: `event_type must be one of: ${allowedEventTypes.join(", ")}` },
+        { status: 400 },
+      );
     }
 
     const payload = {

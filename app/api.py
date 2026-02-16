@@ -220,7 +220,6 @@ ADMIN_USAGE = (
     "admin progress [phone]\n"
     "admin llm-review [phone] [limit]\n"
     "admin detailed [phone]\n"
-    "admin kickoff [phone]            # send 12-week kickoff podcast/flow\n"
     "admin coaching [phone] on|off|faston|reset    # toggle scheduled coaching prompts (faston=every 2m test; reset clears jobs)\n"
     "admin vdate [phone] <YYYY-MM-DD|today|clear>  # set/clear virtual date for fast testing\n"
     "admin schedule [phone]           # show scheduled coaching prompts for user (HTML + summary)\n"
@@ -1650,23 +1649,10 @@ def _handle_admin_command(admin_user: User, text: str, *, source_phone: str | No
                 send_whatsapp(to=admin_user.phone, text=f"Failed to plan weekstart: {e}")
             return True
         elif cmd == "kickoff":
-            # Usage: admin kickoff <phone> [notes] — run 12-week kickoff flow/podcast
-            target_phone, note_parts = _resolve_admin_target_phone(admin_user, args, allow_notes=True)
-            notes = " ".join(note_parts).strip() if note_parts else ""
-            notes = notes or None
-            with SessionLocal() as s:
-                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
-                if not u:
-                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
-                    send_whatsapp(
-                        to=admin_user.phone,
-                        text=f"User with phone {target_phone} not found{scope_txt}."
-                    )
-                    return True
-            try:
-                kickoff.start_kickoff(u, notes=notes)
-            except Exception as e:
-                send_whatsapp(to=admin_user.phone, text=f"Failed to run kickoff: {e}")
+            send_whatsapp(
+                to=admin_user.phone,
+                text="Kickoff flow is retired and no longer available.",
+            )
             return True
         elif cmd in {"schedule", "jobs"}:
             target_phone, _ = _resolve_admin_target_phone(admin_user, args)
@@ -2395,42 +2381,10 @@ async def twilio_inbound(request: Request):
             return Response(content="", media_type="text/plain", status_code=200)
 
         if lower_body.startswith("kickoff"):
-            # Podcast-style kickoff: generate a personalised transcript
-            try:
-                general_support.clear(user.id)
-                from .kickoff import generate_kickoff_podcast_audio
-                audio_url, transcript = generate_kickoff_podcast_audio(user.id)
-                transcript = transcript or "Generated your kickoff briefing."
-                cta = "Please always respond by tapping a button (this keeps our support going)."
-                quick_replies = ["All good", "Need help"]
-                # Twilio text body limit is 1600 chars; chunk if needed
-                if audio_url:
-                    send_whatsapp_media(
-                        to=user.phone,
-                        media_url=audio_url,
-                        caption=(
-                            f"*Kickoff* Hi { (user.first_name or '').strip().title() or 'there' }, {os.getenv('COACH_NAME','Gia')} here. "
-                            "This is your 12-week programme kickoff podcast—give it a listen."
-                        ),
-                    )
-                    send_whatsapp(
-                        to=user.phone,
-                        text=cta,
-                        quick_replies=quick_replies,
-                    )
-                else:
-                    send_whatsapp(
-                        to=user.phone,
-                        text=(
-                            f"*Kickoff* Hi { (user.first_name or '').strip().title() or 'there' }, {os.getenv('COACH_NAME','Gia')} here. "
-                            "I couldn’t generate your kickoff audio just now, but the plan is ready—let’s proceed.\n\n"
-                            f"{cta}"
-                        ),
-                        quick_replies=quick_replies,
-                    )
-                general_support.activate(user.id, source="kickoff", week_no=1, send_intro=False)
-            except Exception as e:
-                send_whatsapp(to=user.phone, text=f"Couldn't generate kickoff briefing: {e}")
+            send_whatsapp(
+                to=user.phone,
+                text="Kickoff has been retired. We’ll continue with your standard weekly coaching flow.",
+            )
             return Response(content="", media_type="text/plain", status_code=200)
 
         if lower_body.startswith("midweek") or lower_body.startswith("wednesday"):
@@ -2487,7 +2441,7 @@ async def twilio_inbound(request: Request):
             try:
                 monday.handle_message(user, body)
             except Exception as e:
-                send_whatsapp(to=user.phone, text=f"Kickoff failed: {e}")
+                send_whatsapp(to=user.phone, text=f"Monday flow failed: {e}")
             return Response(content="", media_type="text/plain", status_code=200)
         if lower_body.startswith("boost") or lower_body.startswith("friday"):
             try:
@@ -2849,6 +2803,26 @@ def _parse_kb_tags(val: object | None) -> list[str]:
 APP_ENGAGEMENT_PROVIDER = "healthsense-app"
 APP_ENGAGEMENT_PRODUCT = "app"
 APP_ENGAGEMENT_TAG = "app_engagement"
+INTRO_SOURCE_TYPE = "app_intro"
+INTRO_PILLAR_KEY = "intro"
+INTRO_CONCEPT_CODE = "welcome"
+INTRO_TITLE_DEFAULT = "Welcome to HealthSense"
+INTRO_WELCOME_TEMPLATE_DEFAULT = (
+    "{first_name}, Welcome to HealthSense please listen to our introductory podcast "
+    "to get started on your journey."
+)
+INTRO_BODY_DEFAULT = (
+    "Welcome to HealthSense. Start by listening to the introduction, then review this guide "
+    "to understand how your weekly coaching flow works."
+)
+ONBOARDING_PREF_KEYS = {
+    "first_login": "first_app_login_at",
+    "assessment_reviewed": "assessment_reviewed_at",
+    "intro_presented": "intro_content_presented_at",
+    "intro_listened": "intro_content_listened_at",
+    "intro_read": "intro_content_read_at",
+    "coaching_enabled_at": "coaching_auto_enabled_at",
+}
 
 
 def _log_app_engagement_event(
@@ -2870,6 +2844,201 @@ def _log_app_engagement_event(
         )
     except Exception as e:
         print(f"[usage] app engagement log failed: {e}")
+
+
+def _is_truthy_env(value: str | None) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _intro_flow_enabled() -> bool:
+    return _is_truthy_env(os.getenv("APP_INTRO_FLOW_ENABLED"))
+
+
+def _utc_now_iso() -> str:
+    return datetime.utcnow().replace(microsecond=0).isoformat()
+
+
+def _parse_pref_timestamp(value: str | None) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        ts = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if ts.tzinfo is not None:
+            ts = ts.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+        return ts
+    except Exception:
+        return None
+
+
+def _pref_row(session, user_id: int, key: str) -> UserPreference | None:
+    return (
+        session.query(UserPreference)
+        .filter(UserPreference.user_id == user_id, UserPreference.key == key)
+        .order_by(UserPreference.updated_at.desc())
+        .first()
+    )
+
+
+def _pref_value(session, user_id: int, key: str) -> str | None:
+    row = _pref_row(session, user_id, key)
+    if not row:
+        return None
+    val = str(row.value or "").strip()
+    return val or None
+
+
+def _set_pref_value(
+    session,
+    user_id: int,
+    key: str,
+    value: str,
+    *,
+    only_if_missing: bool = False,
+) -> bool:
+    row = _pref_row(session, user_id, key)
+    if row:
+        if only_if_missing and str(row.value or "").strip():
+            return False
+        row.value = value
+        return True
+    session.add(UserPreference(user_id=user_id, key=key, value=value))
+    return True
+
+
+def _coaching_enabled_for_user(session, user_id: int) -> bool:
+    row = (
+        session.query(UserPreference)
+        .filter(
+            UserPreference.user_id == user_id,
+            UserPreference.key.in_(("coaching", "auto_daily_prompts")),
+        )
+        .order_by(UserPreference.updated_at.desc())
+        .first()
+    )
+    return bool(row and str(row.value or "").strip() == "1")
+
+
+def _latest_intro_content_row(session, *, active_only: bool = True) -> ContentLibraryItem | None:
+    q = (
+        session.query(ContentLibraryItem)
+        .filter(ContentLibraryItem.source_type == INTRO_SOURCE_TYPE)
+        .order_by(desc(ContentLibraryItem.updated_at), desc(ContentLibraryItem.id))
+    )
+    if active_only:
+        q = q.filter(ContentLibraryItem.status == "published")
+    return q.first()
+
+
+def _intro_message_template_from_row(row: ContentLibraryItem | None) -> str:
+    if not row:
+        return INTRO_WELCOME_TEMPLATE_DEFAULT
+    tags = row.tags if isinstance(row.tags, dict) else {}
+    raw = ""
+    if isinstance(tags, dict):
+        raw = str(tags.get("welcome_message_template") or "").strip()
+    return raw or INTRO_WELCOME_TEMPLATE_DEFAULT
+
+
+def _intro_body_from_row(row: ContentLibraryItem | None) -> str:
+    if row and str(getattr(row, "body", "") or "").strip():
+        return str(row.body).strip()
+    return INTRO_BODY_DEFAULT
+
+
+def _render_intro_message(template: str, user: User | None) -> str:
+    first_name = ""
+    if user:
+        first_name = (getattr(user, "first_name", None) or "").strip()
+        if not first_name:
+            display = (display_full_name(user) or "").strip()
+            first_name = (display.split(" ")[0] if display else "").strip()
+    first_name = first_name or "there"
+    rendered = str(template or "").replace("{first_name}", first_name)
+    rendered = rendered.replace("{display_name}", display_full_name(user) if user else first_name)
+    return rendered.strip() or INTRO_WELCOME_TEMPLATE_DEFAULT.replace("{first_name}", first_name)
+
+
+def _get_onboarding_state(session, user_id: int) -> dict:
+    first_login_val = _pref_value(session, user_id, ONBOARDING_PREF_KEYS["first_login"])
+    assessment_val = _pref_value(session, user_id, ONBOARDING_PREF_KEYS["assessment_reviewed"])
+    intro_presented_val = _pref_value(session, user_id, ONBOARDING_PREF_KEYS["intro_presented"])
+    intro_listened_val = _pref_value(session, user_id, ONBOARDING_PREF_KEYS["intro_listened"])
+    intro_read_val = _pref_value(session, user_id, ONBOARDING_PREF_KEYS["intro_read"])
+    coaching_enabled_at_val = _pref_value(session, user_id, ONBOARDING_PREF_KEYS["coaching_enabled_at"])
+    intro_completed_at_val = intro_listened_val or intro_read_val
+    return {
+        "first_app_login_at": first_login_val,
+        "assessment_reviewed_at": assessment_val,
+        "intro_content_presented_at": intro_presented_val,
+        "intro_content_listened_at": intro_listened_val,
+        "intro_content_read_at": intro_read_val,
+        "intro_content_completed_at": intro_completed_at_val,
+        "coaching_auto_enabled_at": coaching_enabled_at_val,
+    }
+
+
+def _build_intro_payload(session, user: User, onboarding_state: dict | None = None) -> dict:
+    onboarding = onboarding_state or _get_onboarding_state(session, int(user.id))
+    enabled = _intro_flow_enabled()
+    row = _latest_intro_content_row(session, active_only=True) if enabled else None
+    first_login_at = str(onboarding.get("first_app_login_at") or "").strip() or None
+    intro_completed_at = str(onboarding.get("intro_content_completed_at") or "").strip() or None
+    should_show = bool(enabled and first_login_at and not intro_completed_at)
+    title = str(getattr(row, "title", "") or "").strip() or INTRO_TITLE_DEFAULT
+    message_template = _intro_message_template_from_row(row)
+    message = _render_intro_message(message_template, user)
+    body = _intro_body_from_row(row)
+    return {
+        "enabled": enabled,
+        "should_show": should_show,
+        "content_id": int(row.id) if row else None,
+        "title": title,
+        "message": message,
+        "body": body,
+        "podcast_url": _normalize_reports_url(getattr(row, "podcast_url", None)),
+        "podcast_voice": getattr(row, "podcast_voice", None),
+        "welcome_message_template": message_template,
+        "onboarding": onboarding,
+    }
+
+
+def evaluate_and_enable_coaching(user_id: int) -> bool:
+    if not _intro_flow_enabled():
+        return False
+    with SessionLocal() as s:
+        first_login_at = _pref_value(s, user_id, ONBOARDING_PREF_KEYS["first_login"])
+        assessment_reviewed_at = _pref_value(s, user_id, ONBOARDING_PREF_KEYS["assessment_reviewed"])
+        intro_listened_at = _pref_value(s, user_id, ONBOARDING_PREF_KEYS["intro_listened"])
+        intro_read_at = _pref_value(s, user_id, ONBOARDING_PREF_KEYS["intro_read"])
+        intro_completed = bool(intro_listened_at or intro_read_at)
+        if not (first_login_at and assessment_reviewed_at and intro_completed):
+            return False
+        if _coaching_enabled_for_user(s, user_id):
+            return False
+    try:
+        ok = scheduler.enable_coaching(user_id)
+    except Exception as e:
+        print(f"[onboarding] coaching auto-enable failed user_id={user_id}: {e}")
+        return False
+    if not ok:
+        return False
+    with SessionLocal() as s:
+        changed = _set_pref_value(
+            s,
+            user_id,
+            ONBOARDING_PREF_KEYS["coaching_enabled_at"],
+            _utc_now_iso(),
+            only_if_missing=True,
+        )
+        if changed:
+            s.commit()
+    _log_app_engagement_event(
+        user_id=user_id,
+        unit_type="coaching_auto_enabled",
+        meta={"source": "intro_activation_rule"},
+    )
+    return True
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Public API (v1) – JSON reporting endpoints (admin-authenticated for now)
@@ -2947,6 +3116,7 @@ def api_auth_login_verify(payload: dict, request: Request):
     phone_norm = _norm_phone(str(phone_raw))
     phone_variants = [phone_norm, f"whatsapp:{phone_norm}"]
     now = datetime.utcnow()
+    first_login_marked = False
     with SessionLocal() as s:
         user = s.execute(select(User).where(User.phone.in_(phone_variants))).scalar_one_or_none()
         if not user:
@@ -2976,8 +3146,22 @@ def api_auth_login_verify(payload: dict, request: Request):
             user_agent=request.headers.get("user-agent"),
         )
         s.add(session)
+        first_login_marked = _set_pref_value(
+            s,
+            int(user_id),
+            ONBOARDING_PREF_KEYS["first_login"],
+            _utc_now_iso(),
+            only_if_missing=True,
+        )
         s.commit()
         expires_at = session.expires_at
+    _log_app_engagement_event(
+        user_id=int(user_id),
+        unit_type="app_login_success",
+        meta={"source": "auth_login_verify"},
+    )
+    if first_login_marked:
+        evaluate_and_enable_coaching(int(user_id))
     return {
         "session_token": session_token,
         "user_id": user_id,
@@ -3055,6 +3239,7 @@ def api_auth_password_reset_verify(payload: dict, request: Request):
     phone_norm = _norm_phone(str(phone_raw))
     phone_variants = [phone_norm, f"whatsapp:{phone_norm}"]
     now = datetime.utcnow()
+    first_login_marked = False
     with SessionLocal() as s:
         user = s.execute(select(User).where(User.phone.in_(phone_variants))).scalar_one_or_none()
         if not user:
@@ -3084,8 +3269,22 @@ def api_auth_password_reset_verify(payload: dict, request: Request):
             user_agent=request.headers.get("user-agent"),
         )
         s.add(session)
+        first_login_marked = _set_pref_value(
+            s,
+            int(user_id),
+            ONBOARDING_PREF_KEYS["first_login"],
+            _utc_now_iso(),
+            only_if_missing=True,
+        )
         s.commit()
         expires_at = session.expires_at
+    _log_app_engagement_event(
+        user_id=int(user_id),
+        unit_type="app_login_success",
+        meta={"source": "auth_password_reset_verify"},
+    )
+    if first_login_marked:
+        evaluate_and_enable_coaching(int(user_id))
     return {
         "session_token": session_token,
         "user_id": user_id,
@@ -3153,10 +3352,20 @@ def api_user_assessment(
         tag="perf",
     )
     _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    assessment_review_marked = False
     with SessionLocal() as s:
         u = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
         if not u:
             raise HTTPException(status_code=404, detail="user not found")
+        assessment_review_marked = _set_pref_value(
+            s,
+            user_id,
+            ONBOARDING_PREF_KEYS["assessment_reviewed"],
+            _utc_now_iso(),
+            only_if_missing=True,
+        )
+        if assessment_review_marked:
+            s.commit()
         rid = run_id
         if rid is None:
             latest_finished = s.execute(
@@ -3197,6 +3406,13 @@ def api_user_assessment(
             "fast": bool(fast),
         },
     )
+    if assessment_review_marked:
+        _log_app_engagement_event(
+            user_id=user_id,
+            unit_type="assessment_reviewed",
+            meta={"run_id": int(rid)},
+        )
+        evaluate_and_enable_coaching(user_id)
     debug_log(
         "assessment ok",
         {"user_id": user_id, "run_id": rid, "ms": int((time.perf_counter() - t0) * 1000)},
@@ -3337,6 +3553,8 @@ def api_user_status_v1(
                         "coach_schedule_saturday",
                         "coach_schedule_sunday",
                         "text_scale",
+                        "preferred_channel",
+                        "marketing_opt_in",
                         "prompt_state_override",
                     )
                 ),
@@ -3374,8 +3592,10 @@ def api_user_status_v1(
             .order_by(desc(OKRObjective.created_at), desc(OKRObjective.id))
             .first()
         )
+        onboarding_state = _get_onboarding_state(s, user_id)
+        intro_payload = _build_intro_payload(s, u, onboarding_state)
 
-        data = {
+    data = {
         "user": {
             "id": u.id,
             "first_name": getattr(u, "first_name", None),
@@ -3399,6 +3619,8 @@ def api_user_status_v1(
             "marketing_opt_in": pref_map.get("marketing_opt_in", ""),
         },
         "prompt_state_override": pref_map.get("prompt_state_override", ""),
+        "onboarding": onboarding_state,
+        "intro": intro_payload,
     }
 
     if latest_run:
@@ -3416,6 +3638,26 @@ def api_user_status_v1(
         data["status"] = "idle"
 
     return data
+
+
+@api_v1.get("/users/{user_id}/intro-content")
+def api_user_intro_content(
+    user_id: int,
+    request: Request,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    with SessionLocal() as s:
+        u = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not u:
+            raise HTTPException(status_code=404, detail="user not found")
+        onboarding_state = _get_onboarding_state(s, user_id)
+        intro = _build_intro_payload(s, u, onboarding_state)
+    return {
+        "user_id": user_id,
+        "intro": intro,
+    }
 
 
 @api_v1.post("/users/{user_id}/preferences")
@@ -3656,7 +3898,13 @@ def api_user_library_content(
     with SessionLocal() as s:
         rows = (
             s.query(ContentLibraryItem)
-            .filter(ContentLibraryItem.status == "published")
+            .filter(
+                ContentLibraryItem.status == "published",
+                or_(
+                    ContentLibraryItem.source_type.is_(None),
+                    ContentLibraryItem.source_type != INTRO_SOURCE_TYPE,
+                ),
+            )
             .order_by(ContentLibraryItem.pillar_key.asc(), ContentLibraryItem.created_at.desc())
             .all()
         )
@@ -3690,8 +3938,16 @@ def api_user_engagement_event(
         raise HTTPException(status_code=400, detail="payload must be a JSON object")
 
     event_type = str(payload.get("event_type") or "").strip().lower()
-    if event_type not in {"podcast_play", "podcast_complete"}:
-        raise HTTPException(status_code=400, detail="event_type must be podcast_play or podcast_complete")
+    valid_event_types = {
+        "podcast_play",
+        "podcast_complete",
+        "intro_presented",
+        "intro_listened",
+        "intro_read",
+    }
+    if event_type not in valid_event_types:
+        allowed = ", ".join(sorted(valid_event_types))
+        raise HTTPException(status_code=400, detail=f"event_type must be one of: {allowed}")
 
     raw_meta = payload.get("meta")
     event_meta = _meta_to_dict(raw_meta) if raw_meta is not None else None
@@ -3702,11 +3958,58 @@ def api_user_engagement_event(
     if payload.get("podcast_id") is not None and event_meta.get("podcast_id") is None:
         event_meta["podcast_id"] = str(payload.get("podcast_id")).strip()
 
+    if event_type.startswith("intro_"):
+        now_iso = _utc_now_iso()
+        with SessionLocal() as s:
+            changed = False
+            if event_type == "intro_presented":
+                changed = _set_pref_value(
+                    s,
+                    user_id,
+                    ONBOARDING_PREF_KEYS["intro_presented"],
+                    now_iso,
+                    only_if_missing=True,
+                ) or changed
+            elif event_type == "intro_listened":
+                changed = _set_pref_value(
+                    s,
+                    user_id,
+                    ONBOARDING_PREF_KEYS["intro_presented"],
+                    now_iso,
+                    only_if_missing=True,
+                ) or changed
+                changed = _set_pref_value(
+                    s,
+                    user_id,
+                    ONBOARDING_PREF_KEYS["intro_listened"],
+                    now_iso,
+                    only_if_missing=True,
+                ) or changed
+            elif event_type == "intro_read":
+                changed = _set_pref_value(
+                    s,
+                    user_id,
+                    ONBOARDING_PREF_KEYS["intro_presented"],
+                    now_iso,
+                    only_if_missing=True,
+                ) or changed
+                changed = _set_pref_value(
+                    s,
+                    user_id,
+                    ONBOARDING_PREF_KEYS["intro_read"],
+                    now_iso,
+                    only_if_missing=True,
+                ) or changed
+            if changed:
+                s.commit()
+
     _log_app_engagement_event(
         user_id=user_id,
         unit_type=event_type,
         meta=event_meta,
     )
+    if event_type in {"intro_listened", "intro_read"}:
+        evaluate_and_enable_coaching(user_id)
     return {"ok": True}
 
 
@@ -5907,6 +6210,17 @@ def admin_usage_app_engagement(
             completion_q = completion_q.join(User, AssessmentRun.user_id == User.id).filter(User.club_id == club_scope_id)
         completion_rows = completion_q.all()
 
+        onboarding_pref_keys = tuple(ONBOARDING_PREF_KEYS.values())
+        pref_q = (
+            s.query(UserPreference.user_id, UserPreference.key, UserPreference.value)
+            .filter(UserPreference.key.in_(onboarding_pref_keys))
+        )
+        if user_id is not None:
+            pref_q = pref_q.filter(UserPreference.user_id == user_id)
+        elif club_scope_id is not None:
+            pref_q = pref_q.join(User, UserPreference.user_id == User.id).filter(User.club_id == club_scope_id)
+        onboarding_pref_rows = pref_q.all()
+
     active_users: set[int] = set()
     home_users: set[int] = set()
     library_users: set[int] = set()
@@ -6031,6 +6345,158 @@ def admin_usage_app_engagement(
         row["active_users"] = len(users_in_day)
         daily_rows.append(row)
 
+    onboarding_by_user: dict[int, dict[str, datetime]] = {}
+    for uid, key, raw_val in onboarding_pref_rows:
+        if uid is None or not key:
+            continue
+        user_key = int(uid)
+        ts = _parse_pref_timestamp(raw_val)
+        if ts is None:
+            continue
+        row = onboarding_by_user.setdefault(user_key, {})
+        prev = row.get(key)
+        if prev is None or ts > prev:
+            row[key] = ts
+
+    def _in_window(ts: datetime | None) -> bool:
+        return bool(ts and start_utc <= ts < end_utc)
+
+    first_login_key = ONBOARDING_PREF_KEYS["first_login"]
+    assessment_key = ONBOARDING_PREF_KEYS["assessment_reviewed"]
+    intro_presented_key = ONBOARDING_PREF_KEYS["intro_presented"]
+    intro_listened_key = ONBOARDING_PREF_KEYS["intro_listened"]
+    intro_read_key = ONBOARDING_PREF_KEYS["intro_read"]
+    coaching_enabled_key = ONBOARDING_PREF_KEYS["coaching_enabled_at"]
+
+    first_login_users_window: set[int] = set()
+    assessment_reviewed_users_window: set[int] = set()
+    intro_presented_users_window: set[int] = set()
+    intro_listened_users_window: set[int] = set()
+    intro_read_users_window: set[int] = set()
+    intro_completed_users_window: set[int] = set()
+    coaching_auto_enabled_users_window: set[int] = set()
+
+    first_login_cohort = set()
+    assessment_after_first = 0
+    intro_presented_after_first = 0
+    intro_completed_after_first = 0
+    coaching_enabled_after_first = 0
+
+    for uid, pref_map in onboarding_by_user.items():
+        first_login_ts = pref_map.get(first_login_key)
+        assessment_ts = pref_map.get(assessment_key)
+        intro_presented_ts = pref_map.get(intro_presented_key)
+        intro_listened_ts = pref_map.get(intro_listened_key)
+        intro_read_ts = pref_map.get(intro_read_key)
+        coaching_enabled_ts = pref_map.get(coaching_enabled_key)
+        intro_completed_ts = intro_listened_ts or intro_read_ts
+
+        if _in_window(first_login_ts):
+            first_login_users_window.add(uid)
+            first_login_cohort.add(uid)
+        if _in_window(assessment_ts):
+            assessment_reviewed_users_window.add(uid)
+        if _in_window(intro_presented_ts):
+            intro_presented_users_window.add(uid)
+        if _in_window(intro_listened_ts):
+            intro_listened_users_window.add(uid)
+            intro_completed_users_window.add(uid)
+        if _in_window(intro_read_ts):
+            intro_read_users_window.add(uid)
+            intro_completed_users_window.add(uid)
+        if _in_window(coaching_enabled_ts):
+            coaching_auto_enabled_users_window.add(uid)
+
+        if uid not in first_login_cohort or first_login_ts is None:
+            continue
+        if assessment_ts and assessment_ts >= first_login_ts:
+            assessment_after_first += 1
+        if intro_presented_ts and intro_presented_ts >= first_login_ts:
+            intro_presented_after_first += 1
+        if (
+            (intro_listened_ts and intro_listened_ts >= first_login_ts)
+            or (intro_read_ts and intro_read_ts >= first_login_ts)
+        ):
+            intro_completed_after_first += 1
+        if coaching_enabled_ts and coaching_enabled_ts >= first_login_ts:
+            coaching_enabled_after_first += 1
+
+    onboarding_first_login_count = len(first_login_cohort)
+
+    def _rate(numerator: int, denominator: int) -> float | None:
+        if denominator <= 0:
+            return None
+        return round((numerator / denominator) * 100.0, 1)
+
+    def _funnel_step(
+        *,
+        key: str,
+        label: str,
+        count: int,
+        previous: int | None,
+        first_login_total: int,
+    ) -> dict:
+        conversion = None
+        dropoff = None
+        if previous is not None and previous > 0:
+            conversion = round((count / previous) * 100.0, 1)
+            dropoff = max(0, previous - count)
+        return {
+            "key": key,
+            "label": label,
+            "count": count,
+            "percent_of_first_login": _rate(count, first_login_total),
+            "conversion_pct_from_prev": conversion,
+            "dropoff_from_prev": dropoff,
+        }
+
+    onboarding_funnel = []
+    onboarding_funnel.append(
+        _funnel_step(
+            key="first_login",
+            label="Logged in",
+            count=onboarding_first_login_count,
+            previous=None,
+            first_login_total=onboarding_first_login_count,
+        )
+    )
+    onboarding_funnel.append(
+        _funnel_step(
+            key="assessment_reviewed",
+            label="Reviewed assessment",
+            count=assessment_after_first,
+            previous=onboarding_first_login_count,
+            first_login_total=onboarding_first_login_count,
+        )
+    )
+    onboarding_funnel.append(
+        _funnel_step(
+            key="intro_presented",
+            label="Intro presented",
+            count=intro_presented_after_first,
+            previous=assessment_after_first,
+            first_login_total=onboarding_first_login_count,
+        )
+    )
+    onboarding_funnel.append(
+        _funnel_step(
+            key="intro_completed",
+            label="Intro completed (listen/read)",
+            count=intro_completed_after_first,
+            previous=intro_presented_after_first,
+            first_login_total=onboarding_first_login_count,
+        )
+    )
+    onboarding_funnel.append(
+        _funnel_step(
+            key="coaching_auto_enabled",
+            label="Coaching auto-enabled",
+            count=coaching_enabled_after_first,
+            previous=intro_completed_after_first,
+            first_login_total=onboarding_first_login_count,
+        )
+    )
+
     return {
         "as_of_uk": datetime.now(UK_TZ).isoformat(),
         "window": {"start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat()},
@@ -6046,6 +6512,9 @@ def admin_usage_app_engagement(
             "post_assessment_users_viewed_results": post_assessment_results_view_users,
             "podcast_listener_rate_pct": podcast_listener_rate_pct,
             "podcast_listeners": len(podcast_play_users),
+            "onboarding_first_login_users": onboarding_first_login_count,
+            "onboarding_intro_completion_rate_pct": _rate(intro_completed_after_first, onboarding_first_login_count),
+            "onboarding_coaching_auto_enabled_rate_pct": _rate(coaching_enabled_after_first, onboarding_first_login_count),
         },
         "detail": {
             "home": {"views": home_views, "users": len(home_users)},
@@ -6065,6 +6534,25 @@ def admin_usage_app_engagement(
                 "users_completed": completed_users,
                 "users_viewed_results_after_completion": post_assessment_results_view_users,
                 "rate_pct": post_assessment_view_rate_pct,
+            },
+            "onboarding": {
+                "first_login_users": len(first_login_users_window),
+                "assessment_reviewed_users": len(assessment_reviewed_users_window),
+                "intro_presented_users": len(intro_presented_users_window),
+                "intro_listened_users": len(intro_listened_users_window),
+                "intro_read_users": len(intro_read_users_window),
+                "intro_completed_users": len(intro_completed_users_window),
+                "coaching_auto_enabled_users": len(coaching_auto_enabled_users_window),
+                "first_login_cohort_users": onboarding_first_login_count,
+                "assessment_after_first_login_users": assessment_after_first,
+                "intro_presented_after_first_login_users": intro_presented_after_first,
+                "intro_completed_after_first_login_users": intro_completed_after_first,
+                "coaching_auto_enabled_after_first_login_users": coaching_enabled_after_first,
+                "assessment_after_first_login_rate_pct": _rate(assessment_after_first, onboarding_first_login_count),
+                "intro_presented_after_first_login_rate_pct": _rate(intro_presented_after_first, onboarding_first_login_count),
+                "intro_completed_after_first_login_rate_pct": _rate(intro_completed_after_first, onboarding_first_login_count),
+                "coaching_auto_enabled_after_first_login_rate_pct": _rate(coaching_enabled_after_first, onboarding_first_login_count),
+                "funnel": onboarding_funnel,
             },
             "daily": daily_rows,
         },
@@ -8001,6 +8489,81 @@ def admin_library_content_list(
             }
         )
     return {"count": len(items), "items": items}
+
+
+@admin.get("/library/intro")
+def admin_library_intro_detail(
+    admin_user: User = Depends(_require_admin),
+):
+    with SessionLocal() as s:
+        row = _latest_intro_content_row(s, active_only=False)
+        tags = row.tags if isinstance(getattr(row, "tags", None), dict) else {}
+        welcome_template = str((tags or {}).get("welcome_message_template") or "").strip()
+        return {
+            "content_id": int(row.id) if row else None,
+            "active": bool(row and str(getattr(row, "status", "") or "").strip().lower() == "published"),
+            "title": str(getattr(row, "title", "") or "").strip() or INTRO_TITLE_DEFAULT,
+            "welcome_message_template": welcome_template or INTRO_WELCOME_TEMPLATE_DEFAULT,
+            "body": _intro_body_from_row(row),
+            "podcast_url": _normalize_reports_url(getattr(row, "podcast_url", None)),
+            "podcast_voice": getattr(row, "podcast_voice", None),
+            "source_type": INTRO_SOURCE_TYPE,
+            "updated_at": getattr(row, "updated_at", None),
+        }
+
+
+@admin.post("/library/intro")
+def admin_library_intro_update(
+    payload: dict,
+    admin_user: User = Depends(_require_admin),
+):
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="payload must be a JSON object")
+    active_raw = payload.get("active")
+    if isinstance(active_raw, bool):
+        active = active_raw
+    elif active_raw is None:
+        active = True
+    else:
+        active = _is_truthy_env(str(active_raw))
+    title = str(payload.get("title") or "").strip() or INTRO_TITLE_DEFAULT
+    welcome_template = str(payload.get("welcome_message_template") or "").strip() or INTRO_WELCOME_TEMPLATE_DEFAULT
+    body = str(payload.get("body") or "").strip() or INTRO_BODY_DEFAULT
+    podcast_url = str(payload.get("podcast_url") or "").strip() or None
+    podcast_voice = str(payload.get("podcast_voice") or "").strip() or None
+
+    with SessionLocal() as s:
+        row = _latest_intro_content_row(s, active_only=False)
+        if not row:
+            row = ContentLibraryItem(
+                pillar_key=INTRO_PILLAR_KEY,
+                concept_code=INTRO_CONCEPT_CODE,
+                source_type=INTRO_SOURCE_TYPE,
+                created_by=getattr(admin_user, "id", None),
+            )
+            s.add(row)
+        tags = row.tags if isinstance(getattr(row, "tags", None), dict) else {}
+        tags = dict(tags or {})
+        tags["welcome_message_template"] = welcome_template
+        row.pillar_key = INTRO_PILLAR_KEY
+        row.concept_code = INTRO_CONCEPT_CODE
+        row.source_type = INTRO_SOURCE_TYPE
+        row.title = title
+        row.body = body
+        row.podcast_url = podcast_url
+        row.podcast_voice = podcast_voice
+        row.status = "published" if active else "draft"
+        row.tags = tags
+        if active and row.published_at is None:
+            row.published_at = datetime.utcnow()
+        s.commit()
+        s.refresh(row)
+        return {
+            "ok": True,
+            "content_id": row.id,
+            "active": bool(row.status == "published"),
+            "updated_at": row.updated_at,
+        }
 
 
 @admin.get("/library/content/{content_id}")

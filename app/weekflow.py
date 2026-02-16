@@ -1,5 +1,5 @@
 """
-Week orchestration helper: run kickoff (week 1 only), weekstart, midweek, and boost in sequence.
+Week orchestration helper: run weekstart, midweek, and boost in sequence.
 """
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ from datetime import datetime, timedelta, date
 from .models import User, WeeklyFocus, WeeklyFocusKR, AssessmentRun, OKRKeyResult, OKRObjective
 from .nudges import send_whatsapp
 from . import monday, wednesday, friday, tuesday, saturday, sunday
-from .kickoff import start_kickoff
 from .db import SessionLocal
 from .focus import select_top_krs_for_user
 from .reporting import generate_progress_report_html, _reports_root_for_user
@@ -110,7 +109,6 @@ def _ensure_weekly_focus(user: User, week_no: int) -> bool:
 def run_week_flow(user: User, week_no: int = 1) -> None:
     """
     Run the weekly sequence:
-    - 12-week programme kickoff podcast (week 1 only)
     - Monday weekstart (every week)
     - Tuesday micro-check
     - midweek (Wednesday)
@@ -136,8 +134,6 @@ def run_week_flow(user: User, week_no: int = 1) -> None:
         pass
     prev_log = os.environ.get("WEEKFLOW_LOG_FILE")
     os.environ["WEEKFLOW_LOG_FILE"] = log_path
-    if week_no == 1:
-        start_kickoff(user, notes=f"weekflow week {week_no}", debug=False)
     if not _ensure_weekly_focus(user, week_no):
         if prev_log is not None:
             os.environ["WEEKFLOW_LOG_FILE"] = prev_log

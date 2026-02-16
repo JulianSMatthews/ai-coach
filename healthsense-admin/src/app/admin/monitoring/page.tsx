@@ -228,6 +228,7 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
   ];
   const appKpis = appEngagement?.top_kpis || {};
   const appDetail = appEngagement?.detail || {};
+  const appOnboarding = appDetail.onboarding || {};
   const appDailyRows = appDetail.daily || [];
   const appMetrics = [
     {
@@ -253,6 +254,24 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
       value: appKpis.podcast_listener_rate_pct != null ? `${formatNum(appKpis.podcast_listener_rate_pct)}%` : "—",
       subtitle: `${appKpis.podcast_listeners ?? 0} listeners`,
       description: "Active app users who played at least one podcast.",
+    },
+    {
+      title: "Intro completion rate",
+      value:
+        appKpis.onboarding_intro_completion_rate_pct != null
+          ? `${formatNum(appKpis.onboarding_intro_completion_rate_pct)}%`
+          : "—",
+      subtitle: `${appOnboarding.intro_completed_after_first_login_users ?? 0} / ${appOnboarding.first_login_cohort_users ?? 0} first-logins`,
+      description: "First-login users who completed intro via listen or read.",
+    },
+    {
+      title: "Coaching auto-enabled",
+      value:
+        appKpis.onboarding_coaching_auto_enabled_rate_pct != null
+          ? `${formatNum(appKpis.onboarding_coaching_auto_enabled_rate_pct)}%`
+          : "—",
+      subtitle: `${appOnboarding.coaching_auto_enabled_after_first_login_users ?? 0} users`,
+      description: "First-login cohort users that reached coaching auto-enable.",
     },
   ];
 
@@ -556,7 +575,7 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
 
         {activeTab === "app" ? (
           <>
-            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {appMetrics.map((item) => (
                 <div key={item.title} className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
                   <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{item.title}</p>
@@ -597,6 +616,57 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
                   </div>
                 </div>
               </div>
+            </section>
+
+            <section className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Onboarding funnel</p>
+              <p className="mt-2 text-sm text-[#6b6257]">
+                First login to coaching auto-enable progression in the selected window.
+              </p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2 text-sm">
+                  First logins: {appOnboarding.first_login_cohort_users ?? 0}
+                </div>
+                <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2 text-sm">
+                  Assessment reviewed: {appOnboarding.assessment_after_first_login_users ?? 0}
+                </div>
+                <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2 text-sm">
+                  Intro completed: {appOnboarding.intro_completed_after_first_login_users ?? 0}
+                </div>
+                <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2 text-sm">
+                  Coaching on: {appOnboarding.coaching_auto_enabled_after_first_login_users ?? 0}
+                </div>
+              </div>
+              {(appOnboarding.funnel || []).length ? (
+                <div className="mt-4 space-y-3">
+                  {(appOnboarding.funnel || []).map((step, idx) => (
+                    <div key={step.key || `${idx}`} className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                          {idx + 1}. {step.label || step.key || "step"}
+                        </span>
+                        <span className="text-sm font-semibold">{step.count ?? 0}</span>
+                      </div>
+                      <div className="mt-1 text-xs text-[#6b6257]">
+                        {step.percent_of_first_login != null ? `${formatNum(step.percent_of_first_login)}% of first logins` : "—"}
+                      </div>
+                      <div className="mt-2 h-2 w-full rounded-full bg-[#ece4d8]">
+                        <div className="h-2 rounded-full bg-[#1d4ed8]" style={{ width: barWidth(step.percent_of_first_login ?? null) }} />
+                      </div>
+                      <div className="mt-2 text-xs text-[#8a8176]">
+                        Conversion from previous:{" "}
+                        {idx === 0
+                          ? "—"
+                          : step.conversion_pct_from_prev != null
+                            ? `${formatNum(step.conversion_pct_from_prev)}%`
+                            : "—"}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-3 text-sm text-[#8a8176]">No onboarding funnel data in this window.</p>
+              )}
             </section>
 
             <section className="rounded-2xl border border-[#e7e1d6] bg-white p-5">

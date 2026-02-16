@@ -28,7 +28,6 @@ from .models import (
 AUTO_PROMPT_PREF_KEYS = ("coaching", "auto_daily_prompts")
 from .nudges import send_message, send_whatsapp_template, _get_session_reopen_sid
 from .debug_utils import debug_log, debug_enabled
-from . import kickoff
 from .llm import compose_prompt
 from . import monday, tuesday, wednesday, thursday, friday, saturday, sunday
 from .job_queue import enqueue_job, should_use_worker
@@ -704,7 +703,7 @@ def _schedule_prompts_for_user(
         now = datetime.now(tz)
         days = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
         interval_minutes = resolved_fast * len(days)
-        # Kickoff fires immediately; start Monday after fast_minutes, then every fast_minutes thereafter.
+        # In fast mode, start Monday after fast_minutes, then rotate through each day.
         for idx, day in enumerate(days):
             job_id = f"auto_prompt_{day}_{user.id}"
             start_offset = timedelta(minutes=(idx + 1) * resolved_fast)
@@ -842,11 +841,6 @@ def enable_coaching(user_id: int, fast_minutes: int | None = None) -> bool:
                 s.delete(fast_pref)
             set_virtual_mode(s, user_id, enabled=False)
         s.commit()
-        # Trigger kickoff at the start of coaching so Monday follows the kickoff baseline.
-        try:
-            kickoff.start_kickoff(u, notes="auto kickoff: coaching enabled")
-        except Exception as e:
-            print(f"[scheduler] kickoff on coaching enable failed for user {user_id}: {e}")
         _schedule_prompts_for_user(u, defaults, s, fast_minutes=fast_minutes)
     return True
 

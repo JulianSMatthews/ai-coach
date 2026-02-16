@@ -6,6 +6,7 @@ import CarouselDots from "@/components/CarouselDots";
 import TextScale from "@/components/TextScale";
 import AppNav from "@/components/AppNav";
 import KRUpdateEditor from "@/components/KRUpdateEditor";
+import IntroWelcomeModal from "@/components/IntroWelcomeModal";
 import ProgrammeCalendar from "./ProgrammeCalendar";
 
 type PageProps = {
@@ -289,6 +290,7 @@ export default async function ProgressPage(props: PageProps) {
     <PageShell>
       <TextScale defaultScale={textScale} />
       <AppNav userId={userId} promptBadge={promptBadge} />
+      <IntroWelcomeModal userId={userId} intro={status.intro} />
 
       <section id="overview" className="space-y-3">
         <div

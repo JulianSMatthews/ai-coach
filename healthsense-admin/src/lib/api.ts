@@ -87,6 +87,9 @@ export type AppEngagementSummary = {
     post_assessment_users_viewed_results?: number;
     podcast_listener_rate_pct?: number | null;
     podcast_listeners?: number;
+    onboarding_first_login_users?: number;
+    onboarding_intro_completion_rate_pct?: number | null;
+    onboarding_coaching_auto_enabled_rate_pct?: number | null;
   };
   detail?: {
     home?: { views?: number; users?: number };
@@ -106,6 +109,32 @@ export type AppEngagementSummary = {
       users_completed?: number;
       users_viewed_results_after_completion?: number;
       rate_pct?: number | null;
+    };
+    onboarding?: {
+      first_login_users?: number;
+      assessment_reviewed_users?: number;
+      intro_presented_users?: number;
+      intro_listened_users?: number;
+      intro_read_users?: number;
+      intro_completed_users?: number;
+      coaching_auto_enabled_users?: number;
+      first_login_cohort_users?: number;
+      assessment_after_first_login_users?: number;
+      intro_presented_after_first_login_users?: number;
+      intro_completed_after_first_login_users?: number;
+      coaching_auto_enabled_after_first_login_users?: number;
+      assessment_after_first_login_rate_pct?: number | null;
+      intro_presented_after_first_login_rate_pct?: number | null;
+      intro_completed_after_first_login_rate_pct?: number | null;
+      coaching_auto_enabled_after_first_login_rate_pct?: number | null;
+      funnel?: Array<{
+        key?: string;
+        label?: string;
+        count?: number;
+        percent_of_first_login?: number | null;
+        conversion_pct_from_prev?: number | null;
+        dropoff_from_prev?: number | null;
+      }>;
     };
     daily?: Array<{
       day?: string;
@@ -622,6 +651,18 @@ export type ContentLibrarySummary = {
 
 export type ContentLibraryDetail = ContentLibrarySummary & {
   body?: string | null;
+};
+
+export type IntroLibrarySettings = {
+  content_id?: number | null;
+  active?: boolean;
+  title?: string | null;
+  welcome_message_template?: string | null;
+  body?: string | null;
+  podcast_url?: string | null;
+  podcast_voice?: string | null;
+  source_type?: string | null;
+  updated_at?: string | null;
 };
 
 export type AdminUserSummary = {
@@ -1282,6 +1323,25 @@ export async function createLibraryContent(payload: {
 
 export async function updateLibraryContent(id: number, payload: Record<string, unknown>) {
   return apiAdmin<Record<string, unknown>>(`/admin/library/content/${id}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getLibraryIntroSettings(): Promise<IntroLibrarySettings> {
+  return apiAdmin<IntroLibrarySettings>("/admin/library/intro");
+}
+
+export async function updateLibraryIntroSettings(payload: {
+  active: boolean;
+  title?: string;
+  welcome_message_template?: string;
+  body?: string;
+  podcast_url?: string;
+  podcast_voice?: string;
+}): Promise<Record<string, unknown>> {
+  return apiAdmin<Record<string, unknown>>("/admin/library/intro", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
