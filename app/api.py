@@ -958,7 +958,7 @@ def _guess_default_cc() -> str:
     """
     Resolve default country code in priority order:
     1) DEFAULT_COUNTRY_CODE
-    2) TWILIO_WHATSAPP_FROM (extract +CC)
+    2) TWILIO_WHATSAPP_FROM / TWILIO_FROM (extract +CC)
     3) ADMIN_WHATSAPP / ADMIN_PHONE
     4) TWILIO_SMS_FROM
     5) Hard fallback '+44'
@@ -966,14 +966,26 @@ def _guess_default_cc() -> str:
     cand = (os.getenv("DEFAULT_COUNTRY_CODE") or "").strip()
     if cand.startswith("+"):
         return cand
-    for var in ("TWILIO_WHATSAPP_FROM", "ADMIN_WHATSAPP", "ADMIN_PHONE", "TWILIO_SMS_FROM"):
+    for var in ("TWILIO_WHATSAPP_FROM", "TWILIO_FROM", "ADMIN_WHATSAPP", "ADMIN_PHONE", "TWILIO_SMS_FROM"):
         v = (os.getenv(var) or "").strip()
         if not v:
             continue
         v = v.replace("whatsapp:", "")
         m = _CC_RE.match(v)
         if m:
-            return f"+{m.group(1)}"
+            # Avoid over-capturing area-code digits from full phone numbers.
+            digits = m.group(1)
+            if digits.startswith("44"):
+                return "+44"
+            if digits.startswith("1"):
+                return "+1"
+            if digits.startswith("91"):
+                return "+91"
+            if digits.startswith("61"):
+                return "+61"
+            if digits.startswith("353"):
+                return "+353"
+            return f"+{digits}"
     return "+44"
 
 def _norm_phone(s: str) -> str:
@@ -991,11 +1003,15 @@ def _norm_phone(s: str) -> str:
     # Determine default country code
     cc_env = (os.getenv("DEFAULT_COUNTRY_CODE") or "").strip()
     cc = cc_env if cc_env.startswith("+") else _guess_default_cc()
+    cc_digits = cc[1:] if cc.startswith("+") else cc
     # Accept pure digits after stripping separators
     if s.isdigit():
         # UK-style local numbers starting with 0 → drop trunk '0'
         if s.startswith("0"):
             return cc + s[1:]
+        # If user typed country code without '+', treat as international format.
+        if cc_digits and s.startswith(cc_digits) and len(s) > (len(cc_digits) + 6):
+            return "+" + s
         # No trunk '0' — still prefix with cc
         return cc + s
     return s
