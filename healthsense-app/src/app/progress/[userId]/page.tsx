@@ -19,6 +19,8 @@ type ProgressKr = {
   baseline?: number | null;
   actual?: number | null;
   target?: number | null;
+  metric_label?: string | null;
+  unit?: string | null;
   habit_steps?: HabitStep[];
 };
 
