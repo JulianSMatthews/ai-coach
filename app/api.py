@@ -2805,6 +2805,27 @@ def _parse_block_list(val: object | None) -> list[str]:
             return [v.strip() for v in cleaned.split(",") if v.strip()]
     return [str(val).strip()] if str(val).strip() else []
 
+
+LIVE_TEMPLATE_ALLOWED_MODELS = {"gpt-5-mini", "gpt-5.1"}
+
+
+def _normalize_model_override(raw: object | None) -> str | None:
+    val = str(raw or "").strip()
+    return val or None
+
+
+def _ensure_live_template_model_allowed(model_override: str | None, *, context: str) -> None:
+    if not model_override:
+        return
+    if model_override in LIVE_TEMPLATE_ALLOWED_MODELS:
+        return
+    allowed = ", ".join(sorted(LIVE_TEMPLATE_ALLOWED_MODELS))
+    raise HTTPException(
+        status_code=400,
+        detail=f"{context} model_override must be one of: {allowed}",
+    )
+
+
 def _parse_kb_tags(val: object | None) -> list[str]:
     if val is None:
         return []
@@ -3760,6 +3781,87 @@ def api_user_kr_habit_steps_update(
                 {"id": row.id, "text": row.step_text, "status": row.status, "week_no": row.week_no}
                 for row in saved
             ],
+        }
+
+
+@api_v1.put("/users/{user_id}/krs/{kr_id}")
+def api_user_kr_update(
+    user_id: int,
+    kr_id: int,
+    payload: dict,
+    request: Request,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="payload must be a JSON object")
+
+    def _parse_optional_number(raw_value, *, field_name: str):
+        if raw_value is None:
+            return None, False
+        if isinstance(raw_value, str):
+            trimmed = raw_value.strip()
+            if not trimmed:
+                return None, True
+            try:
+                return float(trimmed), True
+            except Exception:
+                raise HTTPException(status_code=400, detail=f"{field_name} must be numeric")
+        try:
+            return float(raw_value), True
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"{field_name} must be numeric")
+
+    description = payload.get("description")
+    target_num, has_target = _parse_optional_number(payload.get("target_num"), field_name="target_num")
+    actual_num, has_actual = _parse_optional_number(payload.get("actual_num"), field_name="actual_num")
+    note = str(payload.get("note") or "").strip() or "KR updated in app"
+    any_change = ("description" in payload) or has_target or has_actual
+    if not any_change:
+        raise HTTPException(status_code=400, detail="at least one field must be provided")
+
+    with SessionLocal() as s:
+        kr = (
+            s.query(OKRKeyResult)
+            .join(OKRObjective, OKRKeyResult.objective_id == OKRObjective.id)
+            .filter(OKRKeyResult.id == kr_id, OKRObjective.owner_user_id == user_id)
+            .first()
+        )
+        if not kr:
+            raise HTTPException(status_code=404, detail="kr not found")
+
+        if "description" in payload:
+            desc_val = str(description or "").strip()
+            if not desc_val:
+                raise HTTPException(status_code=400, detail="description cannot be empty")
+            kr.description = desc_val
+        if has_target:
+            kr.target_num = target_num
+        if has_actual:
+            kr.actual_num = actual_num
+            s.add(
+                OKRKrEntry(
+                    key_result_id=kr.id,
+                    occurred_at=datetime.utcnow(),
+                    actual_num=actual_num,
+                    note=note,
+                    source="app",
+                )
+            )
+
+        s.add(kr)
+        s.commit()
+        s.refresh(kr)
+        return {
+            "kr_id": kr.id,
+            "description": kr.description,
+            "baseline_num": kr.baseline_num,
+            "target_num": kr.target_num,
+            "actual_num": kr.actual_num,
+            "metric_label": kr.metric_label,
+            "unit": kr.unit,
+            "updated_at": kr.updated_at,
         }
 
 
@@ -6005,6 +6107,12 @@ def admin_prompt_template_promote(
         row = s.get(PromptTemplate, template_id)
         if not row:
             raise HTTPException(status_code=404, detail="prompt template not found")
+        model_override = _normalize_model_override(getattr(row, "model_override", None))
+        if to_state == "live":
+            _ensure_live_template_model_allowed(
+                model_override,
+                context=f"touchpoint '{row.touchpoint}' live promotion",
+            )
         max_version = (
             s.query(func.max(PromptTemplate.version))
             .filter(
@@ -6025,7 +6133,7 @@ def admin_prompt_template_promote(
             okr_scope=row.okr_scope,
             programme_scope=row.programme_scope,
             response_format=row.response_format,
-            model_override=getattr(row, "model_override", None),
+            model_override=model_override,
             is_active=True,
             parent_id=row.id,
         )

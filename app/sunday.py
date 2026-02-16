@@ -1,24 +1,27 @@
 """
-Sunday weekly review: habit-step check-in (weeks 1-2 of each pillar block) or KR update (week 3).
-Stateful flow: action prompt → support follow-up.
+Sunday flow:
+- Set next week's habit steps (moved from Monday flow).
+- Then ask whether to update KR numbers now via WhatsApp or in-app.
 """
 from __future__ import annotations
 
-from typing import Optional
-from datetime import datetime, timedelta
+import json
 import os
+import re
+from datetime import datetime, timedelta
+from typing import Optional
+
 from sqlalchemy.orm import Session
 
+from . import general_support
+from . import monday as monday_flow
 from .db import SessionLocal
 from .job_queue import enqueue_job, should_use_worker
-from .nudges import send_whatsapp, append_button_cta
-from .checkins import record_checkin
-from .models import WeeklyFocus, OKRKeyResult, User, UserPreference, OKRKrEntry, OKRKrHabitStep, AssessmentRun
 from .kickoff import COACH_NAME
-from . import llm as shared_llm
-from .touchpoints import log_touchpoint, update_touchpoint
-from .prompts import kr_payload_list, build_prompt, run_llm_prompt
-from . import general_support
+from .models import AssessmentRun, OKRKeyResult, OKRKrEntry, User, UserPreference, WeeklyFocus
+from .nudges import send_whatsapp
+from .prompts import kr_payload_list
+from .touchpoints import log_touchpoint
 from .virtual_clock import get_effective_today
 
 STATE_KEY = "sunday_state"
@@ -45,29 +48,32 @@ def _apply_sunday_marker(text: str | None) -> str | None:
 
 
 def _send_sunday(*, text: str, to: str | None = None, category: str | None = None, quick_replies: list[str] | None = None) -> str:
+    outbound = _apply_sunday_marker(text) or text
+    if outbound and not outbound.lower().startswith("*sunday"):
+        outbound = f"{_sunday_tag()} {outbound}"
     return send_whatsapp(
-        text=_apply_sunday_marker(text) or text,
+        text=outbound,
         to=to,
         category=category,
         quick_replies=quick_replies,
     )
 
 
-def _review_mode_for_week(week_no: int | None) -> str:
-    if week_no and week_no > 0:
-        within = ((week_no - 1) % 3) + 1
-        return "habit" if within in {1, 2} else "kr"
-    return "kr"
+def _hsapp_base_url() -> str:
+    base = (
+        (os.getenv("HSAPP_PUBLIC_URL") or "").strip()
+        or (os.getenv("HSAPP_BASE_URL") or "").strip()
+        or (os.getenv("APP_BASE_URL") or "").strip()
+        or (os.getenv("NEXT_PUBLIC_HSAPP_BASE_URL") or "").strip()
+        or (os.getenv("NEXT_PUBLIC_APP_BASE_URL") or "").strip()
+        or "https://app.healthsense.coach"
+    )
+    if not base.startswith(("http://", "https://")):
+        base = f"https://{base}"
+    return base.rstrip("/")
 
 
 def _resolve_weekly_focus(session: Session, user_id: int, today_date) -> Optional[WeeklyFocus]:
-    """
-    Resolve the focus for "today" first to avoid jumping to a future week.
-    Fallback order:
-    1) Active focus containing today
-    2) Most recent focus that has started (starts_on <= today)
-    3) Latest focus row
-    """
     day_start = datetime.combine(today_date, datetime.min.time())
     day_end = day_start + timedelta(days=1)
     active = (
@@ -147,7 +153,6 @@ def _get_state(session: Session, user_id: int) -> Optional[dict]:
     )
     if pref and pref.value:
         try:
-            import json
             return json.loads(pref.value)
         except Exception:
             return None
@@ -164,116 +169,69 @@ def _set_state(session: Session, user_id: int, state: Optional[dict]) -> None:
         if pref:
             session.delete(pref)
         return
-    import json
     if pref:
         pref.value = json.dumps(state)
     else:
-        pref = UserPreference(user_id=user_id, key=STATE_KEY, value=json.dumps(state))
-        session.add(pref)
+        session.add(UserPreference(user_id=user_id, key=STATE_KEY, value=json.dumps(state)))
 
 
 def has_active_state(user_id: int) -> bool:
     with SessionLocal() as s:
-        st = _get_state(s, user_id)
-        return st is not None
+        return _get_state(s, user_id) is not None
 
 
-def _is_standard_button_reply(text: str) -> bool:
-    cleaned = (text or "").strip().lower()
-    return cleaned in {"all good", "need help", "all ok", "all okay"}
-
-
-def _format_habit_steps(session: Session, user_id: int, kr_ids: list[int], week_no: int | None) -> str:
+def _ordered_krs(session: Session, kr_ids: list[int]) -> list[OKRKeyResult]:
     if not kr_ids:
-        return ""
-    kr_desc = {
-        kr.id: kr.description
-        for kr in session.query(OKRKeyResult).filter(OKRKeyResult.id.in_(kr_ids)).all()
-    }
-    q = (
-        session.query(OKRKrHabitStep)
-        .filter(OKRKrHabitStep.user_id == user_id, OKRKrHabitStep.kr_id.in_(kr_ids))
-        .filter(OKRKrHabitStep.status != "archived")
-        .order_by(
-            OKRKrHabitStep.kr_id.asc(),
-            OKRKrHabitStep.week_no.asc().nullslast(),
-            OKRKrHabitStep.sort_order.asc(),
-            OKRKrHabitStep.id.asc(),
-        )
+        return []
+    rows = session.query(OKRKeyResult).filter(OKRKeyResult.id.in_(kr_ids)).all()
+    by_id = {row.id: row for row in rows if row and row.id}
+    return [by_id[kr_id] for kr_id in kr_ids if kr_id in by_id]
+
+
+def _build_habit_options(user: User, krs: list[OKRKeyResult]) -> list[list[str]]:
+    _actions_text, options_by_index = monday_flow._build_weekstart_actions("", krs, user)
+    out: list[list[str]] = []
+    for idx, kr in enumerate(krs):
+        opts = list(options_by_index[idx]) if idx < len(options_by_index) else []
+        opts = [opt.strip() for opt in opts if opt and opt.strip()]
+        if not opts:
+            opts = monday_flow._fallback_options_for_kr(kr)
+        if len(opts) > 3:
+            opts = opts[:3]
+        out.append(opts)
+    return out
+
+
+def _next_target_week(session: Session, user_id: int, wf: WeeklyFocus) -> tuple[int, int | None]:
+    base_week = getattr(wf, "week_no", None)
+    if not base_week:
+        base_week = _infer_week_no(session, user_id, wf)
+        try:
+            wf.week_no = base_week
+            session.add(wf)
+        except Exception:
+            pass
+    target_week = max(1, int(base_week) + 1)
+    target_wf = (
+        session.query(WeeklyFocus)
+        .filter(WeeklyFocus.user_id == user_id, WeeklyFocus.week_no == target_week)
+        .order_by(WeeklyFocus.starts_on.desc(), WeeklyFocus.id.desc())
+        .first()
     )
-    if week_no is not None:
-        q = q.filter(
-            (OKRKrHabitStep.week_no == week_no) | (OKRKrHabitStep.week_no.is_(None))
-        )
-    steps_by_kr: dict[int, list[str]] = {}
-    for step in q.all():
-        if not step.step_text:
-            continue
-        steps_by_kr.setdefault(step.kr_id, []).append(step.step_text)
-    if not steps_by_kr:
-        return ""
-    lines = []
-    for kr_id in kr_ids:
-        steps = steps_by_kr.get(kr_id) or []
-        if steps:
-            label = kr_desc.get(kr_id) or f"KR {kr_id}"
-            lines.append(f"{label}: " + "; ".join(steps))
-    return "\n".join(lines)
+    return target_week, (target_wf.id if target_wf else None)
 
 
-def _support_prompt(user: User, history: list[dict], user_message: str | None, review_mode: str, week_no: int | None):
-    transcript = []
-    for turn in history:
-        role = turn.get("role", "")
-        content = turn.get("content", "")
-        if role and content:
-            transcript.append(f"{role.upper()}: {content}")
-    if user_message:
-        transcript.append(f"USER: {user_message}")
-    return build_prompt(
-        "sunday_support",
-        user_id=user.id,
-        coach_name=COACH_NAME,
-        user_name=(user.first_name or ""),
-        locale=getattr(user, "tz", "UK") or "UK",
-        history="\n".join(transcript),
-        review_mode=review_mode,
-        week_no=week_no,
-    )
-
-
-def _support_conversation(
-    history: list[dict],
-    user_message: str | None,
-    user: User,
-    review_mode: str,
-    week_no: int | None,
-) -> tuple[str, list[dict]]:
-    prompt_assembly = _support_prompt(user, history, user_message, review_mode, week_no)
-    candidate = run_llm_prompt(
-        prompt_assembly.text,
-        user_id=user.id,
-        touchpoint="sunday_support",
-        context_meta={"review_mode": review_mode, "week_no": week_no},
-        prompt_variant=prompt_assembly.variant,
-        task_label=prompt_assembly.task_label,
-        prompt_blocks={**prompt_assembly.blocks, **(prompt_assembly.meta or {})},
-        block_order=prompt_assembly.block_order,
-        log=True,
-    )
-    text = candidate or ""
-    if not text:
-        if review_mode == "habit":
-            text = "Thanks for the update. Want to tweak any of the habit steps for next week?"
-        else:
-            text = "Thanks for the update. Was anything in the way of hitting the targets this week?"
-    if not text.lower().startswith("*sunday*"):
-        text = "*Sunday* " + text
-    new_history = list(history)
-    if user_message:
-        new_history.append({"role": "user", "content": user_message})
-    new_history.append({"role": "assistant", "content": text})
-    return text, new_history
+def _pick_krs_for_sunday(session: Session, user_id: int, target_week: int, fallback_week: int | None) -> tuple[int, list[int]]:
+    payload = kr_payload_list(user_id, session=session, week_no=target_week, max_krs=3)
+    kr_ids = [int(item["id"]) for item in payload if item.get("id")]
+    if kr_ids:
+        return target_week, kr_ids
+    if fallback_week and fallback_week != target_week:
+        payload = kr_payload_list(user_id, session=session, week_no=fallback_week, max_krs=3)
+        kr_ids = [int(item["id"]) for item in payload if item.get("id")]
+        if kr_ids:
+            return fallback_week, kr_ids
+    return target_week, []
 
 
 def send_sunday_review(user: User, coach_name: str = COACH_NAME) -> None:
@@ -282,87 +240,88 @@ def send_sunday_review(user: User, coach_name: str = COACH_NAME) -> None:
         print(f"[sunday] enqueued day prompt user_id={user.id} job={job_id}")
         return
     general_support.clear(user.id)
-    wf_id: int | None = None
-    kr_ids: list[int] = []
-    week_no: int | None = None
-    review_mode = "kr"
     with SessionLocal() as s:
         today = get_effective_today(s, user.id, default_today=datetime.utcnow().date())
         wf = _resolve_weekly_focus(s, user.id, today)
         if not wf:
             _send_sunday(to=user.phone, text="No weekly plan found. Say monday to plan your week first.")
             return
-        wf_id = wf.id
-        week_no = getattr(wf, "week_no", None)
-        if not week_no:
-            week_no = _infer_week_no(s, user.id, wf)
-            try:
-                wf.week_no = week_no
-                s.add(wf)
-            except Exception:
-                pass
-        review_mode = _review_mode_for_week(week_no)
-        kr_ids = [kr["id"] for kr in kr_payload_list(user.id, session=s, week_no=week_no, max_krs=3)]
+
+        target_week, target_wf_id = _next_target_week(s, user.id, wf)
+        active_week = getattr(wf, "week_no", None) or None
+        target_week, kr_ids = _pick_krs_for_sunday(s, user.id, target_week, active_week)
         if not kr_ids:
-            _send_sunday(to=user.phone, text="No key results found for this week. Say monday to set them up.")
+            _send_sunday(to=user.phone, text="No key results found to set habit steps for. Say monday to refresh your plan.")
             return
-        habit_steps = _format_habit_steps(s, user.id, kr_ids, week_no) if review_mode == "habit" else ""
-        prompt_assembly = build_prompt(
-            "sunday_actions",
-            user_id=user.id,
-            coach_name=coach_name,
-            user_name=(user.first_name or ""),
-            locale=getattr(user, "tz", "UK") or "UK",
-            week_no=week_no,
-            review_mode=review_mode,
-            habit_steps=habit_steps,
+        krs = _ordered_krs(s, kr_ids)
+        if not krs:
+            _send_sunday(to=user.phone, text="I couldn't load your key results right now. Please try again shortly.")
+            return
+
+        options_by_index = _build_habit_options(user, krs)
+        if not options_by_index or not options_by_index[0]:
+            _send_sunday(to=user.phone, text="I couldn't prepare habit options right now. Please try again in a moment.")
+            return
+
+        name = (getattr(user, "first_name", "") or "").strip().title() or "there"
+        intro = (
+            f"*Sunday* Hi {name}, let's set your habit steps for week {target_week}. "
+            "Pick one option for each KR."
         )
-        candidate = run_llm_prompt(
-            prompt_assembly.text,
-            user_id=user.id,
-            touchpoint="sunday_actions",
-            context_meta={"review_mode": review_mode, "week_no": week_no},
-            prompt_variant=prompt_assembly.variant,
-            task_label=prompt_assembly.task_label,
-            prompt_blocks={**prompt_assembly.blocks, **(prompt_assembly.meta or {})},
-            block_order=prompt_assembly.block_order,
-            log=True,
-        )
-        msg = candidate or ""
-        if not msg:
-            if review_mode == "habit":
-                msg = "*Sunday* Quick check-in on your habit steps this week — how did they go, and would you like to tweak anything?"
-            else:
-                msg = "*Sunday* Quick check-in — please share your actuals for each goal (numbers), plus what worked and what didn’t."
-        if not msg.lower().startswith("*sunday*"):
-            msg = "*Sunday* " + msg
+        _send_sunday(to=user.phone, text=intro)
+        first_msg = monday_flow._build_actions_for_kr(1, krs[0], options_by_index[0])
         _send_sunday(
             to=user.phone,
-            text=append_button_cta(msg),
-            quick_replies=["All good", "Need help"],
+            text=first_msg,
+            quick_replies=monday_flow._kr_quick_replies(1, options_by_index[0]),
         )
 
-        # Log touchpoint first so we can store tp_id in state (single write).
         tp_id = log_touchpoint(
             user_id=user.id,
             tp_type="sunday",
-            weekly_focus_id=wf_id,
-            week_no=week_no,
-            generated_text=msg,
-            meta={"source": "sunday", "label": "sunday", "review_mode": review_mode},
+            weekly_focus_id=target_wf_id,
+            week_no=target_week,
+            generated_text=intro,
+            meta={"source": "sunday", "label": "sunday", "flow": "habit_setting"},
         )
-        state = {
-            "mode": "awaiting",
-            "review_mode": review_mode,
+        state: dict[str, object] = {
+            "mode": "habit_setting",
             "kr_ids": kr_ids,
-            "wf_id": wf_id,
-            "week_no": week_no,
-            "history": [],
+            "wf_id": target_wf_id,
+            "week_no": target_week,
+            "options": options_by_index,
+            "current_idx": 0,
+            "selections": {},
+            "edits": {},
         }
         if tp_id:
             state["tp_id"] = tp_id
         _set_state(s, user.id, state)
         s.commit()
+
+
+def _apply_okr_updates_in_whatsapp(session: Session, krs: list[OKRKeyResult], text: str) -> bool:
+    numbers = []
+    for token in text.replace(",", " ").split():
+        try:
+            numbers.append(float(token))
+        except Exception:
+            continue
+    if len(numbers) < len(krs):
+        return False
+    for idx, kr in enumerate(krs):
+        val = numbers[idx]
+        kr.actual_num = val
+        session.add(
+            OKRKrEntry(
+                key_result_id=kr.id,
+                occurred_at=datetime.utcnow(),
+                actual_num=val,
+                note="Sunday KR update (WhatsApp)",
+                source="sunday",
+            )
+        )
+    return True
 
 
 def handle_message(user: User, body: str) -> None:
@@ -373,120 +332,179 @@ def handle_message(user: User, body: str) -> None:
         state = _get_state(s, user.id)
         if not state:
             return
-        if _is_standard_button_reply(text):
-            week_no = state.get("week_no")
-            _set_state(s, user.id, None)
-            s.commit()
-            general_support.activate(user.id, source="sunday", week_no=week_no, send_intro=True)
-            return
-        mode = state.get("mode", "awaiting")
-        review_mode = state.get("review_mode", "kr")
-        kr_ids = state.get("kr_ids") or []
+        mode = str(state.get("mode") or "")
+        kr_ids = [int(v) for v in (state.get("kr_ids") or []) if str(v).isdigit()]
         week_no = state.get("week_no")
+        try:
+            week_no = int(week_no) if week_no is not None else None
+        except Exception:
+            week_no = None
+        wf_id = state.get("wf_id")
+        try:
+            wf_id = int(wf_id) if wf_id is not None else None
+        except Exception:
+            wf_id = None
+        krs = _ordered_krs(s, kr_ids)
 
-        if mode == "awaiting":
-            wf = s.query(WeeklyFocus).get(state.get("wf_id"))
-            krs = s.query(OKRKeyResult).filter(OKRKeyResult.id.in_(kr_ids)).all() if kr_ids else []
-            is_button_reply = _is_standard_button_reply(text)
-            if review_mode == "kr" and not is_button_reply:
-                # parse numbers in order of KR list
-                numbers = []
-                for token in text.replace(",", " ").split():
-                    try:
-                        numbers.append(float(token))
-                    except Exception:
-                        continue
-                if len(numbers) < len(kr_ids):
+        if mode == "habit_setting":
+            if not krs:
+                _set_state(s, user.id, None)
+                s.commit()
+                _send_sunday(to=user.phone, text="I couldn't load your KRs just now. Reply sunday to try again.")
+                return
+            options_by_index = state.get("options") or []
+            current_idx = int(state.get("current_idx") or 0)
+            stored_selections = monday_flow._normalize_state_selections(state.get("selections"), krs, options_by_index)
+            stored_edits = monday_flow._normalize_state_edits(state.get("edits"))
+            selections = monday_flow._parse_option_selections(text, options_by_index)
+            edits = monday_flow._extract_step_edits(text, krs)
+
+            if monday_flow._is_confirm_message(text):
+                selections = {idx: 0 for idx in range(len(krs))}
+                edits = {}
+
+            if not selections and not edits:
+                if 0 <= current_idx < len(krs):
+                    options = options_by_index[current_idx] if current_idx < len(options_by_index) else []
+                    kr_msg = monday_flow._build_actions_for_kr(current_idx + 1, krs[current_idx], options)
                     _send_sunday(
                         to=user.phone,
-                        text="*Sunday* Please reply with a number for each goal in order (e.g., 3 4 2).",
+                        text=kr_msg,
+                        quick_replies=monday_flow._kr_quick_replies(current_idx + 1, options),
                     )
-                    return
-                progress_updates = []
-                for idx, kr_id in enumerate(kr_ids):
-                    val = numbers[idx]
-                    kr = next((k for k in krs if k.id == kr_id), None)
-                    if kr:
-                        kr.actual_num = val
-                        entry = OKRKrEntry(
-                            key_result_id=kr.id,
-                            occurred_at=datetime.utcnow(),
-                            actual_num=val,
-                            note="Sunday check-in",
-                            source="sunday",
-                        )
-                        s.add(entry)
-                        progress_updates.append({"kr_id": kr.id, "actual": val, "target": kr.target_num})
-                s.commit()
-                check_in_id = None
-                try:
-                    check_in_id = record_checkin(
-                        user_id=user.id,
-                        touchpoint_type="sunday",
-                        progress_updates=progress_updates,
-                        blockers=[],
-                        commitments=[],
-                        weekly_focus_id=wf.id if wf else None,
-                        week_no=getattr(wf, "week_no", None) if wf else None,
-                    )
-                except Exception:
-                    check_in_id = None
-            else:
-                # habit steps feedback or button reply
-                check_in_id = None
-                try:
-                    check_in_id = record_checkin(
-                        user_id=user.id,
-                        touchpoint_type="sunday",
-                        progress_updates=[],
-                        blockers=[],
-                        commitments=[{"note": text}],
-                        weekly_focus_id=wf.id if wf else None,
-                        week_no=getattr(wf, "week_no", None) if wf else None,
-                    )
-                except Exception:
-                    check_in_id = None
-                note_prefix = "Sunday check-in" if review_mode == "kr" else "Habit steps check-in"
-                for kr_id in kr_ids:
-                    entry = OKRKrEntry(
-                        key_result_id=kr_id,
-                        occurred_at=datetime.utcnow(),
-                        actual_num=None,
-                        note=f"{note_prefix}: {text}",
-                        source="sunday",
-                        check_in_id=check_in_id,
-                    )
-                    s.add(entry)
+                else:
+                    _send_sunday(to=user.phone, text="Please choose an option (e.g., KR1 A).")
+                return
+
+            merged_selections = {**stored_selections, **selections}
+            merged_edits = {**stored_edits, **edits}
+            selected_ids = monday_flow._selected_kr_ids(krs, merged_selections, merged_edits)
+
+            if selected_ids and len(selected_ids) == len(krs):
+                edits_to_apply: dict[int, list[str]] = {}
+                for idx, opt_idx in merged_selections.items():
+                    opts = options_by_index[idx] if idx < len(options_by_index) else []
+                    if opts and 0 <= opt_idx < len(opts):
+                        edits_to_apply[krs[idx].id] = [opts[opt_idx]]
+                for kr_id, steps in merged_edits.items():
+                    edits_to_apply[kr_id] = steps
+                if edits_to_apply:
+                    monday_flow._apply_habit_step_edits(s, user.id, wf_id, week_no, edits_to_apply)
+                    monday_flow._activate_habit_steps(s, user.id, week_no, list(edits_to_apply.keys()))
                 s.commit()
 
-            history = state.get("history") or []
-            support_text, new_history = _support_conversation(history, text, user, review_mode, week_no)
-            _send_sunday(to=user.phone, text=support_text)
-            try:
-                tp_id = state.get("tp_id") if isinstance(state, dict) else None
-                if tp_id:
-                    update_touchpoint(
-                        tp_id,
-                        generated_text=support_text,
-                        meta={"source": "sunday", "label": "sunday", "review_mode": review_mode},
-                        source_check_in_id=check_in_id,
-                    )
-            except Exception:
-                pass
+                chosen = monday_flow._resolve_chosen_steps(krs, options_by_index, merged_selections, merged_edits)
+                confirm_msg = monday_flow._confirmation_message(krs, chosen)
+                if not confirm_msg.lower().startswith("*sunday*"):
+                    confirm_msg = "*Sunday* " + confirm_msg
+                _send_sunday(to=user.phone, text=confirm_msg)
+                _send_sunday(
+                    to=user.phone,
+                    text="*Sunday* Would you like to update your KR numbers now?",
+                    quick_replies=["WhatsApp", "App", "Not now"],
+                )
+                _set_state(
+                    s,
+                    user.id,
+                    {
+                        "mode": "okr_update_choice",
+                        "kr_ids": kr_ids,
+                        "wf_id": wf_id,
+                        "week_no": week_no,
+                    },
+                )
+                s.commit()
+                return
+
+            next_idx = current_idx
+            if 0 <= current_idx < len(krs) and krs[current_idx].id in selected_ids:
+                next_idx = current_idx + 1
+            if next_idx < len(krs):
+                next_options = options_by_index[next_idx] if next_idx < len(options_by_index) else []
+                next_msg = monday_flow._build_actions_for_kr(next_idx + 1, krs[next_idx], next_options)
+                _send_sunday(
+                    to=user.phone,
+                    text=next_msg,
+                    quick_replies=monday_flow._kr_quick_replies(next_idx + 1, next_options),
+                )
+            _set_state(
+                s,
+                user.id,
+                {
+                    "mode": "habit_setting",
+                    "kr_ids": kr_ids,
+                    "wf_id": wf_id,
+                    "week_no": week_no,
+                    "options": options_by_index,
+                    "current_idx": next_idx,
+                    "selections": merged_selections,
+                    "edits": merged_edits,
+                },
+            )
+            s.commit()
+            return
+
+        if mode == "okr_update_choice":
+            cleaned = re.sub(r"\s+", " ", text.strip().lower())
+            if cleaned in {"not now", "no", "skip", "later", "no thanks"}:
+                _send_sunday(to=user.phone, text="*Sunday* No problem. We can update KRs later.")
+                _set_state(s, user.id, None)
+                s.commit()
+                general_support.activate(user.id, source="sunday", week_no=week_no, send_intro=False)
+                return
+            if "app" in cleaned:
+                app_url = f"{_hsapp_base_url()}/login"
+                _send_sunday(
+                    to=user.phone,
+                    text=(
+                        "*Sunday* Great. Update your KRs in the app using 'Update KRs' on Home.\n"
+                        f"Log in here: {app_url}"
+                    ),
+                )
+                _set_state(s, user.id, None)
+                s.commit()
+                general_support.activate(user.id, source="sunday", week_no=week_no, send_intro=False)
+                return
+            if "whatsapp" in cleaned or "what's app" in cleaned or "whats app" in cleaned:
+                _send_sunday(
+                    to=user.phone,
+                    text="*Sunday* Reply with one number per KR in order (e.g., 3 4 2).",
+                )
+                _set_state(
+                    s,
+                    user.id,
+                    {
+                        "mode": "okr_update_whatsapp",
+                        "kr_ids": kr_ids,
+                        "wf_id": wf_id,
+                        "week_no": week_no,
+                    },
+                )
+                s.commit()
+                return
+            _send_sunday(
+                to=user.phone,
+                text="*Sunday* Choose how to update: WhatsApp, App, or Not now.",
+                quick_replies=["WhatsApp", "App", "Not now"],
+            )
+            return
+
+        if mode == "okr_update_whatsapp":
+            if not krs:
+                _set_state(s, user.id, None)
+                s.commit()
+                _send_sunday(to=user.phone, text="I couldn't load your KRs just now. Reply sunday to restart.")
+                return
+            ok = _apply_okr_updates_in_whatsapp(s, krs, text)
+            if not ok:
+                _send_sunday(to=user.phone, text="*Sunday* Please send one number per KR in order (e.g., 3 4 2).")
+                return
+            s.commit()
+            _send_sunday(to=user.phone, text="*Sunday* Saved. Your KR updates are recorded.")
             _set_state(s, user.id, None)
             s.commit()
             general_support.activate(user.id, source="sunday", week_no=week_no, send_intro=False)
             return
 
-        if mode == "support":
-            history = state.get("history") or []
-            support_text, new_history = _support_conversation(history, text, user, review_mode, week_no)
-            _send_sunday(to=user.phone, text=support_text)
-            _set_state(s, user.id, None)
-            s.commit()
-            general_support.activate(user.id, source="sunday", week_no=week_no, send_intro=False)
-            return
-
-        # default: clear if unknown
         _set_state(s, user.id, None)
         s.commit()

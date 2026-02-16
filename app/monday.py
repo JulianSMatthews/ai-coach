@@ -979,26 +979,13 @@ def start_weekstart(user: User, notes: str | None = None, debug: bool = False, s
         kr_lookup = {kr.id: kr for kr in kr_rows if kr}
         krs = [kr_lookup[kid] for kid in kr_ids if kid in kr_lookup]
 
-        audio_url, transcript = _send_weekly_briefing(user, week_no=label_week)
-        actions_message, options_by_index = _build_weekstart_actions(transcript, krs, user)
-        if actions_message:
-            options_by_index = _refresh_options_from_actions_message(actions_message, krs, options_by_index)
+        audio_url, _transcript = _send_weekly_briefing(user, week_no=label_week)
         confirm_msg = _build_podcast_confirm_message(user, COACH_NAME)
         _send_monday(
             to=user.phone,
             text=confirm_msg,
             quick_replies=["Listened", "Later"],
         )
-
-        _save_habit_steps_from_options(
-            s,
-            user_id=user.id,
-            weekly_focus_id=wf.id,
-            week_no=label_week,
-            krs=krs,
-            options_by_index=options_by_index,
-        )
-        s.commit()
 
         # Log weekstart touchpoint
         log_touchpoint(
@@ -1008,7 +995,7 @@ def start_weekstart(user: User, notes: str | None = None, debug: bool = False, s
             week_no=label_week,
             kr_ids=kr_ids,
             meta={"notes": notes, "week_no": label_week, "source": "weekstart", "label": "monday"},
-            generated_text=actions_message,
+            generated_text=confirm_msg,
             audio_url=audio_url,
         )
 
@@ -1022,9 +1009,7 @@ def start_weekstart(user: User, notes: str | None = None, debug: bool = False, s
                     "kr_ids": kr_ids,
                     "history": [],
                     "debug": debug,
-                    "options": options_by_index,
-                    "actions_message": actions_message,
-                    "current_idx": 0,
+                    "week_no": label_week,
                 },
             )
             s.commit()
@@ -1073,9 +1058,26 @@ def handle_message(user: User, text: str) -> None:
 
         mode = state.get("mode")
         debug = bool(state.get("debug"))
+        week_no = getattr(wf, "week_no", None)
+
+        if mode in {"proposal", "support"}:
+            _send_monday(
+                to=user.phone,
+                text=(
+                    "*Monday* Habit-step setting now runs on Sunday. "
+                    "For today, your weekstart is confirmed after the podcast."
+                ),
+            )
+            _set_state(s, user.id, None)
+            s.commit()
+            general_support.activate(user.id, source="monday", week_no=week_no, send_intro=True)
+            return
+
         options_by_index = state.get("options") or []
         actions_message = state.get("actions_message") or ""
-        needs_refresh = not actions_message or not options_by_index or _any_fallback_options(options_by_index)
+        needs_refresh = mode != "awaiting_podcast" and (
+            not actions_message or not options_by_index or _any_fallback_options(options_by_index)
+        )
         refreshed_options = False
         if needs_refresh:
             if not actions_message or _any_fallback_options(options_by_index):
@@ -1111,50 +1113,15 @@ def handle_message(user: User, text: str) -> None:
         if mode == "awaiting_podcast":
             listened = "listened" in lower or "listen" == lower or _is_confirm_message(msg, allow_all_good=True)
             if listened:
-                actions_message = state.get("actions_message") or ""
-                intro_msg = _extract_intro_from_actions_message(actions_message) or _build_actions_intro()
-                if intro_msg and not intro_msg.lower().startswith("*monday*"):
-                    intro_msg = "*Monday* " + intro_msg
-                _send_monday(to=user.phone, text=intro_msg)
-                if krs:
-                    if actions_message:
-                        parsed = _parse_action_options(actions_message, krs)
-                        if parsed:
-                            options_by_index = [parsed.get(kr.id, []) for kr in krs]
-                        else:
-                            options_by_index = _refresh_options_from_actions_message(actions_message, krs, options_by_index)
-                    if not options_by_index or _any_fallback_options(options_by_index):
-                        _, options_by_index = _build_weekstart_actions("", krs, user)
-                    if not options_by_index or not options_by_index[0]:
-                        _send_monday(
-                            to=user.phone,
-                            text="*Monday* Sorry — I couldn’t retrieve the habit options from the prompt. Please try again later.",
-                        )
-                        return
-                    options = options_by_index[0] if options_by_index else []
-                    kr_msg = _build_actions_for_kr(1, krs[0], options)
-                    if kr_msg and not kr_msg.lower().startswith("*monday*"):
-                        kr_msg = "*Monday* " + kr_msg
-                    _send_monday(
-                        to=user.phone,
-                        text=kr_msg,
-                        quick_replies=_kr_quick_replies(1, options),
-                    )
-                _set_state(
-                    s,
-                    user.id,
-                    {
-                        "mode": "proposal",
-                        "wf_id": wf.id,
-                        "kr_ids": kr_ids,
-                        "history": state.get("history") or [],
-                        "debug": debug,
-                        "options": options_by_index,
-                        "actions_message": actions_message,
-                        "current_idx": 0,
-                    },
+                summary = _summary_message(krs) if krs else "Weekstart confirmed."
+                msg_txt = (
+                    f"*Monday* Thanks for listening.\n\n{summary}\n\n"
+                    "We’ll set your habit steps on Sunday for the next week."
                 )
+                _send_monday(to=user.phone, text=msg_txt)
+                _set_state(s, user.id, None)
                 s.commit()
+                general_support.activate(user.id, source="monday", week_no=week_no, send_intro=True)
                 return
             _send_monday(
                 to=user.phone,

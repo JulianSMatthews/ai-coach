@@ -568,7 +568,7 @@ def _format_main_question_for_user(state: dict, pillar: str | None, concept_code
     return f"{prefix}: {question_text.strip()}"
 
 # --- OKR sync helper: call this AFTER you have saved & committed a PillarResult ---
-from app.okr import generate_and_update_okrs_for_pillar
+from app.okr import generate_and_update_okrs_for_pillar, seed_week1_habit_steps_for_assessment
 from .config import settings
 
 def _sync_okrs_after_pillar(db, user, assess_session, pillar_result, concept_score_map=None):
@@ -2465,6 +2465,27 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 if r_sc is not None: bars.append(_score_bar("Resilience", r_sc))
                 if rc_sc is not None: bars.append(_score_bar("Recovery", rc_sc))
                 breakdown = "\n".join(bars) if bars else "No pillar scores available"
+
+                # Ensure week-1 habit steps are seeded for all active KRs from this assessment.
+                try:
+                    seeded_count = seed_week1_habit_steps_for_assessment(
+                        s,
+                        user_id=user.id,
+                        assess_session_id=getattr(sess, "id", None),
+                        run_id=state.get("run_id"),
+                        week_no=1,
+                    )
+                    if seeded_count:
+                        s.commit()
+                except Exception as _habit_seed_err:
+                    try:
+                        s.rollback()
+                    except Exception:
+                        pass
+                    print(
+                        f"[okr] WARN: week-1 habit seed failed run_id={state.get('run_id')} "
+                        f"user_id={user.id} err={_habit_seed_err}"
+                    )
 
                 # Build final message (will be sent after psych check completes)
                 name = (getattr(user, "first_name", "") or "").strip()

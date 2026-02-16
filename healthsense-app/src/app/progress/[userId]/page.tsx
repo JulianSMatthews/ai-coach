@@ -5,6 +5,7 @@ import { Card, PageShell } from "@/components/ui";
 import CarouselDots from "@/components/CarouselDots";
 import TextScale from "@/components/TextScale";
 import AppNav from "@/components/AppNav";
+import KRUpdateEditor from "@/components/KRUpdateEditor";
 import ProgrammeCalendar from "./ProgrammeCalendar";
 
 type PageProps = {
@@ -501,6 +502,15 @@ export default async function ProgressPage(props: PageProps) {
                                   <p className="mt-1 text-xs text-[#6b6257]">No habit steps yet.</p>
                                 )}
                               </div>
+                              {typeof kr.id === "number" ? (
+                                <KRUpdateEditor
+                                  userId={userId}
+                                  krId={kr.id}
+                                  initialDescription={kr.description}
+                                  initialActual={kr.actual}
+                                  initialTarget={kr.target}
+                                />
+                              ) : null}
                             </div>
                           );
                         })}

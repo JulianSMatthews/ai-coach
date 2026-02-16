@@ -11,6 +11,22 @@ type TemplateFormProps = {
 
 const emptyState = { ok: false, error: null as string | null };
 const emptyPreview = { ok: false, error: null as string | null, result: undefined };
+const MODEL_OPTIONS = [
+  "gpt-5.2-pro",
+  "gpt-5.2",
+  "gpt-5.1",
+  "gpt-5-mini",
+  "gpt-5-nano",
+  "gpt-4.1",
+  "gpt-4.1-mini",
+  "gpt-4.1-nano",
+  "gpt-4o",
+  "gpt-4o-mini",
+  "o3",
+  "o4-mini",
+  "gpt-3.5-turbo",
+] as const;
+const LIVE_MODEL_OPTIONS = new Set(["gpt-5-mini", "gpt-5.1"]);
 
 export default function TemplateForm({ template, userOptions }: TemplateFormProps) {
   const [saveState, saveAction, savePending] = useActionState(saveTemplateAction, emptyState);
@@ -28,6 +44,8 @@ export default function TemplateForm({ template, userOptions }: TemplateFormProp
       : userOptions;
     return list.slice(0, 50);
   }, [userOptions, userQuery]);
+  const modelOverride = (template?.model_override || "").trim();
+  const canPromoteLive = !modelOverride || LIVE_MODEL_OPTIONS.has(modelOverride);
 
   return (
     <div className="space-y-6">
@@ -103,22 +121,17 @@ export default function TemplateForm({ template, userOptions }: TemplateFormProp
               className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
             >
               <option value="">Env default</option>
-              <option value="gpt-5.2-pro">gpt-5.2-pro</option>
-              <option value="gpt-5.2">gpt-5.2</option>
-              <option value="gpt-5.1">gpt-5.1</option>
-              <option value="gpt-5-mini">gpt-5-mini</option>
-              <option value="gpt-5-nano">gpt-5-nano</option>
-              <option value="gpt-4.1">gpt-4.1</option>
-              <option value="gpt-4.1-mini">gpt-4.1-mini</option>
-              <option value="gpt-4.1-nano">gpt-4.1-nano</option>
-              <option value="gpt-4o">gpt-4o</option>
-              <option value="gpt-4o-mini">gpt-4o-mini</option>
-              <option value="o3">o3</option>
-              <option value="o4-mini">o4-mini</option>
-              <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+              {MODEL_OPTIONS.map((model) => (
+                <option key={model} value={model}>
+                  {model}
+                </option>
+              ))}
             </select>
             <p className="mt-2 text-xs text-[#6b6257]">
               Used at runtime for this touchpoint unless a request-level model override is provided.
+            </p>
+            <p className="mt-1 text-xs text-[#8a8176]">
+              Live promotions only allow <code>gpt-5-mini</code> or <code>gpt-5.1</code>; preview/testing can use the full list.
             </p>
           </div>
         </div>
@@ -175,7 +188,9 @@ export default function TemplateForm({ template, userOptions }: TemplateFormProp
             <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Promote to</label>
             <select name="to_state" className="rounded-full border border-[#efe7db] px-3 py-2 text-sm">
               <option value="beta">Beta</option>
-              <option value="live">Live</option>
+              <option value="live" disabled={!canPromoteLive}>
+                Live
+              </option>
             </select>
             <input
               name="note"
@@ -192,6 +207,11 @@ export default function TemplateForm({ template, userOptions }: TemplateFormProp
           </div>
           {promoteState.error ? <p className="mt-2 text-sm text-red-600">{promoteState.error}</p> : null}
           {promoteState.ok ? <p className="mt-2 text-sm text-[var(--accent)]">Promoted.</p> : null}
+          {!canPromoteLive ? (
+            <p className="mt-2 text-sm text-[#8a8176]">
+              Save the template with <code>gpt-5-mini</code> or <code>gpt-5.1</code> before promoting to live.
+            </p>
+          ) : null}
         </form>
       ) : null}
 
@@ -233,19 +253,11 @@ export default function TemplateForm({ template, userOptions }: TemplateFormProp
             disabled={!canPreview}
           >
             <option value="">Default model</option>
-            <option value="gpt-5.2-pro">gpt-5.2-pro</option>
-            <option value="gpt-5.2">gpt-5.2</option>
-            <option value="gpt-5.1">gpt-5.1</option>
-            <option value="gpt-5-mini">gpt-5-mini</option>
-            <option value="gpt-5-nano">gpt-5-nano</option>
-            <option value="gpt-4.1">gpt-4.1</option>
-            <option value="gpt-4.1-mini">gpt-4.1-mini</option>
-            <option value="gpt-4.1-nano">gpt-4.1-nano</option>
-            <option value="gpt-4o">gpt-4o</option>
-            <option value="gpt-4o-mini">gpt-4o-mini</option>
-            <option value="o3">o3</option>
-            <option value="o4-mini">o4-mini</option>
-            <option value="gpt-3.5-turbo">gpt-3.5-turbo</option>
+            {MODEL_OPTIONS.map((model) => (
+              <option key={model} value={model}>
+                {model}
+              </option>
+            ))}
           </select>
           <label className="flex items-center gap-2 text-sm text-[#6b6257]">
             <input type="checkbox" name="run_llm" disabled={!canPreview} />

@@ -30,6 +30,21 @@ _PROMPT_TEMPLATE_DEFAULTS = {
     "is_active": True,
 }
 BANNED_BLOCKS = {"developer", "policy", "tool"}
+LIVE_TEMPLATE_ALLOWED_MODELS = {"gpt-5-mini", "gpt-5.1"}
+
+
+def _normalize_model_override(raw: str | None) -> str | None:
+    val = (raw or "").strip()
+    return val or None
+
+
+def _ensure_live_template_model_allowed(model_override: str | None, *, context: str = "live templates") -> None:
+    if not model_override:
+        return
+    if model_override in LIVE_TEMPLATE_ALLOWED_MODELS:
+        return
+    allowed = ", ".join(sorted(LIVE_TEMPLATE_ALLOWED_MODELS))
+    raise HTTPException(400, f"{context} model_override must be one of: {allowed}")
 
 
 def _enforce_single_active_states(session, state_names: set[str]):
@@ -370,6 +385,21 @@ def _promote_templates_batch(source_state: str, target_state: str, note: str | N
         rows = s.query(PromptTemplate).filter(PromptTemplate.state == source_state).all()
         if not rows:
             raise HTTPException(400, f"No templates found in state '{source_state}'")
+        if target_state == "live":
+            invalid = []
+            for row in rows:
+                model_override = _normalize_model_override(getattr(row, "model_override", None))
+                if model_override and model_override not in LIVE_TEMPLATE_ALLOWED_MODELS:
+                    invalid.append(f"{row.touchpoint}={model_override}")
+            if invalid:
+                allowed = ", ".join(sorted(LIVE_TEMPLATE_ALLOWED_MODELS))
+                sample = ", ".join(invalid[:8])
+                suffix = "..." if len(invalid) > 8 else ""
+                raise HTTPException(
+                    400,
+                    "Cannot promote to live with unsupported model_override. "
+                    f"Allowed: {allowed}. Update these templates first: {sample}{suffix}",
+                )
 
         next_version = None
         if (source_state, target_state) == ("develop", "beta"):
@@ -1318,12 +1348,18 @@ async def save_prompt_template(
         state_val = (state or getattr(row, "state", "develop") or "develop").strip().lower()
         if state_val not in {"develop", "beta", "live"}:
             raise HTTPException(400, "State must be develop|beta|live")
+        model_override_val = _normalize_model_override(model_override)
+        if state_val == "live":
+            _ensure_live_template_model_allowed(
+                model_override_val,
+                context=f"touchpoint '{touchpoint}' live state",
+            )
         row.touchpoint = touchpoint
         row.state = state_val
         row.okr_scope = okr_scope or None
         row.programme_scope = programme_scope or None
         row.response_format = response_format or None
-        row.model_override = (model_override or "").strip() or None
+        row.model_override = model_override_val
         row.block_order = bo_list
         # include_blocks now mirrors block_order (single merged field)
         row.include_blocks = inc_list or bo_list

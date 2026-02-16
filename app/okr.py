@@ -937,7 +937,7 @@ from sqlalchemy import and_, func
 
 # Import your ORM classes (must exist in app.models)
 from app.models import (
-    OKRCycle, OKRObjective, OKRKeyResult, OKRKrEntry, PillarResult,
+    OKRCycle, OKRObjective, OKRKeyResult, OKRKrEntry, OKRKrHabitStep, PillarResult,
     # AssessSession, User  # referenced by ForeignKeys in models.py
 )
 
@@ -1192,6 +1192,82 @@ def recompute_objective_score_from_krs(session: Session, objective_id: int) -> O
         num += float(s) * float(w)
         den += float(w)
     return round(num / den, 2) if den > 0 else None
+
+
+def _week1_habit_step_text(kr: OKRKeyResult) -> str:
+    desc = (getattr(kr, "description", None) or "").strip().rstrip(".")
+    if not desc:
+        return "Do one simple step toward this KR on two days this week."
+    return f"Do one simple step toward this KR on two days this week: {desc}."
+
+
+def seed_week1_habit_steps_for_assessment(
+    session: Session,
+    *,
+    user_id: int,
+    assess_session_id: int | None = None,
+    run_id: int | None = None,
+    week_no: int = 1,
+) -> int:
+    """
+    Ensure week-1 habit steps exist for active KRs generated in an assessment.
+    Non-destructive: if a KR already has any non-archived step for the target week, keep it.
+    """
+    if not user_id:
+        return 0
+
+    obj_query = session.query(OKRObjective.id).filter(OKRObjective.owner_user_id == user_id)
+    if assess_session_id:
+        obj_query = obj_query.filter(OKRObjective.source_assess_session_id == assess_session_id)
+    elif run_id:
+        obj_query = obj_query.join(PillarResult, OKRObjective.source_pillar_id == PillarResult.id).filter(PillarResult.run_id == run_id)
+
+    objective_ids = [int(row[0]) for row in obj_query.all() if row and row[0] is not None]
+    if not objective_ids:
+        return 0
+
+    krs = (
+        session.query(OKRKeyResult)
+        .filter(
+            OKRKeyResult.objective_id.in_(objective_ids),
+            OKRKeyResult.status == "active",
+        )
+        .all()
+    )
+    if not krs:
+        return 0
+
+    seeded = 0
+    for kr in krs:
+        existing = (
+            session.query(OKRKrHabitStep.id)
+            .filter(
+                OKRKrHabitStep.user_id == user_id,
+                OKRKrHabitStep.kr_id == kr.id,
+                OKRKrHabitStep.week_no == week_no,
+                OKRKrHabitStep.status != "archived",
+            )
+            .first()
+        )
+        if existing:
+            continue
+        session.add(
+            OKRKrHabitStep(
+                user_id=user_id,
+                kr_id=kr.id,
+                weekly_focus_id=None,
+                week_no=week_no,
+                sort_order=0,
+                step_text=_week1_habit_step_text(kr),
+                status="proposed",
+                source="assessment_auto",
+            )
+        )
+        seeded += 1
+
+    if seeded:
+        session.flush()
+    return seeded
 
 
 # ──────────────────────────────────────────────────────────────────────────────

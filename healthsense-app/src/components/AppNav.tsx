@@ -11,6 +11,7 @@ type AppNavProps = {
 
 const makeLinks = (userId: string) => [
   { label: "Home", href: `/progress/${userId}` },
+  { label: "Update KRs", href: `/progress/${userId}#timeline` },
   { label: "Assessment", href: `/assessment/${userId}` },
   { label: "Library", href: `/library/${userId}` },
   { label: "Preferences", href: `/preferences/${userId}` },
