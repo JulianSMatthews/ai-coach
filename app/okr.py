@@ -344,6 +344,23 @@ def _normalize_phrase(text: str | None) -> str:
 def _guess_concept_from_description(pillar_slug: str, desc: str) -> str | None:
     if not desc:
         return None
+    raw = desc.lower()
+    # Recovery KRs often include both duration and frequency numbers.
+    # Map common phrasing to concept first so baseline comes from assessment state.
+    if pillar_slug == "recovery":
+        if any(phrase in raw for phrase in ("go to bed", "bedtime", "same time")):
+            return "bedtime_consistency"
+        if (
+            ("screen" in raw and "bed" in raw)
+            or "before bed" in raw
+            or "pre-bed" in raw
+            or "pre bed" in raw
+            or "wind-down" in raw
+            or "wind down" in raw
+        ):
+            return "sleep_quality"
+        if "sleep" in raw and ("hour" in raw or "hours" in raw):
+            return "sleep_duration"
     text = _normalize_phrase(desc)
     for key, meta in (_GUIDE.get(pillar_slug, {}) or {}).items():
         label = _normalize_phrase(meta.get("label"))
@@ -400,8 +417,10 @@ def _enrich_kr_defaults(pillar_slug: str, kr: dict, concept_scores: dict[str, fl
     concept_key = _normalize_concept_key((kr.get("concept_key") or "").split(".")[-1]) or _guess_concept_from_description(pillar_slug, kr.get("description", ""))
     meta = guide.get(concept_key)
     if meta:
-        kr.setdefault("metric_label", meta.get("label"))
-        kr.setdefault("unit", meta.get("unit"))
+        if not kr.get("metric_label"):
+            kr["metric_label"] = meta.get("label")
+        if not kr.get("unit"):
+            kr["unit"] = meta.get("unit")
     if kr.get("unit") is None:
         inferred_unit = _infer_unit_from_text(kr.get("description", ""))
         if inferred_unit:
@@ -493,8 +512,8 @@ _GUIDE: dict[str, dict[str, dict[str, str]]] = {
     },
     "recovery": {
         "bedtime_consistency": {"label": "consistent bedtimes", "unit": "nights/week", "low": "increase", "high": "maintain"},
-        "sleep_duration":      {"label": "sleep duration",      "unit": "hours/night", "low": "increase", "high": "maintain"},
-        "sleep_quality":       {"label": "sleep quality",       "unit": "percent",     "low": "increase", "high": "maintain"},
+        "sleep_duration":      {"label": "nights with 7+ hours sleep", "unit": "nights/week", "low": "increase", "high": "maintain"},
+        "sleep_quality":       {"label": "nights waking refreshed", "unit": "nights/week", "low": "increase", "high": "maintain"},
     },
 }
 
