@@ -3069,7 +3069,14 @@ def _build_intro_payload(session, user: User, onboarding_state: dict | None = No
     row = _latest_intro_content_row(session, active_only=True) if enabled else None
     first_login_at = str(onboarding.get("first_app_login_at") or "").strip() or None
     coaching_enabled = _coaching_enabled_for_user(session, int(user.id))
-    should_show = bool(enabled and first_login_at and not coaching_enabled)
+    coaching_enabled_at_raw = str(onboarding.get("coaching_auto_enabled_at") or "").strip() or None
+    coaching_enabled_at = _parse_pref_timestamp(coaching_enabled_at_raw)
+    coaching_recently_enabled = bool(
+        coaching_enabled
+        and coaching_enabled_at is not None
+        and datetime.utcnow() <= (coaching_enabled_at + timedelta(hours=24))
+    )
+    should_show = bool(enabled and first_login_at and (not coaching_enabled or coaching_recently_enabled))
     title = str(getattr(row, "title", "") or "").strip() or INTRO_TITLE_DEFAULT
     message_template = _intro_message_template_from_row(row)
     message = _render_intro_message(message_template, user)
@@ -3085,6 +3092,7 @@ def _build_intro_payload(session, user: User, onboarding_state: dict | None = No
         "podcast_voice": getattr(row, "podcast_voice", None),
         "welcome_message_template": message_template,
         "coaching_enabled": coaching_enabled,
+        "coaching_recently_enabled": coaching_recently_enabled,
         "onboarding": onboarding,
     }
 
@@ -9645,7 +9653,18 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
     intro_content_published = bool(intro_row)
     intro_content_has_audio = bool(intro_row and str(getattr(intro_row, "podcast_url", "") or "").strip())
     intro_content_has_read = bool(intro_row and str(getattr(intro_row, "body", "") or "").strip())
-    intro_should_show = bool(intro_active and intro_content_published and first_login_at and not coaching_enabled)
+    coaching_enabled_at_ts = _parse_pref_timestamp(coaching_auto_enabled_at)
+    coaching_recently_enabled = bool(
+        coaching_enabled
+        and coaching_enabled_at_ts is not None
+        and datetime.utcnow() <= (coaching_enabled_at_ts + timedelta(hours=24))
+    )
+    intro_should_show = bool(
+        intro_active
+        and intro_content_published
+        and first_login_at
+        and (not coaching_enabled or coaching_recently_enabled)
+    )
     activation_ready = bool(assessment_completed_at and first_login_at and assessment_reviewed_at and intro_completed_at)
 
     return {

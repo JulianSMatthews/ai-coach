@@ -298,7 +298,11 @@ export default async function ProgressPage(props: PageProps) {
   const introShouldShow = Boolean(status.intro?.enabled && status.intro?.should_show);
   const headlineText =
     introShouldShow && introHeadline ? introHeadline : weekHeadline;
-  const anchorLabel = `${meta.anchor_label || "n/a"}${meta.is_virtual_date ? "*" : ""}`;
+  const coachingActivatedAt =
+    status.onboarding?.coaching_auto_enabled_at || status.intro?.onboarding?.coaching_auto_enabled_at || null;
+  const anchorLabel = `${meta.anchor_label || "n/a"}${meta.is_virtual_date ? "*" : ""}${
+    coachingActivatedAt ? " (coaching)" : ""
+  }`;
 
   const normalizePillarKey = (value?: string) => {
     const key = (value || "").toLowerCase();
