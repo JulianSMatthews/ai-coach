@@ -897,7 +897,11 @@ def test_prompt_template(
         # Podcast kickoff/weekstart: full runtime context
         if tp_lower in {"podcast_kickoff", "podcast_weekstart"}:
             run, pillars = kickoff_latest_assessment(int(user_id))
-            programme = kickoff_programme_blocks(getattr(run, "started_at", None) or getattr(run, "created_at", None))
+            programme = kickoff_programme_blocks(
+                getattr(run, "finished_at", None)
+                or getattr(run, "started_at", None)
+                or getattr(run, "created_at", None)
+            )
             first_block = programme[0] if programme else None
             extra_kwargs.update(
                 {

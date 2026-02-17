@@ -173,7 +173,11 @@ def _assemble_prompt_for_report(touchpoint: str, user_id: int, as_of_date: date 
                 "flags": getattr(psych, "flags", None),
                 "parameters": getattr(psych, "parameters", None),
             }
-        programme = kickoff_programme_blocks(getattr(run, "started_at", None) or getattr(run, "created_at", None))
+        programme = kickoff_programme_blocks(
+            getattr(run, "finished_at", None)
+            or getattr(run, "started_at", None)
+            or getattr(run, "created_at", None)
+        )
         first_block = programme[0] if programme else None
 
         if tp_lower in {"podcast_kickoff", "podcast_weekstart"}:
@@ -3508,7 +3512,13 @@ def generate_assessment_summary_pdf(start: date | str, end: date | str, *, club_
         _audit("summary_report_generate", "error", {"start": start_str, "end": end_str}, error=str(e))
         raise
 from .llm import _llm
-def _collect_progress_rows(user_id: int, programme_blocks: dict[str, dict[str, Any]] | None = None) -> list[dict]:
+def _collect_progress_rows(
+    user_id: int,
+    programme_blocks: dict[str, dict[str, Any]] | None = None,
+    *,
+    week_no: int | None = None,
+    focus_kr_ids: set[int] | None = None,
+) -> list[dict]:
     rows: list[dict] = []
     with SessionLocal() as s:
         objectives = (
@@ -3525,6 +3535,13 @@ def _collect_progress_rows(user_id: int, programme_blocks: dict[str, dict[str, A
                     all_kr_ids.append(int(kr.id))
         step_rows: list[OKRKrHabitStep] = []
         steps_by_kr: dict[int, list[dict[str, Any]]] = {}
+        step_rows_by_kr: dict[int, list[OKRKrHabitStep]] = {}
+        preferred_week = None
+        try:
+            preferred_week = int(week_no) if week_no is not None else None
+        except Exception:
+            preferred_week = None
+        focus_set = {int(v) for v in (focus_kr_ids or set()) if str(v).isdigit()}
         if all_kr_ids:
             step_rows = (
                 s.query(OKRKrHabitStep)
@@ -3539,14 +3556,52 @@ def _collect_progress_rows(user_id: int, programme_blocks: dict[str, dict[str, A
                 .all()
             )
             for step in step_rows:
-                steps_by_kr.setdefault(step.kr_id, []).append(
-                    {
-                        "id": step.id,
-                        "text": step.step_text,
-                        "status": step.status,
-                        "week_no": step.week_no,
-                    }
+                step_rows_by_kr.setdefault(int(step.kr_id), []).append(step)
+
+            def _sort_rows(rows: list[OKRKrHabitStep]) -> list[OKRKrHabitStep]:
+                return sorted(
+                    rows,
+                    key=lambda row: (
+                        getattr(row, "sort_order", 0) or 0,
+                        getattr(row, "id", 0) or 0,
+                    ),
                 )
+
+            def _pick_rows_for_kr(kr_id: int) -> list[OKRKrHabitStep]:
+                rows = list(step_rows_by_kr.get(int(kr_id), []) or [])
+                if not rows:
+                    return []
+                # For focused KRs, strongly prefer the selected/current week.
+                if preferred_week is not None and int(kr_id) in focus_set:
+                    exact = [row for row in rows if getattr(row, "week_no", None) == preferred_week]
+                    if exact:
+                        return _sort_rows(exact)
+                # Next prefer generic weekless active steps.
+                generic = [row for row in rows if getattr(row, "week_no", None) is None]
+                if generic:
+                    return _sort_rows(generic)
+                # Otherwise keep the latest explicit-week set.
+                explicit = [row for row in rows if getattr(row, "week_no", None) is not None]
+                if not explicit:
+                    return _sort_rows(rows)
+                latest_week = max(int(getattr(row, "week_no", 0) or 0) for row in explicit)
+                latest_rows = [row for row in explicit if int(getattr(row, "week_no", 0) or 0) == latest_week]
+                return _sort_rows(latest_rows)
+
+            for kr_id in all_kr_ids:
+                selected_rows = _pick_rows_for_kr(int(kr_id))
+                if not selected_rows:
+                    continue
+                steps_by_kr[int(kr_id)] = [
+                    {
+                        "id": row.id,
+                        "text": row.step_text,
+                        "status": row.status,
+                        "week_no": row.week_no,
+                    }
+                    for row in selected_rows
+                    if getattr(row, "step_text", None)
+                ]
         state_cache: dict[int, dict[str, float]] = {}
         for obj in objectives:
             cycle = obj.cycle
@@ -4155,7 +4210,11 @@ def build_progress_report_data(user_id: int, anchor_date: date | None = None) ->
             .first()
         )
         if run:
-            programme_start = getattr(run, "started_at", None) or getattr(run, "created_at", None)
+            programme_start = (
+                getattr(run, "finished_at", None)
+                or getattr(run, "started_at", None)
+                or getattr(run, "created_at", None)
+            )
             programme_blocks = _programme_block_map(programme_start)
             programme_blocks_list = build_programme_blocks(programme_start)
         # Latest weekly focus for this user (use anchor_today to pick current)
@@ -4189,7 +4248,17 @@ def build_progress_report_data(user_id: int, anchor_date: date | None = None) ->
             .first()
         )
 
-    rows = _collect_progress_rows(user_id, programme_blocks=programme_blocks)
+    active_week_no = None
+    if wf_current and getattr(wf_current, "week_no", None):
+        active_week_no = wf_current.week_no
+    elif wf_latest and getattr(wf_latest, "week_no", None):
+        active_week_no = wf_latest.week_no
+    rows = _collect_progress_rows(
+        user_id,
+        programme_blocks=programme_blocks,
+        week_no=active_week_no,
+        focus_kr_ids=set(focus_kr_ids),
+    )
     reported_at = datetime.utcnow().strftime("%d %b %Y %H:%M UTC")
 
     status_counts = {"on track": 0, "at risk": 0, "off track": 0, "not started": 0}

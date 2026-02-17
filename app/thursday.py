@@ -87,7 +87,11 @@ def _resolve_week_context(session, user_id: int, week_no: int | None) -> tuple[i
         .first()
     )
     if run:
-        base_dt = getattr(run, "started_at", None) or getattr(run, "created_at", None)
+        base_dt = (
+            getattr(run, "finished_at", None)
+            or getattr(run, "started_at", None)
+            or getattr(run, "created_at", None)
+        )
         if isinstance(base_dt, datetime):
             programme_start = base_dt.date()
     if programme_start is None:

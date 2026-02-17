@@ -179,7 +179,11 @@ def generate_kickoff_podcast_transcript(
         }
         for p in pillars
     ]
-    programme = _programme_blocks(getattr(run, "started_at", None) or getattr(run, "created_at", None))
+    programme = _programme_blocks(
+        getattr(run, "finished_at", None)
+        or getattr(run, "started_at", None)
+        or getattr(run, "created_at", None)
+    )
     first_block = programme[0] if programme else None
     current_block = None
     if programme:

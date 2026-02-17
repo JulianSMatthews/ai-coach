@@ -34,14 +34,34 @@ def first_monday_on_or_after(day_value: date | datetime | None) -> date | None:
     return base + timedelta(days=(0 - base.weekday()) % 7)
 
 
-def week_anchor_date(start_value: date | datetime | None, default_today: date | None = None) -> date:
+def first_monday_after(day_value: date | datetime | None) -> date | None:
+    base = to_date(day_value)
+    if base is None:
+        return None
+    delta = (7 - base.weekday()) % 7
+    if delta == 0:
+        delta = 7
+    return base + timedelta(days=delta)
+
+
+def coaching_start_date(start_value: date | datetime | None) -> date | None:
+    """
+    Coaching timeline starts the day after assessment completion.
+    """
     start_day = to_date(start_value)
+    if start_day is None:
+        return None
+    return start_day + timedelta(days=1)
+
+
+def week_anchor_date(start_value: date | datetime | None, default_today: date | None = None) -> date:
+    start_day = coaching_start_date(start_value)
     if start_day is not None:
-        anchor = first_monday_on_or_after(start_day)
+        anchor = first_monday_after(start_day)
         if anchor is not None:
             return anchor
     base_today = default_today or datetime.utcnow().date()
-    fallback = first_monday_on_or_after(base_today)
+    fallback = first_monday_after(base_today)
     return fallback or base_today
 
 
@@ -66,10 +86,10 @@ def week_no_for_focus_start(start_value: date | datetime | None, focus_start_val
 
 
 def programme_blocks(start_value: date | datetime | None) -> list[dict[str, Any]]:
-    start_day = to_date(start_value)
+    start_day = coaching_start_date(start_value)
     if start_day is None:
         return []
-    first_monday = first_monday_on_or_after(start_day) or start_day
+    first_monday = first_monday_after(start_day) or start_day
     bridge_days = max(0, (first_monday - start_day).days)
 
     blocks: list[dict[str, Any]] = []

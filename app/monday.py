@@ -234,7 +234,13 @@ def _summary_message(krs: list[OKRKeyResult]) -> str:
     return "Agreed KRs for this week:\n" + _format_krs(krs)
 
 
-def _habit_steps_summary(session: Session, user_id: int, krs: list[OKRKeyResult], week_no: int | None) -> str | None:
+def _habit_steps_summary(
+    session: Session,
+    user_id: int,
+    krs: list[OKRKeyResult],
+    week_no: int | None,
+    weekly_focus_id: int | None = None,
+) -> str | None:
     """
     Build a short confirmation of habit steps set for the current week.
     Prefers exact week_no match, then falls back to active steps with week_no=None.
@@ -259,6 +265,15 @@ def _habit_steps_summary(session: Session, user_id: int, krs: list[OKRKeyResult]
         return q.all()
 
     rows: list[OKRKrHabitStep] = _query_steps(week_no) if week_no is not None else []
+    if not rows and weekly_focus_id is not None:
+        rows = (
+            session.query(OKRKrHabitStep)
+            .filter(OKRKrHabitStep.user_id == user_id, OKRKrHabitStep.kr_id.in_(kr_ids))
+            .filter(OKRKrHabitStep.status != "archived")
+            .filter(OKRKrHabitStep.weekly_focus_id == weekly_focus_id)
+            .order_by(OKRKrHabitStep.kr_id.asc(), OKRKrHabitStep.sort_order.asc(), OKRKrHabitStep.id.asc())
+            .all()
+        )
     if not rows:
         rows = _query_steps(None)
     if not rows:
@@ -337,7 +352,11 @@ def start_weekstart(user: User, notes: str | None = None, debug: bool = False, s
             .first()
         )
         if run:
-            base_dt = getattr(run, "started_at", None) or getattr(run, "created_at", None)
+            base_dt = (
+                getattr(run, "finished_at", None)
+                or getattr(run, "started_at", None)
+                or getattr(run, "created_at", None)
+            )
             if isinstance(base_dt, datetime):
                 programme_start = base_dt.date()
         if programme_start is None:
@@ -498,7 +517,13 @@ def handle_message(user: User, text: str) -> None:
 
             listened = "listened" in lower or lower == "listen" or _is_podcast_confirm_message(msg)
             if listened:
-                habit_summary = _habit_steps_summary(s, user.id, krs, week_no)
+                habit_summary = _habit_steps_summary(
+                    s,
+                    user.id,
+                    krs,
+                    week_no,
+                    weekly_focus_id=getattr(wf, "id", None),
+                )
                 if habit_summary:
                     msg_txt = f"*Monday* Thanks for listening.\n\n{habit_summary}"
                 else:

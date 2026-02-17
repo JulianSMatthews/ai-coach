@@ -860,10 +860,46 @@ def current_krs_context(
                 )
                 .all()
             )
+            rows_by_kr: Dict[int, List[OKRKrHabitStep]] = {}
             for step in step_rows:
-                if not step.step_text:
+                rows_by_kr.setdefault(int(step.kr_id), []).append(step)
+
+            def _sort_rows(rows: List[OKRKrHabitStep]) -> List[OKRKrHabitStep]:
+                return sorted(
+                    rows,
+                    key=lambda row: (
+                        getattr(row, "sort_order", 0) or 0,
+                        getattr(row, "id", 0) or 0,
+                    ),
+                )
+
+            def _pick_rows_for_kr(kr_id: int) -> List[OKRKrHabitStep]:
+                rows = list(rows_by_kr.get(int(kr_id), []) or [])
+                if not rows:
+                    return []
+                if week_no is not None:
+                    exact = [row for row in rows if getattr(row, "week_no", None) == week_no]
+                    if exact:
+                        return _sort_rows(exact)
+                generic = [row for row in rows if getattr(row, "week_no", None) is None]
+                if generic:
+                    return _sort_rows(generic)
+                explicit = [row for row in rows if getattr(row, "week_no", None) is not None]
+                if not explicit:
+                    return _sort_rows(rows)
+                latest_week = max(int(getattr(row, "week_no", 0) or 0) for row in explicit)
+                latest_rows = [row for row in explicit if int(getattr(row, "week_no", 0) or 0) == latest_week]
+                return _sort_rows(latest_rows)
+
+            for kr_id in kr_ids:
+                chosen_rows = _pick_rows_for_kr(int(kr_id))
+                if not chosen_rows:
                     continue
-                steps_by_kr.setdefault(step.kr_id, []).append(step.step_text)
+                steps_by_kr[int(kr_id)] = [
+                    str(step.step_text).strip()
+                    for step in chosen_rows
+                    if getattr(step, "step_text", None) and str(step.step_text).strip()
+                ]
 
         order_map = {kr_id: idx for idx, kr_id in enumerate(kr_ids)}
         krs: List[Dict[str, Any]] = []

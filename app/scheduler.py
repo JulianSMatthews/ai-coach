@@ -1,7 +1,7 @@
 # app/scheduler.py
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import os
 import zoneinfo
 from typing import Any
@@ -31,6 +31,7 @@ from .debug_utils import debug_log, debug_enabled
 from .llm import compose_prompt
 from . import monday, tuesday, wednesday, thursday, friday, saturday, sunday
 from .job_queue import enqueue_job, should_use_worker
+from .programme_timeline import first_monday_after
 from .virtual_clock import (
     advance_virtual_date_for_user,
     is_virtual_enabled,
@@ -622,14 +623,21 @@ def _run_day_prompt(user_id: int, day: str):
     _run_day_prompt_inline(user_id, day)
 
 
-def _next_weekday_occurrence(user: User, weekday_idx: int, hour: int, minute: int) -> datetime:
-    """Return the next local occurrence for weekday_idx (Monday=0) at hour:minute."""
+def _next_weekday_occurrence(
+    user: User,
+    weekday_idx: int,
+    hour: int,
+    minute: int,
+    earliest_date: date | None = None,
+) -> datetime:
+    """Return the next local occurrence for weekday_idx (Monday=0) at hour:minute on/after earliest_date."""
     tz = _tz(user)
     now = datetime.now(tz)
-    days_ahead = (weekday_idx - now.weekday()) % 7
-    run_day = (now + timedelta(days=days_ahead)).date()
+    base_day = earliest_date or now.date()
+    days_ahead = (weekday_idx - base_day.weekday()) % 7
+    run_day = base_day + timedelta(days=days_ahead)
     run_dt = datetime(run_day.year, run_day.month, run_day.day, hour, minute, tzinfo=tz)
-    if run_dt <= now:
+    if run_dt <= now or run_day < base_day:
         run_dt = run_dt + timedelta(days=7)
     return run_dt
 
@@ -724,7 +732,10 @@ def _schedule_prompts_for_user(
             )
         print(f"[scheduler] scheduled FAST prompts every {interval_minutes}m (start offset {resolved_fast}m) for user {user.id} ({tz})")
         return
-    # Start each day prompt from the next local occurrence so post-assessment bridge days are included.
+    # Start next-day onward (never same-day as assessment completion).
+    tz = _tz(user)
+    tomorrow_local = datetime.now(tz).date() + timedelta(days=1)
+    # Start each day prompt from the next local occurrence so bridge days are included.
     dow_idx = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
     for day, default_time in defaults.items():
         if default_time is None:
@@ -742,9 +753,17 @@ def _schedule_prompts_for_user(
         }.get(day)
         if not dow:
             continue
-        start_date = _next_weekday_occurrence(user, dow_idx.get(day, 0), pref_time[0], pref_time[1])
+        earliest_day = tomorrow_local
+        if day == "monday":
+            earliest_day = first_monday_after(tomorrow_local) or tomorrow_local
+        start_date = _next_weekday_occurrence(
+            user,
+            dow_idx.get(day, 0),
+            pref_time[0],
+            pref_time[1],
+            earliest_date=earliest_day,
+        )
         _schedule_prompt_for_user(user, day, dow, pref_time[0], pref_time[1], start_date=start_date)
-    tz = _tz(user)
     print(f"[scheduler] scheduled weekly prompts for user {user.id} ({tz})")
 
 

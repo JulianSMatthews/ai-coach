@@ -18,10 +18,10 @@ from . import habit_steps as habit_flow
 from .db import SessionLocal
 from .job_queue import enqueue_job, should_use_worker
 from .kickoff import COACH_NAME
-from .models import AssessmentRun, OKRKeyResult, OKRKrEntry, User, UserPreference, WeeklyFocus
+from .models import AssessmentRun, OKRKeyResult, OKRKrEntry, User, UserPreference, WeeklyFocus, WeeklyFocusKR
 from .nudges import send_whatsapp
 from .prompts import kr_payload_list
-from .programme_timeline import BLOCK_WEEKS, PILLAR_SEQUENCE, week_no_for_focus_start
+from .programme_timeline import BLOCK_WEEKS, PILLAR_SEQUENCE, week_anchor_date, week_no_for_date, week_no_for_focus_start
 from .touchpoints import log_touchpoint
 from .virtual_clock import get_effective_today
 
@@ -112,10 +112,17 @@ def _infer_week_no(session: Session, user_id: int, wf: WeeklyFocus) -> int:
     programme_start = None
     run = (
         session.query(AssessmentRun)
+        .filter(AssessmentRun.user_id == user_id, AssessmentRun.finished_at.isnot(None))
+        .order_by(AssessmentRun.finished_at.desc(), AssessmentRun.id.desc())
+        .first()
+    )
+    if not run:
+        run = (
+        session.query(AssessmentRun)
         .filter(AssessmentRun.user_id == user_id)
         .order_by(AssessmentRun.id.desc())
         .first()
-    )
+        )
     if run:
         base_dt = (
             getattr(run, "finished_at", None)
@@ -207,7 +214,8 @@ def _build_habit_options(user: User, krs: list[OKRKeyResult]) -> list[list[str]]
     return out
 
 
-def _next_target_week(session: Session, user_id: int, wf: WeeklyFocus) -> tuple[int, int | None]:
+def _next_target_week(session: Session, user_id: int, wf: WeeklyFocus, today_date) -> tuple[int, int | None]:
+    # Primary: current focus row week number.
     base_week = getattr(wf, "week_no", None)
     if not base_week:
         base_week = _infer_week_no(session, user_id, wf)
@@ -216,7 +224,26 @@ def _next_target_week(session: Session, user_id: int, wf: WeeklyFocus) -> tuple[
             session.add(wf)
         except Exception:
             pass
-    target_week = max(1, int(base_week) + 1)
+
+    # Guardrail: if weekly-focus rows are stale/missing, infer current programme week from calendar.
+    calendar_week = None
+    programme_start = _resolve_programme_start_date(session, user_id)
+    try:
+        calendar_week = week_no_for_date(programme_start, today_date)
+    except Exception:
+        calendar_week = None
+
+    try:
+        base_week_i = int(base_week)
+    except Exception:
+        base_week_i = 1
+    if calendar_week is not None:
+        try:
+            base_week_i = max(base_week_i, int(calendar_week))
+        except Exception:
+            pass
+
+    target_week = max(1, int(base_week_i) + 1)
     target_wf = (
         session.query(WeeklyFocus)
         .filter(WeeklyFocus.user_id == user_id, WeeklyFocus.week_no == target_week)
@@ -224,6 +251,110 @@ def _next_target_week(session: Session, user_id: int, wf: WeeklyFocus) -> tuple[
         .first()
     )
     return target_week, (target_wf.id if target_wf else None)
+
+
+def _resolve_programme_start_date(session: Session, user_id: int):
+    programme_start = None
+    run = (
+        session.query(AssessmentRun)
+        .filter(AssessmentRun.user_id == user_id, AssessmentRun.finished_at.isnot(None))
+        .order_by(AssessmentRun.finished_at.desc(), AssessmentRun.id.desc())
+        .first()
+    )
+    if not run:
+        run = (
+        session.query(AssessmentRun)
+        .filter(AssessmentRun.user_id == user_id)
+        .order_by(AssessmentRun.id.desc())
+        .first()
+        )
+    if run:
+        base_dt = (
+            getattr(run, "finished_at", None)
+            or getattr(run, "started_at", None)
+            or getattr(run, "created_at", None)
+        )
+        if isinstance(base_dt, datetime):
+            programme_start = base_dt.date()
+    if programme_start is None:
+        earliest = (
+            session.query(WeeklyFocus)
+            .filter(WeeklyFocus.user_id == user_id)
+            .order_by(WeeklyFocus.starts_on.asc())
+            .first()
+        )
+        if earliest and getattr(earliest, "starts_on", None):
+            try:
+                programme_start = earliest.starts_on.date()
+            except Exception:
+                programme_start = None
+    return programme_start
+
+
+def _ensure_weekly_focus_for_week(
+    session: Session,
+    user_id: int,
+    week_no: int | None,
+    kr_ids: list[int],
+) -> int | None:
+    if week_no is None:
+        return None
+    try:
+        week_i = int(week_no)
+    except Exception:
+        return None
+    if week_i <= 0:
+        return None
+    clean_kr_ids = [int(kr_id) for kr_id in kr_ids if str(kr_id).isdigit()]
+    clean_kr_ids = list(dict.fromkeys(clean_kr_ids))
+
+    today = datetime.utcnow().date()
+    programme_start = _resolve_programme_start_date(session, user_id)
+    base_start = week_anchor_date(programme_start, default_today=today)
+    start_day = base_start + timedelta(days=7 * (week_i - 1))
+    end_day = start_day + timedelta(days=6)
+    start_dt = datetime.combine(start_day, datetime.min.time())
+    end_dt = datetime.combine(end_day, datetime.max.time())
+
+    wf = (
+        session.query(WeeklyFocus)
+        .filter(WeeklyFocus.user_id == user_id, WeeklyFocus.week_no == week_i)
+        .order_by(WeeklyFocus.starts_on.desc(), WeeklyFocus.id.desc())
+        .first()
+    )
+    if not wf:
+        wf = WeeklyFocus(
+            user_id=user_id,
+            starts_on=start_dt,
+            ends_on=end_dt,
+            notes=f"sunday habit setup week {week_i}",
+            week_no=week_i,
+        )
+        session.add(wf)
+        session.flush()
+    else:
+        if getattr(wf, "starts_on", None) != start_dt:
+            wf.starts_on = start_dt
+        if getattr(wf, "ends_on", None) != end_dt:
+            wf.ends_on = end_dt
+        if getattr(wf, "week_no", None) != week_i:
+            wf.week_no = week_i
+        session.add(wf)
+        session.flush()
+
+    if clean_kr_ids:
+        session.query(WeeklyFocusKR).filter(WeeklyFocusKR.weekly_focus_id == wf.id).delete(synchronize_session=False)
+        for idx, kr_id in enumerate(clean_kr_ids):
+            session.add(
+                WeeklyFocusKR(
+                    weekly_focus_id=wf.id,
+                    kr_id=kr_id,
+                    priority_order=idx,
+                    role="primary" if idx == 0 else "secondary",
+                )
+            )
+        session.flush()
+    return int(wf.id)
 
 
 def _pillar_for_week_no(week_no: int | None) -> str | None:
@@ -292,12 +423,13 @@ def send_sunday_review(user: User, coach_name: str = COACH_NAME) -> None:
             _send_sunday(to=user.phone, text="No weekly plan found. Say monday to plan your week first.")
             return
 
-        target_week, target_wf_id = _next_target_week(s, user.id, wf)
+        target_week, target_wf_id = _next_target_week(s, user.id, wf, today)
         active_week = getattr(wf, "week_no", None) or None
         target_week, kr_ids = _pick_krs_for_sunday(s, user.id, target_week, active_week)
         if not kr_ids:
             _send_sunday(to=user.phone, text="No key results found to set habit steps for. Say monday to refresh your plan.")
             return
+        target_wf_id = _ensure_weekly_focus_for_week(s, user.id, target_week, kr_ids) or target_wf_id
         krs = _ordered_krs(s, kr_ids)
         if not krs:
             _send_sunday(to=user.phone, text="I couldn't load your key results right now. Please try again shortly.")
@@ -433,8 +565,14 @@ def handle_message(user: User, body: str) -> None:
                         edits_to_apply[krs[idx].id] = [opts[opt_idx]]
                 for kr_id, steps in merged_edits.items():
                     edits_to_apply[kr_id] = steps
+                resolved_wf_id = _ensure_weekly_focus_for_week(
+                    s,
+                    user.id,
+                    week_no,
+                    list(edits_to_apply.keys()) or kr_ids,
+                ) or wf_id
                 if edits_to_apply:
-                    habit_flow.apply_habit_step_edits(s, user.id, wf_id, week_no, edits_to_apply)
+                    habit_flow.apply_habit_step_edits(s, user.id, resolved_wf_id, week_no, edits_to_apply)
                     habit_flow.activate_habit_steps(s, user.id, week_no, list(edits_to_apply.keys()))
                 s.commit()
 
@@ -454,7 +592,7 @@ def handle_message(user: User, body: str) -> None:
                     {
                         "mode": "okr_update_choice",
                         "kr_ids": kr_ids,
-                        "wf_id": wf_id,
+                        "wf_id": resolved_wf_id,
                         "week_no": week_no,
                     },
                 )
