@@ -427,20 +427,13 @@ def _cleanup_reports_on_reset(*, keep_content: bool) -> None:
     reports_dir = os.getenv("REPORTS_DIR") or os.path.join(os.getcwd(), "public", "reports")
     if not os.path.isdir(reports_dir):
         return
+    if keep_content:
+        print(f"📄 Reports cleanup skipped (KEEP_CONTENT_ON_RESET enabled): {reports_dir}")
+        return
     removed = 0
-    kept = 0
     for root, _dirs, files in os.walk(reports_dir):
         for name in files:
             path = os.path.join(root, name)
-            if keep_content:
-                try:
-                    rel = os.path.relpath(path, reports_dir).replace("\\", "/").lstrip("./")
-                except Exception:
-                    rel = name
-                # Keep the canonical content subtree and legacy "content*" files.
-                if rel == "content" or rel.startswith("content/") or name.lower().startswith("content"):
-                    kept += 1
-                    continue
             try:
                 os.remove(path)
                 removed += 1
@@ -455,18 +448,43 @@ def _cleanup_reports_on_reset(*, keep_content: bool) -> None:
                 os.rmdir(root)
         except Exception:
             pass
-    if removed or kept:
-        print(f"📄 Reports cleanup: removed={removed} kept={kept} keep_content={keep_content}")
+    if removed:
+        print(f"📄 Reports cleanup: removed={removed}")
 
 
 @app.on_event("startup")
 def on_startup():
-    def _env_true(*keys: str) -> bool:
-        for key in keys:
-            val = (os.getenv(key) or "").strip().lower()
-            if val in {"1", "true", "yes"}:
-                return True
-        return False
+    def _parse_bool_env(raw: str | None) -> bool | None:
+        val = (raw or "").strip().lower()
+        if val == "":
+            return None
+        if val in {"1", "true", "yes", "on"}:
+            return True
+        if val in {"0", "false", "no", "off"}:
+            return False
+        return None
+
+    def _resolve_reset_requested() -> tuple[bool, str, dict[str, str]]:
+        """
+        Resolve DB reset intent with explicit precedence to avoid surprises:
+        - If RESET_DB_ON_STARTUP is set, it is authoritative.
+        - Otherwise fall back to legacy aliases.
+        """
+        keys = [
+            "RESET_DB_ON_STARTUP",
+            "RESET_DATABASE_ON_STARTUP",
+            "reset_database_on_startup",
+            "reset_db_on_startup",
+        ]
+        values: dict[str, str] = {k: (os.getenv(k) or "").strip() for k in keys}
+        canonical = _parse_bool_env(values.get("RESET_DB_ON_STARTUP"))
+        if canonical is not None:
+            return bool(canonical), "RESET_DB_ON_STARTUP", values
+        for legacy_key in keys[1:]:
+            parsed = _parse_bool_env(values.get(legacy_key))
+            if parsed is True:
+                return True, legacy_key, values
+        return False, "none", values
 
     def _startup_tasks() -> None:
         try:
@@ -494,16 +512,21 @@ def on_startup():
             except Exception as e:
                 print(f"⚠️  Could not ensure job table: {e!r}")
 
-            reset_requested = _env_true(
-                "RESET_DB_ON_STARTUP",
-                "RESET_DATABASE_ON_STARTUP",
-                "reset_database_on_startup",
-                "reset_db_on_startup",
+            reset_requested, reset_source, reset_values = _resolve_reset_requested()
+            print(
+                "[startup] reset flags: "
+                + ", ".join(f"{k}='{v}'" for k, v in reset_values.items())
+                + f" -> reset_requested={reset_requested} (source={reset_source})"
             )
             if reset_requested:
-                keep_prompt_templates = os.getenv("KEEP_PROMPT_TEMPLATES_ON_RESET") == "1"
-                keep_content = os.getenv("KEEP_CONTENT_ON_RESET") == "1"
-                keep_kb = os.getenv("KEEP_KB_SNIPPETS_ON_RESET") == "1"
+                keep_prompt_templates = bool(_parse_bool_env(os.getenv("KEEP_PROMPT_TEMPLATES_ON_RESET")))
+                keep_content = bool(_parse_bool_env(os.getenv("KEEP_CONTENT_ON_RESET")))
+                keep_kb = bool(_parse_bool_env(os.getenv("KEEP_KB_SNIPPETS_ON_RESET")))
+                print(
+                    "[startup] reset requested -> "
+                    f"keep_prompt_templates={keep_prompt_templates} "
+                    f"keep_content={keep_content} keep_kb={keep_kb}"
+                )
                 try:
                     _predrop_legacy_tables()
                 except Exception as e:
@@ -560,6 +583,13 @@ def on_startup():
                     os.makedirs(reports_dir, exist_ok=True)
                 except Exception as e:
                     print(f"⚠️  Could not create reports dir: {e!r}")
+            else:
+                try:
+                    reports_dir = os.getenv("REPORTS_DIR") or os.path.join(os.getcwd(), "public", "reports")
+                    os.makedirs(reports_dir, exist_ok=True)
+                    print(f"[startup] DB reset skipped; reports dir preserved at {reports_dir}")
+                except Exception as e:
+                    print(f"⚠️  Could not ensure reports dir: {e!r}")
 
             _maybe_set_public_base_via_ngrok()
             _print_env_banner()
@@ -4543,6 +4573,63 @@ def _as_payload_dict(value: object) -> dict:
     return {}
 
 
+DEFAULT_MONITORING_LLM_P50_WARN_MS = 4000.0
+DEFAULT_MONITORING_LLM_P50_CRITICAL_MS = 8000.0
+DEFAULT_MONITORING_LLM_P95_WARN_MS = 8000.0
+DEFAULT_MONITORING_LLM_P95_CRITICAL_MS = 15000.0
+
+
+def _positive_float_or_none(raw: object) -> float | None:
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        cleaned = raw.strip()
+        if not cleaned:
+            return None
+        try:
+            val = float(cleaned)
+        except Exception:
+            return None
+    else:
+        try:
+            val = float(raw)
+        except Exception:
+            return None
+    if not math.isfinite(val) or val <= 0:
+        return None
+    return float(val)
+
+
+def _monitoring_llm_latency_threshold_values(row: PromptSettings | None) -> dict[str, float]:
+    p50_warn = _positive_float_or_none(getattr(row, "monitoring_llm_p50_warn_ms", None)) or DEFAULT_MONITORING_LLM_P50_WARN_MS
+    p50_critical = _positive_float_or_none(getattr(row, "monitoring_llm_p50_critical_ms", None)) or DEFAULT_MONITORING_LLM_P50_CRITICAL_MS
+    p95_warn = _positive_float_or_none(getattr(row, "monitoring_llm_p95_warn_ms", None)) or DEFAULT_MONITORING_LLM_P95_WARN_MS
+    p95_critical = _positive_float_or_none(getattr(row, "monitoring_llm_p95_critical_ms", None)) or DEFAULT_MONITORING_LLM_P95_CRITICAL_MS
+    if p50_critical < p50_warn:
+        p50_critical = p50_warn
+    if p95_critical < p95_warn:
+        p95_critical = p95_warn
+    return {
+        "llm_p50_warn_ms": float(p50_warn),
+        "llm_p50_critical_ms": float(p50_critical),
+        "llm_p95_warn_ms": float(p95_warn),
+        "llm_p95_critical_ms": float(p95_critical),
+    }
+
+
+def _worst_state(*states: str) -> str:
+    rank = {"unknown": 0, "ok": 1, "warn": 2, "critical": 3}
+    best = "unknown"
+    best_rank = -1
+    for state in states:
+        key = str(state or "unknown").strip().lower() or "unknown"
+        val = rank.get(key, 0)
+        if val > best_rank:
+            best_rank = val
+            best = key
+    return best
+
+
 @admin.get("/assessment/health")
 def admin_assessment_health(
     days: int | None = None,
@@ -4572,7 +4659,8 @@ def admin_assessment_health(
         "completion_rate_pct": {"warn": 70.0, "critical": 55.0, "lower_is_bad": True},
         "median_completion_minutes": {"warn": 18.0, "critical": 25.0, "lower_is_bad": False},
         "stale_runs": {"warn": 5.0, "critical": 15.0, "lower_is_bad": False},
-        "llm_p95_ms": {"warn": 8000.0, "critical": 15000.0, "lower_is_bad": False},
+        "llm_p50_ms": {"warn": DEFAULT_MONITORING_LLM_P50_WARN_MS, "critical": DEFAULT_MONITORING_LLM_P50_CRITICAL_MS, "lower_is_bad": False},
+        "llm_p95_ms": {"warn": DEFAULT_MONITORING_LLM_P95_WARN_MS, "critical": DEFAULT_MONITORING_LLM_P95_CRITICAL_MS, "lower_is_bad": False},
         "okr_fallback_rate_pct": {"warn": 5.0, "critical": 15.0, "lower_is_bad": False},
         "queue_backlog": {"warn": 20.0, "critical": 50.0, "lower_is_bad": False},
         "twilio_failure_rate_pct": {"warn": 2.0, "critical": 5.0, "lower_is_bad": False},
@@ -5467,6 +5555,12 @@ def admin_assessment_health(
         podcast_effective = podcast_override if podcast_override is not None else env_podcast
         podcast_source = "override" if podcast_override is not None else "env"
 
+    llm_latency_thresholds = _monitoring_llm_latency_threshold_values(ps)
+    thresholds["llm_p50_ms"]["warn"] = llm_latency_thresholds["llm_p50_warn_ms"]
+    thresholds["llm_p50_ms"]["critical"] = llm_latency_thresholds["llm_p50_critical_ms"]
+    thresholds["llm_p95_ms"]["warn"] = llm_latency_thresholds["llm_p95_warn_ms"]
+    thresholds["llm_p95_ms"]["critical"] = llm_latency_thresholds["llm_p95_critical_ms"]
+
     completion_state = _threshold_state(
         completion_rate,
         warn=thresholds["completion_rate_pct"]["warn"],
@@ -5483,6 +5577,21 @@ def admin_assessment_health(
         warn=thresholds["stale_runs"]["warn"],
         critical=thresholds["stale_runs"]["critical"],
     )
+    llm_p50_state = _threshold_state(
+        llm_p50,
+        warn=thresholds["llm_p50_ms"]["warn"],
+        critical=thresholds["llm_p50_ms"]["critical"],
+    )
+    llm_assessment_p50_state = _threshold_state(
+        llm_assessment_p50,
+        warn=thresholds["llm_p50_ms"]["warn"],
+        critical=thresholds["llm_p50_ms"]["critical"],
+    )
+    llm_coaching_p50_state = _threshold_state(
+        llm_coaching_p50,
+        warn=thresholds["llm_p50_ms"]["warn"],
+        critical=thresholds["llm_p50_ms"]["critical"],
+    )
     llm_p95_state = _threshold_state(
         llm_p95,
         warn=thresholds["llm_p95_ms"]["warn"],
@@ -5498,6 +5607,9 @@ def admin_assessment_health(
         warn=thresholds["llm_p95_ms"]["warn"],
         critical=thresholds["llm_p95_ms"]["critical"],
     )
+    llm_combined_state = _worst_state(llm_p50_state, llm_p95_state)
+    llm_assessment_state = _worst_state(llm_assessment_p50_state, llm_assessment_p95_state)
+    llm_coaching_state = _worst_state(llm_coaching_p50_state, llm_coaching_p95_state)
     fallback_state = _threshold_state(
         okr_fallback_rate,
         warn=thresholds["okr_fallback_rate_pct"]["warn"],
@@ -5569,6 +5681,7 @@ def admin_assessment_health(
         "completion_rate_pct": completion_state,
         "median_completion_minutes": median_state,
         "stale_runs": stale_state,
+        "llm_p50_ms": llm_p50_state,
         "llm_p95_ms": llm_p95_state,
         "okr_fallback_rate_pct": fallback_state,
         "queue_backlog": backlog_state,
@@ -5582,6 +5695,7 @@ def admin_assessment_health(
         "completion_rate_pct": completion_rate,
         "median_completion_minutes": median_completion,
         "stale_runs": stale_runs,
+        "llm_p50_ms": llm_p50,
         "llm_p95_ms": llm_p95,
         "okr_fallback_rate_pct": okr_fallback_rate,
         "queue_backlog": backlog,
@@ -5644,7 +5758,9 @@ def admin_assessment_health(
             "assessor_prompts": llm_prompt_counts["assessment"],
             "duration_ms_p50": round(llm_p50, 2) if llm_p50 is not None else None,
             "duration_ms_p95": round(llm_p95, 2) if llm_p95 is not None else None,
-            "duration_ms_state": llm_p95_state,
+            "duration_ms_p50_state": llm_p50_state,
+            "duration_ms_p95_state": llm_p95_state,
+            "duration_ms_state": llm_combined_state,
             "models": model_counts,
             "slow_over_warn": sum(1 for v in llm_durations_ms if float(v) > thresholds["llm_p95_ms"]["warn"]),
             "slow_over_critical": sum(1 for v in llm_durations_ms if float(v) > thresholds["llm_p95_ms"]["critical"]),
@@ -5652,7 +5768,9 @@ def admin_assessment_health(
                 "prompts": llm_prompt_counts["assessment"],
                 "duration_ms_p50": round(llm_assessment_p50, 2) if llm_assessment_p50 is not None else None,
                 "duration_ms_p95": round(llm_assessment_p95, 2) if llm_assessment_p95 is not None else None,
-                "duration_ms_state": llm_assessment_p95_state,
+                "duration_ms_p50_state": llm_assessment_p50_state,
+                "duration_ms_p95_state": llm_assessment_p95_state,
+                "duration_ms_state": llm_assessment_state,
                 "models": llm_model_counts_by_scope["assessment"],
                 "slow_over_warn": sum(
                     1 for v in llm_durations_by_scope["assessment"] if float(v) > thresholds["llm_p95_ms"]["warn"]
@@ -5665,7 +5783,9 @@ def admin_assessment_health(
                 "prompts": llm_prompt_counts["coaching"],
                 "duration_ms_p50": round(llm_coaching_p50, 2) if llm_coaching_p50 is not None else None,
                 "duration_ms_p95": round(llm_coaching_p95, 2) if llm_coaching_p95 is not None else None,
-                "duration_ms_state": llm_coaching_p95_state,
+                "duration_ms_p50_state": llm_coaching_p50_state,
+                "duration_ms_p95_state": llm_coaching_p95_state,
+                "duration_ms_state": llm_coaching_state,
                 "models": llm_model_counts_by_scope["coaching"],
                 "slow_over_warn": sum(
                     1 for v in llm_durations_by_scope["coaching"] if float(v) > thresholds["llm_p95_ms"]["warn"]
@@ -5678,7 +5798,9 @@ def admin_assessment_health(
                 "prompts": llm_prompt_counts["combined"],
                 "duration_ms_p50": round(llm_p50, 2) if llm_p50 is not None else None,
                 "duration_ms_p95": round(llm_p95, 2) if llm_p95 is not None else None,
-                "duration_ms_state": llm_p95_state,
+                "duration_ms_p50_state": llm_p50_state,
+                "duration_ms_p95_state": llm_p95_state,
+                "duration_ms_state": llm_combined_state,
                 "models": llm_model_counts_by_scope["combined"],
                 "slow_over_warn": sum(1 for v in llm_durations_ms if float(v) > thresholds["llm_p95_ms"]["warn"]),
                 "slow_over_critical": sum(
@@ -5726,6 +5848,82 @@ def admin_assessment_health(
         "coaching": coaching_payload,
         "alerts": alerts,
     }
+
+
+@admin.post("/assessment/health/settings")
+def admin_assessment_health_settings_update(
+    payload: dict,
+    admin_user: User = Depends(_require_admin),
+):
+    ensure_prompt_settings_schema()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="payload must be a JSON object")
+
+    def _parse_optional_positive(name: str) -> float | None:
+        if name not in payload:
+            return None
+        raw = payload.get(name)
+        if raw is None:
+            return None
+        if isinstance(raw, str):
+            cleaned = raw.strip()
+            if not cleaned:
+                return None
+            raw = cleaned
+        try:
+            val = float(raw)
+        except Exception:
+            raise HTTPException(status_code=400, detail=f"{name} must be a number")
+        if not math.isfinite(val) or val <= 0:
+            raise HTTPException(status_code=400, detail=f"{name} must be > 0")
+        return float(val)
+
+    p50_warn = _parse_optional_positive("llm_p50_warn_ms") if "llm_p50_warn_ms" in payload else None
+    p50_critical = _parse_optional_positive("llm_p50_critical_ms") if "llm_p50_critical_ms" in payload else None
+    p95_warn = _parse_optional_positive("llm_p95_warn_ms") if "llm_p95_warn_ms" in payload else None
+    p95_critical = _parse_optional_positive("llm_p95_critical_ms") if "llm_p95_critical_ms" in payload else None
+
+    with SessionLocal() as s:
+        row = s.query(PromptSettings).order_by(PromptSettings.id.asc()).first()
+        if not row:
+            row = PromptSettings()
+            s.add(row)
+
+        if "llm_p50_warn_ms" in payload:
+            row.monitoring_llm_p50_warn_ms = p50_warn
+        if "llm_p50_critical_ms" in payload:
+            row.monitoring_llm_p50_critical_ms = p50_critical
+        if "llm_p95_warn_ms" in payload:
+            row.monitoring_llm_p95_warn_ms = p95_warn
+        if "llm_p95_critical_ms" in payload:
+            row.monitoring_llm_p95_critical_ms = p95_critical
+
+        if (
+            row.monitoring_llm_p50_warn_ms is not None
+            and row.monitoring_llm_p50_critical_ms is not None
+            and float(row.monitoring_llm_p50_critical_ms) < float(row.monitoring_llm_p50_warn_ms)
+        ):
+            row.monitoring_llm_p50_critical_ms = float(row.monitoring_llm_p50_warn_ms)
+        if (
+            row.monitoring_llm_p95_warn_ms is not None
+            and row.monitoring_llm_p95_critical_ms is not None
+            and float(row.monitoring_llm_p95_critical_ms) < float(row.monitoring_llm_p95_warn_ms)
+        ):
+            row.monitoring_llm_p95_critical_ms = float(row.monitoring_llm_p95_warn_ms)
+
+        s.commit()
+        s.refresh(row)
+        resolved = _monitoring_llm_latency_threshold_values(row)
+        return {
+            "ok": True,
+            "settings": {
+                "llm_p50_warn_ms": row.monitoring_llm_p50_warn_ms,
+                "llm_p50_critical_ms": row.monitoring_llm_p50_critical_ms,
+                "llm_p95_warn_ms": row.monitoring_llm_p95_warn_ms,
+                "llm_p95_critical_ms": row.monitoring_llm_p95_critical_ms,
+                "resolved": resolved,
+            },
+        }
 
 
 @admin.get("/stats")
