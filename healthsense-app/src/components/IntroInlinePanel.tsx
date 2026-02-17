@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 type IntroPayload = {
   enabled?: boolean;
@@ -18,16 +18,23 @@ type IntroInlinePanelProps = {
 export default function IntroInlinePanel({ userId, intro, introCompleted }: IntroInlinePanelProps) {
   const [readOpen, setReadOpen] = useState(false);
   const [audioError, setAudioError] = useState(false);
+  const [audioRetryToken, setAudioRetryToken] = useState(0);
   const presentedRef = useRef(false);
   const listenedRef = useRef(false);
   const readRef = useRef(false);
 
   const enabled = Boolean(intro?.enabled);
   const completed = Boolean(introCompleted);
-  const podcastUrl = String(intro?.podcast_url || "").trim();
+  const podcastUrl = String(intro?.podcast_url || "").trim().replace(/^['"]+|['"]+$/g, "");
   const hasPodcast = Boolean(podcastUrl);
   const hasBody = Boolean((intro?.body || "").trim());
   const show = enabled && !completed && (hasPodcast || hasBody);
+  const audioSrc = useMemo(() => {
+    if (!podcastUrl) return "";
+    if (!audioRetryToken) return podcastUrl;
+    const sep = podcastUrl.includes("?") ? "&" : "?";
+    return `${podcastUrl}${sep}r=${audioRetryToken}`;
+  }, [podcastUrl, audioRetryToken]);
 
   const sendEvent = (eventType: "intro_presented" | "intro_listened" | "intro_read") => {
     fetch("/api/engagement", {
@@ -56,6 +63,11 @@ export default function IntroInlinePanel({ userId, intro, introCompleted }: Intr
     sendEvent("intro_presented");
   }, [show]);
 
+  useEffect(() => {
+    setAudioError(false);
+    setAudioRetryToken(0);
+  }, [podcastUrl]);
+
   if (!show) return null;
 
   return (
@@ -64,15 +76,19 @@ export default function IntroInlinePanel({ userId, intro, introCompleted }: Intr
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Intro podcast</p>
           <audio
-            key={podcastUrl}
+            key={audioSrc}
             controls
             preload="none"
             className="mt-2 w-full"
-            src={podcastUrl}
+            src={audioSrc}
             onPlay={() => {
               setAudioError(false);
             }}
             onError={() => {
+              if (!audioRetryToken) {
+                setAudioRetryToken(Date.now());
+                return;
+              }
               setAudioError(true);
             }}
             onEnded={() => {
@@ -90,7 +106,7 @@ export default function IntroInlinePanel({ userId, intro, introCompleted }: Intr
             Open audio
           </a>
           {audioError ? (
-            <p className="mt-2 text-xs text-[#b42318]">Audio unavailable. Use Open audio or regenerate intro podcast.</p>
+            <p className="mt-2 text-xs text-[#6b6257]">Having trouble playing audio here? Use Open audio.</p>
           ) : null}
         </div>
       ) : null}
