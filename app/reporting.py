@@ -3541,7 +3541,6 @@ def _collect_progress_rows(
             preferred_week = int(week_no) if week_no is not None else None
         except Exception:
             preferred_week = None
-        focus_set = {int(v) for v in (focus_kr_ids or set()) if str(v).isdigit()}
         if all_kr_ids:
             step_rows = (
                 s.query(OKRKrHabitStep)
@@ -3571,17 +3570,30 @@ def _collect_progress_rows(
                 rows = list(step_rows_by_kr.get(int(kr_id), []) or [])
                 if not rows:
                     return []
-                # For focused KRs, strongly prefer the selected/current week.
-                if preferred_week is not None and int(kr_id) in focus_set:
+                explicit = [row for row in rows if getattr(row, "week_no", None) is not None]
+                # Always prefer the selected/current week.
+                if preferred_week is not None:
                     exact = [row for row in rows if getattr(row, "week_no", None) == preferred_week]
                     if exact:
                         return _sort_rows(exact)
+                    # If exact doesn't exist, pick latest explicit week up to preferred week (never future).
+                    past_explicit = [
+                        row for row in explicit if int(getattr(row, "week_no", 0) or 0) <= preferred_week
+                    ]
+                    if past_explicit:
+                        latest_week = max(int(getattr(row, "week_no", 0) or 0) for row in past_explicit)
+                        latest_rows = [
+                            row for row in past_explicit if int(getattr(row, "week_no", 0) or 0) == latest_week
+                        ]
+                        return _sort_rows(latest_rows)
                 # Next prefer generic weekless active steps.
                 generic = [row for row in rows if getattr(row, "week_no", None) is None]
                 if generic:
                     return _sort_rows(generic)
+                # When rendering a current week, do not leak future-week steps into current views.
+                if preferred_week is not None:
+                    return []
                 # Otherwise keep the latest explicit-week set.
-                explicit = [row for row in rows if getattr(row, "week_no", None) is not None]
                 if not explicit:
                     return _sort_rows(rows)
                 latest_week = max(int(getattr(row, "week_no", 0) or 0) for row in explicit)
@@ -4228,13 +4240,22 @@ def build_progress_report_data(user_id: int, anchor_date: date | None = None) ->
             .order_by(WeeklyFocus.starts_on.desc())
             .first()
         )
+        wf_latest_started = (
+            s.query(WeeklyFocus)
+            .filter(
+                WeeklyFocus.user_id == user.id,
+                WeeklyFocus.starts_on <= anchor_today,
+            )
+            .order_by(WeeklyFocus.starts_on.desc(), WeeklyFocus.id.desc())
+            .first()
+        )
         wf_latest = (
             s.query(WeeklyFocus)
             .filter(WeeklyFocus.user_id == user.id)
             .order_by(WeeklyFocus.starts_on.desc())
             .first()
         )
-        wf = wf_current or wf_latest
+        wf = wf_current or wf_latest_started or wf_latest
         focus_kr_ids = []
         if wf:
             focus_kr_ids = [
@@ -4251,8 +4272,8 @@ def build_progress_report_data(user_id: int, anchor_date: date | None = None) ->
     active_week_no = None
     if wf_current and getattr(wf_current, "week_no", None):
         active_week_no = wf_current.week_no
-    elif wf_latest and getattr(wf_latest, "week_no", None):
-        active_week_no = wf_latest.week_no
+    elif wf_latest_started and getattr(wf_latest_started, "week_no", None):
+        active_week_no = wf_latest_started.week_no
     rows = _collect_progress_rows(
         user_id,
         programme_blocks=programme_blocks,

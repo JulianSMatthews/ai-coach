@@ -244,6 +244,13 @@ def _next_target_week(session: Session, user_id: int, wf: WeeklyFocus, today_dat
             pass
 
     target_week = max(1, int(base_week_i) + 1)
+    # Bridge period (assessment complete -> first Monday): Sunday should set week 1 steps.
+    try:
+        anchor_week_start = week_anchor_date(programme_start, default_today=today_date)
+        if today_date < anchor_week_start:
+            target_week = 1
+    except Exception:
+        pass
     target_wf = (
         session.query(WeeklyFocus)
         .filter(WeeklyFocus.user_id == user_id, WeeklyFocus.week_no == target_week)
