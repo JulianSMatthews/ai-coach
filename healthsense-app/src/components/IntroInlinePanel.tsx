@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type IntroPayload = {
   enabled?: boolean;
@@ -17,11 +17,11 @@ type IntroInlinePanelProps = {
 
 export default function IntroInlinePanel({ userId, intro, introCompleted }: IntroInlinePanelProps) {
   const [readOpen, setReadOpen] = useState(false);
-  const [audioError, setAudioError] = useState(false);
   const [audioRetryToken, setAudioRetryToken] = useState(0);
   const presentedRef = useRef(false);
   const listenedRef = useRef(false);
   const readRef = useRef(false);
+  const retriedPodcastUrlRef = useRef("");
 
   const enabled = Boolean(intro?.enabled);
   const completed = Boolean(introCompleted);
@@ -36,7 +36,7 @@ export default function IntroInlinePanel({ userId, intro, introCompleted }: Intr
     return `${podcastUrl}${sep}r=${audioRetryToken}`;
   }, [podcastUrl, audioRetryToken]);
 
-  const sendEvent = (eventType: "intro_presented" | "intro_listened" | "intro_read") => {
+  const sendEvent = useCallback((eventType: "intro_presented" | "intro_listened" | "intro_read") => {
     fetch("/api/engagement", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -55,18 +55,13 @@ export default function IntroInlinePanel({ userId, intro, introCompleted }: Intr
     }).catch(() => {
       // Best-effort telemetry only.
     });
-  };
+  }, [intro?.content_id, userId]);
 
   useEffect(() => {
     if (!show || presentedRef.current) return;
     presentedRef.current = true;
     sendEvent("intro_presented");
-  }, [show]);
-
-  useEffect(() => {
-    setAudioError(false);
-    setAudioRetryToken(0);
-  }, [podcastUrl]);
+  }, [sendEvent, show]);
 
   if (!show) return null;
 
@@ -81,15 +76,11 @@ export default function IntroInlinePanel({ userId, intro, introCompleted }: Intr
             preload="none"
             className="mt-2 w-full"
             src={audioSrc}
-            onPlay={() => {
-              setAudioError(false);
-            }}
             onError={() => {
-              if (!audioRetryToken) {
+              if (podcastUrl && retriedPodcastUrlRef.current !== podcastUrl) {
+                retriedPodcastUrlRef.current = podcastUrl;
                 setAudioRetryToken(Date.now());
-                return;
               }
-              setAudioError(true);
             }}
             onEnded={() => {
               if (listenedRef.current) return;
@@ -97,17 +88,6 @@ export default function IntroInlinePanel({ userId, intro, introCompleted }: Intr
               sendEvent("intro_listened");
             }}
           />
-          <a
-            href={podcastUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-2 inline-flex text-[11px] uppercase tracking-[0.2em] text-[var(--accent)]"
-          >
-            Open audio
-          </a>
-          {audioError ? (
-            <p className="mt-2 text-xs text-[#6b6257]">Having trouble playing audio here? Use Open audio.</p>
-          ) : null}
         </div>
       ) : null}
       {hasBody ? (

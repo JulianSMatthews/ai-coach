@@ -84,7 +84,9 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
   const funnelSteps = health?.funnel?.steps || [];
   const coachingFunnelSteps = health?.coaching?.day_funnel?.steps || [];
   const coachingWeekRows = health?.coaching?.week_funnel?.weeks || [];
-  const coachingDayStats = health?.coaching?.day_stats || [];
+  const coachingDayStats = (health?.coaching?.day_stats || []).filter(
+    (row) => String(row?.day || "").toLowerCase() !== "kickoff",
+  );
   const llmAssessment = health?.llm?.assessment || {
     prompts: health?.llm?.assessor_prompts ?? 0,
     duration_ms_p50: health?.llm?.duration_ms_p50 ?? null,

@@ -1063,10 +1063,9 @@ def upsert_objective_from_pillar(
         if advice_text:
             obj.objective = advice_text
         obj.overall_score = pillar_score
-        if not obj.source_assess_session_id:
-            obj.source_assess_session_id = assess_session_id
-        if not obj.source_pillar_id:
-            obj.source_pillar_id = pillar_result_id
+        # Always point lineage to the latest assessment that refreshed this objective.
+        obj.source_assess_session_id = assess_session_id
+        obj.source_pillar_id = pillar_result_id
         if llm_prompt is not None:
             obj.llm_prompt = llm_prompt
         session.flush()
@@ -1324,13 +1323,35 @@ def seed_week1_habit_steps_for_assessment(
     if not user_id:
         return 0
 
-    obj_query = session.query(OKRObjective.id).filter(OKRObjective.owner_user_id == user_id)
+    objective_ids: list[int] = []
     if assess_session_id:
-        obj_query = obj_query.filter(OKRObjective.source_assess_session_id == assess_session_id)
-    elif run_id:
-        obj_query = obj_query.join(PillarResult, OKRObjective.source_pillar_id == PillarResult.id).filter(PillarResult.run_id == run_id)
-
-    objective_ids = [int(row[0]) for row in obj_query.all() if row and row[0] is not None]
+        objective_ids = [
+            int(row[0])
+            for row in (
+                session.query(OKRObjective.id)
+                .filter(
+                    OKRObjective.owner_user_id == user_id,
+                    OKRObjective.source_assess_session_id == assess_session_id,
+                )
+                .all()
+            )
+            if row and row[0] is not None
+        ]
+    # Fallback: some legacy objectives may not have updated source_assess_session_id.
+    if not objective_ids and run_id:
+        objective_ids = [
+            int(row[0])
+            for row in (
+                session.query(OKRObjective.id)
+                .join(PillarResult, OKRObjective.source_pillar_id == PillarResult.id)
+                .filter(
+                    OKRObjective.owner_user_id == user_id,
+                    PillarResult.run_id == run_id,
+                )
+                .all()
+            )
+            if row and row[0] is not None
+        ]
     if not objective_ids:
         return 0
 
