@@ -4,10 +4,11 @@ import { useMemo } from "react";
 import { getPillarPalette } from "@/lib/pillars";
 
 type ProgrammeBlock = { label: string; weeks: string; key: string };
+type ProgrammeBlockRange = ProgrammeBlock & { start?: string | null; end?: string | null };
 
 type ProgrammeCalendarProps = {
   programmeStart?: string | null;
-  programmeBlocks: ProgrammeBlock[];
+  programmeBlocks: ProgrammeBlockRange[];
   programmeLengthDays?: number;
 };
 
@@ -20,19 +21,39 @@ export default function ProgrammeCalendar({
   programmeBlocks,
   programmeLengthDays = 84,
 }: ProgrammeCalendarProps) {
-  const startDate = programmeStart ? new Date(programmeStart) : null;
   const days = useMemo(() => {
-    if (!startDate || Number.isNaN(startDate.getTime())) return [];
-    return Array.from({ length: programmeLengthDays }, (_, idx) => {
-      const date = new Date(startDate.getTime() + idx * 24 * 60 * 60 * 1000);
-      const week = Math.floor(idx / 7) + 1;
-      let key = "nutrition";
-      if (week >= 4 && week <= 6) key = "recovery";
-      if (week >= 7 && week <= 9) key = "training";
-      if (week >= 10) key = "resilience";
+    const startDate = programmeStart ? new Date(programmeStart) : null;
+    const ranges = programmeBlocks
+      .map((block) => {
+        const start = block.start ? new Date(block.start) : null;
+        const end = block.end ? new Date(block.end) : null;
+        if (!start || !end || Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return null;
+        return { key: block.key, start, end };
+      })
+      .filter((value): value is { key: string; start: Date; end: Date } => Boolean(value));
+    const baseStart =
+      ranges.length > 0
+        ? new Date(Math.min(...ranges.map((range) => range.start.getTime())))
+        : startDate && !Number.isNaN(startDate.getTime())
+          ? startDate
+          : null;
+    if (!baseStart) return [];
+    const baseEnd =
+      ranges.length > 0
+        ? new Date(Math.max(...ranges.map((range) => range.end.getTime())))
+        : new Date(baseStart.getTime() + (programmeLengthDays - 1) * 24 * 60 * 60 * 1000);
+    const totalDays = Math.max(
+      1,
+      Math.floor((baseEnd.getTime() - baseStart.getTime()) / (24 * 60 * 60 * 1000)) + 1,
+    );
+    const fallbackKey = programmeBlocks[0]?.key || "nutrition";
+    return Array.from({ length: totalDays }, (_, idx) => {
+      const date = new Date(baseStart.getTime() + idx * 24 * 60 * 60 * 1000);
+      const key =
+        ranges.find((range) => date >= range.start && date <= range.end)?.key || fallbackKey;
       return { date, key };
     });
-  }, [programmeLengthDays, startDate]);
+  }, [programmeBlocks, programmeLengthDays, programmeStart]);
 
   const monthOptions = useMemo(() => {
     if (!days.length) return [];

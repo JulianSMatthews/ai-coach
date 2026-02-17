@@ -190,6 +190,10 @@ class PromptSettings(Base):
     default_block_order = Column(JSONType, nullable=True)
     worker_mode_override = Column(Boolean, nullable=True)
     podcast_worker_mode_override = Column(Boolean, nullable=True)
+    monitoring_llm_p50_warn_ms = Column(Float, nullable=True)
+    monitoring_llm_p50_critical_ms = Column(Float, nullable=True)
+    monitoring_llm_p95_warn_ms = Column(Float, nullable=True)
+    monitoring_llm_p95_critical_ms = Column(Float, nullable=True)
     updated_at        = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 

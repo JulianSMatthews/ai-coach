@@ -34,6 +34,17 @@ type ProgressRow = {
   krs?: ProgressKr[];
 };
 
+type ProgrammeBlock = {
+  label: string;
+  weeks: string;
+  key: string;
+  weekStart: number;
+  weekEnd: number;
+  start?: string | null;
+  end?: string | null;
+  bridgeDays?: number;
+};
+
 type HabitStep = {
   id?: number;
   text?: string;
@@ -68,18 +79,36 @@ export default async function ProgressPage(props: PageProps) {
     "not started": { bg: "#eff6ff", text: "#1d4ed8" },
   };
 
-  const programmeBlocks = [
-    { label: "Nutrition", weeks: "Weeks 1–3", key: "nutrition", weekStart: 1, weekEnd: 3 },
-    { label: "Recovery", weeks: "Weeks 4–6", key: "recovery", weekStart: 4, weekEnd: 6 },
-    { label: "Training", weeks: "Weeks 7–9", key: "training", weekStart: 7, weekEnd: 9 },
-    { label: "Resilience", weeks: "Weeks 10–12", key: "resilience", weekStart: 10, weekEnd: 12 },
-  ];
+  const programmeBlocksRaw = Array.isArray(data.programme?.blocks) ? data.programme?.blocks : [];
+  const programmeBlocks: ProgrammeBlock[] =
+    programmeBlocksRaw && programmeBlocksRaw.length
+      ? programmeBlocksRaw.map((block, idx) => ({
+          label: String(block?.pillar_label || "Pillar"),
+          weeks: String(block?.label || block?.week_label || ""),
+          key: String(block?.pillar_key || `pillar-${idx}`),
+          weekStart: Number(block?.week_start || idx * 3 + 1),
+          weekEnd: Number(block?.week_end || idx * 3 + 3),
+          start: block?.start || null,
+          end: block?.end || null,
+          bridgeDays: Number(block?.bridge_days || 0),
+        }))
+      : [
+          { label: "Nutrition", weeks: "Weeks 1-3", key: "nutrition", weekStart: 1, weekEnd: 3 },
+          { label: "Recovery", weeks: "Weeks 4-6", key: "recovery", weekStart: 4, weekEnd: 6 },
+          { label: "Training", weeks: "Weeks 7-9", key: "training", weekStart: 7, weekEnd: 9 },
+          { label: "Resilience", weeks: "Weeks 10-12", key: "resilience", weekStart: 10, weekEnd: 12 },
+        ];
 
   const rowStarts = rows
     .map((row) => (row.cycle_start ? new Date(row.cycle_start) : null))
     .filter((d: Date | null) => d && !Number.isNaN(d.getTime())) as Date[];
+  const programmeBlockStarts = programmeBlocks
+    .map((block) => (block.start ? new Date(block.start) : null))
+    .filter((d: Date | null) => d && !Number.isNaN(d.getTime())) as Date[];
   const programmeStart =
-    rowStarts.length > 0
+    programmeBlockStarts.length > 0
+      ? new Date(Math.min(...programmeBlockStarts.map((d) => d.getTime())))
+      : rowStarts.length > 0
       ? new Date(Math.min(...rowStarts.map((d) => d.getTime())))
       : meta.anchor_date
         ? new Date(meta.anchor_date)
@@ -190,17 +219,29 @@ export default async function ProgressPage(props: PageProps) {
       ? meta.anchor_date
       : new Date().toISOString().slice(0, 10);
   const anchorDayNumber = isoDateToDayNumber(anchorDateKey) ?? 0;
-  const programmeStartDayNumbers = rows
-    .map((row) => valueToDayNumber(row.cycle_start || null))
-    .filter((dayNumber): dayNumber is number => dayNumber !== null);
+  const programmeRanges = programmeBlocks
+    .map((block, idx) => {
+      const startDayNumber = valueToDayNumber(block.start || null);
+      const endDayNumber = valueToDayNumber(block.end || null);
+      return {
+        ...block,
+        idx,
+        startDayNumber,
+        endDayNumber,
+      };
+    })
+    .filter((block) => block.startDayNumber !== null && block.endDayNumber !== null) as Array<
+    ProgrammeBlock & { idx: number; startDayNumber: number; endDayNumber: number }
+  >;
+  const programmeStartDayNumbers = programmeRanges.map((block) => block.startDayNumber);
   const programmeStartDayNumber = programmeStartDayNumbers.length ? Math.min(...programmeStartDayNumbers) : null;
   const fallbackPillarKey = programmeBlocks[0]?.key || "nutrition";
   const pillarKeyForDay = (dayNumber: number) => {
-    if (programmeStartDayNumber === null) return fallbackPillarKey;
-    const dayOffset = dayNumber - programmeStartDayNumber;
-    if (dayOffset < 0 || dayOffset >= 84) return fallbackPillarKey;
-    const blockIndex = Math.min(3, Math.max(0, Math.floor(dayOffset / 21)));
-    return programmeBlocks[blockIndex]?.key || fallbackPillarKey;
+    const match = programmeRanges.find((block) => dayNumber >= block.startDayNumber && dayNumber <= block.endDayNumber);
+    if (match) return match.key || fallbackPillarKey;
+    if (!programmeRanges.length) return fallbackPillarKey;
+    if (dayNumber < programmeRanges[0].startDayNumber) return programmeRanges[0].key || fallbackPillarKey;
+    return programmeRanges[programmeRanges.length - 1]?.key || fallbackPillarKey;
   };
   const streakDays = Array.from({ length: streakWindowDays }, (_, idx) => {
     const dayNumber = anchorDayNumber - idx;
@@ -213,12 +254,34 @@ export default async function ProgressPage(props: PageProps) {
     };
   });
 
-  const programmeDayRaw = programmeStartDayNumber !== null ? anchorDayNumber - programmeStartDayNumber + 1 : null;
-  const programmeDay = programmeDayRaw === null ? 0 : Math.max(0, Math.min(84, programmeDayRaw));
-  const currentProgrammeWeek = Math.max(1, Math.min(12, Math.ceil(Math.max(programmeDay, 1) / 7)));
-  const currentBlockIndex = Math.min(programmeBlocks.length - 1, Math.floor((currentProgrammeWeek - 1) / 3));
-  const currentBlock = programmeBlocks[currentBlockIndex] || programmeBlocks[0];
-  const weekOfCurrentBlock = ((currentProgrammeWeek - 1) % 3) + 1;
+  const programmeEndDayNumber = programmeRanges.length ? Math.max(...programmeRanges.map((block) => block.endDayNumber)) : null;
+  const programmeLengthDays =
+    programmeStartDayNumber !== null && programmeEndDayNumber !== null
+      ? Math.max(1, programmeEndDayNumber - programmeStartDayNumber + 1)
+      : 84;
+
+  const weekdayMon0 = (dayNumber: number) => {
+    const d = new Date(dayNumber * MS_PER_DAY);
+    return (d.getUTCDay() + 6) % 7;
+  };
+  const firstMondayOnOrAfter = (dayNumber: number) => {
+    const delta = (7 - weekdayMon0(dayNumber)) % 7;
+    return dayNumber + delta;
+  };
+
+  const activeRange =
+    programmeRanges.find((block) => anchorDayNumber >= block.startDayNumber && anchorDayNumber <= block.endDayNumber) ||
+    (programmeRanges.length ? (anchorDayNumber < programmeRanges[0].startDayNumber ? programmeRanges[0] : programmeRanges[programmeRanges.length - 1]) : null);
+  const currentBlock = (activeRange as ProgrammeBlock) || programmeBlocks[0];
+  const weekOfCurrentBlock = (() => {
+    if (!activeRange) return 1;
+    if (activeRange.idx === 0) {
+      const mondayAnchor = firstMondayOnOrAfter(activeRange.startDayNumber);
+      if (anchorDayNumber < mondayAnchor) return 1;
+      return Math.max(1, Math.min(3, Math.floor((anchorDayNumber - mondayAnchor) / 7) + 1));
+    }
+    return Math.max(1, Math.min(3, Math.floor((anchorDayNumber - activeRange.startDayNumber) / 7) + 1));
+  })();
   let activeStreakDays = 0;
   for (const day of streakDays) {
     if (!day.active) break;
@@ -246,11 +309,20 @@ export default async function ProgressPage(props: PageProps) {
     return fallbackPillarKey;
   };
 
-  const programmeDaysCapped = Math.max(0, Math.min(84, programmeDay));
   const pillarSummaries = programmeBlocks.map((block) => {
-    const blockStartDay = (block.weekStart - 1) * 7 + 1;
-    const daysIntoBlock = Math.max(0, Math.min(21, programmeDaysCapped - blockStartDay + 1));
-    const pct = Math.round((daysIntoBlock / 21) * 100);
+    const range = programmeRanges.find((item) => item.key === block.key);
+    if (!range) {
+      return {
+        key: block.key,
+        label: block.label,
+        palette: getPillarPalette(block.key),
+        pct: 0,
+        notStarted: true,
+      };
+    }
+    const blockDays = Math.max(1, range.endDayNumber - range.startDayNumber + 1);
+    const daysIntoBlock = Math.max(0, Math.min(blockDays, anchorDayNumber - range.startDayNumber + 1));
+    const pct = Math.round((daysIntoBlock / blockDays) * 100);
     return {
       key: block.key,
       label: block.label,
@@ -287,7 +359,7 @@ export default async function ProgressPage(props: PageProps) {
 
   const nextAssessmentDue =
     programmeStart && !Number.isNaN(programmeStart.getTime())
-      ? new Date(programmeStart.getTime() + 84 * MS_PER_DAY)
+      ? new Date(programmeStart.getTime() + programmeLengthDays * MS_PER_DAY)
       : null;
 
   return (

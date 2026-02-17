@@ -2548,7 +2548,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 if rc_sc is not None: bars.append(_score_bar("Recovery", rc_sc))
                 breakdown = "\n".join(bars) if bars else "No pillar scores available"
 
-                # Ensure week-1 habit steps are seeded for all active KRs from this assessment.
+                # Ensure week-1 habit steps are seeded for Nutrition KRs from this assessment.
                 try:
                     seeded_count = seed_week1_habit_steps_for_assessment(
                         s,

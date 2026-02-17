@@ -58,6 +58,8 @@ from .prompts import (
 )
 from .debug_utils import debug_log
 from .job_queue import ensure_prompt_settings_schema
+from .programme_timeline import programme_block_map, programme_blocks as build_programme_blocks
+from .reports_paths import resolve_reports_dir
 from .virtual_clock import get_effective_today, get_virtual_date
 
 # For raw SQL fallback when OKR models are unavailable
@@ -121,7 +123,7 @@ def _reports_root_for_user(user_id: int) -> str:
     Determine the filesystem directory where reports should be written.
     Uses REPORTS_DIR env var if set, otherwise ./public/reports/{user_id}.
     """
-    base = os.getenv("REPORTS_DIR") or os.path.join(os.getcwd(), "public", "reports")
+    base = resolve_reports_dir()
     path = os.path.join(base, str(user_id))
     os.makedirs(path, exist_ok=True)
     return path
@@ -131,7 +133,7 @@ def _reports_root_global() -> str:
     """
     Global reports output directory. Uses REPORTS_DIR if set, otherwise ./public/reports
     """
-    base = os.getenv("REPORTS_DIR") or os.path.join(os.getcwd(), "public", "reports")
+    base = resolve_reports_dir()
     os.makedirs(base, exist_ok=True)
     return base
 
@@ -3642,36 +3644,19 @@ def _collect_progress_rows(user_id: int, programme_blocks: dict[str, dict[str, A
     rows.sort(key=lambda r: (r.get("cycle_start") or datetime.min, r.get("pillar")))
     return rows
 
-def _format_cycle_range(start: datetime | None, end: datetime | None) -> str:
-    if isinstance(start, datetime) and isinstance(end, datetime):
-        return f"{start.strftime('%d %b %Y')} – {end.strftime('%d %b %Y')}"
-    if isinstance(start, datetime):
-        return start.strftime("%d %b %Y")
-    if isinstance(end, datetime):
-        return end.strftime("%d %b %Y")
+def _format_cycle_range(start: datetime | date | None, end: datetime | date | None) -> str:
+    start_dt = _as_utc_date(start)
+    end_dt = _as_utc_date(end)
+    if start_dt and end_dt:
+        return f"{start_dt.strftime('%d %b %Y')} – {end_dt.strftime('%d %b %Y')}"
+    if start_dt:
+        return start_dt.strftime("%d %b %Y")
+    if end_dt:
+        return end_dt.strftime("%d %b %Y")
     return ""
 
 def _programme_block_map(start_dt: datetime | date | None) -> dict[str, dict[str, Any]]:
-    if not start_dt:
-        return {}
-    base = start_dt.date() if isinstance(start_dt, datetime) else start_dt
-    pillars = [
-        ("nutrition", "Nutrition"),
-        ("recovery", "Recovery"),
-        ("training", "Training"),
-        ("resilience", "Resilience"),
-    ]
-    blocks: dict[str, dict[str, Any]] = {}
-    for idx, (key, label) in enumerate(pillars):
-        blk_start = base + timedelta(days=idx * 21)
-        blk_end = blk_start + timedelta(days=20)
-        blocks[key] = {
-            "label": f"Weeks {idx * 3 + 1}–{idx * 3 + 3}",
-            "start": blk_start,
-            "end": blk_end,
-            "pillar_label": label,
-        }
-    return blocks
+    return programme_block_map(start_dt)
 
 def _format_number(val: float | None) -> str:
     if val is None:
@@ -3915,24 +3900,42 @@ def generate_progress_report_html(user_id: int, anchor_date: date | None = None)
     status_counts = data.get("status_counts") or {"on track": 0, "at risk": 0, "off track": 0, "not started": 0}
     total_krs = int(data.get("total_krs") or 0)
 
-    # Programme overview (12-week, 3-week blocks by pillar)
-    blocks = [
-        ("Weeks 1–3", "Nutrition", "nutrition"),
-        ("Weeks 4–6", "Recovery", "recovery"),
-        ("Weeks 7–9", "Training", "training"),
-        ("Weeks 10–12", "Resilience", "resilience"),
-    ]
+    programme_payload = (data.get("programme") or {})
+    programme_blocks_payload = list(programme_payload.get("blocks") or [])
+    if not programme_blocks_payload:
+        fallback_map = {}
+        for row in rows:
+            pillar_key = (row.get("pillar") or "").lower()
+            if not pillar_key or pillar_key in fallback_map:
+                continue
+            fallback_map[pillar_key] = {
+                "pillar_key": pillar_key,
+                "pillar_label": _title_for_pillar(pillar_key),
+                "label": row.get("cycle_label") or "",
+                "week_label": row.get("cycle_label") or "",
+                "start": _as_utc_date(row.get("cycle_start")),
+                "end": _as_utc_date(row.get("cycle_end")),
+                "bridge_days": 0,
+            }
+        programme_blocks_payload = list(fallback_map.values())
+
+    has_bridge_days = any(int(b.get("bridge_days") or 0) > 0 for b in programme_blocks_payload if isinstance(b, dict))
+    programme_title = "Programme (bridge days + 3-week focus blocks)" if has_bridge_days else "Programme (3-week focus blocks)"
     programme_html = (
         "<div class='programme'>"
-        "<h3>12-week programme (3-week focus blocks)</h3>"
+        f"<h3>{html.escape(programme_title)}</h3>"
         "<div class='programme-row'>"
         + "".join(
-            f"<div class='programme-pill {css_class}'>"
-            f"<div class='label'>{label}</div>"
-            f"<div class='weeks'>{weeks}</div>"
-            f"<div class='focus'>Focus: {label}</div>"
-            "</div>"
-            for weeks, label, css_class in blocks
+            (
+                f"<div class='programme-pill {html.escape(str(block.get('pillar_key') or '').lower())}'>"
+                f"<div class='label'>{html.escape(str(block.get('pillar_label') or _title_for_pillar(str(block.get('pillar_key') or ''))))}</div>"
+                f"<div class='weeks'>{html.escape(str(block.get('label') or block.get('week_label') or ''))}</div>"
+                f"<div class='focus'>"
+                f"{html.escape(_format_cycle_range(block.get('start'), block.get('end')))}"
+                "</div>"
+                "</div>"
+            )
+            for block in programme_blocks_payload
         )
         + "</div></div>"
     )
@@ -3981,16 +3984,6 @@ def generate_progress_report_html(user_id: int, anchor_date: date | None = None)
         focus_strip = f"<div class='focus-strip'><strong>This week’s focus KRs:</strong> {pills}</div>"
     display_name = (data.get("user") or {}).get("first_name") or "there"
     readiness_html = _habit_readiness_panel(data.get("readiness"))
-    programme_html = (
-        "<div class='programme'>"
-        "<h3>12-week programme (3-week focus blocks)</h3>"
-        "<div class='programme-row'>"
-        "<div class='programme-pill nutrition'><div class='label'>Nutrition</div><div class='weeks'>Weeks 1–3</div><div class='focus'>Focus: Nutrition</div></div>"
-        "<div class='programme-pill recovery'><div class='label'>Recovery</div><div class='weeks'>Weeks 4–6</div><div class='focus'>Focus: Recovery</div></div>"
-        "<div class='programme-pill training'><div class='label'>Training</div><div class='weeks'>Weeks 7–9</div><div class='focus'>Focus: Training</div></div>"
-        "<div class='programme-pill resilience'><div class='label'>Resilience</div><div class='weeks'>Weeks 10–12</div><div class='focus'>Focus: Resilience</div></div>"
-        "</div></div>"
-    )
     display_name = (data.get("user") or {}).get("first_name") or "there"
     html_doc = f"""<!doctype html>
 <html lang="en">
@@ -4137,6 +4130,7 @@ def build_progress_report_data(user_id: int, anchor_date: date | None = None) ->
     anchor_label = anchor_today.strftime("%d %b %Y")
     is_virtual_anchor = False
     programme_blocks: dict[str, dict[str, Any]] = {}
+    programme_blocks_list: list[dict[str, Any]] = []
     engagement: Dict[str, Any] = {
         "daily_streak": 0,
         "active_today": False,
@@ -4161,7 +4155,9 @@ def build_progress_report_data(user_id: int, anchor_date: date | None = None) ->
             .first()
         )
         if run:
-            programme_blocks = _programme_block_map(getattr(run, "started_at", None) or getattr(run, "created_at", None))
+            programme_start = getattr(run, "started_at", None) or getattr(run, "created_at", None)
+            programme_blocks = _programme_block_map(programme_start)
+            programme_blocks_list = build_programme_blocks(programme_start)
         # Latest weekly focus for this user (use anchor_today to pick current)
         wf_current = (
             s.query(WeeklyFocus)
@@ -4285,5 +4281,21 @@ def build_progress_report_data(user_id: int, anchor_date: date | None = None) ->
             "is_current": bool(wf_current),
         },
         "readiness": readiness,
+        "programme": {
+            "blocks": [
+                {
+                    "pillar_key": b.get("pillar_key"),
+                    "pillar_label": b.get("pillar_label"),
+                    "label": b.get("label"),
+                    "week_label": b.get("week_label"),
+                    "week_start": b.get("week_start"),
+                    "week_end": b.get("week_end"),
+                    "start": (_as_utc_date(b.get("start")).isoformat() if _as_utc_date(b.get("start")) else None),
+                    "end": (_as_utc_date(b.get("end")).isoformat() if _as_utc_date(b.get("end")) else None),
+                    "bridge_days": b.get("bridge_days"),
+                }
+                for b in programme_blocks_list
+            ],
+        },
         "rows": rows,
     }

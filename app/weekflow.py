@@ -12,6 +12,7 @@ from . import monday, wednesday, friday, tuesday, saturday, sunday
 from .db import SessionLocal
 from .focus import select_top_krs_for_user
 from .reporting import generate_progress_report_html, _reports_root_for_user
+from .programme_timeline import week_anchor_date
 import os
 import shutil
 def _ensure_weekly_focus(user: User, week_no: int) -> bool:
@@ -21,7 +22,7 @@ def _ensure_weekly_focus(user: User, week_no: int) -> bool:
     - Otherwise create a new one starting from the baseline week plus (week_no-1)*7 days.
     """
     with SessionLocal() as s:
-        base_start = None
+        programme_start = None
         run = (
             s.query(AssessmentRun)
             .filter(AssessmentRun.user_id == user.id)
@@ -31,8 +32,8 @@ def _ensure_weekly_focus(user: User, week_no: int) -> bool:
         if run:
             base_dt = getattr(run, "started_at", None) or getattr(run, "created_at", None)
             if isinstance(base_dt, datetime):
-                base_start = base_dt.date() - timedelta(days=base_dt.date().weekday())
-        if base_start is None:
+                programme_start = base_dt.date()
+        if programme_start is None:
             earliest = (
                 s.query(WeeklyFocus)
                 .filter(WeeklyFocus.user_id == user.id)
@@ -41,12 +42,11 @@ def _ensure_weekly_focus(user: User, week_no: int) -> bool:
             )
             if earliest and getattr(earliest, "starts_on", None):
                 try:
-                    base_start = earliest.starts_on.date()
+                    programme_start = earliest.starts_on.date()
                 except Exception:
-                    base_start = None
-        if base_start is None:
-            today = datetime.utcnow().date()
-            base_start = today - timedelta(days=today.weekday())
+                    programme_start = None
+        today = datetime.utcnow().date()
+        base_start = week_anchor_date(programme_start, default_today=today)
         start = base_start + timedelta(days=7 * (week_no - 1))
         end = start + timedelta(days=6)
 

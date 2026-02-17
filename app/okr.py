@@ -1317,7 +1317,7 @@ def seed_week1_habit_steps_for_assessment(
     week_no: int = 1,
 ) -> int:
     """
-    Ensure week-1 habit steps exist for active KRs generated in an assessment.
+    Ensure week-1 habit steps exist for Nutrition KRs generated in an assessment.
     Non-destructive: if a KR already has any non-archived step for the target week, keep it.
     """
     if not user_id:
@@ -1355,10 +1355,25 @@ def seed_week1_habit_steps_for_assessment(
     if not objective_ids:
         return 0
 
+    nutrition_objective_ids = [
+        int(row[0])
+        for row in (
+            session.query(OKRObjective.id)
+            .filter(
+                OKRObjective.id.in_(objective_ids),
+                func.lower(OKRObjective.pillar_key) == "nutrition",
+            )
+            .all()
+        )
+        if row and row[0] is not None
+    ]
+    if not nutrition_objective_ids:
+        return 0
+
     krs = (
         session.query(OKRKeyResult)
         .filter(
-            OKRKeyResult.objective_id.in_(objective_ids),
+            OKRKeyResult.objective_id.in_(nutrition_objective_ids),
             OKRKeyResult.status == "active",
         )
         .all()

@@ -20,6 +20,7 @@ from .models import (
     WeeklyFocus,
     WeeklyFocusKR,
     OKRKeyResult,
+    OKRKrHabitStep,
     OKRObjective,
     AssessmentRun,
 )
@@ -28,6 +29,7 @@ from .podcast import generate_podcast_audio
 from .prompts import kr_payload_list
 from .touchpoints import log_touchpoint
 from . import general_support
+from .programme_timeline import week_anchor_date, week_no_for_date
 from .virtual_clock import get_effective_today
 
 
@@ -232,6 +234,60 @@ def _summary_message(krs: list[OKRKeyResult]) -> str:
     return "Agreed KRs for this week:\n" + _format_krs(krs)
 
 
+def _habit_steps_summary(session: Session, user_id: int, krs: list[OKRKeyResult], week_no: int | None) -> str | None:
+    """
+    Build a short confirmation of habit steps set for the current week.
+    Prefers exact week_no match, then falls back to active steps with week_no=None.
+    """
+    if not krs:
+        return None
+    kr_ids = [int(kr.id) for kr in krs if getattr(kr, "id", None)]
+    if not kr_ids:
+        return None
+
+    def _query_steps(target_week: int | None) -> list[OKRKrHabitStep]:
+        q = (
+            session.query(OKRKrHabitStep)
+            .filter(OKRKrHabitStep.user_id == user_id, OKRKrHabitStep.kr_id.in_(kr_ids))
+            .filter(OKRKrHabitStep.status != "archived")
+            .order_by(OKRKrHabitStep.kr_id.asc(), OKRKrHabitStep.sort_order.asc(), OKRKrHabitStep.id.asc())
+        )
+        if target_week is None:
+            q = q.filter(OKRKrHabitStep.week_no.is_(None))
+        else:
+            q = q.filter(OKRKrHabitStep.week_no == target_week)
+        return q.all()
+
+    rows: list[OKRKrHabitStep] = _query_steps(week_no) if week_no is not None else []
+    if not rows:
+        rows = _query_steps(None)
+    if not rows:
+        return None
+
+    by_kr: dict[int, list[str]] = {}
+    for row in rows:
+        kr_id = int(getattr(row, "kr_id", 0) or 0)
+        text = (getattr(row, "step_text", None) or "").strip()
+        if kr_id <= 0 or not text:
+            continue
+        by_kr.setdefault(kr_id, [])
+        if text not in by_kr[kr_id]:
+            by_kr[kr_id].append(text)
+
+    lines = ["Habit steps set for this week:"]
+    item_no = 0
+    for kr in krs:
+        steps = by_kr.get(int(kr.id), [])
+        if not steps:
+            continue
+        item_no += 1
+        merged = "; ".join(steps)
+        lines.append(f"{item_no}) {merged}")
+    if item_no == 0:
+        return None
+    return "\n".join(lines)
+
+
 def _is_podcast_confirm_message(text: str) -> bool:
     cleaned = " ".join("".join(ch.lower() if ch.isalnum() else " " for ch in text or "").split())
     if not cleaned:
@@ -273,7 +329,7 @@ def start_weekstart(user: User, notes: str | None = None, debug: bool = False, s
     general_support.clear(user.id)
     with SessionLocal() as s:
         today = get_effective_today(s, user.id, default_today=datetime.utcnow().date())
-        base_start = None
+        programme_start = None
         run = (
             s.query(AssessmentRun)
             .filter(AssessmentRun.user_id == user.id)
@@ -283,8 +339,8 @@ def start_weekstart(user: User, notes: str | None = None, debug: bool = False, s
         if run:
             base_dt = getattr(run, "started_at", None) or getattr(run, "created_at", None)
             if isinstance(base_dt, datetime):
-                base_start = base_dt.date() - timedelta(days=base_dt.date().weekday())
-        if base_start is None:
+                programme_start = base_dt.date()
+        if programme_start is None:
             earliest = (
                 s.query(WeeklyFocus)
                 .filter(WeeklyFocus.user_id == user.id)
@@ -293,17 +349,15 @@ def start_weekstart(user: User, notes: str | None = None, debug: bool = False, s
             )
             if earliest and getattr(earliest, "starts_on", None):
                 try:
-                    base_start = earliest.starts_on.date()
+                    programme_start = earliest.starts_on.date()
                 except Exception:
-                    base_start = None
-        if base_start is None:
-            base_start = today - timedelta(days=today.weekday())
+                    programme_start = None
+        base_start = week_anchor_date(programme_start, default_today=today)
 
         label_week = week_no
         if label_week is None:
-            current_week_start = today - timedelta(days=today.weekday())
             try:
-                label_week = max(1, int(((current_week_start - base_start).days // 7) + 1))
+                label_week = week_no_for_date(programme_start or base_start, today)
             except Exception:
                 label_week = 1
 
@@ -444,11 +498,15 @@ def handle_message(user: User, text: str) -> None:
 
             listened = "listened" in lower or lower == "listen" or _is_podcast_confirm_message(msg)
             if listened:
-                summary = _summary_message(krs) if krs else "Weekstart confirmed."
-                msg_txt = (
-                    f"*Monday* Thanks for listening.\n\n{summary}\n\n"
-                    "We’ll set your habit steps on Sunday for the next week."
-                )
+                habit_summary = _habit_steps_summary(s, user.id, krs, week_no)
+                if habit_summary:
+                    msg_txt = f"*Monday* Thanks for listening.\n\n{habit_summary}"
+                else:
+                    msg_txt = (
+                        "*Monday* Thanks for listening.\n\n"
+                        "I can’t see this week’s habit steps yet. "
+                        "Reply *sunday* if you want to set them now."
+                    )
                 _send_monday(to=user.phone, text=msg_txt)
                 _set_state(s, user.id, None)
                 s.commit()

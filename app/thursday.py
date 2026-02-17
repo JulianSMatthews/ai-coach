@@ -11,6 +11,7 @@ from .nudges import send_whatsapp, send_whatsapp_media, append_button_cta
 from .models import User, WeeklyFocus, AssessmentRun
 from .kickoff import COACH_NAME
 from .prompts import primary_kr_payload, build_prompt, run_llm_prompt
+from .programme_timeline import week_no_for_date
 from .podcast import generate_podcast_audio
 from .touchpoints import log_touchpoint
 from . import general_support
@@ -78,7 +79,7 @@ def _resolve_week_context(session, user_id: int, week_no: int | None) -> tuple[i
     wf = wf_current or wf_latest
     if wf and getattr(wf, "week_no", None):
         return wf.week_no, wf.id
-    base_start = None
+    programme_start = None
     run = (
         session.query(AssessmentRun)
         .filter(AssessmentRun.user_id == user_id)
@@ -88,8 +89,8 @@ def _resolve_week_context(session, user_id: int, week_no: int | None) -> tuple[i
     if run:
         base_dt = getattr(run, "started_at", None) or getattr(run, "created_at", None)
         if isinstance(base_dt, datetime):
-            base_start = base_dt.date() - timedelta(days=base_dt.date().weekday())
-    if base_start is None:
+            programme_start = base_dt.date()
+    if programme_start is None:
         earliest = (
             session.query(WeeklyFocus)
             .filter(WeeklyFocus.user_id == user_id)
@@ -98,14 +99,11 @@ def _resolve_week_context(session, user_id: int, week_no: int | None) -> tuple[i
         )
         if earliest and getattr(earliest, "starts_on", None):
             try:
-                base_start = earliest.starts_on.date()
+                programme_start = earliest.starts_on.date()
             except Exception:
-                base_start = None
-    if base_start is None:
-        base_start = today - timedelta(days=today.weekday())
-    current_week_start = today - timedelta(days=today.weekday())
+                programme_start = None
     try:
-        label_week = max(1, int(((current_week_start - base_start).days // 7) + 1))
+        label_week = week_no_for_date(programme_start, today)
     except Exception:
         label_week = 1
     return label_week, getattr(wf, "id", None) if wf else None

@@ -33,6 +33,10 @@ def ensure_prompt_settings_schema() -> None:
         with engine.connect() as conn:
             conn.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS worker_mode_override boolean;"))
             conn.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS podcast_worker_mode_override boolean;"))
+            conn.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_p50_warn_ms double precision;"))
+            conn.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_p50_critical_ms double precision;"))
+            conn.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_p95_warn_ms double precision;"))
+            conn.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_p95_critical_ms double precision;"))
             conn.commit()
     except Exception:
         pass

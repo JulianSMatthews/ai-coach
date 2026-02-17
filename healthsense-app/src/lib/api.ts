@@ -62,6 +62,19 @@ export type ProgressResponse = {
   focus?: { kr_ids?: number[]; kr_titles?: string[] };
   week_window?: { start?: string | null; end?: string | null; is_current?: boolean };
   readiness?: { score?: number; label?: string; note?: string } | null;
+  programme?: {
+    blocks?: Array<{
+      pillar_key?: string;
+      pillar_label?: string;
+      label?: string;
+      week_label?: string;
+      week_start?: number;
+      week_end?: number;
+      start?: string | null;
+      end?: string | null;
+      bridge_days?: number;
+    }>;
+  };
   rows?: Array<{
     pillar?: string;
     cycle_label?: string;

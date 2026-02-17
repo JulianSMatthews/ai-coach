@@ -126,6 +126,7 @@ from .reporting import (
     build_progress_report_data,
     _reports_root_global,
 )
+from .reports_paths import resolve_reports_dir, resolve_reports_dir_with_source
 from .job_queue import ensure_job_table, enqueue_job, should_use_worker, ensure_prompt_settings_schema
 from .virtual_clock import get_virtual_date, get_virtual_now_for_user, set_virtual_mode
 
@@ -424,7 +425,7 @@ def _drop_all_except(keep_tables: set[str]) -> None:
 
 
 def _cleanup_reports_on_reset(*, keep_content: bool) -> None:
-    reports_dir = os.getenv("REPORTS_DIR") or os.path.join(os.getcwd(), "public", "reports")
+    reports_dir = resolve_reports_dir()
     if not os.path.isdir(reports_dir):
         return
     if keep_content:
@@ -579,13 +580,13 @@ def on_startup():
 
                 # Ensure reports dir exists even when not resetting DB
                 try:
-                    reports_dir = os.getenv("REPORTS_DIR") or os.path.join(os.getcwd(), "public", "reports")
+                    reports_dir = resolve_reports_dir()
                     os.makedirs(reports_dir, exist_ok=True)
                 except Exception as e:
                     print(f"⚠️  Could not create reports dir: {e!r}")
             else:
                 try:
-                    reports_dir = os.getenv("REPORTS_DIR") or os.path.join(os.getcwd(), "public", "reports")
+                    reports_dir = resolve_reports_dir()
                     os.makedirs(reports_dir, exist_ok=True)
                     print(f"[startup] DB reset skipped; reports dir preserved at {reports_dir}")
                 except Exception as e:
@@ -2605,12 +2606,16 @@ async def twilio_inbound(request: Request):
 
 @app.get("/health")
 def health():
+    reports_dir, reports_source = resolve_reports_dir_with_source()
     return {
         "ok": True,
         "env": ENV,
         "timezone": "Europe/London",
         "app_start_uk": APP_START_UK_STR,
         "uptime_seconds": _uptime_seconds(),
+        "reports_dir": reports_dir,
+        "reports_dir_source": reports_source,
+        "reports_dir_exists": os.path.isdir(reports_dir),
     }
 
 @app.get("/")
@@ -10236,10 +10241,10 @@ app.include_router(admin)
 #   - Else (local dev) ⇒ auto-detect ngrok https; fallback http://localhost:8000
 # ──────────────────────────────────────────────────────────────────────────────
 try:
-    reports_dir = os.getenv("REPORTS_DIR") or os.path.join(os.getcwd(), "public", "reports")
+    reports_dir, reports_source = resolve_reports_dir_with_source()
     os.makedirs(reports_dir, exist_ok=True)
     app.mount("/reports", StaticFiles(directory=reports_dir), name="reports")
-    debug_log(f"📄 Reports mounted at /reports -> {reports_dir}", tag="startup")
+    debug_log(f"📄 Reports mounted at /reports -> {reports_dir} ({reports_source})", tag="startup")
 
     _REPORTS_BASE = None
     reports_override = (os.getenv("REPORTS_BASE_URL") or os.getenv("PUBLIC_REPORT_BASE_URL") or "").strip()
@@ -10398,7 +10403,7 @@ def api_reports_upload(payload: dict, request: Request):
         raw = base64.b64decode(content_b64.encode("ascii"), validate=True)
     except Exception:
         raise HTTPException(status_code=400, detail="invalid base64 content")
-    reports_dir = os.getenv("REPORTS_DIR") or os.path.join(os.getcwd(), "public", "reports")
+    reports_dir = resolve_reports_dir()
     user_dir = os.path.join(reports_dir, str(user_id))
     os.makedirs(user_dir, exist_ok=True)
     out_path = os.path.join(user_dir, filename)

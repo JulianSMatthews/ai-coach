@@ -21,6 +21,7 @@ from .kickoff import COACH_NAME
 from .models import AssessmentRun, OKRKeyResult, OKRKrEntry, User, UserPreference, WeeklyFocus
 from .nudges import send_whatsapp
 from .prompts import kr_payload_list
+from .programme_timeline import week_no_for_focus_start
 from .touchpoints import log_touchpoint
 from .virtual_clock import get_effective_today
 
@@ -108,7 +109,7 @@ def _resolve_weekly_focus(session: Session, user_id: int, today_date) -> Optiona
 
 
 def _infer_week_no(session: Session, user_id: int, wf: WeeklyFocus) -> int:
-    base_start = None
+    programme_start = None
     run = (
         session.query(AssessmentRun)
         .filter(AssessmentRun.user_id == user_id)
@@ -118,8 +119,8 @@ def _infer_week_no(session: Session, user_id: int, wf: WeeklyFocus) -> int:
     if run:
         base_dt = getattr(run, "started_at", None) or getattr(run, "created_at", None)
         if isinstance(base_dt, datetime):
-            base_start = base_dt.date() - timedelta(days=base_dt.date().weekday())
-    if base_start is None:
+            programme_start = base_dt.date()
+    if programme_start is None:
         earliest = (
             session.query(WeeklyFocus)
             .filter(WeeklyFocus.user_id == user_id)
@@ -128,19 +129,19 @@ def _infer_week_no(session: Session, user_id: int, wf: WeeklyFocus) -> int:
         )
         if earliest and getattr(earliest, "starts_on", None):
             try:
-                base_start = earliest.starts_on.date()
+                programme_start = earliest.starts_on.date()
             except Exception:
-                base_start = None
+                programme_start = None
     wf_start = None
     if getattr(wf, "starts_on", None):
         try:
             wf_start = wf.starts_on.date()
         except Exception:
             wf_start = None
-    if base_start is None or wf_start is None:
+    if wf_start is None:
         return 1
     try:
-        return max(1, int(((wf_start - base_start).days // 7) + 1))
+        return week_no_for_focus_start(programme_start, wf_start)
     except Exception:
         return 1
 

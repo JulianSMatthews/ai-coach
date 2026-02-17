@@ -1,7 +1,17 @@
 import AdminNav from "@/components/AdminNav";
-import { getAdminAppEngagement, getAdminAssessmentHealth } from "@/lib/api";
+import {
+  getAdminAppEngagement,
+  getAdminAssessmentHealth,
+  updateAdminAssessmentHealthSettings,
+} from "@/lib/api";
+import { revalidatePath } from "next/cache";
 
 export const dynamic = "force-dynamic";
+
+const DEFAULT_LLM_P50_WARN_MS = 4000;
+const DEFAULT_LLM_P50_CRITICAL_MS = 8000;
+const DEFAULT_LLM_P95_WARN_MS = 8000;
+const DEFAULT_LLM_P95_CRITICAL_MS = 15000;
 
 type MonitoringSearchParams = {
   days?: string | string[];
@@ -40,6 +50,25 @@ function barWidth(percentOfStart: number | null | undefined): string {
   const bounded = Math.max(0, Math.min(100, percentOfStart));
   if (bounded === 0) return "0%";
   return `${Math.max(6, bounded)}%`;
+}
+
+async function saveLatencyThresholdsAction(formData: FormData) {
+  "use server";
+
+  const parseOptional = (key: string): number | null => {
+    const raw = String(formData.get(key) || "").trim();
+    if (!raw) return null;
+    const num = Number(raw);
+    return Number.isFinite(num) && num > 0 ? num : null;
+  };
+
+  await updateAdminAssessmentHealthSettings({
+    llm_p50_warn_ms: parseOptional("llm_p50_warn_ms"),
+    llm_p50_critical_ms: parseOptional("llm_p50_critical_ms"),
+    llm_p95_warn_ms: parseOptional("llm_p95_warn_ms"),
+    llm_p95_critical_ms: parseOptional("llm_p95_critical_ms"),
+  });
+  revalidatePath("/admin/monitoring");
 }
 
 export default async function MonitoringPage({ searchParams }: { searchParams?: MonitoringSearchParams }) {
@@ -87,6 +116,10 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
   const coachingDayStats = (health?.coaching?.day_stats || []).filter(
     (row) => String(row?.day || "").toLowerCase() !== "kickoff",
   );
+  const llmP50WarnMs = Number(health?.thresholds?.llm_p50_ms?.warn ?? DEFAULT_LLM_P50_WARN_MS);
+  const llmP50CriticalMs = Number(health?.thresholds?.llm_p50_ms?.critical ?? DEFAULT_LLM_P50_CRITICAL_MS);
+  const llmP95WarnMs = Number(health?.thresholds?.llm_p95_ms?.warn ?? DEFAULT_LLM_P95_WARN_MS);
+  const llmP95CriticalMs = Number(health?.thresholds?.llm_p95_ms?.critical ?? DEFAULT_LLM_P95_CRITICAL_MS);
   const llmAssessment = health?.llm?.assessment || {
     prompts: health?.llm?.assessor_prompts ?? 0,
     duration_ms_p50: health?.llm?.duration_ms_p50 ?? null,
@@ -334,6 +367,66 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
               {loadError}
             </div>
           ) : null}
+          <div className="mt-5 rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
+            <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Latency thresholds (LLM ms)</p>
+            <p className="mt-1 text-xs text-[#8a8176]">
+              Configure warning and critical thresholds used for p50 and p95 latency monitoring.
+            </p>
+            <form action={saveLatencyThresholdsAction} className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                p50 warn
+                <input
+                  type="number"
+                  name="llm_p50_warn_ms"
+                  min={1}
+                  step={100}
+                  defaultValue={String(Math.round(llmP50WarnMs))}
+                  className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                />
+              </label>
+              <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                p50 critical
+                <input
+                  type="number"
+                  name="llm_p50_critical_ms"
+                  min={1}
+                  step={100}
+                  defaultValue={String(Math.round(llmP50CriticalMs))}
+                  className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                />
+              </label>
+              <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                p95 warn
+                <input
+                  type="number"
+                  name="llm_p95_warn_ms"
+                  min={1}
+                  step={100}
+                  defaultValue={String(Math.round(llmP95WarnMs))}
+                  className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                />
+              </label>
+              <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                p95 critical
+                <input
+                  type="number"
+                  name="llm_p95_critical_ms"
+                  min={1}
+                  step={100}
+                  defaultValue={String(Math.round(llmP95CriticalMs))}
+                  className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                />
+              </label>
+              <div className="sm:col-span-2 lg:col-span-4">
+                <button
+                  type="submit"
+                  className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white"
+                >
+                  Save latency thresholds
+                </button>
+              </div>
+            </form>
+          </div>
         </section>
 
         <section className="rounded-2xl border border-[#e7e1d6] bg-white p-4">

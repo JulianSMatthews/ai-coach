@@ -7,7 +7,7 @@ import json
 import re
 import os
 from typing import Optional, List, Dict, Any
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -28,6 +28,7 @@ from .models import (
 )
 from .focus import select_top_krs_for_user
 from . import llm as shared_llm
+from .programme_timeline import programme_blocks, week_anchor_date
 from .reporting import _reports_root_for_user
 from .prompts import podcast_prompt, build_prompt, run_llm_prompt, okrs_by_pillar_payload
 from .touchpoints import log_touchpoint
@@ -128,18 +129,21 @@ def _okr_by_pillar(user_id: int) -> Dict[str, List[OKRKeyResult]]:
 
 
 def _programme_blocks(start: Optional[datetime]) -> List[Dict[str, str]]:
-    pillars = [("nutrition", "Nutrition"), ("recovery", "Recovery"), ("training", "Training"), ("resilience", "Resilience")]
-    base = start.date() if start else datetime.utcnow().date()
+    src_start = start.date() if start else datetime.utcnow().date()
     blocks = []
-    for idx, (key, label) in enumerate(pillars):
-        blk_start = base + timedelta(days=idx * 21)
-        blk_end = blk_start + timedelta(days=20)
-        blocks.append({
-            "pillar_key": key,
-            "label": label,
-            "window": f"Weeks {idx*3+1}–{idx*3+3}",
-            "dates": f"{blk_start.strftime('%d %b %Y')} – {blk_end.strftime('%d %b %Y')}",
-        })
+    for item in programme_blocks(src_start):
+        blk_start = item.get("start")
+        blk_end = item.get("end")
+        if not isinstance(blk_start, date) or not isinstance(blk_end, date):
+            continue
+        blocks.append(
+            {
+                "pillar_key": str(item.get("pillar_key") or ""),
+                "label": str(item.get("pillar_label") or ""),
+                "window": str(item.get("label") or item.get("week_label") or ""),
+                "dates": f"{blk_start.strftime('%d %b %Y')} – {blk_end.strftime('%d %b %Y')}",
+            }
+        )
     return blocks
 
 
@@ -575,7 +579,7 @@ def start_kickoff(user: User, notes: str | None = None, debug: bool = False) -> 
             .order_by(WeeklyFocus.starts_on.asc())
             .first()
         )
-        base_start = earliest.starts_on if earliest else (today - timedelta(days=today.weekday()))
+        base_start = week_anchor_date(earliest.starts_on if earliest else today, default_today=today)
         start = base_start  # Week 1 anchor
         end = start + timedelta(days=6)
 
