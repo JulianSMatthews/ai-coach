@@ -37,6 +37,14 @@ def ensure_prompt_settings_schema() -> None:
             conn.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_p50_critical_ms double precision;"))
             conn.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_p95_warn_ms double precision;"))
             conn.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_p95_critical_ms double precision;"))
+            conn.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_interactive_p50_warn_ms double precision;"))
+            conn.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_interactive_p50_critical_ms double precision;"))
+            conn.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_interactive_p95_warn_ms double precision;"))
+            conn.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_interactive_p95_critical_ms double precision;"))
+            conn.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_worker_p50_warn_ms double precision;"))
+            conn.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_worker_p50_critical_ms double precision;"))
+            conn.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_worker_p95_warn_ms double precision;"))
+            conn.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_worker_p95_critical_ms double precision;"))
             conn.commit()
     except Exception:
         pass

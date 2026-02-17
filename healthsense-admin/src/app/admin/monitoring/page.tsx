@@ -63,10 +63,14 @@ async function saveLatencyThresholdsAction(formData: FormData) {
   };
 
   await updateAdminAssessmentHealthSettings({
-    llm_p50_warn_ms: parseOptional("llm_p50_warn_ms"),
-    llm_p50_critical_ms: parseOptional("llm_p50_critical_ms"),
-    llm_p95_warn_ms: parseOptional("llm_p95_warn_ms"),
-    llm_p95_critical_ms: parseOptional("llm_p95_critical_ms"),
+    llm_interactive_p50_warn_ms: parseOptional("llm_interactive_p50_warn_ms"),
+    llm_interactive_p50_critical_ms: parseOptional("llm_interactive_p50_critical_ms"),
+    llm_interactive_p95_warn_ms: parseOptional("llm_interactive_p95_warn_ms"),
+    llm_interactive_p95_critical_ms: parseOptional("llm_interactive_p95_critical_ms"),
+    llm_worker_p50_warn_ms: parseOptional("llm_worker_p50_warn_ms"),
+    llm_worker_p50_critical_ms: parseOptional("llm_worker_p50_critical_ms"),
+    llm_worker_p95_warn_ms: parseOptional("llm_worker_p95_warn_ms"),
+    llm_worker_p95_critical_ms: parseOptional("llm_worker_p95_critical_ms"),
   });
   revalidatePath("/admin/monitoring");
 }
@@ -120,6 +124,14 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
   const llmP50CriticalMs = Number(health?.thresholds?.llm_p50_ms?.critical ?? DEFAULT_LLM_P50_CRITICAL_MS);
   const llmP95WarnMs = Number(health?.thresholds?.llm_p95_ms?.warn ?? DEFAULT_LLM_P95_WARN_MS);
   const llmP95CriticalMs = Number(health?.thresholds?.llm_p95_ms?.critical ?? DEFAULT_LLM_P95_CRITICAL_MS);
+  const llmInteractiveP50WarnMs = Number(health?.thresholds?.llm_interactive_p50_ms?.warn ?? llmP50WarnMs);
+  const llmInteractiveP50CriticalMs = Number(health?.thresholds?.llm_interactive_p50_ms?.critical ?? llmP50CriticalMs);
+  const llmInteractiveP95WarnMs = Number(health?.thresholds?.llm_interactive_p95_ms?.warn ?? llmP95WarnMs);
+  const llmInteractiveP95CriticalMs = Number(health?.thresholds?.llm_interactive_p95_ms?.critical ?? llmP95CriticalMs);
+  const llmWorkerP50WarnMs = Number(health?.thresholds?.llm_worker_p50_ms?.warn ?? llmP50WarnMs);
+  const llmWorkerP50CriticalMs = Number(health?.thresholds?.llm_worker_p50_ms?.critical ?? llmP50CriticalMs);
+  const llmWorkerP95WarnMs = Number(health?.thresholds?.llm_worker_p95_ms?.warn ?? llmP95WarnMs);
+  const llmWorkerP95CriticalMs = Number(health?.thresholds?.llm_worker_p95_ms?.critical ?? llmP95CriticalMs);
   const llmAssessment = health?.llm?.assessment || {
     prompts: health?.llm?.assessor_prompts ?? 0,
     duration_ms_p50: health?.llm?.duration_ms_p50 ?? null,
@@ -144,9 +156,11 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
     slow_over_warn: health?.llm?.slow_over_warn ?? 0,
     slow_over_critical: health?.llm?.slow_over_critical ?? 0,
   };
+  const llmInteractive = health?.llm?.interactive || llmAssessment;
+  const llmWorker = health?.llm?.worker || llmCoaching;
   const llmPanels = [
-    { title: "Assessment", data: llmAssessment, desc: "Assessment LLM prompts and latency distribution." },
-    { title: "Coaching", data: llmCoaching, desc: "Coaching LLM prompts and latency distribution." },
+    { title: "Interactive", data: llmInteractive, desc: "Request/response latency for user-driven app and assessment prompts." },
+    { title: "Worker", data: llmWorker, desc: "Background/scheduled worker prompt latency profile." },
     { title: "Combined", data: llmCombined, desc: "Assessment + coaching combined latency profile." },
   ];
   const metrics = [
@@ -169,10 +183,10 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
     },
     {
       title: "LLM p95 latency",
-      value: llmCombined.duration_ms_p95 != null ? `${Math.round(llmCombined.duration_ms_p95)} ms` : "—",
-      state: llmCombined.duration_ms_state,
-      subtitle: `${llmCombined.prompts ?? 0} combined prompts`,
-      description: "95th percentile response time across assessment + coaching prompts.",
+      value: llmInteractive.duration_ms_p95 != null ? `${Math.round(llmInteractive.duration_ms_p95)} ms` : "—",
+      state: llmInteractive.duration_ms_state,
+      subtitle: `${llmInteractive.prompts ?? 0} interactive prompts`,
+      description: "95th percentile response time for interactive user-facing prompts.",
     },
     {
       title: "OKR fallback rate",
@@ -370,54 +384,110 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
           <div className="mt-5 rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Latency thresholds (LLM ms)</p>
             <p className="mt-1 text-xs text-[#8a8176]">
-              Configure warning and critical thresholds used for p50 and p95 latency monitoring.
+              Configure separate warning and critical thresholds for interactive prompts vs worker/scheduled prompts.
             </p>
-            <form action={saveLatencyThresholdsAction} className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
-                p50 warn
-                <input
-                  type="number"
-                  name="llm_p50_warn_ms"
-                  min={1}
-                  step={100}
-                  defaultValue={String(Math.round(llmP50WarnMs))}
-                  className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
-                />
-              </label>
-              <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
-                p50 critical
-                <input
-                  type="number"
-                  name="llm_p50_critical_ms"
-                  min={1}
-                  step={100}
-                  defaultValue={String(Math.round(llmP50CriticalMs))}
-                  className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
-                />
-              </label>
-              <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
-                p95 warn
-                <input
-                  type="number"
-                  name="llm_p95_warn_ms"
-                  min={1}
-                  step={100}
-                  defaultValue={String(Math.round(llmP95WarnMs))}
-                  className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
-                />
-              </label>
-              <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
-                p95 critical
-                <input
-                  type="number"
-                  name="llm_p95_critical_ms"
-                  min={1}
-                  step={100}
-                  defaultValue={String(Math.round(llmP95CriticalMs))}
-                  className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
-                />
-              </label>
-              <div className="sm:col-span-2 lg:col-span-4">
+            <form action={saveLatencyThresholdsAction} className="mt-3 space-y-4">
+              <div className="rounded-xl border border-[#e7e1d6] bg-white p-3">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Interactive</p>
+                <p className="mt-1 text-xs text-[#8a8176]">User-driven request/response prompts.</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                    p50 warn
+                    <input
+                      type="number"
+                      name="llm_interactive_p50_warn_ms"
+                      min={1}
+                      step={100}
+                      defaultValue={String(Math.round(llmInteractiveP50WarnMs))}
+                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                    />
+                  </label>
+                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                    p50 critical
+                    <input
+                      type="number"
+                      name="llm_interactive_p50_critical_ms"
+                      min={1}
+                      step={100}
+                      defaultValue={String(Math.round(llmInteractiveP50CriticalMs))}
+                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                    />
+                  </label>
+                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                    p95 warn
+                    <input
+                      type="number"
+                      name="llm_interactive_p95_warn_ms"
+                      min={1}
+                      step={100}
+                      defaultValue={String(Math.round(llmInteractiveP95WarnMs))}
+                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                    />
+                  </label>
+                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                    p95 critical
+                    <input
+                      type="number"
+                      name="llm_interactive_p95_critical_ms"
+                      min={1}
+                      step={100}
+                      defaultValue={String(Math.round(llmInteractiveP95CriticalMs))}
+                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                    />
+                  </label>
+                </div>
+              </div>
+              <div className="rounded-xl border border-[#e7e1d6] bg-white p-3">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Worker / Scheduled</p>
+                <p className="mt-1 text-xs text-[#8a8176]">Background worker and scheduled automation prompts.</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                    p50 warn
+                    <input
+                      type="number"
+                      name="llm_worker_p50_warn_ms"
+                      min={1}
+                      step={100}
+                      defaultValue={String(Math.round(llmWorkerP50WarnMs))}
+                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                    />
+                  </label>
+                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                    p50 critical
+                    <input
+                      type="number"
+                      name="llm_worker_p50_critical_ms"
+                      min={1}
+                      step={100}
+                      defaultValue={String(Math.round(llmWorkerP50CriticalMs))}
+                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                    />
+                  </label>
+                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                    p95 warn
+                    <input
+                      type="number"
+                      name="llm_worker_p95_warn_ms"
+                      min={1}
+                      step={100}
+                      defaultValue={String(Math.round(llmWorkerP95WarnMs))}
+                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                    />
+                  </label>
+                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                    p95 critical
+                    <input
+                      type="number"
+                      name="llm_worker_p95_critical_ms"
+                      min={1}
+                      step={100}
+                      defaultValue={String(Math.round(llmWorkerP95CriticalMs))}
+                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                    />
+                  </label>
+                </div>
+              </div>
+              <div>
                 <button
                   type="submit"
                   className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white"

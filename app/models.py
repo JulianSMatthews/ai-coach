@@ -194,6 +194,14 @@ class PromptSettings(Base):
     monitoring_llm_p50_critical_ms = Column(Float, nullable=True)
     monitoring_llm_p95_warn_ms = Column(Float, nullable=True)
     monitoring_llm_p95_critical_ms = Column(Float, nullable=True)
+    monitoring_llm_interactive_p50_warn_ms = Column(Float, nullable=True)
+    monitoring_llm_interactive_p50_critical_ms = Column(Float, nullable=True)
+    monitoring_llm_interactive_p95_warn_ms = Column(Float, nullable=True)
+    monitoring_llm_interactive_p95_critical_ms = Column(Float, nullable=True)
+    monitoring_llm_worker_p50_warn_ms = Column(Float, nullable=True)
+    monitoring_llm_worker_p50_critical_ms = Column(Float, nullable=True)
+    monitoring_llm_worker_p95_warn_ms = Column(Float, nullable=True)
+    monitoring_llm_worker_p95_critical_ms = Column(Float, nullable=True)
     updated_at        = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 

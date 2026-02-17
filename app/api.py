@@ -4614,19 +4614,67 @@ def _positive_float_or_none(raw: object) -> float | None:
 
 
 def _monitoring_llm_latency_threshold_values(row: PromptSettings | None) -> dict[str, float]:
-    p50_warn = _positive_float_or_none(getattr(row, "monitoring_llm_p50_warn_ms", None)) or DEFAULT_MONITORING_LLM_P50_WARN_MS
-    p50_critical = _positive_float_or_none(getattr(row, "monitoring_llm_p50_critical_ms", None)) or DEFAULT_MONITORING_LLM_P50_CRITICAL_MS
-    p95_warn = _positive_float_or_none(getattr(row, "monitoring_llm_p95_warn_ms", None)) or DEFAULT_MONITORING_LLM_P95_WARN_MS
-    p95_critical = _positive_float_or_none(getattr(row, "monitoring_llm_p95_critical_ms", None)) or DEFAULT_MONITORING_LLM_P95_CRITICAL_MS
-    if p50_critical < p50_warn:
-        p50_critical = p50_warn
-    if p95_critical < p95_warn:
-        p95_critical = p95_warn
+    def _resolve_pair(
+        warn_raw: object,
+        critical_raw: object,
+        default_warn: float,
+        default_critical: float,
+    ) -> tuple[float, float]:
+        warn = _positive_float_or_none(warn_raw) or default_warn
+        critical = _positive_float_or_none(critical_raw) or default_critical
+        if critical < warn:
+            critical = warn
+        return float(warn), float(critical)
+
+    p50_warn, p50_critical = _resolve_pair(
+        getattr(row, "monitoring_llm_p50_warn_ms", None),
+        getattr(row, "monitoring_llm_p50_critical_ms", None),
+        DEFAULT_MONITORING_LLM_P50_WARN_MS,
+        DEFAULT_MONITORING_LLM_P50_CRITICAL_MS,
+    )
+    p95_warn, p95_critical = _resolve_pair(
+        getattr(row, "monitoring_llm_p95_warn_ms", None),
+        getattr(row, "monitoring_llm_p95_critical_ms", None),
+        DEFAULT_MONITORING_LLM_P95_WARN_MS,
+        DEFAULT_MONITORING_LLM_P95_CRITICAL_MS,
+    )
+    interactive_p50_warn, interactive_p50_critical = _resolve_pair(
+        getattr(row, "monitoring_llm_interactive_p50_warn_ms", None),
+        getattr(row, "monitoring_llm_interactive_p50_critical_ms", None),
+        p50_warn,
+        p50_critical,
+    )
+    interactive_p95_warn, interactive_p95_critical = _resolve_pair(
+        getattr(row, "monitoring_llm_interactive_p95_warn_ms", None),
+        getattr(row, "monitoring_llm_interactive_p95_critical_ms", None),
+        p95_warn,
+        p95_critical,
+    )
+    worker_p50_warn, worker_p50_critical = _resolve_pair(
+        getattr(row, "monitoring_llm_worker_p50_warn_ms", None),
+        getattr(row, "monitoring_llm_worker_p50_critical_ms", None),
+        p50_warn,
+        p50_critical,
+    )
+    worker_p95_warn, worker_p95_critical = _resolve_pair(
+        getattr(row, "monitoring_llm_worker_p95_warn_ms", None),
+        getattr(row, "monitoring_llm_worker_p95_critical_ms", None),
+        p95_warn,
+        p95_critical,
+    )
     return {
         "llm_p50_warn_ms": float(p50_warn),
         "llm_p50_critical_ms": float(p50_critical),
         "llm_p95_warn_ms": float(p95_warn),
         "llm_p95_critical_ms": float(p95_critical),
+        "llm_interactive_p50_warn_ms": float(interactive_p50_warn),
+        "llm_interactive_p50_critical_ms": float(interactive_p50_critical),
+        "llm_interactive_p95_warn_ms": float(interactive_p95_warn),
+        "llm_interactive_p95_critical_ms": float(interactive_p95_critical),
+        "llm_worker_p50_warn_ms": float(worker_p50_warn),
+        "llm_worker_p50_critical_ms": float(worker_p50_critical),
+        "llm_worker_p95_warn_ms": float(worker_p95_warn),
+        "llm_worker_p95_critical_ms": float(worker_p95_critical),
     }
 
 
@@ -4674,6 +4722,10 @@ def admin_assessment_health(
         "stale_runs": {"warn": 5.0, "critical": 15.0, "lower_is_bad": False},
         "llm_p50_ms": {"warn": DEFAULT_MONITORING_LLM_P50_WARN_MS, "critical": DEFAULT_MONITORING_LLM_P50_CRITICAL_MS, "lower_is_bad": False},
         "llm_p95_ms": {"warn": DEFAULT_MONITORING_LLM_P95_WARN_MS, "critical": DEFAULT_MONITORING_LLM_P95_CRITICAL_MS, "lower_is_bad": False},
+        "llm_interactive_p50_ms": {"warn": DEFAULT_MONITORING_LLM_P50_WARN_MS, "critical": DEFAULT_MONITORING_LLM_P50_CRITICAL_MS, "lower_is_bad": False},
+        "llm_interactive_p95_ms": {"warn": DEFAULT_MONITORING_LLM_P95_WARN_MS, "critical": DEFAULT_MONITORING_LLM_P95_CRITICAL_MS, "lower_is_bad": False},
+        "llm_worker_p50_ms": {"warn": DEFAULT_MONITORING_LLM_P50_WARN_MS, "critical": DEFAULT_MONITORING_LLM_P50_CRITICAL_MS, "lower_is_bad": False},
+        "llm_worker_p95_ms": {"warn": DEFAULT_MONITORING_LLM_P95_WARN_MS, "critical": DEFAULT_MONITORING_LLM_P95_CRITICAL_MS, "lower_is_bad": False},
         "okr_fallback_rate_pct": {"warn": 5.0, "critical": 15.0, "lower_is_bad": False},
         "queue_backlog": {"warn": 20.0, "critical": 50.0, "lower_is_bad": False},
         "twilio_failure_rate_pct": {"warn": 2.0, "critical": 5.0, "lower_is_bad": False},
@@ -5573,6 +5625,14 @@ def admin_assessment_health(
     thresholds["llm_p50_ms"]["critical"] = llm_latency_thresholds["llm_p50_critical_ms"]
     thresholds["llm_p95_ms"]["warn"] = llm_latency_thresholds["llm_p95_warn_ms"]
     thresholds["llm_p95_ms"]["critical"] = llm_latency_thresholds["llm_p95_critical_ms"]
+    thresholds["llm_interactive_p50_ms"]["warn"] = llm_latency_thresholds["llm_interactive_p50_warn_ms"]
+    thresholds["llm_interactive_p50_ms"]["critical"] = llm_latency_thresholds["llm_interactive_p50_critical_ms"]
+    thresholds["llm_interactive_p95_ms"]["warn"] = llm_latency_thresholds["llm_interactive_p95_warn_ms"]
+    thresholds["llm_interactive_p95_ms"]["critical"] = llm_latency_thresholds["llm_interactive_p95_critical_ms"]
+    thresholds["llm_worker_p50_ms"]["warn"] = llm_latency_thresholds["llm_worker_p50_warn_ms"]
+    thresholds["llm_worker_p50_ms"]["critical"] = llm_latency_thresholds["llm_worker_p50_critical_ms"]
+    thresholds["llm_worker_p95_ms"]["warn"] = llm_latency_thresholds["llm_worker_p95_warn_ms"]
+    thresholds["llm_worker_p95_ms"]["critical"] = llm_latency_thresholds["llm_worker_p95_critical_ms"]
 
     completion_state = _threshold_state(
         completion_rate,
@@ -5597,13 +5657,13 @@ def admin_assessment_health(
     )
     llm_assessment_p50_state = _threshold_state(
         llm_assessment_p50,
-        warn=thresholds["llm_p50_ms"]["warn"],
-        critical=thresholds["llm_p50_ms"]["critical"],
+        warn=thresholds["llm_interactive_p50_ms"]["warn"],
+        critical=thresholds["llm_interactive_p50_ms"]["critical"],
     )
     llm_coaching_p50_state = _threshold_state(
         llm_coaching_p50,
-        warn=thresholds["llm_p50_ms"]["warn"],
-        critical=thresholds["llm_p50_ms"]["critical"],
+        warn=thresholds["llm_worker_p50_ms"]["warn"],
+        critical=thresholds["llm_worker_p50_ms"]["critical"],
     )
     llm_p95_state = _threshold_state(
         llm_p95,
@@ -5612,13 +5672,13 @@ def admin_assessment_health(
     )
     llm_assessment_p95_state = _threshold_state(
         llm_assessment_p95,
-        warn=thresholds["llm_p95_ms"]["warn"],
-        critical=thresholds["llm_p95_ms"]["critical"],
+        warn=thresholds["llm_interactive_p95_ms"]["warn"],
+        critical=thresholds["llm_interactive_p95_ms"]["critical"],
     )
     llm_coaching_p95_state = _threshold_state(
         llm_coaching_p95,
-        warn=thresholds["llm_p95_ms"]["warn"],
-        critical=thresholds["llm_p95_ms"]["critical"],
+        warn=thresholds["llm_worker_p95_ms"]["warn"],
+        critical=thresholds["llm_worker_p95_ms"]["critical"],
     )
     llm_combined_state = _worst_state(llm_p50_state, llm_p95_state)
     llm_assessment_state = _worst_state(llm_assessment_p50_state, llm_assessment_p95_state)
@@ -5694,8 +5754,8 @@ def admin_assessment_health(
         "completion_rate_pct": completion_state,
         "median_completion_minutes": median_state,
         "stale_runs": stale_state,
-        "llm_p50_ms": llm_p50_state,
-        "llm_p95_ms": llm_p95_state,
+        "llm_interactive_p95_ms": llm_assessment_p95_state,
+        "llm_worker_p95_ms": llm_coaching_p95_state,
         "okr_fallback_rate_pct": fallback_state,
         "queue_backlog": backlog_state,
         "twilio_failure_rate_pct": twilio_state,
@@ -5708,8 +5768,8 @@ def admin_assessment_health(
         "completion_rate_pct": completion_rate,
         "median_completion_minutes": median_completion,
         "stale_runs": stale_runs,
-        "llm_p50_ms": llm_p50,
-        "llm_p95_ms": llm_p95,
+        "llm_interactive_p95_ms": llm_assessment_p95,
+        "llm_worker_p95_ms": llm_coaching_p95,
         "okr_fallback_rate_pct": okr_fallback_rate,
         "queue_backlog": backlog,
         "twilio_failure_rate_pct": tw_failure_rate,
@@ -5786,10 +5846,10 @@ def admin_assessment_health(
                 "duration_ms_state": llm_assessment_state,
                 "models": llm_model_counts_by_scope["assessment"],
                 "slow_over_warn": sum(
-                    1 for v in llm_durations_by_scope["assessment"] if float(v) > thresholds["llm_p95_ms"]["warn"]
+                    1 for v in llm_durations_by_scope["assessment"] if float(v) > thresholds["llm_interactive_p95_ms"]["warn"]
                 ),
                 "slow_over_critical": sum(
-                    1 for v in llm_durations_by_scope["assessment"] if float(v) > thresholds["llm_p95_ms"]["critical"]
+                    1 for v in llm_durations_by_scope["assessment"] if float(v) > thresholds["llm_interactive_p95_ms"]["critical"]
                 ),
             },
             "coaching": {
@@ -5801,10 +5861,40 @@ def admin_assessment_health(
                 "duration_ms_state": llm_coaching_state,
                 "models": llm_model_counts_by_scope["coaching"],
                 "slow_over_warn": sum(
-                    1 for v in llm_durations_by_scope["coaching"] if float(v) > thresholds["llm_p95_ms"]["warn"]
+                    1 for v in llm_durations_by_scope["coaching"] if float(v) > thresholds["llm_worker_p95_ms"]["warn"]
                 ),
                 "slow_over_critical": sum(
-                    1 for v in llm_durations_by_scope["coaching"] if float(v) > thresholds["llm_p95_ms"]["critical"]
+                    1 for v in llm_durations_by_scope["coaching"] if float(v) > thresholds["llm_worker_p95_ms"]["critical"]
+                ),
+            },
+            "interactive": {
+                "prompts": llm_prompt_counts["assessment"],
+                "duration_ms_p50": round(llm_assessment_p50, 2) if llm_assessment_p50 is not None else None,
+                "duration_ms_p95": round(llm_assessment_p95, 2) if llm_assessment_p95 is not None else None,
+                "duration_ms_p50_state": llm_assessment_p50_state,
+                "duration_ms_p95_state": llm_assessment_p95_state,
+                "duration_ms_state": llm_assessment_state,
+                "models": llm_model_counts_by_scope["assessment"],
+                "slow_over_warn": sum(
+                    1 for v in llm_durations_by_scope["assessment"] if float(v) > thresholds["llm_interactive_p95_ms"]["warn"]
+                ),
+                "slow_over_critical": sum(
+                    1 for v in llm_durations_by_scope["assessment"] if float(v) > thresholds["llm_interactive_p95_ms"]["critical"]
+                ),
+            },
+            "worker": {
+                "prompts": llm_prompt_counts["coaching"],
+                "duration_ms_p50": round(llm_coaching_p50, 2) if llm_coaching_p50 is not None else None,
+                "duration_ms_p95": round(llm_coaching_p95, 2) if llm_coaching_p95 is not None else None,
+                "duration_ms_p50_state": llm_coaching_p50_state,
+                "duration_ms_p95_state": llm_coaching_p95_state,
+                "duration_ms_state": llm_coaching_state,
+                "models": llm_model_counts_by_scope["coaching"],
+                "slow_over_warn": sum(
+                    1 for v in llm_durations_by_scope["coaching"] if float(v) > thresholds["llm_worker_p95_ms"]["warn"]
+                ),
+                "slow_over_critical": sum(
+                    1 for v in llm_durations_by_scope["coaching"] if float(v) > thresholds["llm_worker_p95_ms"]["critical"]
                 ),
             },
             "combined": {
@@ -5895,6 +5985,26 @@ def admin_assessment_health_settings_update(
     p50_critical = _parse_optional_positive("llm_p50_critical_ms") if "llm_p50_critical_ms" in payload else None
     p95_warn = _parse_optional_positive("llm_p95_warn_ms") if "llm_p95_warn_ms" in payload else None
     p95_critical = _parse_optional_positive("llm_p95_critical_ms") if "llm_p95_critical_ms" in payload else None
+    interactive_p50_warn = (
+        _parse_optional_positive("llm_interactive_p50_warn_ms") if "llm_interactive_p50_warn_ms" in payload else None
+    )
+    interactive_p50_critical = (
+        _parse_optional_positive("llm_interactive_p50_critical_ms") if "llm_interactive_p50_critical_ms" in payload else None
+    )
+    interactive_p95_warn = (
+        _parse_optional_positive("llm_interactive_p95_warn_ms") if "llm_interactive_p95_warn_ms" in payload else None
+    )
+    interactive_p95_critical = (
+        _parse_optional_positive("llm_interactive_p95_critical_ms") if "llm_interactive_p95_critical_ms" in payload else None
+    )
+    worker_p50_warn = _parse_optional_positive("llm_worker_p50_warn_ms") if "llm_worker_p50_warn_ms" in payload else None
+    worker_p50_critical = (
+        _parse_optional_positive("llm_worker_p50_critical_ms") if "llm_worker_p50_critical_ms" in payload else None
+    )
+    worker_p95_warn = _parse_optional_positive("llm_worker_p95_warn_ms") if "llm_worker_p95_warn_ms" in payload else None
+    worker_p95_critical = (
+        _parse_optional_positive("llm_worker_p95_critical_ms") if "llm_worker_p95_critical_ms" in payload else None
+    )
 
     with SessionLocal() as s:
         row = s.query(PromptSettings).order_by(PromptSettings.id.asc()).first()
@@ -5910,19 +6020,39 @@ def admin_assessment_health_settings_update(
             row.monitoring_llm_p95_warn_ms = p95_warn
         if "llm_p95_critical_ms" in payload:
             row.monitoring_llm_p95_critical_ms = p95_critical
+        if "llm_interactive_p50_warn_ms" in payload:
+            row.monitoring_llm_interactive_p50_warn_ms = interactive_p50_warn
+        if "llm_interactive_p50_critical_ms" in payload:
+            row.monitoring_llm_interactive_p50_critical_ms = interactive_p50_critical
+        if "llm_interactive_p95_warn_ms" in payload:
+            row.monitoring_llm_interactive_p95_warn_ms = interactive_p95_warn
+        if "llm_interactive_p95_critical_ms" in payload:
+            row.monitoring_llm_interactive_p95_critical_ms = interactive_p95_critical
+        if "llm_worker_p50_warn_ms" in payload:
+            row.monitoring_llm_worker_p50_warn_ms = worker_p50_warn
+        if "llm_worker_p50_critical_ms" in payload:
+            row.monitoring_llm_worker_p50_critical_ms = worker_p50_critical
+        if "llm_worker_p95_warn_ms" in payload:
+            row.monitoring_llm_worker_p95_warn_ms = worker_p95_warn
+        if "llm_worker_p95_critical_ms" in payload:
+            row.monitoring_llm_worker_p95_critical_ms = worker_p95_critical
 
-        if (
-            row.monitoring_llm_p50_warn_ms is not None
-            and row.monitoring_llm_p50_critical_ms is not None
-            and float(row.monitoring_llm_p50_critical_ms) < float(row.monitoring_llm_p50_warn_ms)
-        ):
-            row.monitoring_llm_p50_critical_ms = float(row.monitoring_llm_p50_warn_ms)
-        if (
-            row.monitoring_llm_p95_warn_ms is not None
-            and row.monitoring_llm_p95_critical_ms is not None
-            and float(row.monitoring_llm_p95_critical_ms) < float(row.monitoring_llm_p95_warn_ms)
-        ):
-            row.monitoring_llm_p95_critical_ms = float(row.monitoring_llm_p95_warn_ms)
+        def _clamp_pair(warn_attr: str, critical_attr: str) -> None:
+            warn_val = getattr(row, warn_attr, None)
+            critical_val = getattr(row, critical_attr, None)
+            if (
+                warn_val is not None
+                and critical_val is not None
+                and float(critical_val) < float(warn_val)
+            ):
+                setattr(row, critical_attr, float(warn_val))
+
+        _clamp_pair("monitoring_llm_p50_warn_ms", "monitoring_llm_p50_critical_ms")
+        _clamp_pair("monitoring_llm_p95_warn_ms", "monitoring_llm_p95_critical_ms")
+        _clamp_pair("monitoring_llm_interactive_p50_warn_ms", "monitoring_llm_interactive_p50_critical_ms")
+        _clamp_pair("monitoring_llm_interactive_p95_warn_ms", "monitoring_llm_interactive_p95_critical_ms")
+        _clamp_pair("monitoring_llm_worker_p50_warn_ms", "monitoring_llm_worker_p50_critical_ms")
+        _clamp_pair("monitoring_llm_worker_p95_warn_ms", "monitoring_llm_worker_p95_critical_ms")
 
         s.commit()
         s.refresh(row)
@@ -5934,6 +6064,14 @@ def admin_assessment_health_settings_update(
                 "llm_p50_critical_ms": row.monitoring_llm_p50_critical_ms,
                 "llm_p95_warn_ms": row.monitoring_llm_p95_warn_ms,
                 "llm_p95_critical_ms": row.monitoring_llm_p95_critical_ms,
+                "llm_interactive_p50_warn_ms": row.monitoring_llm_interactive_p50_warn_ms,
+                "llm_interactive_p50_critical_ms": row.monitoring_llm_interactive_p50_critical_ms,
+                "llm_interactive_p95_warn_ms": row.monitoring_llm_interactive_p95_warn_ms,
+                "llm_interactive_p95_critical_ms": row.monitoring_llm_interactive_p95_critical_ms,
+                "llm_worker_p50_warn_ms": row.monitoring_llm_worker_p50_warn_ms,
+                "llm_worker_p50_critical_ms": row.monitoring_llm_worker_p50_critical_ms,
+                "llm_worker_p95_warn_ms": row.monitoring_llm_worker_p95_warn_ms,
+                "llm_worker_p95_critical_ms": row.monitoring_llm_worker_p95_critical_ms,
                 "resolved": resolved,
             },
         }

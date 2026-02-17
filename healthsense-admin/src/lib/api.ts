@@ -303,6 +303,24 @@ export type AssessmentHealthPayload = {
       slow_over_warn?: number;
       slow_over_critical?: number;
     };
+    interactive?: {
+      prompts?: number;
+      duration_ms_p50?: number | null;
+      duration_ms_p95?: number | null;
+      duration_ms_state?: string;
+      models?: Record<string, number>;
+      slow_over_warn?: number;
+      slow_over_critical?: number;
+    };
+    worker?: {
+      prompts?: number;
+      duration_ms_p50?: number | null;
+      duration_ms_p95?: number | null;
+      duration_ms_state?: string;
+      models?: Record<string, number>;
+      slow_over_warn?: number;
+      slow_over_critical?: number;
+    };
     combined?: {
       prompts?: number;
       duration_ms_p50?: number | null;
@@ -424,6 +442,14 @@ export type MonitoringLatencySettingsPayload = {
   llm_p50_critical_ms?: number | null;
   llm_p95_warn_ms?: number | null;
   llm_p95_critical_ms?: number | null;
+  llm_interactive_p50_warn_ms?: number | null;
+  llm_interactive_p50_critical_ms?: number | null;
+  llm_interactive_p95_warn_ms?: number | null;
+  llm_interactive_p95_critical_ms?: number | null;
+  llm_worker_p50_warn_ms?: number | null;
+  llm_worker_p50_critical_ms?: number | null;
+  llm_worker_p95_warn_ms?: number | null;
+  llm_worker_p95_critical_ms?: number | null;
 };
 
 export type ContentPromptTemplateSummary = {
@@ -947,6 +973,14 @@ export async function updateAdminAssessmentHealthSettings(payload: MonitoringLat
       llm_p50_critical_ms?: number | null;
       llm_p95_warn_ms?: number | null;
       llm_p95_critical_ms?: number | null;
+      llm_interactive_p50_warn_ms?: number | null;
+      llm_interactive_p50_critical_ms?: number | null;
+      llm_interactive_p95_warn_ms?: number | null;
+      llm_interactive_p95_critical_ms?: number | null;
+      llm_worker_p50_warn_ms?: number | null;
+      llm_worker_p50_critical_ms?: number | null;
+      llm_worker_p95_warn_ms?: number | null;
+      llm_worker_p95_critical_ms?: number | null;
       resolved?: MonitoringLatencySettingsPayload;
     };
   }>("/admin/assessment/health/settings", {
