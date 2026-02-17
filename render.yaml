@@ -47,8 +47,12 @@ services:
         value: "420"
       - key: REPORTS_BASE_URL
         sync: false
+      - key: REPORTS_DIR
+        value: "/var/data/reports"
       - key: RESET_DB_ON_STARTUP
         value: "0"
+      - key: KEEP_CONTENT_ON_RESET
+        value: "1"
       - key: DB_POOL_SIZE
         value: "12"
       - key: DB_MAX_OVERFLOW
@@ -61,6 +65,10 @@ services:
         value: "true"
       - key: SCHEDULER_MAX_WORKERS
         value: "4"
+    disk:
+      name: reports-data
+      mountPath: /var/data/reports
+      sizeGB: 1
 
   - type: web
     name: healthsense-app

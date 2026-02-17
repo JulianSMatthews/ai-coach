@@ -145,14 +145,22 @@ except Exception:
 
 def _normalize_reports_url(raw: str | None) -> str | None:
     """
-    Normalize /reports URLs to the current reports base.
-    This fixes stale localhost/ngrok/base URLs stored in DB.
+    Return URL as stored by default.
+    Optional read-time normalization can be enabled with
+    NORMALIZE_REPORTS_URL_ON_READ=1.
     """
     if not raw:
         return None
     url = str(raw).strip()
     if not url:
         return None
+    normalize_on_read = (os.getenv("NORMALIZE_REPORTS_URL_ON_READ") or "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    if not normalize_on_read:
+        return url
     try:
         parsed = urlparse(url)
     except Exception:
@@ -166,9 +174,18 @@ def _normalize_reports_url(raw: str | None) -> str | None:
     base = (_REPORTS_BASE or "").rstrip("/")
     if not base:
         return url
+    def _is_local_host(host: str | None) -> bool:
+        h = str(host or "").strip().lower()
+        return h in {"localhost", "127.0.0.1", "0.0.0.0"} or h.endswith(".local")
     if parsed.netloc:
-        base_host = urlparse(base).netloc
-        if base_host and parsed.netloc == base_host:
+        base_host = urlparse(base).hostname
+        raw_host = parsed.hostname
+        # Preserve absolute non-local URLs if configured base is local/dev.
+        if _is_local_host(base_host) and raw_host and not _is_local_host(raw_host):
+            return url
+        base_netloc = urlparse(base).netloc
+        raw_netloc = parsed.netloc
+        if base_netloc and raw_netloc == base_netloc:
             return url
     suffix = normalized_path
     if parsed.query:
@@ -415,9 +432,15 @@ def _cleanup_reports_on_reset(*, keep_content: bool) -> None:
     for root, _dirs, files in os.walk(reports_dir):
         for name in files:
             path = os.path.join(root, name)
-            if keep_content and name.lower().startswith("content"):
-                kept += 1
-                continue
+            if keep_content:
+                try:
+                    rel = os.path.relpath(path, reports_dir).replace("\\", "/").lstrip("./")
+                except Exception:
+                    rel = name
+                # Keep the canonical content subtree and legacy "content*" files.
+                if rel == "content" or rel.startswith("content/") or name.lower().startswith("content"):
+                    kept += 1
+                    continue
             try:
                 os.remove(path)
                 removed += 1
@@ -8303,6 +8326,7 @@ def admin_content_generation_create(payload: dict, admin_user: User = Depends(_r
                 podcast_error = "LLM content is required to generate podcast audio."
             else:
                 is_intro_generation = str(resolved_pillar or "").strip().lower() == INTRO_PILLAR_KEY
+                target_reports_dir = "content/intro" if is_intro_generation else "content/library"
                 audio_user_id = gen.user_id or getattr(admin_user, "id", None)
                 if not audio_user_id:
                     podcast_error = "No user available for audio generation."
@@ -8314,25 +8338,29 @@ def admin_content_generation_create(payload: dict, admin_user: User = Depends(_r
                             user_id=int(audio_user_id),
                             filename=filename,
                             voice_override=podcast_voice,
-                            return_bytes=bool(is_intro_generation),
-                            persist_user_copy=not bool(is_intro_generation),
+                            return_bytes=True,
+                            persist_user_copy=False,
                             usage_tag="content_generation",
                         )
-                        if is_intro_generation:
-                            generated_audio_bytes = None
-                            if isinstance(tts_result, tuple):
-                                _discard_url, generated_audio_bytes = tts_result
-                            if generated_audio_bytes:
-                                podcast_url = _write_global_report_bytes(
-                                    f"intro/{filename}",
-                                    generated_audio_bytes,
-                                )
-                            else:
-                                podcast_error = "Podcast audio generation failed."
+                        generated_audio_bytes = None
+                        generated_audio_url = None
+                        if isinstance(tts_result, tuple):
+                            generated_audio_url, generated_audio_bytes = tts_result
+                        elif isinstance(tts_result, str):
+                            generated_audio_url = tts_result
+                        if generated_audio_bytes:
+                            podcast_url = _write_global_report_bytes(
+                                f"{target_reports_dir}/{filename}",
+                                generated_audio_bytes,
+                            )
+                        elif generated_audio_url:
+                            podcast_url = (
+                                _promote_intro_podcast_url(generated_audio_url)
+                                if is_intro_generation
+                                else _promote_library_podcast_url(generated_audio_url)
+                            )
                         else:
-                            podcast_url = tts_result if isinstance(tts_result, str) else None
-                            if not podcast_url:
-                                podcast_error = "Podcast audio generation failed."
+                            podcast_error = "Podcast audio generation failed."
                     except Exception as e:
                         podcast_error = str(e)
             if podcast_url or podcast_error:
@@ -8651,6 +8679,7 @@ def admin_library_content_create(
     concept_code = (payload.get("concept_code") or "").strip() or None
     status_val = (payload.get("status") or "").strip() or "draft"
     podcast_url = (payload.get("podcast_url") or "").strip() or None
+    podcast_url = _promote_library_podcast_url(podcast_url)
     podcast_voice = (payload.get("podcast_voice") or "").strip() or None
     source_type = (payload.get("source_type") or "").strip() or None
     source_url = (payload.get("source_url") or "").strip() or None
@@ -8736,7 +8765,7 @@ def admin_library_content_update(
         if "status" in payload:
             row.status = (payload.get("status") or "").strip() or row.status
         if "podcast_url" in payload:
-            row.podcast_url = (payload.get("podcast_url") or "").strip() or None
+            row.podcast_url = _promote_library_podcast_url((payload.get("podcast_url") or "").strip() or None)
         if "podcast_voice" in payload:
             row.podcast_voice = (payload.get("podcast_voice") or "").strip() or None
         if "source_type" in payload:
@@ -10086,44 +10115,58 @@ def _write_global_report_bytes(path_under_reports: str, raw_bytes: bytes) -> str
         f.write(raw_bytes)
     return _public_report_url_global(rel_path)
 
-def _promote_intro_podcast_url(raw_url: str | None) -> str | None:
+def _promote_reports_file_url(raw_url: str | None, *, target_rel_dir: str) -> str | None:
     """
-    Ensure intro podcast URLs use /reports/intro/<filename>.
-    If URL points to /reports/<user_id>/<filename> and the source file exists, copy it to intro/.
+    Ensure a /reports URL points at /reports/<target_rel_dir>/<filename>.
+    If the source file exists under another reports path, copy it into target_rel_dir.
     """
     if not raw_url:
         return None
     normalized = _normalize_reports_url(raw_url) or str(raw_url).strip()
     if not normalized:
         return None
+    target = str(target_rel_dir or "").strip().replace("\\", "/").strip("/")
+    if not target or ".." in target.split("/"):
+        return normalized
     try:
         parsed = urlparse(normalized)
         path = parsed.path or ""
     except Exception:
         return normalized
-    m = re.match(r"^/reports/([^/]+)/([^/]+)$", path)
+    if re.match(rf"^/reports/{re.escape(target)}/[^/]+$", path):
+        return normalized
+    m = re.match(r"^/reports/(.+)/([^/]+)$", path)
     if not m:
         return normalized
-    folder = str(m.group(1) or "").strip()
+    rel_src = str(m.group(1) or "").strip().strip("/")
     filename = str(m.group(2) or "").strip()
     if not filename:
         return normalized
-    if folder == "intro":
-        return normalized
     reports_root = _reports_root_global()
-    src_path = os.path.join(reports_root, folder, filename)
-    dst_rel = f"intro/{filename}"
-    dst_path = os.path.join(reports_root, "intro", filename)
+    src_path = os.path.join(reports_root, rel_src, filename)
+    dst_rel = f"{target}/{filename}"
+    dst_path = os.path.join(reports_root, *target.split("/"), filename)
     try:
         os.makedirs(os.path.dirname(dst_path), exist_ok=True)
         if os.path.isfile(src_path):
-            shutil.copyfile(src_path, dst_path)
+            if os.path.abspath(src_path) != os.path.abspath(dst_path):
+                shutil.copyfile(src_path, dst_path)
             return _public_report_url_global(dst_rel)
         if os.path.isfile(dst_path):
             return _public_report_url_global(dst_rel)
     except Exception:
         return normalized
     return normalized
+
+def _promote_library_podcast_url(raw_url: str | None) -> str | None:
+    return _promote_reports_file_url(raw_url, target_rel_dir="content/library")
+
+def _promote_intro_podcast_url(raw_url: str | None) -> str | None:
+    """
+    Ensure intro podcast URLs use /reports/content/intro/<filename>.
+    If URL points to /reports/<...>/<filename> and the source file exists, copy it to content/intro/.
+    """
+    return _promote_reports_file_url(raw_url, target_rel_dir="content/intro")
 
 
 @api_v1.post("/reports/upload")
