@@ -21,7 +21,7 @@ from .kickoff import COACH_NAME
 from .models import AssessmentRun, OKRKeyResult, OKRKrEntry, User, UserPreference, WeeklyFocus
 from .nudges import send_whatsapp
 from .prompts import kr_payload_list
-from .programme_timeline import week_no_for_focus_start
+from .programme_timeline import BLOCK_WEEKS, PILLAR_SEQUENCE, week_no_for_focus_start
 from .touchpoints import log_touchpoint
 from .virtual_clock import get_effective_today
 
@@ -117,7 +117,11 @@ def _infer_week_no(session: Session, user_id: int, wf: WeeklyFocus) -> int:
         .first()
     )
     if run:
-        base_dt = getattr(run, "started_at", None) or getattr(run, "created_at", None)
+        base_dt = (
+            getattr(run, "finished_at", None)
+            or getattr(run, "started_at", None)
+            or getattr(run, "created_at", None)
+        )
         if isinstance(base_dt, datetime):
             programme_start = base_dt.date()
     if programme_start is None:
@@ -222,16 +226,56 @@ def _next_target_week(session: Session, user_id: int, wf: WeeklyFocus) -> tuple[
     return target_week, (target_wf.id if target_wf else None)
 
 
+def _pillar_for_week_no(week_no: int | None) -> str | None:
+    if week_no is None:
+        return None
+    try:
+        week_i = int(week_no)
+    except Exception:
+        return None
+    if week_i <= 0:
+        return None
+    if not PILLAR_SEQUENCE:
+        return None
+    block_weeks = int(BLOCK_WEEKS or 3)
+    block_index = min((week_i - 1) // max(1, block_weeks), len(PILLAR_SEQUENCE) - 1)
+    try:
+        return (str(PILLAR_SEQUENCE[block_index][0]).strip().lower() or None)
+    except Exception:
+        return None
+
+
+def _kr_ids_from_payload(payload: list[dict], expected_pillar: str | None = None) -> list[int]:
+    ids: list[int] = []
+    for item in payload:
+        kr_id = item.get("id")
+        if not kr_id:
+            continue
+        pillar = (item.get("pillar") or "").strip().lower()
+        if expected_pillar and pillar != expected_pillar:
+            continue
+        try:
+            ids.append(int(kr_id))
+        except Exception:
+            continue
+    return ids
+
+
 def _pick_krs_for_sunday(session: Session, user_id: int, target_week: int, fallback_week: int | None) -> tuple[int, list[int]]:
+    target_pillar = _pillar_for_week_no(target_week)
     payload = kr_payload_list(user_id, session=session, week_no=target_week, max_krs=3)
-    kr_ids = [int(item["id"]) for item in payload if item.get("id")]
+    kr_ids = _kr_ids_from_payload(payload, expected_pillar=target_pillar)
     if kr_ids:
         return target_week, kr_ids
     if fallback_week and fallback_week != target_week:
-        payload = kr_payload_list(user_id, session=session, week_no=fallback_week, max_krs=3)
-        kr_ids = [int(item["id"]) for item in payload if item.get("id")]
-        if kr_ids:
-            return fallback_week, kr_ids
+        fallback_pillar = _pillar_for_week_no(fallback_week)
+        # Never fall back to a different pillar (e.g. week 3 -> week 4 transition).
+        same_pillar = bool(target_pillar and fallback_pillar and target_pillar == fallback_pillar)
+        if target_pillar is None or same_pillar:
+            payload = kr_payload_list(user_id, session=session, week_no=fallback_week, max_krs=3)
+            kr_ids = _kr_ids_from_payload(payload, expected_pillar=target_pillar or fallback_pillar)
+            if kr_ids:
+                return fallback_week, kr_ids
     return target_week, []
 
 
