@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import json
+import copy
 import asyncio
 import time
 import math
@@ -341,6 +342,12 @@ except Exception as e:
 app = FastAPI(title="AI Coach")
 router = APIRouter()
 _STARTUP_TASKS_DONE = threading.Event()
+_RENDER_INFRA_CACHE_LOCK = threading.Lock()
+_RENDER_INFRA_CACHE: dict[str, object] = {
+    "payload": None,
+    "fetched_at_monotonic": 0.0,
+    "rate_limited_until_monotonic": 0.0,
+}
 
 
 @app.on_event("startup")
@@ -4894,6 +4901,42 @@ def _render_usage_ratio_pct(used: dict[str, object], capacity: dict[str, object]
 
 
 def _collect_render_infra_metrics(now_utc: datetime) -> dict[str, object]:
+    cache_ttl_seconds = _env_int("RENDER_METRICS_CACHE_TTL_SECONDS", 90, minimum=5, maximum=3600)
+    rate_limit_backoff_seconds = _env_int("RENDER_METRICS_RATE_LIMIT_BACKOFF_SECONDS", 120, minimum=10, maximum=3600)
+    now_mono = time.monotonic()
+    cached_payload: dict[str, object] | None = None
+    cached_age_seconds: float | None = None
+    rate_limited_until_mono = 0.0
+    with _RENDER_INFRA_CACHE_LOCK:
+        raw_payload = _RENDER_INFRA_CACHE.get("payload")
+        if isinstance(raw_payload, dict):
+            cached_payload = copy.deepcopy(raw_payload)
+        fetched_at = float(_RENDER_INFRA_CACHE.get("fetched_at_monotonic") or 0.0)
+        if fetched_at > 0:
+            cached_age_seconds = max(0.0, now_mono - fetched_at)
+        rate_limited_until_mono = float(_RENDER_INFRA_CACHE.get("rate_limited_until_monotonic") or 0.0)
+    if cached_payload is not None and cached_age_seconds is not None and cached_age_seconds <= float(cache_ttl_seconds):
+        cache_info = {
+            "hit": True,
+            "stale": False,
+            "age_seconds": round(float(cached_age_seconds), 2),
+            "ttl_seconds": int(cache_ttl_seconds),
+        }
+        cached_payload["cache"] = cache_info
+        return cached_payload
+    if cached_payload is not None and rate_limited_until_mono > now_mono:
+        errs = list(cached_payload.get("errors") or [])
+        errs.append("render_rate_limited_using_cached_metrics")
+        cached_payload["errors"] = errs
+        cached_payload["cache"] = {
+            "hit": True,
+            "stale": True,
+            "age_seconds": round(float(cached_age_seconds or 0.0), 2),
+            "ttl_seconds": int(cache_ttl_seconds),
+            "rate_limited_until_seconds": round(float(rate_limited_until_mono - now_mono), 2),
+        }
+        return cached_payload
+
     api_key_present = bool((os.getenv("RENDER_API_KEY") or "").strip())
     api_resources = _split_csv_env("RENDER_METRICS_API_RESOURCE") or _split_csv_env("RENDER_METRICS_API_SERVICE_ID")
     worker_resources = _split_csv_env("RENDER_METRICS_WORKER_RESOURCES") or _split_csv_env("RENDER_METRICS_WORKER_SERVICE_IDS")
@@ -4954,20 +4997,43 @@ def _collect_render_infra_metrics(now_utc: datetime) -> dict[str, object]:
         infra["errors"] = ["Set RENDER_API_KEY to enable Render infrastructure metrics."]
         return infra
 
-    api_cpu = _render_metric_summary(
-        "/metrics/cpu",
-        resources=api_resources,
-        start_iso=start_iso,
-        end_iso=end_iso,
-        resolution_seconds=resolution_seconds,
-    )
-    api_mem = _render_metric_summary(
-        "/metrics/memory",
-        resources=api_resources,
-        start_iso=start_iso,
-        end_iso=end_iso,
-        resolution_seconds=resolution_seconds,
-    )
+    def _rate_limited_metric(path: str, resources: list[str], *, aggregation_method: str | None = "AVG") -> dict[str, object]:
+        return {
+            "path": path,
+            "configured": bool(resources),
+            "resources": resources,
+            "aggregation_method": aggregation_method,
+            "series_count": 0,
+            "sample_count": 0,
+            "unit": None,
+            "latest": None,
+            "p50": None,
+            "p95": None,
+            "min": None,
+            "max": None,
+            "error": "rate_limited_backoff",
+        }
+
+    saw_rate_limit = False
+
+    def _fetch_metric(path: str, resources: list[str], *, aggregation_method: str | None = "AVG") -> dict[str, object]:
+        nonlocal saw_rate_limit
+        if saw_rate_limit:
+            return _rate_limited_metric(path, resources, aggregation_method=aggregation_method)
+        metric = _render_metric_summary(
+            path,
+            resources=resources,
+            start_iso=start_iso,
+            end_iso=end_iso,
+            resolution_seconds=resolution_seconds,
+            aggregation_method=aggregation_method,
+        )
+        if str(metric.get("error") or "").startswith("http_429"):
+            saw_rate_limit = True
+        return metric
+
+    api_cpu = _fetch_metric("/metrics/cpu", api_resources)
+    api_mem = _fetch_metric("/metrics/memory", api_resources)
     api_cpu_state = _threshold_state(
         _positive_float_or_none(api_cpu.get("p95")),
         warn=cpu_warn,
@@ -4982,20 +5048,8 @@ def _collect_render_infra_metrics(now_utc: datetime) -> dict[str, object]:
         "state": api_state,
     }
 
-    worker_cpu = _render_metric_summary(
-        "/metrics/cpu",
-        resources=worker_resources,
-        start_iso=start_iso,
-        end_iso=end_iso,
-        resolution_seconds=resolution_seconds,
-    )
-    worker_mem = _render_metric_summary(
-        "/metrics/memory",
-        resources=worker_resources,
-        start_iso=start_iso,
-        end_iso=end_iso,
-        resolution_seconds=resolution_seconds,
-    )
+    worker_cpu = _fetch_metric("/metrics/cpu", worker_resources)
+    worker_mem = _fetch_metric("/metrics/memory", worker_resources)
     worker_cpu_state = _threshold_state(
         _positive_float_or_none(worker_cpu.get("p95")),
         warn=cpu_warn,
@@ -5010,42 +5064,12 @@ def _collect_render_infra_metrics(now_utc: datetime) -> dict[str, object]:
         "state": worker_state,
     }
 
-    db_cpu = _render_metric_summary(
-        "/metrics/cpu",
-        resources=[db_resource] if db_resource else [],
-        start_iso=start_iso,
-        end_iso=end_iso,
-        resolution_seconds=resolution_seconds,
-    )
-    db_mem = _render_metric_summary(
-        "/metrics/memory",
-        resources=[db_resource] if db_resource else [],
-        start_iso=start_iso,
-        end_iso=end_iso,
-        resolution_seconds=resolution_seconds,
-    )
-    db_conn = _render_metric_summary(
-        "/metrics/active-connections",
-        resources=[db_resource] if db_resource else [],
-        start_iso=start_iso,
-        end_iso=end_iso,
-        resolution_seconds=resolution_seconds,
-        aggregation_method="MAX",
-    )
-    db_disk = _render_metric_summary(
-        "/metrics/disk-usage",
-        resources=[db_resource] if db_resource else [],
-        start_iso=start_iso,
-        end_iso=end_iso,
-        resolution_seconds=resolution_seconds,
-    )
-    db_disk_cap = _render_metric_summary(
-        "/metrics/disk-capacity",
-        resources=[db_resource] if db_resource else [],
-        start_iso=start_iso,
-        end_iso=end_iso,
-        resolution_seconds=resolution_seconds,
-    )
+    db_res_list = [db_resource] if db_resource else []
+    db_cpu = _fetch_metric("/metrics/cpu", db_res_list)
+    db_mem = _fetch_metric("/metrics/memory", db_res_list)
+    db_conn = _fetch_metric("/metrics/active-connections", db_res_list, aggregation_method="MAX")
+    db_disk = _fetch_metric("/metrics/disk-usage", db_res_list)
+    db_disk_cap = _fetch_metric("/metrics/disk-capacity", db_res_list)
     db_disk_pct = _render_usage_ratio_pct(db_disk, db_disk_cap)
 
     db_cpu_state = _threshold_state(
@@ -5126,13 +5150,82 @@ def _collect_render_infra_metrics(now_utc: datetime) -> dict[str, object]:
         "database": db_state,
         "overall": _worst_state(api_state, worker_state, db_state),
     }
+    infra["cache"] = {
+        "hit": False,
+        "stale": False,
+        "ttl_seconds": int(cache_ttl_seconds),
+    }
+    with _RENDER_INFRA_CACHE_LOCK:
+        _RENDER_INFRA_CACHE["payload"] = copy.deepcopy(infra)
+        _RENDER_INFRA_CACHE["fetched_at_monotonic"] = now_mono
+        if any(str(err).startswith("api.cpu:http_429") or "http_429" in str(err) for err in errs):
+            _RENDER_INFRA_CACHE["rate_limited_until_monotonic"] = now_mono + float(rate_limit_backoff_seconds)
+        elif float(_RENDER_INFRA_CACHE.get("rate_limited_until_monotonic") or 0.0) <= now_mono:
+            _RENDER_INFRA_CACHE["rate_limited_until_monotonic"] = 0.0
+
+    if saw_rate_limit and cached_payload is not None:
+        fallback = copy.deepcopy(cached_payload)
+        fallback_errs = list(fallback.get("errors") or [])
+        fallback_errs.append("render_rate_limited_using_cached_metrics")
+        fallback["errors"] = fallback_errs
+        fallback["cache"] = {
+            "hit": True,
+            "stale": True,
+            "age_seconds": round(float(cached_age_seconds or 0.0), 2),
+            "ttl_seconds": int(cache_ttl_seconds),
+        }
+        return fallback
     return infra
+
+
+def _render_infra_placeholder(now_utc: datetime) -> dict[str, object]:
+    api_key_present = bool((os.getenv("RENDER_API_KEY") or "").strip())
+    api_resources = _split_csv_env("RENDER_METRICS_API_RESOURCE") or _split_csv_env("RENDER_METRICS_API_SERVICE_ID")
+    worker_resources = _split_csv_env("RENDER_METRICS_WORKER_RESOURCES") or _split_csv_env("RENDER_METRICS_WORKER_SERVICE_IDS")
+    db_resources = _split_csv_env("RENDER_METRICS_DB_RESOURCE") or _split_csv_env("RENDER_METRICS_DATABASE_ID")
+    db_resource = db_resources[0] if db_resources else ""
+    window_minutes = _env_int("RENDER_METRICS_WINDOW_MINUTES", 180, minimum=15, maximum=1440)
+    resolution_seconds = _env_int("RENDER_METRICS_RESOLUTION_SECONDS", 120, minimum=30, maximum=3600)
+    start_utc = now_utc - timedelta(minutes=window_minutes)
+    return {
+        "enabled": api_key_present,
+        "fetched": False,
+        "configured": {
+            "api_resource": bool(api_resources),
+            "worker_resources": bool(worker_resources),
+            "db_resource": bool(db_resource),
+        },
+        "window": {
+            "minutes": int(window_minutes),
+            "resolution_seconds": int(resolution_seconds),
+            "start_utc": start_utc.replace(microsecond=0).isoformat() + "Z",
+            "end_utc": now_utc.replace(microsecond=0).isoformat() + "Z",
+        },
+        "api": {"resources": api_resources, "cpu": None, "memory": None, "state": "unknown"},
+        "workers": {"resources": worker_resources, "cpu": None, "memory": None, "state": "unknown"},
+        "database": {
+            "resource": db_resource or None,
+            "cpu": None,
+            "memory": None,
+            "active_connections": None,
+            "disk_usage": None,
+            "disk_capacity": None,
+            "disk_usage_pct": None,
+            "state": "unknown",
+        },
+        "states": {"api": "unknown", "workers": "unknown", "database": "unknown", "overall": "unknown"},
+        "alerts": [],
+        "errors": [],
+        "cache": {"hit": False, "stale": False},
+        "notes": ["Infra metrics not fetched. Use the Fetch infra metrics action to run an on-demand pull."],
+    }
 
 
 @admin.get("/assessment/health")
 def admin_assessment_health(
     days: int | None = None,
     stale_minutes: int | None = None,
+    infra_fetch: bool | None = None,
     admin_user: User = Depends(_require_admin),
 ):
     """
@@ -6187,7 +6280,11 @@ def admin_assessment_health(
         if isinstance(coaching_payload.get("engagement_window"), dict):
             coaching_payload["engagement_window"]["outside_24h_state"] = coaching_outside_24h_state
 
-    infra_payload = _collect_render_infra_metrics(now_utc)
+    infra_fetch_requested = bool(infra_fetch)
+    if infra_fetch_requested:
+        infra_payload = _collect_render_infra_metrics(now_utc)
+    else:
+        infra_payload = _render_infra_placeholder(now_utc)
     alerts = []
     metric_states = {
         "completion_rate_pct": completion_state,

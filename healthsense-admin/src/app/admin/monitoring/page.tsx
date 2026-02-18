@@ -17,6 +17,7 @@ type MonitoringSearchParams = {
   days?: string | string[];
   stale_minutes?: string | string[];
   tab?: string | string[];
+  infra_fetch?: string | string[];
 };
 
 function firstParam(value: string | string[] | undefined): string | undefined {
@@ -103,16 +104,19 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
   const tabRaw = (firstParam(resolvedSearchParams?.tab) || "assessment").toLowerCase();
   const activeTab: "assessment" | "coaching" | "app" | "infra" =
     tabRaw === "coaching" ? "coaching" : tabRaw === "app" ? "app" : tabRaw === "infra" ? "infra" : "assessment";
+  const infraFetchRaw = (firstParam(resolvedSearchParams?.infra_fetch) || "").toLowerCase();
+  const infraFetch = infraFetchRaw === "1" || infraFetchRaw === "true" || infraFetchRaw === "yes";
   const assessmentTabHref = `/admin/monitoring?days=${days}&stale_minutes=${staleMinutes}&tab=assessment`;
   const coachingTabHref = `/admin/monitoring?days=${days}&stale_minutes=${staleMinutes}&tab=coaching`;
   const appTabHref = `/admin/monitoring?days=${days}&stale_minutes=${staleMinutes}&tab=app`;
   const infraTabHref = `/admin/monitoring?days=${days}&stale_minutes=${staleMinutes}&tab=infra`;
+  const infraFetchHref = `${infraTabHref}&infra_fetch=1`;
 
   let health: Awaited<ReturnType<typeof getAdminAssessmentHealth>> | null = null;
   let appEngagement: Awaited<ReturnType<typeof getAdminAppEngagement>> | null = null;
   let loadError: string | null = null;
   const [healthRes, appRes] = await Promise.allSettled([
-    getAdminAssessmentHealth({ days, stale_minutes: staleMinutes }),
+    getAdminAssessmentHealth({ days, stale_minutes: staleMinutes, infra_fetch: activeTab === "infra" && infraFetch }),
     getAdminAppEngagement({ days }),
   ]);
   if (healthRes.status === "fulfilled") {
@@ -346,6 +350,7 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
   ];
   const infra = health?.infra;
   const infraErrors = infra?.errors || [];
+  const infraNotes = infra?.notes || [];
   const infraAlerts = infra?.alerts || [];
   const infraApiCpu = infra?.api?.cpu;
   const infraApiMem = infra?.api?.memory;
@@ -979,6 +984,17 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
             <section className="grid gap-4 xl:grid-cols-2">
               <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
                 <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Render integration status</p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <a
+                    href={infraFetchHref}
+                    className="inline-flex items-center rounded-full border border-[#d8d1c4] bg-[#f7f4ee] px-3 py-1 text-xs uppercase tracking-[0.12em] text-[#5f574b]"
+                  >
+                    Fetch infra metrics
+                  </a>
+                  {!infraFetch ? (
+                    <span className="text-xs text-[#8a8176]">Manual fetch mode: no automatic polling.</span>
+                  ) : null}
+                </div>
                 <div className="mt-3 grid gap-2 sm:grid-cols-2">
                   <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2 text-sm">
                     API key: {infra?.enabled ? "configured" : "missing"}
@@ -996,6 +1012,15 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
                 <p className="mt-3 text-xs text-[#8a8176]">
                   Window: last {infra?.window?.minutes ?? "—"} min at {infra?.window?.resolution_seconds ?? "—"}s resolution.
                 </p>
+                {infraNotes.length ? (
+                  <div className="mt-3 space-y-2">
+                    {infraNotes.map((note, idx) => (
+                      <div key={`${idx}-${note}`} className="rounded-xl border border-[#d8d1c4] bg-[#f7f4ee] px-3 py-2 text-xs text-[#5f574b]">
+                        {note}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
                 {infraErrors.length ? (
                   <div className="mt-3 space-y-2">
                     {infraErrors.map((err, idx) => (

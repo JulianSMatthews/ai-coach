@@ -376,6 +376,7 @@ export type AssessmentHealthPayload = {
   worker?: WorkerStatusPayload;
   infra?: {
     enabled?: boolean;
+    fetched?: boolean;
     configured?: {
       api_resource?: boolean;
       worker_resources?: boolean;
@@ -433,6 +434,7 @@ export type AssessmentHealthPayload = {
     };
     alerts?: AssessmentHealthAlert[];
     errors?: string[];
+    notes?: string[];
   };
   coaching?: {
     touchpoints_sent?: number;
@@ -1032,11 +1034,13 @@ export async function getWorkerStatus() {
 export async function getAdminAssessmentHealth(params: {
   days?: number;
   stale_minutes?: number;
+  infra_fetch?: boolean;
 } = {}) {
   return apiAdmin<AssessmentHealthPayload>("/admin/assessment/health", {
     query: {
       days: params.days,
       stale_minutes: params.stale_minutes,
+      infra_fetch: params.infra_fetch ? 1 : undefined,
     },
   });
 }
