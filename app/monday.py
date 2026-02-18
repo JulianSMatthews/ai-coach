@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 import os
 from typing import Optional
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from sqlalchemy.orm import Session
 
@@ -22,14 +22,13 @@ from .models import (
     OKRKeyResult,
     OKRKrHabitStep,
     OKRObjective,
-    AssessmentRun,
 )
 from .kickoff import generate_kickoff_podcast_transcript, COACH_NAME
 from .podcast import generate_podcast_audio
 from .prompts import kr_payload_list
 from .touchpoints import log_touchpoint
 from . import general_support
-from .programme_timeline import week_anchor_date, week_no_for_date
+from .weekly_plan import ensure_weekly_plan
 from .virtual_clock import get_effective_today
 
 
@@ -344,94 +343,24 @@ def start_weekstart(user: User, notes: str | None = None, debug: bool = False, s
     general_support.clear(user.id)
     with SessionLocal() as s:
         today = get_effective_today(s, user.id, default_today=datetime.utcnow().date())
-        programme_start = None
-        run = (
-            s.query(AssessmentRun)
-            .filter(AssessmentRun.user_id == user.id)
-            .order_by(AssessmentRun.id.desc())
-            .first()
+        wf, kr_ids = ensure_weekly_plan(
+            s,
+            int(user.id),
+            week_no=week_no,
+            reference_day=today,
+            notes=notes,
         )
-        if run:
-            base_dt = (
-                getattr(run, "finished_at", None)
-                or getattr(run, "started_at", None)
-                or getattr(run, "created_at", None)
-            )
-            if isinstance(base_dt, datetime):
-                programme_start = base_dt.date()
-        if programme_start is None:
-            earliest = (
-                s.query(WeeklyFocus)
-                .filter(WeeklyFocus.user_id == user.id)
-                .order_by(WeeklyFocus.starts_on.asc())
-                .first()
-            )
-            if earliest and getattr(earliest, "starts_on", None):
-                try:
-                    programme_start = earliest.starts_on.date()
-                except Exception:
-                    programme_start = None
-        base_start = week_anchor_date(programme_start, default_today=today)
-
-        label_week = week_no
-        if label_week is None:
-            try:
-                label_week = week_no_for_date(programme_start or base_start, today)
-            except Exception:
-                label_week = 1
-
-        start = base_start + timedelta(days=7 * (label_week - 1))
-        end = start + timedelta(days=6)
-
-        wf = (
-            s.query(WeeklyFocus)
-            .filter(WeeklyFocus.user_id == user.id, WeeklyFocus.week_no == label_week)
-            .order_by(WeeklyFocus.starts_on.desc(), WeeklyFocus.id.desc())
-            .first()
-        )
-        kr_ids: list[int] = []
-        if wf:
-            rows = (
-                s.query(WeeklyFocusKR)
-                .filter(WeeklyFocusKR.weekly_focus_id == wf.id)
-                .order_by(WeeklyFocusKR.priority_order.asc())
-                .all()
-            )
-            kr_ids = [row.kr_id for row in rows if row.kr_id]
-
-        if not kr_ids:
-            kr_ids = [kr["id"] for kr in kr_payload_list(user.id, session=s, week_no=label_week, max_krs=3)]
-            if not kr_ids:
-                _send_monday(to=user.phone, text="No active KRs found to propose. Please set OKRs first.")
-                return
+        label_week = int(getattr(wf, "week_no", None) or (week_no or 1)) if wf else int(week_no or 1)
 
         if not wf:
-            wf = WeeklyFocus(user_id=user.id, starts_on=start, ends_on=end, notes=notes, week_no=label_week)
-            s.add(wf); s.flush()
-            for idx, kr_id in enumerate(kr_ids):
-                s.add(
-                    WeeklyFocusKR(
-                        weekly_focus_id=wf.id,
-                        kr_id=kr_id,
-                        priority_order=idx,
-                        role="primary" if idx == 0 else "secondary",
-                    )
-                )
-            s.commit()
-        else:
-            try:
-                if wf.week_no != label_week:
-                    wf.week_no = label_week
-                if notes:
-                    wf.notes = notes
-                s.add(wf)
-                s.commit()
-            except Exception:
-                pass
-
-        kr_rows = s.query(OKRKeyResult).filter(OKRKeyResult.id.in_(kr_ids)).all()
-        kr_lookup = {kr.id: kr for kr in kr_rows if kr}
-        krs = [kr_lookup[kid] for kid in kr_ids if kid in kr_lookup]
+            _send_monday(to=user.phone, text="Your weekly plan is still being prepared. Please try again shortly.")
+            return
+        if not kr_ids:
+            kr_ids = [kr["id"] for kr in kr_payload_list(user.id, session=s, week_no=label_week, max_krs=3)]
+        if not kr_ids:
+            _send_monday(to=user.phone, text="No active KRs found to propose. Please set OKRs first.")
+            return
+        s.commit()
 
         audio_url, _transcript = _send_weekly_briefing(user, week_no=label_week)
         confirm_msg = _build_podcast_confirm_message(user, COACH_NAME)

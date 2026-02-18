@@ -44,6 +44,7 @@ export async function saveTemplateAction(_: TemplateActionState, formData: FormD
   try {
     if (id) {
       await updatePromptTemplate(Number(id), payload);
+      revalidatePath(`/admin/prompts/templates/${id}`);
     } else {
       await createPromptTemplate(payload);
     }
@@ -63,6 +64,7 @@ export async function promoteTemplateAction(_: TemplateActionState, formData: Fo
   if (!id || !to_state) return { ok: false, error: "Missing template id or state." };
   try {
     await promotePromptTemplate(id, to_state, note, touchpoint, from_state);
+    revalidatePath(`/admin/prompts/templates/${id}`);
     revalidatePath("/admin/prompts/templates");
     return { ok: true };
   } catch (error) {

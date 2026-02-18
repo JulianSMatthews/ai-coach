@@ -134,7 +134,7 @@ def send_midweek_check(user: User, coach_name: str = "Gia") -> None:
         today = get_effective_today(s, user.id, default_today=datetime.utcnow().date())
         wf = _resolve_weekly_focus(s, user.id, today)
         if not wf:
-            _send_wednesday(to=user.phone, text="No weekly plan found. Say monday to plan your week first.")
+            _send_wednesday(to=user.phone, text="Your weekly plan is still being prepared. Please try again shortly.")
             return
         week_no = getattr(wf, "week_no", None)
         if not week_no:

@@ -32,8 +32,10 @@ from .llm import compose_prompt
 from . import monday, tuesday, wednesday, thursday, friday, saturday, sunday
 from .job_queue import enqueue_job, should_use_worker
 from .programme_timeline import first_monday_after
+from .weekly_plan import ensure_weekly_plan
 from .virtual_clock import (
     advance_virtual_date_for_user,
+    get_virtual_date,
     is_virtual_enabled,
     set_virtual_mode,
 )
@@ -703,6 +705,10 @@ def _schedule_prompts_for_user(
     if not _coaching_enabled(session, user.id):
         _unschedule_prompts_for_user(user.id)
         return
+    try:
+        _seed_weekly_focus_for_coaching_enable(session, user)
+    except Exception as e:
+        print(f"[scheduler] weekly focus seed failed for user {user.id}: {e}")
     resolved_fast = fast_minutes or _user_fast_minutes(session, user.id) or _fast_minutes_env()
     # If fast mode requested, schedule each day as interval jobs instead of daily cron.
     if resolved_fast:
@@ -767,6 +773,25 @@ def _schedule_prompts_for_user(
     print(f"[scheduler] scheduled weekly prompts for user {user.id} ({tz})")
 
 
+def _seed_weekly_focus_for_coaching_enable(session, user: User) -> None:
+    """
+    Ensure at least one weekly focus exists as soon as coaching is enabled.
+    This avoids Tue-Sun flows failing in the bridge period before first Monday.
+    """
+    reference_day = None
+    if is_virtual_enabled(session, int(user.id)):
+        reference_day = get_virtual_date(session, int(user.id))
+    if reference_day is None:
+        tz = _tz(user)
+        reference_day = datetime.now(tz).date() + timedelta(days=1)
+    ensure_weekly_plan(
+        session,
+        int(user.id),
+        reference_day=reference_day,
+        notes="auto-seeded on coaching enable",
+    )
+
+
 def schedule_auto_daily_prompts():
     """Schedule day-specific prompts for all users based on their own preference."""
     defaults = _default_times()
@@ -824,6 +849,9 @@ def enable_coaching(user_id: int, fast_minutes: int | None = None) -> bool:
             .first()
         )
         if fast_minutes:
+            tz = _tz(u)
+            local_today = datetime.now(tz).date()
+            virtual_start = local_today - timedelta(days=local_today.weekday())
             if fast_pref:
                 fast_pref.value = str(max(1, int(fast_minutes)))
             else:
@@ -838,8 +866,8 @@ def enable_coaching(user_id: int, fast_minutes: int | None = None) -> bool:
                 s,
                 user_id,
                 enabled=True,
-                start_date=datetime.utcnow().date(),
-                keep_existing_date=True,
+                start_date=virtual_start,
+                keep_existing_date=False,
             )
         else:
             if fast_pref:

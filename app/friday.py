@@ -130,7 +130,7 @@ def send_boost(user: User, coach_name: str = COACH_NAME, week_no: int | None = N
         primary = primary_kr_payload(user.id, session=s, week_no=week_no)
     if not primary:
         debug_log("friday skipped: no primary KR payload", {"user_id": user.id, "week_no": week_no}, tag="friday")
-        _send_friday(to=user.phone, text="No weekly plan found. Say monday to plan your week first.")
+        _send_friday(to=user.phone, text="Your weekly plan is still being prepared. Please try again shortly.")
         return
     touchpoint_week_no = week_no
 

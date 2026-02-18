@@ -18,6 +18,8 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
   const onboarding = (detail.onboarding || {}) as Record<string, unknown>;
   const onboardingChecks = (onboarding.checks || {}) as Record<string, unknown>;
   const introContent = (onboarding.intro_content || {}) as Record<string, unknown>;
+  const weeklyPlan = (detail.current_weekly_plan || null) as Record<string, unknown> | null;
+  const weeklyPlanKrs = Array.isArray(weeklyPlan?.krs) ? (weeklyPlan?.krs as Record<string, unknown>[]) : [];
   const fields = user ? Object.entries(user) : [];
   const onboardingFields = [
     ["assessment_completed_at", onboarding.assessment_completed_at],
@@ -44,6 +46,23 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
     if (value === null || value === undefined || value === "") return "—";
     if (typeof value === "boolean") return value ? "Yes" : "No";
     return String(value);
+  };
+  const formatDateTime = (value: unknown) => {
+    if (!value) return "—";
+    const raw = String(value);
+    const dt = new Date(raw);
+    if (Number.isNaN(dt.getTime())) return raw;
+    return dt
+      .toLocaleString("en-GB", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: "Europe/London",
+      })
+      .replace(",", "");
   };
 
   return (
@@ -144,6 +163,93 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
                 ) : null}
               </tbody>
             </table>
+          </div>
+
+          <div className="mt-6 overflow-hidden rounded-2xl border border-[#efe7db]">
+            <div className="border-b border-[#efe7db] bg-[#faf7f1] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Current weekly plan</p>
+            </div>
+            {!weeklyPlan ? (
+              <div className="px-4 py-4 text-sm text-[#6b6257]">No weekly plan found.</div>
+            ) : (
+              <div className="space-y-4 p-4">
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Week</p>
+                    <p className="mt-1 text-sm font-medium">{formatValue(weeklyPlan.week_no)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Start</p>
+                    <p className="mt-1 text-sm text-[#6b6257]">{formatDateTime(weeklyPlan.starts_on)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">End</p>
+                    <p className="mt-1 text-sm text-[#6b6257]">{formatDateTime(weeklyPlan.ends_on)}</p>
+                  </div>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Source</p>
+                    <p className="mt-1 text-sm text-[#6b6257]">{formatValue(weeklyPlan.source)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Notes</p>
+                    <p className="mt-1 text-sm text-[#6b6257]">{formatValue(weeklyPlan.notes)}</p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto rounded-xl border border-[#efe7db]">
+                  <table className="w-full min-w-[900px] text-left text-sm">
+                    <thead className="bg-[#faf7f1] text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                      <tr>
+                        <th className="px-3 py-2">Order</th>
+                        <th className="px-3 py-2">KR</th>
+                        <th className="px-3 py-2">Pillar</th>
+                        <th className="px-3 py-2">Target</th>
+                        <th className="px-3 py-2">Current</th>
+                        <th className="px-3 py-2">Habit steps</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[#efe7db]">
+                      {weeklyPlanKrs.map((kr, idx) => {
+                        const habits = Array.isArray(kr.habit_steps) ? (kr.habit_steps as Record<string, unknown>[]) : [];
+                        return (
+                          <tr key={String(kr.id || idx)}>
+                            <td className="px-3 py-2 text-[#6b6257]">
+                              {formatValue(kr.priority_order)} {kr.role ? `(${String(kr.role)})` : ""}
+                            </td>
+                            <td className="px-3 py-2">{formatValue(kr.description)}</td>
+                            <td className="px-3 py-2 text-[#6b6257]">{formatValue(kr.pillar_key)}</td>
+                            <td className="px-3 py-2 text-[#6b6257]">{formatValue(kr.target_num)}</td>
+                            <td className="px-3 py-2 text-[#6b6257]">{formatValue(kr.actual_num)}</td>
+                            <td className="px-3 py-2 text-[#6b6257]">
+                              {habits.length ? (
+                                <div className="space-y-1">
+                                  {habits.map((step, stepIdx) => (
+                                    <p key={String(step.id || `${idx}-${stepIdx}`)}>
+                                      {String(step.text || "")}
+                                      {step.status ? ` (${String(step.status)})` : ""}
+                                    </p>
+                                  ))}
+                                </div>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {!weeklyPlanKrs.length ? (
+                        <tr>
+                          <td className="px-3 py-4 text-[#6b6257]" colSpan={6}>
+                            No KRs linked to this weekly plan.
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="mt-6">

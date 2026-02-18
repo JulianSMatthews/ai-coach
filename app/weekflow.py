@@ -3,109 +3,34 @@ Week orchestration helper: run weekstart, midweek, and boost in sequence.
 """
 from __future__ import annotations
 
-from typing import Optional
-from datetime import datetime, timedelta, date
+from datetime import date
 
-from .models import User, WeeklyFocus, WeeklyFocusKR, AssessmentRun, OKRKeyResult, OKRObjective
+from .models import User, WeeklyFocus
 from .nudges import send_whatsapp
 from . import monday, wednesday, friday, tuesday, saturday, sunday
 from .db import SessionLocal
-from .focus import select_top_krs_for_user
 from .reporting import generate_progress_report_html, _reports_root_for_user
-from .programme_timeline import week_anchor_date
+from .weekly_plan import ensure_weekly_plan
 import os
 import shutil
+
+
 def _ensure_weekly_focus(user: User, week_no: int) -> bool:
     """
     Ensure a WeeklyFocus exists for the requested week number.
-    - If an active focus exists for the requested window, reuse it.
-    - Otherwise create a new one starting from the baseline week plus (week_no-1)*7 days.
+    Uses the shared weekly plan helper used by coaching-start, Sunday, and Monday.
     """
     with SessionLocal() as s:
-        programme_start = None
-        run = (
-            s.query(AssessmentRun)
-            .filter(AssessmentRun.user_id == user.id)
-            .order_by(AssessmentRun.id.desc())
-            .first()
+        _wf, kr_ids = ensure_weekly_plan(
+            s,
+            int(user.id),
+            week_no=week_no,
+            notes=f"weekflow auto week {week_no}",
+            force_refresh_kr_links=True,
         )
-        if run:
-            base_dt = (
-                getattr(run, "finished_at", None)
-                or getattr(run, "started_at", None)
-                or getattr(run, "created_at", None)
-            )
-            if isinstance(base_dt, datetime):
-                programme_start = base_dt.date()
-        if programme_start is None:
-            earliest = (
-                s.query(WeeklyFocus)
-                .filter(WeeklyFocus.user_id == user.id)
-                .order_by(WeeklyFocus.starts_on.asc())
-                .first()
-            )
-            if earliest and getattr(earliest, "starts_on", None):
-                try:
-                    programme_start = earliest.starts_on.date()
-                except Exception:
-                    programme_start = None
-        today = datetime.utcnow().date()
-        base_start = week_anchor_date(programme_start, default_today=today)
-        start = base_start + timedelta(days=7 * (week_no - 1))
-        end = start + timedelta(days=6)
-
-        existing = (
-            s.query(WeeklyFocus)
-            .filter(WeeklyFocus.user_id == user.id, WeeklyFocus.starts_on == start, WeeklyFocus.ends_on == end)
-            .first()
-        )
-        programme_order = ["nutrition", "recovery", "training", "resilience"]
-        expected_pillar = None
-        if week_no and week_no > 0:
-            idx = (week_no - 1) // 3
-            expected_pillar = programme_order[min(idx, len(programme_order) - 1)]
-        if existing:
-            if expected_pillar:
-                existing_kr_ids = [
-                    row.kr_id for row in s.query(WeeklyFocusKR).filter(WeeklyFocusKR.weekly_focus_id == existing.id).all()
-                ]
-                if existing_kr_ids:
-                    rows = (
-                        s.query(OKRKeyResult, OKRObjective)
-                        .join(OKRObjective, OKRKeyResult.objective_id == OKRObjective.id)
-                        .filter(OKRKeyResult.id.in_(existing_kr_ids))
-                        .all()
-                    )
-                    has_expected = any(
-                        (getattr(obj, "pillar_key", "") or "").lower() == expected_pillar for _, obj in rows
-                    )
-                    if has_expected:
-                        return True
-            else:
-                return True
-
-        selected = select_top_krs_for_user(s, user.id, limit=None, week_no=week_no)
-        if not selected:
+        if not kr_ids:
             send_whatsapp(to=user.phone, text="No active KRs found to propose. Please set OKRs first.")
             return False
-        kr_ids = [kr_id for kr_id, _ in selected]
-        if existing:
-            s.query(WeeklyFocusKR).filter(WeeklyFocusKR.weekly_focus_id == existing.id).delete()
-            wf = existing
-            wf.week_no = week_no
-            wf.notes = f"weekflow auto week {week_no}"
-        else:
-            wf = WeeklyFocus(user_id=user.id, starts_on=start, ends_on=end, notes=f"weekflow auto week {week_no}", week_no=week_no)
-            s.add(wf); s.flush()
-        for idx, kr_id in enumerate(kr_ids):
-            s.add(
-                WeeklyFocusKR(
-                    weekly_focus_id=wf.id,
-                    kr_id=kr_id,
-                    priority_order=idx,
-                    role="primary" if idx == 0 else "secondary",
-                )
-            )
         s.commit()
         return True
 

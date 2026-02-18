@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { PromptTemplateDetail } from "@/lib/api";
 import { previewTemplateAction, promoteTemplateAction, saveTemplateAction } from "../actions";
 
@@ -29,6 +30,7 @@ const MODEL_OPTIONS = [
 const LIVE_MODEL_OPTIONS = new Set(["gpt-5-mini", "gpt-5.1"]);
 
 export default function TemplateForm({ template, userOptions }: TemplateFormProps) {
+  const router = useRouter();
   const [saveState, saveAction, savePending] = useActionState(saveTemplateAction, emptyState);
   const [promoteState, promoteAction, promotePending] = useActionState(promoteTemplateAction, emptyState);
   const [previewState, previewAction, previewPending] = useActionState(previewTemplateAction, emptyPreview);
@@ -44,7 +46,13 @@ export default function TemplateForm({ template, userOptions }: TemplateFormProp
       : userOptions;
     return list.slice(0, 50);
   }, [userOptions, userQuery]);
-  const modelOverride = (template?.model_override || "").trim();
+  const [selectedModelOverride, setSelectedModelOverride] = useState((template?.model_override || "").trim());
+  useEffect(() => {
+    if (saveState.ok || promoteState.ok) {
+      router.refresh();
+    }
+  }, [saveState.ok, promoteState.ok, router]);
+  const modelOverride = selectedModelOverride.trim();
   const canPromoteLive = !modelOverride || LIVE_MODEL_OPTIONS.has(modelOverride);
 
   return (
@@ -117,7 +125,8 @@ export default function TemplateForm({ template, userOptions }: TemplateFormProp
             <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Default model</label>
             <select
               name="model_override"
-              defaultValue={template?.model_override || ""}
+              value={selectedModelOverride}
+              onChange={(event) => setSelectedModelOverride(event.target.value)}
               className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
             >
               <option value="">Env default</option>

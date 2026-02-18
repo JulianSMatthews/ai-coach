@@ -34,8 +34,14 @@ LIVE_TEMPLATE_ALLOWED_MODELS = {"gpt-5-mini", "gpt-5.1"}
 
 
 def _normalize_model_override(raw: str | None) -> str | None:
-    val = (raw or "").strip()
-    return val or None
+    val = (raw or "").strip().lower()
+    if not val:
+        return None
+    aliases = {
+        "gpt5-mini": "gpt-5-mini",
+        "gpt5.1": "gpt-5.1",
+    }
+    return aliases.get(val, val)
 
 
 def _ensure_live_template_model_allowed(model_override: str | None, *, context: str = "live templates") -> None:

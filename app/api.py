@@ -2825,8 +2825,14 @@ LIVE_TEMPLATE_ALLOWED_MODELS = {"gpt-5-mini", "gpt-5.1"}
 
 
 def _normalize_model_override(raw: object | None) -> str | None:
-    val = str(raw or "").strip()
-    return val or None
+    val = str(raw or "").strip().lower()
+    if not val:
+        return None
+    aliases = {
+        "gpt5-mini": "gpt-5-mini",
+        "gpt5.1": "gpt-5.1",
+    }
+    return aliases.get(val, val)
 
 
 def _ensure_live_template_model_allowed(model_override: str | None, *, context: str) -> None:
@@ -7176,24 +7182,6 @@ def admin_prompt_template_detail(
     with SessionLocal() as s:
         row = s.get(PromptTemplate, template_id)
         if not row:
-            touchpoint = str(payload.get("touchpoint") or "").strip()
-            from_state = prompts_module._canonical_state(payload.get("from_state") or "")
-            if touchpoint and from_state:
-                state_candidates = [
-                    from_state,
-                    "stage" if from_state == "beta" else from_state,
-                    "production" if from_state == "live" else from_state,
-                ]
-                row = (
-                    s.query(PromptTemplate)
-                    .filter(
-                        PromptTemplate.touchpoint == touchpoint,
-                        PromptTemplate.state.in_(state_candidates),
-                    )
-                    .order_by(PromptTemplate.version.desc(), PromptTemplate.id.desc())
-                    .first()
-                )
-        if not row:
             raise HTTPException(status_code=404, detail="prompt template not found")
     return {
         "id": row.id,
@@ -9764,6 +9752,127 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
         intro_row = _latest_intro_content_row(s, active_only=True)
         coaching_pref = _pref_value(s, user_id, "coaching")
         coaching_enabled = str(coaching_pref or "").strip() == "1"
+        current_weekly_plan = None
+        day_start = datetime.combine(datetime.utcnow().date(), datetime.min.time())
+        day_end = day_start + timedelta(days=1)
+        wf_source = "none"
+        wf = (
+            s.query(WeeklyFocus)
+            .filter(
+                WeeklyFocus.user_id == user_id,
+                WeeklyFocus.starts_on < day_end,
+                WeeklyFocus.ends_on >= day_start,
+            )
+            .order_by(WeeklyFocus.starts_on.desc(), WeeklyFocus.id.desc())
+            .first()
+        )
+        if wf:
+            wf_source = "active"
+        else:
+            wf = (
+                s.query(WeeklyFocus)
+                .filter(
+                    WeeklyFocus.user_id == user_id,
+                    WeeklyFocus.starts_on < day_end,
+                )
+                .order_by(WeeklyFocus.starts_on.desc(), WeeklyFocus.id.desc())
+                .first()
+            )
+            if wf:
+                wf_source = "latest_started"
+            else:
+                wf = (
+                    s.query(WeeklyFocus)
+                    .filter(WeeklyFocus.user_id == user_id)
+                    .order_by(WeeklyFocus.starts_on.desc(), WeeklyFocus.id.desc())
+                    .first()
+                )
+                if wf:
+                    wf_source = "latest"
+
+        if wf:
+            wfk_rows = (
+                s.query(WeeklyFocusKR, OKRKeyResult, OKRObjective)
+                .join(OKRKeyResult, WeeklyFocusKR.kr_id == OKRKeyResult.id)
+                .join(OKRObjective, OKRKeyResult.objective_id == OKRObjective.id)
+                .filter(WeeklyFocusKR.weekly_focus_id == wf.id)
+                .order_by(WeeklyFocusKR.priority_order.asc(), WeeklyFocusKR.id.asc())
+                .all()
+            )
+            kr_ids = [int(getattr(link, "kr_id")) for link, _kr, _obj in wfk_rows if getattr(link, "kr_id", None)]
+            habits_by_kr: dict[int, list[dict]] = {}
+            if kr_ids:
+                habit_query = (
+                    s.query(OKRKrHabitStep)
+                    .filter(
+                        OKRKrHabitStep.user_id == user_id,
+                        OKRKrHabitStep.kr_id.in_(kr_ids),
+                        OKRKrHabitStep.status != "archived",
+                    )
+                )
+                wf_week_no = getattr(wf, "week_no", None)
+                if wf_week_no is not None:
+                    try:
+                        wf_week_no_i = int(wf_week_no)
+                    except Exception:
+                        wf_week_no_i = None
+                    if wf_week_no_i is not None:
+                        habit_query = habit_query.filter(
+                            or_(
+                                OKRKrHabitStep.week_no == wf_week_no_i,
+                                (OKRKrHabitStep.week_no.is_(None)) & (OKRKrHabitStep.weekly_focus_id == wf.id),
+                            )
+                        )
+                    else:
+                        habit_query = habit_query.filter(OKRKrHabitStep.weekly_focus_id == wf.id)
+                else:
+                    habit_query = habit_query.filter(OKRKrHabitStep.weekly_focus_id == wf.id)
+                habit_rows = (
+                    habit_query
+                    .order_by(
+                        OKRKrHabitStep.kr_id.asc(),
+                        OKRKrHabitStep.week_no.asc().nullslast(),
+                        OKRKrHabitStep.sort_order.asc(),
+                        OKRKrHabitStep.id.asc(),
+                    )
+                    .all()
+                )
+                for row in habit_rows:
+                    kr_i = int(getattr(row, "kr_id"))
+                    habits_by_kr.setdefault(kr_i, []).append(
+                        {
+                            "id": int(row.id),
+                            "text": row.step_text,
+                            "status": row.status,
+                            "week_no": row.week_no,
+                            "weekly_focus_id": row.weekly_focus_id,
+                        }
+                    )
+
+            current_weekly_plan = {
+                "id": int(wf.id),
+                "week_no": getattr(wf, "week_no", None),
+                "starts_on": getattr(wf, "starts_on", None),
+                "ends_on": getattr(wf, "ends_on", None),
+                "notes": getattr(wf, "notes", None),
+                "source": wf_source,
+                "krs": [
+                    {
+                        "id": int(kr.id),
+                        "priority_order": getattr(link, "priority_order", None),
+                        "role": getattr(link, "role", None),
+                        "pillar_key": getattr(obj, "pillar_key", None),
+                        "description": getattr(kr, "description", None),
+                        "metric_label": getattr(kr, "metric_label", None),
+                        "unit": getattr(kr, "unit", None),
+                        "target_num": getattr(kr, "target_num", None),
+                        "actual_num": getattr(kr, "actual_num", None),
+                        "status": getattr(kr, "status", None),
+                        "habit_steps": habits_by_kr.get(int(kr.id), []),
+                    }
+                    for link, kr, obj in wfk_rows
+                ],
+            }
         last_template_message_at = s.execute(
             select(func.max(UsageEvent.created_at)).where(
                 UsageEvent.user_id == user_id,
@@ -9863,6 +9972,7 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
                 "body_present": intro_content_has_read,
             },
         },
+        "current_weekly_plan": current_weekly_plan,
     }
 
 @admin.post("/users/{user_id}/prompt-state")
