@@ -41,6 +41,28 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
     ["coaching_auto_enabled_recorded", onboardingChecks.coaching_auto_enabled_recorded],
     ["intro_should_show_now", onboardingChecks.intro_should_show_now],
   ] as const;
+  const essentialActivationRows = [
+    {
+      label: "Assessment completed",
+      met: onboardingChecks.assessment_completed_met,
+      value: onboarding.assessment_completed_at,
+    },
+    {
+      label: "First app login",
+      met: onboardingChecks.first_login_met,
+      value: onboarding.first_app_login_at,
+    },
+    {
+      label: "Assessment reviewed",
+      met: onboardingChecks.assessment_review_met,
+      value: onboarding.assessment_reviewed_at,
+    },
+    {
+      label: "Intro completed (listen/read)",
+      met: onboardingChecks.intro_completed_met,
+      value: onboarding.intro_content_completed_at,
+    },
+  ] as const;
 
   const formatValue = (value: unknown) => {
     if (value === null || value === undefined || value === "") return "—";
@@ -94,46 +116,81 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
 
           <div className="mt-6 overflow-hidden rounded-2xl border border-[#efe7db]">
             <div className="border-b border-[#efe7db] bg-[#faf7f1] px-4 py-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Onboarding diagnostics</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Coaching activation essentials</p>
             </div>
             <table className="w-full text-left text-sm">
               <thead className="bg-[#faf7f1] text-xs uppercase tracking-[0.2em] text-[#6b6257]">
                 <tr>
-                  <th className="px-4 py-3">Field</th>
-                  <th className="px-4 py-3">Value</th>
+                  <th className="px-4 py-3">Requirement</th>
+                  <th className="px-4 py-3">Met</th>
+                  <th className="px-4 py-3">Timestamp / Value</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#efe7db]">
-                {onboardingFields.map(([key, value]) => (
-                  <tr key={key}>
-                    <td className="px-4 py-3 font-medium">{key}</td>
-                    <td className="px-4 py-3 text-[#6b6257]">{formatValue(value)}</td>
-                  </tr>
-                ))}
-                {checkFields.map(([key, value]) => (
-                  <tr key={key}>
-                    <td className="px-4 py-3 font-medium">{key}</td>
-                    <td className="px-4 py-3 text-[#6b6257]">{formatValue(value)}</td>
+                {essentialActivationRows.map((row) => (
+                  <tr key={row.label}>
+                    <td className="px-4 py-3 font-medium">{row.label}</td>
+                    <td className="px-4 py-3 text-[#6b6257]">{formatValue(row.met)}</td>
+                    <td className="px-4 py-3 text-[#6b6257]">{formatValue(row.value)}</td>
                   </tr>
                 ))}
                 <tr>
-                  <td className="px-4 py-3 font-medium">intro_content_id</td>
-                  <td className="px-4 py-3 text-[#6b6257]">{formatValue(introContent.content_id)}</td>
+                  <td className="px-4 py-3 font-medium">Activation ready</td>
+                  <td className="px-4 py-3 text-[#6b6257]">{formatValue(onboardingChecks.coaching_activation_ready)}</td>
+                  <td className="px-4 py-3 text-[#6b6257]">All requirements above must be Yes</td>
                 </tr>
                 <tr>
-                  <td className="px-4 py-3 font-medium">intro_content_title</td>
-                  <td className="px-4 py-3 text-[#6b6257]">{formatValue(introContent.title)}</td>
-                </tr>
-                <tr>
-                  <td className="px-4 py-3 font-medium">intro_content_podcast_url</td>
-                  <td className="px-4 py-3 text-[#6b6257]">{formatValue(introContent.podcast_url)}</td>
-                </tr>
-                <tr>
-                  <td className="px-4 py-3 font-medium">intro_content_body_present</td>
-                  <td className="px-4 py-3 text-[#6b6257]">{formatValue(introContent.body_present)}</td>
+                  <td className="px-4 py-3 font-medium">Coaching enabled now</td>
+                  <td className="px-4 py-3 text-[#6b6257]">{formatValue(onboardingChecks.coaching_enabled_now)}</td>
+                  <td className="px-4 py-3 text-[#6b6257]">{formatValue(onboarding.coaching_auto_enabled_at)}</td>
                 </tr>
               </tbody>
             </table>
+            <details className="border-t border-[#efe7db]">
+              <summary className="cursor-pointer px-4 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                More onboarding diagnostics
+              </summary>
+              <div className="overflow-hidden border-t border-[#efe7db]">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-[#faf7f1] text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                    <tr>
+                      <th className="px-4 py-3">Field</th>
+                      <th className="px-4 py-3">Value</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[#efe7db]">
+                    {onboardingFields.map(([key, value]) => (
+                      <tr key={key}>
+                        <td className="px-4 py-3 font-medium">{key}</td>
+                        <td className="px-4 py-3 text-[#6b6257]">{formatValue(value)}</td>
+                      </tr>
+                    ))}
+                    {checkFields.map(([key, value]) => (
+                      <tr key={key}>
+                        <td className="px-4 py-3 font-medium">{key}</td>
+                        <td className="px-4 py-3 text-[#6b6257]">{formatValue(value)}</td>
+                      </tr>
+                    ))}
+                    <tr>
+                      <td className="px-4 py-3 font-medium">intro_content_id</td>
+                      <td className="px-4 py-3 text-[#6b6257]">{formatValue(introContent.content_id)}</td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 font-medium">intro_content_title</td>
+                      <td className="px-4 py-3 text-[#6b6257]">{formatValue(introContent.title)}</td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 font-medium">intro_content_podcast_url</td>
+                      <td className="px-4 py-3 text-[#6b6257]">{formatValue(introContent.podcast_url)}</td>
+                    </tr>
+                    <tr>
+                      <td className="px-4 py-3 font-medium">intro_content_body_present</td>
+                      <td className="px-4 py-3 text-[#6b6257]">{formatValue(introContent.body_present)}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </details>
           </div>
 
           <div className="mt-6 overflow-hidden rounded-2xl border border-[#efe7db]">
