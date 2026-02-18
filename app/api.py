@@ -127,6 +127,7 @@ from .reporting import (
     _reports_root_global,
 )
 from .reports_paths import resolve_reports_dir, resolve_reports_dir_with_source
+from .reports_retention import run_reports_retention_from_env
 from .job_queue import ensure_job_table, enqueue_job, should_use_worker, ensure_prompt_settings_schema
 from .virtual_clock import get_virtual_date, get_virtual_now_for_user, set_virtual_mode
 
@@ -379,6 +380,7 @@ async def _startup_init() -> None:
         scheduler.start_scheduler()
         scheduler.schedule_auto_daily_prompts()
         scheduler.schedule_out_of_session_messages()
+        scheduler.schedule_reports_retention()
     except Exception as e:
         print(f"⚠️  Scheduler start failed: {e!r}")
 
@@ -9169,6 +9171,15 @@ def admin_reports_recent(
             }
         )
     return {"count": len(items), "items": items}
+
+
+@admin.post("/reports/retention/run")
+def admin_reports_retention_run(
+    dry_run: bool = True,
+    admin_user: User = Depends(_require_admin),
+):
+    _ = admin_user
+    return run_reports_retention_from_env(dry_run=bool(dry_run))
 
 @admin.get("/kb/snippets")
 def admin_kb_snippets(

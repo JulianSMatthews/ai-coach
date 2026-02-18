@@ -53,6 +53,16 @@ services:
         value: "0"
       - key: KEEP_CONTENT_ON_RESET
         value: "1"
+      - key: REPORTS_RETENTION_ENABLED
+        value: "1"
+      - key: REPORTS_WEEKLY_RETENTION_DAYS
+        value: "84"
+      - key: REPORTS_ASSESSMENT_KEEP_RUNS
+        value: "2"
+      - key: REPORTS_RETENTION_HOUR_UTC
+        value: "3"
+      - key: REPORTS_RETENTION_MINUTE_UTC
+        value: "30"
       - key: DB_POOL_SIZE
         value: "12"
       - key: DB_MAX_OVERFLOW

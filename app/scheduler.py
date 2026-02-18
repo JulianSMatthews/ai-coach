@@ -33,6 +33,7 @@ from . import monday, tuesday, wednesday, thursday, friday, saturday, sunday
 from .job_queue import enqueue_job, should_use_worker
 from .programme_timeline import first_monday_after
 from .weekly_plan import ensure_weekly_plan
+from .reports_retention import run_reports_retention_from_env
 from .virtual_clock import (
     advance_virtual_date_for_user,
     get_virtual_date,
@@ -820,6 +821,60 @@ def schedule_out_of_session_messages():
         )
     except Exception as e:
         print(f"[scheduler] failed to schedule out-of-session job: {e}")
+
+
+def _reports_retention_clock_utc() -> tuple[int, int]:
+    hour_raw = (os.getenv("REPORTS_RETENTION_HOUR_UTC") or "3").strip()
+    minute_raw = (os.getenv("REPORTS_RETENTION_MINUTE_UTC") or "30").strip()
+    try:
+        hour = int(hour_raw)
+    except Exception:
+        hour = 3
+    try:
+        minute = int(minute_raw)
+    except Exception:
+        minute = 30
+    hour = min(23, max(0, hour))
+    minute = min(59, max(0, minute))
+    return hour, minute
+
+
+def run_reports_retention_job() -> None:
+    result = run_reports_retention_from_env(dry_run=False)
+    try:
+        if result.get("skipped"):
+            print(f"[scheduler] reports retention skipped ({result.get('reason')})")
+        elif result.get("ok"):
+            print(
+                "[scheduler] reports retention complete "
+                f"removed={result.get('files_removed', 0)} "
+                f"reclaimed_mb={result.get('mb_reclaimed', 0)}"
+            )
+        else:
+            print(f"[scheduler] reports retention failed: {result}")
+    except Exception:
+        print("[scheduler] reports retention completed (log formatting failed)")
+
+
+def schedule_reports_retention() -> None:
+    hour, minute = _reports_retention_clock_utc()
+    try:
+        _safe_add_job(
+            run_reports_retention_job,
+            trigger="cron",
+            hour=hour,
+            minute=minute,
+            id="reports_retention_daily",
+            replace_existing=True,
+            misfire_grace_time=3600,
+            timezone="UTC",
+        )
+        debug_log(
+            f"scheduled reports retention at {hour:02d}:{minute:02d} UTC",
+            tag="scheduler",
+        )
+    except Exception as e:
+        print(f"[scheduler] failed to schedule reports retention job: {e}")
 
 
 def enable_coaching(user_id: int, fast_minutes: int | None = None) -> bool:
