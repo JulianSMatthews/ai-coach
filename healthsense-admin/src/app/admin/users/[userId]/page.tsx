@@ -22,7 +22,10 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
   const weeklyPlanKrs = Array.isArray(weeklyPlan?.krs) ? (weeklyPlan?.krs as Record<string, unknown>[]) : [];
   const fields = user ? Object.entries(user) : [];
   const onboardingFields = [
-    ["assessment_completed_at", onboarding.assessment_completed_at],
+    [
+      "first_assessment_completed_at",
+      onboarding.first_assessment_completed_at || onboarding.assessment_completed_at,
+    ],
     ["first_app_login_at", onboarding.first_app_login_at],
     ["assessment_reviewed_at", onboarding.assessment_reviewed_at],
     ["intro_content_presented_at", onboarding.intro_content_presented_at],
@@ -43,9 +46,9 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
   ] as const;
   const essentialActivationRows = [
     {
-      label: "Assessment completed",
+      label: "First Assessment Completed",
       met: onboardingChecks.assessment_completed_met,
-      value: onboarding.assessment_completed_at,
+      value: onboarding.first_assessment_completed_at || onboarding.assessment_completed_at,
     },
     {
       label: "First app login",

@@ -47,7 +47,7 @@ class User(Base):
     admin_role  = Column(String(32), nullable=False, server_default=text("'member'"))
     consent_given = Column(Boolean, nullable=False, server_default=text("false"))
     consent_at = Column(DateTime, nullable=True)
-    onboard_complete = Column(Boolean, nullable=False, server_default=text("false"))
+    first_assessment_completed = Column(DateTime, nullable=True)
 
     sessions   = relationship("AssessSession", back_populates="user", cascade="all, delete-orphan")
     club       =relationship("Club")

@@ -164,11 +164,12 @@ export default async function ProgressPage(props: PageProps) {
     const hasEnd = end && !Number.isNaN(end.getTime());
     const inFuture = hasStart ? now < start! : false;
     const finished = hasEnd ? now > end! : false;
+    const ratio = progressRatio(actual, target, baseline);
 
     if (inFuture) {
-      return { status: "not started", pct: null };
+      // Keep status as not started but still show progress if the user logs a current value.
+      return { status: "not started", pct: ratio };
     }
-    const ratio = progressRatio(actual, target, baseline);
     if (!finished) {
       return { status: "on track", pct: ratio };
     }

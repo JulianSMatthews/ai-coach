@@ -254,7 +254,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                   <th className="py-2 pr-6 whitespace-nowrap">Consent at</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Last inbound</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Last template sent</th>
-                  <th className="py-2 pr-6 whitespace-nowrap">Last assessment</th>
+                  <th className="py-2 pr-6 whitespace-nowrap">First assessment</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Prompt state</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Coaching</th>
                   <th className="py-2 whitespace-nowrap">Actions</th>
@@ -285,7 +285,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                       {formatDateTime(u.last_template_message_at)}
                     </td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
-                      {formatDate(u.latest_run_finished_at)}
+                      {formatDate(u.first_assessment_completed_at)}
                     </td>
                     <td className="py-3 pr-6 whitespace-nowrap">
                       <form action={setPromptStateAction} className="flex items-center gap-2">

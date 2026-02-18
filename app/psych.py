@@ -229,6 +229,7 @@ def handle_message(user: User, text: str):
         _ack_answer(user, msg, idx + 1)
         idx += 1
         if idx >= len(QUESTIONS):
+            completed_at = datetime.utcnow()
             sec, flags, params = _derive_profile(answers)
             profile = PsychProfile(
                 user_id=user.id,
@@ -237,9 +238,17 @@ def handle_message(user: User, text: str):
                 section_averages=sec,
                 flags=flags,
                 parameters=params,
-                completed_at=datetime.utcnow(),
+                completed_at=completed_at,
             )
             s.add(profile)
+            try:
+                (
+                    s.query(User)
+                    .filter(User.id == user.id, User.first_assessment_completed.is_(None))
+                    .update({"first_assessment_completed": completed_at}, synchronize_session=False)
+                )
+            except Exception:
+                pass
             _set_state(s, user.id, None)
             pending = pop_pending_summary(s, user.id)
             s.commit()

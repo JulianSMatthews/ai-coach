@@ -1503,26 +1503,6 @@ def _mark_assessment_run_finished(user_id: int, run_id: int | None, combined: in
             )
             return None
 
-def _mark_user_onboard_complete(user_id: int) -> bool:
-    with SessionLocal() as s:
-        try:
-            res = s.execute(
-                update(User)
-                .where(User.id == user_id)
-                .values(onboard_complete=True)
-            )
-            if int(res.rowcount or 0) <= 0:
-                s.rollback()
-                return False
-            s.commit()
-            print(f"[assessment] onboard_complete persisted user_id={user_id}")
-            return True
-        except Exception as e:
-            s.rollback()
-            print(f"[assessment] WARN: failed to update onboard_complete user_id={user_id} err={e}")
-            return False
-
-
 def _next_pillar(curr: str) -> Optional[str]:
     try:
         i = PILLAR_ORDER.index(curr)
@@ -2613,9 +2593,6 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                         f"[assessment] WARN: run completion not persisted "
                         f"user_id={user.id} run_id={state.get('run_id')}"
                     )
-                # Mark user onboarding as complete (unblocks scheduler-driven prompts)
-                _mark_user_onboard_complete(int(user.id))
-
                 # Finish run in review_log
                 try:
                     _rv_finish_run(run_id=state.get("run_id"), results=state.get("results"))

@@ -359,7 +359,7 @@ def _user_onboarding_active(user_id: int) -> bool:
         u = s.get(User, user_id)
         if not u:
             return True
-        if not getattr(u, "onboard_complete", False):
+        if not getattr(u, "first_assessment_completed", None):
             return True
         # also suppress if combined assessment is still running
         active = (

@@ -787,6 +787,7 @@ export type AdminUserSummary = {
   last_template_message_at?: string | null;
   latest_run_id?: number | null;
   latest_run_finished_at?: string | null;
+  first_assessment_completed_at?: string | null;
   status?: string | null;
   prompt_state_override?: string | null;
   coaching_enabled?: boolean | null;

@@ -28,7 +28,7 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI, APIRouter, Request, Response, Depends, Header, HTTPException, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text, select, desc, func, or_
+from sqlalchemy import text, select, desc, func, or_, update
 from pathlib import Path 
 from typing import Optional
 
@@ -2995,40 +2995,21 @@ def _coaching_enabled_for_user(session, user_id: int) -> bool:
     return bool(legacy_row and str(legacy_row.value or "").strip() == "1")
 
 def _latest_assessment_completed_at(session, user_id: int) -> str | None:
-    latest_run = (
-        session.execute(
-            select(AssessmentRun.id, AssessmentRun.finished_at)
-            .where(AssessmentRun.user_id == user_id, AssessmentRun.finished_at.isnot(None))
-            .order_by(desc(AssessmentRun.finished_at), desc(AssessmentRun.id))
-        )
-        .first()
-    )
-    if not latest_run:
+    user_row = session.get(User, int(user_id))
+    if not user_row:
         return None
-    run_id, finished_at = latest_run
-    if not run_id or not finished_at:
-        return None
-    # "Assessment completed" is only true once psych readiness is completed
-    # for the latest finished run.
-    psych_completed_at = (
-        session.execute(
-            select(PsychProfile.completed_at)
-            .where(
-                PsychProfile.user_id == user_id,
-                PsychProfile.assessment_run_id == int(run_id),
-                PsychProfile.completed_at.isnot(None),
-            )
-            .order_by(desc(PsychProfile.completed_at), desc(PsychProfile.id))
-        )
-        .scalars()
-        .first()
-    )
-    if not psych_completed_at:
+    completed_at = getattr(user_row, "first_assessment_completed", None)
+    if not completed_at:
         return None
     try:
-        return psych_completed_at.replace(microsecond=0).isoformat()
+        if isinstance(completed_at, datetime):
+            return completed_at.replace(microsecond=0).isoformat()
     except Exception:
-        return str(psych_completed_at)
+        pass
+    parsed = _parse_pref_timestamp(str(completed_at))
+    if parsed:
+        return parsed.replace(microsecond=0).isoformat()
+    return None
 
 
 def _latest_intro_content_row(session, *, active_only: bool = True) -> ContentLibraryItem | None:
@@ -3082,6 +3063,7 @@ def _get_onboarding_state(session, user_id: int) -> dict:
     intro_completed_at_val = intro_listened_val or intro_read_val
     return {
         "assessment_completed_at": assessment_completed_val,
+        "first_assessment_completed_at": assessment_completed_val,
         "first_app_login_at": first_login_val,
         "assessment_reviewed_at": assessment_val,
         "intro_content_presented_at": intro_presented_val,
@@ -4795,11 +4777,20 @@ def _render_api_get(path: str, *, query: dict[str, object], timeout_s: float = 6
         return None, "invalid_json"
 
 
-def _render_metric_summary(path: str, *, resources: list[str], start_iso: str, end_iso: str, resolution_seconds: int) -> dict[str, object]:
+def _render_metric_summary(
+    path: str,
+    *,
+    resources: list[str],
+    start_iso: str,
+    end_iso: str,
+    resolution_seconds: int,
+    aggregation_method: str | None = "AVG",
+) -> dict[str, object]:
     metric_payload: dict[str, object] = {
         "path": path,
         "configured": bool(resources),
         "resources": resources,
+        "aggregation_method": aggregation_method,
         "series_count": 0,
         "sample_count": 0,
         "unit": None,
@@ -4812,16 +4803,26 @@ def _render_metric_summary(path: str, *, resources: list[str], start_iso: str, e
     }
     if not resources:
         return metric_payload
-    data, err = _render_api_get(
-        path,
-        query={
-            "resource": ",".join(resources),
-            "startTime": start_iso,
-            "endTime": end_iso,
-            "resolutionSeconds": int(resolution_seconds),
-            "aggregationMethod": "AVG",
-        },
-    )
+    query: dict[str, object] = {
+        "resource": ",".join(resources),
+        "startTime": start_iso,
+        "endTime": end_iso,
+        "resolutionSeconds": int(resolution_seconds),
+    }
+    agg = str(aggregation_method or "").strip().upper()
+    if agg:
+        query["aggregationMethod"] = agg
+    data, err = _render_api_get(path, query=query)
+    if err and agg and "does not support aggregation method" in str(err).lower():
+        retry_query = dict(query)
+        retry_query.pop("aggregationMethod", None)
+        data, retry_err = _render_api_get(path, query=retry_query)
+        if retry_err:
+            err = retry_err
+        else:
+            err = None
+            metric_payload["aggregation_method"] = None
+            metric_payload["aggregation_fallback"] = "none"
     if err:
         metric_payload["error"] = err
         return metric_payload
@@ -5029,6 +5030,7 @@ def _collect_render_infra_metrics(now_utc: datetime) -> dict[str, object]:
         start_iso=start_iso,
         end_iso=end_iso,
         resolution_seconds=resolution_seconds,
+        aggregation_method="MAX",
     )
     db_disk = _render_metric_summary(
         "/metrics/disk-usage",
@@ -10138,10 +10140,11 @@ def admin_list_users(
     payload = []
     for u in users:
         run_id = latest_runs.get(u.id)
+        first_assessment_completed = getattr(u, "first_assessment_completed", None)
         status = "idle"
         if u.id in active_users:
             status = "in_progress"
-        elif run_id and latest_finished.get(run_id):
+        elif first_assessment_completed:
             status = "completed"
         payload.append(
             {
@@ -10158,6 +10161,7 @@ def admin_list_users(
                 "last_template_message_at": last_template_sent.get(u.id),
                 "latest_run_id": run_id,
                 "latest_run_finished_at": latest_finished.get(run_id) if run_id else None,
+                "first_assessment_completed_at": first_assessment_completed,
                 "status": status,
                 "prompt_state_override": prompt_overrides.get(u.id, ""),
                 "coaching_enabled": (coaching_pref.get(u.id, (None, "0"))[1].strip() == "1"),
@@ -10327,9 +10331,10 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
         ).scalar_one_or_none()
 
     status = "idle"
+    first_assessment_completed_at_user = getattr(u, "first_assessment_completed", None)
     if active:
         status = "in_progress"
-    elif latest_run and getattr(latest_run, "finished_at", None):
+    elif first_assessment_completed_at_user:
         status = "completed"
 
     assessment_completed_at = str(onboarding_state.get("assessment_completed_at") or "").strip() or None
@@ -10379,7 +10384,7 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
             "consent_at": getattr(u, "consent_at", None),
             "last_inbound_message_at": getattr(u, "last_inbound_message_at", None),
             "last_template_message_at": last_template_message_at,
-            "onboard_complete": bool(getattr(u, "onboard_complete", False)),
+            "first_assessment_completed": first_assessment_completed_at_user,
             "prompt_state_override": (pref.value if pref else "") or "",
         },
         "status": status,
@@ -10701,6 +10706,12 @@ def admin_reset_user(user_id: int, admin_user: User = Depends(_require_admin)):
             )
         else:
             _delete_rows("message_logs", s.query(MessageLog).filter(MessageLog.user_id == user_id))
+
+        s.execute(
+            update(User)
+            .where(User.id == user_id)
+            .values(first_assessment_completed=None)
+        )
 
         s.commit()
 
