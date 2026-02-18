@@ -1982,7 +1982,8 @@ def _handle_admin_command(admin_user: User, text: str, *, source_phone: str | No
                 latest_run = s.execute(
                     select(AssessmentRun).where(AssessmentRun.user_id == u.id).order_by(desc(AssessmentRun.id))
                 ).scalars().first()
-            status_txt = "in_progress" if active else ("completed" if latest_run and getattr(latest_run, "finished_at", None) else "idle")
+                completed_at = _latest_assessment_completed_at(s, int(u.id))
+            status_txt = "in_progress" if active else ("completed" if completed_at else "idle")
             send_whatsapp(to=admin_user.phone, text=f"Status for {display_full_name(u)} ({u.phone}): {status_txt}")
             return True
         elif cmd == "assessment":
@@ -2993,21 +2994,40 @@ def _coaching_enabled_for_user(session, user_id: int) -> bool:
     return bool(legacy_row and str(legacy_row.value or "").strip() == "1")
 
 def _latest_assessment_completed_at(session, user_id: int) -> str | None:
-    finished_at = (
+    latest_run = (
         session.execute(
-            select(AssessmentRun.finished_at)
+            select(AssessmentRun.id, AssessmentRun.finished_at)
             .where(AssessmentRun.user_id == user_id, AssessmentRun.finished_at.isnot(None))
             .order_by(desc(AssessmentRun.finished_at), desc(AssessmentRun.id))
+        )
+        .first()
+    )
+    if not latest_run:
+        return None
+    run_id, finished_at = latest_run
+    if not run_id or not finished_at:
+        return None
+    # "Assessment completed" is only true once psych readiness is completed
+    # for the latest finished run.
+    psych_completed_at = (
+        session.execute(
+            select(PsychProfile.completed_at)
+            .where(
+                PsychProfile.user_id == user_id,
+                PsychProfile.assessment_run_id == int(run_id),
+                PsychProfile.completed_at.isnot(None),
+            )
+            .order_by(desc(PsychProfile.completed_at), desc(PsychProfile.id))
         )
         .scalars()
         .first()
     )
-    if not finished_at:
+    if not psych_completed_at:
         return None
     try:
-        return finished_at.replace(microsecond=0).isoformat()
+        return psych_completed_at.replace(microsecond=0).isoformat()
     except Exception:
-        return str(finished_at)
+        return str(psych_completed_at)
 
 
 def _latest_intro_content_row(session, *, active_only: bool = True) -> ContentLibraryItem | None:
@@ -3694,6 +3714,7 @@ def api_user_status_v1(
             .first()
         )
         onboarding_state = _get_onboarding_state(s, user_id)
+        assessment_completed = bool(str(onboarding_state.get("assessment_completed_at") or "").strip())
         intro_payload = _build_intro_payload(s, u, onboarding_state)
 
     data = {
@@ -3733,7 +3754,7 @@ def api_user_status_v1(
 
     if active:
         data["status"] = "in_progress"
-    elif latest_run and getattr(latest_run, "finished_at", None):
+    elif assessment_completed:
         data["status"] = "completed"
     else:
         data["status"] = "idle"
@@ -10127,6 +10148,7 @@ def admin_user_status(user_id: int, admin_user: User = Depends(_require_admin)):
             raise HTTPException(status_code=404, detail="user not found")
         _ensure_club_scope(admin_user, u)
         active = get_active_domain(u)
+        assessment_completed_at = _latest_assessment_completed_at(s, user_id)
         latest_run = s.execute(
             select(AssessmentRun).where(AssessmentRun.user_id == user_id).order_by(desc(AssessmentRun.id))
         ).scalars().first()
@@ -10156,7 +10178,7 @@ def admin_user_status(user_id: int, admin_user: User = Depends(_require_admin)):
 
     if active:
         data["status"] = "in_progress"
-    elif latest_run and getattr(latest_run, "finished_at", None):
+    elif assessment_completed_at:
         data["status"] = "completed"
     else:
         data["status"] = "idle"

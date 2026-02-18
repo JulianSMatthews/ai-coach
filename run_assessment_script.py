@@ -219,6 +219,37 @@ def _latest_session_id_for(user: "User"):
         return None
 
 
+def _latest_assessment_state_for(user: "User") -> tuple[int | None, object | None, int]:
+    """
+    Returns (run_id, finished_at, pillar_count_for_run) for the latest run.
+    """
+    if AssessmentRun is None:
+        return None, None, 0
+    try:
+        with SessionLocal() as s:
+            run = (
+                s.query(AssessmentRun)
+                .filter(AssessmentRun.user_id == user.id)
+                .order_by(AssessmentRun.id.desc())
+                .first()
+            )
+            if run is None:
+                return None, None, 0
+            run_id = int(getattr(run, "id", 0) or 0) or None
+            finished_at = getattr(run, "finished_at", None)
+            pr_count = 0
+            if run_id and PillarResult is not None:
+                pr_fk_col = getattr(PillarResult, "assessment_run_id", None) or getattr(PillarResult, "run_id", None)
+                if pr_fk_col is not None:
+                    try:
+                        pr_count = int(s.query(PillarResult).filter(pr_fk_col == run_id).count())
+                    except Exception:
+                        pr_count = 0
+            return run_id, finished_at, pr_count
+    except Exception:
+        return None, None, 0
+
+
 # Debug: list recent sessions for this user
 def _debug_list_sessions_for(user: "User", limit: int = 5):
     return
@@ -271,32 +302,13 @@ def _wait_for_completion_message(user: "User", timeout_s: float = 10.0, poll_s: 
     if MessageLog is None or mock:
         while time.time() - started < timeout_s:
             try:
-                if AssessmentRun is not None and PillarResult is not None:
-                    with SessionLocal() as s:
-                        run = (
-                            s.query(AssessmentRun)
-                             .filter(AssessmentRun.user_id == user.id)
-                             .order_by(AssessmentRun.id.desc())
-                             .first()
-                        )
-                        if run is not None:
-                            # Consider complete when all 4 pillar rows exist. Support either column name.
-                            pr_fk_col = getattr(PillarResult, 'assessment_run_id', None) or getattr(PillarResult, 'run_id', None)
-                            if pr_fk_col is not None:
-                                pr_count = (
-                                    s.query(PillarResult)
-                                     .filter(pr_fk_col == getattr(run, 'id', None))
-                                     .count()
-                                )
-                            else:
-                                # Fallback: count by user_id and recency if no FK column present
-                                created_col = getattr(PillarResult, 'created_at', None) or getattr(PillarResult, 'created', None)
-                                q = s.query(PillarResult).filter(PillarResult.user_id == user.id)
-                                if created_col is not None and hasattr(run, 'created_at'):
-                                    q = q.filter(created_col >= getattr(run, 'created_at'))
-                                pr_count = q.count()
-                            if pr_count >= 4:
-                                return True
+                run_id, finished_at, pr_count = _latest_assessment_state_for(user)
+                # Treat complete only when run finished_at is persisted.
+                if run_id and finished_at is not None:
+                    return True
+                # Helpful debug while waiting in long-running finalization phases.
+                if run_id and pr_count >= 4:
+                    pass
                 time.sleep(poll_s)
             except Exception:
                 time.sleep(poll_s)
@@ -354,7 +366,13 @@ def _continue_with_timeout(user: "User", text: str, timeout_s: float = 45.0) -> 
     th.join(timeout_s)
     if th.is_alive():
         print(f"[timeout] continue_combined_assessment exceeded {timeout_s}s; skipping input: {text[:40]!r}")
-        return False
+        # Give the in-flight call a grace window so we don't race concurrent assessor calls.
+        grace_s = max(15.0, min(60.0, float(timeout_s)))
+        th.join(grace_s)
+        if th.is_alive():
+            print(f"[error] assessor call still running after extra {grace_s:.0f}s; aborting this run step.")
+            return False
+        print(f"[info] assessor call completed during grace window (+{grace_s:.0f}s).")
     if "err" in result:
         print(f"[warn] continue_combined_assessment error: {result['err']}")
         return False
@@ -1172,7 +1190,7 @@ def main():
     parser.add_argument("--start-from", default="", help="When --batch is set, start from this scenario key (e.g., developing_b)")
     parser.add_argument("--club-ids", default=os.environ.get("BATCH_CLUB_IDS", ""),
                         help="Comma/semicolon separated club IDs to cycle through (batch defaults to first two).")
-    parser.add_argument("--call-timeout", type=float, default=45.0, help="Seconds to wait for each LLM/assessor call before skipping")
+    parser.add_argument("--call-timeout", type=float, default=120.0, help="Seconds to wait for each LLM/assessor call before failing the run step")
     parser.add_argument("--julian", action="store_true",
                         help="Convenience: run mid-range scenario as Julian (defaults to competent_a on existing user).")
     parser.add_argument("--julianlow", action="store_true",
@@ -1305,18 +1323,27 @@ def main():
             print(f"[run] scenario={scenario} club={club_desc}")
         else:
             print(f"[run] scenario={scenario}")
+        had_step_failure = False
         for idx, (pillar, code) in enumerate(order, 1):
             msg = answers.get(code)
             if pillar == "training" and not preamble_sent.get(pillar) and PREAMBLE_ANSWERS.get(pillar):
                 preamble_text = PREAMBLE_ANSWERS[pillar]
                 ok_pre = _continue_with_timeout(user=user, text=preamble_text, timeout_s=args.call_timeout)
                 print(f"[preamble] training -> '{preamble_text}' [{'ok' if ok_pre else 'warn'}]")
+                if not ok_pre:
+                    had_step_failure = True
+                    print("[error] preamble step failed/timed out; stopping run to avoid partial completion.")
+                    break
                 preamble_sent[pillar] = True
                 time.sleep(0.25)
             if not started:
                 if session_id is None:
                     start_combined_assessment(user=user, force_intro=True)
-                _continue_with_timeout(user=user, text="YES", timeout_s=args.call_timeout)
+                ok_consent = _continue_with_timeout(user=user, text="YES", timeout_s=args.call_timeout)
+                if not ok_consent:
+                    had_step_failure = True
+                    print("[error] consent step failed/timed out; stopping run.")
+                    break
                 _mark_consent(user)
                 sid = _latest_session_id_for(user)
                 time.sleep(0.5)
@@ -1332,6 +1359,10 @@ def main():
             ok = _continue_with_timeout(user=user, text=msg, timeout_s=args.call_timeout)
             status = "ok" if ok else "warn"
             print(f"{idx:02d}. {pillar}.{code:<22} -> '{msg}' [{status}]")
+            if not ok:
+                had_step_failure = True
+                print("[error] answer step failed/timed out; stopping run to avoid inconsistent assessment state.")
+                break
             time.sleep(0.25)
             # Stop sending if assessment session is no longer active (finished early)
             if AssessSession is not None:
@@ -1345,24 +1376,30 @@ def main():
                     print("[info] assessment session finished early; stopping further pillar answers.")
                     break
 
-        # finalize
-        _finalize_run(user)
-        got_final = _wait_for_completion_message(user, timeout_s=8.0, poll_s=0.5)
+        # Finalize only when we did not encounter a timeout/failure on answers.
+        if not had_step_failure:
+            _finalize_run(user)
+        else:
+            print("[finalize] skipping flush ticks due earlier step failure.")
+
+        wait_window = max(20.0, float(args.call_timeout))
+        got_final = _wait_for_completion_message(user, timeout_s=wait_window, poll_s=0.5)
         print(f"[finalize] completion_seen={got_final}")
-        if not got_final:
+        if not got_final and not had_step_failure:
             _continue_with_timeout(user=user, text="", timeout_s=args.call_timeout)
             time.sleep(0.75)
-            got_final = _wait_for_completion_message(user, timeout_s=5.0, poll_s=0.5)
+            got_final = _wait_for_completion_message(user, timeout_s=10.0, poll_s=0.5)
             print(f"[finalize] retry completion_seen={got_final}")
 
-        # Close any active assessment sessions before psych readiness (prevent restart)
-        if AssessSession is not None:
-            with SessionLocal() as s:
-                s.query(AssessSession).filter(AssessSession.user_id == user.id).update({"is_active": False})
-                s.commit()
+        if not got_final:
+            rid, finished_at, pr_count = _latest_assessment_state_for(user)
+            print(
+                "[finalize] assessment not completed; skipping psych automation "
+                f"(run_id={rid}, finished_at={finished_at}, pillar_rows={pr_count})."
+            )
 
         # Drive psych readiness questions automatically (6 items) if available
-        if psych is not None:
+        if psych is not None and got_final:
             try:
                 psych.start(user, close_assessment_sessions=True)
             except Exception as e:
