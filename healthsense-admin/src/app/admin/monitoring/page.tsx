@@ -45,6 +45,24 @@ function formatNum(value: number | null | undefined, digits = 2): string {
   return Number(value).toFixed(digits);
 }
 
+function formatMetricWithUnit(value: number | null | undefined, unit?: string | null, digits = 2): string {
+  if (value == null || Number.isNaN(value)) return "—";
+  const num = Number(value);
+  const u = String(unit || "").trim();
+  const lower = u.toLowerCase();
+  if (lower === "bytes" || lower === "b") {
+    const gb = num / (1024 ** 3);
+    if (Math.abs(gb) >= 1) return `${gb.toFixed(2)} GB`;
+    const mb = num / (1024 ** 2);
+    if (Math.abs(mb) >= 1) return `${mb.toFixed(2)} MB`;
+    const kb = num / 1024;
+    if (Math.abs(kb) >= 1) return `${kb.toFixed(2)} KB`;
+    return `${num.toFixed(0)} B`;
+  }
+  if (lower === "percent" || lower === "%") return `${num.toFixed(digits)}%`;
+  return u ? `${num.toFixed(digits)} ${u}` : `${num.toFixed(digits)}`;
+}
+
 function barWidth(percentOfStart: number | null | undefined): string {
   if (percentOfStart == null || Number.isNaN(percentOfStart)) return "0%";
   const bounded = Math.max(0, Math.min(100, percentOfStart));
@@ -83,11 +101,12 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
   const days = clampInt(resolvedSearchParams?.days, 7, 1, 30);
   const staleMinutes = clampInt(resolvedSearchParams?.stale_minutes, 30, 5, 240);
   const tabRaw = (firstParam(resolvedSearchParams?.tab) || "assessment").toLowerCase();
-  const activeTab: "assessment" | "coaching" | "app" =
-    tabRaw === "coaching" ? "coaching" : tabRaw === "app" ? "app" : "assessment";
+  const activeTab: "assessment" | "coaching" | "app" | "infra" =
+    tabRaw === "coaching" ? "coaching" : tabRaw === "app" ? "app" : tabRaw === "infra" ? "infra" : "assessment";
   const assessmentTabHref = `/admin/monitoring?days=${days}&stale_minutes=${staleMinutes}&tab=assessment`;
   const coachingTabHref = `/admin/monitoring?days=${days}&stale_minutes=${staleMinutes}&tab=coaching`;
   const appTabHref = `/admin/monitoring?days=${days}&stale_minutes=${staleMinutes}&tab=app`;
+  const infraTabHref = `/admin/monitoring?days=${days}&stale_minutes=${staleMinutes}&tab=infra`;
 
   let health: Awaited<ReturnType<typeof getAdminAssessmentHealth>> | null = null;
   let appEngagement: Awaited<ReturnType<typeof getAdminAppEngagement>> | null = null;
@@ -110,8 +129,10 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
   const activeWindow =
     activeTab === "app"
       ? appEngagement?.window
+      : activeTab === "infra"
+        ? health?.infra?.window
       : health?.window;
-  const activeAsOf = activeTab === "app" ? appEngagement?.as_of_uk : health?.as_of_utc;
+  const activeAsOf = activeTab === "app" ? appEngagement?.as_of_uk : activeTab === "infra" ? health?.as_of_utc : health?.as_of_utc;
 
   const alerts = health?.alerts || [];
   const funnelSteps = health?.funnel?.steps || [];
@@ -323,6 +344,61 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
       description: "First-login cohort users that reached coaching auto-enable.",
     },
   ];
+  const infra = health?.infra;
+  const infraErrors = infra?.errors || [];
+  const infraAlerts = infra?.alerts || [];
+  const infraApiCpu = infra?.api?.cpu;
+  const infraApiMem = infra?.api?.memory;
+  const infraWorkerCpu = infra?.workers?.cpu;
+  const infraWorkerMem = infra?.workers?.memory;
+  const infraDbCpu = infra?.database?.cpu;
+  const infraDbConn = infra?.database?.active_connections;
+  const infraDbDiskPct = infra?.database?.disk_usage_pct;
+  const infraCards = [
+    {
+      title: "API CPU p95",
+      value: formatMetricWithUnit(infraApiCpu?.p95 ?? null, infraApiCpu?.unit),
+      subtitle: `latest ${formatMetricWithUnit(infraApiCpu?.latest ?? null, infraApiCpu?.unit)}`,
+      state: infra?.api?.cpu_p95_state || "unknown",
+      description: "95th percentile CPU usage for API service resources.",
+    },
+    {
+      title: "API memory p95",
+      value: formatMetricWithUnit(infraApiMem?.p95 ?? null, infraApiMem?.unit),
+      subtitle: `latest ${formatMetricWithUnit(infraApiMem?.latest ?? null, infraApiMem?.unit)}`,
+      state: infra?.api?.state || "unknown",
+      description: "95th percentile memory usage for API service resources.",
+    },
+    {
+      title: "Worker CPU p95",
+      value: formatMetricWithUnit(infraWorkerCpu?.p95 ?? null, infraWorkerCpu?.unit),
+      subtitle: `latest ${formatMetricWithUnit(infraWorkerCpu?.latest ?? null, infraWorkerCpu?.unit)}`,
+      state: infra?.workers?.cpu_p95_state || "unknown",
+      description: "95th percentile CPU usage across configured worker resources.",
+    },
+    {
+      title: "Worker memory p95",
+      value: formatMetricWithUnit(infraWorkerMem?.p95 ?? null, infraWorkerMem?.unit),
+      subtitle: `latest ${formatMetricWithUnit(infraWorkerMem?.latest ?? null, infraWorkerMem?.unit)}`,
+      state: infra?.workers?.state || "unknown",
+      description: "95th percentile memory usage across configured workers.",
+    },
+    {
+      title: "DB active connections p95",
+      value: formatMetricWithUnit(infraDbConn?.p95 ?? null, infraDbConn?.unit),
+      subtitle: `latest ${formatMetricWithUnit(infraDbConn?.latest ?? null, infraDbConn?.unit)}`,
+      state: infra?.database?.active_connections_p95_state || "unknown",
+      description: "95th percentile active connection count for the configured Postgres resource.",
+    },
+    {
+      title: "DB disk usage p95",
+      value: infraDbDiskPct?.p95 != null ? `${formatNum(infraDbDiskPct.p95)}%` : "—",
+      subtitle: infraDbDiskPct?.latest != null ? `latest ${formatNum(infraDbDiskPct.latest)}%` : "latest —",
+      state: infraDbDiskPct?.state || "unknown",
+      description: "Persistent disk utilization percentage from Render disk usage/capacity metrics.",
+    },
+  ];
+  const showOpsSections = activeTab === "assessment" || activeTab === "coaching";
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -530,6 +606,16 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
               }`}
             >
               App
+            </a>
+            <a
+              href={infraTabHref}
+              className={`rounded-full border px-4 py-2 text-xs uppercase tracking-[0.2em] ${
+                activeTab === "infra"
+                  ? "border-[#111827] bg-[#111827] text-white"
+                  : "border-[#d8d1c4] bg-[#f7f4ee] text-[#6b6257]"
+              }`}
+            >
+              Infra
             </a>
           </div>
         </section>
@@ -872,7 +958,83 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
           </>
         ) : null}
 
-        {activeTab !== "app" ? (
+        {activeTab === "infra" ? (
+          <>
+            <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {infraCards.map((item) => (
+                <div key={item.title} className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{item.title}</p>
+                    <span className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.2em] ${stateBadgeClass(item.state)}`}>
+                      {(item.state || "unknown").toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="mt-3 text-3xl font-semibold">{item.value}</div>
+                  <p className="mt-2 text-sm text-[#6b6257]">{item.subtitle}</p>
+                  <p className="mt-1 text-xs text-[#8a8176]">{item.description}</p>
+                </div>
+              ))}
+            </section>
+
+            <section className="grid gap-4 xl:grid-cols-2">
+              <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Render integration status</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2 text-sm">
+                    API key: {infra?.enabled ? "configured" : "missing"}
+                  </div>
+                  <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2 text-sm">
+                    API resource: {infra?.configured?.api_resource ? "configured" : "missing"}
+                  </div>
+                  <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2 text-sm">
+                    Worker resources: {infra?.configured?.worker_resources ? "configured" : "missing"}
+                  </div>
+                  <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2 text-sm">
+                    DB resource: {infra?.configured?.db_resource ? "configured" : "missing"}
+                  </div>
+                </div>
+                <p className="mt-3 text-xs text-[#8a8176]">
+                  Window: last {infra?.window?.minutes ?? "—"} min at {infra?.window?.resolution_seconds ?? "—"}s resolution.
+                </p>
+                {infraErrors.length ? (
+                  <div className="mt-3 space-y-2">
+                    {infraErrors.map((err, idx) => (
+                      <div key={`${idx}-${err}`} className="rounded-xl border border-[#f3c6c6] bg-[#fff1f1] px-3 py-2 text-xs text-[#8c1d1d]">
+                        {err}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-[#2f8b55]">No Render metrics fetch errors.</p>
+                )}
+              </div>
+              <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Infra alerts</p>
+                {!infraAlerts.length ? (
+                  <p className="mt-3 text-sm text-[#2f8b55]">No infrastructure warn/critical alerts in the selected window.</p>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    {infraAlerts.map((alert, idx) => (
+                      <div key={`${alert.metric}-${idx}`} className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{alert.metric || "metric"}</span>
+                          <span className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.2em] ${stateBadgeClass(alert.state)}`}>
+                            {(alert.state || "unknown").toUpperCase()}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm text-[#6b6257]">
+                          value={alert.value ?? "—"} | warn={alert.warn ?? "—"} | critical={alert.critical ?? "—"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </section>
+          </>
+        ) : null}
+
+        {showOpsSections ? (
           <section className="grid gap-4 xl:grid-cols-2">
           <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Active alerts</p>
@@ -982,7 +1144,7 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
           </section>
         ) : null}
 
-        {activeTab !== "app" ? (
+        {showOpsSections ? (
           <section className="grid gap-4 xl:grid-cols-3">
           <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">LLM quality</p>

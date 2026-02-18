@@ -83,7 +83,7 @@ export default async function AdminHome() {
           ))}
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-4">
+        <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-5">
           <div className="rounded-2xl border border-[#efe7db] bg-white p-5">
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Combined costs</p>
             <p className="mt-2 text-sm text-[#6b6257]">Estimated total across TTS, LLM, and WhatsApp (last 7 days).</p>
@@ -236,6 +236,50 @@ export default async function AdminHome() {
                   {appKpis.podcast_listener_rate_pct != null
                     ? `${appKpis.podcast_listener_rate_pct}%`
                     : "—"}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-[#efe7db] bg-white p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Infrastructure monitoring</p>
+                <p className="mt-2 text-sm text-[#6b6257]">
+                  Render API/worker/DB CPU, memory, connections, and disk health.
+                </p>
+              </div>
+              <Link
+                href="/admin/monitoring?tab=infra"
+                className="rounded-full border border-[#111827] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[#111827]"
+              >
+                Open
+              </Link>
+            </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">API CPU p95</span>
+                <div className="mt-1 text-xl font-semibold">
+                  {health?.infra?.api?.cpu?.p95 != null ? `${health.infra.api.cpu.p95} ${health?.infra?.api?.cpu?.unit || ""}`.trim() : "—"}
+                </div>
+              </div>
+              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Worker CPU p95</span>
+                <div className="mt-1 text-xl font-semibold">
+                  {health?.infra?.workers?.cpu?.p95 != null
+                    ? `${health.infra.workers.cpu.p95} ${health?.infra?.workers?.cpu?.unit || ""}`.trim()
+                    : "—"}
+                </div>
+              </div>
+              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">DB connections p95</span>
+                <div className="mt-1 text-xl font-semibold">
+                  {health?.infra?.database?.active_connections?.p95 != null ? `${health.infra.database.active_connections.p95}` : "—"}
+                </div>
+              </div>
+              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">DB disk p95</span>
+                <div className="mt-1 text-xl font-semibold">
+                  {health?.infra?.database?.disk_usage_pct?.p95 != null ? `${health.infra.database.disk_usage_pct.p95}%` : "—"}
                 </div>
               </div>
             </div>

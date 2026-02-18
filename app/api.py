@@ -12,6 +12,7 @@ import time
 import math
 import bisect
 import urllib.request
+import urllib.error
 import secrets
 import hashlib
 import base64
@@ -20,7 +21,7 @@ import subprocess
 import sys
 import threading
 import shutil
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 from datetime import datetime, timedelta, date
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -4720,6 +4721,412 @@ def _worst_state(*states: str) -> str:
     return best
 
 
+def _split_csv_env(name: str) -> list[str]:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return []
+    out: list[str] = []
+    for part in raw.replace("\n", ",").replace(";", ",").split(","):
+        token = part.strip()
+        if token:
+            out.append(token)
+    # Preserve order while removing duplicates.
+    return list(dict.fromkeys(out))
+
+
+def _env_float(name: str, default: float, *, minimum: float | None = None, maximum: float | None = None) -> float:
+    raw = (os.getenv(name) or "").strip()
+    try:
+        val = float(raw) if raw else float(default)
+    except Exception:
+        val = float(default)
+    if minimum is not None:
+        val = max(float(minimum), val)
+    if maximum is not None:
+        val = min(float(maximum), val)
+    return float(val)
+
+
+def _env_int(name: str, default: int, *, minimum: int | None = None, maximum: int | None = None) -> int:
+    raw = (os.getenv(name) or "").strip()
+    try:
+        val = int(float(raw)) if raw else int(default)
+    except Exception:
+        val = int(default)
+    if minimum is not None:
+        val = max(int(minimum), val)
+    if maximum is not None:
+        val = min(int(maximum), val)
+    return int(val)
+
+
+def _render_api_get(path: str, *, query: dict[str, object], timeout_s: float = 6.0) -> tuple[object | None, str | None]:
+    api_key = (os.getenv("RENDER_API_KEY") or "").strip()
+    if not api_key:
+        return None, "missing_render_api_key"
+    base = (os.getenv("RENDER_API_BASE_URL") or "https://api.render.com/v1").strip().rstrip("/")
+    url = f"{base}{path}"
+    params: dict[str, object] = {k: v for k, v in query.items() if v is not None}
+    if params:
+        url = f"{url}?{urlencode(params, doseq=True)}"
+    req = urllib.request.Request(
+        url,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Accept": "application/json",
+            "User-Agent": "healthsense-admin-monitoring",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=max(1.0, float(timeout_s))) as resp:
+            body = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = e.read().decode("utf-8")[:200]
+        except Exception:
+            detail = ""
+        return None, f"http_{int(getattr(e, 'code', 0) or 0)}:{detail or 'render_api_error'}"
+    except Exception as e:
+        return None, f"request_error:{e}"
+    try:
+        return json.loads(body) if body else None, None
+    except Exception:
+        return None, "invalid_json"
+
+
+def _render_metric_summary(path: str, *, resources: list[str], start_iso: str, end_iso: str, resolution_seconds: int) -> dict[str, object]:
+    metric_payload: dict[str, object] = {
+        "path": path,
+        "configured": bool(resources),
+        "resources": resources,
+        "series_count": 0,
+        "sample_count": 0,
+        "unit": None,
+        "latest": None,
+        "p50": None,
+        "p95": None,
+        "min": None,
+        "max": None,
+        "error": None,
+    }
+    if not resources:
+        return metric_payload
+    data, err = _render_api_get(
+        path,
+        query={
+            "resource": ",".join(resources),
+            "startTime": start_iso,
+            "endTime": end_iso,
+            "resolutionSeconds": int(resolution_seconds),
+            "aggregationMethod": "AVG",
+        },
+    )
+    if err:
+        metric_payload["error"] = err
+        return metric_payload
+    if not isinstance(data, list):
+        metric_payload["error"] = "unexpected_payload"
+        return metric_payload
+
+    values: list[float] = []
+    latest_val: float | None = None
+    latest_epoch: float | None = None
+    unit: str | None = None
+    series_count = 0
+    for series in data:
+        if not isinstance(series, dict):
+            continue
+        series_count += 1
+        if unit is None:
+            raw_unit = series.get("unit")
+            unit = str(raw_unit) if raw_unit is not None else None
+        points = series.get("values") or []
+        if not isinstance(points, list):
+            continue
+        for point in points:
+            if not isinstance(point, dict):
+                continue
+            raw_val = _positive_float_or_none(point.get("value"))
+            if raw_val is None:
+                continue
+            values.append(float(raw_val))
+            ts_raw = str(point.get("timestamp") or "").strip()
+            ts_epoch: float | None = None
+            if ts_raw:
+                try:
+                    ts_epoch = datetime.fromisoformat(ts_raw.replace("Z", "+00:00")).timestamp()
+                except Exception:
+                    ts_epoch = None
+            if latest_epoch is None or (ts_epoch is not None and ts_epoch >= latest_epoch):
+                latest_epoch = ts_epoch if ts_epoch is not None else latest_epoch
+                latest_val = float(raw_val)
+
+    p50 = _percentile(values, 50)
+    p95 = _percentile(values, 95)
+    metric_payload.update(
+        {
+            "series_count": int(series_count),
+            "sample_count": len(values),
+            "unit": unit,
+            "latest": round(latest_val, 4) if latest_val is not None else None,
+            "p50": round(p50, 4) if p50 is not None else None,
+            "p95": round(p95, 4) if p95 is not None else None,
+            "min": round(min(values), 4) if values else None,
+            "max": round(max(values), 4) if values else None,
+        }
+    )
+    return metric_payload
+
+
+def _render_usage_ratio_pct(used: dict[str, object], capacity: dict[str, object]) -> dict[str, object]:
+    out = {"latest": None, "p95": None, "state": "unknown"}
+    used_latest = _positive_float_or_none(used.get("latest"))
+    cap_latest = _positive_float_or_none(capacity.get("latest"))
+    used_p95 = _positive_float_or_none(used.get("p95"))
+    cap_p95 = _positive_float_or_none(capacity.get("p95"))
+    if used_latest is not None and cap_latest is not None and cap_latest > 0:
+        out["latest"] = round((used_latest / cap_latest) * 100.0, 2)
+    if used_p95 is not None and cap_p95 is not None and cap_p95 > 0:
+        out["p95"] = round((used_p95 / cap_p95) * 100.0, 2)
+    return out
+
+
+def _collect_render_infra_metrics(now_utc: datetime) -> dict[str, object]:
+    api_key_present = bool((os.getenv("RENDER_API_KEY") or "").strip())
+    api_resources = _split_csv_env("RENDER_METRICS_API_RESOURCE") or _split_csv_env("RENDER_METRICS_API_SERVICE_ID")
+    worker_resources = _split_csv_env("RENDER_METRICS_WORKER_RESOURCES") or _split_csv_env("RENDER_METRICS_WORKER_SERVICE_IDS")
+    db_resources = _split_csv_env("RENDER_METRICS_DB_RESOURCE") or _split_csv_env("RENDER_METRICS_DATABASE_ID")
+    db_resource = db_resources[0] if db_resources else ""
+    window_minutes = _env_int("RENDER_METRICS_WINDOW_MINUTES", 180, minimum=15, maximum=1440)
+    resolution_seconds = _env_int("RENDER_METRICS_RESOLUTION_SECONDS", 120, minimum=30, maximum=3600)
+    start_utc = now_utc - timedelta(minutes=window_minutes)
+    start_iso = start_utc.replace(microsecond=0).isoformat() + "Z"
+    end_iso = now_utc.replace(microsecond=0).isoformat() + "Z"
+
+    cpu_warn = _env_float("RENDER_CPU_WARN_PCT", 70.0, minimum=1.0)
+    cpu_critical = _env_float("RENDER_CPU_CRITICAL_PCT", 85.0, minimum=cpu_warn)
+    db_conn_warn = _env_float("RENDER_DB_CONN_WARN", 80.0, minimum=1.0)
+    db_conn_critical = _env_float("RENDER_DB_CONN_CRITICAL", 120.0, minimum=db_conn_warn)
+    disk_warn = _env_float("RENDER_DISK_WARN_PCT", 85.0, minimum=1.0)
+    disk_critical = _env_float("RENDER_DISK_CRITICAL_PCT", 95.0, minimum=disk_warn)
+
+    infra: dict[str, object] = {
+        "enabled": api_key_present,
+        "configured": {
+            "api_resource": bool(api_resources),
+            "worker_resources": bool(worker_resources),
+            "db_resource": bool(db_resource),
+        },
+        "window": {
+            "minutes": int(window_minutes),
+            "resolution_seconds": int(resolution_seconds),
+            "start_utc": start_iso,
+            "end_utc": end_iso,
+        },
+        "thresholds": {
+            "cpu_warn_pct": float(cpu_warn),
+            "cpu_critical_pct": float(cpu_critical),
+            "db_conn_warn": float(db_conn_warn),
+            "db_conn_critical": float(db_conn_critical),
+            "disk_warn_pct": float(disk_warn),
+            "disk_critical_pct": float(disk_critical),
+        },
+        "api": {"resources": api_resources, "cpu": None, "memory": None, "state": "unknown"},
+        "workers": {"resources": worker_resources, "cpu": None, "memory": None, "state": "unknown"},
+        "database": {
+            "resource": db_resource or None,
+            "cpu": None,
+            "memory": None,
+            "active_connections": None,
+            "disk_usage": None,
+            "disk_capacity": None,
+            "disk_usage_pct": None,
+            "state": "unknown",
+        },
+        "states": {"api": "unknown", "workers": "unknown", "database": "unknown", "overall": "unknown"},
+        "alerts": [],
+        "errors": [],
+    }
+
+    if not api_key_present:
+        infra["errors"] = ["Set RENDER_API_KEY to enable Render infrastructure metrics."]
+        return infra
+
+    api_cpu = _render_metric_summary(
+        "/metrics/cpu",
+        resources=api_resources,
+        start_iso=start_iso,
+        end_iso=end_iso,
+        resolution_seconds=resolution_seconds,
+    )
+    api_mem = _render_metric_summary(
+        "/metrics/memory",
+        resources=api_resources,
+        start_iso=start_iso,
+        end_iso=end_iso,
+        resolution_seconds=resolution_seconds,
+    )
+    api_cpu_state = _threshold_state(
+        _positive_float_or_none(api_cpu.get("p95")),
+        warn=cpu_warn,
+        critical=cpu_critical,
+    )
+    api_state = _worst_state(api_cpu_state)
+    infra["api"] = {
+        "resources": api_resources,
+        "cpu": api_cpu,
+        "cpu_p95_state": api_cpu_state,
+        "memory": api_mem,
+        "state": api_state,
+    }
+
+    worker_cpu = _render_metric_summary(
+        "/metrics/cpu",
+        resources=worker_resources,
+        start_iso=start_iso,
+        end_iso=end_iso,
+        resolution_seconds=resolution_seconds,
+    )
+    worker_mem = _render_metric_summary(
+        "/metrics/memory",
+        resources=worker_resources,
+        start_iso=start_iso,
+        end_iso=end_iso,
+        resolution_seconds=resolution_seconds,
+    )
+    worker_cpu_state = _threshold_state(
+        _positive_float_or_none(worker_cpu.get("p95")),
+        warn=cpu_warn,
+        critical=cpu_critical,
+    )
+    worker_state = _worst_state(worker_cpu_state)
+    infra["workers"] = {
+        "resources": worker_resources,
+        "cpu": worker_cpu,
+        "cpu_p95_state": worker_cpu_state,
+        "memory": worker_mem,
+        "state": worker_state,
+    }
+
+    db_cpu = _render_metric_summary(
+        "/metrics/cpu",
+        resources=[db_resource] if db_resource else [],
+        start_iso=start_iso,
+        end_iso=end_iso,
+        resolution_seconds=resolution_seconds,
+    )
+    db_mem = _render_metric_summary(
+        "/metrics/memory",
+        resources=[db_resource] if db_resource else [],
+        start_iso=start_iso,
+        end_iso=end_iso,
+        resolution_seconds=resolution_seconds,
+    )
+    db_conn = _render_metric_summary(
+        "/metrics/active-connections",
+        resources=[db_resource] if db_resource else [],
+        start_iso=start_iso,
+        end_iso=end_iso,
+        resolution_seconds=resolution_seconds,
+    )
+    db_disk = _render_metric_summary(
+        "/metrics/disk-usage",
+        resources=[db_resource] if db_resource else [],
+        start_iso=start_iso,
+        end_iso=end_iso,
+        resolution_seconds=resolution_seconds,
+    )
+    db_disk_cap = _render_metric_summary(
+        "/metrics/disk-capacity",
+        resources=[db_resource] if db_resource else [],
+        start_iso=start_iso,
+        end_iso=end_iso,
+        resolution_seconds=resolution_seconds,
+    )
+    db_disk_pct = _render_usage_ratio_pct(db_disk, db_disk_cap)
+
+    db_cpu_state = _threshold_state(
+        _positive_float_or_none(db_cpu.get("p95")),
+        warn=cpu_warn,
+        critical=cpu_critical,
+    )
+    db_conn_state = _threshold_state(
+        _positive_float_or_none(db_conn.get("p95")),
+        warn=db_conn_warn,
+        critical=db_conn_critical,
+    )
+    db_disk_state = _threshold_state(
+        _positive_float_or_none(db_disk_pct.get("p95")),
+        warn=disk_warn,
+        critical=disk_critical,
+    )
+    db_state = _worst_state(db_cpu_state, db_conn_state, db_disk_state)
+    db_disk_pct["state"] = db_disk_state
+    infra["database"] = {
+        "resource": db_resource or None,
+        "cpu": db_cpu,
+        "cpu_p95_state": db_cpu_state,
+        "memory": db_mem,
+        "active_connections": db_conn,
+        "active_connections_p95_state": db_conn_state,
+        "disk_usage": db_disk,
+        "disk_capacity": db_disk_cap,
+        "disk_usage_pct": db_disk_pct,
+        "state": db_state,
+    }
+
+    errs: list[str] = []
+    for label, metric in (
+        ("api.cpu", api_cpu),
+        ("api.memory", api_mem),
+        ("workers.cpu", worker_cpu),
+        ("workers.memory", worker_mem),
+        ("database.cpu", db_cpu),
+        ("database.memory", db_mem),
+        ("database.active_connections", db_conn),
+        ("database.disk_usage", db_disk),
+        ("database.disk_capacity", db_disk_cap),
+    ):
+        msg = str(metric.get("error") or "").strip()
+        if msg:
+            errs.append(f"{label}:{msg}")
+    infra["errors"] = errs
+
+    alerts: list[dict[str, object]] = []
+    for metric_key, state, value, warn, critical in (
+        ("infra_api_cpu_p95_pct", api_cpu_state, _positive_float_or_none(api_cpu.get("p95")), cpu_warn, cpu_critical),
+        ("infra_worker_cpu_p95_pct", worker_cpu_state, _positive_float_or_none(worker_cpu.get("p95")), cpu_warn, cpu_critical),
+        ("infra_db_cpu_p95_pct", db_cpu_state, _positive_float_or_none(db_cpu.get("p95")), cpu_warn, cpu_critical),
+        (
+            "infra_db_active_connections_p95",
+            db_conn_state,
+            _positive_float_or_none(db_conn.get("p95")),
+            db_conn_warn,
+            db_conn_critical,
+        ),
+        ("infra_db_disk_usage_p95_pct", db_disk_state, _positive_float_or_none(db_disk_pct.get("p95")), disk_warn, disk_critical),
+    ):
+        if state in {"warn", "critical"}:
+            alerts.append(
+                {
+                    "metric": metric_key,
+                    "state": state,
+                    "value": value,
+                    "warn": float(warn),
+                    "critical": float(critical),
+                }
+            )
+    infra["alerts"] = alerts
+    infra["states"] = {
+        "api": api_state,
+        "workers": worker_state,
+        "database": db_state,
+        "overall": _worst_state(api_state, worker_state, db_state),
+    }
+    return infra
+
+
 @admin.get("/assessment/health")
 def admin_assessment_health(
     days: int | None = None,
@@ -5778,6 +6185,7 @@ def admin_assessment_health(
         if isinstance(coaching_payload.get("engagement_window"), dict):
             coaching_payload["engagement_window"]["outside_24h_state"] = coaching_outside_24h_state
 
+    infra_payload = _collect_render_infra_metrics(now_utc)
     alerts = []
     metric_states = {
         "completion_rate_pct": completion_state,
@@ -5818,6 +6226,9 @@ def admin_assessment_health(
                     "critical": thresholds.get(key, {}).get("critical"),
                 }
             )
+    for infra_alert in (infra_payload.get("alerts") or []):
+        if isinstance(infra_alert, dict):
+            alerts.append(infra_alert)
 
     question_dropoff_rows = [
         {"question_idx": int(idx), "count": int(count)}
@@ -5978,6 +6389,7 @@ def admin_assessment_health(
             "podcast_worker_mode_source": podcast_source,
         },
         "coaching": coaching_payload,
+        "infra": infra_payload,
         "alerts": alerts,
     }
 

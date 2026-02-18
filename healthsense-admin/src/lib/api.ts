@@ -241,6 +241,21 @@ export type AssessmentHealthAlert = {
   critical?: number | null;
 };
 
+export type InfraMetricSummary = {
+  path?: string;
+  configured?: boolean;
+  resources?: string[];
+  series_count?: number;
+  sample_count?: number;
+  unit?: string | null;
+  latest?: number | null;
+  p50?: number | null;
+  p95?: number | null;
+  min?: number | null;
+  max?: number | null;
+  error?: string | null;
+};
+
 export type AssessmentHealthPayload = {
   as_of_utc?: string;
   window?: {
@@ -359,6 +374,66 @@ export type AssessmentHealthPayload = {
     twilio_failure_state?: string;
   };
   worker?: WorkerStatusPayload;
+  infra?: {
+    enabled?: boolean;
+    configured?: {
+      api_resource?: boolean;
+      worker_resources?: boolean;
+      db_resource?: boolean;
+    };
+    window?: {
+      minutes?: number;
+      resolution_seconds?: number;
+      start_utc?: string;
+      end_utc?: string;
+    };
+    thresholds?: {
+      cpu_warn_pct?: number;
+      cpu_critical_pct?: number;
+      db_conn_warn?: number;
+      db_conn_critical?: number;
+      disk_warn_pct?: number;
+      disk_critical_pct?: number;
+    };
+    api?: {
+      resources?: string[];
+      cpu?: InfraMetricSummary;
+      cpu_p95_state?: string;
+      memory?: InfraMetricSummary;
+      state?: string;
+    };
+    workers?: {
+      resources?: string[];
+      cpu?: InfraMetricSummary;
+      cpu_p95_state?: string;
+      memory?: InfraMetricSummary;
+      state?: string;
+    };
+    database?: {
+      resource?: string | null;
+      cpu?: InfraMetricSummary;
+      cpu_p95_state?: string;
+      memory?: InfraMetricSummary;
+      active_connections?: InfraMetricSummary;
+      active_connections_p95_state?: string;
+      disk_usage?: InfraMetricSummary;
+      disk_capacity?: InfraMetricSummary;
+      disk_usage_pct?: {
+        latest?: number | null;
+        p95?: number | null;
+        state?: string;
+      };
+      state?: string;
+    };
+    states?: {
+      api?: string;
+      workers?: string;
+      database?: string;
+      overall?: string;
+    };
+    alerts?: AssessmentHealthAlert[];
+    errors?: string[];
+  };
   coaching?: {
     touchpoints_sent?: number;
     users_reached?: number;
