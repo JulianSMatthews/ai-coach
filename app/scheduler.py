@@ -619,6 +619,16 @@ def _run_day_prompt_inline(user_id: int, day: str):
 
 def _run_day_prompt(user_id: int, day: str):
     """Enqueue or run day-specific handler for a user."""
+    with SessionLocal() as s:
+        user = s.get(User, user_id)
+    if not user:
+        # Stale scheduler job for a deleted/reset user: unschedule all day jobs for this id.
+        print(f"[scheduler] skip {day} prompt for missing user {user_id}; unscheduling stale jobs")
+        _unschedule_prompts_for_user(user_id)
+        return
+    if _user_onboarding_active(user_id):
+        print(f"[scheduler] skip {day} prompt for user {user_id}: onboarding active")
+        return
     if should_use_worker():
         job_id = enqueue_job("day_prompt", {"user_id": user_id, "day": day}, user_id=user_id)
         print(f"[scheduler] enqueued {day} prompt for user {user_id} (job={job_id})")
