@@ -30,7 +30,7 @@ from sqlalchemy.sql import text as _sql_text
 from app.db import SessionLocal
 from app.debug_utils import debug_log
 from app.models import UserConceptState, Concept, PillarResult, JobAudit, UserPreference, AssessSession
-from .prompts import build_prompt, run_llm_prompt
+from .prompts import build_prompt, run_llm_prompt, log_llm_prompt
 from . import psych
 
 PILLAR_PREF_KEYS = {
@@ -111,6 +111,29 @@ def _okr_audit(job: str, *, status: str = "ok", payload: dict | None = None, err
             s.commit()
     except Exception:
         pass
+
+
+def _log_structured_okr_prompt(
+    *,
+    user_id: int | None,
+    prompt_text: str,
+    response_text: str | None,
+    model_name: str | None,
+    context_meta: dict[str, Any] | None = None,
+) -> None:
+    try:
+        log_llm_prompt(
+            user_id=user_id,
+            touchpoint="assessment_okr_structured",
+            prompt_text=prompt_text,
+            model=model_name,
+            response_preview=response_text or None,
+            context_meta=context_meta or None,
+            prompt_variant="assessment_okr_structured",
+            task_label="structured_okr_generation",
+        )
+    except Exception as e:
+        print(f"[okr] WARN: structured OKR llm_prompt log failed: {e}")
 
 
 def _fallback_okr(pillar_slug: str, pillar_score: float | None) -> str:
@@ -410,15 +433,18 @@ def _pick_target_from_numbers(nums: list[float], baseline: float | None, directi
         lower = [n for n in nums if n < baseline]
         if lower:
             return max(lower)
+        return None
     elif direction == "increase":
         higher = [n for n in nums if n > baseline]
         if higher:
             return min(higher)
+        return None
     elif direction == "maintain":
         equal = [n for n in nums if abs(n - baseline) < 1e-6]
         if equal:
             return equal[0]
-    # Fallback to closest number when no directional match is present.
+        return None
+    # Unknown direction: fallback to closest number.
     return min(nums, key=lambda n: abs(n - baseline))
 
 
@@ -477,8 +503,19 @@ def _ensure_kr_actionable(pillar_slug: str, kr: dict, concept_scores: dict[str, 
 
     base = _safe_float(out.get("baseline_num"))
     target = _safe_float(out.get("target_num"))
+    direction = (meta or {}).get("low", "increase")
+    target_opposite = (
+        base is not None
+        and target is not None
+        and (
+            (direction == "increase" and target < base)
+            or (direction == "reduce" and target > base)
+        )
+    )
+    if target_opposite:
+        target = None
+        out["target_num"] = None
     if base is not None and (target is None or abs(base - target) < 1e-6):
-        direction = (meta or {}).get("low", "increase")
         delta = 1.0
         proposed = max(0.0, base - delta) if direction == "reduce" else base + delta
         if abs(proposed - base) < 1e-6:
@@ -523,8 +560,8 @@ def _enrich_kr_defaults(pillar_slug: str, kr: dict, concept_scores: dict[str, fl
                 _baseline_debug("concept_score_cast_failed", {"concept": concept_key, "value": concept_scores.get(concept_key), "err": str(exc)})
                 pass
         # Next: if description has multiple numbers, take the first as baseline
-        elif len(nums) > 1:
-            kr["baseline_num"] = nums[0]
+        elif len(numbers) > 1:
+            kr["baseline_num"] = numbers[0]
             kr["_baseline_source"] = "text_first"
             _baseline_debug("baseline_from_text_first", {"concept": concept_key, "value": kr["baseline_num"], "text": text})
         # Next: any single number found
@@ -542,6 +579,14 @@ def _enrich_kr_defaults(pillar_slug: str, kr: dict, concept_scores: dict[str, fl
     direction = _preferred_direction(meta, concept_scores, concept_key)
     baseline_val = _safe_float(kr.get("baseline_num"))
     target_val = _safe_float(kr.get("target_num"))
+
+    if baseline_val is not None and target_val is not None:
+        if direction == "increase" and target_val < baseline_val:
+            kr["target_num"] = None
+            target_val = None
+        elif direction == "reduce" and target_val > baseline_val:
+            kr["target_num"] = None
+            target_val = None
 
     # If model emitted a target that doesn't match any number tied to the KR unit,
     # replace it with a unit-aligned number from the description.
@@ -926,6 +971,7 @@ def make_structured_okr_llm(
         prompt_user,
     ]
     prompt_text = _json.dumps(messages, ensure_ascii=False)
+    raw = ""
     try:
         resp = _client.chat.completions.create(
             model=mdl,
@@ -991,6 +1037,47 @@ def make_structured_okr_llm(
                     "score": None,
                     "concept_key": None,
                 })
+        missing_baseline = [
+            (kr.get("kr_key") or f"KR{i+1}")
+            for i, kr in enumerate(normalized_krs)
+            if _safe_float(kr.get("baseline_num")) is None
+        ]
+        missing_target = [
+            (kr.get("kr_key") or f"KR{i+1}")
+            for i, kr in enumerate(normalized_krs)
+            if _safe_float(kr.get("target_num")) is None
+        ]
+        missing_both = sorted(set(missing_baseline).intersection(set(missing_target)))
+        missing_meta = {
+            **(audit_payload or {}),
+            "structured_kr_count_raw": len(normalized_krs),
+            "missing_baseline_count_raw": len(missing_baseline),
+            "missing_target_count_raw": len(missing_target),
+            "missing_both_count_raw": len(missing_both),
+            "missing_baseline_kr_keys_raw": missing_baseline,
+            "missing_target_kr_keys_raw": missing_target,
+            "missing_both_kr_keys_raw": missing_both,
+        }
+        if missing_baseline or missing_target:
+            _baseline_debug(
+                "okr_llm_missing_fields_pre_repair",
+                {
+                    "pillar": pillar_slug,
+                    "missing_baseline_count_raw": len(missing_baseline),
+                    "missing_target_count_raw": len(missing_target),
+                    "missing_both_count_raw": len(missing_both),
+                    "missing_baseline_kr_keys_raw": missing_baseline,
+                    "missing_target_kr_keys_raw": missing_target,
+                },
+            )
+        _log_structured_okr_prompt(
+            user_id=(audit_context or {}).get("user_id") if isinstance(audit_context, dict) else None,
+            prompt_text=prompt_text,
+            response_text=raw,
+            model_name=mdl,
+            context_meta=missing_meta,
+        )
+
         data["krs"] = [
             _ensure_kr_actionable(
                 pillar_slug,
@@ -1012,6 +1099,16 @@ def make_structured_okr_llm(
         )
         return data
     except Exception as e:
+        _log_structured_okr_prompt(
+            user_id=(audit_context or {}).get("user_id") if isinstance(audit_context, dict) else None,
+            prompt_text=prompt_text,
+            response_text=raw,
+            model_name=mdl,
+            context_meta={
+                **(audit_payload or {}),
+                "structured_parse_or_call_error": repr(e),
+            },
+        )
         _okr_audit("okr_llm_error", status="error", payload=audit_payload, error=repr(e))
         # Debug: show why we are falling back (parse/model errors)
         try:

@@ -807,6 +807,9 @@ def _seed_weekly_focus_for_coaching_enable(session, user: User) -> None:
         reference_day=reference_day,
         notes="auto-seeded on coaching enable",
     )
+    # Persist seed immediately so bridge-day Sunday/Monday flows can always resolve it,
+    # including fast mode where prompts fire soon after activation.
+    session.commit()
 
 
 def schedule_auto_daily_prompts():

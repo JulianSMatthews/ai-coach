@@ -22,7 +22,14 @@ export const dynamic = "force-dynamic";
 function resolveHsAppBase(): string {
   const nodeEnv = (process.env.NODE_ENV || "").toLowerCase();
   const isDev = nodeEnv === "development";
-  const allowLocalInDev = isDev && (process.env.HSAPP_ALLOW_LOCALHOST_URLS || "").trim() === "1";
+  const isHosted =
+    (process.env.ENV || "").toLowerCase() === "production" ||
+    (process.env.RENDER || "").toLowerCase() === "true" ||
+    Boolean((process.env.RENDER_EXTERNAL_URL || "").trim());
+  const allowLocalInDev =
+    isDev &&
+    !isHosted &&
+    (process.env.HSAPP_ALLOW_LOCALHOST_URLS || "").trim() === "1";
   const rawCandidates = [
     process.env.NEXT_PUBLIC_HSAPP_BASE_URL,
     process.env.NEXT_PUBLIC_APP_BASE_URL,
@@ -42,7 +49,7 @@ function resolveHsAppBase(): string {
       const parsed = new URL(candidate);
       const host = parsed.hostname.toLowerCase();
       const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host.endsWith(".local");
-      if (isLocalHost && !allowLocalInDev) continue;
+      if (isLocalHost && (!allowLocalInDev || isHosted)) continue;
       if (!isDev && parsed.protocol !== "https:") continue;
       // Always reduce to origin so stray path fragments in env vars cannot corrupt redirects.
       return parsed.origin;

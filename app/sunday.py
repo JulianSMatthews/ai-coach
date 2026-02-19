@@ -324,8 +324,20 @@ def send_sunday_review(user: User, coach_name: str = COACH_NAME) -> None:
         today = get_effective_today(s, user.id, default_today=datetime.utcnow().date())
         wf = _resolve_weekly_focus(s, user.id, today)
         if not wf:
-            _send_sunday(to=user.phone, text="Your weekly plan is still being prepared. Please try again shortly.")
-            return
+            # First-Sunday guardrail: if weekly focus has not been created yet,
+            # bootstrap it on demand so the user can still set habits.
+            boot_wf, _boot_kr_ids = ensure_weekly_plan(
+                s,
+                int(user.id),
+                reference_day=today,
+                notes="sunday bootstrap weekly plan",
+            )
+            if boot_wf:
+                s.commit()
+                wf = boot_wf
+            else:
+                _send_sunday(to=user.phone, text="Your weekly plan is still being prepared. Please try again shortly.")
+                return
 
         target_week, target_wf_id = _next_target_week(s, user.id, wf, today)
         active_week = getattr(wf, "week_no", None) or None
