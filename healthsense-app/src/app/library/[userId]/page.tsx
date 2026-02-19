@@ -80,13 +80,13 @@ export default async function LibraryPage(props: PageProps) {
                         </p>
                       ) : null}
                       <p className="mt-2 font-semibold text-[#1e1b16]">{item.title}</p>
-                      <p className="mt-2 text-sm text-[#6b6257]">{truncate(item.body || "")}</p>
+                      <p className="mt-2 whitespace-pre-wrap text-sm text-[#6b6257]">{truncate(item.body || "")}</p>
                       {item.body ? (
                         <details className="mt-3 text-sm text-[#3c332b]">
                           <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[var(--accent)]">
                             Read
                           </summary>
-                          <div className="mt-2 rounded-xl border border-[#efe7db] bg-white/80 p-3 text-sm text-[#2f2a21]">
+                          <div className="mt-2 whitespace-pre-wrap rounded-xl border border-[#efe7db] bg-white/80 p-3 text-sm text-[#2f2a21]">
                             {item.body}
                           </div>
                         </details>

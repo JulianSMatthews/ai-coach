@@ -380,7 +380,7 @@ export default async function ProgressPage(props: PageProps) {
         >
           <Card className="min-w-full snap-start p-4 sm:min-w-[85%]" style={{ scrollSnapStop: "always" }} data-carousel-item>
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{anchorLabel}</p>
-            <p className="mt-2 text-[32px] leading-[1.2] text-[#1e1b16]">{headlineText}</p>
+            <p className="mt-2 whitespace-pre-wrap text-[32px] leading-[1.2] text-[#1e1b16]">{headlineText}</p>
             <IntroInlinePanel
               userId={userId}
               intro={status.intro}

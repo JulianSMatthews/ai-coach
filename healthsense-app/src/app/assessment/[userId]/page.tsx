@@ -154,12 +154,12 @@ export default async function AssessmentPage(props: PageProps) {
               />
             </div>
           ) : null}
-          <div className="mt-4 hidden space-y-3 text-sm text-[#3c332b] md:block" dangerouslySetInnerHTML={{ __html: narratives.score_html || "<p>No narrative available.</p>" }} />
+          <div className="mt-4 hidden space-y-3 whitespace-pre-wrap text-sm text-[#3c332b] md:block" dangerouslySetInnerHTML={{ __html: narratives.score_html || "<p>No narrative available.</p>" }} />
           <details className="mt-4 text-sm text-[#3c332b] md:hidden">
             <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[var(--accent)]">
               Read
             </summary>
-            <div className="mt-3 space-y-3" dangerouslySetInnerHTML={{ __html: narratives.score_html || "<p>No narrative available.</p>" }} />
+            <div className="mt-3 space-y-3 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: narratives.score_html || "<p>No narrative available.</p>" }} />
           </details>
         </Card>
       </section>
@@ -212,12 +212,12 @@ export default async function AssessmentPage(props: PageProps) {
               />
             </div>
           ) : null}
-          <div className="mt-4 hidden space-y-3 text-sm text-[#3c332b] md:block" dangerouslySetInnerHTML={{ __html: narratives.okr_html || "<p>No OKR narrative available.</p>" }} />
+          <div className="mt-4 hidden space-y-3 whitespace-pre-wrap text-sm text-[#3c332b] md:block" dangerouslySetInnerHTML={{ __html: narratives.okr_html || "<p>No OKR narrative available.</p>" }} />
           <details className="mt-4 text-sm text-[#3c332b] md:hidden">
             <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[var(--accent)]">
               Read
             </summary>
-            <div className="mt-3 space-y-3" dangerouslySetInnerHTML={{ __html: narratives.okr_html || "<p>No OKR narrative available.</p>" }} />
+            <div className="mt-3 space-y-3 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: narratives.okr_html || "<p>No OKR narrative available.</p>" }} />
           </details>
         </Card>
         <Card>
@@ -234,12 +234,12 @@ export default async function AssessmentPage(props: PageProps) {
               />
             </div>
           ) : null}
-          <div className="mt-4 hidden space-y-3 text-sm text-[#3c332b] md:block" dangerouslySetInnerHTML={{ __html: narratives.coaching_html || "<p>No habit readiness notes yet.</p>" }} />
+          <div className="mt-4 hidden space-y-3 whitespace-pre-wrap text-sm text-[#3c332b] md:block" dangerouslySetInnerHTML={{ __html: narratives.coaching_html || "<p>No habit readiness notes yet.</p>" }} />
           <details className="mt-4 text-sm text-[#3c332b] md:hidden">
             <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[var(--accent)]">
               Read
             </summary>
-            <div className="mt-3 space-y-3" dangerouslySetInnerHTML={{ __html: narratives.coaching_html || "<p>No habit readiness notes yet.</p>" }} />
+            <div className="mt-3 space-y-3 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: narratives.coaching_html || "<p>No habit readiness notes yet.</p>" }} />
           </details>
         </Card>
       </section>
@@ -302,13 +302,13 @@ export default async function AssessmentPage(props: PageProps) {
               ) : null}
               <div className="mt-4 text-sm text-[#3c332b]">
                 <p className="font-semibold text-[#1e1b16]">Objective</p>
-                <p>{okr?.objective || "No objective yet."}</p>
+                <p className="whitespace-pre-wrap">{okr?.objective || "No objective yet."}</p>
               </div>
               <div className="mt-3 text-sm">
                 <p className="font-semibold text-[#1e1b16]">Key results</p>
                 <ul className="mt-2 list-disc space-y-1 pl-5 text-[#3c332b]">
                   {(okr?.key_results || []).map((kr: string) => (
-                    <li key={kr}>{kr}</li>
+                    <li key={kr} className="whitespace-pre-wrap">{kr}</li>
                   ))}
                 </ul>
               </div>

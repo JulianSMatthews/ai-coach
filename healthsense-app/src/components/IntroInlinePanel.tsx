@@ -103,7 +103,7 @@ export default function IntroInlinePanel({ userId, intro, introCompleted }: Intr
           }}
         >
           <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[var(--accent)]">Read</summary>
-          <div className="mt-2 rounded-xl border border-[#efe7db] bg-[#fffaf0] p-3 text-sm text-[#2f2a21]">
+          <div className="mt-2 whitespace-pre-wrap rounded-xl border border-[#efe7db] bg-[#fffaf0] p-3 text-sm text-[#2f2a21]">
             {intro?.body}
           </div>
         </details>
