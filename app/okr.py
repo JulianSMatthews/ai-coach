@@ -381,6 +381,80 @@ def _safe_float(value: Any) -> float | None:
         return None
 
 
+def _preferred_direction(meta: dict | None, concept_scores: dict[str, float] | None, concept_key: str | None) -> str:
+    default = (meta or {}).get("low", "increase")
+    if not concept_key:
+        return default
+    try:
+        score = (concept_scores or {}).get(concept_key)
+        if score is None:
+            return default
+        sc = float(score)
+        if sc >= 90:
+            return (meta or {}).get("high", "maintain")
+        if sc < 70:
+            return default
+        if default == "reduce":
+            return "reduce"
+        return "increase"
+    except Exception:
+        return default
+
+
+def _pick_target_from_numbers(nums: list[float], baseline: float | None, direction: str) -> float | None:
+    if not nums:
+        return None
+    if baseline is None:
+        return nums[-1]
+    if direction == "reduce":
+        lower = [n for n in nums if n < baseline]
+        if lower:
+            return max(lower)
+    elif direction == "increase":
+        higher = [n for n in nums if n > baseline]
+        if higher:
+            return min(higher)
+    elif direction == "maintain":
+        equal = [n for n in nums if abs(n - baseline) < 1e-6]
+        if equal:
+            return equal[0]
+    # Fallback to closest number when no directional match is present.
+    return min(nums, key=lambda n: abs(n - baseline))
+
+
+def _extract_unit_numbers(text: str, unit: str | None) -> list[float]:
+    if not text or not unit:
+        return []
+    raw = text.lower()
+    u = str(unit).strip().lower()
+    if not u:
+        return []
+
+    if u == "%":
+        try:
+            return [float(m) for m in re.findall(r"(\d+(?:\.\d+)?)\s*%", raw)]
+        except Exception:
+            return []
+
+    # Capture "3 ... sessions/week" forms while avoiding later numbers
+    # in the same clause (e.g. "... 20 minutes").
+    try:
+        pattern = rf"(\d+(?:\.\d+)?)(?:(?!\d).){{0,48}}{re.escape(u)}"
+        nums = [float(m) for m in re.findall(pattern, raw)]
+        if nums:
+            return nums
+    except Exception:
+        pass
+
+    # Fallback: direct adjacency.
+    try:
+        pattern_direct = re.escape(u)
+        matches = re.findall(r"(\d+(?:\.\d+)?)\s*" + pattern_direct, raw)
+        return [float(m) for m in matches]
+    except Exception:
+        return []
+
+
 def _ensure_kr_actionable(pillar_slug: str, kr: dict, concept_scores: dict[str, float] | None = None) -> dict:
     """
     Repair noisy model output so each KR is usable:
@@ -419,7 +493,9 @@ def _enrich_kr_defaults(pillar_slug: str, kr: dict, concept_scores: dict[str, fl
     if meta:
         if not kr.get("metric_label"):
             kr["metric_label"] = meta.get("label")
-        if not kr.get("unit"):
+        # Force concept-canonical unit so we don't misread duration numbers
+        # (e.g. "10 minutes") as weekly KR targets.
+        if meta.get("unit"):
             kr["unit"] = meta.get("unit")
     if kr.get("unit") is None:
         inferred_unit = _infer_unit_from_text(kr.get("description", ""))
@@ -430,18 +506,6 @@ def _enrich_kr_defaults(pillar_slug: str, kr: dict, concept_scores: dict[str, fl
 
     text = kr.get("description", "") or ""
     numbers = _infer_numbers_from_text(text)
-    unit = kr.get("unit") or ""
-    unit_nums: list[float] = []
-    if unit:
-        pattern = re.escape(unit)
-        matches = re.findall(r"(\d+(?:\.\d+)?)\s*" + pattern, text)
-        unit_nums = [float(m) for m in matches]
-    nums = unit_nums or numbers
-    lower_text = text.lower()
-
-    if kr.get("target_num") is None and nums:
-        kr["target_num"] = nums[-1]
-
     if kr.get("baseline_num") is None:
         # Highest priority: numeric answer we captured from the assessment dialogue
         state_val = state_answers.get(concept_key) if concept_key else None
@@ -473,11 +537,38 @@ def _enrich_kr_defaults(pillar_slug: str, kr: dict, concept_scores: dict[str, fl
             kr["_baseline_source"] = "default_zero"
             _baseline_debug("baseline_not_found_default_zero", {"concept": concept_key, "description": text})
 
+    unit = kr.get("unit") or ""
+    unit_nums = _extract_unit_numbers(text, unit)
+    direction = _preferred_direction(meta, concept_scores, concept_key)
+    baseline_val = _safe_float(kr.get("baseline_num"))
+    target_val = _safe_float(kr.get("target_num"))
+
+    # If model emitted a target that doesn't match any number tied to the KR unit,
+    # replace it with a unit-aligned number from the description.
+    if target_val is not None and unit_nums:
+        if all(abs(target_val - n) > 1e-6 for n in unit_nums):
+            picked = _pick_target_from_numbers(unit_nums, baseline_val, direction)
+            if picked is not None:
+                kr["target_num"] = picked
+                target_val = picked
+
+    if target_val is None:
+        picked = _pick_target_from_numbers(unit_nums, baseline_val, direction)
+        if picked is None:
+            picked = _pick_target_from_numbers(numbers, baseline_val, direction)
+        if picked is not None:
+            kr["target_num"] = picked
+            target_val = picked
+
     if kr.get("target_num") is None and kr.get("baseline_num") is not None:
-        direction = (meta or {}).get("low", "increase")
         delta = 1
         base = float(kr["baseline_num"])
-        kr["target_num"] = max(0, base - delta) if direction == "reduce" else base + delta
+        if direction == "reduce":
+            kr["target_num"] = max(0, base - delta)
+        elif direction == "maintain":
+            kr["target_num"] = base
+        else:
+            kr["target_num"] = base + delta
 
     if kr.get("actual_num") is None:
         if concept_key and concept_key in state_answers:
