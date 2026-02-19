@@ -36,6 +36,15 @@ from .models import (
     ADMIN_ROLE_GLOBAL,
 )
 
+DEFAULT_MONITORING_LLM_INTERACTIVE_P50_WARN_MS = 9000.0
+DEFAULT_MONITORING_LLM_INTERACTIVE_P50_CRITICAL_MS = 13000.0
+DEFAULT_MONITORING_LLM_INTERACTIVE_P95_WARN_MS = 15000.0
+DEFAULT_MONITORING_LLM_INTERACTIVE_P95_CRITICAL_MS = 22000.0
+DEFAULT_MONITORING_LLM_WORKER_P50_WARN_MS = 12000.0
+DEFAULT_MONITORING_LLM_WORKER_P50_CRITICAL_MS = 18000.0
+DEFAULT_MONITORING_LLM_WORKER_P95_WARN_MS = 20000.0
+DEFAULT_MONITORING_LLM_WORKER_P95_CRITICAL_MS = 30000.0
+
 PILLARS = [
     ("nutrition",  "Nutrition"),
     ("training",   "Training"),
@@ -1074,6 +1083,14 @@ def seed_prompt_templates(session: Session) -> int:
     try:
         session.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS worker_mode_override boolean;"))
         session.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS podcast_worker_mode_override boolean;"))
+        session.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_interactive_p50_warn_ms double precision;"))
+        session.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_interactive_p50_critical_ms double precision;"))
+        session.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_interactive_p95_warn_ms double precision;"))
+        session.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_interactive_p95_critical_ms double precision;"))
+        session.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_worker_p50_warn_ms double precision;"))
+        session.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_worker_p50_critical_ms double precision;"))
+        session.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_worker_p95_warn_ms double precision;"))
+        session.execute(sa_text("ALTER TABLE prompt_settings ADD COLUMN IF NOT EXISTS monitoring_llm_worker_p95_critical_ms double precision;"))
     except Exception:
         pass
     try:
@@ -1088,8 +1105,33 @@ def seed_prompt_templates(session: Session) -> int:
                 system_block="Tone: supportive, conversational; speak directly to the user as their coach. Do not mention background music or sound effects. Do not read out section headers or labels; speak naturally as a flowing message. Do not read or say emoji names; ignore emoji.",
                 locale_block="Use British English: UK spelling (favour, programme, behaviour), light British phrasing (have a think, check in, crack on), warm, calm, supportive tone; avoid Americanisms (vacation, sidewalk, awesome, mom); no US cultural refs.",
                 default_block_order=DEFAULT_PROMPT_TEMPLATES[0].get("block_order"),
+                monitoring_llm_interactive_p50_warn_ms=DEFAULT_MONITORING_LLM_INTERACTIVE_P50_WARN_MS,
+                monitoring_llm_interactive_p50_critical_ms=DEFAULT_MONITORING_LLM_INTERACTIVE_P50_CRITICAL_MS,
+                monitoring_llm_interactive_p95_warn_ms=DEFAULT_MONITORING_LLM_INTERACTIVE_P95_WARN_MS,
+                monitoring_llm_interactive_p95_critical_ms=DEFAULT_MONITORING_LLM_INTERACTIVE_P95_CRITICAL_MS,
+                monitoring_llm_worker_p50_warn_ms=DEFAULT_MONITORING_LLM_WORKER_P50_WARN_MS,
+                monitoring_llm_worker_p50_critical_ms=DEFAULT_MONITORING_LLM_WORKER_P50_CRITICAL_MS,
+                monitoring_llm_worker_p95_warn_ms=DEFAULT_MONITORING_LLM_WORKER_P95_WARN_MS,
+                monitoring_llm_worker_p95_critical_ms=DEFAULT_MONITORING_LLM_WORKER_P95_CRITICAL_MS,
             )
         )
+    else:
+        if getattr(settings, "monitoring_llm_interactive_p50_warn_ms", None) is None:
+            settings.monitoring_llm_interactive_p50_warn_ms = DEFAULT_MONITORING_LLM_INTERACTIVE_P50_WARN_MS
+        if getattr(settings, "monitoring_llm_interactive_p50_critical_ms", None) is None:
+            settings.monitoring_llm_interactive_p50_critical_ms = DEFAULT_MONITORING_LLM_INTERACTIVE_P50_CRITICAL_MS
+        if getattr(settings, "monitoring_llm_interactive_p95_warn_ms", None) is None:
+            settings.monitoring_llm_interactive_p95_warn_ms = DEFAULT_MONITORING_LLM_INTERACTIVE_P95_WARN_MS
+        if getattr(settings, "monitoring_llm_interactive_p95_critical_ms", None) is None:
+            settings.monitoring_llm_interactive_p95_critical_ms = DEFAULT_MONITORING_LLM_INTERACTIVE_P95_CRITICAL_MS
+        if getattr(settings, "monitoring_llm_worker_p50_warn_ms", None) is None:
+            settings.monitoring_llm_worker_p50_warn_ms = DEFAULT_MONITORING_LLM_WORKER_P50_WARN_MS
+        if getattr(settings, "monitoring_llm_worker_p50_critical_ms", None) is None:
+            settings.monitoring_llm_worker_p50_critical_ms = DEFAULT_MONITORING_LLM_WORKER_P50_CRITICAL_MS
+        if getattr(settings, "monitoring_llm_worker_p95_warn_ms", None) is None:
+            settings.monitoring_llm_worker_p95_warn_ms = DEFAULT_MONITORING_LLM_WORKER_P95_WARN_MS
+        if getattr(settings, "monitoring_llm_worker_p95_critical_ms", None) is None:
+            settings.monitoring_llm_worker_p95_critical_ms = DEFAULT_MONITORING_LLM_WORKER_P95_CRITICAL_MS
     created = 0
     TARGET_STATES = ["develop", "beta", "live"]
     for tpl in DEFAULT_PROMPT_TEMPLATES:

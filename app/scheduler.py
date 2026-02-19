@@ -727,9 +727,11 @@ def _schedule_prompts_for_user(
         tz = _tz(user)
         now = datetime.now(tz)
         days = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+        first_idx = (now.date().weekday() + 1) % len(days)  # next local day
+        ordered_days = days[first_idx:] + days[:first_idx]
         interval_minutes = resolved_fast * len(days)
-        # In fast mode, start Monday after fast_minutes, then rotate through each day.
-        for idx, day in enumerate(days):
+        # In fast mode, start on the next local day after activation, then rotate through each day.
+        for idx, day in enumerate(ordered_days):
             job_id = f"auto_prompt_{day}_{user.id}"
             start_offset = timedelta(minutes=(idx + 1) * resolved_fast)
             _safe_add_job(
@@ -747,7 +749,11 @@ def _schedule_prompts_for_user(
                 f"fast job {job_id} start={now + start_offset} interval={interval_minutes}m offset={start_offset}",
                 tag="scheduler",
             )
-        print(f"[scheduler] scheduled FAST prompts every {interval_minutes}m (start offset {resolved_fast}m) for user {user.id} ({tz})")
+        first_day = ordered_days[0] if ordered_days else "monday"
+        print(
+            f"[scheduler] scheduled FAST prompts every {interval_minutes}m "
+            f"(start offset {resolved_fast}m, first_day={first_day}) for user {user.id} ({tz})"
+        )
         return
     # Start next-day onward (never same-day as assessment completion).
     tz = _tz(user)
@@ -916,7 +922,7 @@ def enable_coaching(user_id: int, fast_minutes: int | None = None) -> bool:
         if fast_minutes:
             tz = _tz(u)
             local_today = datetime.now(tz).date()
-            virtual_start = local_today - timedelta(days=local_today.weekday())
+            virtual_start = local_today + timedelta(days=1)
             if fast_pref:
                 fast_pref.value = str(max(1, int(fast_minutes)))
             else:
