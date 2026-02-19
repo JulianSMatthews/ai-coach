@@ -20,14 +20,9 @@ type UsersPageProps = {
 export const dynamic = "force-dynamic";
 
 function resolveHsAppBase(): string {
-  const allowLocal = (process.env.HSAPP_ALLOW_LOCALHOST_URLS || "").trim() === "1";
   const nodeEnv = (process.env.NODE_ENV || "").toLowerCase();
   const isDev = nodeEnv === "development";
-  const isHosted =
-    !isDev ||
-    (process.env.ENV || "").toLowerCase() === "production" ||
-    (process.env.RENDER || "").toLowerCase() === "true" ||
-    Boolean((process.env.RENDER_EXTERNAL_URL || "").trim());
+  const allowLocalInDev = isDev && (process.env.HSAPP_ALLOW_LOCALHOST_URLS || "").trim() === "1";
   const rawCandidates = [
     process.env.NEXT_PUBLIC_HSAPP_BASE_URL,
     process.env.NEXT_PUBLIC_APP_BASE_URL,
@@ -44,11 +39,13 @@ function resolveHsAppBase(): string {
 
   for (const candidate of normalized) {
     try {
-      const host = new URL(candidate).hostname.toLowerCase();
+      const parsed = new URL(candidate);
+      const host = parsed.hostname.toLowerCase();
       const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host.endsWith(".local");
-      if (!allowLocal && isLocalHost) continue;
-      if (isHosted && isLocalHost) continue;
-      return candidate;
+      if (isLocalHost && !allowLocalInDev) continue;
+      if (!isDev && parsed.protocol !== "https:") continue;
+      // Always reduce to origin so stray path fragments in env vars cannot corrupt redirects.
+      return parsed.origin;
     } catch {
       continue;
     }
