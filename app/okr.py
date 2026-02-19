@@ -391,6 +391,58 @@ def _guess_concept_from_description(pillar_slug: str, desc: str) -> str | None:
             return "strength_training"
         if any(phrase in raw for phrase in ("cardio", "running", "cycling", "swimming")):
             return "cardio_frequency"
+    if pillar_slug == "resilience":
+        if any(
+            phrase in raw
+            for phrase in (
+                "connect",
+                "connection",
+                "social",
+                "call",
+                "meet",
+                "check-in",
+                "check in",
+                "self-care",
+                "self care",
+            )
+        ):
+            return "positive_connection"
+        if any(
+            phrase in raw
+            for phrase in (
+                "reach out",
+                "ask for help",
+                "open up",
+                "openness",
+                "share",
+                "support",
+            )
+        ):
+            return "support_openness"
+        if any(
+            phrase in raw
+            for phrase in (
+                "stress",
+                "reset",
+                "recovery",
+                "deep breathing",
+                "deep-breathing",
+            )
+        ):
+            return "stress_recovery"
+        if any(
+            phrase in raw
+            for phrase in (
+                "emotion",
+                "regulation",
+                "grounding",
+                "journal",
+                "naming feelings",
+            )
+        ):
+            return "emotional_regulation"
+        if any(phrase in raw for phrase in ("optimism", "perspective", "reframe", "gratitude")):
+            return "optimism_perspective"
     text = _normalize_phrase(desc)
     for key, meta in (_GUIDE.get(pillar_slug, {}) or {}).items():
         label = _normalize_phrase(meta.get("label"))
@@ -487,6 +539,19 @@ def _extract_unit_numbers(text: str, unit: str | None) -> list[float]:
     except Exception:
         return []
 
+def _extract_duration_numbers(text: str) -> list[float]:
+    if not text:
+        return []
+    raw = text.lower()
+    try:
+        matches = re.findall(
+            r"(\d+(?:\.\d+)?)\s*(?:\+)?\s*(?:min|mins|minute|minutes|hr|hrs|hour|hours)",
+            raw,
+        )
+        return [float(m) for m in matches]
+    except Exception:
+        return []
+
 
 def _ensure_kr_actionable(pillar_slug: str, kr: dict, concept_scores: dict[str, float] | None = None) -> dict:
     """
@@ -550,6 +615,12 @@ def _enrich_kr_defaults(pillar_slug: str, kr: dict, concept_scores: dict[str, fl
 
     text = kr.get("description", "") or ""
     numbers = _infer_numbers_from_text(text)
+    unit = kr.get("unit") or ""
+    unit_nums = _extract_unit_numbers(text, unit)
+    duration_nums = _extract_duration_numbers(text)
+    non_duration_numbers = [
+        n for n in numbers if all(abs(n - d) > 1e-6 for d in duration_nums)
+    ]
     if kr.get("baseline_num") is None:
         # Highest priority: numeric answer we captured from the assessment dialogue
         state_val = state_answers.get(concept_key) if concept_key else None
@@ -566,23 +637,26 @@ def _enrich_kr_defaults(pillar_slug: str, kr: dict, concept_scores: dict[str, fl
             except Exception as exc:
                 _baseline_debug("concept_score_cast_failed", {"concept": concept_key, "value": concept_scores.get(concept_key), "err": str(exc)})
                 pass
-        # Next: if description has multiple numbers, take the first as baseline
-        elif len(numbers) > 1:
-            kr["baseline_num"] = numbers[0]
-            kr["_baseline_source"] = "text_first"
-            _baseline_debug("baseline_from_text_first", {"concept": concept_key, "value": kr["baseline_num"], "text": text})
-        # Next: any single number found
-        elif numbers:
-            kr["baseline_num"] = numbers[0]
-            kr["_baseline_source"] = "text_any"
-            _baseline_debug("baseline_from_text_any", {"concept": concept_key, "value": kr["baseline_num"], "text": text})
+        # Next: use numbers aligned to KR unit (e.g. days/week), if present.
+        elif unit_nums:
+            kr["baseline_num"] = unit_nums[0]
+            kr["_baseline_source"] = "text_unit"
+            _baseline_debug("baseline_from_text_unit", {"concept": concept_key, "value": kr["baseline_num"], "text": text, "unit": unit})
+        # Next: if description has multiple non-duration numbers, take the first as baseline
+        elif len(non_duration_numbers) > 1:
+            kr["baseline_num"] = non_duration_numbers[0]
+            kr["_baseline_source"] = "text_first_non_duration"
+            _baseline_debug("baseline_from_text_first_non_duration", {"concept": concept_key, "value": kr["baseline_num"], "text": text})
+        # Next: any single non-duration number found
+        elif non_duration_numbers:
+            kr["baseline_num"] = non_duration_numbers[0]
+            kr["_baseline_source"] = "text_any_non_duration"
+            _baseline_debug("baseline_from_text_any_non_duration", {"concept": concept_key, "value": kr["baseline_num"], "text": text})
         else:
             kr["baseline_num"] = 0
             kr["_baseline_source"] = "default_zero"
             _baseline_debug("baseline_not_found_default_zero", {"concept": concept_key, "description": text})
 
-    unit = kr.get("unit") or ""
-    unit_nums = _extract_unit_numbers(text, unit)
     direction = _preferred_direction(meta, concept_scores, concept_key)
     baseline_val = _safe_float(kr.get("baseline_num"))
     target_val = _safe_float(kr.get("target_num"))
@@ -610,7 +684,7 @@ def _enrich_kr_defaults(pillar_slug: str, kr: dict, concept_scores: dict[str, fl
         # candidates at all. This prevents duration values (e.g. "10 minutes")
         # from being used as the weekly target for unit-based KRs.
         if picked is None and not unit_nums:
-            picked = _pick_target_from_numbers(numbers, baseline_val, direction)
+            picked = _pick_target_from_numbers(non_duration_numbers, baseline_val, direction)
         if picked is not None:
             kr["target_num"] = picked
             target_val = picked
