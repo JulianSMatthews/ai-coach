@@ -1344,6 +1344,17 @@ def build_prompt(
     if tp in {"habit_steps_generator", "weekstart_actions"}:
         transcript = data.get("transcript", "")
         krs = data.get("krs", [])
+        week_no_raw = data.get("week_no")
+        week_no_value: Optional[int] = None
+        if week_no_raw is not None:
+            try:
+                week_no_value = int(week_no_raw)
+            except Exception as exc:
+                raise ValueError("habit_steps_generator requires a valid week_no integer") from exc
+            if week_no_value <= 0:
+                raise ValueError("habit_steps_generator requires week_no > 0")
+        if tp == "habit_steps_generator" and week_no_value is None:
+            raise ValueError("habit_steps_generator requires week_no")
         okr_scope = (template or {}).get("okr_scope") or "week"
         primary = krs[0] if krs else None
         okr_txt, okr_meta = okr_block_with_scope(
@@ -1351,7 +1362,7 @@ def build_prompt(
             _krs_for_okr_scope(
                 okr_scope=okr_scope,
                 user_id=user_id,
-                week_no=data.get("week_no"),
+                week_no=week_no_value,
                 primary=primary,
                 fallback_krs=krs,
             ),

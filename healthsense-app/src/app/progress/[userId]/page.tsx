@@ -157,7 +157,10 @@ export default async function ProgressPage(props: PageProps) {
     cycleStart?: string | null,
     cycleEnd?: string | null,
   ) => {
-    const now = new Date();
+    const now =
+      typeof meta.anchor_date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(meta.anchor_date)
+        ? new Date(`${meta.anchor_date}T12:00:00Z`)
+        : new Date();
     const start = cycleStart ? new Date(cycleStart) : null;
     const end = cycleEnd ? new Date(cycleEnd) : null;
     const hasStart = start && !Number.isNaN(start.getTime());
@@ -488,7 +491,11 @@ export default async function ProgressPage(props: PageProps) {
               style={{ scrollSnapType: "x mandatory" }}
             >
               {rows.map((row: ProgressRow, idx: number) => {
-                const palette = getPillarPalette(row.pillar);
+                const rowPillarKey = normalizePillarKey(row.pillar);
+                const palette = getPillarPalette(rowPillarKey);
+                const rowRange = programmeRanges.find((item) => item.key === rowPillarKey);
+                const effectiveCycleStart = rowRange ? dayNumberToIso(rowRange.startDayNumber) : row.cycle_start;
+                const effectiveCycleEnd = rowRange ? dayNumberToIso(rowRange.endDayNumber) : row.cycle_end;
                 const cardStyle = {
                   borderColor: palette.border,
                   background: palette.bg,
@@ -518,9 +525,9 @@ export default async function ProgressPage(props: PageProps) {
                         {row.cycle_label || "Current"}
                       </span>
                     </div>
-                    {row.cycle_start || row.cycle_end ? (
+                    {effectiveCycleStart || effectiveCycleEnd ? (
                       <p className="mt-1 text-xs text-[#6b6257]">
-                        {formatDateUkFromIso(row.cycle_start)} – {formatDateUkFromIso(row.cycle_end)}
+                        {formatDateUkFromIso(effectiveCycleStart)} – {formatDateUkFromIso(effectiveCycleEnd)}
                       </p>
                     ) : null}
                     <p className="mt-2 text-sm text-[#3c332b]">{row.objective || "No objective yet."}</p>
@@ -531,8 +538,8 @@ export default async function ProgressPage(props: PageProps) {
                             kr.actual,
                             kr.target,
                             kr.baseline,
-                            row.cycle_start,
-                            row.cycle_end,
+                            effectiveCycleStart,
+                            effectiveCycleEnd,
                           );
                           const chip = chipPalette[status.status] || { bg: "#f4f4f5", text: "#52525b" };
                           const pctValue = status.pct ?? 0;

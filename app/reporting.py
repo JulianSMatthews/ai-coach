@@ -210,7 +210,7 @@ def _assemble_prompt_for_report(touchpoint: str, user_id: int, as_of_date: date 
         if tp_lower == "weekstart_actions":
             extra_kwargs.update({"krs": krs_payload, "transcript": ""})
         if tp_lower == "habit_steps_generator":
-            extra_kwargs.update({"krs": krs_payload, "transcript": ""})
+            extra_kwargs.update({"krs": krs_payload, "transcript": "", "week_no": 1})
         if tp_lower == "initial_habit_steps_generator":
             extra_kwargs.update({"krs": krs_payload, "week_no": 1})
         if tp_lower in {"tuesday", "midweek", "saturday", "sunday"}:
@@ -3519,7 +3519,26 @@ def _collect_progress_rows(
     week_no: int | None = None,
     focus_kr_ids: set[int] | None = None,
 ) -> list[dict]:
+    def _normalize_pillar_key(value: Any) -> str:
+        key = str(value or "").strip().lower()
+        if "nutri" in key:
+            return "nutrition"
+        if "recover" in key:
+            return "recovery"
+        if "train" in key:
+            return "training"
+        if "resilien" in key:
+            return "resilience"
+        return key
+
     rows: list[dict] = []
+    normalized_programme_blocks: dict[str, dict[str, Any]] = {}
+    if programme_blocks:
+        for block_key, block_val in (programme_blocks or {}).items():
+            normalized_key = _normalize_pillar_key(block_key)
+            if normalized_key:
+                normalized_programme_blocks[normalized_key] = block_val
+
     with SessionLocal() as s:
         objectives = (
             s.query(OKRObjective)
@@ -3692,16 +3711,18 @@ def _collect_progress_rows(
                     "habit_steps": steps_by_kr.get(int(kr.id), []),
                 })
 
+            raw_pillar_key = str(getattr(obj, "pillar_key", "") or "")
+            normalized_pillar_key = _normalize_pillar_key(raw_pillar_key) or raw_pillar_key
             cycle_label = getattr(cycle, "title", None) or f"FY{getattr(cycle, 'year', '')} {getattr(cycle, 'quarter', '')}"
             cycle_start = getattr(cycle, "starts_on", None)
             cycle_end = getattr(cycle, "ends_on", None)
-            block = programme_blocks.get(obj.pillar_key) if programme_blocks else None
+            block = normalized_programme_blocks.get(normalized_pillar_key) if normalized_programme_blocks else None
             if block:
                 cycle_label = block.get("label") or cycle_label
                 cycle_start = block.get("start") or cycle_start
                 cycle_end = block.get("end") or cycle_end
             rows.append({
-                "pillar": obj.pillar_key,
+                "pillar": normalized_pillar_key,
                 "objective": obj.objective or "",
                 "krs": kr_payload,
                 "cycle_label": cycle_label,

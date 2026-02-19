@@ -201,8 +201,8 @@ def _ordered_krs(session: Session, kr_ids: list[int]) -> list[OKRKeyResult]:
     return [by_id[kr_id] for kr_id in kr_ids if kr_id in by_id]
 
 
-def _build_habit_options(user: User, krs: list[OKRKeyResult]) -> list[list[str]]:
-    _actions_text, options_by_index = habit_flow.build_sunday_habit_actions("", krs, user)
+def _build_habit_options(user: User, krs: list[OKRKeyResult], week_no: int) -> list[list[str]]:
+    _actions_text, options_by_index = habit_flow.build_sunday_habit_actions("", krs, user, week_no=week_no)
     out: list[list[str]] = []
     for idx, kr in enumerate(krs):
         opts = list(options_by_index[idx]) if idx < len(options_by_index) else []
@@ -347,7 +347,7 @@ def send_sunday_review(user: User, coach_name: str = COACH_NAME) -> None:
             _send_sunday(to=user.phone, text="I couldn't load your key results right now. Please try again shortly.")
             return
 
-        options_by_index = _build_habit_options(user, krs)
+        options_by_index = _build_habit_options(user, krs, target_week)
         if not options_by_index or not options_by_index[0]:
             _send_sunday(to=user.phone, text="I couldn't prepare habit options right now. Please try again in a moment.")
             return

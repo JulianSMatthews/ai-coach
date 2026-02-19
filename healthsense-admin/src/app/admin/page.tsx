@@ -83,8 +83,8 @@ export default async function AdminHome() {
           ))}
         </section>
 
-        <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-5">
-          <div className="rounded-2xl border border-[#efe7db] bg-white p-5">
+        <section className="grid gap-4 lg:grid-cols-2 xl:grid-cols-6">
+          <div className="rounded-2xl border border-[#efe7db] bg-white p-5 xl:col-span-2">
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Combined costs</p>
             <p className="mt-2 text-sm text-[#6b6257]">Estimated total across TTS, LLM, and WhatsApp (last 7 days).</p>
             <div className="mt-4 rounded-xl bg-[#f7f4ee] px-4 py-3">
@@ -94,7 +94,7 @@ export default async function AdminHome() {
               </div>
             </div>
           </div>
-          <div className="rounded-2xl border border-[#efe7db] bg-white p-5">
+          <div className="rounded-2xl border border-[#efe7db] bg-white p-5 xl:col-span-2">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Assessment monitoring</p>
@@ -136,7 +136,7 @@ export default async function AdminHome() {
               </div>
             </div>
           </div>
-          <div className="rounded-2xl border border-[#efe7db] bg-white p-5">
+          <div className="rounded-2xl border border-[#efe7db] bg-white p-5 xl:col-span-2">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Coaching monitoring</p>
@@ -198,7 +198,7 @@ export default async function AdminHome() {
               </div>
             </div>
           </div>
-          <div className="rounded-2xl border border-[#efe7db] bg-white p-5">
+          <div className="rounded-2xl border border-[#efe7db] bg-white p-5 xl:col-span-3">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">App monitoring</p>
@@ -240,7 +240,7 @@ export default async function AdminHome() {
               </div>
             </div>
           </div>
-          <div className="rounded-2xl border border-[#efe7db] bg-white p-5">
+          <div className="rounded-2xl border border-[#efe7db] bg-white p-5 xl:col-span-3">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Infrastructure monitoring</p>

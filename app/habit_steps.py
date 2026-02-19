@@ -190,8 +190,25 @@ def any_fallback_options(options_by_index: list[list[str]]) -> bool:
     return any(is_fallback_option_set(opts) for opts in options_by_index if opts)
 
 
-def build_sunday_habit_actions(transcript: Optional[str], krs: list[OKRKeyResult], user: User) -> tuple[str, list[list[str]]]:
+def _require_week_no(week_no: int | None) -> int:
+    try:
+        week_i = int(week_no) if week_no is not None else 0
+    except Exception as exc:
+        raise ValueError("week_no is required for habit_steps_generator") from exc
+    if week_i <= 0:
+        raise ValueError("week_no is required for habit_steps_generator")
+    return week_i
+
+
+def build_sunday_habit_actions(
+    transcript: Optional[str],
+    krs: list[OKRKeyResult],
+    user: User,
+    *,
+    week_no: int | None,
+) -> tuple[str, list[list[str]]]:
     transcript = (transcript or "").strip()
+    week_i = _require_week_no(week_no)
     client = getattr(shared_llm, "_llm", None)
     options_by_kr: dict[int, list[str]] = {kr.id: [] for kr in krs}
     llm_text = None
@@ -214,6 +231,7 @@ def build_sunday_habit_actions(transcript: Optional[str], krs: list[OKRKeyResult
                 user_name=(user.first_name or ""),
                 locale=getattr(user, "tz", "UK") or "UK",
                 transcript=transcript,
+                week_no=week_i,
                 krs=prompt_krs or [kr.description for kr in krs],
             )
             txt = run_llm_prompt(
@@ -259,9 +277,15 @@ def build_sunday_habit_actions(transcript: Optional[str], krs: list[OKRKeyResult
     return message, options_by_index
 
 
-def build_weekstart_actions(transcript: Optional[str], krs: list[OKRKeyResult], user: User) -> tuple[str, list[list[str]]]:
+def build_weekstart_actions(
+    transcript: Optional[str],
+    krs: list[OKRKeyResult],
+    user: User,
+    *,
+    week_no: int | None,
+) -> tuple[str, list[list[str]]]:
     # Backward-compatible alias used by existing callers/tests.
-    return build_sunday_habit_actions(transcript, krs, user)
+    return build_sunday_habit_actions(transcript, krs, user, week_no=week_no)
 
 
 def extract_action_lines(summary: str) -> list[str]:
