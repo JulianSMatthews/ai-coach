@@ -516,7 +516,6 @@ def on_startup():
                 _ensure_message_log_schema()
             except Exception as e:
                 print(f"⚠️  Could not ensure message log schema: {e!r}")
-
             # Ensure job queue table exists (non-destructive)
             try:
                 ensure_job_table()

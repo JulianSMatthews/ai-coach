@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from sqlalchemy import (
-    Column, Integer, String, Text, DateTime, Date, Boolean, Float, ForeignKey,
+    Column, Integer, BigInteger, String, Text, DateTime, Date, Boolean, Float, ForeignKey,
     UniqueConstraint, Index, PrimaryKeyConstraint, text
 )
 from sqlalchemy import text as sa_text
@@ -48,9 +48,208 @@ class User(Base):
     consent_given = Column(Boolean, nullable=False, server_default=text("false"))
     consent_at = Column(DateTime, nullable=True)
     first_assessment_completed = Column(DateTime, nullable=True)
+    stripe_customer_id = Column(String(120), nullable=True, unique=True, index=True)
+    billing_provider = Column(String(32), nullable=False, server_default=text("'stripe'"))
+    billing_status = Column(String(32), nullable=True, index=True)
+    billing_enforced_override = Column(Boolean, nullable=True)
 
     sessions   = relationship("AssessSession", back_populates="user", cascade="all, delete-orphan")
     club       =relationship("Club")
+
+
+class BillingPlan(Base):
+    __tablename__ = "billing_plans"
+
+    id = Column(Integer, primary_key=True)
+    code = Column(String(64), nullable=False, unique=True, index=True)
+    name = Column(String(160), nullable=False)
+    description = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, server_default=text("true"))
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class BillingPlanPrice(Base):
+    __tablename__ = "billing_plan_prices"
+
+    id = Column(Integer, primary_key=True)
+    plan_id = Column(Integer, ForeignKey("billing_plans.id", ondelete="CASCADE"), nullable=False, index=True)
+    currency = Column(String(3), nullable=False, index=True)
+    amount_minor = Column(BigInteger, nullable=False)
+    currency_exponent = Column(Integer, nullable=False, server_default=text("2"))
+    interval = Column(String(24), nullable=False)  # month|year|one_time
+    interval_count = Column(Integer, nullable=False, server_default=text("1"))
+    stripe_product_id = Column(String(120), nullable=True, index=True)
+    stripe_price_id = Column(String(120), nullable=True, unique=True, index=True)
+    is_active = Column(Boolean, nullable=False, server_default=text("true"))
+    is_default = Column(Boolean, nullable=False, server_default=text("false"))
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index(
+            "ix_billing_plan_prices_plan_currency_interval",
+            "plan_id",
+            "currency",
+            "interval",
+            "interval_count",
+            "is_active",
+        ),
+    )
+
+
+class BillingCustomer(Base):
+    __tablename__ = "billing_customers"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    stripe_customer_id = Column(String(120), nullable=False, unique=True, index=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class BillingSubscription(Base):
+    __tablename__ = "billing_subscriptions"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    customer_id = Column(Integer, ForeignKey("billing_customers.id", ondelete="SET NULL"), nullable=True, index=True)
+    plan_id = Column(Integer, ForeignKey("billing_plans.id", ondelete="SET NULL"), nullable=True, index=True)
+    price_id = Column(Integer, ForeignKey("billing_plan_prices.id", ondelete="SET NULL"), nullable=True, index=True)
+    provider = Column(String(32), nullable=False, server_default=text("'stripe'"))
+    provider_subscription_id = Column(String(120), nullable=True, unique=True, index=True)
+    status = Column(String(32), nullable=False, index=True)  # beta|trialing|active|past_due|canceled|...
+    provider_status = Column(String(64), nullable=True)
+    starts_at = Column(DateTime, nullable=True)
+    current_period_start = Column(DateTime, nullable=True)
+    current_period_end = Column(DateTime, nullable=True, index=True)
+    cancel_at_period_end = Column(Boolean, nullable=False, server_default=text("false"))
+    cancel_at = Column(DateTime, nullable=True)
+    canceled_at = Column(DateTime, nullable=True)
+    ended_at = Column(DateTime, nullable=True)
+    cancel_reason_code = Column(String(64), nullable=True)
+    cancel_reason_text = Column(Text, nullable=True)
+    meta = Column("metadata", JSONType, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_billing_subscriptions_user_status", "user_id", "status"),
+    )
+
+
+class BillingSubscriptionItem(Base):
+    __tablename__ = "billing_subscription_items"
+
+    id = Column(Integer, primary_key=True)
+    subscription_id = Column(Integer, ForeignKey("billing_subscriptions.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider_item_id = Column(String(120), nullable=False, unique=True, index=True)
+    price_id = Column(Integer, ForeignKey("billing_plan_prices.id", ondelete="SET NULL"), nullable=True, index=True)
+    provider_price_id = Column(String(120), nullable=True, index=True)
+    quantity = Column(Integer, nullable=False, server_default=text("1"))
+    currency = Column(String(3), nullable=True)
+    unit_amount_minor = Column(BigInteger, nullable=True)
+    interval = Column(String(24), nullable=True)  # month|year|one_time
+    interval_count = Column(Integer, nullable=True)
+    status = Column(String(32), nullable=False, server_default=text("'active'"))  # active|deleted
+    current_period_start = Column(DateTime, nullable=True)
+    current_period_end = Column(DateTime, nullable=True)
+    meta = Column("metadata", JSONType, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class BillingInvoice(Base):
+    __tablename__ = "billing_invoices"
+
+    id = Column(Integer, primary_key=True)
+    subscription_id = Column(Integer, ForeignKey("billing_subscriptions.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    provider_invoice_id = Column(String(120), nullable=False, unique=True, index=True)
+    invoice_number = Column(String(120), nullable=True)
+    currency = Column(String(3), nullable=True)
+    subtotal_minor = Column(BigInteger, nullable=True)
+    tax_minor = Column(BigInteger, nullable=True)
+    total_minor = Column(BigInteger, nullable=True)
+    amount_paid_minor = Column(BigInteger, nullable=True)
+    amount_due_minor = Column(BigInteger, nullable=True)
+    status = Column(String(32), nullable=True, index=True)  # draft|open|paid|uncollectible|void
+    period_start = Column(DateTime, nullable=True)
+    period_end = Column(DateTime, nullable=True)
+    due_at = Column(DateTime, nullable=True)
+    paid_at = Column(DateTime, nullable=True)
+    failed_at = Column(DateTime, nullable=True)
+    failure_reason = Column(Text, nullable=True)
+    hosted_invoice_url = Column(Text, nullable=True)
+    invoice_pdf_url = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_billing_invoices_user_status", "user_id", "status"),
+    )
+
+
+class BillingTransaction(Base):
+    __tablename__ = "billing_transactions"
+
+    id = Column(Integer, primary_key=True)
+    invoice_id = Column(Integer, ForeignKey("billing_invoices.id", ondelete="SET NULL"), nullable=True, index=True)
+    subscription_id = Column(Integer, ForeignKey("billing_subscriptions.id", ondelete="SET NULL"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    type = Column(String(32), nullable=False)  # payment|refund|chargeback|adjustment
+    status = Column(String(32), nullable=False)  # pending|succeeded|failed
+    currency = Column(String(3), nullable=True)
+    amount_minor = Column(BigInteger, nullable=False)
+    provider_payment_intent_id = Column(String(120), nullable=True, index=True)
+    provider_charge_id = Column(String(120), nullable=True, index=True)
+    provider_balance_txn_id = Column(String(120), nullable=True, index=True)
+    provider_refund_id = Column(String(120), nullable=True, index=True)
+    occurred_at = Column(DateTime, nullable=False, server_default=func.now(), index=True)
+    failure_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class BillingWebhookEvent(Base):
+    __tablename__ = "billing_webhook_events"
+
+    id = Column(Integer, primary_key=True)
+    provider = Column(String(32), nullable=False, server_default=text("'stripe'"))
+    provider_event_id = Column(String(160), nullable=False, unique=True, index=True)
+    event_type = Column(String(120), nullable=False, index=True)
+    livemode = Column(Boolean, nullable=False, server_default=text("false"))
+    payload = Column(JSONType, nullable=True)
+    status = Column(String(32), nullable=False, server_default=text("'pending'"), index=True)  # pending|processed|ignored|error
+    processed_at = Column(DateTime, nullable=True)
+    error_message = Column(Text, nullable=True)
+    retry_count = Column(Integer, nullable=False, server_default=text("0"))
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_billing_webhook_events_status_created_at", "status", "created_at"),
+    )
+
+
+class UserEntitlement(Base):
+    __tablename__ = "user_entitlements"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    subscription_id = Column(Integer, ForeignKey("billing_subscriptions.id", ondelete="SET NULL"), nullable=True, index=True)
+    entitlement_key = Column(String(120), nullable=False, index=True)  # access:all | feature:coaching
+    source = Column(String(32), nullable=False, index=True)  # subscription|beta|admin|promo
+    starts_at = Column(DateTime, nullable=False, server_default=func.now())
+    ends_at = Column(DateTime, nullable=True, index=True)
+    is_active = Column(Boolean, nullable=False, server_default=text("true"), index=True)
+    meta = Column("metadata", JSONType, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_user_entitlements_user_active_end", "user_id", "is_active", "ends_at"),
+    )
 
 
 class AuthOtp(Base):
