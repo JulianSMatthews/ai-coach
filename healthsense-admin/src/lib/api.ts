@@ -775,6 +775,43 @@ export type IntroLibrarySettings = {
   updated_at?: string | null;
 };
 
+export type BillingPlanPrice = {
+  id: number;
+  plan_id: number;
+  currency?: string | null;
+  amount_minor?: number | null;
+  currency_exponent?: number | null;
+  interval?: string | null;
+  interval_count?: number | null;
+  stripe_product_id?: string | null;
+  stripe_price_id?: string | null;
+  is_active?: boolean | null;
+  is_default?: boolean | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type BillingPlan = {
+  id: number;
+  code?: string | null;
+  name?: string | null;
+  description?: string | null;
+  is_active?: boolean | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+  prices?: BillingPlanPrice[];
+};
+
+export type BillingCatalogPayload = {
+  plans?: BillingPlan[];
+  stripe?: {
+    configured?: boolean;
+    mode?: string | null;
+    api_base?: string | null;
+    publishable_key_configured?: boolean;
+  };
+};
+
 export type AdminUserSummary = {
   id: number;
   first_name?: string | null;
@@ -963,6 +1000,65 @@ export async function updateUsageSettings(payload: UsageSettings): Promise<Usage
 export async function fetchUsageSettings(): Promise<UsageSettings> {
   return apiAdmin<UsageSettings>("/admin/usage/settings/fetch", {
     method: "POST",
+  });
+}
+
+export async function getBillingCatalog(): Promise<BillingCatalogPayload> {
+  return apiAdmin<BillingCatalogPayload>("/admin/billing/plans");
+}
+
+export async function upsertBillingPlan(payload: {
+  id?: number;
+  code: string;
+  name: string;
+  description?: string | null;
+  is_active?: boolean;
+}): Promise<BillingPlan> {
+  return apiAdmin<BillingPlan>("/admin/billing/plans", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function upsertBillingPlanPrice(
+  planId: number,
+  payload: {
+    id?: number;
+    currency: string;
+    amount_minor: number;
+    currency_exponent?: number;
+    interval: string;
+    interval_count?: number;
+    stripe_product_id?: string | null;
+    stripe_price_id?: string | null;
+    is_active?: boolean;
+    is_default?: boolean;
+  },
+): Promise<BillingPlanPrice> {
+  return apiAdmin<BillingPlanPrice>(`/admin/billing/plans/${planId}/prices`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function syncBillingToStripe(payload?: {
+  price_ids?: number[];
+  force_new_prices?: boolean;
+  only_active?: boolean;
+}): Promise<{
+  ok?: boolean;
+  stripe_mode?: string | null;
+  api_base?: string | null;
+  synced_count?: number;
+  error_count?: number;
+  results?: Array<Record<string, unknown>>;
+}> {
+  return apiAdmin("/admin/billing/sync/stripe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload || {}),
   });
 }
 

@@ -91,6 +91,8 @@ from .models import (
     PsychProfile,
     CheckIn,
     PreferenceInferenceAudit,
+    BillingPlan,
+    BillingPlanPrice,
 )  # ensure model registered for metadata
 from . import monday, wednesday, thursday, friday, saturday, weekflow, tuesday, sunday, kickoff, admin_routes, general_support
 from . import psych
@@ -6721,6 +6723,436 @@ def admin_usage_settings(admin_user: User = Depends(_require_admin)):
 @admin.post("/usage/settings")
 def admin_usage_settings_update(payload: dict, admin_user: User = Depends(_require_admin)):
     return save_usage_settings(payload)
+
+
+def _parse_bool(raw, default: bool = False) -> bool:
+    if raw is None:
+        return default
+    if isinstance(raw, bool):
+        return raw
+    token = str(raw).strip().lower()
+    if token in {"1", "true", "yes", "on"}:
+        return True
+    if token in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _stripe_secret_key() -> str:
+    key = (os.getenv("STRIPE_SECRET_KEY") or os.getenv("STRIPE_API_KEY") or "").strip()
+    if not key:
+        raise HTTPException(
+            status_code=400,
+            detail="Stripe API key missing. Set STRIPE_SECRET_KEY (or STRIPE_API_KEY).",
+        )
+    return key
+
+
+def _stripe_api_base() -> str:
+    return (os.getenv("STRIPE_API_BASE") or "https://api.stripe.com/v1").strip().rstrip("/")
+
+
+def _stripe_mode_from_key(secret_key: str | None) -> str:
+    key = str(secret_key or "").strip().lower()
+    if key.startswith("sk_live_"):
+        return "live"
+    if key.startswith("sk_test_"):
+        return "test"
+    return "unknown"
+
+
+def _stripe_form_request(path: str, form: dict[str, object]) -> dict:
+    secret = _stripe_secret_key()
+    base = _stripe_api_base()
+    flat_form: dict[str, str] = {}
+    for key, value in (form or {}).items():
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            flat_form[key] = "true" if value else "false"
+        else:
+            flat_form[key] = str(value)
+    body = urlencode(flat_form).encode("utf-8")
+    req = urllib.request.Request(
+        f"{base}{path}",
+        data=body,
+        method="POST",
+        headers={
+            "Authorization": f"Bearer {secret}",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read().decode("utf-8")
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as e:
+        raw = ""
+        try:
+            raw = e.read().decode("utf-8")
+        except Exception:
+            raw = ""
+        try:
+            payload = json.loads(raw) if raw else {}
+        except Exception:
+            payload = {}
+        err = payload.get("error") if isinstance(payload, dict) else None
+        msg = (
+            (err.get("message") if isinstance(err, dict) else None)
+            or raw
+            or str(e.reason or "")
+            or "Stripe API error"
+        )
+        raise RuntimeError(f"Stripe API {e.code}: {msg}") from e
+    except Exception as e:
+        raise RuntimeError(f"Stripe request failed: {e}") from e
+
+
+def _stripe_lookup_key(plan_code: str, price_row: BillingPlanPrice) -> str:
+    safe_code = re.sub(r"[^a-z0-9_-]+", "-", str(plan_code or "").strip().lower()).strip("-") or "plan"
+    currency = str(getattr(price_row, "currency", "") or "").strip().lower() or "gbp"
+    interval = str(getattr(price_row, "interval", "") or "month").strip().lower() or "month"
+    interval_count = int(getattr(price_row, "interval_count", 1) or 1)
+    return f"hs_{safe_code}_{interval}{interval_count}_{currency}"
+
+
+def _sync_price_to_stripe(plan_row: BillingPlan, price_row: BillingPlanPrice, *, force_new_price: bool = False) -> dict:
+    plan_code = str(getattr(plan_row, "code", "") or "").strip()
+    if not plan_code:
+        raise RuntimeError("Plan code is required before Stripe sync.")
+    plan_name = str(getattr(plan_row, "name", "") or "").strip() or plan_code
+    price_active = bool(getattr(price_row, "is_active", True)) and bool(getattr(plan_row, "is_active", True))
+    metadata = {
+        "metadata[hs_plan_code]": plan_code,
+        "metadata[hs_plan_id]": int(getattr(plan_row, "id")),
+        "metadata[hs_price_id]": int(getattr(price_row, "id")),
+    }
+
+    product_id = str(getattr(price_row, "stripe_product_id", "") or "").strip()
+    if product_id:
+        try:
+            _stripe_form_request(
+                f"/products/{product_id}",
+                {
+                    "name": plan_name,
+                    "description": (getattr(plan_row, "description", None) or ""),
+                    "active": price_active,
+                    **metadata,
+                },
+            )
+        except Exception:
+            product_id = ""
+    if not product_id:
+        product_obj = _stripe_form_request(
+            "/products",
+            {
+                "name": plan_name,
+                "description": (getattr(plan_row, "description", None) or ""),
+                "active": price_active,
+                **metadata,
+            },
+        )
+        product_id = str(product_obj.get("id") or "").strip()
+        if not product_id:
+            raise RuntimeError("Stripe product create returned no id.")
+
+    price_id = str(getattr(price_row, "stripe_price_id", "") or "").strip()
+    created_new_price = False
+    if price_id and not force_new_price:
+        _stripe_form_request(
+            f"/prices/{price_id}",
+            {
+                "active": price_active,
+                **metadata,
+            },
+        )
+    else:
+        currency = str(getattr(price_row, "currency", "") or "").strip().lower() or "gbp"
+        interval = str(getattr(price_row, "interval", "") or "month").strip().lower() or "month"
+        interval_count = int(getattr(price_row, "interval_count", 1) or 1)
+        amount_minor = int(getattr(price_row, "amount_minor", 0) or 0)
+        form = {
+            "currency": currency,
+            "unit_amount": amount_minor,
+            "product": product_id,
+            "active": price_active,
+            "lookup_key": _stripe_lookup_key(plan_code, price_row),
+            **metadata,
+        }
+        if interval != "one_time":
+            form["recurring[interval]"] = interval
+            form["recurring[interval_count]"] = interval_count
+        price_obj = _stripe_form_request("/prices", form)
+        price_id = str(price_obj.get("id") or "").strip()
+        if not price_id:
+            raise RuntimeError("Stripe price create returned no id.")
+        created_new_price = True
+
+    return {
+        "stripe_product_id": product_id,
+        "stripe_price_id": price_id,
+        "price_created": created_new_price,
+        "price_updated": not created_new_price,
+    }
+
+
+def _billing_price_payload(row: BillingPlanPrice) -> dict:
+    return {
+        "id": int(row.id),
+        "plan_id": int(row.plan_id),
+        "currency": row.currency,
+        "amount_minor": row.amount_minor,
+        "currency_exponent": row.currency_exponent,
+        "interval": row.interval,
+        "interval_count": row.interval_count,
+        "stripe_product_id": row.stripe_product_id,
+        "stripe_price_id": row.stripe_price_id,
+        "is_active": bool(row.is_active),
+        "is_default": bool(row.is_default),
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
+def _billing_plan_payload(row: BillingPlan, prices: list[BillingPlanPrice]) -> dict:
+    return {
+        "id": int(row.id),
+        "code": row.code,
+        "name": row.name,
+        "description": row.description,
+        "is_active": bool(row.is_active),
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+        "prices": [_billing_price_payload(price) for price in prices],
+    }
+
+
+@admin.get("/billing/plans")
+def admin_billing_plans(admin_user: User = Depends(_require_admin)):
+    with SessionLocal() as s:
+        plans = s.query(BillingPlan).order_by(BillingPlan.is_active.desc(), BillingPlan.code.asc()).all()
+        plan_ids = [int(p.id) for p in plans]
+        prices_by_plan: dict[int, list[BillingPlanPrice]] = {}
+        if plan_ids:
+            prices = (
+                s.query(BillingPlanPrice)
+                .filter(BillingPlanPrice.plan_id.in_(plan_ids))
+                .order_by(
+                    BillingPlanPrice.plan_id.asc(),
+                    BillingPlanPrice.is_active.desc(),
+                    BillingPlanPrice.currency.asc(),
+                    BillingPlanPrice.interval.asc(),
+                    BillingPlanPrice.interval_count.asc(),
+                    BillingPlanPrice.id.asc(),
+                )
+                .all()
+            )
+            for price in prices:
+                prices_by_plan.setdefault(int(price.plan_id), []).append(price)
+    secret = (os.getenv("STRIPE_SECRET_KEY") or os.getenv("STRIPE_API_KEY") or "").strip()
+    return {
+        "plans": [_billing_plan_payload(plan, prices_by_plan.get(int(plan.id), [])) for plan in plans],
+        "stripe": {
+            "configured": bool(secret),
+            "mode": _stripe_mode_from_key(secret),
+            "api_base": _stripe_api_base(),
+            "publishable_key_configured": bool((os.getenv("STRIPE_PUBLISHABLE_KEY") or "").strip()),
+        },
+    }
+
+
+@admin.post("/billing/plans")
+def admin_upsert_billing_plan(payload: dict, admin_user: User = Depends(_require_admin)):
+    plan_id_raw = payload.get("id")
+    plan_id = None
+    if plan_id_raw not in (None, "", 0):
+        try:
+            plan_id = int(plan_id_raw)
+        except Exception:
+            raise HTTPException(status_code=400, detail="invalid plan id")
+    code = re.sub(r"[^a-z0-9_-]+", "-", str(payload.get("code") or "").strip().lower()).strip("-")
+    name = str(payload.get("name") or "").strip()
+    description = str(payload.get("description") or "").strip() or None
+    is_active = _parse_bool(payload.get("is_active"), True)
+    if not code:
+        raise HTTPException(status_code=400, detail="plan code is required")
+    if not name:
+        raise HTTPException(status_code=400, detail="plan name is required")
+
+    with SessionLocal() as s:
+        row = s.get(BillingPlan, plan_id) if plan_id else None
+        if not row:
+            row = s.query(BillingPlan).filter(BillingPlan.code == code).one_or_none()
+        if not row:
+            row = BillingPlan(code=code, name=name, description=description, is_active=is_active)
+            s.add(row)
+        else:
+            row.code = code
+            row.name = name
+            row.description = description
+            row.is_active = is_active
+            s.add(row)
+        s.commit()
+        s.refresh(row)
+        prices = (
+            s.query(BillingPlanPrice)
+            .filter(BillingPlanPrice.plan_id == row.id)
+            .order_by(
+                BillingPlanPrice.is_active.desc(),
+                BillingPlanPrice.currency.asc(),
+                BillingPlanPrice.interval.asc(),
+                BillingPlanPrice.interval_count.asc(),
+                BillingPlanPrice.id.asc(),
+            )
+            .all()
+        )
+        return _billing_plan_payload(row, prices)
+
+
+@admin.post("/billing/plans/{plan_id}/prices")
+def admin_upsert_billing_plan_price(plan_id: int, payload: dict, admin_user: User = Depends(_require_admin)):
+    price_id_raw = payload.get("id")
+    price_id = None
+    if price_id_raw not in (None, "", 0):
+        try:
+            price_id = int(price_id_raw)
+        except Exception:
+            raise HTTPException(status_code=400, detail="invalid price id")
+
+    currency = str(payload.get("currency") or "").strip().lower()
+    interval = str(payload.get("interval") or "").strip().lower()
+    stripe_product_id = str(payload.get("stripe_product_id") or "").strip() or None
+    stripe_price_id = str(payload.get("stripe_price_id") or "").strip() or None
+    is_active = _parse_bool(payload.get("is_active"), True)
+    is_default = _parse_bool(payload.get("is_default"), False)
+
+    amount_minor_raw = payload.get("amount_minor")
+    interval_count_raw = payload.get("interval_count")
+    currency_exponent_raw = payload.get("currency_exponent")
+    if not currency or len(currency) != 3:
+        raise HTTPException(status_code=400, detail="currency must be 3-letter ISO code")
+    if interval not in {"month", "year", "one_time"}:
+        raise HTTPException(status_code=400, detail="interval must be month|year|one_time")
+    try:
+        amount_minor = int(amount_minor_raw)
+    except Exception:
+        raise HTTPException(status_code=400, detail="amount_minor must be an integer")
+    if amount_minor < 0:
+        raise HTTPException(status_code=400, detail="amount_minor must be >= 0")
+    try:
+        interval_count = int(interval_count_raw or 1)
+    except Exception:
+        raise HTTPException(status_code=400, detail="interval_count must be an integer")
+    if interval_count < 1:
+        raise HTTPException(status_code=400, detail="interval_count must be >= 1")
+    try:
+        currency_exponent = int(currency_exponent_raw or 2)
+    except Exception:
+        raise HTTPException(status_code=400, detail="currency_exponent must be an integer")
+    if currency_exponent < 0 or currency_exponent > 4:
+        raise HTTPException(status_code=400, detail="currency_exponent must be between 0 and 4")
+
+    with SessionLocal() as s:
+        plan = s.get(BillingPlan, plan_id)
+        if not plan:
+            raise HTTPException(status_code=404, detail="plan not found")
+        row = s.get(BillingPlanPrice, price_id) if price_id else None
+        if row and int(row.plan_id) != int(plan_id):
+            raise HTTPException(status_code=400, detail="price does not belong to plan")
+        if not row:
+            row = BillingPlanPrice(plan_id=plan_id)
+            s.add(row)
+        row.currency = currency
+        row.amount_minor = amount_minor
+        row.currency_exponent = currency_exponent
+        row.interval = interval
+        row.interval_count = interval_count
+        row.is_active = is_active
+        row.is_default = is_default
+        row.stripe_product_id = stripe_product_id
+        row.stripe_price_id = stripe_price_id
+        s.add(row)
+        s.flush()
+
+        if is_default:
+            s.query(BillingPlanPrice).filter(
+                BillingPlanPrice.plan_id == plan_id,
+                BillingPlanPrice.id != row.id,
+                BillingPlanPrice.is_default == True,
+            ).update({"is_default": False}, synchronize_session=False)
+        s.commit()
+        s.refresh(row)
+        return _billing_price_payload(row)
+
+
+@admin.post("/billing/sync/stripe")
+def admin_sync_billing_to_stripe(payload: dict | None = None, admin_user: User = Depends(_require_admin)):
+    payload = payload or {}
+    force_new = _parse_bool(payload.get("force_new_prices"), False)
+    only_active = _parse_bool(payload.get("only_active"), True)
+    price_ids_raw = payload.get("price_ids") or []
+    price_ids: list[int] = []
+    if isinstance(price_ids_raw, list):
+        for raw in price_ids_raw:
+            try:
+                v = int(raw)
+            except Exception:
+                continue
+            if v > 0:
+                price_ids.append(v)
+
+    secret = _stripe_secret_key()
+    mode = _stripe_mode_from_key(secret)
+    results: list[dict] = []
+    with SessionLocal() as s:
+        query = (
+            s.query(BillingPlanPrice, BillingPlan)
+            .join(BillingPlan, BillingPlanPrice.plan_id == BillingPlan.id)
+        )
+        if price_ids:
+            query = query.filter(BillingPlanPrice.id.in_(price_ids))
+        if only_active:
+            query = query.filter(BillingPlanPrice.is_active == True, BillingPlan.is_active == True)
+        rows = query.order_by(BillingPlan.code.asc(), BillingPlanPrice.id.asc()).all()
+        for price_row, plan_row in rows:
+            row_result = {
+                "plan_id": int(plan_row.id),
+                "plan_code": plan_row.code,
+                "price_id": int(price_row.id),
+                "currency": price_row.currency,
+                "interval": price_row.interval,
+                "interval_count": price_row.interval_count,
+            }
+            try:
+                sync_meta = _sync_price_to_stripe(plan_row, price_row, force_new_price=force_new)
+                price_row.stripe_product_id = sync_meta.get("stripe_product_id")
+                price_row.stripe_price_id = sync_meta.get("stripe_price_id")
+                s.add(price_row)
+                s.commit()
+                row_result.update(
+                    {
+                        "status": "synced",
+                        "stripe_product_id": price_row.stripe_product_id,
+                        "stripe_price_id": price_row.stripe_price_id,
+                        "price_created": bool(sync_meta.get("price_created")),
+                        "price_updated": bool(sync_meta.get("price_updated")),
+                    }
+                )
+            except Exception as e:
+                s.rollback()
+                row_result.update({"status": "error", "error": str(e)})
+            results.append(row_result)
+
+    synced_count = sum(1 for item in results if item.get("status") == "synced")
+    error_count = sum(1 for item in results if item.get("status") == "error")
+    return {
+        "ok": error_count == 0,
+        "stripe_mode": mode,
+        "api_base": _stripe_api_base(),
+        "synced_count": synced_count,
+        "error_count": error_count,
+        "results": results,
+    }
 
 
 def _meta_to_dict(value):

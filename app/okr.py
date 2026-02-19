@@ -1025,9 +1025,16 @@ def make_structured_okr_llm(
                     "concept_key": None,
                 })
             elif isinstance(kr, dict):
+                desc_raw = (
+                    kr.get("description")
+                    or kr.get("text")
+                    or kr.get("label")
+                    or kr.get("name")
+                )
+                desc_val = str(desc_raw).strip() if desc_raw is not None else ""
                 normalized_krs.append({
                     "kr_key": (kr.get("kr_key") or f"KR{i+1}"),
-                    "description": (kr.get("description") or "").strip(),
+                    "description": desc_val,
                     "metric_label": kr.get("metric_label"),
                     "unit": kr.get("unit"),
                     "baseline_num": kr.get("baseline_num"),

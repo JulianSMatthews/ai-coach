@@ -21,6 +21,7 @@ export default function AdminNav({ title = "Admin", subtitle }: AdminNavProps) {
           { href: "/admin/users", label: "Users" },
           { href: "/admin/messaging", label: "Messaging" },
           { href: "/admin/reporting", label: "Reporting" },
+          { href: "/admin/billing", label: "Billing" },
           { href: "/admin/prompts/templates", label: "Prompts" },
           { href: "/admin/history", label: "History" },
           { href: "/admin/library", label: "Library" },
