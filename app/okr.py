@@ -384,6 +384,13 @@ def _guess_concept_from_description(pillar_slug: str, desc: str) -> str | None:
             return "sleep_quality"
         if "sleep" in raw and ("hour" in raw or "hours" in raw):
             return "sleep_duration"
+    if pillar_slug == "training":
+        if any(phrase in raw for phrase in ("mobility", "flexibility", "stretch", "yoga")):
+            return "flexibility_mobility"
+        if any(phrase in raw for phrase in ("strength", "weights", "resistance band", "resistance bands", "bodyweight")):
+            return "strength_training"
+        if any(phrase in raw for phrase in ("cardio", "running", "cycling", "swimming")):
+            return "cardio_frequency"
     text = _normalize_phrase(desc)
     for key, meta in (_GUIDE.get(pillar_slug, {}) or {}).items():
         label = _normalize_phrase(meta.get("label"))
@@ -599,7 +606,10 @@ def _enrich_kr_defaults(pillar_slug: str, kr: dict, concept_scores: dict[str, fl
 
     if target_val is None:
         picked = _pick_target_from_numbers(unit_nums, baseline_val, direction)
-        if picked is None:
+        # Only fall back to any-number parsing when we found no unit-aligned
+        # candidates at all. This prevents duration values (e.g. "10 minutes")
+        # from being used as the weekly target for unit-based KRs.
+        if picked is None and not unit_nums:
             picked = _pick_target_from_numbers(numbers, baseline_val, direction)
         if picked is not None:
             kr["target_num"] = picked
