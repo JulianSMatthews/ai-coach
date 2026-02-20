@@ -2722,7 +2722,8 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     and getattr(sess, "id", None)
                 )
 
-                if can_queue_okr_sync and should_use_worker():
+                if can_queue_okr_sync:
+                    # assessment_okr_structured is worker-only: always enqueue pillar sync.
                     # Commit PillarResult before queueing so the worker can read it immediately.
                     try:
                         s.commit()
@@ -2749,34 +2750,16 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                         )
                     except Exception as _okr_q_e:
                         print(
-                            f"[okr] WARN: queue pillar_okr_sync failed run_id={state.get('run_id')} "
-                            f"pillar={pillar} user_id={user.id}: {_okr_q_e}"
+                            f"[okr] ERROR: queue pillar_okr_sync failed (worker-only path) "
+                            f"run_id={state.get('run_id')} pillar={pillar} user_id={user.id}: {_okr_q_e}"
                         )
-                        # Fallback to inline sync if queueing fails.
-                        _sync_okrs_after_pillar(
-                            db=s,
-                            user=user,
-                            assess_session=sess,
-                            pillar_result=pr,
-                            concept_score_map=filled_scores,
-                        )
-                        try:
-                            s.commit()
-                        except Exception:
-                            s.rollback()
-                elif pr is not None:
-                    # Worker disabled: keep current inline behavior.
-                    _sync_okrs_after_pillar(
-                        db=s,
-                        user=user,
-                        assess_session=sess,
-                        pillar_result=pr,
-                        concept_score_map=filled_scores,
+                else:
+                    print(
+                        f"[okr] WARN: skip pillar_okr_sync enqueue (missing lineage) "
+                        f"run_id={state.get('run_id')} pillar={pillar} user_id={user.id} "
+                        f"pr_id={getattr(pr, 'id', None) if pr is not None else None} "
+                        f"sess_id={getattr(sess, 'id', None)}"
                     )
-                    try:
-                        s.commit()
-                    except Exception:
-                        s.rollback()
             except Exception as _okr_e:
                 print(f"[okr] WARN: OKR sync failed for run_id={state.get('run_id')} pillar={pillar}: {_okr_e}")
             # ─────────────────────────────────────────────────────────────────────────────
