@@ -1254,6 +1254,7 @@ def _force_finish(pillar: str, concept_code: str, payload: dict, extra_rules: st
     """
     FORCE_SYSTEM = (
         "You already have enough to score this concept.\n"
+        "Evaluate the latest user reply against the latest main question.\n"
         "The user's reply contains a NUMBER and the main question supplied the timeframe (e.g., last 7 days).\n"
         "Return JSON for FINISH with: {\"action\":\"finish\",\"question\":\"\",\"level\":\"Low|Moderate|High\",\"confidence\":<float 0.0–1.0>,\"rationale\":\"\",\"scores\":{}}.\n"
         "Set confidence 0.80–0.95 in this force-finish case (numeric + explicit timeframe). Do NOT copy example values; set confidence per this rule.\n"
@@ -1265,10 +1266,12 @@ def _force_finish(pillar: str, concept_code: str, payload: dict, extra_rules: st
             with SessionLocal() as ss:
                 ss.add(JobAudit(job_name="force_finish_request", status="ok",
                                 payload={"pillar": pillar, "concept": concept_code,
-                                        "hist_len": len(payload.get("history", [])),
-                                        "retrieval_len": len(payload.get("retrieval", [])),
-                                        "has_range_guide": bool(extra_rules),
-                                        "range_bounds": list(bounds) if bounds else None}))
+                                         "hist_len": len(payload.get("history", [])),
+                                         "retrieval_len": len(payload.get("retrieval", [])),
+                                         "has_last_main_question": bool((payload.get("last_main_question") or "").strip()),
+                                         "has_last_user_reply": bool((payload.get("last_user_reply") or "").strip()),
+                                         "has_range_guide": bool(extra_rules),
+                                         "range_bounds": list(bounds) if bounds else None}))
                 ss.commit()
         except Exception:
             pass
@@ -1278,6 +1281,8 @@ def _force_finish(pillar: str, concept_code: str, payload: dict, extra_rules: st
             {"role": "user", "content": json.dumps({
                 "pillar": pillar,
                 "concept": concept_code,
+                "last_main_question": payload.get("last_main_question", ""),
+                "last_user_reply": payload.get("last_user_reply", ""),
                 "history": payload.get("history", []),
                 "retrieval": payload.get("retrieval", []),
                 "extra_rules": (extra_rules or "")      
@@ -1972,6 +1977,8 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         # Send prior history only when this reply likely needs clarification.
         history_for_llm = dialogue[-6:] if not sufficient_for_scoring else []
         payload = {
+            "last_main_question": last_q,
+            "last_user_reply": msg,
             "history": history_for_llm,
             "already_asked": already_asked,
             "turns_so_far": sum(1 for t in turns if t.get("pillar") == pillar and t.get("role") == "user"),
@@ -2047,8 +2054,11 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
 
         _user_msg = (
             "Continue this concept.\n"
+            "Primary task: evaluate payload.last_user_reply against payload.last_main_question.\n"
             f"Payload (JSON): {json.dumps(payload, ensure_ascii=False)}\n"
             "Rules:\n"
+            "- Use payload.last_main_question and payload.last_user_reply as the primary evidence for scoring.\n"
+            "- If these two fields are clear enough, finish with a score and do not ask a clarifier.\n"
             "- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.\n"
             "- Clarifiers do NOT count toward the 5-per-pillar main questions.\n"
             "- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.\n"
