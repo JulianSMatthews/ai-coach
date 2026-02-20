@@ -270,7 +270,7 @@ def llm_review(user_id: int, limit: int = 100):
                 """
                 SELECT id, created_at, touchpoint, model, duration_ms, prompt_variant, task_label,
                        block_order, system_block, locale_block, okr_block, okr_scope, scores_block, habit_block,
-                       task_block, template_state, template_version, user_block, extra_blocks, assembled_prompt,
+                       task_block, template_state, template_version, user_block, extra_blocks, payload_truncated, sent_payload, assembled_prompt,
                        response_preview, context_meta
                 FROM llm_prompt_logs_view
                 WHERE user_id = :u
@@ -313,6 +313,8 @@ def llm_review(user_id: int, limit: int = 100):
             f"<td>{_esc(getattr(r,'duration_ms','') or '')}</td>"
             f"<td>{_pre(r.user_block)}</td>"
             f"<td>{_pre(r.extra_blocks)}</td>"
+            f"<td>{_esc(getattr(r,'payload_truncated','') or '')}</td>"
+            f"<td>{_pre(r.sent_payload)}</td>"
             f"<td>{_pre(r.assembled_prompt)}</td>"
             f"<td>{_pre(r.response_preview)}</td>"
             f"<td>{_pre(r.context_meta)}</td>"
@@ -328,7 +330,7 @@ def llm_review(user_id: int, limit: int = 100):
         "<th>ID</th><th>Timestamp</th><th>Touchpoint</th><th>Model</th><th>Duration (ms)</th>"
         "<th>Variant</th><th>Task</th><th>Block Order</th>"
         "<th>System</th><th>Locale</th><th>OKR</th><th>OKR Scope</th><th>Scores</th><th>Habit</th><th>Task Block</th><th>State</th><th>Version</th><th>Duration (ms)</th><th>User</th>"
-        "<th>Extras</th><th>Assembled Prompt</th><th>Response Preview</th><th>Context Meta</th>"
+        "<th>Extras</th><th>Payload Trimmed</th><th>Sent Payload</th><th>Assembled Prompt</th><th>Response Preview</th><th>Context Meta</th>"
         "</tr>"
         + "".join(row_html)
         + "</table>"

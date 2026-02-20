@@ -346,6 +346,8 @@ class LLMPromptLog(Base):
     user_block       = Column(Text, nullable=True)
     extra_blocks     = Column(JSONType, nullable=True)   # map of other labeled blocks
     block_order      = Column(JSONType, nullable=True)   # ordered list of labels used in assembly
+    sent_payload     = Column(Text, nullable=True)       # exact payload sent to LLM (for direct review)
+    payload_truncated = Column(Boolean, nullable=True)   # true when DB-timeout fallback trimmed payload
     prompt_text      = Column(Text, nullable=False)      # final assembled prompt (legacy name)
     assembled_prompt = Column(Text, nullable=True)       # duplicate field for clarity / future rename
     response_preview = Column(Text, nullable=True)

@@ -43,6 +43,7 @@ from .models import (
     UserPreference,
 )
 from .prompts import log_llm_prompt, _coerce_llm_content
+from .debug_utils import debug_log
 
 # Messaging + LLM
 from .nudges import send_message
@@ -2072,14 +2073,47 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         except Exception:
             pass
         llm_duration_ms = None
+        request_messages = [
+            {"role": "system", "content": _system_msg},
+            {"role": "user", "content": _user_msg},
+        ]
+        debug_log(
+            "assessor_llm_request_exact",
+            {
+                "touchpoint": "assessor_system",
+                "pillar": pillar,
+                "concept": concept_code,
+                "messages": request_messages,
+            },
+            tag="assessor",
+        )
         try:
+            _llm_started_wall = datetime.utcnow()
             _llm_started_at = time.perf_counter()
-            _resp = _llm.invoke([
-                {"role": "system", "content": _system_msg},
-                {"role": "user", "content": _user_msg},
-            ])
+            _resp = _llm.invoke(request_messages)
             llm_duration_ms = int((time.perf_counter() - _llm_started_at) * 1000)
+            _llm_finished_wall = datetime.utcnow()
             raw = _coerce_llm_content(getattr(_resp, "content", None))
+            resp_meta = getattr(_resp, "response_metadata", None)
+            usage_meta = getattr(_resp, "usage_metadata", None)
+            provider_request_id = None
+            if isinstance(resp_meta, dict):
+                provider_request_id = (
+                    resp_meta.get("request_id")
+                    or resp_meta.get("id")
+                    or (resp_meta.get("response") or {}).get("id")
+                )
+            debug_log(
+                "assessor_llm_response_exact",
+                {
+                    "touchpoint": "assessor_system",
+                    "pillar": pillar,
+                    "concept": concept_code,
+                    "duration_ms": llm_duration_ms,
+                    "response_text": raw,
+                },
+                tag="assessor",
+            )
             try:
                 log_llm_prompt(
                     user_id=state.get("user_id") or (user.id if user else None),
@@ -2087,11 +2121,16 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     prompt_text=_system_msg + "\n\n" + _user_msg,
                     model=getattr(_resp, "model", None),
                     duration_ms=llm_duration_ms,
-                    response_preview=raw[:200] if raw else None,
+                    response_preview=raw or None,
                     context_meta={
                         "pillar": pillar,
                         "concept": concept_code,
                         "has_range": bool(range_rule_text),
+                        "provider_request_id": provider_request_id,
+                        "response_metadata": resp_meta if isinstance(resp_meta, dict) else None,
+                        "usage_metadata": usage_meta if isinstance(usage_meta, dict) else None,
+                        "llm_started_at_utc": _llm_started_wall.isoformat() + "Z",
+                        "llm_finished_at_utc": _llm_finished_wall.isoformat() + "Z",
                     },
                     prompt_variant="assessor_system",
                     task_label="assessor_system",
@@ -2122,6 +2161,19 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     llm_duration_ms = None
             raw = ""
             tb = traceback.format_exc(limit=2)
+            debug_log(
+                "assessor_llm_exception_exact",
+                {
+                    "touchpoint": "assessor_system",
+                    "pillar": pillar,
+                    "concept": concept_code,
+                    "duration_ms": llm_duration_ms,
+                    "error": repr(e),
+                    "traceback": tb,
+                    "messages": request_messages,
+                },
+                tag="assessor",
+            )
             try:
                 with SessionLocal() as ss:
                     ss.add(JobAudit(job_name="assessor_llm_exception", status="error",

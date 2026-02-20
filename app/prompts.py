@@ -724,6 +724,8 @@ def _ensure_llm_prompt_log_schema() -> None:
                     if is_pg
                     else "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS block_order text;"
                 ),
+                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS sent_payload text;",
+                "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS payload_truncated boolean;",
                 "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS assembled_prompt text;",
                 "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS template_state varchar(32);",
                 "ALTER TABLE llm_prompt_logs ADD COLUMN IF NOT EXISTS template_version integer;",
@@ -768,6 +770,8 @@ def _ensure_llm_prompt_log_schema() -> None:
                         l.template_version,
                         l.user_block,
                         l.extra_blocks,
+                        COALESCE(l.payload_truncated, FALSE) AS payload_truncated,
+                        COALESCE(l.sent_payload, l.assembled_prompt, l.prompt_text) AS sent_payload,
                         COALESCE(l.assembled_prompt, l.prompt_text) AS assembled_prompt,
                         l.response_preview,
                         l.context_meta
@@ -798,6 +802,8 @@ def _ensure_llm_prompt_log_schema() -> None:
                         l.template_version,
                         l.user_block,
                         l.extra_blocks,
+                        COALESCE(l.payload_truncated, 0) AS payload_truncated,
+                        COALESCE(l.sent_payload, l.assembled_prompt, l.prompt_text) AS sent_payload,
                         COALESCE(l.assembled_prompt, l.prompt_text) AS assembled_prompt,
                         l.response_preview,
                         l.context_meta
@@ -2084,6 +2090,8 @@ def _log_llm_prompt_sync(
                         user_block=known_blocks.get("user"),
                         extra_blocks=extra_blocks or None,
                         block_order=block_order_value or None,
+                        payload_truncated=False,
+                        sent_payload=final_prompt,
                         prompt_text=prompt_text_value,
                         assembled_prompt=final_prompt,
                         response_preview=response_preview,
@@ -2121,6 +2129,8 @@ def _log_llm_prompt_sync(
                         user_block=_truncate_text(known_blocks.get("user"), 2000),
                         extra_blocks=None,
                         block_order=block_order_value or None,
+                        payload_truncated=True,
+                        sent_payload=_truncate_text(final_prompt, 8000),
                         prompt_text=_truncate_text(prompt_text_value, 8000),
                         assembled_prompt=_truncate_text(final_prompt, 8000),
                         response_preview=_truncate_text(response_preview, 2000) if isinstance(response_preview, str) else None,
