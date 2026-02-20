@@ -26,10 +26,12 @@ from .models import (
 
 # Preference key(s) for auto coaching prompts (new primary key: "coaching"; legacy: "auto_daily_prompts")
 AUTO_PROMPT_PREF_KEYS = ("coaching", "auto_daily_prompts")
+FIRST_DAY_PENDING_PREF_KEY = "coaching_first_day_pending"
+FIRST_DAY_SENT_AT_PREF_KEY = "coaching_first_day_sent_at"
 from .nudges import send_message, send_whatsapp_template, _get_session_reopen_sid
 from .debug_utils import debug_log, debug_enabled
 from .llm import compose_prompt
-from . import monday, tuesday, wednesday, thursday, friday, saturday, sunday
+from . import monday, tuesday, wednesday, thursday, friday, saturday, sunday, first_day
 from .job_queue import enqueue_job, should_use_worker
 from .programme_timeline import first_monday_after
 from .weekly_plan import ensure_weekly_plan
@@ -576,6 +578,8 @@ def _run_day_prompt_inline(user_id: int, day: str):
         print(f"[scheduler] skip {day} prompt for user {user_id}: onboarding active")
         return
     try:
+        if _run_first_day_coaching_if_needed(user, day):
+            return
         tp_type = "ad_hoc"  # fallback if not matched below
         if day == "monday":
             monday.start_weekstart(user)
@@ -615,6 +619,34 @@ def _run_day_prompt_inline(user_id: int, day: str):
                     )
             except Exception as e:
                 print(f"[scheduler] virtual date advance failed for user {user_id}: {e}")
+
+
+def _run_first_day_coaching_if_needed(user: User, day: str) -> bool:
+    user_id = int(getattr(user, "id", 0) or 0)
+    if user_id <= 0:
+        return False
+    with SessionLocal() as s:
+        pref = _get_user_pref(s, user_id, FIRST_DAY_PENDING_PREF_KEY)
+        pending = bool(pref and str(pref.value or "").strip() == "1")
+        if not pending:
+            return False
+        if day == "sunday":
+            # If the user's first scheduled day is Sunday, keep the normal Sunday flow.
+            _set_user_pref(s, user_id, FIRST_DAY_PENDING_PREF_KEY, "0")
+            s.commit()
+            return False
+    try:
+        first_day.send_first_day_coaching(user, scheduled_day=day)
+    except Exception as e:
+        print(f"[scheduler] first-day coaching prompt failed for user {user_id}: {e}")
+        # Keep pending flag as-is so we can retry on the next scheduled day.
+        return False
+    with SessionLocal() as s:
+        _set_user_pref(s, user_id, FIRST_DAY_PENDING_PREF_KEY, "0")
+        _set_user_pref(s, user_id, FIRST_DAY_SENT_AT_PREF_KEY, datetime.utcnow().isoformat())
+        s.commit()
+    _audit(user_id, "auto_prompt_first_day", {"day": day})
+    return True
 
 
 def _run_day_prompt(user_id: int, day: str):
@@ -909,12 +941,16 @@ def enable_coaching(user_id: int, fast_minutes: int | None = None) -> bool:
             .order_by(UserPreference.updated_at.desc())
             .first()
         )
+        was_enabled = bool(pref and str(pref.value or "").strip() == "1")
         key = AUTO_PROMPT_PREF_KEYS[0]
         if pref:
             pref.key = key
             pref.value = "1"
         else:
             s.add(UserPreference(user_id=user_id, key=key, value="1"))
+        if not was_enabled:
+            _set_user_pref(s, user_id, FIRST_DAY_PENDING_PREF_KEY, "1")
+            _set_user_pref(s, user_id, FIRST_DAY_SENT_AT_PREF_KEY, "")
         # Persist per-user fast mode so it survives restarts and global schedule changes.
         fast_pref = (
             s.query(UserPreference)
@@ -977,6 +1013,7 @@ def disable_coaching(user_id: int) -> bool:
         )
         if fast_pref:
             s.delete(fast_pref)
+        _set_user_pref(s, user_id, FIRST_DAY_PENDING_PREF_KEY, "0")
         set_virtual_mode(s, user_id, enabled=False)
         s.commit()
         _unschedule_prompts_for_user(user_id)

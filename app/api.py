@@ -8216,8 +8216,32 @@ def admin_prompt_template_update(
         row = s.get(PromptTemplate, template_id)
         if not row:
             raise HTTPException(status_code=404, detail="prompt template not found")
-        if prompts_module._canonical_state(getattr(row, "state", "develop")) != "develop":
-            raise HTTPException(status_code=400, detail="only develop templates can be edited")
+        state_norm = prompts_module._canonical_state(getattr(row, "state", "develop"))
+        if state_norm != "develop":
+            # Non-develop templates are status-only editable (active flag + note).
+            # Runtime content changes must flow through develop -> promote.
+            if "note" in payload:
+                row.note = payload.get("note") or None
+            if "is_active" in payload:
+                new_active = bool(payload.get("is_active"))
+                row.is_active = new_active
+                if new_active:
+                    state_aliases = [state_norm]
+                    if state_norm == "beta":
+                        state_aliases.append("stage")
+                    if state_norm == "live":
+                        state_aliases.append("production")
+                    (
+                        s.query(PromptTemplate)
+                        .filter(
+                            PromptTemplate.id != row.id,
+                            PromptTemplate.touchpoint == row.touchpoint,
+                            PromptTemplate.state.in_(state_aliases),
+                        )
+                        .update({PromptTemplate.is_active: False}, synchronize_session=False)
+                    )
+            s.commit()
+            return {"ok": True}
         if "okr_scope" in payload:
             row.okr_scope = payload.get("okr_scope") or None
         if "programme_scope" in payload:
@@ -8450,6 +8474,7 @@ def admin_prompt_history_detail(log_id: int, admin_user: User = Depends(_require
     podcast_type_map = {
         "podcast_kickoff": "kickoff",
         "podcast_weekstart": "monday",
+        "podcast_first_day": "first_day",
         "podcast_thursday": "thursday",
         "podcast_friday": "friday",
     }

@@ -377,6 +377,44 @@ By the end of the episode, the user should feel:
 • Ready to start the week with simplicity and purpose""",
     },
     {
+        "touchpoint": 'podcast_first_day',
+        "okr_scope": 'week',
+        "programme_scope": 'pillar',
+        "response_format": '',
+        "is_active": True,
+        "block_order": ['system', 'locale', 'context', 'history', 'okr', 'scores', 'habit', 'task', 'user'],
+        "include_blocks": ['system', 'locale', 'context', 'history', 'okr', 'scores', 'habit', 'task', 'user'],
+        "task_block": """You are delivering the first-day coaching welcome podcast.
+This message is sent instead of the normal day flow when coaching starts and the first scheduled day is not Sunday.
+
+Your role is to welcome the user, orient them to the week, and reinforce the habit steps that were already prepared from their completed assessment.
+
+Keep the podcast short (around 45–75 seconds in natural pacing).
+
+Required content:
+- Warm first-day welcome.
+- Brief reminder that their habit steps are already set from assessment.
+- Mention the provided habit steps in plain language (do not add new goals).
+- Encourage consistency and low-pressure repetition this week.
+- Invite the user to reply if they want to adjust any habit step.
+
+Tone:
+- Calm
+- Practical
+- Human
+- Supportive
+- No hype
+
+Do not:
+- Introduce new tasks or goals.
+- Use OKR/KR jargon.
+- Sound evaluative or urgent.
+- Turn this into a review/checkpoint.
+
+Desired outcome:
+The user feels welcomed, clear on what they are doing this week, and confident starting coaching.""",
+    },
+    {
         "touchpoint": 'weekstart_support',
         "okr_scope": 'week',
         "programme_scope": '',

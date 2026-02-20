@@ -1015,6 +1015,7 @@ def build_prompt(
     """
     Central prompt builder. touchpoint options:
     - podcast_weekstart
+    - podcast_first_day
     - podcast_thursday
     - podcast_friday
     - weekstart_support
@@ -1175,6 +1176,51 @@ def build_prompt(
         return _prompt_assembly(
             "podcast_friday",
             "friday_podcast",
+            parts,
+            meta=_merge_template_meta(okr_meta, template),
+            block_order_override=order_override or settings.get("default_block_order"),
+        )
+    if tp == "podcast_first_day":
+        krs_payload = data.get("krs")
+        if not isinstance(krs_payload, list) or not krs_payload:
+            krs_payload = kr_payload_list(user_id, week_no=data.get("week_no"), max_krs=3)
+        okr_scope = (template or {}).get("okr_scope") or "week"
+        primary = krs_payload[0] if krs_payload else None
+        krs = _krs_for_okr_scope(
+            okr_scope=okr_scope,
+            user_id=user_id,
+            week_no=data.get("week_no"),
+            primary=primary,
+            fallback_krs=krs_payload,
+        )
+        okr_txt, okr_meta = okr_block_with_scope(okr_scope, krs)
+        habit_lines: list[str] = []
+        for kr in (krs_payload or []):
+            steps = [str(step).strip() for step in (kr.get("habit_steps") or []) if str(step or "").strip()]
+            if not steps:
+                continue
+            habit_lines.append(f"- {kr.get('description')}: {'; '.join(steps)}")
+        day_label = str(data.get("scheduled_day") or "").strip().title()
+        day_suffix = f" (scheduled day: {day_label})" if day_label else ""
+        instruction = (
+            "You are a warm, concise wellbeing coach creating a short first-day coaching podcast (~45-75 seconds). "
+            "Welcome the user to coaching, explain that habit steps are already prepared from their completed assessment, "
+            "and reinforce that this week is about simple, repeatable consistency. "
+            "Briefly reference the provided habit steps in plain language without adding new goals. "
+            "Close with calm encouragement and invite them to reply if they want to adjust anything."
+        )
+        parts = [
+            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
+            ("locale", settings.get("locale_block") or locale_block(locale)),
+            ("context", context_block("podcast_first_day", f"first-day coaching welcome{day_suffix}", timeframe=data.get("week_no") or "")),
+            ("task", instruction),
+            ("okr", okr_txt),
+            ("history", f"Habit steps:\n" + "\n".join(habit_lines) if habit_lines else ""),
+        ]
+        parts, order_override = _apply_prompt_template(parts, template)
+        return _prompt_assembly(
+            "podcast_first_day",
+            "first_day_podcast",
             parts,
             meta=_merge_template_meta(okr_meta, template),
             block_order_override=order_override or settings.get("default_block_order"),
