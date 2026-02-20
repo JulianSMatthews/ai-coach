@@ -8504,6 +8504,18 @@ def admin_prompt_history_detail(log_id: int, admin_user: User = Depends(_require
     if not row:
         raise HTTPException(status_code=404, detail="prompt log not found")
     item = dict(row)
+    ctx = item.get("context_meta")
+    if isinstance(ctx, str):
+        try:
+            ctx = json.loads(ctx)
+        except Exception:
+            ctx = None
+    if isinstance(ctx, dict):
+        item["execution_source"] = ctx.get("execution_source")
+        item["worker_process"] = bool(ctx.get("worker_process")) if ctx.get("worker_process") is not None else None
+    else:
+        item["execution_source"] = None
+        item["worker_process"] = None
     name = " ".join([str(item.get("first_name") or "").strip(), str(item.get("surname") or "").strip()]).strip()
     item["user_name"] = name or None
     audio_url = None

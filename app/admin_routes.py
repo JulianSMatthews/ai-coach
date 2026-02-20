@@ -289,13 +289,28 @@ def llm_review(user_id: int, limit: int = 100):
             return ""
         return f"<pre style='white-space:pre-wrap'>{_esc(val)}</pre>"
 
+    def _source_from_context_meta(val):
+        meta = val
+        if isinstance(meta, str):
+            try:
+                meta = json.loads(meta)
+            except Exception:
+                return ""
+        if isinstance(meta, dict):
+            src = str(meta.get("execution_source") or "").strip().lower()
+            if src in {"worker", "api"}:
+                return src
+        return ""
+
     row_html = []
     for r in rows:
+        source = _source_from_context_meta(getattr(r, "context_meta", None))
         row_html.append(
             "<tr>"
             f"<td>{r.id}</td>"
             f"<td>{r.created_at}</td>"
             f"<td>{_esc(r.touchpoint)}</td>"
+            f"<td>{_esc(source)}</td>"
             f"<td>{_esc(r.model)}</td>"
             f"<td>{_esc(getattr(r,'duration_ms','') or '')}</td>"
             f"<td>{_esc(r.prompt_variant)}</td>"
@@ -327,7 +342,7 @@ def llm_review(user_id: int, limit: int = 100):
         "<div class='card'>"
         "<table>"
         "<tr>"
-        "<th>ID</th><th>Timestamp</th><th>Touchpoint</th><th>Model</th><th>Duration (ms)</th>"
+        "<th>ID</th><th>Timestamp</th><th>Touchpoint</th><th>Source</th><th>Model</th><th>Duration (ms)</th>"
         "<th>Variant</th><th>Task</th><th>Block Order</th>"
         "<th>System</th><th>Locale</th><th>OKR</th><th>OKR Scope</th><th>Scores</th><th>Habit</th><th>Task Block</th><th>State</th><th>Version</th><th>Duration (ms)</th><th>User</th>"
         "<th>Extras</th><th>Payload Trimmed</th><th>Sent Payload</th><th>Assembled Prompt</th><th>Response Preview</th><th>Context Meta</th>"
