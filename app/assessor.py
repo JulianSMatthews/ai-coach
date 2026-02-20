@@ -271,6 +271,60 @@ def _parse_number(text: str) -> float | None:
     return None
 
 
+def _parse_habitual_count_signal(text: str, *, week_window: bool) -> tuple[float | None, str]:
+    """
+    Map common habitual phrases to approximate counts only when the question already
+    establishes a recent-week timeframe.
+    """
+    if not text or not week_window:
+        return None, ""
+    t = (text or "").lower().strip()
+    if not t:
+        return None, ""
+    if re.search(r"\b(every day|daily|each day)\b", t):
+        return 7.0, "habit_daily"
+    if re.search(r"\b(most days|regularly|often)\b", t):
+        return 6.0, "habit_most_days"
+    if re.search(r"\b(some days)\b", t):
+        return 3.0, "habit_some_days"
+    if re.search(r"\b(once or twice|occasionally)\b", t):
+        return 1.5, "habit_once_or_twice"
+    return None, ""
+
+
+def _level_from_score(score: float) -> str:
+    try:
+        s = float(score)
+    except Exception:
+        return "Moderate"
+    if s < 34:
+        return "Low"
+    if s < 67:
+        return "Moderate"
+    return "High"
+
+
+def _assessor_fast_path_beta_enabled(user_id: int, state: dict | None = None) -> bool:
+    """
+    Gate deterministic fast scoring to users with prompt_state_override=beta.
+    Non-beta users remain on the existing LLM path.
+    """
+    if not user_id:
+        return False
+    cache_key = "_assessor_fast_path_beta_enabled"
+    if isinstance(state, dict) and cache_key in state:
+        return bool(state.get(cache_key))
+    enabled = False
+    try:
+        override = (_get_user_preference_value(user_id, "prompt_state_override") or "").strip().lower()
+        enabled = override == "beta"
+    except Exception:
+        enabled = False
+    if isinstance(state, dict):
+        state[cache_key] = bool(enabled)
+    return bool(enabled)
+
+
 def _score_from_bounds(zero: float, maxv: float, val: float) -> float:
     if zero > maxv:
         span = zero - maxv
@@ -1973,6 +2027,11 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             last_q = ""
         has_number = _has_numeric_signal(msg or "")
         q_has_week = _has_recent_week_window(last_q or "")
+        parsed_num_hint = _parse_number(msg or "")
+        habitual_num_hint, habitual_hint_source = _parse_habitual_count_signal(
+            msg or "",
+            week_window=q_has_week,
+        )
         sufficient_for_scoring = bool(has_number and q_has_week)
         # Send prior history only when this reply likely needs clarification.
         history_for_llm = dialogue[-6:] if not sufficient_for_scoring else []
@@ -2052,6 +2111,108 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         
         # Furtrher rules 
 
+        beta_fast_path_enabled = _assessor_fast_path_beta_enabled(int(getattr(user, "id", 0) or 0), state)
+        fast_path_hit = False
+        fast_path_raw = ""
+        fast_path_value = None
+        fast_path_value_source = ""
+        if parsed_num_hint is not None:
+            fast_path_value = parsed_num_hint
+            fast_path_value_source = "parsed_number"
+        elif habitual_num_hint is not None:
+            fast_path_value = habitual_num_hint
+            fast_path_value_source = habitual_hint_source or "habitual_phrase"
+
+        if beta_fast_path_enabled:
+            fast_path_miss_reason = ""
+            if bm_tuple is None:
+                fast_path_miss_reason = "no_bounds"
+            elif not q_has_week:
+                fast_path_miss_reason = "no_week_window"
+            elif fast_path_value is None:
+                fast_path_miss_reason = "no_parse"
+            else:
+                try:
+                    normalized_fast = _normalize_value_for_concept(
+                        pillar,
+                        concept_code,
+                        float(fast_path_value),
+                        None,
+                        msg,
+                    )
+                except Exception:
+                    normalized_fast = float(fast_path_value)
+                try:
+                    fast_score = _score_from_bounds(
+                        float(bm_tuple[0]),
+                        float(bm_tuple[1]),
+                        float(normalized_fast),
+                    )
+                    fast_score_i = int(round(max(0.0, min(100.0, fast_score))))
+                    fast_conf = 0.88 if fast_path_value_source == "parsed_number" else 0.72
+                    fast_level = _level_from_score(fast_score_i)
+                    fast_payload = {
+                        "action": "finish",
+                        "question": "",
+                        "level": fast_level,
+                        "confidence": fast_conf,
+                        "rationale": f"Deterministic fast-path score from {fast_path_value_source}.",
+                        "scores": {concept_code: fast_score_i},
+                        "status": "scorable",
+                        "why": "Parsed answer and timeframe were sufficient for deterministic scoring.",
+                        "missing": [],
+                        "parsed_value": {
+                            "value": float(fast_path_value),
+                            "unit": "",
+                            "timeframe_ok": True,
+                        },
+                    }
+                    fast_path_raw = json.dumps(fast_payload, ensure_ascii=False)
+                    fast_path_hit = True
+                    try:
+                        with SessionLocal() as ss:
+                            ss.add(
+                                JobAudit(
+                                    job_name="assessor_fast_path_hit",
+                                    status="ok",
+                                    payload={
+                                        "pillar": pillar,
+                                        "concept": concept_code,
+                                        "source": fast_path_value_source,
+                                        "value": float(fast_path_value),
+                                        "normalized_value": float(normalized_fast),
+                                        "score": fast_score_i,
+                                    },
+                                )
+                            )
+                            ss.commit()
+                    except Exception:
+                        pass
+                except Exception:
+                    fast_path_miss_reason = "score_failed"
+
+            if (not fast_path_hit) and fast_path_miss_reason:
+                try:
+                    with SessionLocal() as ss:
+                        ss.add(
+                            JobAudit(
+                                job_name="assessor_fast_path_miss",
+                                status="ok",
+                                payload={
+                                    "pillar": pillar,
+                                    "concept": concept_code,
+                                    "reason": fast_path_miss_reason,
+                                    "has_bounds": bool(bm_tuple),
+                                    "q_has_week": bool(q_has_week),
+                                    "has_parsed_num": parsed_num_hint is not None,
+                                    "has_habitual_num": habitual_num_hint is not None,
+                                },
+                            )
+                        )
+                        ss.commit()
+                except Exception:
+                    pass
+
         _user_msg = (
             "Continue this concept.\n"
             "Primary task: evaluate payload.last_user_reply against payload.last_main_question.\n"
@@ -2072,131 +2233,136 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             'Return JSON only: {"action":"ask"|"finish","question":"","level":"","confidence":<float 0.0–1.0>,"rationale":"","scores":{},'
             '"status":"","why":"","missing":[],"parsed_value":{"value":null,"unit":"","timeframe_ok":false}}'
         )
-        try:
-            with SessionLocal() as ss:
-                ss.add(JobAudit(job_name="assessor_llm_request", status="ok",
-                                 payload={
-                                     "pillar": pillar,
-                                     "concept": concept_code,
-                                     "system_len": len(_system_msg or ""),
-                                     "user_len": len(_user_msg or ""),
-                                     "sufficient_for_scoring": payload.get("sufficient_for_scoring"),
-                                     "has_range_guide": bool(range_rule_text),
-                                     "range_bounds": list(bm_tuple) if bm_tuple else None,
-                                 }))
-                ss.commit()
-        except Exception:
-            pass
+        if not fast_path_hit:
+            try:
+                with SessionLocal() as ss:
+                    ss.add(JobAudit(job_name="assessor_llm_request", status="ok",
+                                     payload={
+                                         "pillar": pillar,
+                                         "concept": concept_code,
+                                         "system_len": len(_system_msg or ""),
+                                         "user_len": len(_user_msg or ""),
+                                         "sufficient_for_scoring": payload.get("sufficient_for_scoring"),
+                                         "has_range_guide": bool(range_rule_text),
+                                         "range_bounds": list(bm_tuple) if bm_tuple else None,
+                                     }))
+                    ss.commit()
+            except Exception:
+                pass
         llm_duration_ms = None
         request_messages = [
             {"role": "system", "content": _system_msg},
             {"role": "user", "content": _user_msg},
         ]
-        debug_log(
-            "assessor_llm_request_exact",
-            {
-                "touchpoint": "assessor_system",
-                "pillar": pillar,
-                "concept": concept_code,
-                "messages": request_messages,
-            },
-            tag="assessor",
-        )
-        try:
-            _llm_started_wall = datetime.utcnow()
-            _llm_started_at = time.perf_counter()
-            _resp = _llm.invoke(request_messages)
-            llm_duration_ms = int((time.perf_counter() - _llm_started_at) * 1000)
-            _llm_finished_wall = datetime.utcnow()
-            raw = _coerce_llm_content(getattr(_resp, "content", None))
-            resp_meta = getattr(_resp, "response_metadata", None)
-            usage_meta = getattr(_resp, "usage_metadata", None)
-            provider_request_id = None
-            if isinstance(resp_meta, dict):
-                provider_request_id = (
-                    resp_meta.get("request_id")
-                    or resp_meta.get("id")
-                    or (resp_meta.get("response") or {}).get("id")
-                )
+        raw = ""
+        if fast_path_hit:
+            raw = fast_path_raw
+        else:
             debug_log(
-                "assessor_llm_response_exact",
+                "assessor_llm_request_exact",
                 {
                     "touchpoint": "assessor_system",
                     "pillar": pillar,
                     "concept": concept_code,
-                    "duration_ms": llm_duration_ms,
-                    "response_text": raw,
-                },
-                tag="assessor",
-            )
-            try:
-                log_llm_prompt(
-                    user_id=state.get("user_id") or (user.id if user else None),
-                    touchpoint="assessor_system",
-                    prompt_text=_system_msg + "\n\n" + _user_msg,
-                    model=getattr(_resp, "model", None),
-                    duration_ms=llm_duration_ms,
-                    response_preview=raw or None,
-                    context_meta={
-                        "pillar": pillar,
-                        "concept": concept_code,
-                        "has_range": bool(range_rule_text),
-                        "provider_request_id": provider_request_id,
-                        "response_metadata": resp_meta if isinstance(resp_meta, dict) else None,
-                        "usage_metadata": usage_meta if isinstance(usage_meta, dict) else None,
-                        "llm_started_at_utc": _llm_started_wall.isoformat() + "Z",
-                        "llm_finished_at_utc": _llm_finished_wall.isoformat() + "Z",
-                    },
-                    prompt_variant="assessor_system",
-                    task_label="assessor_system",
-                    prompt_blocks={
-                        "system": _system_msg,
-                        "assessor": _user_msg,
-                    },
-                    block_order=["system", "assessor"],
-                )
-            except Exception:
-                pass
-            try:
-                preview = (raw[:220] + "…") if len(raw) > 220 else raw
-                with SessionLocal() as ss:
-                    ss.add(JobAudit(job_name="assessor_llm_response", status="ok",
-                                    payload={"pillar": pillar, "concept": concept_code,
-                                             "type": type(_resp).__name__,
-                                             "has_content": bool(raw), "content_len": len(raw or ""),
-                                             "preview": preview, "duration_ms": llm_duration_ms}))
-                    ss.commit()
-            except Exception:
-                pass
-        except Exception as e:
-            if llm_duration_ms is None:
-                try:
-                    llm_duration_ms = int((time.perf_counter() - _llm_started_at) * 1000)
-                except Exception:
-                    llm_duration_ms = None
-            raw = ""
-            tb = traceback.format_exc(limit=2)
-            debug_log(
-                "assessor_llm_exception_exact",
-                {
-                    "touchpoint": "assessor_system",
-                    "pillar": pillar,
-                    "concept": concept_code,
-                    "duration_ms": llm_duration_ms,
-                    "error": repr(e),
-                    "traceback": tb,
                     "messages": request_messages,
                 },
                 tag="assessor",
             )
             try:
-                with SessionLocal() as ss:
-                    ss.add(JobAudit(job_name="assessor_llm_exception", status="error",
-                                    payload={"pillar": pillar, "concept": concept_code, "duration_ms": llm_duration_ms},
-                                    error=f"{e!r}\n{tb}"))
-                    ss.commit()
-            except Exception:
-                pass
+                _llm_started_wall = datetime.utcnow()
+                _llm_started_at = time.perf_counter()
+                _resp = _llm.invoke(request_messages)
+                llm_duration_ms = int((time.perf_counter() - _llm_started_at) * 1000)
+                _llm_finished_wall = datetime.utcnow()
+                raw = _coerce_llm_content(getattr(_resp, "content", None))
+                resp_meta = getattr(_resp, "response_metadata", None)
+                usage_meta = getattr(_resp, "usage_metadata", None)
+                provider_request_id = None
+                if isinstance(resp_meta, dict):
+                    provider_request_id = (
+                        resp_meta.get("request_id")
+                        or resp_meta.get("id")
+                        or (resp_meta.get("response") or {}).get("id")
+                    )
+                debug_log(
+                    "assessor_llm_response_exact",
+                    {
+                        "touchpoint": "assessor_system",
+                        "pillar": pillar,
+                        "concept": concept_code,
+                        "duration_ms": llm_duration_ms,
+                        "response_text": raw,
+                    },
+                    tag="assessor",
+                )
+                try:
+                    log_llm_prompt(
+                        user_id=state.get("user_id") or (user.id if user else None),
+                        touchpoint="assessor_system",
+                        prompt_text=_system_msg + "\n\n" + _user_msg,
+                        model=getattr(_resp, "model", None),
+                        duration_ms=llm_duration_ms,
+                        response_preview=raw or None,
+                        context_meta={
+                            "pillar": pillar,
+                            "concept": concept_code,
+                            "has_range": bool(range_rule_text),
+                            "provider_request_id": provider_request_id,
+                            "response_metadata": resp_meta if isinstance(resp_meta, dict) else None,
+                            "usage_metadata": usage_meta if isinstance(usage_meta, dict) else None,
+                            "llm_started_at_utc": _llm_started_wall.isoformat() + "Z",
+                            "llm_finished_at_utc": _llm_finished_wall.isoformat() + "Z",
+                        },
+                        prompt_variant="assessor_system",
+                        task_label="assessor_system",
+                        prompt_blocks={
+                            "system": _system_msg,
+                            "assessor": _user_msg,
+                        },
+                        block_order=["system", "assessor"],
+                    )
+                except Exception:
+                    pass
+                try:
+                    preview = (raw[:220] + "…") if len(raw) > 220 else raw
+                    with SessionLocal() as ss:
+                        ss.add(JobAudit(job_name="assessor_llm_response", status="ok",
+                                        payload={"pillar": pillar, "concept": concept_code,
+                                                 "type": type(_resp).__name__,
+                                                 "has_content": bool(raw), "content_len": len(raw or ""),
+                                                 "preview": preview, "duration_ms": llm_duration_ms}))
+                        ss.commit()
+                except Exception:
+                    pass
+            except Exception as e:
+                if llm_duration_ms is None:
+                    try:
+                        llm_duration_ms = int((time.perf_counter() - _llm_started_at) * 1000)
+                    except Exception:
+                        llm_duration_ms = None
+                raw = ""
+                tb = traceback.format_exc(limit=2)
+                debug_log(
+                    "assessor_llm_exception_exact",
+                    {
+                        "touchpoint": "assessor_system",
+                        "pillar": pillar,
+                        "concept": concept_code,
+                        "duration_ms": llm_duration_ms,
+                        "error": repr(e),
+                        "traceback": tb,
+                        "messages": request_messages,
+                    },
+                    tag="assessor",
+                )
+                try:
+                    with SessionLocal() as ss:
+                        ss.add(JobAudit(job_name="assessor_llm_exception", status="error",
+                                        payload={"pillar": pillar, "concept": concept_code, "duration_ms": llm_duration_ms},
+                                        error=f"{e!r}\n{tb}"))
+                        ss.commit()
+                except Exception:
+                    pass
 
         # Log empty/short LLM responses for debugging
         if not raw or len((raw or "").strip()) < 5:
