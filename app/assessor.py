@@ -1218,7 +1218,6 @@ def _regen_clarifier(pillar: str, concept_code: str, payload: dict) -> str:
                 "concept": concept_code,
                 "history": payload.get("history", []),
                 "already_asked": payload.get("already_asked", []),
-                "already_asked_norm": payload.get("already_asked_norm", []),
                 "retrieval": payload.get("retrieval", []),
                 "main_question": payload.get("main_question", ""),
                 "last_user_reply": payload.get("last_user_reply", ""),
@@ -1949,9 +1948,13 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
 
         # LLM payload
         pillar_turns = [t for t in turns if t.get("pillar") == pillar]
-        already_asked = [t.get("question") for t in pillar_turns if t.get("role") == "assistant" and t.get("question")]
-        already_asked_norm = list({_norm(q) for q in already_asked if q})
-        dialogue = _as_dialogue_simple(pillar_turns)
+        concept_turns = [t for t in pillar_turns if t.get("concept") == concept_code]
+        already_asked = [
+            t.get("question")
+            for t in concept_turns
+            if t.get("role") == "assistant" and t.get("question")
+        ]
+        dialogue = _as_dialogue_simple(concept_turns)
         # Sufficiency hint: if the user gave a number and the main question already had a last-7-days timeframe,
         # nudge the LLM to prefer finishing with a score.
         try:
@@ -1965,14 +1968,16 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             last_q = ""
         has_number = _has_numeric_signal(msg or "")
         q_has_week = _has_recent_week_window(last_q or "")
+        sufficient_for_scoring = bool(has_number and q_has_week)
+        # Send prior history only when this reply likely needs clarification.
+        history_for_llm = dialogue[-6:] if not sufficient_for_scoring else []
         payload = {
-            "history": dialogue[-10:],
+            "history": history_for_llm,
             "already_asked": already_asked,
-            "already_asked_norm": already_asked_norm,
             "turns_so_far": sum(1 for t in turns if t.get("pillar") == pillar and t.get("role") == "user"),
             "retrieval": retrieval_ctx,
             "concept_focus": concept_code,
-            "sufficient_for_scoring": bool(has_number and q_has_week),
+            "sufficient_for_scoring": sufficient_for_scoring,
         }
 
         # Audit payload for debugging
