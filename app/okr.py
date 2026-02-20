@@ -24,6 +24,7 @@ from datetime import datetime, timezone, timedelta
 from calendar import monthrange
 import os
 import json
+import time
 
 # --- Needed for new state context helper ---
 from sqlalchemy.sql import text as _sql_text
@@ -119,16 +120,22 @@ def _log_structured_okr_prompt(
     prompt_text: str,
     response_text: str | None,
     model_name: str | None,
+    duration_ms: int | None = None,
     context_meta: dict[str, Any] | None = None,
 ) -> None:
+    in_worker = (os.getenv("PROMPT_WORKER_PROCESS") or "").strip().lower() in {"1", "true", "yes"}
+    meta = dict(context_meta or {})
+    meta.setdefault("execution_source", "worker" if in_worker else "api")
+    meta.setdefault("worker_process", in_worker)
     try:
         log_llm_prompt(
             user_id=user_id,
             touchpoint="assessment_okr_structured",
             prompt_text=prompt_text,
             model=model_name,
+            duration_ms=duration_ms,
             response_preview=response_text or None,
-            context_meta=context_meta or None,
+            context_meta=meta or None,
             prompt_variant="assessment_okr_structured",
             task_label="structured_okr_generation",
         )
@@ -1056,6 +1063,8 @@ def make_structured_okr_llm(
     ]
     prompt_text = _json.dumps(messages, ensure_ascii=False)
     raw = ""
+    llm_started_at = time.perf_counter()
+    llm_duration_ms: int | None = None
     try:
         resp = _client.chat.completions.create(
             model=mdl,
@@ -1063,6 +1072,7 @@ def make_structured_okr_llm(
             response_format={"type": "json_object"},
             messages=messages,
         )
+        llm_duration_ms = int((time.perf_counter() - llm_started_at) * 1000)
         raw = (resp.choices[0].message.content or "").strip()
         # Guard: strip common markdown fences if present
         if raw.startswith("```"):
@@ -1166,6 +1176,7 @@ def make_structured_okr_llm(
             prompt_text=prompt_text,
             response_text=raw,
             model_name=mdl,
+            duration_ms=llm_duration_ms,
             context_meta=missing_meta,
         )
 
@@ -1190,11 +1201,14 @@ def make_structured_okr_llm(
         )
         return data
     except Exception as e:
+        if llm_duration_ms is None:
+            llm_duration_ms = int((time.perf_counter() - llm_started_at) * 1000)
         _log_structured_okr_prompt(
             user_id=(audit_context or {}).get("user_id") if isinstance(audit_context, dict) else None,
             prompt_text=prompt_text,
             response_text=raw,
             model_name=mdl,
+            duration_ms=llm_duration_ms,
             context_meta={
                 **(audit_payload or {}),
                 "structured_parse_or_call_error": repr(e),

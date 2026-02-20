@@ -8446,7 +8446,7 @@ def admin_prompt_history(
     query = text(
         f"""
         SELECT l.id, l.created_at, l.touchpoint, l.user_id, l.model, l.duration_ms,
-               l.template_state, l.template_version, l.response_preview,
+               l.template_state, l.template_version, l.response_preview, l.context_meta,
                u.first_name, u.surname, u.phone
         FROM llm_prompt_logs_view l
         LEFT JOIN users u ON u.id = l.user_id
@@ -8462,6 +8462,18 @@ def admin_prompt_history(
         item = dict(row)
         name = " ".join([str(item.get("first_name") or "").strip(), str(item.get("surname") or "").strip()]).strip()
         item["user_name"] = name or None
+        ctx = item.get("context_meta")
+        if isinstance(ctx, str):
+            try:
+                ctx = json.loads(ctx)
+            except Exception:
+                ctx = None
+        if isinstance(ctx, dict):
+            item["execution_source"] = ctx.get("execution_source")
+            item["worker_process"] = bool(ctx.get("worker_process")) if ctx.get("worker_process") is not None else None
+        else:
+            item["execution_source"] = None
+            item["worker_process"] = None
         items.append(item)
     return {"items": items}
 
