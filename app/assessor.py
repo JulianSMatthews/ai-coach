@@ -304,16 +304,32 @@ def _level_from_score(score: float) -> str:
     return "High"
 
 
-def _assessor_fast_path_beta_enabled(user_id: int, state: dict | None = None) -> bool:
+def _env_flag_true(name: str) -> bool:
+    raw = (os.getenv(name) or "").strip().lower()
+    return raw in {"1", "true", "yes", "on"}
+
+
+def _assessor_fast_path_enabled(user_id: int, state: dict | None = None) -> bool:
     """
-    Gate deterministic fast scoring to users with prompt_state_override=beta.
-    Non-beta users remain on the existing LLM path.
+    Fast-path gate precedence:
+    1) Global env switch ON => enabled for all users.
+    2) Otherwise, enable only for users with prompt_state_override=beta.
     """
-    if not user_id:
-        return False
-    cache_key = "_assessor_fast_path_beta_enabled"
+    cache_key = "_assessor_fast_path_enabled"
     if isinstance(state, dict) and cache_key in state:
         return bool(state.get(cache_key))
+
+    # Global rollout switch: when enabled, all users use fast-path scoring.
+    # Keep backward-compatible alias for environment naming.
+    if _env_flag_true("ASSESSOR_FAST_MODE_ENABLED") or _env_flag_true("ASSESSOR_FAST_PATH_ENABLED"):
+        if isinstance(state, dict):
+            state[cache_key] = True
+        return True
+
+    if not user_id:
+        return False
+
+    # Fallback: beta-only per user.
     enabled = False
     try:
         override = (_get_user_preference_value(user_id, "prompt_state_override") or "").strip().lower()
@@ -2111,7 +2127,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         
         # Furtrher rules 
 
-        beta_fast_path_enabled = _assessor_fast_path_beta_enabled(int(getattr(user, "id", 0) or 0), state)
+        fast_path_enabled = _assessor_fast_path_enabled(int(getattr(user, "id", 0) or 0), state)
         fast_path_hit = False
         fast_path_raw = ""
         fast_path_value = None
@@ -2123,7 +2139,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             fast_path_value = habitual_num_hint
             fast_path_value_source = habitual_hint_source or "habitual_phrase"
 
-        if beta_fast_path_enabled:
+        if fast_path_enabled:
             fast_path_miss_reason = ""
             if bm_tuple is None:
                 fast_path_miss_reason = "no_bounds"
