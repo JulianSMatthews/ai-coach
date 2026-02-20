@@ -60,7 +60,7 @@ from .llm import _llm
 # ==============================================================================
 
 from .okr import make_quarterly_okr_llm
-from .job_queue import enqueue_job, should_use_podcast_worker
+from .job_queue import enqueue_job, should_use_podcast_worker, should_use_worker
 from .seed import PILLAR_PREAMBLE_QUESTIONS
 
 # --- Unified helper -----------------------------------------------------------
@@ -2534,18 +2534,67 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     )
                 ).scalars().first()
 
-                if pr is not None:
+                can_queue_okr_sync = bool(
+                    pr is not None
+                    and getattr(pr, "id", None)
+                    and getattr(sess, "id", None)
+                )
+
+                if can_queue_okr_sync and should_use_worker():
+                    # Commit PillarResult before queueing so the worker can read it immediately.
+                    try:
+                        s.commit()
+                    except Exception:
+                        s.rollback()
+                    try:
+                        job_id = enqueue_job(
+                            "pillar_okr_sync",
+                            {
+                                "user_id": int(user.id),
+                                "assess_session_id": int(getattr(sess, "id", None)) if getattr(sess, "id", None) else None,
+                                "pillar_result_id": int(getattr(pr, "id", 0) or 0),
+                                "pillar_key": str(pillar),
+                                "pillar_score": float(overall) if overall is not None else None,
+                                "concept_scores": filled_scores,
+                                "write_progress_entries": True,
+                                "quarter_label": "This Quarter",
+                            },
+                            user_id=user.id,
+                        )
+                        print(
+                            f"[okr] enqueued pillar_okr_sync run_id={state.get('run_id')} "
+                            f"pillar={pillar} user_id={user.id} job={job_id}"
+                        )
+                    except Exception as _okr_q_e:
+                        print(
+                            f"[okr] WARN: queue pillar_okr_sync failed run_id={state.get('run_id')} "
+                            f"pillar={pillar} user_id={user.id}: {_okr_q_e}"
+                        )
+                        # Fallback to inline sync if queueing fails.
+                        _sync_okrs_after_pillar(
+                            db=s,
+                            user=user,
+                            assess_session=sess,
+                            pillar_result=pr,
+                            concept_score_map=filled_scores,
+                        )
+                        try:
+                            s.commit()
+                        except Exception:
+                            s.rollback()
+                elif pr is not None:
+                    # Worker disabled: keep current inline behavior.
                     _sync_okrs_after_pillar(
                         db=s,
                         user=user,
                         assess_session=sess,
                         pillar_result=pr,
-                        concept_score_map=filled_scores,  # pass per-concept scores if available
+                        concept_score_map=filled_scores,
                     )
-                try:
-                    s.commit()
-                except Exception:
-                    s.rollback()
+                    try:
+                        s.commit()
+                    except Exception:
+                        s.rollback()
             except Exception as _okr_e:
                 print(f"[okr] WARN: OKR sync failed for run_id={state.get('run_id')} pillar={pillar}: {_okr_e}")
             # ─────────────────────────────────────────────────────────────────────────────
@@ -2596,16 +2645,34 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 breakdown = "\n".join(bars) if bars else "No pillar scores available"
 
                 # Ensure week-1 habit steps are seeded for Nutrition KRs from this assessment.
+                # Prefer worker path to keep API interactive latency low.
                 try:
-                    seeded_count = seed_week1_habit_steps_for_assessment(
-                        s,
-                        user_id=user.id,
-                        assess_session_id=getattr(sess, "id", None),
-                        run_id=state.get("run_id"),
-                        week_no=1,
-                    )
-                    if seeded_count:
-                        s.commit()
+                    if should_use_worker():
+                        job_id = enqueue_job(
+                            "assessment_week1_habit_seed",
+                            {
+                                "user_id": int(user.id),
+                                "assess_session_id": int(getattr(sess, "id", None)) if getattr(sess, "id", None) else None,
+                                "run_id": int(state.get("run_id")) if state.get("run_id") else None,
+                                "week_no": 1,
+                                "require_seed": True,
+                            },
+                            user_id=user.id,
+                        )
+                        print(
+                            f"[okr] enqueued assessment_week1_habit_seed run_id={state.get('run_id')} "
+                            f"user_id={user.id} job={job_id}"
+                        )
+                    else:
+                        seeded_count = seed_week1_habit_steps_for_assessment(
+                            s,
+                            user_id=user.id,
+                            assess_session_id=getattr(sess, "id", None),
+                            run_id=state.get("run_id"),
+                            week_no=1,
+                        )
+                        if seeded_count:
+                            s.commit()
                 except Exception as _habit_seed_err:
                     try:
                         s.rollback()

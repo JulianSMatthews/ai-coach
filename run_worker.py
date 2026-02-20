@@ -21,7 +21,8 @@ from app.reporting import (
     generate_progress_report_html,
 )
 from app.db import SessionLocal, _table_exists, engine
-from app.models import User
+from app.models import User, AssessSession, PillarResult, OKRKrHabitStep
+from app.okr import generate_and_update_okrs_for_pillar, seed_week1_habit_steps_for_assessment
 
 os.environ.setdefault("PROMPT_WORKER_PROCESS", "1")
 
@@ -77,6 +78,109 @@ def _process_assessment_report(payload: dict) -> None:
             generate_progress_report_html(int(user_id))
         except Exception:
             pass
+
+
+def _process_pillar_okr_sync(payload: dict) -> dict:
+    user_id = payload.get("user_id")
+    assess_session_id = payload.get("assess_session_id")
+    pillar_result_id = payload.get("pillar_result_id")
+    pillar_key = payload.get("pillar_key")
+    if not user_id or not assess_session_id or not pillar_result_id or not pillar_key:
+        raise ValueError("pillar_okr_sync requires user_id, assess_session_id, pillar_result_id, pillar_key")
+
+    concept_scores = payload.get("concept_scores")
+    if not isinstance(concept_scores, dict):
+        concept_scores = {}
+
+    pillar_score = payload.get("pillar_score")
+    try:
+        pillar_score_val = float(pillar_score) if pillar_score is not None else None
+    except Exception:
+        pillar_score_val = None
+
+    write_progress_entries = bool(payload.get("write_progress_entries", True))
+    quarter_label = payload.get("quarter_label")
+
+    with SessionLocal() as s:
+        user = s.get(User, int(user_id))
+        assess_session = s.get(AssessSession, int(assess_session_id))
+        pillar_result = s.get(PillarResult, int(pillar_result_id))
+        if not user:
+            raise ValueError(f"user not found: {user_id}")
+        if not assess_session:
+            raise ValueError(f"assess_session not found: {assess_session_id}")
+        if not pillar_result:
+            raise ValueError(f"pillar_result not found: {pillar_result_id}")
+
+        res = generate_and_update_okrs_for_pillar(
+            s,
+            user_id=int(user_id),
+            assess_session_id=int(assess_session_id),
+            pillar_result_id=int(pillar_result_id),
+            pillar_key=str(pillar_key),
+            pillar_score=pillar_score_val,
+            concept_scores=concept_scores,
+            write_progress_entries=write_progress_entries,
+            quarter_label=quarter_label,
+        )
+        s.commit()
+        return {
+            "ok": True,
+            "objective_id": int(getattr(res.get("objective"), "id", 0) or 0) if isinstance(res, dict) else 0,
+            "pillar_result_id": int(pillar_result_id),
+            "pillar_key": str(pillar_key),
+        }
+
+
+def _process_assessment_week1_habit_seed(payload: dict) -> dict:
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise ValueError("assessment_week1_habit_seed requires user_id")
+
+    assess_session_id = payload.get("assess_session_id")
+    run_id = payload.get("run_id")
+    week_no = int(payload.get("week_no") or 1)
+    require_seed = bool(payload.get("require_seed", True))
+
+    # Local retries to allow queued OKR sync jobs to complete first.
+    local_retries = int(payload.get("local_retries") or 3)
+    local_delay_seconds = float(payload.get("local_delay_seconds") or 2.0)
+
+    seeded_count = 0
+    for attempt in range(max(1, local_retries)):
+        with SessionLocal() as s:
+            seeded_count = seed_week1_habit_steps_for_assessment(
+                s,
+                user_id=int(user_id),
+                assess_session_id=int(assess_session_id) if assess_session_id else None,
+                run_id=int(run_id) if run_id else None,
+                week_no=week_no,
+            )
+            if seeded_count:
+                s.commit()
+                return {"ok": True, "seeded_count": int(seeded_count), "week_no": week_no}
+
+            existing = (
+                s.query(OKRKrHabitStep.id)
+                .filter(
+                    OKRKrHabitStep.user_id == int(user_id),
+                    OKRKrHabitStep.week_no == int(week_no),
+                    OKRKrHabitStep.status != "archived",
+                )
+                .first()
+            )
+            if existing:
+                return {"ok": True, "seeded_count": 0, "already_exists": True, "week_no": week_no}
+
+        if attempt < max(1, local_retries) - 1:
+            time.sleep(max(0.5, local_delay_seconds))
+
+    if require_seed:
+        raise RuntimeError(
+            f"week-1 habit seed not ready yet user_id={user_id} "
+            f"assess_session_id={assess_session_id} run_id={run_id}"
+        )
+    return {"ok": True, "seeded_count": int(seeded_count), "week_no": week_no}
 
 
 def _process_llm_prompt(payload: dict) -> dict:
@@ -153,6 +257,10 @@ def process_job(kind: str, payload: dict) -> dict:
     if kind == "assessment_report":
         _process_assessment_report(payload)
         return {"ok": True}
+    if kind == "pillar_okr_sync":
+        return _process_pillar_okr_sync(payload)
+    if kind == "assessment_week1_habit_seed":
+        return _process_assessment_week1_habit_seed(payload)
     if kind == "llm_prompt":
         return _process_llm_prompt(payload)
     if kind == "weekstart_flow":
