@@ -89,6 +89,7 @@ export default async function PromptHistoryPage({ searchParams }: HistoryPagePro
                   <th className="py-2">User ID</th>
                   <th className="py-2">Name</th>
                   <th className="py-2">Duration</th>
+                  <th className="py-2">Source</th>
                   <th className="py-2">Action</th>
                 </tr>
               </thead>
@@ -102,6 +103,9 @@ export default async function PromptHistoryPage({ searchParams }: HistoryPagePro
                     <td className="py-3 text-[#6b6257]">
                       {row.duration_ms ? `${row.duration_ms} ms` : "—"}
                     </td>
+                    <td className="py-3 text-[#6b6257]">
+                      {row.execution_source || "—"}
+                    </td>
                     <td className="py-3">
                       <Link
                         href={`/admin/prompts/history/${row.id}`}
@@ -114,7 +118,7 @@ export default async function PromptHistoryPage({ searchParams }: HistoryPagePro
                 ))}
                 {!rows.length ? (
                   <tr>
-                    <td className="py-6 text-sm text-[#6b6257]" colSpan={6}>
+                    <td className="py-6 text-sm text-[#6b6257]" colSpan={7}>
                       No prompt history found for this filter.
                     </td>
                   </tr>

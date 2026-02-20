@@ -596,6 +596,8 @@ export type PromptHistoryItem = {
   phone?: string | null;
   model?: string | null;
   duration_ms?: number | null;
+  execution_source?: string | null;
+  worker_process?: boolean | null;
   template_state?: string | null;
   template_version?: number | null;
   response_preview?: string | null;
