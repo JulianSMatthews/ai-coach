@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from .db import SessionLocal
-from .job_queue import enqueue_job, should_use_podcast_worker
+from .job_queue import enqueue_job, should_use_worker
 from .nudges import send_whatsapp, send_whatsapp_media, append_button_cta
 from .models import User, WeeklyFocus, AssessmentRun
 from .kickoff import COACH_NAME
@@ -23,7 +23,7 @@ def _in_worker_process() -> bool:
 
 
 def _podcast_worker_enabled() -> bool:
-    return should_use_podcast_worker() and not _in_worker_process()
+    return should_use_worker() and not _in_worker_process()
 
 
 def _thursday_label() -> str:

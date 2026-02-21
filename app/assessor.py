@@ -60,7 +60,7 @@ from .llm import _llm
 # ==============================================================================
 
 from .okr import make_quarterly_okr_llm
-from .job_queue import enqueue_job, should_use_podcast_worker, should_use_worker
+from .job_queue import enqueue_job, should_use_worker
 from .seed import PILLAR_PREAMBLE_QUESTIONS
 
 # --- Unified helper -----------------------------------------------------------
@@ -2908,7 +2908,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 # Enqueue assessment report generation (narrative + reports)
                 try:
                     run_id = state.get("run_id")
-                    if should_use_podcast_worker() and run_id:
+                    if should_use_worker() and run_id:
                         job_id = enqueue_job(
                             "assessment_report",
                             {"run_id": int(run_id), "user_id": user.id},

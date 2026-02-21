@@ -2031,6 +2031,12 @@ def _log_llm_prompt_sync(
                 context_meta = json.loads(json.dumps(context_meta, default=str))
             except Exception:
                 context_meta = {"_raw": str(context_meta)}
+        if context_meta is None:
+            context_meta = {}
+        if isinstance(context_meta, dict):
+            in_worker = _in_worker_process()
+            context_meta.setdefault("execution_source", "worker" if in_worker else "api")
+            context_meta.setdefault("worker_process", in_worker)
         known_blocks, extra_blocks, resolved_order, assembled_from_blocks = _normalize_prompt_blocks(
             prompt_blocks, preferred_order=block_order
         )

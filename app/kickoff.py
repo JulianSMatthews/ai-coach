@@ -12,7 +12,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
-from .job_queue import enqueue_job, should_use_podcast_worker
+from .job_queue import enqueue_job, should_use_worker
 from .nudges import send_whatsapp, send_whatsapp_media
 from .debug_utils import debug_enabled
 from .models import (
@@ -43,7 +43,7 @@ def _in_worker_process() -> bool:
 
 
 def _podcast_worker_enabled() -> bool:
-    return should_use_podcast_worker() and not _in_worker_process()
+    return should_use_worker() and not _in_worker_process()
 
 
 def _kickoff_label() -> str:

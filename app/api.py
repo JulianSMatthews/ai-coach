@@ -663,27 +663,13 @@ def _record_freeform_checkin(user, body: str) -> None:
 
 
 def _start_assessment_async(user: User, *, force_intro: bool = False) -> bool:
-    if should_use_worker():
-        job_id = enqueue_job(
-            "assessment_start",
-            {"user_id": user.id, "force_intro": bool(force_intro)},
-            user_id=user.id,
-        )
-        print(f"[assessment] enqueued start user_id={user.id} job={job_id} force_intro={force_intro}")
-        return True
+    # Interactive assessor flow should run on API for immediate turn-by-turn replies.
     start_combined_assessment(user, force_intro=force_intro)
     return False
 
 
 def _continue_assessment_async(user: User, user_text: str) -> bool:
-    if should_use_worker():
-        job_id = enqueue_job(
-            "assessment_continue",
-            {"user_id": user.id, "text": user_text},
-            user_id=user.id,
-        )
-        print(f"[assessment] enqueued continue user_id={user.id} job={job_id}")
-        return True
+    # Interactive assessor flow should run on API for immediate turn-by-turn replies.
     continue_combined_assessment(user, user_text)
     return False
 
