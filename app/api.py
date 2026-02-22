@@ -5492,7 +5492,7 @@ def admin_assessment_health(
             key = str(touchpoint or "").strip().lower()
             if not key:
                 return None
-            if key == "assessor_system":
+            if key == "assessor_system" or key.startswith("assessor_"):
                 return "assessment"
             if key == "initial_habit_steps_generator":
                 return "assessment"
@@ -5509,7 +5509,7 @@ def admin_assessment_health(
                 return src
             key = str(touchpoint or "").strip().lower()
             # Conservative fallback for legacy rows that predate source stamping.
-            if key in {"assessor_system", "general_support"}:
+            if key in {"assessor_system", "general_support"} or key.startswith("assessor_"):
                 return "api"
             if key == "assessment_okr_structured":
                 return "worker"

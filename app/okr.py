@@ -2,8 +2,7 @@
 # app/okr.py
 # ------------------------------------------------------------------------------
 # PURPOSE:
-#   1) Generate presentable OKR text (LLM + deterministic fallback).
-#   2) Persist OKRs at pillar completion:
+#   Persist OKRs at pillar completion:
 #      - Ensure/create quarter in okr_cycles
 #      - Upsert pillar-level objective in okr_objectives (linked to user, session, pillar result)
 #      - Upsert child KRs in okr_key_results (+ optional entries in okr_kr_entries)
@@ -11,7 +10,6 @@
 #
 # INTEGRATION:
 #   • Call sync_okrs_for_completed_pillar(...) at the end of a pillar assessment.
-#   • Optionally call make_quarterly_okr_llm(...) to get the text block to display.
 #
 # CREATED: 2025-10-24
 # AUTHOR:  HealthSense / CoachSense Development Team
@@ -89,16 +87,6 @@ OKR_RAW_FROM_LLM = os.getenv("OKR_RAW_FROM_LLM", "0") == "1"
 # Explicit override for raw mode (takes precedence if set)
 OKR_FORCE_RAW = os.getenv("OKR_FORCE_RAW", "0") == "1"
 
-SYSTEM_MSG = (
-    "You are a health coach that writes quarterly OKRs from pillar assessments. "
-    "Use the overall pillar score only as context for priority, but DO NOT set a key result that targets the pillar score itself. "
-    "Review individual concept scores to identify the main gaps that, if improved, will raise the pillar. "
-    "Write ONE objective that focuses on those gap concepts, and 2–3 Key Results that are measurable in user-recognisable units. "
-    "Key Results must use concrete units such as: portions per day, litres per day, sessions per week, days per week, nights per week, or percent. "
-    "Each KR should be a small, safe step from the baseline toward a sensible guideline cap; prefer weekly cadence. "
-    "Output only the OKR block, no extra commentary."
-)
-
 def _baseline_debug(reason: str, detail: dict | None = None) -> None:
     debug_log(reason, detail or {}, tag="okr")
 
@@ -141,94 +129,6 @@ def _log_structured_okr_prompt(
         )
     except Exception as e:
         print(f"[okr] WARN: structured OKR llm_prompt log failed: {e}")
-
-
-def _fallback_okr(pillar_slug: str, pillar_score: float | None) -> str:
-    """Deterministic OKR in case the LLM call fails or client is unavailable."""
-    obj = {
-        "nutrition":  "Improve daily nutrition habits",
-        "training":   "Improve training consistency and quality",
-        "resilience": "Strengthen stress recovery and emotional regulation",
-        "recovery":   "Upgrade sleep and day-to-day recovery routines",
-    }.get(pillar_slug, "Improve key behaviours for this pillar")
-    return (
-        f"🧭 {DEFAULT_OKR_QUARTER} Objective: {obj}\n"
-        "Key Results:\n"
-        "1) Complete 3 small health habits each week for 12 weeks\n"
-        "2) Plan your week every Sunday and tick off at least 10 planned actions across the week\n"
-        f"3) Keep one written note per week on what helped or hindered progress in {pillar_slug.title()}"
-    )
-
-def make_quarterly_okr_llm(
-    pillar_slug: str,
-    pillar_score: float | None,
-    concept_scores: Dict[str, float] | None = None,
-    *,
-    model: Optional[str] = None,
-    temperature: float = 0.3,
-    quarter_label: Optional[str] = None,
-    audit_context: Optional[Dict[str, Any]] = None,
-) -> str:
-    """
-    Returns a formatted OKR block string ("🧭 <Quarter> Objective: ...\nKey Results:\n1) ...")
-    using the LLM if available, otherwise a deterministic fallback.
-    """
-    mdl    = model or DEFAULT_OKR_MODEL
-    qlabel = quarter_label or DEFAULT_OKR_QUARTER
-    concept_scores = concept_scores or {}
-    req_temp = _resolve_okr_temperature(mdl, temperature)
-    audit_payload = {
-        "pillar": pillar_slug,
-        "model": mdl,
-        "temperature_requested": temperature,
-        "temperature_effective": req_temp,
-        "mode": "legacy_text",
-        **(audit_context or {}),
-    }
-    _okr_audit("okr_llm_call", payload=audit_payload)
-
-    user_msg = {
-        "role": "user",
-        "content": (
-            f"Write a concise quarterly OKR for the pillar '{pillar_slug}'.\n"
-            f"- Pillar score: {pillar_score}\n"
-            f"- Concept scores: {concept_scores}\n"
-            f"- Use the label: {qlabel}\n"
-            "- ONE Objective only.\n"
-            "- 2 or 3 Key Results. Each KR must be measurable (numbers or %), weekly cadence preferred.\n"
-            "- No extra commentary.\n\n"
-            "Format exactly:\n"
-            "🧭 {quarter} Objective: <objective>\n"
-            "Key Results:\n"
-            "1) <KR1>\n"
-            "2) <KR2>\n"
-            "3) <KR3>  # omit if only 2\n"
-        ),
-    }
-
-    if not _client:
-        _okr_audit("okr_llm_fallback", status="warn", payload={**audit_payload, "reason": "client_unavailable"})
-        return _fallback_okr(pillar_slug, pillar_score)
-
-    try:
-        resp = _client.chat.completions.create(
-            model=mdl,
-            temperature=req_temp,
-            messages=[
-                {"role": "system", "content": SYSTEM_MSG},
-                user_msg,
-            ],
-        )
-        txt = (resp.choices[0].message.content or "").strip()
-        if txt.startswith("🧭 ") and qlabel != "This Quarter":
-            txt = txt.replace("🧭 This Quarter", f"🧭 {qlabel}")
-        _okr_audit("okr_llm_success", payload={**audit_payload, "has_text": bool(txt)})
-        return txt or _fallback_okr(pillar_slug, pillar_score)
-    except Exception as e:
-        _okr_audit("okr_llm_error", status="error", payload=audit_payload, error=repr(e))
-        _okr_audit("okr_llm_fallback", status="warn", payload={**audit_payload, "reason": "exception"})
-        return _fallback_okr(pillar_slug, pillar_score)
-
 
 
 STRUCTURED_OKR_SYSTEM = (

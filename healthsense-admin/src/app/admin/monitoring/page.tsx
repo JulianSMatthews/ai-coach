@@ -173,20 +173,11 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
     slow_over_warn: 0,
     slow_over_critical: 0,
   };
-  const llmCombined = health?.llm?.combined || {
-    prompts: health?.llm?.assessor_prompts ?? 0,
-    duration_ms_p50: health?.llm?.duration_ms_p50 ?? null,
-    duration_ms_p95: health?.llm?.duration_ms_p95 ?? null,
-    duration_ms_state: health?.llm?.duration_ms_state,
-    slow_over_warn: health?.llm?.slow_over_warn ?? 0,
-    slow_over_critical: health?.llm?.slow_over_critical ?? 0,
-  };
   const llmInteractive = health?.llm?.interactive || llmAssessment;
   const llmWorker = health?.llm?.worker || llmCoaching;
   const llmPanels = [
     { title: "Interactive", data: llmInteractive, desc: "Request/response latency for user-driven app and assessment prompts." },
     { title: "Worker", data: llmWorker, desc: "Background/scheduled worker prompt latency profile." },
-    { title: "Combined", data: llmCombined, desc: "Assessment + coaching combined latency profile." },
   ];
   const metrics = [
     {

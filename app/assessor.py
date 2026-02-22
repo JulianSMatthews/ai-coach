@@ -49,64 +49,8 @@ from .debug_utils import debug_log
 from .nudges import send_message
 from .llm import _llm
 
-# ==============================================================================
-# OKR Integration (LLM-generated feedback replacement)
-# ------------------------------------------------------------------------------
-# This section replaces the old pillar feedback functions with an LLM-generated
-# Quarterly OKR produced by app/okr.py.
-# - Keeps interface compatibility (generate_feedback_summary, etc.)
-# - Requires OPENAI_API_KEY to be set
-# - Falls back to deterministic OKR text if the model call fails
-# ==============================================================================
-
-from .okr import make_quarterly_okr_llm
 from .job_queue import enqueue_job, should_use_worker
 from .seed import PILLAR_PREAMBLE_QUESTIONS
-
-# --- Unified helper -----------------------------------------------------------
-def feedback_to_okr(
-    pillar_slug: str,
-    pillar_score: float,
-    concept_scores: Optional[dict] = None
-) -> str:
-    """
-    Generate a Quarterly OKR block from pillar results using the LLM.
-    Safe to call anywhere you previously returned feedback prose.
-    """
-    return make_quarterly_okr_llm(
-        pillar_slug=pillar_slug,
-        pillar_score=pillar_score,
-        concept_scores=concept_scores or {},
-    )
-
-
-# --- Override legacy feedback functions ---------------------------------------
-def _okr_wrapper(pillar_slug: str, score: float, concept_scores: Optional[dict] = None) -> str:
-    return feedback_to_okr(pillar_slug, score, concept_scores)
-
-
-# 1) generate_feedback_summary(...)
-def generate_feedback_summary(
-    pillar_slug: str, score: float, concept_scores: Optional[dict] = None
-) -> str:
-    """Overrides old function to return LLM-based OKR instead of text feedback."""
-    return _okr_wrapper(pillar_slug, score, concept_scores)
-
-
-# 2) format_pillar_feedback(...)
-def format_pillar_feedback(
-    pillar_slug: str, score: float, concept_scores: Optional[dict] = None
-) -> str:
-    """Overrides old function to return LLM-based OKR instead of text feedback."""
-    return _okr_wrapper(pillar_slug, score, concept_scores)
-
-
-# 3) build_pillar_feedback(...)
-def build_pillar_feedback(
-    pillar_slug: str, score: float, concept_scores: Optional[dict] = None
-) -> str:
-    """Overrides old function to return LLM-based OKR instead of text feedback."""
-    return _okr_wrapper(pillar_slug, score, concept_scores)
 
 # Report 
 
@@ -170,13 +114,6 @@ Notes:
 - If uncertain, ask a clarifier instead of finishing.
 - Do NOT copy example values; set confidence per these rules.
 """
-
-FEEDBACK_SYSTEM = (
-    "Write one short feedback line and two short next steps based on pillar dialog.\n"
-    "Format:\n"
-    "- 1 short feedback line (what they do well + gap)\n"
-    '- \"Next steps:\" + 2 bullets (<= 12 words), practical, non-judgmental.'
-)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Utils
@@ -290,6 +227,26 @@ def _parse_habitual_count_signal(text: str, *, week_window: bool) -> tuple[float
     if re.search(r"\b(once or twice|occasionally)\b", t):
         return 1.5, "habit_once_or_twice"
     return None, ""
+
+
+def _extract_llm_response_meta(resp_obj):
+    model_name = getattr(resp_obj, "model", None)
+    response_meta = getattr(resp_obj, "response_metadata", None)
+    usage_meta = getattr(resp_obj, "usage_metadata", None)
+    provider_request_id = None
+    if isinstance(response_meta, dict):
+        provider_request_id = (
+            response_meta.get("request_id")
+            or response_meta.get("id")
+            or (response_meta.get("response") or {}).get("id")
+        )
+        if not model_name:
+            model_name = (
+                response_meta.get("model_name")
+                or response_meta.get("model")
+                or (response_meta.get("response") or {}).get("model")
+            )
+    return model_name, provider_request_id, response_meta, usage_meta
 
 
 def _level_from_score(score: float) -> str:
@@ -638,37 +595,7 @@ def _format_main_question_for_user(state: dict, pillar: str | None, concept_code
     prefix = f"Q{num}/{total} · {label}"
     return f"{prefix}: {question_text.strip()}"
 
-# --- OKR sync helper: call this AFTER you have saved & committed a PillarResult ---
-from app.okr import generate_and_update_okrs_for_pillar, seed_week1_habit_steps_for_assessment
-from .config import settings
-
-def _sync_okrs_after_pillar(db, user, assess_session, pillar_result, concept_score_map=None):
-    """
-    Generates + persists OKRs for a finished pillar.
-    Assumes pillar_result is committed and has id, pillar_key, score, advice (optional).
-    """
-    try:
-        res = generate_and_update_okrs_for_pillar(
-            db,
-            user_id=user.id,
-            assess_session_id=assess_session.id,
-            pillar_result_id=pillar_result.id,
-            pillar_key=pillar_result.pillar_key,
-            pillar_score=getattr(pillar_result, "score", None),
-            concept_scores=concept_score_map or {},
-            write_progress_entries=True,
-            quarter_label="This Quarter",
-        )
-        return res  # { "objective": OKRObjective, "okr_text": str, "okr_struct": dict }
-    except Exception as e:
-        # Clear any failed transaction on the session we were given so the rest of the flow can continue
-        try:
-            if hasattr(db, "rollback"):
-                db.rollback()
-        except Exception:
-            pass
-        print(f"[okr] WARN: failed to sync OKRs for pillar_id={pillar_result.id}: {e}")
-        return None
+from app.okr import seed_week1_habit_steps_for_assessment
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1157,7 +1084,7 @@ def _update_concepts_from_scores(user_id: int, pillar_key: str, scores: dict[str
 # Persist/Update a PillarResult row for the current run/pillar
 # Persist/Update a PillarResult row for the current run/pillar (isolated session + full JobAudit)
 def _upsert_pillar_result(_unused_session, run_id: int, pillar_key: str, overall: int,
-                          concept_scores: dict, feedback_text: str, user_id: Optional[int] = None) -> None:
+                          concept_scores: dict, user_id: Optional[int] = None) -> None:
     """
     Defensive upsert for PillarResult keyed by (run_id, pillar_key).
     - Always sets user_id (NOT NULL in schema).
@@ -1188,9 +1115,10 @@ def _upsert_pillar_result(_unused_session, run_id: int, pillar_key: str, overall
                 # Prefer native dict for JSON/JSONB columns
                 setattr(row, "concept_scores", concept_scores or {})
 
-            # Optional explanatory fields
+            # Legacy narrative field intentionally cleared.
+            # Pillar OKRs are generated asynchronously via worker (structured path).
             if hasattr(row, "advice"):
-                setattr(row, "advice", feedback_text or "")
+                setattr(row, "advice", "")
             if hasattr(row, "updated_at"):
                 setattr(row, "updated_at", datetime.utcnow())
 
@@ -1235,30 +1163,8 @@ def _upsert_pillar_result(_unused_session, run_id: int, pillar_key: str, overall
         except Exception:
             pass
 
-# pillar_result: your saved PillarResult row
-# assess_session: the current AssessSession
-# user: the owner user
-
-# Feedback
-def _generate_feedback(pillar_name: str, level: str, recent_turns: list[dict]) -> str:
-    try:
-        content = _llm.invoke([
-            {"role": "system", "content": FEEDBACK_SYSTEM},
-            {"role": "user", "content": json.dumps({
-                "pillar": pillar_name,
-                "level": level,
-                "recent": recent_turns[-10:],
-            }, ensure_ascii=False)},
-        ]).content
-    except Exception:
-        content = ""
-    msg = (content or "").strip()
-    if not msg:
-        return f"Feedback: {pillar_name} looks {level}. Next steps: keep it simple and consistent."
-    return msg[:700]
-
 # Clarifier regeneration (LLM-only; no deterministic text)
-def _regen_clarifier(pillar: str, concept_code: str, payload: dict) -> str:
+def _regen_clarifier(pillar: str, concept_code: str, payload: dict, *, user_id: int | None = None) -> str:
     """Ask the LLM explicitly to produce a fresh clarifier question (<=320 chars).
     Returns an empty string on error."""
     CLARIFIER_SYSTEM = (
@@ -1298,20 +1204,51 @@ def _regen_clarifier(pillar: str, concept_code: str, payload: dict) -> str:
         except Exception:
             pass
 
-        resp_obj = _llm.invoke([
+        req_payload = {
+            "pillar": pillar,
+            "concept": concept_code,
+            "history": payload.get("history", []),
+            "already_asked": payload.get("already_asked", []),
+            "retrieval": payload.get("retrieval", []),
+            "main_question": payload.get("main_question", ""),
+            "last_user_reply": payload.get("last_user_reply", ""),
+            "what_seems_missing": payload.get("missing", [])
+        }
+        req_user_text = json.dumps(req_payload, ensure_ascii=False)
+        request_messages = [
             {"role": "system", "content": CLARIFIER_SYSTEM},
-            {"role": "user", "content": json.dumps({
-                "pillar": pillar,
-                "concept": concept_code,
-                "history": payload.get("history", []),
-                "already_asked": payload.get("already_asked", []),
-                "retrieval": payload.get("retrieval", []),
-                "main_question": payload.get("main_question", ""),
-                "last_user_reply": payload.get("last_user_reply", ""),
-                "what_seems_missing": payload.get("missing", [])
-            }, ensure_ascii=False)},
-        ])
-        resp = getattr(resp_obj, "content", "") or ""
+            {"role": "user", "content": req_user_text},
+        ]
+        llm_started_at = time.perf_counter()
+        resp_obj = _llm.invoke(request_messages)
+        llm_duration_ms = int((time.perf_counter() - llm_started_at) * 1000)
+        resp = _coerce_llm_content(getattr(resp_obj, "content", None))
+        model_name, provider_request_id, response_meta, usage_meta = _extract_llm_response_meta(resp_obj)
+        try:
+            log_llm_prompt(
+                user_id=user_id,
+                touchpoint="assessor_clarifier_regen",
+                prompt_text=CLARIFIER_SYSTEM + "\n\n" + req_user_text,
+                model=model_name,
+                duration_ms=llm_duration_ms,
+                response_preview=resp or None,
+                context_meta={
+                    "pillar": pillar,
+                    "concept": concept_code,
+                    "provider_request_id": provider_request_id,
+                    "response_metadata": response_meta if isinstance(response_meta, dict) else None,
+                    "usage_metadata": usage_meta if isinstance(usage_meta, dict) else None,
+                },
+                prompt_variant="assessor_clarifier_regen",
+                task_label="assessor_clarifier_regen",
+                prompt_blocks={
+                    "system": CLARIFIER_SYSTEM,
+                    "assessor": req_user_text,
+                },
+                block_order=["system", "assessor"],
+            )
+        except Exception:
+            pass
         try:
             with SessionLocal() as ss:
                 ss.add(JobAudit(job_name="clarifier_response", status="ok",
@@ -1321,6 +1258,33 @@ def _regen_clarifier(pillar: str, concept_code: str, payload: dict) -> str:
         except Exception:
             pass
     except Exception as e:
+        try:
+            log_llm_prompt(
+                user_id=user_id,
+                touchpoint="assessor_clarifier_regen",
+                prompt_text=CLARIFIER_SYSTEM + "\n\n" + json.dumps({
+                    "pillar": pillar,
+                    "concept": concept_code,
+                    "history": payload.get("history", []),
+                    "already_asked": payload.get("already_asked", []),
+                    "retrieval": payload.get("retrieval", []),
+                    "main_question": payload.get("main_question", ""),
+                    "last_user_reply": payload.get("last_user_reply", ""),
+                    "what_seems_missing": payload.get("missing", [])
+                }, ensure_ascii=False),
+                model=None,
+                duration_ms=None,
+                response_preview=None,
+                context_meta={
+                    "pillar": pillar,
+                    "concept": concept_code,
+                    "error": repr(e),
+                },
+                prompt_variant="assessor_clarifier_regen",
+                task_label="assessor_clarifier_regen",
+            )
+        except Exception:
+            pass
         try:
             with SessionLocal() as ss:
                 ss.add(JobAudit(job_name="clarifier_exception", status="error",
@@ -1334,7 +1298,15 @@ def _regen_clarifier(pillar: str, concept_code: str, payload: dict) -> str:
     return q[:320]
 
 # Force-finish when numeric answer + timeframe are present, but the model hesitates
-def _force_finish(pillar: str, concept_code: str, payload: dict, extra_rules: str = "", bounds=None) -> str:
+def _force_finish(
+    pillar: str,
+    concept_code: str,
+    payload: dict,
+    extra_rules: str = "",
+    bounds=None,
+    *,
+    user_id: int | None = None,
+) -> str:
     """
     Ask the LLM to return a FINISH JSON when the user's answer appears sufficient (numeric + timeframe).
     Returns raw JSON string (model content) or empty string on error.
@@ -1363,19 +1335,52 @@ def _force_finish(pillar: str, concept_code: str, payload: dict, extra_rules: st
         except Exception:
             pass
 
-        resp_obj = _llm.invoke([
+        req_payload = {
+            "pillar": pillar,
+            "concept": concept_code,
+            "last_main_question": payload.get("last_main_question", ""),
+            "last_user_reply": payload.get("last_user_reply", ""),
+            "history": payload.get("history", []),
+            "retrieval": payload.get("retrieval", []),
+            "extra_rules": (extra_rules or "")
+        }
+        req_user_text = json.dumps(req_payload, ensure_ascii=False)
+        request_messages = [
             {"role": "system", "content": FORCE_SYSTEM},
-            {"role": "user", "content": json.dumps({
-                "pillar": pillar,
-                "concept": concept_code,
-                "last_main_question": payload.get("last_main_question", ""),
-                "last_user_reply": payload.get("last_user_reply", ""),
-                "history": payload.get("history", []),
-                "retrieval": payload.get("retrieval", []),
-                "extra_rules": (extra_rules or "")      
-            }, ensure_ascii=False)},
-        ])
-        resp = getattr(resp_obj, "content", "") or ""
+            {"role": "user", "content": req_user_text},
+        ]
+        llm_started_at = time.perf_counter()
+        resp_obj = _llm.invoke(request_messages)
+        llm_duration_ms = int((time.perf_counter() - llm_started_at) * 1000)
+        resp = _coerce_llm_content(getattr(resp_obj, "content", None))
+        model_name, provider_request_id, response_meta, usage_meta = _extract_llm_response_meta(resp_obj)
+        try:
+            log_llm_prompt(
+                user_id=user_id,
+                touchpoint="assessor_force_finish",
+                prompt_text=FORCE_SYSTEM + "\n\n" + req_user_text,
+                model=model_name,
+                duration_ms=llm_duration_ms,
+                response_preview=resp or None,
+                context_meta={
+                    "pillar": pillar,
+                    "concept": concept_code,
+                    "provider_request_id": provider_request_id,
+                    "response_metadata": response_meta if isinstance(response_meta, dict) else None,
+                    "usage_metadata": usage_meta if isinstance(usage_meta, dict) else None,
+                    "range_bounds": list(bounds) if bounds else None,
+                    "has_range_guide": bool(extra_rules),
+                },
+                prompt_variant="assessor_force_finish",
+                task_label="assessor_force_finish",
+                prompt_blocks={
+                    "system": FORCE_SYSTEM,
+                    "assessor": req_user_text,
+                },
+                block_order=["system", "assessor"],
+            )
+        except Exception:
+            pass
         try:
             with SessionLocal() as ss:
                 ss.add(JobAudit(job_name="force_finish_response", status="ok",
@@ -1386,6 +1391,34 @@ def _force_finish(pillar: str, concept_code: str, payload: dict, extra_rules: st
             pass
         return (resp or "")
     except Exception as e:
+        try:
+            log_llm_prompt(
+                user_id=user_id,
+                touchpoint="assessor_force_finish",
+                prompt_text=FORCE_SYSTEM + "\n\n" + json.dumps({
+                    "pillar": pillar,
+                    "concept": concept_code,
+                    "last_main_question": payload.get("last_main_question", ""),
+                    "last_user_reply": payload.get("last_user_reply", ""),
+                    "history": payload.get("history", []),
+                    "retrieval": payload.get("retrieval", []),
+                    "extra_rules": (extra_rules or "")
+                }, ensure_ascii=False),
+                model=None,
+                duration_ms=None,
+                response_preview=None,
+                context_meta={
+                    "pillar": pillar,
+                    "concept": concept_code,
+                    "error": repr(e),
+                    "range_bounds": list(bounds) if bounds else None,
+                    "has_range_guide": bool(extra_rules),
+                },
+                prompt_variant="assessor_force_finish",
+                task_label="assessor_force_finish",
+            )
+        except Exception:
+            pass
         try:
             with SessionLocal() as ss:
                 ss.add(JobAudit(job_name="_force_finish", status="error",
@@ -2440,7 +2473,14 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         # If not done yet, but the input looks sufficient, try a force-finish pass first
         wants_finish = (out.action == "finish_domain") or (this_concept_score > 0.0)
         if not wants_finish and payload.get("sufficient_for_scoring"):
-            raw_ff = _force_finish(pillar, concept_code, payload, extra_rules=range_rule_text, bounds=bm_tuple)           
+            raw_ff = _force_finish(
+                pillar,
+                concept_code,
+                payload,
+                extra_rules=range_rule_text,
+                bounds=bm_tuple,
+                user_id=state.get("user_id") or (user.id if user else None),
+            )
             if raw_ff:
                 out_ff = _parse_llm_json(raw_ff)
                 c_scores_ff = out_ff.scores or {}
@@ -2479,12 +2519,22 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 regen_payload["last_user_reply"] = msg
                 regen_payload["missing"] = (out.missing or [])
 
-                regen = _regen_clarifier(pillar, concept_code, regen_payload)
+                regen = _regen_clarifier(
+                    pillar,
+                    concept_code,
+                    regen_payload,
+                    user_id=state.get("user_id") or (user.id if user else None),
+                )
                 if regen and _norm(regen) not in asked and not _too_similar(regen, last_main_q):
                     cand = regen
                 else:
                     # One more attempt with the same enriched payload (still LLM-authored)
-                    regen2 = _regen_clarifier(pillar, concept_code, regen_payload)
+                    regen2 = _regen_clarifier(
+                        pillar,
+                        concept_code,
+                        regen_payload,
+                        user_id=state.get("user_id") or (user.id if user else None),
+                    )
                     if regen2 and _norm(regen2) not in asked and not _too_similar(regen2, last_main_q):
                         cand = regen2
                     else:
@@ -2717,12 +2767,6 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             finally:
                 handoff_timing["ms_update_concepts"] = int((time.perf_counter() - step_started_at) * 1000)
 
-            recent = [t for t in turns if t.get("pillar") == pillar][-10:]
-            feedback_line = feedback_to_okr(
-                pillar_slug=pillar,
-                pillar_score=float(overall) if overall is not None else 0.0,
-                concept_scores=filled_scores
-            )
             breakdown = "\n".join(
                 _score_bar(k.replace('_',' ').title(), v)
                 for k, v in filled_scores.items()
@@ -2736,7 +2780,6 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     pillar_key=pillar,
                     overall=int(overall),
                     concept_scores=filled_scores,
-                    feedback_text=feedback_line,
                     user_id=user.id
                 )
             except Exception:
