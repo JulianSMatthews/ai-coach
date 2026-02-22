@@ -20,6 +20,7 @@ from typing import Dict, Optional, List, Any
 from dataclasses import dataclass
 from datetime import datetime, timezone, timedelta
 from calendar import monthrange
+import concurrent.futures
 import os
 import json
 import time
@@ -1673,6 +1674,12 @@ def _generate_initial_habit_steps(
         )
     if not payload:
         return {}
+    timeout_raw = (os.getenv("INITIAL_HABIT_STEPS_LLM_TIMEOUT_SECONDS") or "").strip()
+    try:
+        timeout_seconds = float(timeout_raw) if timeout_raw else 40.0
+    except Exception:
+        timeout_seconds = 40.0
+    timeout_seconds = max(1.0, timeout_seconds)
     try:
         prompt_assembly = build_prompt(
             "initial_habit_steps_generator",
@@ -1683,16 +1690,33 @@ def _generate_initial_habit_steps(
             week_no=week_no,
             krs=payload,
         )
-        raw = run_llm_prompt(
-            prompt_assembly.text,
-            user_id=user_id,
-            touchpoint="initial_habit_steps_generator",
-            prompt_variant=prompt_assembly.variant,
-            task_label=prompt_assembly.task_label,
-            prompt_blocks={**prompt_assembly.blocks, **(prompt_assembly.meta or {})},
-            block_order=prompt_assembly.block_order,
-            log=True,
-        )
+        invoke_started = time.perf_counter()
+
+        def _invoke_prompt() -> str:
+            return run_llm_prompt(
+                prompt_assembly.text,
+                user_id=user_id,
+                touchpoint="initial_habit_steps_generator",
+                prompt_variant=prompt_assembly.variant,
+                task_label=prompt_assembly.task_label,
+                prompt_blocks={**prompt_assembly.blocks, **(prompt_assembly.meta or {})},
+                block_order=prompt_assembly.block_order,
+                log=True,
+            )
+
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=1, thread_name_prefix="habit-steps-llm")
+        future = executor.submit(_invoke_prompt)
+        try:
+            raw = future.result(timeout=timeout_seconds)
+        except concurrent.futures.TimeoutError:
+            elapsed_ms = int((time.perf_counter() - invoke_started) * 1000)
+            print(
+                f"[okr] WARN: initial habit-step generation timed out "
+                f"user_id={user_id} timeout_s={timeout_seconds} elapsed_ms={elapsed_ms}"
+            )
+            return {}
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
     except Exception as e:
         print(f"[okr] WARN: initial habit-step generation failed user_id={user_id} err={e}")
         return {}
