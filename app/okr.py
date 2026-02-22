@@ -728,23 +728,130 @@ def _fallback_structured_okr(pillar_slug: str, pillar_score: float | None):
         ],
     }
 
+def _coerce_int_or_none(value: Any) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(value)
+    except Exception:
+        return None
+
+
+def _row_has_state_signal(row: dict[str, Any]) -> bool:
+    if row.get("value_num") is not None:
+        return True
+    if str(row.get("answer") or "").strip():
+        return True
+    if str(row.get("question") or "").strip():
+        return True
+    return False
+
+
+def _dedupe_state_context_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Keep one row per concept_code and prefer rows with real Q/A/value data.
+    This guards prompt size and avoids duplicate concept repeats in state_context.
+    """
+    by_code: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for row in rows:
+        code = _normalize_concept_key(row.get("concept_code") or row.get("concept"))
+        if not code:
+            continue
+        candidate = dict(row)
+        candidate["concept_code"] = code
+        if not str(candidate.get("concept") or "").strip():
+            candidate["concept"] = code
+        current = by_code.get(code)
+        if current is None:
+            by_code[code] = candidate
+            order.append(code)
+            continue
+        if _row_has_state_signal(candidate) or not _row_has_state_signal(current):
+            by_code[code] = candidate
+
+    out: list[dict[str, Any]] = []
+    for code in order:
+        row = by_code[code]
+        if not _row_has_state_signal(row):
+            continue
+        out.append(row)
+    return out
+
+
+def _resolve_state_context_run_id(
+    session: "Session", *, user_id: int, run_id: int | None, pillar_slug: str
+) -> int | None:
+    """
+    Resolve a safe run scope for state_context.
+    Priority:
+    1) explicit run_id
+    2) latest PillarResult.run_id for this user/pillar
+    3) latest UserConceptState.run_id for this user/pillar
+    """
+    requested = _coerce_int_or_none(run_id)
+    if requested is not None:
+        return requested
+
+    try:
+        row = (
+            session.query(PillarResult.run_id)
+            .filter(
+                PillarResult.user_id == user_id,
+                PillarResult.pillar_key == pillar_slug,
+                PillarResult.run_id.isnot(None),
+            )
+            .order_by(PillarResult.id.desc())
+            .first()
+        )
+        inferred = _coerce_int_or_none(row[0] if row else None)
+        if inferred is not None:
+            return inferred
+    except Exception:
+        pass
+
+    try:
+        row = (
+            session.query(UserConceptState.run_id)
+            .join(Concept, UserConceptState.concept_id == Concept.id)
+            .filter(
+                UserConceptState.user_id == user_id,
+                Concept.pillar_key == pillar_slug,
+                UserConceptState.run_id.isnot(None),
+            )
+            .order_by(UserConceptState.id.desc())
+            .first()
+        )
+        return _coerce_int_or_none(row[0] if row else None)
+    except Exception:
+        return None
+
+
 def _build_state_context_from_models(session: "Session", *, user_id: int, run_id: int | None, pillar_slug: str) -> list[dict]:
     """
-    Pull rows from user_concept_state for the given user/run and pillar,
-    joined to concepts to fetch bounds (zero_score → min, max_score → max).
+    Pull rows from user_concept_state for one user+run+pillar and return one
+    normalized row per concept.
     Returns: list of {concept, question, answer, unit, min_val, max_val}
     """
-    rows_out: list[dict] = []
+    rows_out: list[dict[str, Any]] = []
+    effective_run_id = _resolve_state_context_run_id(
+        session, user_id=user_id, run_id=run_id, pillar_slug=pillar_slug
+    )
+    if effective_run_id is None:
+        _baseline_debug(
+            "state_context_missing_run_scope",
+            {"user_id": user_id, "pillar": pillar_slug, "requested_run_id": run_id},
+        )
+        return []
     try:
         q = (
             session.query(UserConceptState, Concept)
             .join(Concept, UserConceptState.concept_id == Concept.id)
             .filter(UserConceptState.user_id == user_id)
             .filter(Concept.pillar_key == pillar_slug)
+            .filter(UserConceptState.run_id == effective_run_id)
+            .order_by(UserConceptState.id.asc())
         )
-        if run_id is not None:
-            q = q.filter(UserConceptState.run_id == run_id)
-        q = q.order_by(UserConceptState.id.asc())
         for st, c in q.all():
             notes = getattr(st, "notes", {}) or {}
             parsed_val = None
@@ -754,20 +861,22 @@ def _build_state_context_from_models(session: "Session", *, user_id: int, run_id
                 if isinstance(pv, dict):
                     parsed_val = pv.get("value")
                     parsed_unit = pv.get("unit") or ""
-            rows_out.append({
-                "concept":   c.code or c.name,
-                "concept_code": _normalize_concept_key(c.code) or _normalize_concept_key(c.name),
-                "question":  st.question or "",
-                "answer":    st.answer or "",
-                "unit":      parsed_unit or "",
-                "min_val":   c.zero_score,
-                "max_val":   c.max_score,
-                "value_num": parsed_val,
-            })
-        return rows_out
+            rows_out.append(
+                {
+                    "concept": c.code or c.name,
+                    "concept_code": _normalize_concept_key(c.code) or _normalize_concept_key(c.name),
+                    "question": st.question or "",
+                    "answer": st.answer or "",
+                    "unit": parsed_unit or "",
+                    "min_val": c.zero_score,
+                    "max_val": c.max_score,
+                    "value_num": parsed_val,
+                }
+            )
+        return _dedupe_state_context_rows(rows_out)
     except Exception:
         # Fallback raw SQL (tolerant to small naming differences)
-        params = {"uid": user_id, "rid": run_id, "pillar": pillar_slug}
+        params = {"uid": user_id, "rid": effective_run_id, "pillar": pillar_slug}
         sql = """
             SELECT c.pillar_key,
                    COALESCE(c.code, c.name)           AS concept_key,
@@ -779,7 +888,7 @@ def _build_state_context_from_models(session: "Session", *, user_id: int, run_id
             FROM user_concept_state ucs
             JOIN concepts c ON ucs.concept_id = c.id
             WHERE ucs.user_id = :uid
-              AND (:rid IS NULL OR ucs.run_id = :rid)
+              AND ucs.run_id = :rid
               AND c.pillar_key = :pillar
             ORDER BY ucs.id ASC
         """
@@ -805,19 +914,21 @@ def _build_state_context_from_models(session: "Session", *, user_id: int, run_id
                     parsed_val = pv.get("value")
                     parsed_unit = pv.get("unit") or ""
 
-                rows_out.append({
-                    "concept":  concept_key,
-                    "concept_code": norm_code,
-                    "question": r["question_text"] or "",
-                    "answer":   r["answer_text"] or "",
-                    "unit":     parsed_unit or "",
-                    "min_val":  r["min_val"],
-                    "max_val":  r["max_val"],
-                    "value_num": parsed_val,
-                })
+                rows_out.append(
+                    {
+                        "concept": concept_key,
+                        "concept_code": norm_code,
+                        "question": r["question_text"] or "",
+                        "answer": r["answer_text"] or "",
+                        "unit": parsed_unit or "",
+                        "min_val": r["min_val"],
+                        "max_val": r["max_val"],
+                        "value_num": parsed_val,
+                    }
+                )
         except Exception:
             pass
-        return rows_out
+        return _dedupe_state_context_rows(rows_out)
 
 
 def _answers_from_state_context(rows: list[dict]) -> dict[str, float]:
@@ -1776,6 +1887,7 @@ def generate_and_update_okrs_for_pillar(
     session: Session,
     *,
     user_id: int,
+    run_id: int | None = None,
     assess_session_id: int,
     pillar_result_id: int,
     pillar_key: str,
@@ -1805,10 +1917,12 @@ def generate_and_update_okrs_for_pillar(
             pass
 
     # 1) Ask LLM for structured OKR
-    run_id_for_pillar = None
+    run_id_for_pillar = _coerce_int_or_none(run_id)
     try:
         pr = session.get(PillarResult, pillar_result_id) if pillar_result_id else None
-        run_id_for_pillar = getattr(pr, "run_id", None) if pr is not None else None
+        pr_run_id = _coerce_int_or_none(getattr(pr, "run_id", None)) if pr is not None else None
+        if pr_run_id is not None:
+            run_id_for_pillar = pr_run_id
     except Exception:
         pass
     state_ctx = _build_state_context_from_models(session, user_id=user_id, run_id=run_id_for_pillar, pillar_slug=pillar_key)

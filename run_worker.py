@@ -82,6 +82,7 @@ def _process_assessment_report(payload: dict) -> None:
 
 def _process_pillar_okr_sync(payload: dict) -> dict:
     user_id = payload.get("user_id")
+    run_id = payload.get("run_id")
     assess_session_id = payload.get("assess_session_id")
     pillar_result_id = payload.get("pillar_result_id")
     pillar_key = payload.get("pillar_key")
@@ -115,6 +116,7 @@ def _process_pillar_okr_sync(payload: dict) -> dict:
         res = generate_and_update_okrs_for_pillar(
             s,
             user_id=int(user_id),
+            run_id=int(run_id) if run_id is not None else None,
             assess_session_id=int(assess_session_id),
             pillar_result_id=int(pillar_result_id),
             pillar_key=str(pillar_key),

@@ -2820,6 +2820,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                             "pillar_okr_sync",
                             {
                                 "user_id": int(user.id),
+                                "run_id": int(state.get("run_id")) if state.get("run_id") else None,
                                 "assess_session_id": int(getattr(sess, "id", None)) if getattr(sess, "id", None) else None,
                                 "pillar_result_id": int(getattr(pr, "id", 0) or 0),
                                 "pillar_key": str(pillar),
