@@ -1428,6 +1428,7 @@ def _fetch_okrs_for_run(run_id: int) -> Dict[str, Dict[str, Any]]:
                             # Try to extract numeric baseline/target and unit-ish labels from common field names
                             baseline_val = _first_non_empty_attr(kr, ['baseline', 'baseline_value', 'baseline_num', 'start_value', 'start'])
                             target_val   = _first_non_empty_attr(kr, ['target', 'target_value', 'target_num', 'target_text', 'goal_value', 'goal'])
+                            actual_val   = _first_non_empty_attr(kr, ['actual', 'actual_value', 'actual_num', 'current', 'current_value'])
                             unit_label   = _first_non_empty_attr(kr, ['unit', 'metric_unit', 'unit_label', 'metric_label'])
                             per_label    = _first_non_empty_attr(kr, ['per', 'unit_per', 'per_period'])  # e.g., 'day', 'week'
 
@@ -1450,14 +1451,74 @@ def _fetch_okrs_for_run(run_id: int) -> Dict[str, Dict[str, Any]]:
                                     return '%'
                                 if u and per:
                                     # e.g., 'portions per day'
-                                    return f' {u} per {per}'
+                                    return f'{u} per {per}'
                                 if u and not per:
-                                    return f' {u}'
+                                    return f'{u}'
                                 if per and not u:
-                                    return f' per {per}'
+                                    return f'per {per}'
                                 return ''
 
+                            def _as_float(raw: str) -> float | None:
+                                try:
+                                    return float(str(raw).strip())
+                                except Exception:
+                                    return None
+
+                            def _subject_phrase(text_value: str) -> str:
+                                text_value = (text_value or "").strip()
+                                prefixes = (
+                                    "complete ",
+                                    "do ",
+                                    "have ",
+                                    "drink ",
+                                    "limit ",
+                                    "practice ",
+                                    "take ",
+                                    "sleep ",
+                                    "go ",
+                                    "wake ",
+                                )
+                                lower = text_value.lower()
+                                for prefix in prefixes:
+                                    if lower.startswith(prefix):
+                                        trimmed = text_value[len(prefix):].strip()
+                                        if trimmed:
+                                            return trimmed
+                                return text_value
+
+                            def _compose_kr_text(base: str, current: str, target: str, unit: str) -> str:
+                                base = (base or "").strip()
+                                if not base:
+                                    return ""
+                                current = (current or "").strip()
+                                target = (target or "").strip()
+                                unit = (unit or "").strip()
+                                if unit == "%":
+                                    suffix = "%"
+                                else:
+                                    suffix = f" {unit}" if unit else ""
+                                subject = _subject_phrase(base)
+                                if current and target:
+                                    c_val = _as_float(current)
+                                    t_val = _as_float(target)
+                                    if c_val is not None and t_val is not None:
+                                        if t_val > c_val:
+                                            return f"Increase {subject} from {current}{suffix} to {target}{suffix}."
+                                        if t_val < c_val:
+                                            return f"Reduce {subject} from {current}{suffix} to {target}{suffix}."
+                                        return f"Maintain {subject} at {target}{suffix}."
+                                    return f"Adjust {subject} from {current}{suffix} to {target}{suffix}."
+                                if target:
+                                    return f"Target {subject} at {target}{suffix}."
+                                if current:
+                                    return f"Current {subject}: {current}{suffix}."
+                                return base
+
                             enriched = base_txt.strip() if base_txt else ''
+                            current_num = _fmt_num(actual_val) if str(actual_val or "").strip() else _fmt_num(baseline_val) if str(baseline_val or "").strip() else ""
+                            target_num = _fmt_num(target_val) if str(target_val or "").strip() else ""
+                            unit_value = _fmt_unit(str(unit_label or ""), str(per_label or ""))
+                            enriched = _compose_kr_text(enriched, current_num, target_num, unit_value)
                             if enriched:
                                 krs.append(enriched)
                         out[pk] = {'objective': objective_text, 'krs': krs, 'llm_prompt': getattr(obj, 'llm_prompt', None)}
@@ -1623,11 +1684,13 @@ def _fetch_okrs_for_run(run_id: int) -> Dict[str, Dict[str, Any]]:
                     # Detect optional numeric/unit columns for enrichment
                     _b_cols = [c for c in ['baseline', 'baseline_value', 'baseline_num', 'start_value', 'start'] if c in kr_cols_available]
                     _t_cols = [c for c in ['target', 'target_value', 'target_num', 'target_text', 'goal_value', 'goal'] if c in kr_cols_available]
+                    _a_cols = [c for c in ['actual', 'actual_value', 'actual_num', 'current', 'current_value'] if c in kr_cols_available]
                     _u_cols = [c for c in ['unit', 'metric_unit', 'unit_label', 'metric_label'] if c in kr_cols_available]
                     _p_cols = [c for c in ['per', 'unit_per', 'per_period'] if c in kr_cols_available]
 
                     b_expr = _b_cols[0] if _b_cols else 'NULL'
                     t_expr = _t_cols[0] if _t_cols else 'NULL'
+                    a_expr = _a_cols[0] if _a_cols else 'NULL'
                     u_expr = _u_cols[0] if _u_cols else 'NULL'
                     p_expr = _p_cols[0] if _p_cols else 'NULL'
 
@@ -1636,6 +1699,7 @@ def _fetch_okrs_for_run(run_id: int) -> Dict[str, Dict[str, Any]]:
                         'present': _present,
                         'baseline_col': b_expr if b_expr != 'NULL' else None,
                         'target_col': t_expr if t_expr != 'NULL' else None,
+                        'actual_col': a_expr if a_expr != 'NULL' else None,
                         'unit_col': u_expr if u_expr != 'NULL' else None,
                         'per_col': p_expr if p_expr != 'NULL' else None,
                     })
@@ -1643,7 +1707,7 @@ def _fetch_okrs_for_run(run_id: int) -> Dict[str, Dict[str, Any]]:
                     # Fetch KRs per objective id (simple loop to avoid dialect-specific IN binding)
                     for oid in okr_map.keys():
                         kr_rows = s.execute(
-                            text(f"SELECT {coalesce_expr}, {b_expr} AS baseline, {t_expr} AS target, {u_expr} AS unit, {p_expr} AS per FROM okr_key_results WHERE objective_id = :oid ORDER BY id ASC"),
+                            text(f"SELECT {coalesce_expr}, {b_expr} AS baseline, {t_expr} AS target, {a_expr} AS actual, {u_expr} AS unit, {p_expr} AS per FROM okr_key_results WHERE objective_id = :oid ORDER BY id ASC"),
                             {"oid": oid}
                         ).fetchall()
                         if kr_rows:
@@ -1652,7 +1716,7 @@ def _fetch_okrs_for_run(run_id: int) -> Dict[str, Dict[str, Any]]:
                     for oid, (pk, obj_txt, prompt_txt) in okr_map.items():
                         krs: List[str] = []
                         for row in by_obj.get(oid, []):
-                            # row indices: 0=text, 1=baseline, 2=target, 3=unit, 4=per (when selected above)
+                            # row indices: 0=text, 1=baseline, 2=target, 3=actual, 4=unit, 5=per (when selected above)
                             kr_txt = (row[0] or "")
                             if isinstance(kr_txt, bytes):
                                 try:
@@ -1662,8 +1726,9 @@ def _fetch_okrs_for_run(run_id: int) -> Dict[str, Dict[str, Any]]:
                             kr_txt = str(kr_txt).strip()
                             b = str(row[1]).strip() if len(row) > 1 and row[1] is not None else ''
                             t = str(row[2]).strip() if len(row) > 2 and row[2] is not None else ''
-                            u = str(row[3]).strip() if len(row) > 3 and row[3] is not None else ''
-                            p = str(row[4]).strip() if len(row) > 4 and row[4] is not None else ''
+                            a = str(row[3]).strip() if len(row) > 3 and row[3] is not None else ''
+                            u = str(row[4]).strip() if len(row) > 4 and row[4] is not None else ''
+                            p = str(row[5]).strip() if len(row) > 5 and row[5] is not None else ''
 
                             def _fmt_num(x_: str) -> str:
                                 try:
@@ -1680,14 +1745,74 @@ def _fetch_okrs_for_run(run_id: int) -> Dict[str, Dict[str, Any]]:
                                 if u_.lower() in ('percent', '%') and not p_:
                                     return '%'
                                 if u_ and p_:
-                                    return f' {u_} per {p_}'
+                                    return f'{u_} per {p_}'
                                 if u_:
-                                    return f' {u_}'
+                                    return f'{u_}'
                                 if p_:
-                                    return f' per {p_}'
+                                    return f'per {p_}'
                                 return ''
 
+                            def _as_float(raw_: str) -> float | None:
+                                try:
+                                    return float(str(raw_).strip())
+                                except Exception:
+                                    return None
+
+                            def _subject_phrase(text_value: str) -> str:
+                                text_value = (text_value or "").strip()
+                                prefixes = (
+                                    "complete ",
+                                    "do ",
+                                    "have ",
+                                    "drink ",
+                                    "limit ",
+                                    "practice ",
+                                    "take ",
+                                    "sleep ",
+                                    "go ",
+                                    "wake ",
+                                )
+                                lower = text_value.lower()
+                                for prefix in prefixes:
+                                    if lower.startswith(prefix):
+                                        trimmed = text_value[len(prefix):].strip()
+                                        if trimmed:
+                                            return trimmed
+                                return text_value
+
+                            def _compose_kr_text(base: str, current: str, target: str, unit: str) -> str:
+                                base = (base or "").strip()
+                                if not base:
+                                    return ""
+                                current = (current or "").strip()
+                                target = (target or "").strip()
+                                unit = (unit or "").strip()
+                                if unit == "%":
+                                    suffix = "%"
+                                else:
+                                    suffix = f" {unit}" if unit else ""
+                                subject = _subject_phrase(base)
+                                if current and target:
+                                    c_val = _as_float(current)
+                                    t_val = _as_float(target)
+                                    if c_val is not None and t_val is not None:
+                                        if t_val > c_val:
+                                            return f"Increase {subject} from {current}{suffix} to {target}{suffix}."
+                                        if t_val < c_val:
+                                            return f"Reduce {subject} from {current}{suffix} to {target}{suffix}."
+                                        return f"Maintain {subject} at {target}{suffix}."
+                                    return f"Adjust {subject} from {current}{suffix} to {target}{suffix}."
+                                if target:
+                                    return f"Target {subject} at {target}{suffix}."
+                                if current:
+                                    return f"Current {subject}: {current}{suffix}."
+                                return base
+
                             if kr_txt:
+                                current_num = _fmt_num(a) if a else (_fmt_num(b) if b else "")
+                                target_num = _fmt_num(t) if t else ""
+                                unit_value = _fmt_unit(u, p)
+                                kr_txt = _compose_kr_text(kr_txt, current_num, target_num, unit_value)
                                 krs.append(kr_txt)
                         if pk:
                             out[pk] = {"objective": obj_txt, "krs": krs, "llm_prompt": prompt_txt}
