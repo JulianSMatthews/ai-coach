@@ -40,10 +40,10 @@ DEFAULT_MONITORING_LLM_INTERACTIVE_P50_WARN_MS = 9000.0
 DEFAULT_MONITORING_LLM_INTERACTIVE_P50_CRITICAL_MS = 13000.0
 DEFAULT_MONITORING_LLM_INTERACTIVE_P95_WARN_MS = 15000.0
 DEFAULT_MONITORING_LLM_INTERACTIVE_P95_CRITICAL_MS = 22000.0
-DEFAULT_MONITORING_LLM_WORKER_P50_WARN_MS = 12000.0
-DEFAULT_MONITORING_LLM_WORKER_P50_CRITICAL_MS = 18000.0
-DEFAULT_MONITORING_LLM_WORKER_P95_WARN_MS = 20000.0
-DEFAULT_MONITORING_LLM_WORKER_P95_CRITICAL_MS = 30000.0
+DEFAULT_MONITORING_LLM_WORKER_P50_WARN_MS = 20000.0
+DEFAULT_MONITORING_LLM_WORKER_P50_CRITICAL_MS = 28000.0
+DEFAULT_MONITORING_LLM_WORKER_P95_WARN_MS = 30000.0
+DEFAULT_MONITORING_LLM_WORKER_P95_CRITICAL_MS = 40000.0
 
 PILLARS = [
     ("nutrition",  "Nutrition"),
@@ -384,35 +384,95 @@ By the end of the episode, the user should feel:
         "is_active": True,
         "block_order": ['system', 'locale', 'context', 'history', 'okr', 'scores', 'habit', 'task', 'user'],
         "include_blocks": ['system', 'locale', 'context', 'history', 'okr', 'scores', 'habit', 'task', 'user'],
-        "task_block": """You are delivering the first-day coaching welcome podcast.
-This message is sent instead of the normal day flow when coaching starts and the first scheduled day is not Sunday.
-
-Your role is to welcome the user, orient them to the week, and reinforce the habit steps that were already prepared from their completed assessment.
-
-Keep the podcast short (around 45–75 seconds in natural pacing).
-
-Required content:
-- Warm first-day welcome.
-- Brief reminder that their habit steps are already set from assessment.
-- Mention the provided habit steps in plain language (do not add new goals).
-- Encourage consistency and low-pressure repetition this week.
-- Invite the user to reply if they want to adjust any habit step.
-
-Tone:
-- Calm
-- Practical
-- Human
-- Supportive
-- No hype
-
-Do not:
-- Introduce new tasks or goals.
-- Use OKR/KR jargon.
-- Sound evaluative or urgent.
-- Turn this into a review/checkpoint.
-
-Desired outcome:
-The user feels welcomed, clear on what they are doing this week, and confident starting coaching.""",
+        "task_block": """You are delivering the First Coaching Welcome message.
+This message appears when a user first enters the coaching experience, before they have chosen their Habit Steps.
+Your role is to warmly welcome them, introduce the philosophy behind HealthSense, then gently introduce Habit Steps — what they are, why they matter, and how they fit into the Sunday start of their Nutrition 21-day block.
+This message should feel calm, supportive, warm, and human.
+Write in plain text only.
+Do not use bold, italics, or formatting symbols.
+Core Purpose
+• Give a warm welcome to the coaching experience.
+• Briefly introduce what HealthSense coaching is and the journey they’re stepping into.
+• Introduce the concept of Habit Steps in a natural, simple, and reassuring way.
+• Explain why Habit Steps are used, without making it sound technical.
+• Let them know that Sunday is when their first set of Habit Steps will be chosen and when their Nutrition 21-day block officially begins.
+• Reassure them that there is nothing they need to do until Sunday.
+• Prepare them for receiving some coaching messages beforehand that help them get familiar with the rhythm.
+Structure
+1. Warm welcome into coaching
+Set the tone: calm, confident, and supportive.
+Make them feel like they’ve just stepped into something structured and helpful.
+Example tone guidance:
+“Great to have you here. You’re now stepping into the coaching part of HealthSense — the part where things start to come together.”
+(This is tone guidance only, not script.)
+2. Introduce the coaching approach
+In simple language, explain that HealthSense uses a structured, layered approach to wellbeing:
+• Change is built weekly, not instantly
+• Progress comes from rhythm, not intensity
+• We focus on one pillar at a time
+Keep this light, not educational or detailed.
+3. Gentle introduction to Habit Steps
+Before explaining them, set the frame:
+• Mention that HealthSense uses small, weekly actions to make the process manageable.
+• Mention that these small actions (Habit Steps) form the core of each week.
+• Keep it warm and human, not technical.
+Example tone:
+“We keep things simple so you’re never overwhelmed — just a few small actions each week that build real momentum.”
+4. Now explain Habit Steps clearly and simply
+In plain language:
+• Habit Steps are small, repeatable actions that anchor progress
+• They make change feel doable
+• They fit into real life
+• They’re reviewed weekly so they always stay realistic
+• They build the foundation of each 21-day block
+Keep the explanation grounded, supportive, and not academic.
+5. Set expectations for Sunday
+Explain that:
+• Their first official Habit Steps will be chosen on Sunday
+• That Sunday marks the beginning of their Nutrition 21-day block
+• This gives them a clear, structured starting point
+• Nothing is expected of them before Sunday
+Avoid any wording that implies they’re late or early.
+6. Set expectations for messages between now and Sunday
+Let them know gently:
+• They may receive a few coaching messages before Sunday
+• These messages help them get familiar with how coaching works
+• They are not expected to act on anything yet
+• It’s simply a chance to understand the rhythm and style of support
+Keep the tone calm and reassuring.
+7. Close with confidence
+End with a warm, steady, supportive tone:
+• “You’re in the right place.”
+• “We’ll take this one week at a time.”
+• “You’ll choose your Habit Steps on Sunday and begin your first block.”
+No hype. No pressure.
+Tone
+Warm
+Calm
+Supportive
+Clear
+Human
+Reassuring
+Low-pressure
+Steady
+Not motivational
+Not intense
+Do Not
+• Do not mention joining midweek
+• Do not mention bridge periods
+• Do not mention OKRs or deep system mechanics
+• Do not give specific Habit Steps
+• Do not imply they should prepare for Sunday
+• Do not ask them to do tasks early
+• Do not use hype or urgency
+Emotional Outcome
+By the end of this message, the user should feel:
+• Welcomed
+• Clear on what Habit Steps are
+• Clear on why they matter
+• Reassured that nothing is expected until Sunday
+• Comfortable receiving a few messages beforehand
+• Excited and grounded ahead of starting their Nutrition block""",
     },
     {
         "touchpoint": 'weekstart_support',
@@ -587,7 +647,7 @@ The desired outcome is a short reply that keeps the conversation open.""",
         "response_format": '',
         "is_active": True,
         "block_order": ['system', 'locale', 'context', 'okr', 'task', 'user'],
-        "include_blocks": ['system', 'locale', 'context', 'okr', 'task'],
+        "include_blocks": ['system', 'locale', 'context', 'okr', 'task', 'user'],
         "task_block": """You generate initial week-1 habit steps immediately after assessment completion.
 
 Return STRICT JSON only using this exact shape:
@@ -597,15 +657,60 @@ Return STRICT JSON only using this exact shape:
   ]
 }
 
-Rules:
-- Include every kr_id from the input exactly once.
-- Write one week-1 habit step per KR.
-- Keep each step practical, observable, and low-pressure.
-- Keep each step realistic for this week and usually completable in 15 minutes or less.
-- Prefer actions that can be repeated on at least 2 days this week.
-- Use plain British English.
-- Do not include markdown, prose, or extra keys.
-- Do not mention KR IDs inside step_text.""",
+You are generating Week 1 Habit Steps for each KR in the input.
+Your role is to give the user clear, guided, practical actions that help them set up their environment, routines, or decisions so the week feels easier — NOT tiny nutritional add-ons or vague food tweaks.
+Core Behaviour Rules (Updated for Mini)
+Produce one clear Week-1 Habit Step for each KR in the input.
+Use every kr_id once.
+Each habit step must describe one clear, practical action the user can do without thinking.
+Each habit step must be about setup, preparation, visibility, routine, organisation, or pre-decisions — not food toppings, not “eat X”, not minor nutrition tricks.
+The action must be realistic but specific, so the user knows exactly what to do.
+Do not mention timing, duration, or frequency.
+Use natural British English.
+Do not mention kr_id inside the step_text.
+Do not use markdown or formatting.
+What Habit Steps MUST look like
+Habit Steps should be:
+Environmental
+“Set out your breakfast ingredients in one spot so it’s easy to start your day without thinking.”
+Preparatory
+“Choose a simple lunch you can repeat this week and make sure the ingredients are ready at home.”
+Routine-based
+“Decide on one steady evening routine, like dimming lights or reading, and follow that same pattern.”
+Decision-removing
+“Choose one go-to snack you feel good about and keep it somewhere visible for busy moments.”
+Friction-reducing
+“Organise a small space for your training kit so it’s always ready to use.”
+These are behavioural, not nutritional micro-tweaks.
+What Habit Steps MUST NOT be
+Do not generate any steps like:
+“Add fruit…”
+“Add vegetables…”
+“Drink a glass of water…”
+“Have protein with meals…”
+“Swap X for Y…”
+“Include a healthy option…”
+“Try a new recipe…”
+“Eat less…”
+Any food topping or food addition
+Any step based on guessing what foods they like
+These will always be too vague and too low-value.
+Mini-Friendly Writing Rules
+Mini models improve dramatically when given explicit phrase guidance.
+Each step should:
+Start with a clear verb:
+Prepare, organise, choose, set aside, place, decide, lay out, group, arrange, tidy.
+Describe one specific action, not a general behaviour.
+Include one small supporting detail to make it concrete.
+Example: “…and keep it somewhere you’ll see it.”
+Use natural human sentences, not templates.
+Avoid repeating sentence structures across steps.
+Output Format
+Return a list of objects.
+Each object must include:
+kr_id
+step_text
+Nothing else.""",
     },
     {
         "touchpoint": 'habit_steps_generator',
@@ -615,18 +720,51 @@ Rules:
         "is_active": True,
         "block_order": ['system', 'locale', 'context', 'history', 'okr', 'scores', 'habit', 'task', 'user'],
         "include_blocks": ['system', 'locale', 'context', 'history', 'okr', 'scores', 'habit', 'task', 'user'],
-        "task_block": """Keep this warm, calm, and easy to read.
-
-This touchpoint is for weekly habit-step selection and is not for initial assessment week-1 seeding.
-
-Start with a brief line acknowledging the podcast and that you’re now turning the OKRs into simple weekly actions.
-Then add one short sentence: you’ll share a few small habit-step options per KR so they can choose what feels most realistic this week.
-
-Using the podcast context, create three habit-step options per KR.
-Keep them practical, low‑pressure, and easy to start this week.
-
-Use this exact format (no extra bullets or commentary):
-
+        "task_block": """You are generating the weekly Habit Step options for each KR.
+This touchpoint happens after the weekly coaching podcast and is only for the user choosing their new Habit Steps for the week.
+It is not for the initial assessment seeding week.
+Your role is to give the user clear, practical, low-pressure options they can choose from — each one being a small, specific action that helps them make progress this week.
+Write in plain text only.
+Do not use markdown or formatting symbols.
+Do not mention KR IDs inside step options.
+Opening Lines (Mini-Safe Behaviour)
+Start with one short, calm sentence acknowledging the podcast and explaining that you’re now turning their OKRs into simple weekly actions.
+Then add a single sentence explaining that you will share a few small Habit Step options per KR so they can choose what feels most realistic this week.
+The tone should be warm, steady, and unrushed.
+Habit-Step Generation Rules (Aligned With the Revised Week-1 Behaviour)
+For each KR:
+Create three Habit Step options (A, B, and C).
+If only two are meaningfully different, you may provide A and B only.
+Each option must be clear, specific, and actionable — not vague intentions or nutritional micro-tweaks.
+Each option must be a single behaviour, not a cluster of tasks.
+Each option should be friction-reducing, preparatory, environmental, or routine-based.
+Keep them small enough to feel completely manageable this week.
+Do not include time, duration, or number of days.
+Do not mention week numbers or "week 1".
+Use plain British English.
+What Habit Steps Should Look Like (Mini Guidance)
+Each option should:
+Start with a clear verb (prepare, choose, set, arrange, organise, lay out, decide, etc).
+Describe one small, concrete action.
+Include one guiding detail that makes the action clear (“…and place it where you’ll see it”).
+Avoid repeated phrasing across options or KRs.
+Examples of the correct pattern:
+“Prepare one go-to breakfast you can rely on using ingredients you already have.”
+“Choose a simple evening routine, like dimming lights or reading, and repeat that pattern.”
+“Set out your training clothes somewhere visible so getting started feels easier.”
+“Organise a small spot in the kitchen for the foods you want to reach for first.”
+Avoid:
+“Add fruit…”
+“Drink water…”
+“Include vegetables…”
+“Try to improve…”
+“Be mindful…”
+“Aim to…”
+“Swap X for Y…”
+measurement, calories, macros
+time-based instructions
+vague ideas or intentions
+Format (Must Follow Exactly)
 KR1: <short KR description>
 1A) <habit step option>
 1B) <habit step option>
@@ -635,13 +773,14 @@ KR2: <short KR description>
 2A) <habit step option>
 2B) <habit step option>
 2C) <habit step option>
-…
-
-If a KR only needs two options, still include an A and B, but prefer three whenever possible.
-
-End with one short line telling them they’ll be asked to choose an option for each KR.
-
-Tone: steady, supportive, unrushed.""",
+…continue this pattern for all KRs.
+No extra commentary.
+No additional bullets.
+No headings.
+No explanations.
+Closing Line
+End with one short sentence telling them they’ll be asked to choose one option for each KR.
+Keep tone steady, supportive, and unrushed.""",
     },
     {
         "touchpoint": 'weekstart_actions',
@@ -682,7 +821,7 @@ Tone: steady, supportive, unrushed.""",
     {
         "touchpoint": 'midweek',
         "okr_scope": 'week',
-        "programme_scope": '',
+        "programme_scope": 'pillar',
         "response_format": '',
         "is_active": True,
         "block_order": ['system', 'locale', 'context', 'history', 'okr', 'scores', 'habit', 'task', 'user'],
@@ -872,6 +1011,10 @@ Your goal is to help the user recognise themselves in the description and feel u
 
 Refer directly to the user’s pillar scores and use them to paint a clear, human picture of what their day-to-day experience might be like.
 
+• Open by thanking the user for completing the assessment. 
+• Tone must be warm, supportive, and human — no AI-style phrasing, no jargon.
+• Clearly state that you’re going to give them a simple, helpful breakdown of their results before moving on.
+
 For each pillar:
 - Translate the score into lived experiences, common patterns, and subtle signals the user may recognise.
 - Explain how people with similar scores often feel, think, or behave — without making assumptions or sounding diagnostic.
@@ -940,8 +1083,8 @@ End with one short line reinforcing that these OKRs were designed specifically f
     },
     {
         "touchpoint": 'assessment_approach',
-        "okr_scope": '',
-        "programme_scope": '',
+        "okr_scope": 'all',
+        "programme_scope": 'full',
         "response_format": '',
         "is_active": True,
         "block_order": ['system', 'locale', 'context', 'habit', 'task', 'user'],
@@ -1009,7 +1152,7 @@ Rules:
 - Skip maintenance KRs where no behavior change is needed.
 - Forbidden terms in KR text: score, adherence, priority action.
 - Return JSON only. No markdown, no prose outside JSON.""",
-    }
+    },
 ]
 
 
@@ -1209,13 +1352,17 @@ def seed_prompt_templates(session: Session) -> int:
             settings.monitoring_llm_interactive_p95_warn_ms = DEFAULT_MONITORING_LLM_INTERACTIVE_P95_WARN_MS
         if getattr(settings, "monitoring_llm_interactive_p95_critical_ms", None) is None:
             settings.monitoring_llm_interactive_p95_critical_ms = DEFAULT_MONITORING_LLM_INTERACTIVE_P95_CRITICAL_MS
-        if getattr(settings, "monitoring_llm_worker_p50_warn_ms", None) is None:
+        worker_p50_warn = getattr(settings, "monitoring_llm_worker_p50_warn_ms", None)
+        if worker_p50_warn in (None, 12000.0):
             settings.monitoring_llm_worker_p50_warn_ms = DEFAULT_MONITORING_LLM_WORKER_P50_WARN_MS
-        if getattr(settings, "monitoring_llm_worker_p50_critical_ms", None) is None:
+        worker_p50_critical = getattr(settings, "monitoring_llm_worker_p50_critical_ms", None)
+        if worker_p50_critical in (None, 18000.0):
             settings.monitoring_llm_worker_p50_critical_ms = DEFAULT_MONITORING_LLM_WORKER_P50_CRITICAL_MS
-        if getattr(settings, "monitoring_llm_worker_p95_warn_ms", None) is None:
+        worker_p95_warn = getattr(settings, "monitoring_llm_worker_p95_warn_ms", None)
+        if worker_p95_warn in (None, 20000.0):
             settings.monitoring_llm_worker_p95_warn_ms = DEFAULT_MONITORING_LLM_WORKER_P95_WARN_MS
-        if getattr(settings, "monitoring_llm_worker_p95_critical_ms", None) is None:
+        worker_p95_critical = getattr(settings, "monitoring_llm_worker_p95_critical_ms", None)
+        if worker_p95_critical in (None, 30000.0):
             settings.monitoring_llm_worker_p95_critical_ms = DEFAULT_MONITORING_LLM_WORKER_P95_CRITICAL_MS
     created = 0
     TARGET_STATES = ["develop", "beta", "live"]
