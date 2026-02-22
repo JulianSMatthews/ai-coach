@@ -1,0 +1,985 @@
+[
+  {
+    "id": 1,
+    "created_at": "2026-02-20 11:41:24.42672",
+    "model": "gpt-5-mini",
+    "duration_ms": "11554",
+    "payload": {
+      "history": [
+        {
+          "role": "assistant",
+          "text": "In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries."
+        },
+        {
+          "role": "user",
+          "text": "2"
+        }
+      ],
+      "already_asked": [
+        "In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries."
+      ],
+      "already_asked_norm": [
+        "in the last 7 days how many portions of fruit and vegetables did you eat on average per day for reference 1 portion 1 apple or banana 1 fist sized serving of vegetables or 1 handful of salad or berries"
+      ],
+      "turns_so_far": 1,
+      "retrieval": [
+        {
+          "id": 3,
+          "type": "snippet",
+          "title": "Target & variety",
+          "text": "≥5 portions/day; mix colours for fibre and micronutrients.",
+          "score": 0.03179401328774153,
+          "locale": "en-GB"
+        },
+        {
+          "id": 4,
+          "type": "snippet",
+          "title": "Make it easy",
+          "text": "Front-load fruit/veg into the first two meals; batch-cook to stay consistent.",
+          "score": 0.02766131133018047,
+          "locale": "en-GB"
+        }
+      ],
+      "concept_focus": "fruit_veg",
+      "sufficient_for_scoring": true
+    },
+    "payload_raw": null,
+    "parse_error": null
+  },
+  {
+    "id": 2,
+    "created_at": "2026-02-20 11:41:45.02629",
+    "model": "gpt-5-mini",
+    "duration_ms": "12022",
+    "payload": {
+      "history": [
+        {
+          "role": "assistant",
+          "text": "In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries."
+        },
+        {
+          "role": "user",
+          "text": "2"
+        },
+        {
+          "role": "assistant",
+          "text": "Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml."
+        },
+        {
+          "role": "user",
+          "text": "2 litres"
+        }
+      ],
+      "already_asked": [
+        "In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries.",
+        "Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml."
+      ],
+      "already_asked_norm": [
+        "thinking about the last 7 days how much water did you usually drink per day for reference 1 glass 250ml 1 small bottle 500ml",
+        "in the last 7 days how many portions of fruit and vegetables did you eat on average per day for reference 1 portion 1 apple or banana 1 fist sized serving of vegetables or 1 handful of salad or berries"
+      ],
+      "turns_so_far": 2,
+      "retrieval": [
+        {
+          "id": 6,
+          "type": "snippet",
+          "title": "Scoring cue (0–6 L/day)",
+          "text": "2–4 L/day = strong; spread intake through the day; pair sips with routine cues.",
+          "score": -0.015553352157052109,
+          "locale": "en-GB"
+        },
+        {
+          "id": 5,
+          "type": "snippet",
+          "title": "Daily target",
+          "text": "Women: 2–3 L/day; Men: 3–4 L/day (more with heat/training). Pale-straw urine ≈ good hydration.",
+          "score": -0.02217761208925138,
+          "locale": "en-GB"
+        }
+      ],
+      "concept_focus": "hydration",
+      "sufficient_for_scoring": true
+    },
+    "payload_raw": null,
+    "parse_error": null
+  },
+  {
+    "id": 3,
+    "created_at": "2026-02-20 11:42:14.600062",
+    "model": "gpt-5-mini",
+    "duration_ms": "15106",
+    "payload": {
+      "history": [
+        {
+          "role": "assistant",
+          "text": "In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries."
+        },
+        {
+          "role": "user",
+          "text": "2"
+        },
+        {
+          "role": "assistant",
+          "text": "Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml."
+        },
+        {
+          "role": "user",
+          "text": "2 litres"
+        },
+        {
+          "role": "assistant",
+          "text": "In the last 7 days, how many portions of processed food did you *eat on average per day*? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry."
+        },
+        {
+          "role": "user",
+          "text": "3"
+        }
+      ],
+      "already_asked": [
+        "In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries.",
+        "Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml.",
+        "In the last 7 days, how many portions of processed food did you *eat on average per day*? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry."
+      ],
+      "already_asked_norm": [
+        "thinking about the last 7 days how much water did you usually drink per day for reference 1 glass 250ml 1 small bottle 500ml",
+        "in the last 7 days how many portions of fruit and vegetables did you eat on average per day for reference 1 portion 1 apple or banana 1 fist sized serving of vegetables or 1 handful of salad or berries",
+        "in the last 7 days how many portions of processed food did you eat on average per day examples 1 portion a chocolate bar 1 can of fizzy drink 1 handful of sweets or a pastry"
+      ],
+      "turns_so_far": 3,
+      "retrieval": [
+        {
+          "id": 8,
+          "type": "snippet",
+          "title": "Scoring cue (reverse; 0–4+/day)",
+          "text": "0/day = best, 0–1/day = good, 2–3/day = fair, ≥4/day = poor; use an 80/20 approach and reward gradual reduction.",
+          "score": -0.00803971981929605,
+          "locale": "en-GB"
+        },
+        {
+          "id": 7,
+          "type": "snippet",
+          "title": "Definition & unit",
+          "text": "UPFs include crisps, sweets, pastries, ready meals, sugary drinks; count portions per day.",
+          "score": -0.02278227049193842,
+          "locale": "en-GB"
+        }
+      ],
+      "concept_focus": "processed_food",
+      "sufficient_for_scoring": true
+    },
+    "payload_raw": null,
+    "parse_error": null
+  },
+  {
+    "id": 4,
+    "created_at": "2026-02-20 11:42:35.741041",
+    "model": "gpt-5-mini",
+    "duration_ms": "13665",
+    "payload": {
+      "history": [
+        {
+          "role": "assistant",
+          "text": "In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries."
+        },
+        {
+          "role": "user",
+          "text": "2"
+        },
+        {
+          "role": "assistant",
+          "text": "Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml."
+        },
+        {
+          "role": "user",
+          "text": "2 litres"
+        },
+        {
+          "role": "assistant",
+          "text": "In the last 7 days, how many portions of processed food did you *eat on average per day*? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry."
+        },
+        {
+          "role": "user",
+          "text": "3"
+        },
+        {
+          "role": "assistant",
+          "text": "Thinking about the last 7 days, how many protein portions did you usually *eat on average per day*? For reference: 1 portion = palm-sized meat or fish, 2 eggs, 1 handful of nuts, or 1 cup of beans/lentils."
+        },
+        {
+          "role": "user",
+          "text": "3"
+        }
+      ],
+      "already_asked": [
+        "In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries.",
+        "Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml.",
+        "In the last 7 days, how many portions of processed food did you *eat on average per day*? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry.",
+        "Thinking about the last 7 days, how many protein portions did you usually *eat on average per day*? For reference: 1 portion = palm-sized meat or fish, 2 eggs, 1 handful of nuts, or 1 cup of beans/lentils."
+      ],
+      "already_asked_norm": [
+        "in the last 7 days how many portions of processed food did you eat on average per day examples 1 portion a chocolate bar 1 can of fizzy drink 1 handful of sweets or a pastry",
+        "thinking about the last 7 days how many protein portions did you usually eat on average per day for reference 1 portion palm sized meat or fish 2 eggs 1 handful of nuts or 1 cup of beans lentils",
+        "thinking about the last 7 days how much water did you usually drink per day for reference 1 glass 250ml 1 small bottle 500ml",
+        "in the last 7 days how many portions of fruit and vegetables did you eat on average per day for reference 1 portion 1 apple or banana 1 fist sized serving of vegetables or 1 handful of salad or berries"
+      ],
+      "turns_so_far": 4,
+      "retrieval": [
+        {
+          "id": 2,
+          "type": "snippet",
+          "title": "Scoring cue (0–5/day)",
+          "text": "0–1/day = low, 2–3/day = fair, 3–4/day = good, 5/day = excellent; spread evenly across meals.",
+          "score": -0.012085480110614121,
+          "locale": "en-GB"
+        },
+        {
+          "id": 1,
+          "type": "snippet",
+          "title": "Portion baseline",
+          "text": "Aim ~3–4 protein portions/day; 1 portion = palm of lean protein, 2 eggs, or 1 cup beans/lentils.",
+          "score": -0.020697768875056533,
+          "locale": "en-GB"
+        }
+      ],
+      "concept_focus": "protein_intake",
+      "sufficient_for_scoring": true
+    },
+    "payload_raw": null,
+    "parse_error": null
+  },
+  {
+    "id": 6,
+    "created_at": "2026-02-20 11:43:42.34756",
+    "model": "gpt-5-mini",
+    "duration_ms": "11212",
+    "payload": {
+      "history": [
+        {
+          "role": "assistant",
+          "text": "*Great Rhys* — Nutrition done. Now a quick check on Training ⭐"
+        },
+        {
+          "role": "assistant",
+          "text": "Looking ahead over the next three months, do you have any particular training goal or focus (e.g., marathon prep, strength maintenance, injury recovery)?"
+        },
+        {
+          "role": "assistant",
+          "text": "In the last 7 days, on how many days did you do at least 20 minutes of cardio exercise, such as running, cycling, or swimming?"
+        },
+        {
+          "role": "user",
+          "text": "2"
+        }
+      ],
+      "already_asked": [
+        "Looking ahead over the next three months, do you have any particular training goal or focus (e.g., marathon prep, strength maintenance, injury recovery)?",
+        "In the last 7 days, on how many days did you do at least 20 minutes of cardio exercise, such as running, cycling, or swimming?"
+      ],
+      "already_asked_norm": [
+        "in the last 7 days on how many days did you do at least 20 minutes of cardio exercise such as running cycling or swimming",
+        "looking ahead over the next three months do you have any particular training goal or focus e g marathon prep strength maintenance injury recovery"
+      ],
+      "turns_so_far": 2,
+      "retrieval": [
+        {
+          "id": 10,
+          "type": "snippet",
+          "title": "Scoring cue (0–5 days/wk)",
+          "text": "0–1 days = low, 2–3 = fair, 4 = good, 5 = excellent; 150–300 min/week moderate (or 75–150 vigorous) is the weekly anchor.",
+          "score": 0.04581577573201189,
+          "locale": "en-GB"
+        },
+        {
+          "id": 9,
+          "type": "snippet",
+          "title": "Aerobic baseline",
+          "text": "Do ≥20 min most days in Zone 2–3; include 1–2 sessions/week in Zone 4–5 for range.",
+          "score": 0.04549357184108104,
+          "locale": "en-GB"
+        }
+      ],
+      "concept_focus": "cardio_frequency",
+      "sufficient_for_scoring": true
+    },
+    "payload_raw": null,
+    "parse_error": null
+  },
+  {
+    "id": 7,
+    "created_at": "2026-02-20 11:44:11.047515",
+    "model": "gpt-5-mini",
+    "duration_ms": "10296",
+    "payload": {
+      "history": [
+        {
+          "role": "assistant",
+          "text": "*Great Rhys* — Nutrition done. Now a quick check on Training ⭐"
+        },
+        {
+          "role": "assistant",
+          "text": "Looking ahead over the next three months, do you have any particular training goal or focus (e.g., marathon prep, strength maintenance, injury recovery)?"
+        },
+        {
+          "role": "assistant",
+          "text": "In the last 7 days, on how many days did you do at least 20 minutes of cardio exercise, such as running, cycling, or swimming?"
+        },
+        {
+          "role": "user",
+          "text": "2"
+        },
+        {
+          "role": "assistant",
+          "text": "In the last 7 days, on how many days did you do stretching, yoga, or mobility work for at least 10 minutes?"
+        },
+        {
+          "role": "user",
+          "text": "3"
+        }
+      ],
+      "already_asked": [
+        "Looking ahead over the next three months, do you have any particular training goal or focus (e.g., marathon prep, strength maintenance, injury recovery)?",
+        "In the last 7 days, on how many days did you do at least 20 minutes of cardio exercise, such as running, cycling, or swimming?",
+        "In the last 7 days, on how many days did you do stretching, yoga, or mobility work for at least 10 minutes?"
+      ],
+      "already_asked_norm": [
+        "in the last 7 days on how many days did you do at least 20 minutes of cardio exercise such as running cycling or swimming",
+        "in the last 7 days on how many days did you do stretching yoga or mobility work for at least 10 minutes",
+        "looking ahead over the next three months do you have any particular training goal or focus e g marathon prep strength maintenance injury recovery"
+      ],
+      "turns_so_far": 3,
+      "retrieval": [
+        {
+          "id": 14,
+          "type": "snippet",
+          "title": "Scoring cue (0–5 days/wk)",
+          "text": "Consistency beats one-off long sessions; more days at 10–15 min score higher.",
+          "score": 0.032788904698004995,
+          "locale": "en-GB"
+        },
+        {
+          "id": 13,
+          "type": "snippet",
+          "title": "Baseline habit",
+          "text": "≥10 minutes on ≥3 days/week; link to a fixed time (post-workout or pre-bed).",
+          "score": 0.025467189008618985,
+          "locale": "en-GB"
+        }
+      ],
+      "concept_focus": "flexibility_mobility",
+      "sufficient_for_scoring": true
+    },
+    "payload_raw": null,
+    "parse_error": null
+  },
+  {
+    "id": 8,
+    "created_at": "2026-02-20 11:44:33.644901",
+    "model": "gpt-5-mini",
+    "duration_ms": "10560",
+    "payload": {
+      "history": [
+        {
+          "role": "assistant",
+          "text": "*Great Rhys* — Nutrition done. Now a quick check on Training ⭐"
+        },
+        {
+          "role": "assistant",
+          "text": "Looking ahead over the next three months, do you have any particular training goal or focus (e.g., marathon prep, strength maintenance, injury recovery)?"
+        },
+        {
+          "role": "assistant",
+          "text": "In the last 7 days, on how many days did you do at least 20 minutes of cardio exercise, such as running, cycling, or swimming?"
+        },
+        {
+          "role": "user",
+          "text": "2"
+        },
+        {
+          "role": "assistant",
+          "text": "In the last 7 days, on how many days did you do stretching, yoga, or mobility work for at least 10 minutes?"
+        },
+        {
+          "role": "user",
+          "text": "3"
+        },
+        {
+          "role": "assistant",
+          "text": "In the last 7 days, how many strength training sessions did you do, such as weights, bodyweight exercises, or resistance bands?"
+        },
+        {
+          "role": "user",
+          "text": "2"
+        }
+      ],
+      "already_asked": [
+        "Looking ahead over the next three months, do you have any particular training goal or focus (e.g., marathon prep, strength maintenance, injury recovery)?",
+        "In the last 7 days, on how many days did you do at least 20 minutes of cardio exercise, such as running, cycling, or swimming?",
+        "In the last 7 days, on how many days did you do stretching, yoga, or mobility work for at least 10 minutes?",
+        "In the last 7 days, how many strength training sessions did you do, such as weights, bodyweight exercises, or resistance bands?"
+      ],
+      "already_asked_norm": [
+        "in the last 7 days how many strength training sessions did you do such as weights bodyweight exercises or resistance bands",
+        "in the last 7 days on how many days did you do stretching yoga or mobility work for at least 10 minutes",
+        "in the last 7 days on how many days did you do at least 20 minutes of cardio exercise such as running cycling or swimming",
+        "looking ahead over the next three months do you have any particular training goal or focus e g marathon prep strength maintenance injury recovery"
+      ],
+      "turns_so_far": 4,
+      "retrieval": [
+        {
+          "id": 11,
+          "type": "snippet",
+          "title": "Dose & structure",
+          "text": "2–3 full-body sessions/week; cover push, pull, squat, hinge, carry, core.",
+          "score": 0.03752061012580146,
+          "locale": "en-GB"
+        },
+        {
+          "id": 12,
+          "type": "snippet",
+          "title": "Scoring cue (0–4 sessions/wk)",
+          "text": "1 = low, 2 = fair, 3 = good, 4 = excellent if recovery (sleep/energy/soreness) is solid.",
+          "score": 0.028694635723678582,
+          "locale": "en-GB"
+        }
+      ],
+      "concept_focus": "strength_training",
+      "sufficient_for_scoring": true
+    },
+    "payload_raw": null,
+    "parse_error": null
+  },
+  {
+    "id": 10,
+    "created_at": "2026-02-20 11:45:23.645386",
+    "model": "gpt-5-mini",
+    "duration_ms": "8239",
+    "payload": {
+      "history": [
+        {
+          "role": "assistant",
+          "text": "*Great Rhys* — Training done. Now a quick check on Resilience ⭐"
+        },
+        {
+          "role": "assistant",
+          "text": "In the past 7 days, on how many days did you feel calm and in control of your emotions for most of the day?"
+        },
+        {
+          "role": "user",
+          "text": "3"
+        }
+      ],
+      "already_asked": [
+        "In the past 7 days, on how many days did you feel calm and in control of your emotions for most of the day?"
+      ],
+      "already_asked_norm": [
+        "in the past 7 days on how many days did you feel calm and in control of your emotions for most of the day"
+      ],
+      "turns_so_far": 1,
+      "retrieval": [
+        {
+          "id": 16,
+          "type": "snippet",
+          "title": "Scoring cue (0–7 days/wk)",
+          "text": "Reward intentional regulation efforts and consistency, not the absence of difficult emotion.",
+          "score": -0.012884500811383467,
+          "locale": "en-GB"
+        },
+        {
+          "id": 15,
+          "type": "snippet",
+          "title": "Micro-resets",
+          "text": "Take 5–10 min walks or mindful breaks; use 2–3 presence prompts/day (breath, posture, body scan).",
+          "score": -0.027343677352470702,
+          "locale": "en-GB"
+        }
+      ],
+      "concept_focus": "emotional_regulation",
+      "sufficient_for_scoring": true
+    },
+    "payload_raw": null,
+    "parse_error": null
+  },
+  {
+    "id": 11,
+    "created_at": "2026-02-20 11:45:42.402452",
+    "model": "gpt-5-mini",
+    "duration_ms": "12538",
+    "payload": {
+      "history": [
+        {
+          "role": "assistant",
+          "text": "*Great Rhys* — Training done. Now a quick check on Resilience ⭐"
+        },
+        {
+          "role": "assistant",
+          "text": "In the past 7 days, on how many days did you feel calm and in control of your emotions for most of the day?"
+        },
+        {
+          "role": "user",
+          "text": "3"
+        },
+        {
+          "role": "assistant",
+          "text": "In the past 7 days, on how many days did you feel able to stay positive and keep things in perspective when challenges arose?"
+        },
+        {
+          "role": "user",
+          "text": "2"
+        }
+      ],
+      "already_asked": [
+        "In the past 7 days, on how many days did you feel calm and in control of your emotions for most of the day?",
+        "In the past 7 days, on how many days did you feel able to stay positive and keep things in perspective when challenges arose?"
+      ],
+      "already_asked_norm": [
+        "in the past 7 days on how many days did you feel calm and in control of your emotions for most of the day",
+        "in the past 7 days on how many days did you feel able to stay positive and keep things in perspective when challenges arose"
+      ],
+      "turns_so_far": 2,
+      "retrieval": [
+        {
+          "id": 21,
+          "type": "snippet",
+          "title": "Reframe & evidence",
+          "text": "Widen the view: ask what else could be true; track one small win daily.",
+          "score": -0.0021951290723143183,
+          "locale": "en-GB"
+        },
+        {
+          "id": 22,
+          "type": "snippet",
+          "title": "Scoring cue (0–7 days/wk)",
+          "text": "Regular practice of reframing/perspective-taking increases the score.",
+          "score": -0.01400143646605489,
+          "locale": "en-GB"
+        }
+      ],
+      "concept_focus": "optimism_perspective",
+      "sufficient_for_scoring": true
+    },
+    "payload_raw": null,
+    "parse_error": null
+  },
+  {
+    "id": 12,
+    "created_at": "2026-02-20 11:46:02.004639",
+    "model": "gpt-5-mini",
+    "duration_ms": "13069",
+    "payload": {
+      "history": [
+        {
+          "role": "assistant",
+          "text": "*Great Rhys* — Training done. Now a quick check on Resilience ⭐"
+        },
+        {
+          "role": "assistant",
+          "text": "In the past 7 days, on how many days did you feel calm and in control of your emotions for most of the day?"
+        },
+        {
+          "role": "user",
+          "text": "3"
+        },
+        {
+          "role": "assistant",
+          "text": "In the past 7 days, on how many days did you feel able to stay positive and keep things in perspective when challenges arose?"
+        },
+        {
+          "role": "user",
+          "text": "2"
+        },
+        {
+          "role": "assistant",
+          "text": "In the past 7 days, on how many days did you do something that made you feel genuinely good — either by taking time for yourself or connecting with someone you enjoy spending time with?"
+        },
+        {
+          "role": "user",
+          "text": "3"
+        }
+      ],
+      "already_asked": [
+        "In the past 7 days, on how many days did you feel calm and in control of your emotions for most of the day?",
+        "In the past 7 days, on how many days did you feel able to stay positive and keep things in perspective when challenges arose?",
+        "In the past 7 days, on how many days did you do something that made you feel genuinely good — either by taking time for yourself or connecting with someone you enjoy spending time with?"
+      ],
+      "already_asked_norm": [
+        "in the past 7 days on how many days did you do something that made you feel genuinely good either by taking time for yourself or connecting with someone you enjoy spending time with",
+        "in the past 7 days on how many days did you feel calm and in control of your emotions for most of the day",
+        "in the past 7 days on how many days did you feel able to stay positive and keep things in perspective when challenges arose"
+      ],
+      "turns_so_far": 3,
+      "retrieval": [
+        {
+          "id": 17,
+          "type": "snippet",
+          "title": "Gratitude & contact",
+          "text": "Note 2–3 gratitudes/day; brief check-ins (message/call) count as positive connection.",
+          "score": 0.03505987195038756,
+          "locale": "en-GB"
+        },
+        {
+          "id": 18,
+          "type": "snippet",
+          "title": "Scoring cue (0–7 days/wk)",
+          "text": "Intentional engagement and gratitude both improve scores; more days = higher.",
+          "score": 0.03219642752648483,
+          "locale": "en-GB"
+        }
+      ],
+      "concept_focus": "positive_connection",
+      "sufficient_for_scoring": true
+    },
+    "payload_raw": null,
+    "parse_error": null
+  },
+  {
+    "id": 13,
+    "created_at": "2026-02-20 11:46:33.768497",
+    "model": "gpt-5-mini",
+    "duration_ms": "19307",
+    "payload": {
+      "history": [
+        {
+          "role": "assistant",
+          "text": "*Great Rhys* — Training done. Now a quick check on Resilience ⭐"
+        },
+        {
+          "role": "assistant",
+          "text": "In the past 7 days, on how many days did you feel calm and in control of your emotions for most of the day?"
+        },
+        {
+          "role": "user",
+          "text": "3"
+        },
+        {
+          "role": "assistant",
+          "text": "In the past 7 days, on how many days did you feel able to stay positive and keep things in perspective when challenges arose?"
+        },
+        {
+          "role": "user",
+          "text": "2"
+        },
+        {
+          "role": "assistant",
+          "text": "In the past 7 days, on how many days did you do something that made you feel genuinely good — either by taking time for yourself or connecting with someone you enjoy spending time with?"
+        },
+        {
+          "role": "user",
+          "text": "3"
+        },
+        {
+          "role": "assistant",
+          "text": "In the past 7 days, on how many days did you take a short break to relax, breathe deeply, or reset when you felt stressed or tired?"
+        },
+        {
+          "role": "user",
+          "text": "2"
+        }
+      ],
+      "already_asked": [
+        "In the past 7 days, on how many days did you feel calm and in control of your emotions for most of the day?",
+        "In the past 7 days, on how many days did you feel able to stay positive and keep things in perspective when challenges arose?",
+        "In the past 7 days, on how many days did you do something that made you feel genuinely good — either by taking time for yourself or connecting with someone you enjoy spending time with?",
+        "In the past 7 days, on how many days did you take a short break to relax, breathe deeply, or reset when you felt stressed or tired?"
+      ],
+      "already_asked_norm": [
+        "in the past 7 days on how many days did you feel able to stay positive and keep things in perspective when challenges arose",
+        "in the past 7 days on how many days did you do something that made you feel genuinely good either by taking time for yourself or connecting with someone you enjoy spending time with",
+        "in the past 7 days on how many days did you take a short break to relax breathe deeply or reset when you felt stressed or tired",
+        "in the past 7 days on how many days did you feel calm and in control of your emotions for most of the day"
+      ],
+      "turns_so_far": 4,
+      "retrieval": [
+        {
+          "id": 20,
+          "type": "snippet",
+          "title": "Scoring cue (0–7 days/wk)",
+          "text": "Consistent use of a coping strategy scores higher than infrequent, long sessions.",
+          "score": -0.002092779833546821,
+          "locale": "en-GB"
+        },
+        {
+          "id": 19,
+          "type": "snippet",
+          "title": "Active coping",
+          "text": "Use journaling and reach out to supports to reduce overload; short resets beat avoidance.",
+          "score": -0.015944855689856492,
+          "locale": "en-GB"
+        }
+      ],
+      "concept_focus": "stress_recovery",
+      "sufficient_for_scoring": true
+    },
+    "payload_raw": null,
+    "parse_error": null
+  },
+  {
+    "id": 14,
+    "created_at": "2026-02-20 11:46:53.826666",
+    "model": "gpt-5-mini",
+    "duration_ms": "13431",
+    "payload": {
+      "history": [
+        {
+          "role": "assistant",
+          "text": "In the past 7 days, on how many days did you feel calm and in control of your emotions for most of the day?"
+        },
+        {
+          "role": "user",
+          "text": "3"
+        },
+        {
+          "role": "assistant",
+          "text": "In the past 7 days, on how many days did you feel able to stay positive and keep things in perspective when challenges arose?"
+        },
+        {
+          "role": "user",
+          "text": "2"
+        },
+        {
+          "role": "assistant",
+          "text": "In the past 7 days, on how many days did you do something that made you feel genuinely good — either by taking time for yourself or connecting with someone you enjoy spending time with?"
+        },
+        {
+          "role": "user",
+          "text": "3"
+        },
+        {
+          "role": "assistant",
+          "text": "In the past 7 days, on how many days did you take a short break to relax, breathe deeply, or reset when you felt stressed or tired?"
+        },
+        {
+          "role": "user",
+          "text": "2"
+        },
+        {
+          "role": "assistant",
+          "text": "In the past 7 days, on how many days did you actively connect with others to discuss your goals, progress, or challenges?"
+        },
+        {
+          "role": "user",
+          "text": "2"
+        }
+      ],
+      "already_asked": [
+        "In the past 7 days, on how many days did you feel calm and in control of your emotions for most of the day?",
+        "In the past 7 days, on how many days did you feel able to stay positive and keep things in perspective when challenges arose?",
+        "In the past 7 days, on how many days did you do something that made you feel genuinely good — either by taking time for yourself or connecting with someone you enjoy spending time with?",
+        "In the past 7 days, on how many days did you take a short break to relax, breathe deeply, or reset when you felt stressed or tired?",
+        "In the past 7 days, on how many days did you actively connect with others to discuss your goals, progress, or challenges?"
+      ],
+      "already_asked_norm": [
+        "in the past 7 days on how many days did you feel calm and in control of your emotions for most of the day",
+        "in the past 7 days on how many days did you feel able to stay positive and keep things in perspective when challenges arose",
+        "in the past 7 days on how many days did you actively connect with others to discuss your goals progress or challenges",
+        "in the past 7 days on how many days did you do something that made you feel genuinely good either by taking time for yourself or connecting with someone you enjoy spending time with",
+        "in the past 7 days on how many days did you take a short break to relax breathe deeply or reset when you felt stressed or tired"
+      ],
+      "turns_so_far": 5,
+      "retrieval": [
+        {
+          "id": 23,
+          "type": "snippet",
+          "title": "Ask early & specifically",
+          "text": "Share goals/challenges before they build; make specific asks or check-ins.",
+          "score": -0.017196616556138085,
+          "locale": "en-GB"
+        },
+        {
+          "id": 24,
+          "type": "snippet",
+          "title": "Scoring cue (0–7 days/wk)",
+          "text": "Willingness to request or accept support earlier and more consistently scores higher.",
+          "score": -0.024521547065205405,
+          "locale": "en-GB"
+        }
+      ],
+      "concept_focus": "support_openness",
+      "sufficient_for_scoring": true
+    },
+    "payload_raw": null,
+    "parse_error": null
+  },
+  {
+    "id": 16,
+    "created_at": "2026-02-20 11:47:41.396673",
+    "model": "gpt-5-mini",
+    "duration_ms": "10050",
+    "payload": {
+      "history": [
+        {
+          "role": "assistant",
+          "text": "*Great Rhys* — Resilience done. Now a quick check on Recovery ⭐"
+        },
+        {
+          "role": "assistant",
+          "text": "In the last 7 days, on how many nights did you go to bed at roughly the same time?"
+        },
+        {
+          "role": "user",
+          "text": "2"
+        }
+      ],
+      "already_asked": [
+        "In the last 7 days, on how many nights did you go to bed at roughly the same time?"
+      ],
+      "already_asked_norm": [
+        "in the last 7 days on how many nights did you go to bed at roughly the same time"
+      ],
+      "turns_so_far": 1,
+      "retrieval": [
+        {
+          "id": 29,
+          "type": "snippet",
+          "title": "Circadian window",
+          "text": "Keep sleep/wake within ±60 min to support circadian rhythm.",
+          "score": 0.01873090622413134,
+          "locale": "en-GB"
+        },
+        {
+          "id": 30,
+          "type": "snippet",
+          "title": "Scoring cue (0–7 nights/wk)",
+          "text": "Reward stabilising a regular schedule over rigid perfection; consistency > total hours for circadian alignment.",
+          "score": -0.013462876340946566,
+          "locale": "en-GB"
+        }
+      ],
+      "concept_focus": "bedtime_consistency",
+      "sufficient_for_scoring": true
+    },
+    "payload_raw": null,
+    "parse_error": null
+  },
+  {
+    "id": 17,
+    "created_at": "2026-02-20 11:48:04.119495",
+    "model": "gpt-5-mini",
+    "duration_ms": "8055",
+    "payload": {
+      "history": [
+        {
+          "role": "assistant",
+          "text": "*Great Rhys* — Resilience done. Now a quick check on Recovery ⭐"
+        },
+        {
+          "role": "assistant",
+          "text": "In the last 7 days, on how many nights did you go to bed at roughly the same time?"
+        },
+        {
+          "role": "user",
+          "text": "2"
+        },
+        {
+          "role": "assistant",
+          "text": "In the last 7 days, on how many nights did you sleep for 7 or more hours?"
+        },
+        {
+          "role": "user",
+          "text": "2"
+        }
+      ],
+      "already_asked": [
+        "In the last 7 days, on how many nights did you go to bed at roughly the same time?",
+        "In the last 7 days, on how many nights did you sleep for 7 or more hours?"
+      ],
+      "already_asked_norm": [
+        "in the last 7 days on how many nights did you go to bed at roughly the same time",
+        "in the last 7 days on how many nights did you sleep for 7 or more hours"
+      ],
+      "turns_so_far": 2,
+      "retrieval": [
+        {
+          "id": 26,
+          "type": "snippet",
+          "title": "Scoring cue (0–7 nights/wk)",
+          "text": "More nights at ≥7 h score higher; if fatigued, go to bed earlier rather than sleeping in.",
+          "score": -0.031016815319346733,
+          "locale": "en-GB"
+        },
+        {
+          "id": 25,
+          "type": "snippet",
+          "title": "Hours & anchor",
+          "text": "Most adults benefit from 7–9 h/night; keep a consistent wake time.",
+          "score": -0.04492756205949103,
+          "locale": "en-GB"
+        }
+      ],
+      "concept_focus": "sleep_duration",
+      "sufficient_for_scoring": true
+    },
+    "payload_raw": null,
+    "parse_error": null
+  },
+  {
+    "id": 18,
+    "created_at": "2026-02-20 11:48:23.522696",
+    "model": "gpt-5-mini",
+    "duration_ms": "10823",
+    "payload": {
+      "history": [
+        {
+          "role": "assistant",
+          "text": "*Great Rhys* — Resilience done. Now a quick check on Recovery ⭐"
+        },
+        {
+          "role": "assistant",
+          "text": "In the last 7 days, on how many nights did you go to bed at roughly the same time?"
+        },
+        {
+          "role": "user",
+          "text": "2"
+        },
+        {
+          "role": "assistant",
+          "text": "In the last 7 days, on how many nights did you sleep for 7 or more hours?"
+        },
+        {
+          "role": "user",
+          "text": "2"
+        },
+        {
+          "role": "assistant",
+          "text": "In the last 7 days, on how many mornings did you wake up feeling rested and refreshed?"
+        },
+        {
+          "role": "user",
+          "text": "3"
+        }
+      ],
+      "already_asked": [
+        "In the last 7 days, on how many nights did you go to bed at roughly the same time?",
+        "In the last 7 days, on how many nights did you sleep for 7 or more hours?",
+        "In the last 7 days, on how many mornings did you wake up feeling rested and refreshed?"
+      ],
+      "already_asked_norm": [
+        "in the last 7 days on how many mornings did you wake up feeling rested and refreshed",
+        "in the last 7 days on how many nights did you go to bed at roughly the same time",
+        "in the last 7 days on how many nights did you sleep for 7 or more hours"
+      ],
+      "turns_so_far": 3,
+      "retrieval": [
+        {
+          "id": 28,
+          "type": "snippet",
+          "title": "Scoring cue (0–7 mornings/wk)",
+          "text": "Improvement = faster sleep onset, deeper rest, fewer night wakes; more mornings feeling refreshed score higher.",
+          "score": -0.01696923780607868,
+          "locale": "en-GB"
+        },
+        {
+          "id": 27,
+          "type": "snippet",
+          "title": "Wind-down routine",
+          "text": "Dim lights, quiet time, breathing/reading; avoid screens ≥60 min before bed.",
+          "score": -0.029766636853568486,
+          "locale": "en-GB"
+        }
+      ],
+      "concept_focus": "sleep_quality",
+      "sufficient_for_scoring": true
+    },
+    "payload_raw": null,
+    "parse_error": null
+  }
+]

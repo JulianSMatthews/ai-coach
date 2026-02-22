@@ -35,6 +35,7 @@ export default function TemplateForm({ template, userOptions }: TemplateFormProp
   const [promoteState, promoteAction, promotePending] = useActionState(promoteTemplateAction, emptyState);
   const [previewState, previewAction, previewPending] = useActionState(previewTemplateAction, emptyPreview);
   const isDevelop = !template || (template.state || "develop") === "develop";
+  const isStatusOnly = Boolean(template?.id) && !isDevelop;
   const canPreview = Boolean(template?.id);
   const blockOrder = previewState.result?.block_order || Object.keys(previewState.result?.blocks || {});
   const [userQuery, setUserQuery] = useState("");
@@ -60,110 +61,117 @@ export default function TemplateForm({ template, userOptions }: TemplateFormProp
       <form action={saveAction} className="space-y-4">
         <input type="hidden" name="id" value={template?.id ?? ""} />
         <input type="hidden" name="state" value={template?.state || "develop"} />
-        <div>
-          <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Touchpoint</label>
-          <input
-            name="touchpoint"
-            defaultValue={template?.touchpoint || ""}
-            className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
-            placeholder="podcast_kickoff"
-            readOnly={Boolean(template?.id)}
-          />
-        </div>
-        <div className="grid gap-4 md:grid-cols-4">
+        <fieldset disabled={isStatusOnly} className={isStatusOnly ? "space-y-4 opacity-70" : "space-y-4"}>
           <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">OKR scope</label>
-            <select
-              name="okr_scope"
-              defaultValue={template?.okr_scope || ""}
-              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-            >
-              <option value="">Select scope</option>
-              <option value="all">All OKRs (full programme)</option>
-              <option value="pillar">Pillar OKRs (current pillar)</option>
-              <option value="week">Weekly focus (current week)</option>
-              <option value="single">Single KR (focused)</option>
-              {template?.okr_scope &&
-              !["all", "pillar", "week", "single"].includes(template.okr_scope) ? (
-                <option value={template.okr_scope}>{template.okr_scope} (existing)</option>
-              ) : null}
-            </select>
-            <p className="mt-2 text-xs text-[#6b6257]">
-              All = full programme OKRs; Pillar = only current pillar; Week = current week focus; Single = one KR.
-            </p>
-          </div>
-          <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Programme scope</label>
-            <select
-              name="programme_scope"
-              defaultValue={template?.programme_scope || ""}
-              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-            >
-              <option value="">Select scope</option>
-              <option value="full">Full 12-week programme</option>
-              <option value="pillar">Current pillar only</option>
-              <option value="none">No programme context</option>
-              {template?.programme_scope &&
-              !["full", "pillar", "none"].includes(template.programme_scope) ? (
-                <option value={template.programme_scope}>{template.programme_scope} (existing)</option>
-              ) : null}
-            </select>
-            <p className="mt-2 text-xs text-[#6b6257]">
-              Full = all pillars; Pillar = current block; None = omit programme context.
-            </p>
-          </div>
-          <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Response format</label>
+            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Touchpoint</label>
             <input
-              name="response_format"
-              defaultValue={template?.response_format || ""}
+              name="touchpoint"
+              defaultValue={template?.touchpoint || ""}
               className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
-              placeholder="text | json"
+              placeholder="podcast_kickoff"
+              readOnly={Boolean(template?.id)}
+            />
+          </div>
+          <div className="grid gap-4 md:grid-cols-4">
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">OKR scope</label>
+              <select
+                name="okr_scope"
+                defaultValue={template?.okr_scope || ""}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Select scope</option>
+                <option value="all">All OKRs (full programme)</option>
+                <option value="pillar">Pillar OKRs (current pillar)</option>
+                <option value="week">Weekly focus (current week)</option>
+                <option value="single">Single KR (focused)</option>
+                {template?.okr_scope &&
+                !["all", "pillar", "week", "single"].includes(template.okr_scope) ? (
+                  <option value={template.okr_scope}>{template.okr_scope} (existing)</option>
+                ) : null}
+              </select>
+              <p className="mt-2 text-xs text-[#6b6257]">
+                All = full programme OKRs; Pillar = only current pillar; Week = current week focus; Single = one KR.
+              </p>
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Programme scope</label>
+              <select
+                name="programme_scope"
+                defaultValue={template?.programme_scope || ""}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Select scope</option>
+                <option value="full">Full 12-week programme</option>
+                <option value="pillar">Current pillar only</option>
+                <option value="none">No programme context</option>
+                {template?.programme_scope &&
+                !["full", "pillar", "none"].includes(template.programme_scope) ? (
+                  <option value={template.programme_scope}>{template.programme_scope} (existing)</option>
+                ) : null}
+              </select>
+              <p className="mt-2 text-xs text-[#6b6257]">
+                Full = all pillars; Pillar = current block; None = omit programme context.
+              </p>
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Response format</label>
+              <input
+                name="response_format"
+                defaultValue={template?.response_format || ""}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                placeholder="text | json"
+              />
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Default model</label>
+              <select
+                name="model_override"
+                value={selectedModelOverride}
+                onChange={(event) => setSelectedModelOverride(event.target.value)}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Env default</option>
+                {MODEL_OPTIONS.map((model) => (
+                  <option key={model} value={model}>
+                    {model}
+                  </option>
+                ))}
+              </select>
+              <p className="mt-2 text-xs text-[#6b6257]">
+                Used at runtime for this touchpoint unless a request-level model override is provided.
+              </p>
+              <p className="mt-1 text-xs text-[#8a8176]">
+                Live promotions only allow <code>gpt-5-mini</code> or <code>gpt-5.1</code>; preview/testing can use the full list.
+              </p>
+            </div>
+          </div>
+          <div>
+            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+              Blocks (order = include)
+            </label>
+            <input
+              name="block_order"
+              defaultValue={(template?.block_order || template?.include_blocks || []).join(", ")}
+              className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+              placeholder="system, locale, context, programme, history, okr, scores, habit, task, user"
             />
           </div>
           <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Default model</label>
-            <select
-              name="model_override"
-              value={selectedModelOverride}
-              onChange={(event) => setSelectedModelOverride(event.target.value)}
-              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-            >
-              <option value="">Env default</option>
-              {MODEL_OPTIONS.map((model) => (
-                <option key={model} value={model}>
-                  {model}
-                </option>
-              ))}
-            </select>
-            <p className="mt-2 text-xs text-[#6b6257]">
-              Used at runtime for this touchpoint unless a request-level model override is provided.
-            </p>
-            <p className="mt-1 text-xs text-[#8a8176]">
-              Live promotions only allow <code>gpt-5-mini</code> or <code>gpt-5.1</code>; preview/testing can use the full list.
-            </p>
+            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Task block</label>
+            <textarea
+              name="task_block"
+              defaultValue={template?.task_block || ""}
+              rows={10}
+              className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+            />
           </div>
-        </div>
-        <div>
-          <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-            Blocks (order = include)
-          </label>
-          <input
-            name="block_order"
-            defaultValue={(template?.block_order || template?.include_blocks || []).join(", ")}
-            className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
-            placeholder="system, locale, context, programme, history, okr, scores, habit, task, user"
-          />
-        </div>
-        <div>
-          <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Task block</label>
-          <textarea
-            name="task_block"
-            defaultValue={template?.task_block || ""}
-            rows={10}
-            className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
-          />
-        </div>
+        </fieldset>
+        {isStatusOnly ? (
+          <p className="text-xs text-[#8a8176]">
+            Live/Beta templates are content-locked. You can update <strong>Active</strong> and <strong>Notes</strong> here.
+          </p>
+        ) : null}
         <div>
           <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Notes</label>
           <textarea
@@ -179,10 +187,10 @@ export default function TemplateForm({ template, userOptions }: TemplateFormProp
         </label>
         <button
           type="submit"
-          disabled={!isDevelop || savePending}
+          disabled={savePending}
           className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {savePending ? "Saving…" : isDevelop ? "Save template" : "Read only (non-develop)"}
+          {savePending ? "Saving…" : isDevelop ? "Save template" : "Save status"}
         </button>
         {saveState.error ? <p className="text-sm text-red-600">{saveState.error}</p> : null}
         {saveState.ok ? <p className="text-sm text-[var(--accent)]">Saved.</p> : null}

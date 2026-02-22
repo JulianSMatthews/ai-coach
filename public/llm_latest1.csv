@@ -1,0 +1,1063 @@
+id,user_id,touchpoint,model,duration_ms,prompt_variant,task_label,system_block,locale_block,okr_block,okr_scope,scores_block,habit_block,task_block,template_state,template_version,user_block,extra_blocks,block_order,sent_payload,payload_truncated,prompt_text,assembled_prompt,response_preview,context_meta,created_at
+1,2,assessor_system,gpt-5-mini,17115,assessor_system,assessor_system,"You are a concise WhatsApp assessor for Nutrition.
+Active concept: Fruit Veg.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+",,,,,,,,,,null,"[""system"", ""assessor""]","You are a concise WhatsApp assessor for Nutrition.
+Active concept: Fruit Veg.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+
+
+Continue this concept.
+Payload (JSON): {""history"": [], ""already_asked"": [""In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries.""], ""turns_so_far"": 1, ""retrieval"": [{""id"": 3, ""type"": ""snippet"", ""title"": ""Target & variety"", ""text"": ""≥5 portions/day; mix colours for fibre and micronutrients."", ""score"": 0.03602573895450536, ""locale"": ""en-GB""}, {""id"": 4, ""type"": ""snippet"", ""title"": ""Make it easy"", ""text"": ""Front-load fruit/veg into the first two meals; batch-cook to stay consistent."", ""score"": 0.02750898842719849, ""locale"": ""en-GB""}], ""concept_focus"": ""fruit_veg"", ""sufficient_for_scoring"": true}
+Rules:
+- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.
+- Clarifiers do NOT count toward the 5-per-pillar main questions.
+- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.
+- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.
+- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.
+- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).
+- Always populate: status, why, missing, parsed_value in your JSON.
+- Finish this concept when you can assign an appropriate score (including 0).
+- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.
+SCORING_RANGE_GUIDE:
+- Higher is better; map linearly to 0–100.
+- 0 → 0; 5+ → 100; clamp outside bounds.
+- Treat 'none', 'no', 'zero', or 0 as numeric 0.
+- Parse number words (e.g., 'three', 'couple') when digits not given.
+- In your JSON, put only the active concept key: ""scores"": { ""fruit_veg"": <0-100 integer> }.
+Return JSON only: {""action"":""ask""|""finish"",""question"":"""",""level"":"""",""confidence"":<float 0.0–1.0>,""rationale"":"""",""scores"":{},""status"":"""",""why"":"""",""missing"":[],""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}",false,"You are a concise WhatsApp assessor for Nutrition.
+Active concept: Fruit Veg.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+
+
+Continue this concept.
+Payload (JSON): {""history"": [], ""already_asked"": [""In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries.""], ""turns_so_far"": 1, ""retrieval"": [{""id"": 3, ""type"": ""snippet"", ""title"": ""Target & variety"", ""text"": ""≥5 portions/day; mix colours for fibre and micronutrients."", ""score"": 0.03602573895450536, ""locale"": ""en-GB""}, {""id"": 4, ""type"": ""snippet"", ""title"": ""Make it easy"", ""text"": ""Front-load fruit/veg into the first two meals; batch-cook to stay consistent."", ""score"": 0.02750898842719849, ""locale"": ""en-GB""}], ""concept_focus"": ""fruit_veg"", ""sufficient_for_scoring"": true}
+Rules:
+- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.
+- Clarifiers do NOT count toward the 5-per-pillar main questions.
+- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.
+- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.
+- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.
+- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).
+- Always populate: status, why, missing, parsed_value in your JSON.
+- Finish this concept when you can assign an appropriate score (including 0).
+- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.
+SCORING_RANGE_GUIDE:
+- Higher is better; map linearly to 0–100.
+- 0 → 0; 5+ → 100; clamp outside bounds.
+- Treat 'none', 'no', 'zero', or 0 as numeric 0.
+- Parse number words (e.g., 'three', 'couple') when digits not given.
+- In your JSON, put only the active concept key: ""scores"": { ""fruit_veg"": <0-100 integer> }.
+Return JSON only: {""action"":""ask""|""finish"",""question"":"""",""level"":"""",""confidence"":<float 0.0–1.0>,""rationale"":"""",""scores"":{},""status"":"""",""why"":"""",""missing"":[],""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}","You are a concise WhatsApp assessor for Nutrition.
+Active concept: Fruit Veg.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+
+
+Continue this concept.
+Payload (JSON): {""history"": [], ""already_asked"": [""In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries.""], ""turns_so_far"": 1, ""retrieval"": [{""id"": 3, ""type"": ""snippet"", ""title"": ""Target & variety"", ""text"": ""≥5 portions/day; mix colours for fibre and micronutrients."", ""score"": 0.03602573895450536, ""locale"": ""en-GB""}, {""id"": 4, ""type"": ""snippet"", ""title"": ""Make it easy"", ""text"": ""Front-load fruit/veg into the first two meals; batch-cook to stay consistent."", ""score"": 0.02750898842719849, ""locale"": ""en-GB""}], ""concept_focus"": ""fruit_veg"", ""sufficient_for_scoring"": true}
+Rules:
+- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.
+- Clarifiers do NOT count toward the 5-per-pillar main questions.
+- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.
+- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.
+- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.
+- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).
+- Always populate: status, why, missing, parsed_value in your JSON.
+- Finish this concept when you can assign an appropriate score (including 0).
+- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.
+SCORING_RANGE_GUIDE:
+- Higher is better; map linearly to 0–100.
+- 0 → 0; 5+ → 100; clamp outside bounds.
+- Treat 'none', 'no', 'zero', or 0 as numeric 0.
+- Parse number words (e.g., 'three', 'couple') when digits not given.
+- In your JSON, put only the active concept key: ""scores"": { ""fruit_veg"": <0-100 integer> }.
+Return JSON only: {""action"":""ask""|""finish"",""question"":"""",""level"":"""",""confidence"":<float 0.0–1.0>,""rationale"":"""",""scores"":{},""status"":"""",""why"":"""",""missing"":[],""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}","{
+  ""action"": ""ask"",
+  ""question"": ""Can you tell me the average number of portions of fruit & vegetables you ate per day over the last 7 days? (1 portion = 1 apple/banana, 1 fist-sized veg serving, or a handful of salad/berries.)"",
+  ""level"": ""High"",
+  ""confidence"": 0.55,
+  ""rationale"": ""I need a numeric average (portions/day over 7 days) to map to the scoring range (0→0; 5+→100)."",
+  ""scores"": {},
+  ""status"": ""needs_clarifier"",
+  ""why"": ""No numeric answer was provided to the previous question asking average portions/day."",
+  ""missing"": [
+    ""value""
+  ],
+  ""parsed_value"": {
+    ""value"": null,
+    ""unit"": ""portions/day"",
+    ""timeframe_ok"": false
+  }
+}","{""pillar"": ""nutrition"", ""concept"": ""fruit_veg"", ""has_range"": true, ""usage_metadata"": {""input_tokens"": 1470, ""total_tokens"": 2633, ""output_tokens"": 1163, ""input_token_details"": {""audio"": 0, ""cache_read"": 0}, ""output_token_details"": {""audio"": 0, ""reasoning"": 960}}, ""response_metadata"": {""id"": ""chatcmpl-DBMOESpFGQ5ttBtLoweoDGssnXxr0"", ""logprobs"": null, ""model_name"": ""gpt-5-mini-2025-08-07"", ""token_usage"": {""total_tokens"": 2633, ""prompt_tokens"": 1470, ""completion_tokens"": 1163, ""prompt_tokens_details"": {""audio_tokens"": 0, ""cached_tokens"": 0}, ""completion_tokens_details"": {""audio_tokens"": 0, ""reasoning_tokens"": 960, ""accepted_prediction_tokens"": 0, ""rejected_prediction_tokens"": 0}}, ""service_tier"": ""default"", ""finish_reason"": ""stop"", ""model_provider"": ""openai"", ""system_fingerprint"": null}, ""llm_started_at_utc"": ""2026-02-20T15:07:26.525883Z"", ""llm_finished_at_utc"": ""2026-02-20T15:07:43.641139Z"", ""provider_request_id"": ""chatcmpl-DBMOESpFGQ5ttBtLoweoDGssnXxr0""}",2026-02-20 15:07:43.649488
+2,2,assessor_system,gpt-5-mini,10099,assessor_system,assessor_system,"You are a concise WhatsApp assessor for Nutrition.
+Active concept: Hydration.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+",,,,,,,,,,null,"[""system"", ""assessor""]","You are a concise WhatsApp assessor for Nutrition.
+Active concept: Hydration.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+
+
+Continue this concept.
+Primary task: evaluate payload.last_user_reply against payload.last_main_question.
+Payload (JSON): {""last_main_question"": ""Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml."", ""last_user_reply"": ""2 litres"", ""history"": [], ""already_asked"": [""Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml.""], ""turns_so_far"": 2, ""retrieval"": [{""id"": 6, ""type"": ""snippet"", ""title"": ""Scoring cue (0–6 L/day)"", ""text"": ""2–4 L/day = strong; spread intake through the day; pair sips with routine cues."", ""score"": -0.015553352157052109, ""locale"": ""en-GB""}, {""id"": 5, ""type"": ""snippet"", ""title"": ""Daily target"", ""text"": ""Women: 2–3 L/day; Men: 3–4 L/day (more with heat/training). Pale-straw urine ≈ good hydration."", ""score"": -0.02217761208925138, ""locale"": ""en-GB""}], ""concept_focus"": ""hydration"", ""sufficient_for_scoring"": true}
+Rules:
+- Use payload.last_main_question and payload.last_user_reply as the primary evidence for scoring.
+- If these two fields are clear enough, finish with a score and do not ask a clarifier.
+- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.
+- Clarifiers do NOT count toward the 5-per-pillar main questions.
+- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.
+- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.
+- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.
+- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).
+- Always populate: status, why, missing, parsed_value in your JSON.
+- Finish this concept when you can assign an appropriate score (including 0).
+- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.
+SCORING_RANGE_GUIDE:
+- Higher is better; map linearly to 0–100.
+- 0 → 0; 4+ → 100; clamp outside bounds.
+- Treat 'none', 'no', 'zero', or 0 as numeric 0.
+- Parse number words (e.g., 'three', 'couple') when digits not given.
+- In your JSON, put only the active concept key: ""scores"": { ""hydration"": <0-100 integer> }.
+Return JSON only: {""action"":""ask""|""finish"",""question"":"""",""level"":"""",""confidence"":<float 0.0–1.0>,""rationale"":"""",""scores"":{},""status"":"""",""why"":"""",""missing"":[],""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}",false,"You are a concise WhatsApp assessor for Nutrition.
+Active concept: Hydration.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+
+
+Continue this concept.
+Primary task: evaluate payload.last_user_reply against payload.last_main_question.
+Payload (JSON): {""last_main_question"": ""Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml."", ""last_user_reply"": ""2 litres"", ""history"": [], ""already_asked"": [""Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml.""], ""turns_so_far"": 2, ""retrieval"": [{""id"": 6, ""type"": ""snippet"", ""title"": ""Scoring cue (0–6 L/day)"", ""text"": ""2–4 L/day = strong; spread intake through the day; pair sips with routine cues."", ""score"": -0.015553352157052109, ""locale"": ""en-GB""}, {""id"": 5, ""type"": ""snippet"", ""title"": ""Daily target"", ""text"": ""Women: 2–3 L/day; Men: 3–4 L/day (more with heat/training). Pale-straw urine ≈ good hydration."", ""score"": -0.02217761208925138, ""locale"": ""en-GB""}], ""concept_focus"": ""hydration"", ""sufficient_for_scoring"": true}
+Rules:
+- Use payload.last_main_question and payload.last_user_reply as the primary evidence for scoring.
+- If these two fields are clear enough, finish with a score and do not ask a clarifier.
+- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.
+- Clarifiers do NOT count toward the 5-per-pillar main questions.
+- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.
+- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.
+- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.
+- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).
+- Always populate: status, why, missing, parsed_value in your JSON.
+- Finish this concept when you can assign an appropriate score (including 0).
+- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.
+SCORING_RANGE_GUIDE:
+- Higher is better; map linearly to 0–100.
+- 0 → 0; 4+ → 100; clamp outside bounds.
+- Treat 'none', 'no', 'zero', or 0 as numeric 0.
+- Parse number words (e.g., 'three', 'couple') when digits not given.
+- In your JSON, put only the active concept key: ""scores"": { ""hydration"": <0-100 integer> }.
+Return JSON only: {""action"":""ask""|""finish"",""question"":"""",""level"":"""",""confidence"":<float 0.0–1.0>,""rationale"":"""",""scores"":{},""status"":"""",""why"":"""",""missing"":[],""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}","You are a concise WhatsApp assessor for Nutrition.
+Active concept: Hydration.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+
+
+Continue this concept.
+Primary task: evaluate payload.last_user_reply against payload.last_main_question.
+Payload (JSON): {""last_main_question"": ""Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml."", ""last_user_reply"": ""2 litres"", ""history"": [], ""already_asked"": [""Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml.""], ""turns_so_far"": 2, ""retrieval"": [{""id"": 6, ""type"": ""snippet"", ""title"": ""Scoring cue (0–6 L/day)"", ""text"": ""2–4 L/day = strong; spread intake through the day; pair sips with routine cues."", ""score"": -0.015553352157052109, ""locale"": ""en-GB""}, {""id"": 5, ""type"": ""snippet"", ""title"": ""Daily target"", ""text"": ""Women: 2–3 L/day; Men: 3–4 L/day (more with heat/training). Pale-straw urine ≈ good hydration."", ""score"": -0.02217761208925138, ""locale"": ""en-GB""}], ""concept_focus"": ""hydration"", ""sufficient_for_scoring"": true}
+Rules:
+- Use payload.last_main_question and payload.last_user_reply as the primary evidence for scoring.
+- If these two fields are clear enough, finish with a score and do not ask a clarifier.
+- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.
+- Clarifiers do NOT count toward the 5-per-pillar main questions.
+- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.
+- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.
+- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.
+- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).
+- Always populate: status, why, missing, parsed_value in your JSON.
+- Finish this concept when you can assign an appropriate score (including 0).
+- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.
+SCORING_RANGE_GUIDE:
+- Higher is better; map linearly to 0–100.
+- 0 → 0; 4+ → 100; clamp outside bounds.
+- Treat 'none', 'no', 'zero', or 0 as numeric 0.
+- Parse number words (e.g., 'three', 'couple') when digits not given.
+- In your JSON, put only the active concept key: ""scores"": { ""hydration"": <0-100 integer> }.
+Return JSON only: {""action"":""ask""|""finish"",""question"":"""",""level"":"""",""confidence"":<float 0.0–1.0>,""rationale"":"""",""scores"":{},""status"":"""",""why"":"""",""missing"":[],""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}","{""action"":""finish"",""question"":"""",""level"":""Moderate"",""confidence"":0.90,""rationale"":""User explicitly reported 2 litres per day for the last 7 days. Using the provided guide (0→0, 4+→100) maps linearly to a mid-range score."",""scores"":{""hydration"":50},""status"":""scorable"",""why"":""Clear numeric answer with explicit 7-day timeframe; 2 L/day is halfway to the 4 L/day target used for scoring."",""missing"":[],""parsed_value"":{""value"":2,""unit"":""L/day"",""timeframe_ok"":true}}","{""pillar"": ""nutrition"", ""concept"": ""hydration"", ""has_range"": true, ""usage_metadata"": {""input_tokens"": 1590, ""total_tokens"": 2233, ""output_tokens"": 643, ""input_token_details"": {""audio"": 0, ""cache_read"": 0}, ""output_token_details"": {""audio"": 0, ""reasoning"": 512}}, ""response_metadata"": {""id"": ""chatcmpl-DBMOlUAlsiSIIpKgOTF16Lo4eZIIS"", ""logprobs"": null, ""model_name"": ""gpt-5-mini-2025-08-07"", ""token_usage"": {""total_tokens"": 2233, ""prompt_tokens"": 1590, ""completion_tokens"": 643, ""prompt_tokens_details"": {""audio_tokens"": 0, ""cached_tokens"": 0}, ""completion_tokens_details"": {""audio_tokens"": 0, ""reasoning_tokens"": 512, ""accepted_prediction_tokens"": 0, ""rejected_prediction_tokens"": 0}}, ""service_tier"": ""default"", ""finish_reason"": ""stop"", ""model_provider"": ""openai"", ""system_fingerprint"": null}, ""llm_started_at_utc"": ""2026-02-20T15:07:59.297803Z"", ""llm_finished_at_utc"": ""2026-02-20T15:08:09.397256Z"", ""provider_request_id"": ""chatcmpl-DBMOlUAlsiSIIpKgOTF16Lo4eZIIS""}",2026-02-20 15:08:09.405129
+3,2,assessor_system,gpt-5-mini,9951,assessor_system,assessor_system,"You are a concise WhatsApp assessor for Nutrition.
+Active concept: Processed Food.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+",,,,,,,,,,null,"[""system"", ""assessor""]","You are a concise WhatsApp assessor for Nutrition.
+Active concept: Processed Food.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+
+
+Continue this concept.
+Primary task: evaluate payload.last_user_reply against payload.last_main_question.
+Payload (JSON): {""last_main_question"": ""In the last 7 days, how many portions of processed food did you *eat on average per day*? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry."", ""last_user_reply"": ""2 portions"", ""history"": [], ""already_asked"": [""In the last 7 days, how many portions of processed food did you *eat on average per day*? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry.""], ""turns_so_far"": 3, ""retrieval"": [{""id"": 8, ""type"": ""snippet"", ""title"": ""Scoring cue (reverse; 0–4+/day)"", ""text"": ""0/day = best, 0–1/day = good, 2–3/day = fair, ≥4/day = poor; use an 80/20 approach and reward gradual reduction."", ""score"": 0.017282351036694503, ""locale"": ""en-GB""}, {""id"": 7, ""type"": ""snippet"", ""title"": ""Definition & unit"", ""text"": ""UPFs include crisps, sweets, pastries, ready meals, sugary drinks; count portions per day."", ""score"": -0.005156492832182223, ""locale"": ""en-GB""}], ""concept_focus"": ""processed_food"", ""sufficient_for_scoring"": true}
+Rules:
+- Use payload.last_main_question and payload.last_user_reply as the primary evidence for scoring.
+- If these two fields are clear enough, finish with a score and do not ask a clarifier.
+- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.
+- Clarifiers do NOT count toward the 5-per-pillar main questions.
+- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.
+- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.
+- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.
+- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).
+- Always populate: status, why, missing, parsed_value in your JSON.
+- Finish this concept when you can assign an appropriate score (including 0).
+- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.
+SCORING_RANGE_GUIDE:
+- Lower is better; map linearly to 0–100.
+- 4 → 0; 0 or less → 100; clamp outside bounds.
+- Treat 'none', 'no', 'zero', or 0 as numeric 0 (which should map near 100 here).
+- Parse number words (e.g., 'three', 'couple') when digits not given.
+- Example: if the answer is ~1.0, score around 75.
+- In your JSON, put only the active concept key: ""scores"": { ""processed_food"": <0-100 integer> }.
+Return JSON only: {""action"":""ask""|""finish"",""question"":"""",""level"":"""",""confidence"":<float 0.0–1.0>,""rationale"":"""",""scores"":{},""status"":"""",""why"":"""",""missing"":[],""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}",false,"You are a concise WhatsApp assessor for Nutrition.
+Active concept: Processed Food.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+
+
+Continue this concept.
+Primary task: evaluate payload.last_user_reply against payload.last_main_question.
+Payload (JSON): {""last_main_question"": ""In the last 7 days, how many portions of processed food did you *eat on average per day*? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry."", ""last_user_reply"": ""2 portions"", ""history"": [], ""already_asked"": [""In the last 7 days, how many portions of processed food did you *eat on average per day*? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry.""], ""turns_so_far"": 3, ""retrieval"": [{""id"": 8, ""type"": ""snippet"", ""title"": ""Scoring cue (reverse; 0–4+/day)"", ""text"": ""0/day = best, 0–1/day = good, 2–3/day = fair, ≥4/day = poor; use an 80/20 approach and reward gradual reduction."", ""score"": 0.017282351036694503, ""locale"": ""en-GB""}, {""id"": 7, ""type"": ""snippet"", ""title"": ""Definition & unit"", ""text"": ""UPFs include crisps, sweets, pastries, ready meals, sugary drinks; count portions per day."", ""score"": -0.005156492832182223, ""locale"": ""en-GB""}], ""concept_focus"": ""processed_food"", ""sufficient_for_scoring"": true}
+Rules:
+- Use payload.last_main_question and payload.last_user_reply as the primary evidence for scoring.
+- If these two fields are clear enough, finish with a score and do not ask a clarifier.
+- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.
+- Clarifiers do NOT count toward the 5-per-pillar main questions.
+- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.
+- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.
+- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.
+- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).
+- Always populate: status, why, missing, parsed_value in your JSON.
+- Finish this concept when you can assign an appropriate score (including 0).
+- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.
+SCORING_RANGE_GUIDE:
+- Lower is better; map linearly to 0–100.
+- 4 → 0; 0 or less → 100; clamp outside bounds.
+- Treat 'none', 'no', 'zero', or 0 as numeric 0 (which should map near 100 here).
+- Parse number words (e.g., 'three', 'couple') when digits not given.
+- Example: if the answer is ~1.0, score around 75.
+- In your JSON, put only the active concept key: ""scores"": { ""processed_food"": <0-100 integer> }.
+Return JSON only: {""action"":""ask""|""finish"",""question"":"""",""level"":"""",""confidence"":<float 0.0–1.0>,""rationale"":"""",""scores"":{},""status"":"""",""why"":"""",""missing"":[],""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}","You are a concise WhatsApp assessor for Nutrition.
+Active concept: Processed Food.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+
+
+Continue this concept.
+Primary task: evaluate payload.last_user_reply against payload.last_main_question.
+Payload (JSON): {""last_main_question"": ""In the last 7 days, how many portions of processed food did you *eat on average per day*? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry."", ""last_user_reply"": ""2 portions"", ""history"": [], ""already_asked"": [""In the last 7 days, how many portions of processed food did you *eat on average per day*? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry.""], ""turns_so_far"": 3, ""retrieval"": [{""id"": 8, ""type"": ""snippet"", ""title"": ""Scoring cue (reverse; 0–4+/day)"", ""text"": ""0/day = best, 0–1/day = good, 2–3/day = fair, ≥4/day = poor; use an 80/20 approach and reward gradual reduction."", ""score"": 0.017282351036694503, ""locale"": ""en-GB""}, {""id"": 7, ""type"": ""snippet"", ""title"": ""Definition & unit"", ""text"": ""UPFs include crisps, sweets, pastries, ready meals, sugary drinks; count portions per day."", ""score"": -0.005156492832182223, ""locale"": ""en-GB""}], ""concept_focus"": ""processed_food"", ""sufficient_for_scoring"": true}
+Rules:
+- Use payload.last_main_question and payload.last_user_reply as the primary evidence for scoring.
+- If these two fields are clear enough, finish with a score and do not ask a clarifier.
+- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.
+- Clarifiers do NOT count toward the 5-per-pillar main questions.
+- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.
+- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.
+- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.
+- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).
+- Always populate: status, why, missing, parsed_value in your JSON.
+- Finish this concept when you can assign an appropriate score (including 0).
+- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.
+SCORING_RANGE_GUIDE:
+- Lower is better; map linearly to 0–100.
+- 4 → 0; 0 or less → 100; clamp outside bounds.
+- Treat 'none', 'no', 'zero', or 0 as numeric 0 (which should map near 100 here).
+- Parse number words (e.g., 'three', 'couple') when digits not given.
+- Example: if the answer is ~1.0, score around 75.
+- In your JSON, put only the active concept key: ""scores"": { ""processed_food"": <0-100 integer> }.
+Return JSON only: {""action"":""ask""|""finish"",""question"":"""",""level"":"""",""confidence"":<float 0.0–1.0>,""rationale"":"""",""scores"":{},""status"":"""",""why"":"""",""missing"":[],""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}","{""action"":""finish"",""question"":"""",""level"":""Moderate"",""confidence"":0.9,""rationale"":""User explicitly reported an average of 2 portions/day over the last 7 days. Lower intake is better for processed foods; using the provided 0–4+/day reverse scale (0 best, 4 worst) I mapped linearly."",""scores"":{""processed_food"":50},""status"":""scorable"",""why"":""Answered with a numeric average per day (2 portions/day) matching the requested 7-day timeframe, so scoring is possible."",""missing"":[],""parsed_value"":{""value"":2,""unit"":""portions/day"",""timeframe_ok"":true}}","{""pillar"": ""nutrition"", ""concept"": ""processed_food"", ""has_range"": true, ""usage_metadata"": {""input_tokens"": 1649, ""total_tokens"": 2237, ""output_tokens"": 588, ""input_token_details"": {""audio"": 0, ""cache_read"": 0}, ""output_token_details"": {""audio"": 0, ""reasoning"": 448}}, ""response_metadata"": {""id"": ""chatcmpl-DBMP7y9EToylBAWdEn5tSa1bXiQZd"", ""logprobs"": null, ""model_name"": ""gpt-5-mini-2025-08-07"", ""token_usage"": {""total_tokens"": 2237, ""prompt_tokens"": 1649, ""completion_tokens"": 588, ""prompt_tokens_details"": {""audio_tokens"": 0, ""cached_tokens"": 0}, ""completion_tokens_details"": {""audio_tokens"": 0, ""reasoning_tokens"": 448, ""accepted_prediction_tokens"": 0, ""rejected_prediction_tokens"": 0}}, ""service_tier"": ""default"", ""finish_reason"": ""stop"", ""model_provider"": ""openai"", ""system_fingerprint"": null}, ""llm_started_at_utc"": ""2026-02-20T15:08:20.669172Z"", ""llm_finished_at_utc"": ""2026-02-20T15:08:30.620499Z"", ""provider_request_id"": ""chatcmpl-DBMP7y9EToylBAWdEn5tSa1bXiQZd""}",2026-02-20 15:08:30.627992
+4,2,assessor_system,gpt-5-mini,7722,assessor_system,assessor_system,"You are a concise WhatsApp assessor for Nutrition.
+Active concept: Protein Intake.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+",,,,,,,,,,null,"[""system"", ""assessor""]","You are a concise WhatsApp assessor for Nutrition.
+Active concept: Protein Intake.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+
+
+Continue this concept.
+Primary task: evaluate payload.last_user_reply against payload.last_main_question.
+Payload (JSON): {""last_main_question"": ""Thinking about the last 7 days, how many protein portions did you usually *eat on average per day*? For reference: 1 portion = palm-sized meat or fish, 2 eggs, 1 handful of nuts, or 1 cup of beans/lentils."", ""last_user_reply"": ""2"", ""history"": [], ""already_asked"": [""Thinking about the last 7 days, how many protein portions did you usually *eat on average per day*? For reference: 1 portion = palm-sized meat or fish, 2 eggs, 1 handful of nuts, or 1 cup of beans/lentils.""], ""turns_so_far"": 4, ""retrieval"": [{""id"": 1, ""type"": ""snippet"", ""title"": ""Portion baseline"", ""text"": ""Aim ~3–4 protein portions/day; 1 portion = palm of lean protein, 2 eggs, or 1 cup beans/lentils."", ""score"": -0.01808439568553305, ""locale"": ""en-GB""}, {""id"": 2, ""type"": ""snippet"", ""title"": ""Scoring cue (0–5/day)"", ""text"": ""0–1/day = low, 2–3/day = fair, 3–4/day = good, 5/day = excellent; spread evenly across meals."", ""score"": -0.04350110153881139, ""locale"": ""en-GB""}], ""concept_focus"": ""protein_intake"", ""sufficient_for_scoring"": true}
+Rules:
+- Use payload.last_main_question and payload.last_user_reply as the primary evidence for scoring.
+- If these two fields are clear enough, finish with a score and do not ask a clarifier.
+- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.
+- Clarifiers do NOT count toward the 5-per-pillar main questions.
+- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.
+- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.
+- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.
+- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).
+- Always populate: status, why, missing, parsed_value in your JSON.
+- Finish this concept when you can assign an appropriate score (including 0).
+- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.
+SCORING_RANGE_GUIDE:
+- Higher is better; map linearly to 0–100.
+- 0 → 0; 5+ → 100; clamp outside bounds.
+- Treat 'none', 'no', 'zero', or 0 as numeric 0.
+- Parse number words (e.g., 'three', 'couple') when digits not given.
+- In your JSON, put only the active concept key: ""scores"": { ""protein_intake"": <0-100 integer> }.
+Return JSON only: {""action"":""ask""|""finish"",""question"":"""",""level"":"""",""confidence"":<float 0.0–1.0>,""rationale"":"""",""scores"":{},""status"":"""",""why"":"""",""missing"":[],""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}",false,"You are a concise WhatsApp assessor for Nutrition.
+Active concept: Protein Intake.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+
+
+Continue this concept.
+Primary task: evaluate payload.last_user_reply against payload.last_main_question.
+Payload (JSON): {""last_main_question"": ""Thinking about the last 7 days, how many protein portions did you usually *eat on average per day*? For reference: 1 portion = palm-sized meat or fish, 2 eggs, 1 handful of nuts, or 1 cup of beans/lentils."", ""last_user_reply"": ""2"", ""history"": [], ""already_asked"": [""Thinking about the last 7 days, how many protein portions did you usually *eat on average per day*? For reference: 1 portion = palm-sized meat or fish, 2 eggs, 1 handful of nuts, or 1 cup of beans/lentils.""], ""turns_so_far"": 4, ""retrieval"": [{""id"": 1, ""type"": ""snippet"", ""title"": ""Portion baseline"", ""text"": ""Aim ~3–4 protein portions/day; 1 portion = palm of lean protein, 2 eggs, or 1 cup beans/lentils."", ""score"": -0.01808439568553305, ""locale"": ""en-GB""}, {""id"": 2, ""type"": ""snippet"", ""title"": ""Scoring cue (0–5/day)"", ""text"": ""0–1/day = low, 2–3/day = fair, 3–4/day = good, 5/day = excellent; spread evenly across meals."", ""score"": -0.04350110153881139, ""locale"": ""en-GB""}], ""concept_focus"": ""protein_intake"", ""sufficient_for_scoring"": true}
+Rules:
+- Use payload.last_main_question and payload.last_user_reply as the primary evidence for scoring.
+- If these two fields are clear enough, finish with a score and do not ask a clarifier.
+- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.
+- Clarifiers do NOT count toward the 5-per-pillar main questions.
+- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.
+- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.
+- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.
+- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).
+- Always populate: status, why, missing, parsed_value in your JSON.
+- Finish this concept when you can assign an appropriate score (including 0).
+- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.
+SCORING_RANGE_GUIDE:
+- Higher is better; map linearly to 0–100.
+- 0 → 0; 5+ → 100; clamp outside bounds.
+- Treat 'none', 'no', 'zero', or 0 as numeric 0.
+- Parse number words (e.g., 'three', 'couple') when digits not given.
+- In your JSON, put only the active concept key: ""scores"": { ""protein_intake"": <0-100 integer> }.
+Return JSON only: {""action"":""ask""|""finish"",""question"":"""",""level"":"""",""confidence"":<float 0.0–1.0>,""rationale"":"""",""scores"":{},""status"":"""",""why"":"""",""missing"":[],""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}","You are a concise WhatsApp assessor for Nutrition.
+Active concept: Protein Intake.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+
+
+Continue this concept.
+Primary task: evaluate payload.last_user_reply against payload.last_main_question.
+Payload (JSON): {""last_main_question"": ""Thinking about the last 7 days, how many protein portions did you usually *eat on average per day*? For reference: 1 portion = palm-sized meat or fish, 2 eggs, 1 handful of nuts, or 1 cup of beans/lentils."", ""last_user_reply"": ""2"", ""history"": [], ""already_asked"": [""Thinking about the last 7 days, how many protein portions did you usually *eat on average per day*? For reference: 1 portion = palm-sized meat or fish, 2 eggs, 1 handful of nuts, or 1 cup of beans/lentils.""], ""turns_so_far"": 4, ""retrieval"": [{""id"": 1, ""type"": ""snippet"", ""title"": ""Portion baseline"", ""text"": ""Aim ~3–4 protein portions/day; 1 portion = palm of lean protein, 2 eggs, or 1 cup beans/lentils."", ""score"": -0.01808439568553305, ""locale"": ""en-GB""}, {""id"": 2, ""type"": ""snippet"", ""title"": ""Scoring cue (0–5/day)"", ""text"": ""0–1/day = low, 2–3/day = fair, 3–4/day = good, 5/day = excellent; spread evenly across meals."", ""score"": -0.04350110153881139, ""locale"": ""en-GB""}], ""concept_focus"": ""protein_intake"", ""sufficient_for_scoring"": true}
+Rules:
+- Use payload.last_main_question and payload.last_user_reply as the primary evidence for scoring.
+- If these two fields are clear enough, finish with a score and do not ask a clarifier.
+- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.
+- Clarifiers do NOT count toward the 5-per-pillar main questions.
+- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.
+- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.
+- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.
+- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).
+- Always populate: status, why, missing, parsed_value in your JSON.
+- Finish this concept when you can assign an appropriate score (including 0).
+- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.
+SCORING_RANGE_GUIDE:
+- Higher is better; map linearly to 0–100.
+- 0 → 0; 5+ → 100; clamp outside bounds.
+- Treat 'none', 'no', 'zero', or 0 as numeric 0.
+- Parse number words (e.g., 'three', 'couple') when digits not given.
+- In your JSON, put only the active concept key: ""scores"": { ""protein_intake"": <0-100 integer> }.
+Return JSON only: {""action"":""ask""|""finish"",""question"":"""",""level"":"""",""confidence"":<float 0.0–1.0>,""rationale"":"""",""scores"":{},""status"":"""",""why"":"""",""missing"":[],""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}","{""action"":""finish"",""question"":"""",""level"":""Moderate"",""confidence"":0.90,""rationale"":""User explicitly reported an average of 2 protein portions/day over the last 7 days. Scoring uses the provided guide (0→0, 5+→100) mapped linearly; 2/5 → 40. Aim ~3–4 portions/day, so 2 is below target but not minimal."",""scores"":{""protein_intake"":40},""status"":""scorable"",""why"":""Numeric, timeframe-specific reply allowed direct scoring per the scoring range guide."",""missing"":[],""parsed_value"":{""value"":2,""unit"":""portions/day"",""timeframe_ok"":true}}","{""pillar"": ""nutrition"", ""concept"": ""protein_intake"", ""has_range"": true, ""usage_metadata"": {""input_tokens"": 1634, ""total_tokens"": 2164, ""output_tokens"": 530, ""input_token_details"": {""audio"": 0, ""cache_read"": 0}, ""output_token_details"": {""audio"": 0, ""reasoning"": 384}}, ""response_metadata"": {""id"": ""chatcmpl-DBMPNC0evMe8y3qtNHXtp9pzEYcfq"", ""logprobs"": null, ""model_name"": ""gpt-5-mini-2025-08-07"", ""token_usage"": {""total_tokens"": 2164, ""prompt_tokens"": 1634, ""completion_tokens"": 530, ""prompt_tokens_details"": {""audio_tokens"": 0, ""cached_tokens"": 0}, ""completion_tokens_details"": {""audio_tokens"": 0, ""reasoning_tokens"": 384, ""accepted_prediction_tokens"": 0, ""rejected_prediction_tokens"": 0}}, ""service_tier"": ""default"", ""finish_reason"": ""stop"", ""model_provider"": ""openai"", ""system_fingerprint"": null}, ""llm_started_at_utc"": ""2026-02-20T15:08:37.277186Z"", ""llm_finished_at_utc"": ""2026-02-20T15:08:44.999693Z"", ""provider_request_id"": ""chatcmpl-DBMPNC0evMe8y3qtNHXtp9pzEYcfq""}",2026-02-20 15:08:45.006588
+5,2,assessment_okr_structured,gpt-5-mini,,assessment_okr_structured,structured_okr_generation,,,,,,,,,,,null,"[""system"", ""locale"", ""context"", ""history"", ""programme"", ""okr"", ""scores"", ""habit"", ""assessor"", ""task"", ""user""]","[{""role"": ""system"", ""content"": ""You are a pragmatic health coach helping people translate assessment scores into weekly habits. Return STRICT JSON with keys: objective (string), krs (array of 1–3 items). Each KR MUST be an observable behavior the user can perform weekly/daily, expressed in real-world units: sessions/week, days/week, nights/week, portions/day, litres/day, or percent. Use the provided behavior_context (labels, units, direction) to decide what to increase, maintain, or reduce. Skip any KR that would simply 'maintain' the current habit; only include behaviors that need to change versus the reported answers.Forbidden terms in KR text: 'score', 'adherence', 'priority action(s)'. Prefer small, realistic progressions and specific habits (e.g., add a veg portion at lunch, 10‑min mobility after training, 2L water/day). Return JSON only. Within text fields, write plain-English habit descriptions.""}, {""role"": ""user"", ""content"": ""pillar: nutrition\nbehavior_context: Each item below lists the key behaviors within this pillar. Use these to generate practical, habit-based Key Results.\n- fruit_veg: label='fruit & vegetable portions', unit='portions/day', score=40.0, band='low', direction='increase', tip='Suggest realistic habits to increase this area (e.g., small weekly/daily actions using the given unit).'\n- hydration: label='daily hydration', unit='L/day', score=50.0, band='low', direction='increase', tip='Suggest realistic habits to increase this area (e.g., small weekly/daily actions using the given unit).'\n- processed_food: label='processed food intake', unit='percent', score=50.0, band='low', direction='reduce', tip='Suggest realistic habits to reduce this area (e.g., small weekly/daily actions using the given unit).'\n- protein_intake: label='protein intake', unit='g/day', score=40.0, band='low', direction='increase', tip='Suggest realistic habits to increase this area (e.g., small weekly/daily actions using the given unit).'\nstate_context:  # from user_concept_state; includes bounds from Concept.zero_score/max_score\n- concept: fruit_veg\n  question: \""In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries.\""\n  answer: \""2 portions\""\n  meta: \"" (zero_score=0, max_score=5)\""\n- concept: hydration\n  question: \""Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml.\""\n  answer: \""2 litres\""\n  meta: \"" (zero_score=0, max_score=4)\""\n- concept: processed_food\n  question: \""In the last 7 days, how many portions of processed food did you *eat on average per day*? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry.\""\n  answer: \""2 portions\""\n  meta: \"" (zero_score=4, max_score=0, direction=lower_is_better)\""\n- concept: protein_intake\n  question: \""Thinking about the last 7 days, how many protein portions did you usually *eat on average per day*? For reference: 1 portion = palm-sized meat or fish, 2 eggs, 1 handful of nuts, or 1 cup of beans/lentils.\""\n  answer: \""2\""\n  meta: \"" (zero_score=0, max_score=5)\""\nqa_context: []\n\nRules:\n- Base the Objective and ALL Key Results on the user's answers in state_context (prefer) or qa_context if state_context is empty.\n- Where bounds are given (min/max or unit), set realistic targets within bounds; do NOT exceed max. Respect units.\n- Write ONE objective focused on the main gaps implied by the answers.\n- Return 2–4 Key Results that are weekly/daily habits with concrete units (sessions/week, portions/day, L/day, nights/week, days/week, or %).\n- Forbidden in KR text: 'score', 'adherence', 'priority action(s)'. Use behaviors and units instead.\n- Prefer small, realistic progressions derived from the stated answers (e.g., from '1 session/week' move to '3 sessions/week').\n- DO NOT include a Key Result if the user is already at the recommended level or no improvement is needed; fewer KRs are preferred over maintenance targets.\n- Do NOT propose improvements for concepts already scoring ~100; focus on concepts materially below the top score.\n- Reuse the units mentioned in the user's answers (state_context meta); do not switch to different units like percentages if the question used days/week or portions/day.\nReturn JSON only. Do not include markdown or code fences.""}]",false,"[{""role"": ""system"", ""content"": ""You are a pragmatic health coach helping people translate assessment scores into weekly habits. Return STRICT JSON with keys: objective (string), krs (array of 1–3 items). Each KR MUST be an observable behavior the user can perform weekly/daily, expressed in real-world units: sessions/week, days/week, nights/week, portions/day, litres/day, or percent. Use the provided behavior_context (labels, units, direction) to decide what to increase, maintain, or reduce. Skip any KR that would simply 'maintain' the current habit; only include behaviors that need to change versus the reported answers.Forbidden terms in KR text: 'score', 'adherence', 'priority action(s)'. Prefer small, realistic progressions and specific habits (e.g., add a veg portion at lunch, 10‑min mobility after training, 2L water/day). Return JSON only. Within text fields, write plain-English habit descriptions.""}, {""role"": ""user"", ""content"": ""pillar: nutrition\nbehavior_context: Each item below lists the key behaviors within this pillar. Use these to generate practical, habit-based Key Results.\n- fruit_veg: label='fruit & vegetable portions', unit='portions/day', score=40.0, band='low', direction='increase', tip='Suggest realistic habits to increase this area (e.g., small weekly/daily actions using the given unit).'\n- hydration: label='daily hydration', unit='L/day', score=50.0, band='low', direction='increase', tip='Suggest realistic habits to increase this area (e.g., small weekly/daily actions using the given unit).'\n- processed_food: label='processed food intake', unit='percent', score=50.0, band='low', direction='reduce', tip='Suggest realistic habits to reduce this area (e.g., small weekly/daily actions using the given unit).'\n- protein_intake: label='protein intake', unit='g/day', score=40.0, band='low', direction='increase', tip='Suggest realistic habits to increase this area (e.g., small weekly/daily actions using the given unit).'\nstate_context:  # from user_concept_state; includes bounds from Concept.zero_score/max_score\n- concept: fruit_veg\n  question: \""In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries.\""\n  answer: \""2 portions\""\n  meta: \"" (zero_score=0, max_score=5)\""\n- concept: hydration\n  question: \""Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml.\""\n  answer: \""2 litres\""\n  meta: \"" (zero_score=0, max_score=4)\""\n- concept: processed_food\n  question: \""In the last 7 days, how many portions of processed food did you *eat on average per day*? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry.\""\n  answer: \""2 portions\""\n  meta: \"" (zero_score=4, max_score=0, direction=lower_is_better)\""\n- concept: protein_intake\n  question: \""Thinking about the last 7 days, how many protein portions did you usually *eat on average per day*? For reference: 1 portion = palm-sized meat or fish, 2 eggs, 1 handful of nuts, or 1 cup of beans/lentils.\""\n  answer: \""2\""\n  meta: \"" (zero_score=0, max_score=5)\""\nqa_context: []\n\nRules:\n- Base the Objective and ALL Key Results on the user's answers in state_context (prefer) or qa_context if state_context is empty.\n- Where bounds are given (min/max or unit), set realistic targets within bounds; do NOT exceed max. Respect units.\n- Write ONE objective focused on the main gaps implied by the answers.\n- Return 2–4 Key Results that are weekly/daily habits with concrete units (sessions/week, portions/day, L/day, nights/week, days/week, or %).\n- Forbidden in KR text: 'score', 'adherence', 'priority action(s)'. Use behaviors and units instead.\n- Prefer small, realistic progressions derived from the stated answers (e.g., from '1 session/week' move to '3 sessions/week').\n- DO NOT include a Key Result if the user is already at the recommended level or no improvement is needed; fewer KRs are preferred over maintenance targets.\n- Do NOT propose improvements for concepts already scoring ~100; focus on concepts materially below the top score.\n- Reuse the units mentioned in the user's answers (state_context meta); do not switch to different units like percentages if the question used days/week or portions/day.\nReturn JSON only. Do not include markdown or code fences.""}]","[{""role"": ""system"", ""content"": ""You are a pragmatic health coach helping people translate assessment scores into weekly habits. Return STRICT JSON with keys: objective (string), krs (array of 1–3 items). Each KR MUST be an observable behavior the user can perform weekly/daily, expressed in real-world units: sessions/week, days/week, nights/week, portions/day, litres/day, or percent. Use the provided behavior_context (labels, units, direction) to decide what to increase, maintain, or reduce. Skip any KR that would simply 'maintain' the current habit; only include behaviors that need to change versus the reported answers.Forbidden terms in KR text: 'score', 'adherence', 'priority action(s)'. Prefer small, realistic progressions and specific habits (e.g., add a veg portion at lunch, 10‑min mobility after training, 2L water/day). Return JSON only. Within text fields, write plain-English habit descriptions.""}, {""role"": ""user"", ""content"": ""pillar: nutrition\nbehavior_context: Each item below lists the key behaviors within this pillar. Use these to generate practical, habit-based Key Results.\n- fruit_veg: label='fruit & vegetable portions', unit='portions/day', score=40.0, band='low', direction='increase', tip='Suggest realistic habits to increase this area (e.g., small weekly/daily actions using the given unit).'\n- hydration: label='daily hydration', unit='L/day', score=50.0, band='low', direction='increase', tip='Suggest realistic habits to increase this area (e.g., small weekly/daily actions using the given unit).'\n- processed_food: label='processed food intake', unit='percent', score=50.0, band='low', direction='reduce', tip='Suggest realistic habits to reduce this area (e.g., small weekly/daily actions using the given unit).'\n- protein_intake: label='protein intake', unit='g/day', score=40.0, band='low', direction='increase', tip='Suggest realistic habits to increase this area (e.g., small weekly/daily actions using the given unit).'\nstate_context:  # from user_concept_state; includes bounds from Concept.zero_score/max_score\n- concept: fruit_veg\n  question: \""In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries.\""\n  answer: \""2 portions\""\n  meta: \"" (zero_score=0, max_score=5)\""\n- concept: hydration\n  question: \""Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml.\""\n  answer: \""2 litres\""\n  meta: \"" (zero_score=0, max_score=4)\""\n- concept: processed_food\n  question: \""In the last 7 days, how many portions of processed food did you *eat on average per day*? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry.\""\n  answer: \""2 portions\""\n  meta: \"" (zero_score=4, max_score=0, direction=lower_is_better)\""\n- concept: protein_intake\n  question: \""Thinking about the last 7 days, how many protein portions did you usually *eat on average per day*? For reference: 1 portion = palm-sized meat or fish, 2 eggs, 1 handful of nuts, or 1 cup of beans/lentils.\""\n  answer: \""2\""\n  meta: \"" (zero_score=0, max_score=5)\""\nqa_context: []\n\nRules:\n- Base the Objective and ALL Key Results on the user's answers in state_context (prefer) or qa_context if state_context is empty.\n- Where bounds are given (min/max or unit), set realistic targets within bounds; do NOT exceed max. Respect units.\n- Write ONE objective focused on the main gaps implied by the answers.\n- Return 2–4 Key Results that are weekly/daily habits with concrete units (sessions/week, portions/day, L/day, nights/week, days/week, or %).\n- Forbidden in KR text: 'score', 'adherence', 'priority action(s)'. Use behaviors and units instead.\n- Prefer small, realistic progressions derived from the stated answers (e.g., from '1 session/week' move to '3 sessions/week').\n- DO NOT include a Key Result if the user is already at the recommended level or no improvement is needed; fewer KRs are preferred over maintenance targets.\n- Do NOT propose improvements for concepts already scoring ~100; focus on concepts materially below the top score.\n- Reuse the units mentioned in the user's answers (state_context meta); do not switch to different units like percentages if the question used days/week or portions/day.\nReturn JSON only. Do not include markdown or code fences.""}]","{
+  ""objective"": ""Build basic daily nutrition habits: increase fruit & vegetables and fluids, and reduce processed snacks."",
+  ""krs"": [
+    ""Eat 3 portions/day of fruit & vegetables (e.g., add one portion of fruit or a fist-sized veg serving at lunch)"",
+    ""Drink 2.5 L/day of water on average"",
+    ""Limit processed food to 1 portion/day (replace one usual processed snack with a whole-food alternative)""
+  ]
+}","{""mode"": ""structured_json"", ""model"": ""gpt-5-mini"", ""pillar"": ""nutrition"", ""run_id"": 1, ""user_id"": 2, ""pillar_result_id"": 1, ""assess_session_id"": 1, ""temperature_effective"": 1.0, ""temperature_requested"": 0.2, ""missing_both_count_raw"": 3, ""structured_kr_count_raw"": 3, ""missing_both_kr_keys_raw"": [""KR1"", ""KR2"", ""KR3""], ""missing_target_count_raw"": 3, ""missing_baseline_count_raw"": 3, ""missing_target_kr_keys_raw"": [""KR1"", ""KR2"", ""KR3""], ""missing_baseline_kr_keys_raw"": [""KR1"", ""KR2"", ""KR3""]}",2026-02-20 15:09:25.336565
+6,2,assessor_system,gpt-5-mini,15355,assessor_system,assessor_system,"You are a concise WhatsApp assessor for Training.
+Active concept: Cardio Frequency.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+",,,,,,,,,,null,"[""system"", ""assessor""]","You are a concise WhatsApp assessor for Training.
+Active concept: Cardio Frequency.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+
+
+Continue this concept.
+Payload (JSON): {""history"": [], ""already_asked"": [""In the last 7 days, on how many days did you do at least 20 minutes of cardio exercise, such as running, cycling, or swimming?""], ""turns_so_far"": 2, ""retrieval"": [{""id"": 10, ""type"": ""snippet"", ""title"": ""Scoring cue (0–5 days/wk)"", ""text"": ""0–1 days = low, 2–3 = fair, 4 = good, 5 = excellent; 150–300 min/week moderate (or 75–150 vigorous) is the weekly anchor."", ""score"": 0.04581577573201189, ""locale"": ""en-GB""}, {""id"": 9, ""type"": ""snippet"", ""title"": ""Aerobic baseline"", ""text"": ""Do ≥20 min most days in Zone 2–3; include 1–2 sessions/week in Zone 4–5 for range."", ""score"": 0.04549357184108104, ""locale"": ""en-GB""}], ""concept_focus"": ""cardio_frequency"", ""sufficient_for_scoring"": true}
+Rules:
+- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.
+- Clarifiers do NOT count toward the 5-per-pillar main questions.
+- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.
+- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.
+- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.
+- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).
+- Always populate: status, why, missing, parsed_value in your JSON.
+- Finish this concept when you can assign an appropriate score (including 0).
+- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.
+SCORING_RANGE_GUIDE:
+- Higher is better; map linearly to 0–100.
+- 0 → 0; 3+ → 100; clamp outside bounds.
+- Treat 'none', 'no', 'zero', or 0 as numeric 0.
+- Parse number words (e.g., 'three', 'couple') when digits not given.
+- In your JSON, put only the active concept key: ""scores"": { ""cardio_frequency"": <0-100 integer> }.
+Return JSON only: {""action"":""ask""|""finish"",""question"":"""",""level"":"""",""confidence"":<float 0.0–1.0>,""rationale"":"""",""scores"":{},""status"":"""",""why"":"""",""missing"":[],""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}",false,"You are a concise WhatsApp assessor for Training.
+Active concept: Cardio Frequency.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+
+
+Continue this concept.
+Payload (JSON): {""history"": [], ""already_asked"": [""In the last 7 days, on how many days did you do at least 20 minutes of cardio exercise, such as running, cycling, or swimming?""], ""turns_so_far"": 2, ""retrieval"": [{""id"": 10, ""type"": ""snippet"", ""title"": ""Scoring cue (0–5 days/wk)"", ""text"": ""0–1 days = low, 2–3 = fair, 4 = good, 5 = excellent; 150–300 min/week moderate (or 75–150 vigorous) is the weekly anchor."", ""score"": 0.04581577573201189, ""locale"": ""en-GB""}, {""id"": 9, ""type"": ""snippet"", ""title"": ""Aerobic baseline"", ""text"": ""Do ≥20 min most days in Zone 2–3; include 1–2 sessions/week in Zone 4–5 for range."", ""score"": 0.04549357184108104, ""locale"": ""en-GB""}], ""concept_focus"": ""cardio_frequency"", ""sufficient_for_scoring"": true}
+Rules:
+- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.
+- Clarifiers do NOT count toward the 5-per-pillar main questions.
+- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.
+- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.
+- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.
+- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).
+- Always populate: status, why, missing, parsed_value in your JSON.
+- Finish this concept when you can assign an appropriate score (including 0).
+- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.
+SCORING_RANGE_GUIDE:
+- Higher is better; map linearly to 0–100.
+- 0 → 0; 3+ → 100; clamp outside bounds.
+- Treat 'none', 'no', 'zero', or 0 as numeric 0.
+- Parse number words (e.g., 'three', 'couple') when digits not given.
+- In your JSON, put only the active concept key: ""scores"": { ""cardio_frequency"": <0-100 integer> }.
+Return JSON only: {""action"":""ask""|""finish"",""question"":"""",""level"":"""",""confidence"":<float 0.0–1.0>,""rationale"":"""",""scores"":{},""status"":"""",""why"":"""",""missing"":[],""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}","You are a concise WhatsApp assessor for Training.
+Active concept: Cardio Frequency.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+
+
+Continue this concept.
+Payload (JSON): {""history"": [], ""already_asked"": [""In the last 7 days, on how many days did you do at least 20 minutes of cardio exercise, such as running, cycling, or swimming?""], ""turns_so_far"": 2, ""retrieval"": [{""id"": 10, ""type"": ""snippet"", ""title"": ""Scoring cue (0–5 days/wk)"", ""text"": ""0–1 days = low, 2–3 = fair, 4 = good, 5 = excellent; 150–300 min/week moderate (or 75–150 vigorous) is the weekly anchor."", ""score"": 0.04581577573201189, ""locale"": ""en-GB""}, {""id"": 9, ""type"": ""snippet"", ""title"": ""Aerobic baseline"", ""text"": ""Do ≥20 min most days in Zone 2–3; include 1–2 sessions/week in Zone 4–5 for range."", ""score"": 0.04549357184108104, ""locale"": ""en-GB""}], ""concept_focus"": ""cardio_frequency"", ""sufficient_for_scoring"": true}
+Rules:
+- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.
+- Clarifiers do NOT count toward the 5-per-pillar main questions.
+- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.
+- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.
+- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.
+- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).
+- Always populate: status, why, missing, parsed_value in your JSON.
+- Finish this concept when you can assign an appropriate score (including 0).
+- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.
+SCORING_RANGE_GUIDE:
+- Higher is better; map linearly to 0–100.
+- 0 → 0; 3+ → 100; clamp outside bounds.
+- Treat 'none', 'no', 'zero', or 0 as numeric 0.
+- Parse number words (e.g., 'three', 'couple') when digits not given.
+- In your JSON, put only the active concept key: ""scores"": { ""cardio_frequency"": <0-100 integer> }.
+Return JSON only: {""action"":""ask""|""finish"",""question"":"""",""level"":"""",""confidence"":<float 0.0–1.0>,""rationale"":"""",""scores"":{},""status"":"""",""why"":"""",""missing"":[],""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}","{""action"":""ask"",""question"":""Quick follow-up: in the last 7 days, on how many days did you do at least 20 minutes of cardio (running, cycling, swimming, brisk walking)? Please answer 0–7."",""level"":""Moderate"",""confidence"":0.60,""rationale"":""I need a numeric count for the past 7 days to map to the scoring guide (0→0, 3+→100). Your earlier question was logged but no answer was recorded."",""scores"":{},""status"":""needs_clarifier"",""why"":""No numeric response found to the prior question; cannot assign a score without days/week."",""missing"":[""days_per_week""],""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}","{""pillar"": ""training"", ""concept"": ""cardio_frequency"", ""has_range"": true, ""usage_metadata"": {""input_tokens"": 1498, ""total_tokens"": 2493, ""output_tokens"": 995, ""input_token_details"": {""audio"": 0, ""cache_read"": 0}, ""output_token_details"": {""audio"": 0, ""reasoning"": 832}}, ""response_metadata"": {""id"": ""chatcmpl-DBMQWEE1O2VLGKANj6Z2fiF1tDwZs"", ""logprobs"": null, ""model_name"": ""gpt-5-mini-2025-08-07"", ""token_usage"": {""total_tokens"": 2493, ""prompt_tokens"": 1498, ""completion_tokens"": 995, ""prompt_tokens_details"": {""audio_tokens"": 0, ""cached_tokens"": 0}, ""completion_tokens_details"": {""audio_tokens"": 0, ""reasoning_tokens"": 832, ""accepted_prediction_tokens"": 0, ""rejected_prediction_tokens"": 0}}, ""service_tier"": ""default"", ""finish_reason"": ""stop"", ""model_provider"": ""openai"", ""system_fingerprint"": null}, ""llm_started_at_utc"": ""2026-02-20T15:09:48.417635Z"", ""llm_finished_at_utc"": ""2026-02-20T15:10:03.773578Z"", ""provider_request_id"": ""chatcmpl-DBMQWEE1O2VLGKANj6Z2fiF1tDwZs""}",2026-02-20 15:10:03.78175
+7,2,assessor_system,gpt-5-mini,16100,assessor_system,assessor_system,"You are a concise WhatsApp assessor for Training.
+Active concept: Flexibility Mobility.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+",,,,,,,,,,null,"[""system"", ""assessor""]","You are a concise WhatsApp assessor for Training.
+Active concept: Flexibility Mobility.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+
+
+Continue this concept.
+Payload (JSON): {""history"": [], ""already_asked"": [""In the last 7 days, on how many days did you do stretching, yoga, or mobility work for at least 10 minutes?""], ""turns_so_far"": 3, ""retrieval"": [{""id"": 13, ""type"": ""snippet"", ""title"": ""Baseline habit"", ""text"": ""≥10 minutes on ≥3 days/week; link to a fixed time (post-workout or pre-bed)."", ""score"": 0.016589272373578153, ""locale"": ""en-GB""}, {""id"": 14, ""type"": ""snippet"", ""title"": ""Scoring cue (0–5 days/wk)"", ""text"": ""Consistency beats one-off long sessions; more days at 10–15 min score higher."", ""score"": 0.007918277269175659, ""locale"": ""en-GB""}], ""concept_focus"": ""flexibility_mobility"", ""sufficient_for_scoring"": true}
+Rules:
+- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.
+- Clarifiers do NOT count toward the 5-per-pillar main questions.
+- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.
+- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.
+- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.
+- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).
+- Always populate: status, why, missing, parsed_value in your JSON.
+- Finish this concept when you can assign an appropriate score (including 0).
+- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.
+SCORING_RANGE_GUIDE:
+- Higher is better; map linearly to 0–100.
+- 0 → 0; 4+ → 100; clamp outside bounds.
+- Treat 'none', 'no', 'zero', or 0 as numeric 0.
+- Parse number words (e.g., 'three', 'couple') when digits not given.
+- In your JSON, put only the active concept key: ""scores"": { ""flexibility_mobility"": <0-100 integer> }.
+Return JSON only: {""action"":""ask""|""finish"",""question"":"""",""level"":"""",""confidence"":<float 0.0–1.0>,""rationale"":"""",""scores"":{},""status"":"""",""why"":"""",""missing"":[],""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}",false,"You are a concise WhatsApp assessor for Training.
+Active concept: Flexibility Mobility.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+
+
+Continue this concept.
+Payload (JSON): {""history"": [], ""already_asked"": [""In the last 7 days, on how many days did you do stretching, yoga, or mobility work for at least 10 minutes?""], ""turns_so_far"": 3, ""retrieval"": [{""id"": 13, ""type"": ""snippet"", ""title"": ""Baseline habit"", ""text"": ""≥10 minutes on ≥3 days/week; link to a fixed time (post-workout or pre-bed)."", ""score"": 0.016589272373578153, ""locale"": ""en-GB""}, {""id"": 14, ""type"": ""snippet"", ""title"": ""Scoring cue (0–5 days/wk)"", ""text"": ""Consistency beats one-off long sessions; more days at 10–15 min score higher."", ""score"": 0.007918277269175659, ""locale"": ""en-GB""}], ""concept_focus"": ""flexibility_mobility"", ""sufficient_for_scoring"": true}
+Rules:
+- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.
+- Clarifiers do NOT count toward the 5-per-pillar main questions.
+- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.
+- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.
+- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.
+- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).
+- Always populate: status, why, missing, parsed_value in your JSON.
+- Finish this concept when you can assign an appropriate score (including 0).
+- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.
+SCORING_RANGE_GUIDE:
+- Higher is better; map linearly to 0–100.
+- 0 → 0; 4+ → 100; clamp outside bounds.
+- Treat 'none', 'no', 'zero', or 0 as numeric 0.
+- Parse number words (e.g., 'three', 'couple') when digits not given.
+- In your JSON, put only the active concept key: ""scores"": { ""flexibility_mobility"": <0-100 integer> }.
+Return JSON only: {""action"":""ask""|""finish"",""question"":"""",""level"":"""",""confidence"":<float 0.0–1.0>,""rationale"":"""",""scores"":{},""status"":"""",""why"":"""",""missing"":[],""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}","You are a concise WhatsApp assessor for Training.
+Active concept: Flexibility Mobility.
+Ask a main question (<=300 chars, can be detailed with examples) or a clarifier (<=320 chars) when the user's answer is vague. You have latitude to infer when the user's phrasing strongly implies a quantitative pattern.
+If the user's reply contains a NUMBER **or** strongly implies a count/timeframe (e.g., ""daily"", ""every evening"", ""twice daily"", ""each morning""), you may TREAT IT AS SUFFICIENT and finish with a score. When you infer from habitual phrasing, state a brief rationale and set an appropriate confidence.
+Only finish the concept once you can assign a score (0–100) for this concept (zero is allowed).
+Return JSON only with these fields:
+{""action"":""ask""|""finish"",""question"":"""",""level"":""Low""|""Moderate""|""High"",""confidence"":<float 0.0–1.0>,
+""rationale"":"""",""scores"":{},
+""status"":""scorable""|""needs_clarifier""|""insufficient"",
+""why"":"""",
+""missing"":[],
+""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}
+Notes:
+- Scoring priority: If numeric bounds (zero_score, max_score) are provided for this concept, they DEFINE polarity (higher-is-better vs lower-is-better) and the mapping to 0–100. Bounds override heuristics and any KB snippets. If no bounds are provided, use your general health/nutrition expertise to choose a sensible polarity and mapping; treat retrieved KB snippets as optional context only.
+- Always output integer scores on a 0–100 scale. Choose a reasonable mapping that reflects how clearly good/poor the reported pattern is.
+- Polarity inference: When the behavior is one people should limit/avoid (e.g., processed foods), LOWER frequency is BETTER. When it’s a recommended behavior (e.g., fruit/veg portions, hydration, protein), HIGHER adherence is BETTER.
+- Zero handling follows the bounds polarity. If zero_score <= max_score (higher is better), 0 maps to a low score. If zero_score > max_score (lower is better), 0 maps to a high score. Treat 'none', 'no', 'zero' as numeric 0.
+- Language-to-number heuristic: map categorical habitual phrases when reasonable (e.g., ""daily""/""every evening"" in a 7‑day window → 7). Also map number words: “once or twice / occasionally” ≈ 1–2; “few days / some days” ≈ 3–4; “most days / regularly / often” ≈ 5–7.
+- Clarifiers: You **may** ask a clarifier if needed to score. Avoid verbatim repetition of the main question; rephrase when you re-ask. You can ask for more than one detail if truly necessary, but prefer concise, high-signal questions.
+- status=scorable → you can finish now; needs_clarifier → ask a clarifier; insufficient → ask a main question.
+- missing: list the specific fields you need (e.g., [""unit"",""days_per_week""]).
+- parsed_value: include the numeric you inferred (e.g., 3), unit label, and whether timeframe is satisfied.
+- IMPORTANT: Return `scores` as integers on a 0–100 scale (NOT 0–10). Use your rubric mapping to 0–100.
+- Confidence calibration: If numeric AND timeframe explicit → set confidence 0.75–0.95. If inferred from categorical phrasing (e.g., ""every evening""), choose 0.65–0.85 based on certainty. If numeric but timeframe inferred/loose → 0.55–0.75.
+- If uncertain, ask a clarifier instead of finishing.
+- Do NOT copy example values; set confidence per these rules.
+
+
+Continue this concept.
+Payload (JSON): {""history"": [], ""already_asked"": [""In the last 7 days, on how many days did you do stretching, yoga, or mobility work for at least 10 minutes?""], ""turns_so_far"": 3, ""retrieval"": [{""id"": 13, ""type"": ""snippet"", ""title"": ""Baseline habit"", ""text"": ""≥10 minutes on ≥3 days/week; link to a fixed time (post-workout or pre-bed)."", ""score"": 0.016589272373578153, ""locale"": ""en-GB""}, {""id"": 14, ""type"": ""snippet"", ""title"": ""Scoring cue (0–5 days/wk)"", ""text"": ""Consistency beats one-off long sessions; more days at 10–15 min score higher."", ""score"": 0.007918277269175659, ""locale"": ""en-GB""}], ""concept_focus"": ""flexibility_mobility"", ""sufficient_for_scoring"": true}
+Rules:
+- Ask a clear main question (<=300 chars) or a clarifier (<=320 chars) when needed.
+- Clarifiers do NOT count toward the 5-per-pillar main questions.
+- If payload.sufficient_for_scoring is true OR the user's reply strongly implies a count/timeframe (e.g., 'daily', 'every evening'), you may prefer action:'finish' with a score.
+- You may infer numeric counts from habitual phrasing (e.g., 'every evening' in a 7-day window → 7); include a brief rationale and set confidence accordingly.
+- Treat number words (e.g., 'three', 'two to three') as numeric answers when the timeframe is already given.
+- Avoid verbatim repetition of the original main question; if you re-ask, rephrase and narrow to the highest-signal detail(s).
+- Always populate: status, why, missing, parsed_value in your JSON.
+- Finish this concept when you can assign an appropriate score (including 0).
+- Set confidence based on certainty: numeric + explicit timeframe → 0.80–0.95; inferred from categorical habit → 0.65–0.85; numeric but inferred timeframe → 0.55–0.75; otherwise ask a clarifier.
+SCORING_RANGE_GUIDE:
+- Higher is better; map linearly to 0–100.
+- 0 → 0; 4+ → 100; clamp outside bounds.
+- Treat 'none', 'no', 'zero', or 0 as numeric 0.
+- Parse number words (e.g., 'three', 'couple') when digits not given.
+- In your JSON, put only the active concept key: ""scores"": { ""flexibility_mobility"": <0-100 integer> }.
+Return JSON only: {""action"":""ask""|""finish"",""question"":"""",""level"":"""",""confidence"":<float 0.0–1.0>,""rationale"":"""",""scores"":{},""status"":"""",""why"":"""",""missing"":[],""parsed_value"":{""value"":null,""unit"":"""",""timeframe_ok"":false}}","{
+  ""action"": ""ask"",
+  ""question"": ""Quick check: in the past 7 days, on how many days did you do at least 10 minutes of stretching, yoga, or mobility work? (Reply with a number 0–7.)"",
+  ""level"": ""Moderate"",
+  ""confidence"": 0.60,
+  ""rationale"": ""To score flexibility/mobility we need the number of days (0–7) with ≥10 minutes of mobility work; the scoring maps 0→0 and 4+→100."",
+  ""scores"": {},
+  ""status"": ""needs_clarifier"",
+  ""why"": ""No numeric answer was provided yet; cannot map to the 0–100 scale without days/week."",
+  ""missing"": [
+    ""days_per_week""
+  ],
+  ""parsed_value"": {
+    ""value"": null,
+    ""unit"": ""days"",
+    ""timeframe_ok"": false
+  }
+}","{""pillar"": ""training"", ""concept"": ""flexibility_mobility"", ""has_range"": true, ""usage_metadata"": {""input_tokens"": 1465, ""total_tokens"": 2442, ""output_tokens"": 977, ""input_token_details"": {""audio"": 0, ""cache_read"": 0}, ""output_token_details"": {""audio"": 0, ""reasoning"": 768}}, ""response_metadata"": {""id"": ""chatcmpl-DBMRJg6x6dLI3mETbfqCUPq23qu4Y"", ""logprobs"": null, ""model_name"": ""gpt-5-mini-2025-08-07"", ""token_usage"": {""total_tokens"": 2442, ""prompt_tokens"": 1465, ""completion_tokens"": 977, ""prompt_tokens_details"": {""audio_tokens"": 0, ""cached_tokens"": 0}, ""completion_tokens_details"": {""audio_tokens"": 0, ""reasoning_tokens"": 768, ""accepted_prediction_tokens"": 0, ""rejected_prediction_tokens"": 0}}, ""service_tier"": ""default"", ""finish_reason"": ""stop"", ""model_provider"": ""openai"", ""system_fingerprint"": null}, ""llm_started_at_utc"": ""2026-02-20T15:10:37.347913Z"", ""llm_finished_at_utc"": ""2026-02-20T15:10:53.448798Z"", ""provider_request_id"": ""chatcmpl-DBMRJg6x6dLI3mETbfqCUPq23qu4Y""}",2026-02-20 15:10:53.457435

@@ -1004,6 +1004,23 @@ def _send_first_concept_question_for_pillar(user: User, state: dict, pillar: str
         pass
     return True
 
+
+def _log_pillar_handoff_timing(payload: dict) -> None:
+    """Best-effort timing audit for pillar transition latency decomposition."""
+    try:
+        with SessionLocal() as ss:
+            ss.add(
+                JobAudit(
+                    job_name="assessor_pillar_handoff_timing",
+                    status="ok",
+                    payload=payload,
+                )
+            )
+            ss.commit()
+    except Exception:
+        pass
+
+
 def _update_concepts_from_scores(user_id: int, pillar_key: str, scores: dict[str, float],
                                  q_by_code: dict[str, str] | None = None,
                                  a_by_code: dict[str, str] | None = None,
@@ -2658,6 +2675,22 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         finished_pillar = concept_idx_map[pillar] >= min(MAIN_QUESTIONS_PER_PILLAR, len(pillar_concepts))
 
         if finished_pillar:
+            handoff_started_at = time.perf_counter()
+            handoff_timing = {
+                "user_id": int(getattr(user, "id", 0) or 0),
+                "run_id": int(state.get("run_id")) if state.get("run_id") else None,
+                "pillar": pillar,
+                "next_pillar": None,
+                "ms_update_concepts": None,
+                "ms_upsert_pillar_result": None,
+                "ms_commit_before_enqueue": None,
+                "ms_enqueue_pillar_okr_sync": None,
+                "ms_send_transition": None,
+                "ms_send_next_prompt": None,
+                "next_prompt_mode": None,
+                "queued_pillar_okr_sync": False,
+                "pillar_okr_sync_job_id": None,
+            }
             # Pillar summary
             codes = pillar_concepts[:MAIN_QUESTIONS_PER_PILLAR]
             raw_vals = [concept_scores.get(pillar, {}).get(k, None) for k in codes]
@@ -2668,6 +2701,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             overall = round(sum(kept) / max(1, len(kept)))
 
             # Persist concept scores with Q/A/Confidence/Notes from snapshots
+            step_started_at = time.perf_counter()
             try:
                 snap_pillar = (state.get("qa_snapshots", {}) or {}).get(pillar) or {}
                 q_by = {k: v.get("q") for k, v in snap_pillar.items()}
@@ -2680,6 +2714,8 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                                              run_id=state.get("run_id"))
             except Exception:
                 pass
+            finally:
+                handoff_timing["ms_update_concepts"] = int((time.perf_counter() - step_started_at) * 1000)
 
             recent = [t for t in turns if t.get("pillar") == pillar][-10:]
             feedback_line = feedback_to_okr(
@@ -2692,6 +2728,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 for k, v in filled_scores.items()
             ) or "(no sub-scores)"
             # Write/Update PillarResult for this pillar
+            step_started_at = time.perf_counter()
             try:
                 _upsert_pillar_result(
                     s,
@@ -2705,6 +2742,8 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             except Exception:
                 # swallow to avoid impacting the user flow
                 pass
+            finally:
+                handoff_timing["ms_upsert_pillar_result"] = int((time.perf_counter() - step_started_at) * 1000)
 
             # ── OKR: update objective + KRs for this finished pillar ─────────────────────
             try:
@@ -2725,10 +2764,14 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 if can_queue_okr_sync:
                     # assessment_okr_structured is worker-only: always enqueue pillar sync.
                     # Commit PillarResult before queueing so the worker can read it immediately.
+                    commit_started_at = time.perf_counter()
                     try:
                         s.commit()
                     except Exception:
                         s.rollback()
+                    finally:
+                        handoff_timing["ms_commit_before_enqueue"] = int((time.perf_counter() - commit_started_at) * 1000)
+                    enqueue_started_at = time.perf_counter()
                     try:
                         job_id = enqueue_job(
                             "pillar_okr_sync",
@@ -2744,6 +2787,8 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                             },
                             user_id=user.id,
                         )
+                        handoff_timing["queued_pillar_okr_sync"] = True
+                        handoff_timing["pillar_okr_sync_job_id"] = int(job_id)
                         print(
                             f"[okr] enqueued pillar_okr_sync run_id={state.get('run_id')} "
                             f"pillar={pillar} user_id={user.id} job={job_id}"
@@ -2753,6 +2798,8 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                             f"[okr] ERROR: queue pillar_okr_sync failed (worker-only path) "
                             f"run_id={state.get('run_id')} pillar={pillar} user_id={user.id}: {_okr_q_e}"
                         )
+                    finally:
+                        handoff_timing["ms_enqueue_pillar_okr_sync"] = int((time.perf_counter() - enqueue_started_at) * 1000)
                 else:
                     print(
                         f"[okr] WARN: skip pillar_okr_sync enqueue (missing lineage) "
@@ -2772,19 +2819,35 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
 
             if nxt:
                 state["current"] = nxt
+                handoff_timing["next_pillar"] = nxt
                 first_name = (getattr(user, "first_name", "") or "").strip()
                 if first_name:
                     tr_msg = f"*Great {first_name}* — {pillar.title()} done. Now a quick check on {nxt.title()} ⭐"
                 else:
                     tr_msg = f"*Great* — {pillar.title()} done. Now a quick check on {nxt.title()} ⭐"
                 turns.append({"role": "assistant", "pillar": nxt, "text": tr_msg})
+                step_started_at = time.perf_counter()
                 _send_to_user(user, tr_msg)
+                handoff_timing["ms_send_transition"] = int((time.perf_counter() - step_started_at) * 1000)
+                step_started_at = time.perf_counter()
                 if _maybe_prompt_preamble_question(user, state, nxt, turns):
+                    handoff_timing["next_prompt_mode"] = "preamble"
+                    handoff_timing["ms_send_next_prompt"] = int((time.perf_counter() - step_started_at) * 1000)
+                    handoff_timing["ms_total"] = int((time.perf_counter() - handoff_started_at) * 1000)
+                    _log_pillar_handoff_timing(handoff_timing)
                     _commit_state(s, sess, state)
                     return True
                 if not _send_first_concept_question_for_pillar(user, state, nxt, turns, s):
+                    handoff_timing["next_prompt_mode"] = "first_concept_failed"
+                    handoff_timing["ms_send_next_prompt"] = int((time.perf_counter() - step_started_at) * 1000)
+                    handoff_timing["ms_total"] = int((time.perf_counter() - handoff_started_at) * 1000)
+                    _log_pillar_handoff_timing(handoff_timing)
                     _commit_state(s, sess, state)
                     return True
+                handoff_timing["next_prompt_mode"] = "first_concept"
+                handoff_timing["ms_send_next_prompt"] = int((time.perf_counter() - step_started_at) * 1000)
+                handoff_timing["ms_total"] = int((time.perf_counter() - handoff_started_at) * 1000)
+                _log_pillar_handoff_timing(handoff_timing)
                 _commit_state(s, sess, state)
                 return True
             else:

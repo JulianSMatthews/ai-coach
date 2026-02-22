@@ -5464,7 +5464,7 @@ def admin_assessment_health(
                 point_dropoff[label] = point_dropoff.get(label, 0) + 1
 
         prompt_q = (
-            s.query(LLMPromptLog.duration_ms, LLMPromptLog.model, LLMPromptLog.touchpoint)
+            s.query(LLMPromptLog.duration_ms, LLMPromptLog.model, LLMPromptLog.touchpoint, LLMPromptLog.context_meta)
             .filter(LLMPromptLog.created_at >= start_utc, LLMPromptLog.created_at < end_utc)
         )
         if club_scope_id is not None:
@@ -5502,6 +5502,19 @@ def admin_assessment_health(
                 return "coaching"
             return None
 
+        def _llm_execution_scope(touchpoint: object, context_meta: object) -> str | None:
+            meta = _as_payload_dict(context_meta)
+            src = str(meta.get("execution_source") or "").strip().lower() if isinstance(meta, dict) else ""
+            if src in {"api", "worker"}:
+                return src
+            key = str(touchpoint or "").strip().lower()
+            # Conservative fallback for legacy rows that predate source stamping.
+            if key in {"assessor_system", "general_support"}:
+                return "api"
+            if key == "assessment_okr_structured":
+                return "worker"
+            return None
+
         llm_durations_by_scope: dict[str, list[int]] = {
             "assessment": [],
             "coaching": [],
@@ -5517,18 +5530,46 @@ def admin_assessment_health(
             "coaching": 0,
             "combined": 0,
         }
+        llm_durations_by_execution: dict[str, list[int]] = {
+            "api": [],
+            "worker": [],
+            "combined": [],
+        }
+        llm_model_counts_by_execution: dict[str, dict[str, int]] = {
+            "api": {},
+            "worker": {},
+            "combined": {},
+        }
+        llm_prompt_counts_by_execution: dict[str, int] = {
+            "api": 0,
+            "worker": 0,
+            "combined": 0,
+            "unknown": 0,
+        }
 
-        for dur, model, touchpoint in prompt_rows:
+        for dur, model, touchpoint, context_meta in prompt_rows:
             scope = _llm_scope(touchpoint)
-            if scope is None:
-                continue
-            llm_prompt_counts[scope] += 1
-            llm_prompt_counts["combined"] += 1
-            model_key = (model or "unknown").strip()
-            scope_models = llm_model_counts_by_scope[scope]
-            scope_models[model_key] = scope_models.get(model_key, 0) + 1
-            combined_models = llm_model_counts_by_scope["combined"]
-            combined_models[model_key] = combined_models.get(model_key, 0) + 1
+            if scope is not None:
+                llm_prompt_counts[scope] += 1
+                llm_prompt_counts["combined"] += 1
+                model_key = (model or "unknown").strip()
+                scope_models = llm_model_counts_by_scope[scope]
+                scope_models[model_key] = scope_models.get(model_key, 0) + 1
+                combined_models = llm_model_counts_by_scope["combined"]
+                combined_models[model_key] = combined_models.get(model_key, 0) + 1
+
+            exec_scope = _llm_execution_scope(touchpoint, context_meta)
+            if exec_scope is None:
+                llm_prompt_counts_by_execution["unknown"] += 1
+            else:
+                llm_prompt_counts_by_execution[exec_scope] += 1
+                llm_prompt_counts_by_execution["combined"] += 1
+                model_key_exec = (model or "unknown").strip()
+                exec_models = llm_model_counts_by_execution[exec_scope]
+                exec_models[model_key_exec] = exec_models.get(model_key_exec, 0) + 1
+                combined_exec_models = llm_model_counts_by_execution["combined"]
+                combined_exec_models[model_key_exec] = combined_exec_models.get(model_key_exec, 0) + 1
+
             if dur is None:
                 continue
             try:
@@ -5537,8 +5578,12 @@ def admin_assessment_health(
                 continue
             if dur_i < 0:
                 continue
-            llm_durations_by_scope[scope].append(dur_i)
-            llm_durations_by_scope["combined"].append(dur_i)
+            if scope is not None:
+                llm_durations_by_scope[scope].append(dur_i)
+                llm_durations_by_scope["combined"].append(dur_i)
+            if exec_scope is not None:
+                llm_durations_by_execution[exec_scope].append(dur_i)
+                llm_durations_by_execution["combined"].append(dur_i)
 
         llm_durations_ms = llm_durations_by_scope["combined"]
         model_counts = llm_model_counts_by_scope["combined"]
@@ -5548,6 +5593,10 @@ def admin_assessment_health(
         llm_assessment_p95 = _percentile([float(v) for v in llm_durations_by_scope["assessment"]], 95)
         llm_coaching_p50 = _percentile([float(v) for v in llm_durations_by_scope["coaching"]], 50)
         llm_coaching_p95 = _percentile([float(v) for v in llm_durations_by_scope["coaching"]], 95)
+        llm_interactive_p50 = _percentile([float(v) for v in llm_durations_by_execution["api"]], 50)
+        llm_interactive_p95 = _percentile([float(v) for v in llm_durations_by_execution["api"]], 95)
+        llm_worker_p50 = _percentile([float(v) for v in llm_durations_by_execution["worker"]], 50)
+        llm_worker_p95 = _percentile([float(v) for v in llm_durations_by_execution["worker"]], 95)
 
         okr_q = (
             s.query(JobAudit.job_name, JobAudit.payload)
@@ -6198,9 +6247,31 @@ def admin_assessment_health(
         warn=thresholds["llm_worker_p95_ms"]["warn"],
         critical=thresholds["llm_worker_p95_ms"]["critical"],
     )
+    llm_interactive_p50_state = _threshold_state(
+        llm_interactive_p50,
+        warn=thresholds["llm_interactive_p50_ms"]["warn"],
+        critical=thresholds["llm_interactive_p50_ms"]["critical"],
+    )
+    llm_interactive_p95_state = _threshold_state(
+        llm_interactive_p95,
+        warn=thresholds["llm_interactive_p95_ms"]["warn"],
+        critical=thresholds["llm_interactive_p95_ms"]["critical"],
+    )
+    llm_worker_p50_state = _threshold_state(
+        llm_worker_p50,
+        warn=thresholds["llm_worker_p50_ms"]["warn"],
+        critical=thresholds["llm_worker_p50_ms"]["critical"],
+    )
+    llm_worker_p95_state = _threshold_state(
+        llm_worker_p95,
+        warn=thresholds["llm_worker_p95_ms"]["warn"],
+        critical=thresholds["llm_worker_p95_ms"]["critical"],
+    )
     llm_combined_state = _worst_state(llm_p50_state, llm_p95_state)
     llm_assessment_state = _worst_state(llm_assessment_p50_state, llm_assessment_p95_state)
     llm_coaching_state = _worst_state(llm_coaching_p50_state, llm_coaching_p95_state)
+    llm_interactive_state = _worst_state(llm_interactive_p50_state, llm_interactive_p95_state)
+    llm_worker_state = _worst_state(llm_worker_p50_state, llm_worker_p95_state)
     fallback_state = _threshold_state(
         okr_fallback_rate,
         warn=thresholds["okr_fallback_rate_pct"]["warn"],
@@ -6277,8 +6348,8 @@ def admin_assessment_health(
         "completion_rate_pct": completion_state,
         "median_completion_minutes": median_state,
         "stale_runs": stale_state,
-        "llm_interactive_p95_ms": llm_assessment_p95_state,
-        "llm_worker_p95_ms": llm_coaching_p95_state,
+        "llm_interactive_p95_ms": llm_interactive_p95_state,
+        "llm_worker_p95_ms": llm_worker_p95_state,
         "okr_fallback_rate_pct": fallback_state,
         "queue_backlog": backlog_state,
         "twilio_failure_rate_pct": twilio_state,
@@ -6291,8 +6362,8 @@ def admin_assessment_health(
         "completion_rate_pct": completion_rate,
         "median_completion_minutes": median_completion,
         "stale_runs": stale_runs,
-        "llm_interactive_p95_ms": llm_assessment_p95,
-        "llm_worker_p95_ms": llm_coaching_p95,
+        "llm_interactive_p95_ms": llm_interactive_p95,
+        "llm_worker_p95_ms": llm_worker_p95,
         "okr_fallback_rate_pct": okr_fallback_rate,
         "queue_backlog": backlog,
         "twilio_failure_rate_pct": tw_failure_rate,
@@ -6394,33 +6465,33 @@ def admin_assessment_health(
                 ),
             },
             "interactive": {
-                "prompts": llm_prompt_counts["assessment"],
-                "duration_ms_p50": round(llm_assessment_p50, 2) if llm_assessment_p50 is not None else None,
-                "duration_ms_p95": round(llm_assessment_p95, 2) if llm_assessment_p95 is not None else None,
-                "duration_ms_p50_state": llm_assessment_p50_state,
-                "duration_ms_p95_state": llm_assessment_p95_state,
-                "duration_ms_state": llm_assessment_state,
-                "models": llm_model_counts_by_scope["assessment"],
+                "prompts": llm_prompt_counts_by_execution["api"],
+                "duration_ms_p50": round(llm_interactive_p50, 2) if llm_interactive_p50 is not None else None,
+                "duration_ms_p95": round(llm_interactive_p95, 2) if llm_interactive_p95 is not None else None,
+                "duration_ms_p50_state": llm_interactive_p50_state,
+                "duration_ms_p95_state": llm_interactive_p95_state,
+                "duration_ms_state": llm_interactive_state,
+                "models": llm_model_counts_by_execution["api"],
                 "slow_over_warn": sum(
-                    1 for v in llm_durations_by_scope["assessment"] if float(v) > thresholds["llm_interactive_p95_ms"]["warn"]
+                    1 for v in llm_durations_by_execution["api"] if float(v) > thresholds["llm_interactive_p95_ms"]["warn"]
                 ),
                 "slow_over_critical": sum(
-                    1 for v in llm_durations_by_scope["assessment"] if float(v) > thresholds["llm_interactive_p95_ms"]["critical"]
+                    1 for v in llm_durations_by_execution["api"] if float(v) > thresholds["llm_interactive_p95_ms"]["critical"]
                 ),
             },
             "worker": {
-                "prompts": llm_prompt_counts["coaching"],
-                "duration_ms_p50": round(llm_coaching_p50, 2) if llm_coaching_p50 is not None else None,
-                "duration_ms_p95": round(llm_coaching_p95, 2) if llm_coaching_p95 is not None else None,
-                "duration_ms_p50_state": llm_coaching_p50_state,
-                "duration_ms_p95_state": llm_coaching_p95_state,
-                "duration_ms_state": llm_coaching_state,
-                "models": llm_model_counts_by_scope["coaching"],
+                "prompts": llm_prompt_counts_by_execution["worker"],
+                "duration_ms_p50": round(llm_worker_p50, 2) if llm_worker_p50 is not None else None,
+                "duration_ms_p95": round(llm_worker_p95, 2) if llm_worker_p95 is not None else None,
+                "duration_ms_p50_state": llm_worker_p50_state,
+                "duration_ms_p95_state": llm_worker_p95_state,
+                "duration_ms_state": llm_worker_state,
+                "models": llm_model_counts_by_execution["worker"],
                 "slow_over_warn": sum(
-                    1 for v in llm_durations_by_scope["coaching"] if float(v) > thresholds["llm_worker_p95_ms"]["warn"]
+                    1 for v in llm_durations_by_execution["worker"] if float(v) > thresholds["llm_worker_p95_ms"]["warn"]
                 ),
                 "slow_over_critical": sum(
-                    1 for v in llm_durations_by_scope["coaching"] if float(v) > thresholds["llm_worker_p95_ms"]["critical"]
+                    1 for v in llm_durations_by_execution["worker"] if float(v) > thresholds["llm_worker_p95_ms"]["critical"]
                 ),
             },
             "combined": {
