@@ -2320,7 +2320,7 @@ def _write_detailed_pdf(path: str, user: User, run: AssessmentRun, rows: List[Us
             if kr_lines:
                 story.append(Spacer(1, 4))
                 story.append(Paragraph('<b>Key Results</b>', styles['Normal']))
-                for i, kr in enumerate(kr_lines[:3], start=1):
+                for i, kr in enumerate(kr_lines, start=1):
                     # Constrain each KR to a single compact line; add ellipsis if too long
                     line = _wrap_block(str(kr), width=80, max_lines=1, bullet=f"{i}. ")
                     story.append(Paragraph(line.replace('\n', '<br/>'), styles['Normal']))                   
@@ -2967,7 +2967,7 @@ def build_assessment_dashboard_data(run_id: int, *, include_llm: bool = True) ->
             "pillar_name": _title_for_pillar(key),
             "score": score_pct,
             "objective": okr.get("objective", ""),
-            "key_results": (okr.get("krs") or [])[:3],
+            "key_results": (okr.get("krs") or []),
             "focus_note": focus_note,
         })
     t4 = time.perf_counter()
@@ -3325,7 +3325,7 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
         okr = okr_lookup.get(key, {})
         objective = html.escape(okr.get("objective", "") or "Not available yet.")
         krs = okr.get("key_results") or []
-        kr_lines = "".join(f"<li>{html.escape(kr)}</li>" for kr in krs[:3] if kr) or "<li>No key results yet.</li>"
+        kr_lines = "".join(f"<li>{html.escape(kr)}</li>" for kr in krs if kr) or "<li>No key results yet.</li>"
         sections.append(
             f"<section data-pillar='{html.escape(key)}'>"
             "<div class='pillar-head'>"
