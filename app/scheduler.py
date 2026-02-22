@@ -33,7 +33,7 @@ from .debug_utils import debug_log, debug_enabled
 from .llm import compose_prompt
 from . import monday, tuesday, wednesday, thursday, friday, saturday, sunday, first_day
 from .job_queue import enqueue_job, should_use_worker
-from .programme_timeline import first_monday_after
+from .programme_timeline import first_monday_on_or_after
 from .weekly_plan import ensure_weekly_plan
 from .reports_retention import run_reports_retention_from_env
 from .virtual_clock import (
@@ -810,7 +810,7 @@ def _schedule_prompts_for_user(
             continue
         earliest_day = tomorrow_local
         if day == "monday":
-            earliest_day = first_monday_after(tomorrow_local) or tomorrow_local
+            earliest_day = first_monday_on_or_after(tomorrow_local) or tomorrow_local
         start_date = _next_weekday_occurrence(
             user,
             dow_idx.get(day, 0),
