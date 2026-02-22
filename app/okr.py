@@ -110,6 +110,9 @@ def _log_structured_okr_prompt(
     model_name: str | None,
     duration_ms: int | None = None,
     context_meta: dict[str, Any] | None = None,
+    prompt_blocks: dict[str, str] | None = None,
+    block_order: list[str] | None = None,
+    prompt_variant: str | None = None,
 ) -> None:
     in_worker = (os.getenv("PROMPT_WORKER_PROCESS") or "").strip().lower() in {"1", "true", "yes"}
     meta = dict(context_meta or {})
@@ -124,8 +127,10 @@ def _log_structured_okr_prompt(
             duration_ms=duration_ms,
             response_preview=response_text or None,
             context_meta=meta or None,
-            prompt_variant="assessment_okr_structured",
+            prompt_variant=prompt_variant or "assessment_okr_structured",
             task_label="structured_okr_generation",
+            prompt_blocks=prompt_blocks,
+            block_order=block_order,
         )
     except Exception as e:
         print(f"[okr] WARN: structured OKR llm_prompt log failed: {e}")
@@ -930,36 +935,96 @@ def make_structured_okr_llm(
 
     focus_line = ""
     if pillar_preference:
-        focus_line = f"user_focus: \"{pillar_preference.strip()}\"\n"
-    prompt_user = {
-        "role": "user",
-        "content": (
-            f"pillar: {pillar_slug}\n"
-            f"{context_block}\n"
-            f"{state_block}\n"
-            f"{qa_block}\n"
-            f"{focus_line}\n"
-            f"{psych_block}"
-            "Rules:\n"
-            "- Base the Objective and ALL Key Results on the user's answers in state_context (prefer) or qa_context if state_context is empty.\n"
-            "- Where bounds are given (min/max or unit), set realistic targets within bounds; do NOT exceed max. Respect units.\n"
-            "- Write ONE objective focused on the main gaps implied by the answers.\n"
-            "- Return 2–4 Key Results that are weekly/daily habits with concrete units (sessions/week, portions/day, L/day, nights/week, days/week, or %).\n"
-            "- Forbidden in KR text: 'score', 'adherence', 'priority action(s)'. Use behaviors and units instead.\n"
-            "- Prefer small, realistic progressions derived from the stated answers (e.g., from '1 session/week' move to '3 sessions/week').\n"
-            "- DO NOT include a Key Result if the user is already at the recommended level or no improvement is needed; fewer KRs are preferred over maintenance targets.\n"
-            "- Do NOT propose improvements for concepts already scoring ~100; focus on concepts materially below the top score.\n"
-            "- Reuse the units mentioned in the user's answers (state_context meta); do not switch to different units like percentages if the question used days/week or portions/day.\n"
-            "Return JSON only. Do not include markdown or code fences."
-        ),
-    }
+        focus_line = f"user_focus: \"{pillar_preference.strip()}\""
+    user_rules_text = (
+        "- Base the Objective and ALL Key Results on the user's answers in state_context (prefer) or qa_context if state_context is empty.\n"
+        "- Where bounds are given (min/max or unit), set realistic targets within bounds; do NOT exceed max. Respect units.\n"
+        "- Write ONE objective focused on the main gaps implied by the answers.\n"
+        "- Return 2–4 Key Results that are weekly/daily habits with concrete units (sessions/week, portions/day, L/day, nights/week, days/week, or %).\n"
+        "- Forbidden in KR text: 'score', 'adherence', 'priority action(s)'. Use behaviors and units instead.\n"
+        "- Prefer small, realistic progressions derived from the stated answers (e.g., from '1 session/week' move to '3 sessions/week').\n"
+        "- DO NOT include a Key Result if the user is already at the recommended level or no improvement is needed; fewer KRs are preferred over maintenance targets.\n"
+        "- Do NOT propose improvements for concepts already scoring ~100; focus on concepts materially below the top score.\n"
+        "- Reuse the units mentioned in the user's answers (state_context meta); do not switch to different units like percentages if the question used days/week or portions/day.\n"
+        "Return JSON only. Do not include markdown or code fences."
+    )
 
-    # Use the practical coaching system prompt (raw mode still uses RAW; otherwise PRACTICAL)
-    system_msg = STRUCTURED_OKR_SYSTEM_RAW if OKR_FORCE_RAW else PRACTICAL_OKR_SYSTEM
+    # Default structured OKR prompt if no template exists yet.
+    default_task_text = STRUCTURED_OKR_SYSTEM_RAW if OKR_FORCE_RAW else PRACTICAL_OKR_SYSTEM
+    user_msg = (
+        f"pillar: {pillar_slug}\n"
+        f"{context_block}\n"
+        f"{state_block}\n"
+        f"{qa_block}\n"
+        f"{focus_line}\n"
+        f"{psych_block}"
+        "Rules:\n"
+        f"{user_rules_text}"
+    )
+    system_msg = default_task_text
+    prompt_blocks_for_log: dict[str, str] | None = None
+    block_order_for_log: list[str] | None = None
+    prompt_variant_for_log = "assessment_okr_structured"
+
+    # Template-driven assembly for assessment_okr_structured instructions.
+    template_user_id = None
+    try:
+        uid_raw = (audit_context or {}).get("user_id") if isinstance(audit_context, dict) else None
+        template_user_id = int(uid_raw) if uid_raw is not None else None
+    except Exception:
+        template_user_id = None
+
+    if template_user_id:
+        try:
+            assembly = build_prompt(
+                "assessment_okr_structured",
+                user_id=template_user_id,
+                coach_name="Coach",
+                user_name="User",
+                locale="UK",
+                pillar_slug=pillar_slug,
+                behavior_context=context_block,
+                state_context=state_block,
+                qa_context=qa_block,
+                focus_line=focus_line,
+                psych_block=psych_block,
+                default_task=default_task_text,
+                default_rules=user_rules_text,
+            )
+            prompt_blocks_for_log = {**assembly.blocks, **(assembly.meta or {})}
+            block_order_for_log = assembly.block_order
+            prompt_variant_for_log = assembly.variant or prompt_variant_for_log
+
+            system_parts: list[str] = []
+            for key in ("system", "locale", "task"):
+                val = (assembly.blocks or {}).get(key)
+                if isinstance(val, str) and val.strip():
+                    system_parts.append(val.strip())
+            if system_parts:
+                system_msg = "\n".join(system_parts)
+
+            user_parts: list[str] = []
+            ordered_keys = [k for k in (assembly.block_order or []) if k not in {"system", "locale", "task"}]
+            for key in ordered_keys:
+                val = (assembly.blocks or {}).get(key)
+                if isinstance(val, str) and val.strip():
+                    user_parts.append(val.strip())
+            if not user_parts:
+                fallback_user = (assembly.blocks or {}).get("okr")
+                if isinstance(fallback_user, str) and fallback_user.strip():
+                    user_parts.append(fallback_user.strip())
+            if user_parts:
+                user_msg = "\n".join(user_parts)
+        except Exception as e:
+            _baseline_debug(
+                "okr_structured_prompt_template_fallback",
+                {"pillar": pillar_slug, "user_id": template_user_id, "err": repr(e)},
+            )
+
     import json as _json
     messages = [
         {"role": "system", "content": system_msg},
-        prompt_user,
+        {"role": "user", "content": user_msg},
     ]
     prompt_text = _json.dumps(messages, ensure_ascii=False)
     raw = ""
@@ -1078,6 +1143,9 @@ def make_structured_okr_llm(
             model_name=mdl,
             duration_ms=llm_duration_ms,
             context_meta=missing_meta,
+            prompt_blocks=prompt_blocks_for_log,
+            block_order=block_order_for_log,
+            prompt_variant=prompt_variant_for_log,
         )
 
         data["krs"] = [
@@ -1113,6 +1181,9 @@ def make_structured_okr_llm(
                 **(audit_payload or {}),
                 "structured_parse_or_call_error": repr(e),
             },
+            prompt_blocks=prompt_blocks_for_log,
+            block_order=block_order_for_log,
+            prompt_variant=prompt_variant_for_log,
         )
         _okr_audit("okr_llm_error", status="error", payload=audit_payload, error=repr(e))
         # Debug: show why we are falling back (parse/model errors)

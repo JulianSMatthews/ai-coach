@@ -4944,6 +4944,7 @@ def _collect_render_infra_metrics(now_utc: datetime) -> dict[str, object]:
 
     infra: dict[str, object] = {
         "enabled": api_key_present,
+        "fetched": True,
         "configured": {
             "api_resource": bool(api_resources),
             "worker_resources": bool(worker_resources),
@@ -5163,6 +5164,29 @@ def _collect_render_infra_metrics(now_utc: datetime) -> dict[str, object]:
         }
         return fallback
     return infra
+
+
+def _render_infra_cached_or_placeholder(now_utc: datetime) -> dict[str, object]:
+    now_mono = time.monotonic()
+    cache_ttl_seconds = _env_int("RENDER_METRICS_CACHE_TTL_SECONDS", 90, minimum=5, maximum=3600)
+    with _RENDER_INFRA_CACHE_LOCK:
+        raw_payload = _RENDER_INFRA_CACHE.get("payload")
+        cached_payload = copy.deepcopy(raw_payload) if isinstance(raw_payload, dict) else None
+        fetched_at = float(_RENDER_INFRA_CACHE.get("fetched_at_monotonic") or 0.0)
+    if isinstance(cached_payload, dict):
+        age_seconds = max(0.0, now_mono - fetched_at) if fetched_at > 0 else None
+        cache_meta = cached_payload.get("cache")
+        if not isinstance(cache_meta, dict):
+            cache_meta = {}
+        cache_meta["hit"] = True
+        if age_seconds is not None:
+            cache_meta["age_seconds"] = round(float(age_seconds), 2)
+            cache_meta["stale"] = bool(age_seconds > float(cache_ttl_seconds))
+        cache_meta.setdefault("ttl_seconds", int(cache_ttl_seconds))
+        cached_payload["cache"] = cache_meta
+        cached_payload["fetched"] = True
+        return cached_payload
+    return _render_infra_placeholder(now_utc)
 
 
 def _render_infra_placeholder(now_utc: datetime) -> dict[str, object]:
@@ -6342,7 +6366,7 @@ def admin_assessment_health(
     if infra_fetch_requested:
         infra_payload = _collect_render_infra_metrics(now_utc)
     else:
-        infra_payload = _render_infra_placeholder(now_utc)
+        infra_payload = _render_infra_cached_or_placeholder(now_utc)
     alerts = []
     metric_states = {
         "completion_rate_pct": completion_state,

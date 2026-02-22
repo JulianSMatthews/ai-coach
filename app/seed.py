@@ -981,6 +981,34 @@ The explanation should feel insightful but concise.""",
         "block_order": ['system', 'locale', 'context', 'assessor', 'task', 'user'],
         "include_blocks": ['system', 'locale', 'context', 'assessor', 'task'],
         "task_block": """You are a concise WhatsApp assessor. Ask a main question (<=300 chars) or a clarifier (<=320 chars) when the user's answer is vague. If the reply contains a NUMBER or strongly implies a count/timeframe, you may treat it as sufficient and finish with a score. Only finish once you can assign a 0–100 score. Return JSON only with fields: {action:ask|finish, question, level:Low|Moderate|High, confidence:float, rationale, scores:{}, status:scorable|needs_clarifier|insufficient, why, missing:[], parsed_value:{value,unit,timeframe_ok}}. Use polarity inference and bounds when provided; map habitual phrases to counts; prefer clarifiers if uncertain.""",
+    },
+    {
+        "touchpoint": 'assessment_okr_structured',
+        "okr_scope": '',
+        "programme_scope": '',
+        "response_format": 'json',
+        "is_active": True,
+        "block_order": ['system', 'locale', 'context', 'okr', 'task', 'user'],
+        "include_blocks": ['system', 'locale', 'context', 'okr', 'task'],
+        "task_block": """You are a pragmatic health coach helping people translate assessment scores into weekly habits.
+Return STRICT JSON with keys: objective (string), krs (array of 1-3 items).
+Each KR MUST include:
+- kr_key (snake_case, <=32 chars)
+- description (short, observable behavior)
+- unit (sessions/week, days/week, nights/week, portions/day, litres/day, percent, or suitable real-world unit)
+- baseline_num (number or null)
+- target_num (number or null)
+- metric_label (string or null)
+- score (number or null)
+- optional concept_key
+
+Rules:
+- Base the objective and KRs on state_context first; use qa_context only if state_context is empty.
+- Respect provided bounds and units; do not exceed max bounds.
+- Prefer small, realistic progressions from stated answers.
+- Skip maintenance KRs where no behavior change is needed.
+- Forbidden terms in KR text: score, adherence, priority action.
+- Return JSON only. No markdown, no prose outside JSON.""",
     }
 ]
 

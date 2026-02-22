@@ -1030,6 +1030,7 @@ def build_prompt(
     - habit_steps_generator
     - weekstart_actions
     - initial_habit_steps_generator
+    - assessment_okr_structured
     - sunday_actions
     - sunday_support
     - tuesday
@@ -1389,6 +1390,63 @@ def build_prompt(
         return _prompt_assembly(
             "initial_habit_steps_generator",
             "initial_habit_steps_generator",
+            parts,
+            meta=_merge_template_meta({}, template),
+            block_order_override=order_override or settings.get("default_block_order"),
+        )
+    if tp == "assessment_okr_structured":
+        pillar_slug = str(data.get("pillar_slug") or "").strip().lower()
+        behavior_context = str(data.get("behavior_context") or "").strip()
+        state_context = str(data.get("state_context") or "").strip()
+        qa_context = str(data.get("qa_context") or "").strip()
+        focus_line = str(data.get("focus_line") or "").strip()
+        psych_block = str(data.get("psych_block") or "").strip()
+        default_task = str(data.get("default_task") or "").strip()
+        default_rules = str(data.get("default_rules") or "").strip()
+        if focus_line:
+            focus_line = f"{focus_line}\n"
+        if psych_block:
+            psych_block = f"{psych_block}\n"
+        if not default_task:
+            default_task = (
+                "You are a pragmatic health coach helping people translate assessment scores into weekly habits. "
+                "Return STRICT JSON with keys: objective (string), krs (array of 1-3 items). "
+                "Each KR MUST include: kr_key, description, unit, baseline_num, target_num, metric_label, score, and optional concept_key. "
+                "Return JSON only."
+            )
+        if not default_rules:
+            default_rules = (
+                "- Base the Objective and ALL Key Results on the user's answers in state_context (prefer) or qa_context if state_context is empty.\n"
+                "- Where bounds are given (min/max or unit), set realistic targets within bounds; do NOT exceed max. Respect units.\n"
+                "- Write ONE objective focused on the main gaps implied by the answers.\n"
+                "- Return 2-4 Key Results that are weekly/daily habits with concrete units (sessions/week, portions/day, L/day, nights/week, days/week, or %).\n"
+                "- Forbidden in KR text: 'score', 'adherence', 'priority action(s)'. Use behaviors and units instead.\n"
+                "- Prefer small, realistic progressions derived from the stated answers.\n"
+                "- Do NOT include a Key Result if the user is already at the recommended level or no improvement is needed.\n"
+                "- Reuse the units mentioned in the user's answers.\n"
+                "Return JSON only. Do not include markdown or code fences."
+            )
+        user_payload = (
+            f"pillar: {pillar_slug}\n"
+            f"{behavior_context}\n"
+            f"{state_context}\n"
+            f"{qa_context}\n"
+            f"{focus_line}"
+            f"{psych_block}"
+            "Rules:\n"
+            f"{default_rules}"
+        )
+        parts = [
+            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
+            ("locale", settings.get("locale_block") or locale_block(locale)),
+            ("context", context_block("assessment_okr_structured", "pillar OKR structured JSON generation")),
+            ("okr", user_payload),
+            ("task", (template or {}).get("task_block") or default_task),
+        ]
+        parts, order_override = _apply_prompt_template(parts, template)
+        return _prompt_assembly(
+            "assessment_okr_structured",
+            "assessment_okr_structured",
             parts,
             meta=_merge_template_meta({}, template),
             block_order_override=order_override or settings.get("default_block_order"),
