@@ -179,6 +179,8 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
     { title: "Interactive", data: llmInteractive, desc: "Request/response latency for user-driven app and assessment prompts." },
     { title: "Worker", data: llmWorker, desc: "Background/scheduled worker prompt latency profile." },
   ];
+  const twilioFailureCodes = health?.messaging?.twilio_failure_codes || [];
+  const twilioFailedMessages = health?.messaging?.twilio_failed_messages || [];
   const metrics = [
     {
       title: "Completion rate",
@@ -1226,6 +1228,47 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
                   : "—"}
                 <div className="mt-1 text-xs text-[#8a8176]">Failure percentage from Twilio callback outcomes.</div>
               </div>
+              <details className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
+                <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                  Review failed callbacks ({twilioFailedMessages.length})
+                </summary>
+                <div className="mt-2 space-y-2 text-xs text-[#6b6257]">
+                  {!twilioFailedMessages.length ? (
+                    <div className="text-[#8a8176]">No failed callbacks in this window.</div>
+                  ) : (
+                    <>
+                      <div className="rounded-lg border border-[#ece4d8] bg-white px-2 py-2">
+                        <div className="font-medium text-[#6b6257]">Error code summary</div>
+                        {!twilioFailureCodes.length ? (
+                          <div className="mt-1 text-[#8a8176]">No error-code data available.</div>
+                        ) : (
+                          <div className="mt-1 space-y-1">
+                            {twilioFailureCodes.map((code, idx) => (
+                              <div key={`${code.error_code || "none"}-${idx}`} className="rounded border border-[#f0e8dc] bg-[#fdfaf4] px-2 py-1">
+                                <div>
+                                  code: {code.error_code || "none"} · count: {code.count ?? 0}
+                                </div>
+                                <div className="text-[#8a8176]">{code.description || "No description returned."}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="max-h-80 space-y-1 overflow-auto rounded-lg border border-[#ece4d8] bg-white px-2 py-2">
+                        {twilioFailedMessages.map((row, idx) => (
+                          <div key={`${row.sid || "sid"}-${idx}`} className="rounded border border-[#f0e8dc] bg-[#fdfaf4] px-2 py-2">
+                            <div>time: {row.callback_at || "—"} · status: {row.status || "—"} · code: {row.error_code || "none"}</div>
+                            <div>sid: {row.sid || "—"}</div>
+                            <div>to: {row.to || row.message_phone || "—"} · user: {row.message_user_name || row.user_id || "—"}</div>
+                            <div className="text-[#8a8176]">meaning: {row.error_description || row.error_message || "No description returned."}</div>
+                            <div className="text-[#8a8176]">message: {row.message_preview || "Not linked to a message_logs row."}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </details>
             </div>
           </div>
           </section>

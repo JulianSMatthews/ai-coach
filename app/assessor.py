@@ -3012,37 +3012,6 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 except Exception:
                     pass
 
-                # Enqueue assessment report generation (narrative + reports)
-                try:
-                    run_id = state.get("run_id")
-                    if should_use_worker() and run_id:
-                        job_id = enqueue_job(
-                            "assessment_report",
-                            {"run_id": int(run_id), "user_id": user.id},
-                            user_id=user.id,
-                        )
-                        print(f"[assessment] enqueued report run_id={run_id} user_id={user.id} job={job_id}")
-                    elif run_id:
-                        try:
-                            from .reporting import (
-                                generate_assessment_dashboard_html,
-                                generate_assessment_report_pdf,
-                                generate_progress_report_html,
-                            )
-                            generate_assessment_dashboard_html(int(run_id))
-                            try:
-                                generate_assessment_report_pdf(int(run_id))
-                            except Exception:
-                                pass
-                            try:
-                                generate_progress_report_html(int(user.id))
-                            except Exception:
-                                pass
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-
                 # Deactivate session
                 try:
                     sess.is_active = False; s.commit()

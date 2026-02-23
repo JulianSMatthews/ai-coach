@@ -2690,27 +2690,40 @@ async def twilio_status_callback(request: Request):
         form = await request.form()
     except Exception:
         form = {}
+    sid_val = str(form.get("MessageSid") or form.get("SmsSid") or "").strip()
+    status_val = str(form.get("MessageStatus") or form.get("SmsStatus") or "").strip().lower()
+    to_val = str(form.get("To") or "").strip()
+    from_val = str(form.get("From") or "").strip()
+    error_code = _normalise_twilio_error_code(form.get("ErrorCode"))
+    error_message = str(form.get("ErrorMessage") or "").strip() or None
     payload = {
-        "sid": form.get("MessageSid") or form.get("SmsSid"),
-        "status": form.get("MessageStatus") or form.get("SmsStatus"),
-        "to": form.get("To"),
-        "from": form.get("From"),
-        "error_code": form.get("ErrorCode"),
-        "error_message": form.get("ErrorMessage"),
+        "sid": sid_val or None,
+        "status": status_val or None,
+        "to": to_val or None,
+        "from": from_val or None,
+        "error_code": error_code,
+        "error_message": error_message,
     }
     debug_log("twilio status", payload, tag="twilio")
     try:
-        to_raw = (payload.get("to") or "").strip()
+        to_raw = to_val
         to_phone = to_raw.split("whatsapp:", 1)[1] if to_raw.startswith("whatsapp:") else to_raw
-        user_id = None
-        if to_phone:
-            with SessionLocal() as s:
+        failed_states = {"failed", "undelivered"}
+        audit_status = "error" if error_code or status_val in failed_states else "ok"
+        with SessionLocal() as s:
+            user_id = None
+            if to_phone:
                 u = s.execute(select(User).where(User.phone == to_phone)).scalar_one_or_none()
                 user_id = getattr(u, "id", None) if u else None
-        status_val = str(payload.get("status") or "").strip().lower()
-        failed_states = {"failed", "undelivered"}
-        audit_status = "error" if payload.get("error_code") or status_val in failed_states else "ok"
-        with SessionLocal() as s:
+            message_log_id = _annotate_message_log_with_twilio_status(
+                s,
+                sid=sid_val,
+                status_val=status_val,
+                error_code=error_code,
+                error_message=error_message,
+                to_phone=to_phone,
+                user_id=user_id,
+            )
             s.add(
                 JobAudit(
                     job_name="twilio_status",
@@ -2718,8 +2731,10 @@ async def twilio_status_callback(request: Request):
                     payload={
                         **payload,
                         "user_id": user_id,
+                        "message_log_id": message_log_id,
+                        "error_description": _twilio_error_code_meaning(error_code, error_message),
                     },
-                    error=str(payload.get("error_message") or "") or None,
+                    error=error_message,
                 )
             )
             s.commit()
@@ -4592,10 +4607,101 @@ def _as_payload_dict(value: object) -> dict:
     return {}
 
 
+def _normalise_twilio_error_code(raw: object) -> str | None:
+    txt = str(raw or "").strip()
+    if txt in {"", "0", "null", "None", "none"}:
+        return None
+    return txt or None
+
+
+def _twilio_error_code_meaning(error_code: object, error_message: object = None) -> str | None:
+    msg = str(error_message or "").strip()
+    if msg:
+        return msg
+    code = _normalise_twilio_error_code(error_code)
+    if not code:
+        return None
+    # Keep this list intentionally short and high-confidence.
+    if code == "63016":
+        return "WhatsApp session is outside the 24-hour customer-care window; send using an approved template."
+    return "Twilio reported delivery failure for this code. Check Twilio error docs for full details."
+
+
+def _annotate_message_log_with_twilio_status(
+    session,
+    *,
+    sid: str | None,
+    status_val: str,
+    error_code: str | None,
+    error_message: str | None,
+    to_phone: str | None,
+    user_id: int | None,
+) -> int | None:
+    """
+    Update the matching outbound MessageLog (matched by meta.twilio_sid) with latest
+    Twilio callback status details. Returns MessageLog.id when updated.
+    """
+    sid_val = str(sid or "").strip()
+    if not sid_val:
+        return None
+
+    q = session.query(MessageLog).filter(MessageLog.direction == "outbound")
+    if user_id is not None:
+        q = q.filter(MessageLog.user_id == int(user_id))
+    elif to_phone:
+        q = q.filter(MessageLog.phone == to_phone)
+
+    rows = q.order_by(MessageLog.created_at.desc(), MessageLog.id.desc()).limit(500).all()
+    callback_ts = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+    for row in rows:
+        meta = _as_payload_dict(getattr(row, "meta", None))
+        if str(meta.get("twilio_sid") or "").strip() != sid_val:
+            continue
+
+        meta["twilio_sid"] = sid_val
+        if status_val:
+            meta["twilio_status"] = status_val
+        if error_code:
+            meta["twilio_error_code"] = error_code
+        else:
+            meta.pop("twilio_error_code", None)
+        if error_message:
+            meta["twilio_error_message"] = error_message
+        else:
+            meta.pop("twilio_error_message", None)
+
+        desc = _twilio_error_code_meaning(error_code, error_message)
+        if desc:
+            meta["twilio_error_description"] = desc
+        else:
+            meta.pop("twilio_error_description", None)
+        meta["twilio_last_callback_at"] = callback_ts
+
+        history = meta.get("twilio_status_history")
+        if not isinstance(history, list):
+            history = []
+        hist_item = {"ts": callback_ts, "status": status_val or None}
+        if error_code:
+            hist_item["error_code"] = error_code
+        if error_message:
+            hist_item["error_message"] = error_message
+        history.append(hist_item)
+        meta["twilio_status_history"] = history[-20:]
+
+        row.meta = meta
+        return int(getattr(row, "id", 0) or 0) or None
+
+    return None
+
+
 DEFAULT_MONITORING_LLM_P50_WARN_MS = 4000.0
 DEFAULT_MONITORING_LLM_P50_CRITICAL_MS = 8000.0
 DEFAULT_MONITORING_LLM_P95_WARN_MS = 8000.0
 DEFAULT_MONITORING_LLM_P95_CRITICAL_MS = 15000.0
+DEFAULT_MONITORING_LLM_WORKER_P50_WARN_MS = 20000.0
+DEFAULT_MONITORING_LLM_WORKER_P50_CRITICAL_MS = 28000.0
+DEFAULT_MONITORING_LLM_WORKER_P95_WARN_MS = 30000.0
+DEFAULT_MONITORING_LLM_WORKER_P95_CRITICAL_MS = 40000.0
 
 
 def _positive_float_or_none(raw: object) -> float | None:
@@ -4659,14 +4765,14 @@ def _monitoring_llm_latency_threshold_values(row: PromptSettings | None) -> dict
     worker_p50_warn, worker_p50_critical = _resolve_pair(
         getattr(row, "monitoring_llm_worker_p50_warn_ms", None),
         getattr(row, "monitoring_llm_worker_p50_critical_ms", None),
-        p50_warn,
-        p50_critical,
+        DEFAULT_MONITORING_LLM_WORKER_P50_WARN_MS,
+        DEFAULT_MONITORING_LLM_WORKER_P50_CRITICAL_MS,
     )
     worker_p95_warn, worker_p95_critical = _resolve_pair(
         getattr(row, "monitoring_llm_worker_p95_warn_ms", None),
         getattr(row, "monitoring_llm_worker_p95_critical_ms", None),
-        p95_warn,
-        p95_critical,
+        DEFAULT_MONITORING_LLM_WORKER_P95_WARN_MS,
+        DEFAULT_MONITORING_LLM_WORKER_P95_CRITICAL_MS,
     )
     return {
         "llm_p50_warn_ms": float(p50_warn),
@@ -5266,8 +5372,8 @@ def admin_assessment_health(
         "llm_p95_ms": {"warn": DEFAULT_MONITORING_LLM_P95_WARN_MS, "critical": DEFAULT_MONITORING_LLM_P95_CRITICAL_MS, "lower_is_bad": False},
         "llm_interactive_p50_ms": {"warn": DEFAULT_MONITORING_LLM_P50_WARN_MS, "critical": DEFAULT_MONITORING_LLM_P50_CRITICAL_MS, "lower_is_bad": False},
         "llm_interactive_p95_ms": {"warn": DEFAULT_MONITORING_LLM_P95_WARN_MS, "critical": DEFAULT_MONITORING_LLM_P95_CRITICAL_MS, "lower_is_bad": False},
-        "llm_worker_p50_ms": {"warn": DEFAULT_MONITORING_LLM_P50_WARN_MS, "critical": DEFAULT_MONITORING_LLM_P50_CRITICAL_MS, "lower_is_bad": False},
-        "llm_worker_p95_ms": {"warn": DEFAULT_MONITORING_LLM_P95_WARN_MS, "critical": DEFAULT_MONITORING_LLM_P95_CRITICAL_MS, "lower_is_bad": False},
+        "llm_worker_p50_ms": {"warn": DEFAULT_MONITORING_LLM_WORKER_P50_WARN_MS, "critical": DEFAULT_MONITORING_LLM_WORKER_P50_CRITICAL_MS, "lower_is_bad": False},
+        "llm_worker_p95_ms": {"warn": DEFAULT_MONITORING_LLM_WORKER_P95_WARN_MS, "critical": DEFAULT_MONITORING_LLM_WORKER_P95_CRITICAL_MS, "lower_is_bad": False},
         "okr_fallback_rate_pct": {"warn": 5.0, "critical": 15.0, "lower_is_bad": False},
         "queue_backlog": {"warn": 20.0, "critical": 50.0, "lower_is_bad": False},
         "twilio_failure_rate_pct": {"warn": 2.0, "critical": 5.0, "lower_is_bad": False},
@@ -5703,19 +5809,19 @@ def admin_assessment_health(
         inbound_messages = int(msg_map.get("inbound", 0))
 
         tw_q = (
-            s.query(JobAudit.payload)
+            s.query(JobAudit.created_at, JobAudit.payload)
             .filter(JobAudit.job_name == "twilio_status")
             .filter(JobAudit.created_at >= start_utc, JobAudit.created_at < end_utc)
         )
         tw_rows = tw_q.all()
-        tw_statuses: list[dict] = []
+        tw_statuses: list[tuple[datetime | None, dict]] = []
         if club_scope_id is not None and tw_rows:
             scoped_user_ids = {
                 int(uid)
                 for (uid,) in s.query(User.id).filter(User.club_id == club_scope_id).all()
                 if uid is not None
             }
-            for (payload,) in tw_rows:
+            for created_at, payload in tw_rows:
                 body = _as_payload_dict(payload)
                 uid = body.get("user_id")
                 try:
@@ -5723,16 +5829,103 @@ def admin_assessment_health(
                 except Exception:
                     uid_i = None
                 if uid_i is not None and uid_i in scoped_user_ids:
-                    tw_statuses.append(body)
+                    tw_statuses.append((created_at, body))
         else:
-            tw_statuses = [_as_payload_dict(payload) for (payload,) in tw_rows]
+            tw_statuses = [(created_at, _as_payload_dict(payload)) for created_at, payload in tw_rows]
+
         tw_total = len(tw_statuses)
         tw_failed = 0
-        for body in tw_statuses:
+        tw_failed_messages: list[dict] = []
+        failed_sids: set[str] = set()
+        for created_at, body in tw_statuses:
             status_val = str(body.get("status") or "").strip().lower()
-            if body.get("error_code") or status_val in {"failed", "undelivered"}:
+            error_code = _normalise_twilio_error_code(body.get("error_code"))
+            error_message = str(body.get("error_message") or "").strip() or None
+            if error_code or status_val in {"failed", "undelivered"}:
                 tw_failed += 1
+                sid = str(body.get("sid") or "").strip()
+                if sid:
+                    failed_sids.add(sid)
+                tw_failed_messages.append(
+                    {
+                        "callback_at": created_at.isoformat() if isinstance(created_at, datetime) else None,
+                        "sid": sid or None,
+                        "status": status_val or None,
+                        "error_code": error_code,
+                        "error_message": error_message,
+                        "error_description": _twilio_error_code_meaning(error_code, error_message),
+                        "to": str(body.get("to") or "").strip() or None,
+                        "from": str(body.get("from") or "").strip() or None,
+                        "user_id": body.get("user_id"),
+                        "message_log_id": body.get("message_log_id"),
+                    }
+                )
         tw_failure_rate = (tw_failed / tw_total * 100.0) if tw_total else None
+
+        failed_message_by_sid: dict[str, dict] = {}
+        if failed_sids:
+            sid_scan_start = start_utc - timedelta(days=2)
+            sid_scan_end = end_utc + timedelta(days=1)
+            out_q = (
+                s.query(
+                    MessageLog.id,
+                    MessageLog.user_id,
+                    MessageLog.user_name,
+                    MessageLog.phone,
+                    MessageLog.text,
+                    MessageLog.meta,
+                    MessageLog.created_at,
+                )
+                .filter(MessageLog.direction == "outbound")
+                .filter(MessageLog.created_at >= sid_scan_start, MessageLog.created_at < sid_scan_end)
+                .order_by(MessageLog.created_at.desc(), MessageLog.id.desc())
+            )
+            if club_scope_id is not None:
+                out_q = out_q.join(User, MessageLog.user_id == User.id).filter(User.club_id == club_scope_id)
+            for row in out_q.limit(5000).all():
+                row_meta = _as_payload_dict(row.meta)
+                sid_val = str(row_meta.get("twilio_sid") or "").strip()
+                if not sid_val or sid_val not in failed_sids or sid_val in failed_message_by_sid:
+                    continue
+                text_val = str(row.text or "").strip()
+                failed_message_by_sid[sid_val] = {
+                    "message_log_id": int(row.id),
+                    "message_created_at": row.created_at.isoformat() if isinstance(row.created_at, datetime) else None,
+                    "message_user_id": int(row.user_id) if row.user_id is not None else None,
+                    "message_user_name": str(row.user_name or "").strip() or None,
+                    "message_phone": str(row.phone or "").strip() or None,
+                    "message_preview": (text_val[:220] + "…") if len(text_val) > 220 else (text_val or None),
+                }
+
+        for item in tw_failed_messages:
+            sid_val = str(item.get("sid") or "").strip()
+            if not sid_val:
+                continue
+            msg_meta = failed_message_by_sid.get(sid_val)
+            if not msg_meta:
+                continue
+            item.update(msg_meta)
+
+        tw_failed_messages.sort(key=lambda row: str(row.get("callback_at") or ""), reverse=True)
+        tw_failed_messages = tw_failed_messages[:100]
+        tw_failure_codes_map: dict[str, dict] = {}
+        for item in tw_failed_messages:
+            code_key = str(item.get("error_code") or "none")
+            bucket = tw_failure_codes_map.get(code_key)
+            if not bucket:
+                tw_failure_codes_map[code_key] = {
+                    "error_code": None if code_key == "none" else code_key,
+                    "count": 1,
+                    "description": item.get("error_description"),
+                }
+            else:
+                bucket["count"] = int(bucket.get("count") or 0) + 1
+                if not bucket.get("description") and item.get("error_description"):
+                    bucket["description"] = item.get("error_description")
+        tw_failure_codes = sorted(
+            tw_failure_codes_map.values(),
+            key=lambda row: (-int(row.get("count") or 0), str(row.get("error_code") or "")),
+        )
 
         coaching_types = ["kickoff", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
         weekly_types = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
@@ -6558,6 +6751,8 @@ def admin_assessment_health(
             "twilio_failures": tw_failed,
             "twilio_failure_rate_pct": round(tw_failure_rate, 2) if tw_failure_rate is not None else None,
             "twilio_failure_state": twilio_state,
+            "twilio_failed_messages": tw_failed_messages,
+            "twilio_failure_codes": tw_failure_codes,
         },
         "worker": {
             "worker_mode_override": worker_override,

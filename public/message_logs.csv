@@ -1,0 +1,220 @@
+id,user_id,user_name,phone,direction,channel,text,meta,created_at
+1,2,,+447860362908,outbound,whatsapp,"Hey Rhys! 😊 Welcome to your wellbeing journey! 👋🏻
+
+In a moment we’ll be taking you through a short check-in over WhatsApp. Nothing heavy - just a quick snapshot of how the last 7 days have been across four wellbeing pillars:
+
+• *Nutrition* – what you’ve been eating and drinking day to day
+• *Training* – how you’ve been moving and staying active
+• *Resilience* – how you’re feeling emotionally and coping with stress (share only what feels comfortable — we’re here to support you)
+• *Recovery* – how you’ve been resting and recharging
+
+These questions help us build a clear picture of your routine so we can tailor the next steps that actually matter for you.","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:24.765769
+2,2,,+447860362908,outbound,whatsapp,"Before we get started, I just need to confirm your consent.
+
+🔒 Your data:
+Your answers are stored securely and only used to personalise your wellbeing programme.
+We never share your information with third parties, and you can stop at any time.
+Replying is optional, and you can request deletion of your data whenever you want.
+
+If you’re happy to continue, *reply YES* to give consent.
+If not, *reply NO* to opt out.","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:25.396052
+3,2,,+447860362908,inbound,whatsapp,yes,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:35:37.298808
+4,2,,+447860362908,outbound,whatsapp,Thanks Rhys! Your consent is recorded — I’ll start with Nutrition now. These are short check-in questions about the last 7 days; you can type *redo* or *restart* any time.,"{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:37.617075
+5,2,,+447860362908,outbound,whatsapp,"Q1/15 · Nutrition: In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries.","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:38.305051
+6,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:35:45.164098
+7,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟧⬜⬜]  Training [⬜⬜⬜]  Resilience [⬜⬜⬜⬜⬜]  Recovery [⬜⬜⬜]
+
+Q2/15 · Nutrition: Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml.","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:45.598839
+8,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:35:45.819218
+9,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟧⬜]  Training [⬜⬜⬜]  Resilience [⬜⬜⬜⬜⬜]  Recovery [⬜⬜⬜]
+
+Q3/15 · Nutrition: In the last 7 days, how many portions of processed food did you *eat on average per day*? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry.","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:46.219377
+10,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:35:46.300028
+11,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟧]  Training [⬜⬜⬜]  Resilience [⬜⬜⬜⬜⬜]  Recovery [⬜⬜⬜]
+
+Q4/15 · Nutrition: Thinking about the last 7 days, how many protein portions did you usually *eat on average per day*? For reference: 1 portion = palm-sized meat or fish, 2 eggs, 1 handful of nuts, or 1 cup of beans/lentils.","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:46.838903
+12,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:35:46.918891
+13,2,,+447860362908,outbound,whatsapp,*Great Rhys* — Nutrition done. Now a quick check on Training ⭐,"{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:47.483902
+14,2,,+447860362908,outbound,whatsapp,"Looking ahead over the next three months, do you have any particular training goal or focus (e.g., marathon prep, strength maintenance, injury recovery)?","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:48.294425
+15,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:35:48.38787
+16,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". I’ll shape training around this. (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟩]  Training [🟧⬜⬜]  Resilience [⬜⬜⬜⬜⬜]  Recovery [⬜⬜⬜]","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:48.913705
+17,2,,+447860362908,outbound,whatsapp,"Q5/15 · Training: In the last 7 days, on how many days did you do at least 20 minutes of cardio exercise, such as running, cycling, or swimming?","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:49.547132
+18,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:35:49.647442
+19,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟩]  Training [🟩🟧⬜]  Resilience [⬜⬜⬜⬜⬜]  Recovery [⬜⬜⬜]
+
+Q6/15 · Training: In the last 7 days, on how many days did you do stretching, yoga, or mobility work for at least 10 minutes?","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:50.157911
+20,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:35:50.241374
+21,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟩]  Training [🟩🟩🟧]  Resilience [⬜⬜⬜⬜⬜]  Recovery [⬜⬜⬜]
+
+Q7/15 · Training: In the last 7 days, how many strength training sessions did you do, such as weights, bodyweight exercises, or resistance bands?","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:50.765773
+22,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:35:50.85518
+23,2,,+447860362908,outbound,whatsapp,*Great Rhys* — Training done. Now a quick check on Resilience ⭐,"{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:51.393616
+24,2,,+447860362908,outbound,whatsapp,"Q8/15 · Resilience: In the past 7 days, on how many days did you feel calm and in control of your emotions for most of the day?","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:52.028896
+25,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:35:52.19447
+26,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟩]  Training [🟩🟩🟩]  Resilience [🟩🟧⬜⬜⬜]  Recovery [⬜⬜⬜]
+
+Q9/15 · Resilience: In the past 7 days, on how many days did you feel able to stay positive and keep things in perspective when challenges arose?","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:52.626588
+27,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:35:52.731772
+28,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟩]  Training [🟩🟩🟩]  Resilience [🟩🟩🟧⬜⬜]  Recovery [⬜⬜⬜]
+
+Q10/15 · Resilience: In the past 7 days, on how many days did you do something that made you feel genuinely good — either by taking time for yourself or connecting with someone you enjoy spending time with?","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:53.264035
+29,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:35:53.40102
+30,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟩]  Training [🟩🟩🟩]  Resilience [🟩🟩🟩🟧⬜]  Recovery [⬜⬜⬜]
+
+Q11/15 · Resilience: In the past 7 days, on how many days did you take a short break to relax, breathe deeply, or reset when you felt stressed or tired?","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:53.872989
+31,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:35:53.966762
+32,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟩]  Training [🟩🟩🟩]  Resilience [🟩🟩🟩🟩🟧]  Recovery [⬜⬜⬜]
+
+Q12/15 · Resilience: In the past 7 days, on how many days did you actively connect with others to discuss your goals, progress, or challenges?","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:54.496401
+33,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:35:54.696704
+34,2,,+447860362908,outbound,whatsapp,*Great Rhys* — Resilience done. Now a quick check on Recovery ⭐,"{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:55.149417
+35,2,,+447860362908,outbound,whatsapp,"Q13/15 · Recovery: In the last 7 days, on how many nights did you go to bed at roughly the same time?","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:55.746825
+36,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:35:55.860901
+37,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟩]  Training [🟩🟩🟩]  Resilience [🟩🟩🟩🟩🟩]  Recovery [🟩🟧⬜]
+
+Q14/15 · Recovery: In the last 7 days, on how many nights did you sleep for 7 or more hours?","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:56.359752
+38,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:35:56.475421
+39,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟩]  Training [🟩🟩🟩]  Resilience [🟩🟩🟩🟩🟩]  Recovery [🟩🟩🟧]
+
+Q15/15 · Recovery: In the last 7 days, on how many mornings did you wake up feeling rested and refreshed?","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:35:56.975808
+40,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:36:23.248831
+41,2,,+447860362908,outbound,whatsapp,"I’m going to ask 6 quick questions about your habits and how you approach change. It helps me tailor the plan and support for your 12-week programme. Takes about a minute.
+
+Type *redo* to repeat the previous question or *restart* to start again at any time.","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:36:24.001479
+42,2,,+447860362908,outbound,whatsapp,"Q1/6:
+I feel ready to make changes to my daily habits right now.
+
+1️⃣ Strongly disagree | 2️⃣ Disagree | 3️⃣ Unsure | 4️⃣ Agree | 5️⃣ Strongly agree
+(Reply with 1-5.)","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:36:24.617684
+43,2,,+447860362908,inbound,whatsapp,4,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:36:28.220969
+44,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""4"". (type *redo* to change or *restart* to begin again)
+
+Progress: [🟩🟧⬜️⬜️⬜️⬜️] 1/6","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:36:28.519453
+45,2,,+447860362908,outbound,whatsapp,"Q2/6:
+Improving my wellbeing feels important to me at this point in my life.
+
+1️⃣ Strongly disagree | 2️⃣ Disagree | 3️⃣ Unsure | 4️⃣ Agree | 5️⃣ Strongly agree
+(Reply with 1-5.)","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:36:29.135346
+46,2,,+447860362908,inbound,whatsapp,4,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:36:29.180922
+47,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""4"". (type *redo* to change or *restart* to begin again)
+
+Progress: [🟩🟩🟧⬜️⬜️⬜️] 2/6","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:36:29.778071
+48,2,,+447860362908,outbound,whatsapp,"Q3/6:
+I find it easy to stick to routines once I’ve started them.
+
+1️⃣ Strongly disagree | 2️⃣ Disagree | 3️⃣ Unsure | 4️⃣ Agree | 5️⃣ Strongly agree
+(Reply with 1-5.)","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:36:30.399995
+49,2,,+447860362908,inbound,whatsapp,4,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:36:30.447355
+50,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""4"". (type *redo* to change or *restart* to begin again)
+
+Progress: [🟩🟩🟩🟧⬜️⬜️] 3/6","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:36:31.029491
+51,2,,+447860362908,outbound,whatsapp,"Q4/6:
+Stress or overwhelm often makes it harder for me to stay consistent with routines.
+
+1️⃣ Strongly disagree | 2️⃣ Disagree | 3️⃣ Unsure | 4️⃣ Agree | 5️⃣ Strongly agree
+(Reply with 1-5.)","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:36:31.665943
+52,2,,+447860362908,inbound,whatsapp,4,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:36:31.727445
+53,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""4"". (type *redo* to change or *restart* to begin again)
+
+Progress: [🟩🟩🟩🟩🟧⬜️] 4/6","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:36:32.288612
+54,2,,+447860362908,outbound,whatsapp,"Q5/6:
+I sometimes use food, screens, or other habits to cope with stress or low mood.
+
+1️⃣ Strongly disagree | 2️⃣ Disagree | 3️⃣ Unsure | 4️⃣ Agree | 5️⃣ Strongly agree
+(Reply with 1-5.)","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:36:32.917684
+55,2,,+447860362908,inbound,whatsapp,4,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:36:32.965941
+56,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""4"". (type *redo* to change or *restart* to begin again)
+
+Progress: [🟩🟩🟩🟩🟩🟧] 5/6","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:36:33.587071
+57,2,,+447860362908,outbound,whatsapp,"Q6/6:
+I prefer clear structure, guidance, and accountability to stay consistent.
+
+1️⃣ Strongly disagree | 2️⃣ Disagree | 3️⃣ Unsure | 4️⃣ Agree | 5️⃣ Strongly agree
+(Reply with 1-5.)","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:36:34.196975
+58,2,,+447860362908,inbound,whatsapp,4,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:36:34.259163
+59,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""4"". (type *redo* to change or *restart* to begin again)
+
+Progress: [🟩🟩🟩🟩🟩🟩] 6/6","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:36:34.801442
+60,2,,+447860362908,outbound,whatsapp,"🎯 *Assessment complete, Rhys!* Your combined score is *40/100*
+
+[🟥🟥⬜⬜⬜] 45% - *Nutrition*
+[🟥🟥🟥⬜⬜] 56% - *Training*
+[🟥⬜⬜⬜⬜] 29% - *Resilience*
+[🟥⬜⬜⬜⬜] 29% - *Recovery*
+
+View your assessment in the HealthSense app: https://app.healthsense.coach/login","{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:36:35.407303
+61,2,,+447860362908,outbound,whatsapp,Thanks—saved your readiness profile. I’ll use this to set the right KR load and coaching style.,"{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:36:36.02506
+62,2,,+447860362908,inbound,whatsapp,4,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:36:44.622552
+63,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:37:21.382031
+64,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-22 16:38:49.939534
+65,2,,+447860362908,outbound,whatsapp,Your HealthSense login code is 678868. It expires in 5 minutes.,"{""to"": ""whatsapp:+447860362908""}",2026-02-22 16:38:59.887037
+66,2,,+447860362908,outbound,whatsapp,Your HealthSense login code is 404997. It expires in 5 minutes.,"{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-23""}",2026-02-23 16:42:15.02013
+67,2,,+447860362908,outbound,whatsapp,"*First day* Hi Rhys, Gia here. Welcome to coaching. Here’s your first-day podcast.","{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-23""}",2026-02-23 16:42:16.459507
+68,2,,+447860362908,outbound,whatsapp,"*First day* Habit steps for this week:
+1) Arrange the snack cupboard so processed packets are stored out of sight and place a single pre-portioned treat in a clear jar at eye level as your designated option.
+2) Lay out your breakfast ingredients in one spot in the kitchen and keep a clear container on the top shelf of the fridge so everything is easy to grab.
+3) Choose a reusable bottle you like and keep it filled and visible on your desk or in your bag so there’s always one ready to hand.
+Reply if you want to adjust any step.
+Please always respond by tapping a button (this keeps our support going).","{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-23""}",2026-02-23 16:42:17.769176
+69,2,,+447860362908,inbound,whatsapp,All good,"{""from"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-24""}",2026-02-24 16:42:27.267539
+70,2,,+447860362908,outbound,whatsapp,"*Coach* Hi Rhys, Gia here. I'm here if you want a hand, have a good day.","{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-24""}",2026-02-24 16:42:27.569824
+71,2,,+447860362908,outbound,whatsapp,"*Tuesday* Hi — hope your Tuesday’s going gently. How’s your day been so far? I know Tuesdays can feel busy or a bit ordinary, and there’s absolutely no pressure to report anything. I’m here if anything feels unclear or you want a quick chat — just drop me a message.
+Please always respond by tapping a button (this keeps our support going).","{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-24""}",2026-02-24 16:44:04.899075
+72,2,,+447860362908,inbound,whatsapp,All good,"{""from"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-25""}",2026-02-25 16:44:09.277056
+73,2,,+447860362908,outbound,whatsapp,"*Coach* Hi Rhys, Gia here. I'm here if you want a hand, have a good day.","{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-25""}",2026-02-25 16:44:09.569107
+74,2,,+447860362908,outbound,whatsapp,"*Wednesday* Hi — happy Wednesday. Midweek check-in, no pressure.
+How have the habit steps felt over the past couple of days — arranging the snack cupboard and keeping one pre‑portioned treat in a clear jar, laying out breakfast and using the clear container on the top shelf for fruit/veg, and carrying a reusable bottle to sip across the day?
+Have a think: tell me one thing that’s gone easier than you expected, or one thing that’s felt a bit sticky.
+Either way, noticing what’s working and what isn’t is progress. If anything feels unclear or fiddly, I can help you tweak one small detail to make it simpler.
+Please always respond by tapping a button (this keeps our support going).","{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-25""}",2026-02-25 16:46:13.161947
+75,2,,+447860362908,inbound,whatsapp,All good,"{""from"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-26""}",2026-02-26 16:46:19.614091
+76,2,,+447860362908,outbound,whatsapp,"*Coach* Hi Rhys, Gia here. I'm here if you want a hand, have a good day.","{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-26""}",2026-02-26 16:46:20.103701
+77,2,,+447860362908,outbound,whatsapp,Your HealthSense login code is 917107. It expires in 5 minutes.,"{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-26""}",2026-02-26 16:47:20.569881
+78,2,,+447860362908,outbound,whatsapp,"*Thursday* Hi Rhys, Gia here. Here’s your Thursday boost podcast—give it a quick listen.","{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-26""}",2026-02-26 16:48:15.197417
+79,2,,+447860362908,outbound,whatsapp,"*Thursday* Quick check-in: what stood out from today’s boost?
+Please always respond by tapping a button (this keeps our support going).","{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-26""}",2026-02-26 16:48:15.8432
+80,2,,+447860362908,inbound,whatsapp,All good,"{""from"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-27""}",2026-02-27 16:48:21.933072
+81,2,,+447860362908,outbound,whatsapp,"*Coach* Hi Rhys, Gia here. I'm here if you want a hand, have a good day.","{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-27""}",2026-02-27 16:48:22.244047
+82,2,,+447860362908,outbound,whatsapp,"*Friday* Hi Rhys, Gia here. Here’s your boost podcast—give it a quick listen.","{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-27""}",2026-02-27 16:50:17.395822
+83,2,,+447860362908,outbound,whatsapp,"*Friday* Quick check-in: how does this boost feel for today?
+Please always respond by tapping a button (this keeps our support going).","{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-27""}",2026-02-27 16:50:18.034354
+84,2,,+447860362908,inbound,whatsapp,All good,"{""from"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-28""}",2026-02-28 16:50:28.08668
+85,2,,+447860362908,outbound,whatsapp,"*Coach* Hi Rhys, Gia here. I'm here if you want a hand, have a good day.","{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-28""}",2026-02-28 16:50:28.431723
+86,2,,+447860362908,outbound,whatsapp,"*Saturday* Hey, just checking in for the weekend - how are things feeling with food right now?
+Please always respond by tapping a button (this keeps our support going).","{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-02-28""}",2026-02-28 16:51:57.154636
+87,2,,+447860362908,inbound,whatsapp,All good,"{""from"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-03-01""}",2026-03-01 16:52:04.337512
+88,2,,+447860362908,outbound,whatsapp,"*Coach* Hi Rhys, Gia here. I'm here if you want a hand, have a good day.","{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-03-01""}",2026-03-01 16:52:04.632277
+89,2,,+447860362908,outbound,whatsapp,"*Sunday* Hi Rhys, let's set your habit steps for week 2. Pick one option for each KR.","{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-03-01""}",2026-03-01 16:54:31.285284
+90,2,,+447860362908,outbound,whatsapp,"*Sunday* KR1: Limit processed food to 1 portion per day (swap one processed snack for fruit, nuts or yoghurt).
+A) Arrange the snack cupboard so processed packets are stored out of sight and a single pre-portioned treat sits at eye level.
+B) Portion fresh snacks into single-serve pots and store them where you usually reach for snacks.
+C) Choose a visible bowl for only fresh options (fruit, nuts or yoghurt) and move processed packets to a high shelf.","{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-03-01""}",2026-03-01 16:54:31.982213
+91,2,,+447860362908,inbound,whatsapp,KR1 C,"{""from"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-03-02""}",2026-03-02 16:54:46.249658
+92,2,,+447860362908,outbound,whatsapp,"*Sunday.* KR2: Eat 3 portions of fruit and vegetables per day (add a piece of fruit at breakfast and a small salad or extra veg at one meal).
+A) Lay out a piece of fruit beside your breakfast items so it’s the first thing you see in the morning.
+B) Pack a small salad pot and place it on the top shelf of the fridge for easy access at mealtimes.
+C) Set a bowl of chopped veg on the table so it’s ready to add to one meal.","{""to"": ""whatsapp:+447860362908"", ""virtual_date"": ""2026-03-02""}",2026-03-02 16:54:46.587011

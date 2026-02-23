@@ -15,13 +15,8 @@ from app.prompts import run_llm_prompt
 from app.usage import ensure_usage_schema
 from app.prompts import _ensure_llm_prompt_log_schema
 from app.message_log import _ensure_message_log_schema
-from app.reporting import (
-    generate_assessment_dashboard_html,
-    generate_assessment_report_pdf,
-    generate_progress_report_html,
-)
 from app.db import SessionLocal, _table_exists, engine
-from app.models import User, AssessSession, PillarResult, OKRKrHabitStep
+from app.models import User, AssessSession, PillarResult, OKRKrHabitStep, BackgroundJob, OKRObjective
 from app.okr import generate_and_update_okrs_for_pillar, seed_week1_habit_steps_for_assessment
 
 os.environ.setdefault("PROMPT_WORKER_PROCESS", "1")
@@ -60,24 +55,6 @@ def _process_assessment_continue(payload: dict) -> None:
         raise ValueError("assessment_continue requires user_id and text")
     user = _load_user(int(user_id))
     assessor.continue_combined_assessment(user, str(text))
-
-
-def _process_assessment_report(payload: dict) -> None:
-    run_id = payload.get("run_id")
-    if not run_id:
-        raise ValueError("assessment_report requires run_id")
-    user_id = payload.get("user_id")
-    generate_assessment_dashboard_html(int(run_id))
-    try:
-        generate_assessment_report_pdf(int(run_id))
-    except Exception:
-        # PDF generation shouldn't block narrative availability
-        pass
-    if user_id:
-        try:
-            generate_progress_report_html(int(user_id))
-        except Exception:
-            pass
 
 
 def _process_pillar_okr_sync(payload: dict) -> dict:
@@ -145,34 +122,102 @@ def _process_assessment_week1_habit_seed(payload: dict) -> dict:
     require_seed = bool(payload.get("require_seed", True))
 
     # Local retries to allow queued OKR sync jobs to complete first.
-    local_retries = int(payload.get("local_retries") or 3)
-    local_delay_seconds = float(payload.get("local_delay_seconds") or 2.0)
+    # Keep defaults generous because each pillar_okr_sync can take 15-35s.
+    local_retries = int(payload.get("local_retries") or 24)
+    local_delay_seconds = float(payload.get("local_delay_seconds") or 5.0)
+
+    def _safe_int(value):
+        try:
+            if value is None:
+                return None
+            return int(value)
+        except Exception:
+            return None
+
+    def _pending_pillar_sync_count(session) -> int:
+        target_user = _safe_int(user_id)
+        target_session = _safe_int(assess_session_id)
+        target_run = _safe_int(run_id)
+        q = session.query(BackgroundJob).filter(
+            BackgroundJob.kind == "pillar_okr_sync",
+            BackgroundJob.status.in_(["pending", "running", "retry"]),
+        )
+        if target_user is not None:
+            q = q.filter(BackgroundJob.user_id == target_user)
+        pending = 0
+        for job in q.all():
+            body = job.payload if isinstance(job.payload, dict) else {}
+            if not isinstance(body, dict):
+                continue
+            job_session = _safe_int(body.get("assess_session_id"))
+            job_run = _safe_int(body.get("run_id"))
+            if target_session is not None and job_session == target_session:
+                pending += 1
+                continue
+            if target_run is not None and job_run == target_run:
+                pending += 1
+                continue
+        return pending
 
     seeded_count = 0
     for attempt in range(max(1, local_retries)):
         with SessionLocal() as s:
-            seeded_count = seed_week1_habit_steps_for_assessment(
-                s,
-                user_id=int(user_id),
-                assess_session_id=int(assess_session_id) if assess_session_id else None,
-                run_id=int(run_id) if run_id else None,
-                week_no=week_no,
-            )
-            if seeded_count:
-                s.commit()
-                return {"ok": True, "seeded_count": int(seeded_count), "week_no": week_no}
-
-            existing = (
-                s.query(OKRKrHabitStep.id)
-                .filter(
-                    OKRKrHabitStep.user_id == int(user_id),
-                    OKRKrHabitStep.week_no == int(week_no),
-                    OKRKrHabitStep.status != "archived",
+            pending_sync = _pending_pillar_sync_count(s)
+            if pending_sync > 0:
+                print(
+                    f"[worker] habit seed waiting user_id={user_id} "
+                    f"assess_session_id={assess_session_id} run_id={run_id} "
+                    f"pending_pillar_okr_sync={pending_sync} attempt={attempt+1}/{max(1, local_retries)}"
                 )
-                .first()
-            )
-            if existing:
-                return {"ok": True, "seeded_count": 0, "already_exists": True, "week_no": week_no}
+            else:
+                seeded_count = seed_week1_habit_steps_for_assessment(
+                    s,
+                    user_id=int(user_id),
+                    assess_session_id=int(assess_session_id) if assess_session_id else None,
+                    run_id=int(run_id) if run_id else None,
+                    week_no=week_no,
+                )
+                if seeded_count:
+                    s.commit()
+                    return {"ok": True, "seeded_count": int(seeded_count), "week_no": week_no}
+
+                # If steps already exist, treat as success.
+                existing = (
+                    s.query(OKRKrHabitStep.id)
+                    .filter(
+                        OKRKrHabitStep.user_id == int(user_id),
+                        OKRKrHabitStep.week_no == int(week_no),
+                        OKRKrHabitStep.status != "archived",
+                    )
+                    .first()
+                )
+                if existing:
+                    return {"ok": True, "seeded_count": 0, "already_exists": True, "week_no": week_no}
+
+                nutrition_obj_query = (
+                    s.query(OKRObjective.id)
+                    .filter(
+                        OKRObjective.owner_user_id == int(user_id),
+                        OKRObjective.pillar_key == "nutrition",
+                    )
+                )
+                if assess_session_id:
+                    nutrition_obj_query = nutrition_obj_query.filter(
+                        OKRObjective.source_assess_session_id == int(assess_session_id)
+                    )
+                nutrition_obj_exists = nutrition_obj_query.first()
+                if nutrition_obj_exists:
+                    print(
+                        f"[worker] habit seed retry user_id={user_id} "
+                        f"assess_session_id={assess_session_id} run_id={run_id} "
+                        f"nutrition_objective_found=true attempt={attempt+1}/{max(1, local_retries)}"
+                    )
+                else:
+                    print(
+                        f"[worker] habit seed retry user_id={user_id} "
+                        f"assess_session_id={assess_session_id} run_id={run_id} "
+                        f"nutrition_objective_found=false attempt={attempt+1}/{max(1, local_retries)}"
+                    )
 
         if attempt < max(1, local_retries) - 1:
             time.sleep(max(0.5, local_delay_seconds))
@@ -255,9 +300,6 @@ def process_job(kind: str, payload: dict) -> dict:
         return {"ok": True}
     if kind == "assessment_continue":
         _process_assessment_continue(payload)
-        return {"ok": True}
-    if kind == "assessment_report":
-        _process_assessment_report(payload)
         return {"ok": True}
     if kind == "pillar_okr_sync":
         return _process_pillar_okr_sync(payload)

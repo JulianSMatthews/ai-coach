@@ -163,13 +163,19 @@ def write_log(*args, **kwargs) -> None:
         except Exception:
             user_obj = None
 
-    # 3) Normalize meta payload to JSON-safe
+    # 3) Normalize meta payload to JSON-safe and keep Twilio identifiers on the row.
     meta_payload = kwargs.get("meta")
     if meta_payload is not None:
         try:
             meta_payload = json.loads(json.dumps(meta_payload, default=str))
         except Exception:
             meta_payload = {"_raw": str(meta_payload)}
+    if not isinstance(meta_payload, dict):
+        meta_payload = {}
+    if twilio_sid:
+        meta_payload["twilio_sid"] = str(twilio_sid)
+    if category:
+        meta_payload.setdefault("category", str(category))
 
     # 4) Persist (never raise)
     try:

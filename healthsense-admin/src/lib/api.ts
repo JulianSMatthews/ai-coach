@@ -372,6 +372,28 @@ export type AssessmentHealthPayload = {
     twilio_failures?: number;
     twilio_failure_rate_pct?: number | null;
     twilio_failure_state?: string;
+    twilio_failure_codes?: Array<{
+      error_code?: string | null;
+      count?: number;
+      description?: string | null;
+    }>;
+    twilio_failed_messages?: Array<{
+      callback_at?: string | null;
+      sid?: string | null;
+      status?: string | null;
+      error_code?: string | null;
+      error_message?: string | null;
+      error_description?: string | null;
+      to?: string | null;
+      from?: string | null;
+      user_id?: number | null;
+      message_log_id?: number | null;
+      message_created_at?: string | null;
+      message_user_id?: number | null;
+      message_user_name?: string | null;
+      message_phone?: string | null;
+      message_preview?: string | null;
+    }>;
   };
   worker?: WorkerStatusPayload;
   infra?: {

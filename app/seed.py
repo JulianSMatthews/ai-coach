@@ -1057,29 +1057,42 @@ maximum words 200""",
     },
     {
         "touchpoint": 'assessment_okr',
-        "okr_scope": '',
-        "programme_scope": '',
+        "okr_scope": 'all',
+        "programme_scope": 'full',
         "response_format": '',
         "is_active": True,
         "block_order": ['system', 'locale', 'context', 'okr', 'task', 'user'],
         "include_blocks": ['system', 'locale', 'context', 'okr', 'task', 'user'],
-        "task_block": """You are giving the user a short, conversational summary of what their OKRs mean and what they can expect from the coaching around them. 
-Do not restate their OKRs or scores — they can already see those. 
-Your role is to help them understand the purpose behind these targets and how the coaching will support them week by week.
+        "task_block": """You are giving the user a short, conversational explanation of what their OKRs mean and how coaching will support them.
 
-Write as a coach who has reviewed their results and wants to explain things simply and clearly. 
-Keep this light, personal, and easy to digest.
+Start the message with a neutral, simple line that orients the user.
+You must begin with something like:
+“I want to give you a quick explanation of what your OKRs represent and how I’ll support you with them.”
+Do not alter this intention.
+Do not replace it with praise or encouragement.
 
-Explain that their OKRs highlight the few areas that will make the biggest difference for them right now. 
-These aren’t random targets — they’re chosen to give the user clarity, momentum, and quick early wins without overwhelming them.
+Do not praise the user.
+Do not congratulate the user.
+Do not imply they “set something up” or “completed something”.
+Do not reference actions they have not taken.
+Do not invent achievements or progress.
 
-Briefly reassure them that they won’t be left to figure this out alone. 
-Let them know that for each KR, the coach will offer a small set of simple, realistic actions they can choose from each week, so they always know exactly what to do next. 
-This keeps progress achievable and personalised, and ensures the user builds habits in a way that feels manageable.
+Start with a neutral, grounding line that simply acknowledges you’re here to walk them through what their OKRs represent.
 
-Keep the messaging relaxed, warm, and confident. 
-Don't use bold writing in the script.
-End with one short line reinforcing that these OKRs were designed specifically for them and that they’ll be guided step-by-step through how to bring them to life.""",
+Do not restate their OKRs or scores — they can already see those.
+
+Explain that their OKRs highlight the small number of areas that will make the biggest difference for them right now.
+Make it clear these aren’t random targets; they exist to give clarity and early momentum without overwhelm.
+
+Reassure them that they won’t be left to work this out alone.
+Explain that each week, they’ll get a small, simple set of habit-step options for every KR so they always know what to do next.
+These options should feel realistic and easy to carry into their week.
+
+Keep the messaging warm, calm, and confident.
+Keep language simple and human.
+Do not use bold writing.
+
+End with one short line reinforcing that these OKRs were chosen for them and that coaching will guide them step by step.""",
     },
     {
         "touchpoint": 'assessment_approach',
@@ -1565,10 +1578,11 @@ def run_seed() -> None:
             tp = upsert_touchpoint_defaults(s) if 'upsert_touchpoint_defaults' in globals() else {"created_prefs": 0, "created_defs": 0}
 
             # 5) Prompt templates
-            keep_templates = os.getenv("KEEP_PROMPT_TEMPLATES_ON_RESET") == "1"
+            keep_templates_raw = (os.getenv("KEEP_PROMPT_TEMPLATES_ON_RESET") or "").strip().lower()
+            keep_templates = keep_templates_raw in {"1", "true", "yes", "on"}
             if keep_templates:
-                pt = seed_prompt_templates(s)
-                print("[seed] Prompt templates kept; upserted missing/updated entries.")
+                pt = 0
+                print("[seed] Skipping prompt template seed (KEEP_PROMPT_TEMPLATES_ON_RESET=1).")
             else:
                 pt = seed_prompt_templates(s)
 
