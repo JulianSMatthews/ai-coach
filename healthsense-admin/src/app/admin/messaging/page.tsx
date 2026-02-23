@@ -7,7 +7,6 @@ import {
   deleteTwilioTemplate,
   syncTwilioTemplates,
   updateGlobalPromptSchedule,
-  updateMessagingSettings,
   updateTwilioTemplates,
 } from "@/lib/api";
 import { revalidatePath } from "next/cache";
@@ -48,17 +47,6 @@ async function saveTemplatesAction(formData: FormData) {
   revalidatePath("/admin/messaging");
 }
 
-async function saveMessagingSettingsAction(formData: FormData) {
-  "use server";
-  const enabled = Boolean(formData.get("out_of_session_enabled"));
-  const message = String(formData.get("out_of_session_message") || "").trim();
-  await updateMessagingSettings({
-    out_of_session_enabled: enabled,
-    out_of_session_message: message || null,
-  });
-  revalidatePath("/admin/messaging");
-}
-
 async function saveScheduleAction(formData: FormData) {
   "use server";
   const dayListRaw = String(formData.get("schedule_days") || "").trim();
@@ -81,10 +69,14 @@ export default async function MessagingPage() {
   ]);
   const settingsData = await getMessagingSettings();
   const templates = templateData.templates || [];
+  const sessionReopenTemplate = templates.find((tpl) => tpl.template_type === "session-reopen");
   const schedule = scheduleData.items || [];
   const templateIds = templates.map((t) => t.id).join(",");
   const scheduleDays = schedule.map((s) => s.day_key).join(",");
   const deleteFormId = "delete-template-form";
+  const sentence = (settingsData?.out_of_session_message || "").trim() || "Please tap below to continue your wellbeing journey.";
+  const previewBody = `Hi {{first_name}}, {{coach_name}} from HealthSense here. I’m ready to continue your coaching. ${sentence}`;
+  const previewButton = "Continue coaching";
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -185,35 +177,42 @@ export default async function MessagingPage() {
             <h2 className="mt-2 text-xl">24h+ messaging</h2>
             <p className="mt-2 text-sm text-[#6b6257]">
               Sends a WhatsApp template message when a member has been inactive for more than 24 hours.
-              Template variables are populated as: user first name, coach name, then this sentence.
             </p>
           </div>
-          <form action={saveMessagingSettingsAction} className="mt-6 space-y-4">
-            <label className="flex items-center gap-2 text-sm text-[#6b6257]">
-              <input
-                type="checkbox"
-                name="out_of_session_enabled"
-                defaultChecked={Boolean(settingsData?.out_of_session_enabled)}
-              />
-              Enable out-of-session message
-            </label>
-            <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Message text</label>
-              <textarea
-                name="out_of_session_message"
-                defaultValue={settingsData?.out_of_session_message || ""}
-                placeholder="Please tap below to continue your wellbeing journey."
-                className="mt-2 w-full rounded-2xl border border-[#efe7db] px-4 py-3 text-sm"
-                rows={4}
-              />
+          <div className="mt-6 space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Status</span>
+              <span
+                className={`rounded-full border px-3 py-1 text-xs uppercase tracking-[0.2em] ${
+                  settingsData?.out_of_session_enabled
+                    ? "border-[#16824a] bg-[#edf8f1] text-[#16824a]"
+                    : "border-[#b56e0a] bg-[#fff7ea] text-[#b56e0a]"
+                }`}
+              >
+                {settingsData?.out_of_session_enabled ? "Enabled" : "Disabled"}
+              </span>
+              {sessionReopenTemplate?.sid ? (
+                <span className="rounded-full border border-[#efe7db] bg-[#fdfaf4] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                  Template SID set
+                </span>
+              ) : (
+                <span className="rounded-full border border-[#c43e1c] bg-[#fff5f2] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[#c43e1c]">
+                  Template SID missing
+                </span>
+              )}
             </div>
-            <button
-              type="submit"
-              className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white"
-            >
-              Save out-of-session message
-            </button>
-          </form>
+            <div className="rounded-2xl border border-[#efe7db] bg-[#faf7f1] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Message body preview</p>
+              <p className="mt-2 text-sm text-[#1e1b16]">{previewBody}</p>
+              <p className="mt-4 text-xs uppercase tracking-[0.2em] text-[#6b6257]">Reply button</p>
+              <span className="mt-2 inline-flex rounded-full border border-[#efe7db] bg-white px-3 py-1 text-xs font-medium">
+                {previewButton}
+              </span>
+            </div>
+            <p className="text-xs text-[#6b6257]">
+              Variables sent to Twilio: user first name, coach name, then the sentence shown above.
+            </p>
+          </div>
         </section>
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">

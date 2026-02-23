@@ -652,7 +652,7 @@ The desired outcome is a short reply that keeps the conversation open.""",
     {
         "touchpoint": 'initial_habit_steps_generator',
         "okr_scope": 'all',
-        "programme_scope": '',
+        "programme_scope": 'pillar',
         "response_format": '',
         "is_active": True,
         "block_order": ['system', 'locale', 'context', 'okr', 'task', 'user'],
@@ -666,60 +666,41 @@ Return STRICT JSON only using this exact shape:
   ]
 }
 
-You are generating Week 1 Habit Steps for each KR in the input.
-Your role is to give the user clear, guided, practical actions that help them set up their environment, routines, or decisions so the week feels easier — NOT tiny nutritional add-ons or vague food tweaks.
-Core Behaviour Rules (Updated for Mini)
-Produce one clear Week-1 Habit Step for each KR in the input.
-Use every kr_id once.
-Each habit step must describe one clear, practical action the user can do without thinking.
-Each habit step must be about setup, preparation, visibility, routine, organisation, or pre-decisions — not food toppings, not “eat X”, not minor nutrition tricks.
-The action must be realistic but specific, so the user knows exactly what to do.
-Do not mention timing, duration, or frequency.
-Use natural British English.
-Do not mention kr_id inside the step_text.
-Do not use markdown or formatting.
-What Habit Steps MUST look like
-Habit Steps should be:
-Environmental
-“Set out your breakfast ingredients in one spot so it’s easy to start your day without thinking.”
-Preparatory
-“Choose a simple lunch you can repeat this week and make sure the ingredients are ready at home.”
-Routine-based
-“Decide on one steady evening routine, like dimming lights or reading, and follow that same pattern.”
-Decision-removing
-“Choose one go-to snack you feel good about and keep it somewhere visible for busy moments.”
-Friction-reducing
-“Organise a small space for your training kit so it’s always ready to use.”
-These are behavioural, not nutritional micro-tweaks.
-What Habit Steps MUST NOT be
-Do not generate any steps like:
-“Add fruit…”
-“Add vegetables…”
-“Drink a glass of water…”
-“Have protein with meals…”
-“Swap X for Y…”
-“Include a healthy option…”
-“Try a new recipe…”
-“Eat less…”
-Any food topping or food addition
-Any step based on guessing what foods they like
-These will always be too vague and too low-value.
-Mini-Friendly Writing Rules
-Mini models improve dramatically when given explicit phrase guidance.
-Each step should:
-Start with a clear verb:
-Prepare, organise, choose, set aside, place, decide, lay out, group, arrange, tidy.
-Describe one specific action, not a general behaviour.
-Include one small supporting detail to make it concrete.
-Example: “…and keep it somewhere you’ll see it.”
-Use natural human sentences, not templates.
-Avoid repeating sentence structures across steps.
-Output Format
-Return a list of objects.
-Each object must include:
-kr_id
-step_text
-Nothing else.""",
+Rules:
+Generate one week-1 habit step for each KR.
+Each step must be shaped by the KR theme (fruit & veg, processed foods, hydration, protein).
+Create a behaviour-based micro-action rather than offering advice or preparing full meals.
+Each step must be tiny, low-pressure, and able to begin in under 30 seconds.
+Steps must describe an observable action (placing, picking, adding, sipping, pausing, choosing, positioning).
+Steps must be realistic for this week and completable in under 15 minutes.
+Favour steps that connect to everyday routines (morning, commute, work desk, cooking moments, snack times).
+Avoid rules, restrictions, targets, quantities, portion sizes, or nutrition education.
+Use plain British English.
+Do not include markdown, explanations, or extra keys.
+Do not mention KR IDs inside step_text.
+Ensure steps vary in structure and wording across different generations.
+Generate actions using the following behavioural archetypes:
+For fruit & veg KRs:
+Make a fruit or veg option more visible.
+Add a small amount of fruit or veg to something already being eaten.
+Introduce an extra colour or plant item into a familiar meal.
+Place a fruit/veg reminder in a location tied to a daily cue.
+For processed food KRs:
+Adjust the environment so a less processed option is easier to reach.
+Insert a brief pause or check-in before a usual snack choice.
+Redirect an automatic snack moment towards a slightly better alternative.
+Shift the position of foods so the first thing seen is a more nourishing option.
+For hydration KRs:
+Make water more available or visible.
+Link drinking water to a common daily trigger.
+Begin the day with a simple water action.
+Use small sips tied to a routine behaviour.
+For protein KRs:
+Add a simple protein item to a meal already being eaten.
+Make a protein option easier to choose by changing its placement.
+Include a quick protein choice at a moment that already exists.
+Use small additions rather than full meal changes.
+Steps should feel like real-life nudges that reduce friction and support the KR with minimal effort.""",
     },
     {
         "touchpoint": 'habit_steps_generator',
@@ -730,49 +711,53 @@ Nothing else.""",
         "block_order": ['system', 'locale', 'context', 'history', 'okr', 'scores', 'habit', 'task', 'user'],
         "include_blocks": ['system', 'locale', 'context', 'history', 'okr', 'scores', 'habit', 'task', 'user'],
         "task_block": """You are generating the weekly Habit Step options for each KR.
-This touchpoint happens after the weekly coaching podcast and is only for the user choosing their new Habit Steps for the week.
-It is not for the initial assessment seeding week.
-Your role is to give the user clear, practical, low-pressure options they can choose from — each one being a small, specific action that helps them make progress this week.
+This touchpoint takes place after the weekly coaching podcast, and your role is to convert each KR into small, low-pressure actions the user can choose for the week ahead.
+This is not the initial assessment week.
 Write in plain text only.
 Do not use markdown or formatting symbols.
 Do not mention KR IDs inside step options.
-Opening Lines (Mini-Safe Behaviour)
+Opening Lines
 Start with one short, calm sentence acknowledging the podcast and explaining that you’re now turning their OKRs into simple weekly actions.
 Then add a single sentence explaining that you will share a few small Habit Step options per KR so they can choose what feels most realistic this week.
-The tone should be warm, steady, and unrushed.
-Habit-Step Generation Rules (Aligned With the Revised Week-1 Behaviour)
+Keep the tone warm, steady, and unrushed.
+Habit-Step Generation Rules
 For each KR:
 Create three Habit Step options (A, B, and C).
-If only two are meaningfully different, you may provide A and B only.
-Each option must be clear, specific, and actionable — not vague intentions or nutritional micro-tweaks.
-Each option must be a single behaviour, not a cluster of tasks.
-Each option should be friction-reducing, preparatory, environmental, or routine-based.
-Keep them small enough to feel completely manageable this week.
-Do not include time, duration, or number of days.
-Do not mention week numbers or "week 1".
+If only two are meaningfully different, provide A and B only.
+Each option must be one small, specific behaviour — never a cluster of tasks.
+Each option must be friction-reducing, preparatory, environmental, or routine-based.
+Each option must be simple enough to begin in under 30 seconds.
+Each option must tie directly to the KR’s theme (nutrition, hydration, processed food, protein, sleep routine, wind-down, movement, training set-up, resilience practice, etc).
+Use observable action verbs such as: prepare, place, position, organise, set, arrange, decide, choose, carry, lay out, keep, use, put, store, move, adjust.
+Keep steps free of numbers, measurements, durations, targets, or time-based instructions.
+Avoid nutritional substitutions, nutrient advice, “add fruit”, “drink water”, or any wording that sounds like a diet tip.
+Avoid vague ideas or intentions (try to improve, aim to be mindful, think about…).
+Avoid repeated phrasing across options.
 Use plain British English.
-What Habit Steps Should Look Like (Mini Guidance)
-Each option should:
-Start with a clear verb (prepare, choose, set, arrange, organise, lay out, decide, etc).
-Describe one small, concrete action.
-Include one guiding detail that makes the action clear (“…and place it where you’ll see it”).
-Avoid repeated phrasing across options or KRs.
-Examples of the correct pattern:
-“Prepare one go-to breakfast you can rely on using ingredients you already have.”
-“Choose a simple evening routine, like dimming lights or reading, and repeat that pattern.”
-“Set out your training clothes somewhere visible so getting started feels easier.”
-“Organise a small spot in the kitchen for the foods you want to reach for first.”
-Avoid:
-“Add fruit…”
-“Drink water…”
-“Include vegetables…”
-“Try to improve…”
-“Be mindful…”
-“Aim to…”
-“Swap X for Y…”
-measurement, calories, macros
-time-based instructions
-vague ideas or intentions
+Ensure steps vary in structure and rely on behavioural archetypes instead of example sentences.
+Behavioural Archetypes (Use These Patterns to Generate Steps)
+For Nutrition KRs (fruit & veg, processed foods, hydration, protein):
+Make a helpful food or drink option more visible or easier to reach.
+Add a simple element to something the user already does or already eats.
+Adjust the environment so the preferred option is the path of least resistance.
+Introduce a small cue or pause before a typical moment (e.g., snack, meal, drink).
+Set up one simple item ahead of time to remove friction.
+For Training KRs:
+Prepare a small element of the training environment or equipment.
+Position an item where it creates easier start-up.
+Organise something that reduces the decision-load around movement.
+Create a cue linked to a daily routine (clothes laid out, mat placed, shoes visible).
+Choose one tiny action related to warm-up, technique, or session entry.
+For Recovery KRs (sleep, wind-down, restfulness, switching off):
+Adjust the evening or morning environment to reduce stimulation.
+Prepare one item or routine that signals winding down.
+Place or move something to support calmer transitions.
+Decide on a simple pattern that helps the nervous system settle.
+For Resilience KRs (stress regulation, emotional load, presence, clarity):
+Introduce a small pause or grounding behaviour during a typical moment of tension.
+Position or prepare an item that encourages reflection or decompression.
+Use a simple environmental or routine cue to create a brief reset.
+Decide on one tiny supportive behaviour for the day.
 Format (Must Follow Exactly)
 KR1: <short KR description>
 1A) <habit step option>
@@ -782,14 +767,13 @@ KR2: <short KR description>
 2A) <habit step option>
 2B) <habit step option>
 2C) <habit step option>
-…continue this pattern for all KRs.
+Continue this pattern for all KRs.
 No extra commentary.
 No additional bullets.
 No headings.
 No explanations.
 Closing Line
-End with one short sentence telling them they’ll be asked to choose one option for each KR.
-Keep tone steady, supportive, and unrushed.""",
+End with one short sentence letting the user know they’ll choose one option for each KR.""",
     },
     {
         "touchpoint": 'weekstart_actions',
