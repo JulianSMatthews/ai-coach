@@ -15,6 +15,7 @@ from app.prompts import run_llm_prompt
 from app.usage import ensure_usage_schema
 from app.prompts import _ensure_llm_prompt_log_schema
 from app.message_log import _ensure_message_log_schema
+from app.reporting import generate_assessment_narratives
 from app.db import SessionLocal, _table_exists, engine
 from app.models import User, AssessSession, PillarResult, OKRKrHabitStep, BackgroundJob, OKRObjective
 from app.okr import generate_and_update_okrs_for_pillar, seed_week1_habit_steps_for_assessment
@@ -55,6 +56,13 @@ def _process_assessment_continue(payload: dict) -> None:
         raise ValueError("assessment_continue requires user_id and text")
     user = _load_user(int(user_id))
     assessor.continue_combined_assessment(user, str(text))
+
+
+def _process_assessment_narratives_seed(payload: dict) -> dict:
+    run_id = payload.get("run_id")
+    if not run_id:
+        raise ValueError("assessment_narratives_seed requires run_id")
+    return generate_assessment_narratives(int(run_id))
 
 
 def _process_pillar_okr_sync(payload: dict) -> dict:
@@ -301,6 +309,8 @@ def process_job(kind: str, payload: dict) -> dict:
     if kind == "assessment_continue":
         _process_assessment_continue(payload)
         return {"ok": True}
+    if kind == "assessment_narratives_seed":
+        return _process_assessment_narratives_seed(payload)
     if kind == "pillar_okr_sync":
         return _process_pillar_okr_sync(payload)
     if kind == "assessment_week1_habit_seed":

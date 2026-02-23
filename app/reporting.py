@@ -3595,6 +3595,32 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
         f.write(html_doc)
     return out_path
 
+
+def generate_assessment_narratives(run_id: int) -> dict:
+    """
+    Precompute and cache assessment narratives (score/OKR/coaching) and audio links.
+    Intended for async worker execution so app/API reads do not block on LLM calls.
+    """
+    started = time.perf_counter()
+    data = build_assessment_dashboard_data(run_id, include_llm=True)
+    user = data.get("user") or {}
+    meta = data.get("meta") or {}
+    result = {
+        "ok": True,
+        "run_id": int(run_id),
+        "user_id": user.get("id"),
+        "narratives_cached": meta.get("narratives_cached"),
+        "narratives_source": meta.get("narratives_source"),
+        "duration_ms": int((time.perf_counter() - started) * 1000),
+    }
+    try:
+        with SessionLocal() as s:
+            s.add(JobAudit(job_name="assessment_narratives_generate", status="ok", payload=result))
+            s.commit()
+    except Exception:
+        pass
+    return result
+
 def generate_detailed_report_pdf_by_user(user_id: int) -> str:
     """Public entry point to generate the detailed (grouped) PDF for a user.
     Returns the absolute filesystem path to the generated PDF.

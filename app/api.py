@@ -3495,7 +3495,7 @@ def api_user_assessment(
                 if not latest:
                     raise HTTPException(status_code=404, detail="assessment run not found")
                 rid = latest.id
-    data = build_assessment_dashboard_data(int(rid), include_llm=not fast)
+    data = build_assessment_dashboard_data(int(rid), include_llm=False)
     narratives = data.get("narratives") or {}
     if isinstance(narratives, dict):
         narratives = {
@@ -3562,7 +3562,7 @@ def api_public_user_assessment(user_id: int, run_id: int | None = None, fast: bo
                 if not latest:
                     raise HTTPException(status_code=404, detail="assessment run not found")
                 rid = latest.id
-    data = build_assessment_dashboard_data(int(rid), include_llm=not fast)
+    data = build_assessment_dashboard_data(int(rid), include_llm=False)
     narratives = data.get("narratives") or {}
     if isinstance(narratives, dict):
         narratives = {

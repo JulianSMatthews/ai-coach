@@ -3012,6 +3012,23 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 except Exception:
                     pass
 
+                # Seed assessment narratives asynchronously on worker so API reads do not
+                # block on assessment_scores/assessment_okr/coaching_approach LLM calls.
+                try:
+                    run_id = state.get("run_id")
+                    if run_id and should_use_worker():
+                        job_id = enqueue_job(
+                            "assessment_narratives_seed",
+                            {"run_id": int(run_id), "user_id": user.id},
+                            user_id=user.id,
+                        )
+                        print(
+                            f"[assessment] enqueued assessment_narratives_seed "
+                            f"run_id={run_id} user_id={user.id} job={job_id}"
+                        )
+                except Exception as _narrative_enqueue_error:
+                    print(f"[assessment] WARN: enqueue assessment_narratives_seed failed: {_narrative_enqueue_error}")
+
                 # Deactivate session
                 try:
                     sess.is_active = False; s.commit()
