@@ -1478,8 +1478,8 @@ export async function setAdminUserCoaching(
 
 export async function createAdminUserAppSession(
   userId: number,
-): Promise<{ user_id?: number; session_token?: string; expires_at?: string; ttl_minutes?: number }> {
-  return apiAdmin<{ user_id?: number; session_token?: string; expires_at?: string; ttl_minutes?: number }>(
+): Promise<{ user_id?: number; session_token?: string; expires_at?: string; ttl_minutes?: number; app_base_url?: string }> {
+  return apiAdmin<{ user_id?: number; session_token?: string; expires_at?: string; ttl_minutes?: number; app_base_url?: string }>(
     `/admin/users/${userId}/app-session`,
     { method: "POST" },
   );

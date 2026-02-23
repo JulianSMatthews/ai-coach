@@ -523,8 +523,8 @@ def _compose_final_summary_message(user: User, state: dict) -> str:
     combined_bar = _score_bar("Combined", combined)
     msg = f"{intro} Your combined score is:\n{combined_bar}\n\n{breakdown}"
     try:
-        app_base = _hsapp_base_url()
-        msg += f"\n\nView your assessment in the HealthSense app: {app_base}/login"
+        login_url = _hsapp_login_url_for_user(user, reason="compose_final_summary_message")
+        msg += f"\n\nView your assessment in the HealthSense app: {login_url}"
     except Exception:
         pass
     return msg
@@ -2958,11 +2958,11 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 # Build final message (will be sent after psych check completes)
                 name = (getattr(user, "first_name", "") or "").strip()
                 intro = f"🎯 *Assessment complete, {name}!*" if name else "🎯 *Assessment complete!*"
-                app_base = _hsapp_base_url()
+                login_url = _hsapp_login_url_for_user(user, reason="assessment_completion_final_message")
                 final_msg = (
                     f"{intro} Your combined score is *{combined}/100*\n"
                     f"\n{breakdown}\n\n"
-                    f"View your assessment in the HealthSense app: {app_base}/login"
+                    f"View your assessment in the HealthSense app: {login_url}"
                 )
                 # Mark any active assessment sessions as inactive before psych
                 try:
@@ -3076,7 +3076,7 @@ def send_menu_options(user: User) -> None:
     _send_to_user(user, "Log into the HealthSense app to view your assessment.")
 
 
-def _hsapp_base_url() -> str:
+def _resolve_hsapp_base_url() -> tuple[str, dict]:
     allow_local = (os.getenv("HSAPP_ALLOW_LOCALHOST_URLS") or "").strip() == "1"
     node_env = (os.getenv("NODE_ENV") or "").strip().lower()
     is_dev = node_env == "development"
@@ -3091,32 +3091,118 @@ def _hsapp_base_url() -> str:
         low = (url or "").strip().lower()
         return ("localhost" in low) or ("127.0.0.1" in low)
 
-    base = (os.getenv("HSAPP_PUBLIC_URL") or "").strip()
-    if not base:
-        base = (os.getenv("HSAPP_BASE_URL") or os.getenv("APP_BASE_URL") or "").strip()
-    if not base:
-        base = (os.getenv("NEXT_PUBLIC_HSAPP_BASE_URL") or os.getenv("NEXT_PUBLIC_APP_BASE_URL") or "").strip()
-    if not base:
-        base = (os.getenv("HSAPP_NGROK_DOMAIN") or "").strip()
+    candidates = {
+        "HSAPP_PUBLIC_URL": (os.getenv("HSAPP_PUBLIC_URL") or "").strip(),
+        "HSAPP_BASE_URL": (os.getenv("HSAPP_BASE_URL") or "").strip(),
+        "APP_BASE_URL": (os.getenv("APP_BASE_URL") or "").strip(),
+        "NEXT_PUBLIC_HSAPP_BASE_URL": (os.getenv("NEXT_PUBLIC_HSAPP_BASE_URL") or "").strip(),
+        "NEXT_PUBLIC_APP_BASE_URL": (os.getenv("NEXT_PUBLIC_APP_BASE_URL") or "").strip(),
+        "HSAPP_NGROK_DOMAIN": (os.getenv("HSAPP_NGROK_DOMAIN") or "").strip(),
+    }
+    chosen_source = ""
+    base = ""
+    for key in (
+        "HSAPP_PUBLIC_URL",
+        "HSAPP_BASE_URL",
+        "APP_BASE_URL",
+        "NEXT_PUBLIC_HSAPP_BASE_URL",
+        "NEXT_PUBLIC_APP_BASE_URL",
+        "HSAPP_NGROK_DOMAIN",
+    ):
+        val = candidates.get(key) or ""
+        if val:
+            base = val
+            chosen_source = key
+            break
+
+    dropped_local_reason = ""
     if (not allow_local) and _looks_local(base):
+        dropped_local_reason = "localhost_blocked"
         base = ""
     if is_hosted and _looks_local(base):
+        dropped_local_reason = "localhost_blocked_hosted"
         base = ""
+
+    fallback_source = ""
     if not base:
         if is_hosted:
             base = (os.getenv("HSAPP_PUBLIC_DEFAULT_URL") or "https://app.healthsense.coach").strip()
+            fallback_source = "HSAPP_PUBLIC_DEFAULT_URL_or_default"
         else:
             base = "http://localhost:3000"
+            fallback_source = "dev_local_default"
+
     if not base.startswith(("http://", "https://")):
         base = f"https://{base}"
-    return base.rstrip("/")
+    resolved = base.rstrip("/")
+    debug_payload = {
+        "allow_local": bool(allow_local),
+        "node_env": node_env,
+        "is_dev": bool(is_dev),
+        "is_hosted": bool(is_hosted),
+        "chosen_source": chosen_source or None,
+        "fallback_source": fallback_source or None,
+        "dropped_local_reason": dropped_local_reason or None,
+        "resolved_base_url": resolved,
+        "resolved_is_local": bool(_looks_local(resolved)),
+        "candidates": candidates,
+    }
+    return resolved, debug_payload
+
+
+def _audit_hsapp_link_resolution(*, user_id: int | None, reason: str, payload: dict, status: str = "ok", error: str | None = None) -> None:
+    try:
+        with SessionLocal() as s:
+            s.add(
+                JobAudit(
+                    job_name="hsapp_link_resolution",
+                    status=status,
+                    payload={
+                        "user_id": user_id,
+                        "reason": reason,
+                        **(payload or {}),
+                    },
+                    error=error or None,
+                )
+            )
+            s.commit()
+    except Exception:
+        pass
+
+
+def _hsapp_base_url() -> str:
+    base, _ = _resolve_hsapp_base_url()
+    return base
+
+
+def _hsapp_login_url_for_user(user: User | None, *, reason: str) -> str:
+    user_id = getattr(user, "id", None) if user is not None else None
+    try:
+        base, debug_payload = _resolve_hsapp_base_url()
+        login_url = f"{base}/login"
+        _audit_hsapp_link_resolution(
+            user_id=int(user_id) if user_id is not None else None,
+            reason=reason,
+            payload={**debug_payload, "login_url": login_url},
+            status="ok",
+        )
+        return login_url
+    except Exception as e:
+        _audit_hsapp_link_resolution(
+            user_id=int(user_id) if user_id is not None else None,
+            reason=reason,
+            payload={},
+            status="error",
+            error=str(e),
+        )
+        raise
 
 
 def send_hsapp_assessment_link(user: User) -> None:
-    base = _hsapp_base_url()
+    login_url = _hsapp_login_url_for_user(user, reason="send_hsapp_assessment_link")
     _send_to_user(
         user,
-        f"Your assessment is now in the HealthSense app. Log in here: {base}/login",
+        f"Your assessment is now in the HealthSense app. Log in here: {login_url}",
     )
 
 def send_dashboard_link(user: User) -> None:

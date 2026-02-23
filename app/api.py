@@ -1292,10 +1292,17 @@ def _extract_session_token(request: Request) -> str | None:
         return cookie.strip()
     return None
 
-def _get_session_user(request: Request) -> User | None:
+def _get_active_session_meta(request: Request) -> dict | None:
+    cached = getattr(request.state, "_hs_session_meta_loaded", False)
+    if cached:
+        return getattr(request.state, "_hs_session_meta", None)
+
     token = _extract_session_token(request)
     if not token:
+        request.state._hs_session_meta = None
+        request.state._hs_session_meta_loaded = True
         return None
+
     token_hash = _hash_token(token)
     now = datetime.utcnow()
     with SessionLocal() as s:
@@ -1306,9 +1313,53 @@ def _get_session_user(request: Request) -> User | None:
             .first()
         )
         if not sess or sess.expires_at <= now:
+            request.state._hs_session_meta = None
+            request.state._hs_session_meta_loaded = True
             return None
-        user = s.execute(select(User).where(User.id == sess.user_id)).scalar_one_or_none()
-        return user
+        meta = {
+            "id": int(sess.id),
+            "user_id": int(sess.user_id),
+            "user_agent": str(getattr(sess, "user_agent", "") or ""),
+        }
+    request.state._hs_session_meta = meta
+    request.state._hs_session_meta_loaded = True
+    return meta
+
+
+def _is_admin_app_preview_session(request: Request) -> bool:
+    meta = _get_active_session_meta(request)
+    if not meta:
+        return False
+    return str(meta.get("user_agent") or "").startswith("admin-app-session:")
+
+
+def _is_readonly_admin_preview_request(
+    request: Request,
+    *,
+    x_admin_token: str | None = None,
+    x_admin_user_id: str | None = None,
+) -> bool:
+    # Explicit admin-header requests are trusted admin actions, not app preview.
+    if x_admin_token or x_admin_user_id:
+        return False
+    return _is_admin_app_preview_session(request)
+
+
+def _get_session_user(request: Request) -> User | None:
+    cached = getattr(request.state, "_hs_session_user_loaded", False)
+    if cached:
+        return getattr(request.state, "_hs_session_user", None)
+
+    meta = _get_active_session_meta(request)
+    if not meta:
+        request.state._hs_session_user = None
+        request.state._hs_session_user_loaded = True
+        return None
+    with SessionLocal() as s:
+        user = s.execute(select(User).where(User.id == int(meta.get("user_id") or 0))).scalar_one_or_none()
+    request.state._hs_session_user = user
+    request.state._hs_session_user_loaded = True
+    return user
 
 def _get_admin_if_valid(
     x_admin_token: str | None,
@@ -3465,20 +3516,26 @@ def api_user_assessment(
         tag="perf",
     )
     _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    readonly_preview = _is_readonly_admin_preview_request(
+        request,
+        x_admin_token=x_admin_token,
+        x_admin_user_id=x_admin_user_id,
+    )
     assessment_review_marked = False
     with SessionLocal() as s:
         u = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
         if not u:
             raise HTTPException(status_code=404, detail="user not found")
-        assessment_review_marked = _set_pref_value(
-            s,
-            user_id,
-            ONBOARDING_PREF_KEYS["assessment_reviewed"],
-            _utc_now_iso(),
-            only_if_missing=True,
-        )
-        if assessment_review_marked:
-            s.commit()
+        if not readonly_preview:
+            assessment_review_marked = _set_pref_value(
+                s,
+                user_id,
+                ONBOARDING_PREF_KEYS["assessment_reviewed"],
+                _utc_now_iso(),
+                only_if_missing=True,
+            )
+            if assessment_review_marked:
+                s.commit()
         rid = run_id
         if rid is None:
             latest_finished = s.execute(
@@ -3510,22 +3567,23 @@ def api_user_assessment(
         "assessment_pdf": _public_report_url(user_id, "latest.pdf"),
         "assessment_image": _public_report_url(user_id, "latest.jpeg"),
     }
-    _log_app_engagement_event(
-        user_id=user_id,
-        unit_type="page_view",
-        meta={
-            "page": "assessment_results",
-            "run_id": int(rid),
-            "fast": bool(fast),
-        },
-    )
-    if assessment_review_marked:
+    if not readonly_preview:
         _log_app_engagement_event(
             user_id=user_id,
-            unit_type="assessment_reviewed",
-            meta={"run_id": int(rid)},
+            unit_type="page_view",
+            meta={
+                "page": "assessment_results",
+                "run_id": int(rid),
+                "fast": bool(fast),
+            },
         )
-        evaluate_and_enable_coaching(user_id)
+        if assessment_review_marked:
+            _log_app_engagement_event(
+                user_id=user_id,
+                unit_type="assessment_reviewed",
+                meta={"run_id": int(rid)},
+            )
+            evaluate_and_enable_coaching(user_id)
     debug_log(
         "assessment ok",
         {"user_id": user_id, "run_id": rid, "ms": int((time.perf_counter() - t0) * 1000)},
@@ -3600,6 +3658,11 @@ def api_user_progress(
         tag="perf",
     )
     _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    readonly_preview = _is_readonly_admin_preview_request(
+        request,
+        x_admin_token=x_admin_token,
+        x_admin_user_id=x_admin_user_id,
+    )
     with SessionLocal() as s:
         u = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
         if not u:
@@ -3614,14 +3677,15 @@ def api_user_progress(
     data["reports"] = {
         "progress_html": _public_report_url(user_id, "progress.html"),
     }
-    _log_app_engagement_event(
-        user_id=user_id,
-        unit_type="page_view",
-        meta={
-            "page": "progress_home",
-            "anchor_date": anchor_date,
-        },
-    )
+    if not readonly_preview:
+        _log_app_engagement_event(
+            user_id=user_id,
+            unit_type="page_view",
+            meta={
+                "page": "progress_home",
+                "anchor_date": anchor_date,
+            },
+        )
     debug_log(
         "progress ok",
         {"user_id": user_id, "ms": int((time.perf_counter() - t0) * 1000)},
@@ -3788,6 +3852,12 @@ def api_user_preferences_update(
     allowed_days = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
     allowed_channels = {"whatsapp", "sms", "email"}
     _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    if _is_readonly_admin_preview_request(
+        request,
+        x_admin_token=x_admin_token,
+        x_admin_user_id=x_admin_user_id,
+    ):
+        raise HTTPException(status_code=403, detail="Admin app preview is read-only")
     with SessionLocal() as s:
         u = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
         if not u:
@@ -4004,11 +4074,17 @@ def api_user_library_content(
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
 ):
     _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
-    _log_app_engagement_event(
-        user_id=user_id,
-        unit_type="page_view",
-        meta={"page": "library"},
+    readonly_preview = _is_readonly_admin_preview_request(
+        request,
+        x_admin_token=x_admin_token,
+        x_admin_user_id=x_admin_user_id,
     )
+    if not readonly_preview:
+        _log_app_engagement_event(
+            user_id=user_id,
+            unit_type="page_view",
+            meta={"page": "library"},
+        )
     with SessionLocal() as s:
         rows = (
             s.query(ContentLibraryItem)
@@ -4048,6 +4124,12 @@ def api_user_engagement_event(
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
 ):
     _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    if _is_readonly_admin_preview_request(
+        request,
+        x_admin_token=x_admin_token,
+        x_admin_user_id=x_admin_user_id,
+    ):
+        return {"ok": True}
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="payload must be a JSON object")
 
@@ -4175,6 +4257,12 @@ def api_user_kr_habit_steps_update(
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
 ):
     _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    if _is_readonly_admin_preview_request(
+        request,
+        x_admin_token=x_admin_token,
+        x_admin_user_id=x_admin_user_id,
+    ):
+        raise HTTPException(status_code=403, detail="Admin app preview is read-only")
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="payload must be a JSON object")
     raw_steps = payload.get("steps", [])
@@ -4293,6 +4381,12 @@ def api_user_kr_update(
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
 ):
     _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    if _is_readonly_admin_preview_request(
+        request,
+        x_admin_token=x_admin_token,
+        x_admin_user_id=x_admin_user_id,
+    ):
+        raise HTTPException(status_code=403, detail="Admin app preview is read-only")
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="payload must be a JSON object")
 
@@ -11373,6 +11467,89 @@ def admin_start_user(user_id: int, admin_user: User = Depends(_require_admin)):
     _start_assessment_async(u)
     return {"status": "started", "user_id": user_id}
 
+
+def _resolve_admin_hsapp_base_url() -> tuple[str, dict]:
+    allow_local = (os.getenv("HSAPP_ALLOW_LOCALHOST_URLS") or "").strip() == "1"
+    node_env = (os.getenv("NODE_ENV") or "").strip().lower()
+    is_dev = node_env == "development"
+    is_hosted = (
+        (not is_dev)
+        or (os.getenv("ENV") or "").strip().lower() == "production"
+        or (os.getenv("RENDER") or "").strip().lower() == "true"
+        or bool((os.getenv("RENDER_EXTERNAL_URL") or "").strip())
+    )
+
+    def _looks_local(url: str) -> bool:
+        low = (url or "").strip().lower()
+        return (
+            ("localhost" in low)
+            or ("127.0.0.1" in low)
+            or ("0.0.0.0" in low)
+            or ("host.docker.internal" in low)
+        )
+
+    candidates = {
+        "HSAPP_PUBLIC_URL": (os.getenv("HSAPP_PUBLIC_URL") or "").strip(),
+        "HSAPP_BASE_URL": (os.getenv("HSAPP_BASE_URL") or "").strip(),
+        "APP_BASE_URL": (os.getenv("APP_BASE_URL") or "").strip(),
+        "NEXT_PUBLIC_HSAPP_BASE_URL": (os.getenv("NEXT_PUBLIC_HSAPP_BASE_URL") or "").strip(),
+        "NEXT_PUBLIC_APP_BASE_URL": (os.getenv("NEXT_PUBLIC_APP_BASE_URL") or "").strip(),
+        "HSAPP_PUBLIC_DEFAULT_URL": (os.getenv("HSAPP_PUBLIC_DEFAULT_URL") or "").strip(),
+        "HSAPP_NGROK_DOMAIN": (os.getenv("HSAPP_NGROK_DOMAIN") or "").strip(),
+    }
+
+    chosen_source = ""
+    base = ""
+    for key in (
+        "HSAPP_PUBLIC_URL",
+        "HSAPP_BASE_URL",
+        "APP_BASE_URL",
+        "NEXT_PUBLIC_HSAPP_BASE_URL",
+        "NEXT_PUBLIC_APP_BASE_URL",
+        "HSAPP_PUBLIC_DEFAULT_URL",
+        "HSAPP_NGROK_DOMAIN",
+    ):
+        candidate = candidates.get(key) or ""
+        if candidate:
+            base = candidate
+            chosen_source = key
+            break
+
+    dropped_local_reason = ""
+    if (not allow_local) and _looks_local(base):
+        base = ""
+        dropped_local_reason = "localhost_blocked"
+    if is_hosted and _looks_local(base):
+        base = ""
+        dropped_local_reason = "localhost_blocked_hosted"
+
+    fallback_source = ""
+    if not base:
+        if is_hosted:
+            base = (os.getenv("HSAPP_PUBLIC_DEFAULT_URL") or "https://app.healthsense.coach").strip()
+            fallback_source = "HSAPP_PUBLIC_DEFAULT_URL_or_default"
+        else:
+            base = "http://localhost:3000"
+            fallback_source = "dev_local_default"
+
+    if not base.startswith(("http://", "https://")):
+        base = f"https://{base}"
+    resolved = base.rstrip("/")
+    debug = {
+        "allow_local": bool(allow_local),
+        "node_env": node_env,
+        "is_dev": bool(is_dev),
+        "is_hosted": bool(is_hosted),
+        "chosen_source": chosen_source or None,
+        "fallback_source": fallback_source or None,
+        "dropped_local_reason": dropped_local_reason or None,
+        "resolved_base_url": resolved,
+        "resolved_is_local": bool(_looks_local(resolved)),
+        "candidates": candidates,
+    }
+    return resolved, debug
+
+
 @admin.post("/users/{user_id}/app-session")
 def admin_user_app_session(user_id: int, admin_user: User = Depends(_require_admin)):
     """
@@ -11384,6 +11561,7 @@ def admin_user_app_session(user_id: int, admin_user: User = Depends(_require_adm
     except Exception:
         ttl_minutes = 30
     now = datetime.utcnow()
+    app_base_url, app_base_debug = _resolve_admin_hsapp_base_url()
     with SessionLocal() as s:
         u = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
         if not u:
@@ -11399,12 +11577,25 @@ def admin_user_app_session(user_id: int, admin_user: User = Depends(_require_adm
             user_agent=f"admin-app-session:{getattr(admin_user, 'id', 'unknown')}",
         )
         s.add(auth_session)
+        s.add(
+            JobAudit(
+                job_name="admin_app_open_link_resolution",
+                status="ok",
+                payload={
+                    "admin_user_id": getattr(admin_user, "id", None),
+                    "target_user_id": int(user_id),
+                    "app_base_url": app_base_url,
+                    **app_base_debug,
+                },
+            )
+        )
         s.commit()
     return {
         "user_id": user_id,
         "session_token": session_token,
         "expires_at": (now + timedelta(minutes=ttl_minutes)).isoformat(),
         "ttl_minutes": ttl_minutes,
+        "app_base_url": app_base_url,
     }
 
 @admin.get("/users/{user_id}/status")

@@ -6,6 +6,7 @@ import CarouselDots from "@/components/CarouselDots";
 import TextScale from "@/components/TextScale";
 import AppNav from "@/components/AppNav";
 import TrackedAudio from "@/components/TrackedAudio";
+import AutoRefreshOnPending from "@/components/AutoRefreshOnPending";
 
 type PageProps = {
   params: Promise<{ userId: string }>;
@@ -118,6 +119,7 @@ export default async function AssessmentPage(props: PageProps) {
 
   return (
     <PageShell>
+      <AutoRefreshOnPending enabled={narrativesPending} intervalMs={8000} />
       <TextScale defaultScale={textScale} />
       <AppNav userId={userId} promptBadge={promptBadge} />
       <SectionHeader

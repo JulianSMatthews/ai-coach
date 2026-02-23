@@ -18,7 +18,7 @@ from . import habit_steps as habit_flow
 from .db import SessionLocal
 from .job_queue import enqueue_job, should_use_worker
 from .kickoff import COACH_NAME
-from .models import AssessmentRun, OKRKeyResult, OKRKrEntry, User, UserPreference, WeeklyFocus
+from .models import AssessmentRun, JobAudit, OKRKeyResult, OKRKrEntry, User, UserPreference, WeeklyFocus
 from .nudges import send_whatsapp
 from .prompts import kr_payload_list
 from .programme_timeline import BLOCK_WEEKS, PILLAR_SEQUENCE, week_anchor_date, week_no_for_date, week_no_for_focus_start
@@ -73,6 +73,59 @@ def _hsapp_base_url() -> str:
     if not base.startswith(("http://", "https://")):
         base = f"https://{base}"
     return base.rstrip("/")
+
+
+def _audit_hsapp_link_resolution(*, user_id: int | None, reason: str, payload: dict, status: str = "ok", error: str | None = None) -> None:
+    try:
+        with SessionLocal() as s:
+            s.add(
+                JobAudit(
+                    job_name="hsapp_link_resolution",
+                    status=status,
+                    payload={
+                        "user_id": user_id,
+                        "reason": reason,
+                        **(payload or {}),
+                    },
+                    error=error or None,
+                )
+            )
+            s.commit()
+    except Exception:
+        pass
+
+
+def _hsapp_login_url_with_debug(*, user_id: int | None, reason: str) -> str:
+    candidates = {
+        "HSAPP_PUBLIC_URL": (os.getenv("HSAPP_PUBLIC_URL") or "").strip(),
+        "HSAPP_BASE_URL": (os.getenv("HSAPP_BASE_URL") or "").strip(),
+        "APP_BASE_URL": (os.getenv("APP_BASE_URL") or "").strip(),
+        "NEXT_PUBLIC_HSAPP_BASE_URL": (os.getenv("NEXT_PUBLIC_HSAPP_BASE_URL") or "").strip(),
+        "NEXT_PUBLIC_APP_BASE_URL": (os.getenv("NEXT_PUBLIC_APP_BASE_URL") or "").strip(),
+    }
+    try:
+        base = _hsapp_base_url()
+        login_url = f"{base}/login"
+        _audit_hsapp_link_resolution(
+            user_id=user_id,
+            reason=reason,
+            payload={
+                "resolved_base_url": base,
+                "login_url": login_url,
+                "candidates": candidates,
+            },
+            status="ok",
+        )
+        return login_url
+    except Exception as e:
+        _audit_hsapp_link_resolution(
+            user_id=user_id,
+            reason=reason,
+            payload={"candidates": candidates},
+            status="error",
+            error=str(e),
+        )
+        raise
 
 
 def _resolve_weekly_focus(session: Session, user_id: int, today_date) -> Optional[WeeklyFocus]:
@@ -563,7 +616,10 @@ def handle_message(user: User, body: str) -> None:
                 general_support.activate(user.id, source="sunday", week_no=week_no, send_intro=False)
                 return
             if "app" in cleaned:
-                app_url = f"{_hsapp_base_url()}/login"
+                app_url = _hsapp_login_url_with_debug(
+                    user_id=int(getattr(user, "id", 0) or 0) or None,
+                    reason="sunday_okr_update_choice_app",
+                )
                 _send_sunday(
                     to=user.phone,
                     text=(

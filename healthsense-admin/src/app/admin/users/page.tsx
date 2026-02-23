@@ -139,8 +139,8 @@ async function openAppAction(formData: FormData) {
   "use server";
   const userId = Number(formData.get("user_id") || 0);
   if (!userId) return;
-  const appBase = resolveHsAppBase();
   const session = await createAdminUserAppSession(userId);
+  const appBase = String(session.app_base_url || "").trim() || resolveHsAppBase();
   const token = String(session.session_token || "").trim();
   if (!token) return;
   const nextPath = `/progress/${userId}`;
