@@ -28,7 +28,13 @@ from .models import (
 AUTO_PROMPT_PREF_KEYS = ("coaching", "auto_daily_prompts")
 FIRST_DAY_PENDING_PREF_KEY = "coaching_first_day_pending"
 FIRST_DAY_SENT_AT_PREF_KEY = "coaching_first_day_sent_at"
-from .nudges import send_message, send_whatsapp_template, _get_session_reopen_sid
+from .nudges import (
+    send_message,
+    send_whatsapp_template,
+    _get_session_reopen_sid,
+    build_session_reopen_template_variables,
+    get_default_session_reopen_message_text,
+)
 from .debug_utils import debug_log, debug_enabled
 from .llm import compose_prompt
 from . import monday, tuesday, wednesday, thursday, friday, saturday, sunday, first_day
@@ -294,8 +300,9 @@ def send_out_of_session_messages() -> None:
     now = datetime.utcnow()
     with SessionLocal() as s:
         enabled, message = _get_messaging_settings(s)
-        if not enabled or not message:
+        if not enabled:
             return
+        reopen_message = (message or "").strip() or get_default_session_reopen_message_text()
         template_sid = _get_session_reopen_sid()
         if not template_sid:
             debug_log("out-of-session skipped: missing TWILIO_REOPEN_CONTENT_SID", tag="scheduler")
@@ -321,7 +328,11 @@ def send_out_of_session_messages() -> None:
                 send_whatsapp_template(
                     to=user.phone,
                     template_sid=template_sid,
-                    variables={"1": message},
+                    variables=build_session_reopen_template_variables(
+                        user_first_name=getattr(user, "first_name", None),
+                        coach_name=None,
+                        message_text=reopen_message,
+                    ),
                     category="session-reopen",
                 )
                 _set_user_pref(s, user.id, "out_of_session_last_sent_at", now.isoformat())

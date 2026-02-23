@@ -19,7 +19,7 @@ type UsersPageProps = {
 
 export const dynamic = "force-dynamic";
 
-function resolveHsAppBase(): string {
+function normalizeHsAppBase(raw: string | null | undefined): string | null {
   const nodeEnv = (process.env.NODE_ENV || "").toLowerCase();
   const isDev = nodeEnv === "development";
   const isHosted =
@@ -30,6 +30,26 @@ function resolveHsAppBase(): string {
     isDev &&
     !isHosted &&
     (process.env.HSAPP_ALLOW_LOCALHOST_URLS || "").trim() === "1";
+  const input = String(raw || "").trim();
+  if (!input) return null;
+  try {
+    const parsed = new URL(input.startsWith("http://") || input.startsWith("https://") ? input : `https://${input}`);
+    const host = parsed.hostname.toLowerCase();
+    const isLocalHost =
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "0.0.0.0" ||
+      host.endsWith(".local");
+    if (isLocalHost && (!allowLocalInDev || isHosted)) return null;
+    if (!isDev && parsed.protocol !== "https:") return null;
+    // Always reduce to origin so stray path fragments in env vars cannot corrupt redirects.
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
+function resolveHsAppBase(): string {
   const rawCandidates = [
     process.env.NEXT_PUBLIC_HSAPP_BASE_URL,
     process.env.NEXT_PUBLIC_APP_BASE_URL,
@@ -37,27 +57,10 @@ function resolveHsAppBase(): string {
     process.env.HSAPP_PUBLIC_DEFAULT_URL,
     process.env.HSAPP_NGROK_DOMAIN,
   ];
-
-  const normalized = rawCandidates
-    .map((raw) => (raw || "").trim())
-    .filter(Boolean)
-    .map((raw) => (raw.startsWith("http://") || raw.startsWith("https://") ? raw : `https://${raw}`))
-    .map((url) => url.replace(/\/+$/, ""));
-
-  for (const candidate of normalized) {
-    try {
-      const parsed = new URL(candidate);
-      const host = parsed.hostname.toLowerCase();
-      const isLocalHost = host === "localhost" || host === "127.0.0.1" || host === "0.0.0.0" || host.endsWith(".local");
-      if (isLocalHost && (!allowLocalInDev || isHosted)) continue;
-      if (!isDev && parsed.protocol !== "https:") continue;
-      // Always reduce to origin so stray path fragments in env vars cannot corrupt redirects.
-      return parsed.origin;
-    } catch {
-      continue;
-    }
+  for (const raw of rawCandidates) {
+    const normalized = normalizeHsAppBase(raw);
+    if (normalized) return normalized;
   }
-
   return "https://app.healthsense.coach";
 }
 
@@ -140,7 +143,7 @@ async function openAppAction(formData: FormData) {
   const userId = Number(formData.get("user_id") || 0);
   if (!userId) return;
   const session = await createAdminUserAppSession(userId);
-  const appBase = String(session.app_base_url || "").trim() || resolveHsAppBase();
+  const appBase = normalizeHsAppBase(session.app_base_url) || resolveHsAppBase();
   const token = String(session.session_token || "").trim();
   if (!token) return;
   const nextPath = `/progress/${userId}`;

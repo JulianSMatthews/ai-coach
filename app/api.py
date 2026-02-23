@@ -98,7 +98,12 @@ from . import monday, wednesday, thursday, friday, saturday, weekflow, tuesday, 
 from . import psych
 from . import coachmycoach
 from . import scheduler
-from .nudges import send_whatsapp, send_whatsapp_media, send_sms
+from .nudges import (
+    send_whatsapp,
+    send_whatsapp_media,
+    send_sms,
+    get_default_session_reopen_message_text,
+)
 from .checkins import record_checkin
 from . import prompts as prompts_module
 from .prompts import build_prompt, assessment_scores_prompt, okr_narrative_prompt, coaching_approach_prompt, assessor_system_prompt
@@ -5470,6 +5475,8 @@ def admin_assessment_health(
         "llm_worker_p95_ms": {"warn": DEFAULT_MONITORING_LLM_WORKER_P95_WARN_MS, "critical": DEFAULT_MONITORING_LLM_WORKER_P95_CRITICAL_MS, "lower_is_bad": False},
         "okr_fallback_rate_pct": {"warn": 5.0, "critical": 15.0, "lower_is_bad": False},
         "queue_backlog": {"warn": 20.0, "critical": 50.0, "lower_is_bad": False},
+        "queue_oldest_pending_age_min": {"warn": 15.0, "critical": 60.0, "lower_is_bad": False},
+        "queue_error_rate_1h_pct": {"warn": 2.0, "critical": 5.0, "lower_is_bad": False},
         "twilio_failure_rate_pct": {"warn": 2.0, "critical": 5.0, "lower_is_bad": False},
         "coaching_week_completion_pct": {"warn": 60.0, "critical": 40.0, "lower_is_bad": True},
         "coaching_sunday_reply_pct": {"warn": 50.0, "critical": 30.0, "lower_is_bad": True},
@@ -5927,19 +5934,68 @@ def admin_assessment_health(
         else:
             tw_statuses = [(created_at, _as_payload_dict(payload)) for created_at, payload in tw_rows]
 
-        tw_total = len(tw_statuses)
+        tw_total_all = len(tw_statuses)
+        tw_message_log_ids: set[int] = set()
+        for _, body in tw_statuses:
+            raw_mid = body.get("message_log_id")
+            try:
+                mid_i = int(raw_mid)
+            except Exception:
+                mid_i = None
+            if mid_i is not None and mid_i > 0:
+                tw_message_log_ids.add(mid_i)
+
+        matched_message_by_id: dict[int, dict] = {}
+        if tw_message_log_ids:
+            msg_q = (
+                s.query(
+                    MessageLog.id,
+                    MessageLog.user_id,
+                    MessageLog.user_name,
+                    MessageLog.phone,
+                    MessageLog.text,
+                    MessageLog.created_at,
+                )
+                .filter(MessageLog.id.in_(tw_message_log_ids))
+            )
+            if club_scope_id is not None:
+                msg_q = msg_q.join(User, MessageLog.user_id == User.id).filter(User.club_id == club_scope_id)
+            for row in msg_q.all():
+                text_val = str(row.text or "").strip()
+                matched_message_by_id[int(row.id)] = {
+                    "message_log_id": int(row.id),
+                    "message_created_at": row.created_at.isoformat() if isinstance(row.created_at, datetime) else None,
+                    "message_user_id": int(row.user_id) if row.user_id is not None else None,
+                    "message_user_name": str(row.user_name or "").strip() or None,
+                    "message_phone": str(row.phone or "").strip() or None,
+                    "message_preview": (text_val[:220] + "…") if len(text_val) > 220 else (text_val or None),
+                }
+
+        tw_callbacks_unmatched = 0
+        tw_matched_statuses: list[tuple[datetime | None, dict, int]] = []
+        for created_at, body in tw_statuses:
+            raw_mid = body.get("message_log_id")
+            try:
+                mid_i = int(raw_mid)
+            except Exception:
+                mid_i = None
+            if mid_i is None or mid_i not in matched_message_by_id:
+                tw_callbacks_unmatched += 1
+                continue
+            tw_matched_statuses.append((created_at, body, mid_i))
+
+        tw_total = len(tw_matched_statuses)
         tw_failed = 0
         tw_failed_messages: list[dict] = []
-        failed_sids: set[str] = set()
-        for created_at, body in tw_statuses:
+        tw_failed_message_groups_map: dict[int, dict] = {}
+        for created_at, body, message_log_id in tw_matched_statuses:
             status_val = str(body.get("status") or "").strip().lower()
             error_code = _normalise_twilio_error_code(body.get("error_code"))
             error_message = str(body.get("error_message") or "").strip() or None
             if error_code or status_val in {"failed", "undelivered"}:
                 tw_failed += 1
                 sid = str(body.get("sid") or "").strip()
-                if sid:
-                    failed_sids.add(sid)
+                msg_meta = matched_message_by_id.get(message_log_id) or {}
                 tw_failed_messages.append(
                     {
                         "callback_at": created_at.isoformat() if isinstance(created_at, datetime) else None,
@@ -5951,59 +6007,69 @@ def admin_assessment_health(
                         "to": str(body.get("to") or "").strip() or None,
                         "from": str(body.get("from") or "").strip() or None,
                         "user_id": body.get("user_id"),
-                        "message_log_id": body.get("message_log_id"),
+                        "message_log_id": int(message_log_id),
+                        "message_created_at": msg_meta.get("message_created_at"),
+                        "message_user_id": msg_meta.get("message_user_id"),
+                        "message_user_name": msg_meta.get("message_user_name"),
+                        "message_phone": msg_meta.get("message_phone"),
+                        "message_preview": msg_meta.get("message_preview"),
                     }
                 )
+                group = tw_failed_message_groups_map.get(message_log_id)
+                if not group:
+                    group = {
+                        "message_log_id": int(message_log_id),
+                        "sid": sid or None,
+                        "to": str(body.get("to") or "").strip() or None,
+                        "from": str(body.get("from") or "").strip() or None,
+                        "user_id": body.get("user_id"),
+                        "message_created_at": msg_meta.get("message_created_at"),
+                        "message_user_id": msg_meta.get("message_user_id"),
+                        "message_user_name": msg_meta.get("message_user_name"),
+                        "message_phone": msg_meta.get("message_phone"),
+                        "message_preview": msg_meta.get("message_preview"),
+                        "failed_callback_count": 0,
+                        "latest_callback_at": None,
+                        "latest_status": None,
+                        "latest_error_code": None,
+                        "latest_error_message": None,
+                        "latest_error_description": None,
+                        "_latest_callback_dt": None,
+                    }
+                    tw_failed_message_groups_map[message_log_id] = group
+                group["failed_callback_count"] = int(group.get("failed_callback_count") or 0) + 1
+                callback_dt = created_at if isinstance(created_at, datetime) else None
+                prev_dt = group.get("_latest_callback_dt")
+                if callback_dt and (prev_dt is None or callback_dt >= prev_dt):
+                    group["_latest_callback_dt"] = callback_dt
+                    group["latest_callback_at"] = callback_dt.isoformat()
+                    group["latest_status"] = status_val or None
+                    group["latest_error_code"] = error_code
+                    group["latest_error_message"] = error_message
+                    group["latest_error_description"] = _twilio_error_code_meaning(error_code, error_message)
+                elif group.get("latest_error_description") is None:
+                    group["latest_error_description"] = _twilio_error_code_meaning(error_code, error_message)
         tw_failure_rate = (tw_failed / tw_total * 100.0) if tw_total else None
 
-        failed_message_by_sid: dict[str, dict] = {}
-        if failed_sids:
-            sid_scan_start = start_utc - timedelta(days=2)
-            sid_scan_end = end_utc + timedelta(days=1)
-            out_q = (
-                s.query(
-                    MessageLog.id,
-                    MessageLog.user_id,
-                    MessageLog.user_name,
-                    MessageLog.phone,
-                    MessageLog.text,
-                    MessageLog.meta,
-                    MessageLog.created_at,
-                )
-                .filter(MessageLog.direction == "outbound")
-                .filter(MessageLog.created_at >= sid_scan_start, MessageLog.created_at < sid_scan_end)
-                .order_by(MessageLog.created_at.desc(), MessageLog.id.desc())
-            )
-            if club_scope_id is not None:
-                out_q = out_q.join(User, MessageLog.user_id == User.id).filter(User.club_id == club_scope_id)
-            for row in out_q.limit(5000).all():
-                row_meta = _as_payload_dict(row.meta)
-                sid_val = str(row_meta.get("twilio_sid") or "").strip()
-                if not sid_val or sid_val not in failed_sids or sid_val in failed_message_by_sid:
-                    continue
-                text_val = str(row.text or "").strip()
-                failed_message_by_sid[sid_val] = {
-                    "message_log_id": int(row.id),
-                    "message_created_at": row.created_at.isoformat() if isinstance(row.created_at, datetime) else None,
-                    "message_user_id": int(row.user_id) if row.user_id is not None else None,
-                    "message_user_name": str(row.user_name or "").strip() or None,
-                    "message_phone": str(row.phone or "").strip() or None,
-                    "message_preview": (text_val[:220] + "…") if len(text_val) > 220 else (text_val or None),
-                }
-
-        for item in tw_failed_messages:
-            sid_val = str(item.get("sid") or "").strip()
-            if not sid_val:
-                continue
-            msg_meta = failed_message_by_sid.get(sid_val)
-            if not msg_meta:
-                continue
-            item.update(msg_meta)
-
         tw_failed_messages.sort(key=lambda row: str(row.get("callback_at") or ""), reverse=True)
+        tw_failure_codes_source = list(tw_failed_messages)
         tw_failed_messages = tw_failed_messages[:100]
+        tw_failed_message_groups: list[dict] = []
+        if tw_failed_message_groups_map:
+            grouped = list(tw_failed_message_groups_map.values())
+            grouped.sort(
+                key=lambda row: (
+                    str(row.get("latest_callback_at") or ""),
+                    int(row.get("message_log_id") or 0),
+                ),
+                reverse=True,
+            )
+            for row in grouped:
+                row.pop("_latest_callback_dt", None)
+                tw_failed_message_groups.append(row)
+            tw_failed_message_groups = tw_failed_message_groups[:100]
         tw_failure_codes_map: dict[str, dict] = {}
-        for item in tw_failed_messages:
+        for item in tw_failure_codes_source:
             code_key = str(item.get("error_code") or "none")
             bucket = tw_failure_codes_map.get(code_key)
             if not bucket:
@@ -6593,6 +6659,17 @@ def admin_assessment_health(
         warn=thresholds["queue_backlog"]["warn"],
         critical=thresholds["queue_backlog"]["critical"],
     )
+    queue_oldest_pending_state = _threshold_state(
+        oldest_pending_age_min,
+        warn=thresholds["queue_oldest_pending_age_min"]["warn"],
+        critical=thresholds["queue_oldest_pending_age_min"]["critical"],
+    )
+    queue_error_rate_state = _threshold_state(
+        queue_error_rate_1h,
+        warn=thresholds["queue_error_rate_1h_pct"]["warn"],
+        critical=thresholds["queue_error_rate_1h_pct"]["critical"],
+    )
+    queue_state = _worst_state(backlog_state, queue_oldest_pending_state, queue_error_rate_state)
     twilio_state = _threshold_state(
         tw_failure_rate,
         warn=thresholds["twilio_failure_rate_pct"]["warn"],
@@ -6663,6 +6740,8 @@ def admin_assessment_health(
         "llm_worker_p95_ms": llm_worker_p95_state,
         "okr_fallback_rate_pct": fallback_state,
         "queue_backlog": backlog_state,
+        "queue_oldest_pending_age_min": queue_oldest_pending_state,
+        "queue_error_rate_1h_pct": queue_error_rate_state,
         "twilio_failure_rate_pct": twilio_state,
         "coaching_week_completion_pct": coaching_week_completion_state,
         "coaching_sunday_reply_pct": coaching_sunday_reply_state,
@@ -6677,6 +6756,8 @@ def admin_assessment_health(
         "llm_worker_p95_ms": llm_worker_p95,
         "okr_fallback_rate_pct": okr_fallback_rate,
         "queue_backlog": backlog,
+        "queue_oldest_pending_age_min": oldest_pending_age_min,
+        "queue_error_rate_1h_pct": queue_error_rate_1h,
         "twilio_failure_rate_pct": tw_failure_rate,
         "coaching_week_completion_pct": coaching_week_completion,
         "coaching_sunday_reply_pct": coaching_sunday_reply,
@@ -6834,18 +6915,24 @@ def admin_assessment_health(
             "error": error_count,
             "backlog": backlog,
             "backlog_state": backlog_state,
+            "oldest_pending_age_state": queue_oldest_pending_state,
             "oldest_pending_age_min": round(oldest_pending_age_min, 2) if oldest_pending_age_min is not None else None,
+            "error_rate_1h_state": queue_error_rate_state,
             "error_rate_1h_pct": round(queue_error_rate_1h, 2) if queue_error_rate_1h is not None else None,
             "processed_1h": recent_processed,
+            "state": queue_state,
         },
         "messaging": {
             "outbound_messages": outbound_messages,
             "inbound_messages": inbound_messages,
             "twilio_callbacks": tw_total,
+            "twilio_callbacks_total": tw_total_all,
+            "twilio_callbacks_unmatched": tw_callbacks_unmatched,
             "twilio_failures": tw_failed,
             "twilio_failure_rate_pct": round(tw_failure_rate, 2) if tw_failure_rate is not None else None,
             "twilio_failure_state": twilio_state,
             "twilio_failed_messages": tw_failed_messages,
+            "twilio_failed_message_groups": tw_failed_message_groups,
             "twilio_failure_codes": tw_failure_codes,
         },
         "worker": {
@@ -9277,12 +9364,12 @@ def admin_get_messaging_settings(admin_user: User = Depends(_require_admin)):
         row = s.query(MessagingSettings).order_by(MessagingSettings.id.asc()).first()
         if not row:
             return {
-                "out_of_session_enabled": False,
-                "out_of_session_message": None,
+                "out_of_session_enabled": True,
+                "out_of_session_message": get_default_session_reopen_message_text(),
             }
         return {
             "out_of_session_enabled": bool(row.out_of_session_enabled),
-            "out_of_session_message": row.out_of_session_message,
+            "out_of_session_message": row.out_of_session_message or get_default_session_reopen_message_text(),
             "updated_at": row.updated_at.isoformat() if row.updated_at else None,
         }
 

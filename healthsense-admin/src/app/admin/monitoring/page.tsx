@@ -181,6 +181,7 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
   ];
   const twilioFailureCodes = health?.messaging?.twilio_failure_codes || [];
   const twilioFailedMessages = health?.messaging?.twilio_failed_messages || [];
+  const twilioFailedMessageGroups = health?.messaging?.twilio_failed_message_groups || [];
   const metrics = [
     {
       title: "Completion rate",
@@ -200,11 +201,18 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
       description: "Typical end-to-end completion time for finished assessments.",
     },
     {
-      title: "LLM p95 latency",
+      title: "Interactive LLM p95 latency",
       value: llmInteractive.duration_ms_p95 != null ? `${Math.round(llmInteractive.duration_ms_p95)} ms` : "—",
       state: llmInteractive.duration_ms_state,
       subtitle: `${llmInteractive.prompts ?? 0} interactive prompts`,
       description: "95th percentile response time for interactive user-facing prompts.",
+    },
+    {
+      title: "Worker LLM p95 latency",
+      value: llmWorker.duration_ms_p95 != null ? `${Math.round(llmWorker.duration_ms_p95)} ms` : "—",
+      state: llmWorker.duration_ms_state,
+      subtitle: `${llmWorker.prompts ?? 0} worker prompts`,
+      description: "95th percentile response time for worker/scheduled LLM prompts.",
     },
     {
       title: "OKR fallback rate",
@@ -231,7 +239,7 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
           : "—",
       state: health?.messaging?.twilio_failure_state,
       subtitle: `${health?.messaging?.twilio_failures ?? 0} failed callbacks`,
-      description: "Share of Twilio status callbacks marked failed/undelivered or with error codes.",
+      description: "Share of Twilio callbacks marked failed/undelivered, counting only callbacks linked to existing message logs.",
     },
   ];
   const coachingMetrics = [
@@ -455,122 +463,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
               {loadError}
             </div>
           ) : null}
-          <div className="mt-5 rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
-            <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Latency thresholds (LLM ms)</p>
-            <p className="mt-1 text-xs text-[#8a8176]">
-              Configure separate warning and critical thresholds for interactive prompts vs worker/scheduled prompts.
-            </p>
-            <form action={saveLatencyThresholdsAction} className="mt-3 space-y-4">
-              <div className="rounded-xl border border-[#e7e1d6] bg-white p-3">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Interactive</p>
-                <p className="mt-1 text-xs text-[#8a8176]">User-driven request/response prompts.</p>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
-                    p50 warn
-                    <input
-                      type="number"
-                      name="llm_interactive_p50_warn_ms"
-                      min={1}
-                      step={100}
-                      defaultValue={String(Math.round(llmInteractiveP50WarnMs))}
-                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
-                    />
-                  </label>
-                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
-                    p50 critical
-                    <input
-                      type="number"
-                      name="llm_interactive_p50_critical_ms"
-                      min={1}
-                      step={100}
-                      defaultValue={String(Math.round(llmInteractiveP50CriticalMs))}
-                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
-                    />
-                  </label>
-                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
-                    p95 warn
-                    <input
-                      type="number"
-                      name="llm_interactive_p95_warn_ms"
-                      min={1}
-                      step={100}
-                      defaultValue={String(Math.round(llmInteractiveP95WarnMs))}
-                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
-                    />
-                  </label>
-                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
-                    p95 critical
-                    <input
-                      type="number"
-                      name="llm_interactive_p95_critical_ms"
-                      min={1}
-                      step={100}
-                      defaultValue={String(Math.round(llmInteractiveP95CriticalMs))}
-                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
-                    />
-                  </label>
-                </div>
-              </div>
-              <div className="rounded-xl border border-[#e7e1d6] bg-white p-3">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Worker / Scheduled</p>
-                <p className="mt-1 text-xs text-[#8a8176]">Background worker and scheduled automation prompts.</p>
-                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
-                    p50 warn
-                    <input
-                      type="number"
-                      name="llm_worker_p50_warn_ms"
-                      min={1}
-                      step={100}
-                      defaultValue={String(Math.round(llmWorkerP50WarnMs))}
-                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
-                    />
-                  </label>
-                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
-                    p50 critical
-                    <input
-                      type="number"
-                      name="llm_worker_p50_critical_ms"
-                      min={1}
-                      step={100}
-                      defaultValue={String(Math.round(llmWorkerP50CriticalMs))}
-                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
-                    />
-                  </label>
-                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
-                    p95 warn
-                    <input
-                      type="number"
-                      name="llm_worker_p95_warn_ms"
-                      min={1}
-                      step={100}
-                      defaultValue={String(Math.round(llmWorkerP95WarnMs))}
-                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
-                    />
-                  </label>
-                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
-                    p95 critical
-                    <input
-                      type="number"
-                      name="llm_worker_p95_critical_ms"
-                      min={1}
-                      step={100}
-                      defaultValue={String(Math.round(llmWorkerP95CriticalMs))}
-                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
-                    />
-                  </label>
-                </div>
-              </div>
-              <div>
-                <button
-                  type="submit"
-                  className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white"
-                >
-                  Save latency thresholds
-                </button>
-              </div>
-            </form>
-          </div>
         </section>
 
         <section className="rounded-2xl border border-[#e7e1d6] bg-white p-4">
@@ -1187,24 +1079,48 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
           </div>
 
           <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
-            <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Queue health</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Queue health</p>
+              <span className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.2em] ${stateBadgeClass(health?.queue?.state)}`}>
+                {(health?.queue?.state || "unknown").toUpperCase()}
+              </span>
+            </div>
             <div className="mt-3 space-y-2 text-sm">
               <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
-                pending {health?.queue?.pending ?? 0}, retry {health?.queue?.retry ?? 0}, running {health?.queue?.running ?? 0}, error {health?.queue?.error ?? 0}
+                <div className="flex items-center justify-between gap-2">
+                  <span>pending {health?.queue?.pending ?? 0}, retry {health?.queue?.retry ?? 0}, running {health?.queue?.running ?? 0}, error {health?.queue?.error ?? 0}</span>
+                  <span className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.2em] ${stateBadgeClass(health?.queue?.backlog_state)}`}>
+                    {(health?.queue?.backlog_state || "unknown").toUpperCase()}
+                  </span>
+                </div>
                 <div className="mt-1 text-xs text-[#8a8176]">Current job counts by lifecycle state.</div>
               </div>
               <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
-                oldest pending age:{" "}
-                {health?.queue?.oldest_pending_age_min != null
-                  ? `${formatNum(health.queue.oldest_pending_age_min)} min`
-                  : "—"}
+                <div className="flex items-center justify-between gap-2">
+                  <span>
+                    oldest pending age:{" "}
+                    {health?.queue?.oldest_pending_age_min != null
+                      ? `${formatNum(health.queue.oldest_pending_age_min)} min`
+                      : "—"}
+                  </span>
+                  <span className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.2em] ${stateBadgeClass(health?.queue?.oldest_pending_age_state)}`}>
+                    {(health?.queue?.oldest_pending_age_state || "unknown").toUpperCase()}
+                  </span>
+                </div>
                 <div className="mt-1 text-xs text-[#8a8176]">Age of the oldest unprocessed pending/retry job.</div>
               </div>
               <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
-                error rate (1h):{" "}
-                {health?.queue?.error_rate_1h_pct != null
-                  ? `${formatNum(health.queue.error_rate_1h_pct)}%`
-                  : "—"}
+                <div className="flex items-center justify-between gap-2">
+                  <span>
+                    error rate (1h):{" "}
+                    {health?.queue?.error_rate_1h_pct != null
+                      ? `${formatNum(health.queue.error_rate_1h_pct)}%`
+                      : "—"}
+                  </span>
+                  <span className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.2em] ${stateBadgeClass(health?.queue?.error_rate_1h_state)}`}>
+                    {(health?.queue?.error_rate_1h_state || "unknown").toUpperCase()}
+                  </span>
+                </div>
                 <div className="mt-1 text-xs text-[#8a8176]">Share of recently processed jobs that ended in error.</div>
               </div>
             </div>
@@ -1219,21 +1135,33 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
               </div>
               <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
                 callbacks {health?.messaging?.twilio_callbacks ?? 0}, failures {health?.messaging?.twilio_failures ?? 0}
-                <div className="mt-1 text-xs text-[#8a8176]">Delivery callbacks received from Twilio and those marked failed.</div>
+                <div className="mt-1 text-xs text-[#8a8176]">
+                  Matched delivery callbacks (linked to existing message logs) and those marked failed.
+                </div>
+                {(health?.messaging?.twilio_callbacks_unmatched ?? 0) > 0 ? (
+                  <div className="mt-1 text-xs text-[#8a8176]">
+                    Excluded unmatched callbacks: {health?.messaging?.twilio_callbacks_unmatched ?? 0}
+                    {health?.messaging?.twilio_callbacks_total != null
+                      ? ` (raw callbacks ${health.messaging.twilio_callbacks_total})`
+                      : ""}
+                  </div>
+                ) : null}
               </div>
               <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
                 failure rate:{" "}
                 {health?.messaging?.twilio_failure_rate_pct != null
                   ? `${formatNum(health.messaging.twilio_failure_rate_pct)}%`
                   : "—"}
-                <div className="mt-1 text-xs text-[#8a8176]">Failure percentage from Twilio callback outcomes.</div>
+                <div className="mt-1 text-xs text-[#8a8176]">
+                  Failure percentage from matched Twilio callback outcomes.
+                </div>
               </div>
               <details className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
                 <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                  Review failed callbacks ({twilioFailedMessages.length})
+                  Review failed callbacks ({twilioFailedMessageGroups.length || twilioFailedMessages.length})
                 </summary>
                 <div className="mt-2 space-y-2 text-xs text-[#6b6257]">
-                  {!twilioFailedMessages.length ? (
+                  {!twilioFailedMessageGroups.length ? (
                     <div className="text-[#8a8176]">No failed callbacks in this window.</div>
                   ) : (
                     <>
@@ -1255,12 +1183,19 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
                         )}
                       </div>
                       <div className="max-h-80 space-y-1 overflow-auto rounded-lg border border-[#ece4d8] bg-white px-2 py-2">
-                        {twilioFailedMessages.map((row, idx) => (
-                          <div key={`${row.sid || "sid"}-${idx}`} className="rounded border border-[#f0e8dc] bg-[#fdfaf4] px-2 py-2">
-                            <div>time: {row.callback_at || "—"} · status: {row.status || "—"} · code: {row.error_code || "none"}</div>
-                            <div>sid: {row.sid || "—"}</div>
-                            <div>to: {row.to || row.message_phone || "—"} · user: {row.message_user_name || row.user_id || "—"}</div>
-                            <div className="text-[#8a8176]">meaning: {row.error_description || row.error_message || "No description returned."}</div>
+                        {twilioFailedMessageGroups.map((row, idx) => (
+                          <div key={`${row.message_log_id || row.sid || "sid"}-${idx}`} className="rounded border border-[#f0e8dc] bg-[#fdfaf4] px-2 py-2">
+                            <div>
+                              message time: {row.message_created_at || "—"} · latest callback: {row.latest_callback_at || "—"}
+                            </div>
+                            <div>
+                              failed callbacks: {row.failed_callback_count ?? 0} · latest status: {row.latest_status || "—"} · latest code: {row.latest_error_code || "none"}
+                            </div>
+                            <div>sid: {row.sid || "—"} · message log id: {row.message_log_id || "—"}</div>
+                            <div>to: {row.to || row.message_phone || "—"} · user: {row.message_user_name || row.message_user_id || row.user_id || "—"}</div>
+                            <div className="text-[#8a8176]">
+                              meaning: {row.latest_error_description || row.latest_error_message || "No description returned."}
+                            </div>
                             <div className="text-[#8a8176]">message: {row.message_preview || "Not linked to a message_logs row."}</div>
                           </div>
                         ))}
@@ -1273,6 +1208,125 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
           </div>
           </section>
         ) : null}
+        
+        <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
+          <div className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
+            <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Latency thresholds (LLM ms)</p>
+            <p className="mt-1 text-xs text-[#8a8176]">
+              Configure separate warning and critical thresholds for interactive prompts vs worker/scheduled prompts.
+            </p>
+            <form action={saveLatencyThresholdsAction} className="mt-3 space-y-4">
+              <div className="rounded-xl border border-[#e7e1d6] bg-white p-3">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Interactive</p>
+                <p className="mt-1 text-xs text-[#8a8176]">User-driven request/response prompts.</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                    p50 warn
+                    <input
+                      type="number"
+                      name="llm_interactive_p50_warn_ms"
+                      min={1}
+                      step={100}
+                      defaultValue={String(Math.round(llmInteractiveP50WarnMs))}
+                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                    />
+                  </label>
+                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                    p50 critical
+                    <input
+                      type="number"
+                      name="llm_interactive_p50_critical_ms"
+                      min={1}
+                      step={100}
+                      defaultValue={String(Math.round(llmInteractiveP50CriticalMs))}
+                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                    />
+                  </label>
+                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                    p95 warn
+                    <input
+                      type="number"
+                      name="llm_interactive_p95_warn_ms"
+                      min={1}
+                      step={100}
+                      defaultValue={String(Math.round(llmInteractiveP95WarnMs))}
+                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                    />
+                  </label>
+                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                    p95 critical
+                    <input
+                      type="number"
+                      name="llm_interactive_p95_critical_ms"
+                      min={1}
+                      step={100}
+                      defaultValue={String(Math.round(llmInteractiveP95CriticalMs))}
+                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                    />
+                  </label>
+                </div>
+              </div>
+              <div className="rounded-xl border border-[#e7e1d6] bg-white p-3">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Worker / Scheduled</p>
+                <p className="mt-1 text-xs text-[#8a8176]">Background worker and scheduled automation prompts.</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                    p50 warn
+                    <input
+                      type="number"
+                      name="llm_worker_p50_warn_ms"
+                      min={1}
+                      step={100}
+                      defaultValue={String(Math.round(llmWorkerP50WarnMs))}
+                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                    />
+                  </label>
+                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                    p50 critical
+                    <input
+                      type="number"
+                      name="llm_worker_p50_critical_ms"
+                      min={1}
+                      step={100}
+                      defaultValue={String(Math.round(llmWorkerP50CriticalMs))}
+                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                    />
+                  </label>
+                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                    p95 warn
+                    <input
+                      type="number"
+                      name="llm_worker_p95_warn_ms"
+                      min={1}
+                      step={100}
+                      defaultValue={String(Math.round(llmWorkerP95WarnMs))}
+                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                    />
+                  </label>
+                  <label className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                    p95 critical
+                    <input
+                      type="number"
+                      name="llm_worker_p95_critical_ms"
+                      min={1}
+                      step={100}
+                      defaultValue={String(Math.round(llmWorkerP95CriticalMs))}
+                      className="mt-2 w-full rounded-xl border border-[#e7e1d6] bg-white px-3 py-2 text-sm normal-case tracking-normal text-[#1e1b16]"
+                    />
+                  </label>
+                </div>
+              </div>
+              <div>
+                <button
+                  type="submit"
+                  className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white"
+                >
+                  Save latency thresholds
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
       </div>
     </main>
   );

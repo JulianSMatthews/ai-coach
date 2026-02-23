@@ -185,6 +185,7 @@ export default async function MessagingPage() {
             <h2 className="mt-2 text-xl">24h+ messaging</h2>
             <p className="mt-2 text-sm text-[#6b6257]">
               Sends a WhatsApp template message when a member has been inactive for more than 24 hours.
+              Template variables are populated as: user first name, coach name, then this sentence.
             </p>
           </div>
           <form action={saveMessagingSettingsAction} className="mt-6 space-y-4">
@@ -201,7 +202,7 @@ export default async function MessagingPage() {
               <textarea
                 name="out_of_session_message"
                 defaultValue={settingsData?.out_of_session_message || ""}
-                placeholder="We have a quick update for you. Reply to continue."
+                placeholder="Please tap below to continue your wellbeing journey."
                 className="mt-2 w-full rounded-2xl border border-[#efe7db] px-4 py-3 text-sm"
                 rows={4}
               />

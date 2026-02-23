@@ -1,0 +1,215 @@
+id,user_id,user_name,phone,direction,channel,text,meta,created_at
+415,2,,+447860362908,inbound,whatsapp,Start,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:23:30.641025
+416,2,,+447860362908,outbound,whatsapp,"Hey Rhys! 😊 Welcome to your wellbeing journey! 👋🏻
+
+In a moment we’ll be taking you through a short check-in over WhatsApp. Nothing heavy - just a quick snapshot of how the last 7 days have been across four wellbeing pillars:
+
+• *Nutrition* – what you’ve been eating and drinking day to day
+• *Training* – how you’ve been moving and staying active
+• *Resilience* – how you’re feeling emotionally and coping with stress (share only what feels comfortable — we’re here to support you)
+• *Recovery* – how you’ve been resting and recharging
+
+These questions help us build a clear picture of your routine so we can tailor the next steps that actually matter for you.","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM25a75ab1cfd1eacf354b0d8467594988""}",2026-02-23 10:23:31.013711
+417,2,,+447860362908,outbound,whatsapp,"Before we get started, I just need to confirm your consent.
+
+🔒 Your data:
+Your answers are stored securely and only used to personalise your wellbeing programme.
+We never share your information with third parties, and you can stop at any time.
+Replying is optional, and you can request deletion of your data whenever you want.
+
+If you’re happy to continue, *reply YES* to give consent.
+If not, *reply NO* to opt out.","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMe8840674ed31d210d07f8713b3edfa17""}",2026-02-23 10:23:31.646744
+418,2,,+447860362908,inbound,whatsapp,Yes,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:23:40.863973
+419,2,,+447860362908,outbound,whatsapp,Thanks Rhys! Your consent is recorded — I’ll start with Nutrition now. These are short check-in questions about the last 7 days; you can type *redo* or *restart* any time.,"{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMc932e8d9dc3a20c7433d45095c3c8f37""}",2026-02-23 10:23:41.236036
+420,2,,+447860362908,outbound,whatsapp,"Q1/15 · Nutrition: In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries.","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM357696435d1c61ed27f75690bfcc967f""}",2026-02-23 10:23:41.942063
+421,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:23:46.630962
+422,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟧⬜⬜]  Training [⬜⬜⬜]  Resilience [⬜⬜⬜⬜⬜]  Recovery [⬜⬜⬜]
+
+Q2/15 · Nutrition: Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml.","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM7c1f5d9554216deb7afe5fa850ce5ab7""}",2026-02-23 10:23:47.129631
+423,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:23:50.764689
+424,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟧⬜]  Training [⬜⬜⬜]  Resilience [⬜⬜⬜⬜⬜]  Recovery [⬜⬜⬜]
+
+Q3/15 · Nutrition: In the last 7 days, how many portions of processed food did you *eat on average per day*? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry.","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM19193dc12ac34617523e7759a026ac74""}",2026-02-23 10:23:51.262908
+425,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:23:55.53114
+426,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟧]  Training [⬜⬜⬜]  Resilience [⬜⬜⬜⬜⬜]  Recovery [⬜⬜⬜]
+
+Q4/15 · Nutrition: Thinking about the last 7 days, how many protein portions did you usually *eat on average per day*? For reference: 1 portion = palm-sized meat or fish, 2 eggs, 1 handful of nuts, or 1 cup of beans/lentils.","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMc0f0db4ada5d042e6d7b3ea4110f6ba1""}",2026-02-23 10:23:55.997324
+427,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:23:59.69299
+428,2,,+447860362908,outbound,whatsapp,*Great Rhys* — Nutrition done. Now a quick check on Training ⭐,"{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM39a532d5c11c1675648621bc63b43b5b""}",2026-02-23 10:24:00.43199
+429,2,,+447860362908,outbound,whatsapp,"Looking ahead over the next three months, do you have any particular training goal or focus (e.g., marathon prep, strength maintenance, injury recovery)?","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM405867cad7f219b09206a174476e0a39""}",2026-02-23 10:24:00.964494
+430,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:24:03.955896
+431,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". I’ll shape training around this. (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟩]  Training [🟧⬜⬜]  Resilience [⬜⬜⬜⬜⬜]  Recovery [⬜⬜⬜]","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMb78a73181b1d9de2ad43dbe849e951ea""}",2026-02-23 10:24:04.299629
+432,2,,+447860362908,outbound,whatsapp,"Q5/15 · Training: In the last 7 days, on how many days did you do at least 20 minutes of cardio exercise, such as running, cycling, or swimming?","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMaf5c4fff2559f5fd443d7800de4bb266""}",2026-02-23 10:24:04.908897
+433,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:24:08.624725
+434,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟩]  Training [🟩🟧⬜]  Resilience [⬜⬜⬜⬜⬜]  Recovery [⬜⬜⬜]
+
+Q6/15 · Training: In the last 7 days, on how many days did you do stretching, yoga, or mobility work for at least 10 minutes?","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMc2e4b9623efe1555a4b883b76c4ff036""}",2026-02-23 10:24:09.106712
+435,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:24:26.46984
+436,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟩]  Training [🟩🟩🟧]  Resilience [⬜⬜⬜⬜⬜]  Recovery [⬜⬜⬜]
+
+Q7/15 · Training: In the last 7 days, how many strength training sessions did you do, such as weights, bodyweight exercises, or resistance bands?","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMfd982cf7d8c7f94b2cb930636f328abe""}",2026-02-23 10:24:27.011388
+437,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:24:52.975362
+438,2,,+447860362908,outbound,whatsapp,*Great Rhys* — Training done. Now a quick check on Resilience ⭐,"{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMf96019452bf18cadfa239eb1ca5787e0""}",2026-02-23 10:24:53.575665
+439,2,,+447860362908,outbound,whatsapp,"Q8/15 · Resilience: In the past 7 days, on how many days did you feel calm and in control of your emotions for most of the day?","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM2c104cfcef4bf2406556e5d6eb68c006""}",2026-02-23 10:24:54.109977
+440,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:25:39.62748
+441,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟩]  Training [🟩🟩🟩]  Resilience [🟩🟧⬜⬜⬜]  Recovery [⬜⬜⬜]
+
+Q9/15 · Resilience: In the past 7 days, on how many days did you feel able to stay positive and keep things in perspective when challenges arose?","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM07d5ee2d00731c9828e9e2310392feae""}",2026-02-23 10:25:40.418974
+442,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:26:21.138618
+443,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟩]  Training [🟩🟩🟩]  Resilience [🟩🟩🟧⬜⬜]  Recovery [⬜⬜⬜]
+
+Q10/15 · Resilience: In the past 7 days, on how many days did you do something that made you feel genuinely good — either by taking time for yourself or connecting with someone you enjoy spending time with?","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM982c06d633141cea922d79c1611ba946""}",2026-02-23 10:26:21.603068
+444,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:27:27.98289
+445,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟩]  Training [🟩🟩🟩]  Resilience [🟩🟩🟩🟧⬜]  Recovery [⬜⬜⬜]
+
+Q11/15 · Resilience: In the past 7 days, on how many days did you take a short break to relax, breathe deeply, or reset when you felt stressed or tired?","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMffe4a85be8fd54836b995f2855192d05""}",2026-02-23 10:27:28.469129
+446,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:27:35.022825
+447,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟩]  Training [🟩🟩🟩]  Resilience [🟩🟩🟩🟩🟧]  Recovery [⬜⬜⬜]
+
+Q12/15 · Resilience: In the past 7 days, on how many days did you actively connect with others to discuss your goals, progress, or challenges?","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMcbce6c5f900e78f57e4dd1344c207d8a""}",2026-02-23 10:27:35.523107
+448,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:27:41.466649
+449,2,,+447860362908,outbound,whatsapp,*Great Rhys* — Resilience done. Now a quick check on Recovery ⭐,"{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM380b90818530790f0df4a49a0507b1d9""}",2026-02-23 10:27:42.029773
+450,2,,+447860362908,outbound,whatsapp,"Q13/15 · Recovery: In the last 7 days, on how many nights did you go to bed at roughly the same time?","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMc398abfae37e5a6264e6b6e0a561b958""}",2026-02-23 10:27:42.658486
+451,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:27:49.142011
+452,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟩]  Training [🟩🟩🟩]  Resilience [🟩🟩🟩🟩🟩]  Recovery [🟩🟧⬜]
+
+Q14/15 · Recovery: In the last 7 days, on how many nights did you sleep for 7 or more hours?","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM522b9a9cd507e71f7c065c3301bba5f7""}",2026-02-23 10:27:49.653353
+453,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:27:55.93638
+454,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟩]  Training [🟩🟩🟩]  Resilience [🟩🟩🟩🟩🟩]  Recovery [🟩🟩🟧]
+
+Q15/15 · Recovery: In the last 7 days, on how many mornings did you wake up feeling rested and refreshed?","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM44a89bfc941eef96fa0470334d6912af""}",2026-02-23 10:27:56.429098
+455,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:28:02.017148
+456,2,,+447860362908,outbound,whatsapp,"I’m going to ask 6 quick questions about your habits and how you approach change. It helps me tailor the plan and support for your 12-week programme. Takes about a minute.
+
+Type *redo* to repeat the previous question or *restart* to start again at any time.","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMaf5e7581ff4dbb28c640a96d9e09c669""}",2026-02-23 10:28:02.640017
+457,2,,+447860362908,outbound,whatsapp,"Q1/6:
+I feel ready to make changes to my daily habits right now.
+
+1️⃣ Strongly disagree | 2️⃣ Disagree | 3️⃣ Unsure | 4️⃣ Agree | 5️⃣ Strongly agree
+(Reply with 1-5.)","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMc8386cb4987945732c421fee72d09e4a""}",2026-02-23 10:28:03.275624
+458,2,,+447860362908,inbound,whatsapp,4,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:28:12.224099
+459,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""4"". (type *redo* to change or *restart* to begin again)
+
+Progress: [🟩🟧⬜️⬜️⬜️⬜️] 1/6","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM0873fdb0301d7d97a82e130098b825d7""}",2026-02-23 10:28:12.565255
+460,2,,+447860362908,outbound,whatsapp,"Q2/6:
+Improving my wellbeing feels important to me at this point in my life.
+
+1️⃣ Strongly disagree | 2️⃣ Disagree | 3️⃣ Unsure | 4️⃣ Agree | 5️⃣ Strongly agree
+(Reply with 1-5.)","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM3f760e7fc325c9318b693a8578d63695""}",2026-02-23 10:28:13.48535
+461,2,,+447860362908,inbound,whatsapp,4,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:28:18.198297
+462,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""4"". (type *redo* to change or *restart* to begin again)
+
+Progress: [🟩🟩🟧⬜️⬜️⬜️] 2/6","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMf9d0b68939f4a369bf8b471fa778f59d""}",2026-02-23 10:28:18.513216
+463,2,,+447860362908,outbound,whatsapp,"Q3/6:
+I find it easy to stick to routines once I’ve started them.
+
+1️⃣ Strongly disagree | 2️⃣ Disagree | 3️⃣ Unsure | 4️⃣ Agree | 5️⃣ Strongly agree
+(Reply with 1-5.)","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM22b905093df891b3daa88a0fecc4bdb4""}",2026-02-23 10:28:19.145042
+464,2,,+447860362908,inbound,whatsapp,4,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:28:25.837835
+465,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""4"". (type *redo* to change or *restart* to begin again)
+
+Progress: [🟩🟩🟩🟧⬜️⬜️] 3/6","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMe4e4d15cab318a97e15d24e064ceda4f""}",2026-02-23 10:28:26.150545
+466,2,,+447860362908,outbound,whatsapp,"Q4/6:
+Stress or overwhelm often makes it harder for me to stay consistent with routines.
+
+1️⃣ Strongly disagree | 2️⃣ Disagree | 3️⃣ Unsure | 4️⃣ Agree | 5️⃣ Strongly agree
+(Reply with 1-5.)","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM8c989b63addd2168d2411f5db8419418""}",2026-02-23 10:28:26.777986
+467,2,,+447860362908,inbound,whatsapp,4,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:28:31.714502
+468,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""4"". (type *redo* to change or *restart* to begin again)
+
+Progress: [🟩🟩🟩🟩🟧⬜️] 4/6","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM1db8c3d1f22989001766214d6cbe7aef""}",2026-02-23 10:28:32.031883
+469,2,,+447860362908,outbound,whatsapp,"Q5/6:
+I sometimes use food, screens, or other habits to cope with stress or low mood.
+
+1️⃣ Strongly disagree | 2️⃣ Disagree | 3️⃣ Unsure | 4️⃣ Agree | 5️⃣ Strongly agree
+(Reply with 1-5.)","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMb8db2b760736928751dc4a0d88924240""}",2026-02-23 10:28:32.649319
+470,2,,+447860362908,inbound,whatsapp,4,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:28:40.562984
+471,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""4"". (type *redo* to change or *restart* to begin again)
+
+Progress: [🟩🟩🟩🟩🟩🟧] 5/6","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM1c3708e1076b64de6424ec1c39c46eec""}",2026-02-23 10:28:40.888231
+472,2,,+447860362908,outbound,whatsapp,"Q6/6:
+I prefer clear structure, guidance, and accountability to stay consistent.
+
+1️⃣ Strongly disagree | 2️⃣ Disagree | 3️⃣ Unsure | 4️⃣ Agree | 5️⃣ Strongly agree
+(Reply with 1-5.)","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM8131c903d890efe1712f23c01e4c828e""}",2026-02-23 10:28:41.494082
+473,2,,+447860362908,inbound,whatsapp,4,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:28:45.599775
+474,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""4"". (type *redo* to change or *restart* to begin again)
+
+Progress: [🟩🟩🟩🟩🟩🟩] 6/6","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMf7512c454b400c29a451dcdbb7c456fe""}",2026-02-23 10:28:45.922345
+475,2,,+447860362908,outbound,whatsapp,"🎯 *Assessment complete, Rhys!* Your combined score is *40/100*
+
+[🟥🟥⬜⬜⬜] 45% - *Nutrition*
+[🟥🟥🟥⬜⬜] 56% - *Training*
+[🟥⬜⬜⬜⬜] 29% - *Resilience*
+[🟥⬜⬜⬜⬜] 29% - *Recovery*
+
+View your assessment in the HealthSense app: https://app.healthsense.coach/login","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMe4a98930e76a4376f48d8443a110ff65""}",2026-02-23 10:28:46.775792
+476,2,,+447860362908,outbound,whatsapp,Thanks—saved your readiness profile. I’ll use this to set the right KR load and coaching style.,"{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMf5c2c27b0809d2ec13e6ed8c8eba6a72""}",2026-02-23 10:28:47.129626
+477,2,,+447860362908,outbound,whatsapp,Your HealthSense login code is 940968. It expires in 5 minutes.,"{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMf38c135b22c5ed5e4a2ac209892969cc""}",2026-02-23 10:28:53.707956
+478,2,,+447860362908,inbound,whatsapp,start,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:35:48.17303
+479,2,,+447860362908,outbound,whatsapp,"Hey Rhys! 😊 Welcome to your wellbeing journey! 👋🏻
+
+In a moment we’ll be taking you through a short check-in over WhatsApp. Nothing heavy - just a quick snapshot of how the last 7 days have been across four wellbeing pillars:
+
+• *Nutrition* – what you’ve been eating and drinking day to day
+• *Training* – how you’ve been moving and staying active
+• *Resilience* – how you’re feeling emotionally and coping with stress (share only what feels comfortable — we’re here to support you)
+• *Recovery* – how you’ve been resting and recharging
+
+These questions help us build a clear picture of your routine so we can tailor the next steps that actually matter for you.","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM42aa20b2466d8273e9ecb58df237a059""}",2026-02-23 10:35:48.546607
+480,2,,+447860362908,outbound,whatsapp,"Before we get started, I just need to confirm your consent.
+
+🔒 Your data:
+Your answers are stored securely and only used to personalise your wellbeing programme.
+We never share your information with third parties, and you can stop at any time.
+Replying is optional, and you can request deletion of your data whenever you want.
+
+If you’re happy to continue, *reply YES* to give consent.
+If not, *reply NO* to opt out.","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM910024b52b4796f4a43e3cb71dc76425""}",2026-02-23 10:35:49.198796
+481,2,,+447860362908,inbound,whatsapp,yes,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:35:53.557632
+482,2,,+447860362908,outbound,whatsapp,Thanks Rhys! Your consent is recorded — I’ll start with Nutrition now. These are short check-in questions about the last 7 days; you can type *redo* or *restart* any time.,"{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM51dbdfa0434d01f7fa978c9969ab295a""}",2026-02-23 10:35:53.939951
+483,2,,+447860362908,outbound,whatsapp,"Q1/15 · Nutrition: In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries.","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMa5a6efce3659c651af81f69684e8bfc1""}",2026-02-23 10:35:54.564773
+484,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:35:57.329071
+485,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟧⬜⬜]  Training [⬜⬜⬜]  Resilience [⬜⬜⬜⬜⬜]  Recovery [⬜⬜⬜]
+
+Q2/15 · Nutrition: Thinking about the last 7 days, how much water did you usually *drink per day*? For reference: 1 glass = 250ml, 1 small bottle = 500ml.","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMe67b6561b5f42b723de39e9bc8de8c17""}",2026-02-23 10:35:57.916742
+486,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:36:01.815805
+487,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟧⬜]  Training [⬜⬜⬜]  Resilience [⬜⬜⬜⬜⬜]  Recovery [⬜⬜⬜]
+
+Q3/15 · Nutrition: In the last 7 days, how many portions of processed food did you *eat on average per day*? Examples: 1 portion = a chocolate bar, 1 can of fizzy drink, 1 handful of sweets, or a pastry.","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMa59ca088bde11097789a7fb1a4e0acf0""}",2026-02-23 10:36:02.319751
+488,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:36:05.914377
+489,2,,+447860362908,outbound,whatsapp,"Thanks Rhys, logged ""2"". (type *redo* to change or *restart* to begin again)
+
+Pillar progress: Nutrition [🟩🟩🟩🟧]  Training [⬜⬜⬜]  Resilience [⬜⬜⬜⬜⬜]  Recovery [⬜⬜⬜]
+
+Q4/15 · Nutrition: Thinking about the last 7 days, how many protein portions did you usually *eat on average per day*? For reference: 1 portion = palm-sized meat or fish, 2 eggs, 1 handful of nuts, or 1 cup of beans/lentils.","{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SMa38af0be6ba8fc84b4d4965615c6d680""}",2026-02-23 10:36:06.472531
+490,2,,+447860362908,inbound,whatsapp,2,"{""from"": ""whatsapp:+447860362908""}",2026-02-23 10:36:09.856006
+491,2,,+447860362908,outbound,whatsapp,*Great Rhys* — Nutrition done. Now a quick check on Training ⭐,"{""to"": ""whatsapp:+447860362908"", ""twilio_sid"": ""SM030b6d3b8394e7e2422ff9e0f1ee5a84""}",2026-02-23 10:36:10.457894

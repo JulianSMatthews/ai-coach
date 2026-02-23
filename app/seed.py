@@ -31,6 +31,8 @@ from .models import (
     PromptTemplate,
     PromptSettings,
     PromptTemplateVersionLog,
+    TwilioTemplate,
+    MessagingSettings,
     ADMIN_ROLE_MEMBER,
     ADMIN_ROLE_CLUB,
     ADMIN_ROLE_GLOBAL,
@@ -44,6 +46,13 @@ DEFAULT_MONITORING_LLM_WORKER_P50_WARN_MS = 20000.0
 DEFAULT_MONITORING_LLM_WORKER_P50_CRITICAL_MS = 28000.0
 DEFAULT_MONITORING_LLM_WORKER_P95_WARN_MS = 30000.0
 DEFAULT_MONITORING_LLM_WORKER_P95_CRITICAL_MS = 40000.0
+DEFAULT_OUT_OF_SESSION_ENABLED = True
+DEFAULT_OUT_OF_SESSION_MESSAGE = "Please tap below to continue your wellbeing journey."
+DEFAULT_SESSION_REOPEN_BODY = (
+    "Hi {{1}}, {{2}} from HealthSense here. "
+    "I'm ready to continue your coaching. {{3}}"
+)
+DEFAULT_SESSION_REOPEN_BUTTON_TITLE = "Continue coaching"
 
 PILLARS = [
     ("nutrition",  "Nutrition"),
@@ -1531,6 +1540,97 @@ def upsert_demo_users(session: Session) -> int:
     return created
 
 
+def upsert_twilio_template_defaults(session: Session) -> int:
+    created = 0
+    try:
+        TwilioTemplate.__table__.create(bind=session.bind, checkfirst=True)
+    except Exception:
+        pass
+
+    defaults = [
+        {
+            "template_type": "quick-reply",
+            "button_count": 2,
+            "friendly_name": os.getenv("TWILIO_QR_TEMPLATE_NAME_2", "hs_qr_2"),
+            "payload": {"button_count": 2},
+        },
+        {
+            "template_type": "quick-reply",
+            "button_count": 3,
+            "friendly_name": os.getenv("TWILIO_QR_TEMPLATE_NAME_3", "hs_qr_3"),
+            "payload": {"button_count": 3},
+        },
+        {
+            "template_type": "session-reopen",
+            "button_count": None,
+            "friendly_name": os.getenv("TWILIO_REOPEN_TEMPLATE_NAME", "hs_reopen"),
+            "payload": {
+                "purpose": "session-reopen",
+                "body": DEFAULT_SESSION_REOPEN_BODY,
+                "button_title": DEFAULT_SESSION_REOPEN_BUTTON_TITLE,
+            },
+        },
+    ]
+    for item in defaults:
+        row = session.execute(
+            select(TwilioTemplate).where(
+                TwilioTemplate.provider == "twilio",
+                TwilioTemplate.template_type == item["template_type"],
+                (
+                    TwilioTemplate.button_count.is_(None)
+                    if item["button_count"] is None
+                    else TwilioTemplate.button_count == int(item["button_count"])
+                ),
+            )
+        ).scalar_one_or_none()
+        if row:
+            if not row.friendly_name:
+                row.friendly_name = item["friendly_name"]
+            if row.payload is None:
+                row.payload = item["payload"]
+            if not row.language:
+                row.language = "en"
+            if not row.status:
+                row.status = "missing"
+            continue
+        session.add(
+            TwilioTemplate(
+                provider="twilio",
+                template_type=item["template_type"],
+                button_count=item["button_count"],
+                friendly_name=item["friendly_name"],
+                language="en",
+                status="missing",
+                payload=item["payload"],
+            )
+        )
+        created += 1
+    session.commit()
+    return created
+
+
+def upsert_messaging_defaults(session: Session) -> int:
+    created = 0
+    try:
+        MessagingSettings.__table__.create(bind=session.bind, checkfirst=True)
+    except Exception:
+        pass
+    row = session.execute(select(MessagingSettings)).scalar_one_or_none()
+    if not row:
+        session.add(
+            MessagingSettings(
+                out_of_session_enabled=DEFAULT_OUT_OF_SESSION_ENABLED,
+                out_of_session_message=DEFAULT_OUT_OF_SESSION_MESSAGE,
+            )
+        )
+        created = 1
+    else:
+        if row.out_of_session_message in (None, ""):
+            row.out_of_session_message = DEFAULT_OUT_OF_SESSION_MESSAGE
+    session.commit()
+    return created
+
+
 def run_seed() -> None:
     """
     Full seed entrypoint. Safely seeds in the right order and won't crash
@@ -1576,6 +1676,8 @@ def run_seed() -> None:
             # 4) Users last (requires clubs)
             u  = upsert_demo_users(s) if 'upsert_demo_users' in globals() else 0
             tp = upsert_touchpoint_defaults(s) if 'upsert_touchpoint_defaults' in globals() else {"created_prefs": 0, "created_defs": 0}
+            tw = upsert_twilio_template_defaults(s) if 'upsert_twilio_template_defaults' in globals() else 0
+            ms = upsert_messaging_defaults(s) if 'upsert_messaging_defaults' in globals() else 0
 
             # 5) Prompt templates
             keep_templates_raw = (os.getenv("KEEP_PROMPT_TEMPLATES_ON_RESET") or "").strip().lower()
@@ -1598,6 +1700,8 @@ def run_seed() -> None:
             print(f"[seed] KB vectors complete. new_vectors={kv} (dim={kb_dim})")
             print(f"[seed] Users seed complete. Created {u} new user(s).")
             print(f"[seed] Touchpoint defaults complete. new_prefs={tp['created_prefs']} new_defs={tp['created_defs']}")
+            print(f"[seed] Twilio template defaults complete. new_templates={tw}")
+            print(f"[seed] Messaging defaults complete. new_rows={ms} enabled_default={DEFAULT_OUT_OF_SESSION_ENABLED}")
             print(f"[seed] Prompt templates complete. new_templates={pt}")
 
         except Exception as e:

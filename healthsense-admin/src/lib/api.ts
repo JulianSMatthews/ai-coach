@@ -361,14 +361,19 @@ export type AssessmentHealthPayload = {
     error?: number;
     backlog?: number;
     backlog_state?: string;
+    oldest_pending_age_state?: string;
     oldest_pending_age_min?: number | null;
+    error_rate_1h_state?: string;
     error_rate_1h_pct?: number | null;
     processed_1h?: number;
+    state?: string;
   };
   messaging?: {
     outbound_messages?: number;
     inbound_messages?: number;
     twilio_callbacks?: number;
+    twilio_callbacks_total?: number;
+    twilio_callbacks_unmatched?: number;
     twilio_failures?: number;
     twilio_failure_rate_pct?: number | null;
     twilio_failure_state?: string;
@@ -393,6 +398,24 @@ export type AssessmentHealthPayload = {
       message_user_name?: string | null;
       message_phone?: string | null;
       message_preview?: string | null;
+    }>;
+    twilio_failed_message_groups?: Array<{
+      message_log_id?: number | null;
+      sid?: string | null;
+      to?: string | null;
+      from?: string | null;
+      user_id?: number | null;
+      message_created_at?: string | null;
+      message_user_id?: number | null;
+      message_user_name?: string | null;
+      message_phone?: string | null;
+      message_preview?: string | null;
+      failed_callback_count?: number;
+      latest_callback_at?: string | null;
+      latest_status?: string | null;
+      latest_error_code?: string | null;
+      latest_error_message?: string | null;
+      latest_error_description?: string | null;
     }>;
   };
   worker?: WorkerStatusPayload;
