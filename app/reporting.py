@@ -1514,12 +1514,9 @@ def _fetch_okrs_for_run(run_id: int) -> Dict[str, Dict[str, Any]]:
                                     return f"Current {subject}: {current}{suffix}."
                                 return base
 
-                            enriched = base_txt.strip() if base_txt else ''
-                            current_num = _fmt_num(actual_val) if str(actual_val or "").strip() else _fmt_num(baseline_val) if str(baseline_val or "").strip() else ""
-                            target_num = _fmt_num(target_val) if str(target_val or "").strip() else ""
-                            unit_value = _fmt_unit(str(unit_label or ""), str(per_label or ""))
-                            enriched = _compose_kr_text(enriched, current_num, target_num, unit_value)
+                            enriched = base_txt.strip() if base_txt else ""
                             if enriched:
+                                # Keep KR text exactly as stored in DB; avoid read-time rewrites.
                                 krs.append(enriched)
                         out[pk] = {'objective': objective_text, 'krs': krs, 'llm_prompt': getattr(obj, 'llm_prompt', None)}
             # Audit successful fetch just before return
@@ -1809,10 +1806,7 @@ def _fetch_okrs_for_run(run_id: int) -> Dict[str, Dict[str, Any]]:
                                 return base
 
                             if kr_txt:
-                                current_num = _fmt_num(a) if a else (_fmt_num(b) if b else "")
-                                target_num = _fmt_num(t) if t else ""
-                                unit_value = _fmt_unit(u, p)
-                                kr_txt = _compose_kr_text(kr_txt, current_num, target_num, unit_value)
+                                # Keep KR text exactly as stored in DB; avoid read-time rewrites.
                                 krs.append(kr_txt)
                         if pk:
                             out[pk] = {"objective": obj_txt, "krs": krs, "llm_prompt": prompt_txt}

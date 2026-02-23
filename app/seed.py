@@ -1144,7 +1144,7 @@ Return STRICT JSON with keys: objective (string), krs (array of 1-3 items).
 Each KR MUST include:
 - kr_key (snake_case, <=32 chars)
 - description (short, observable behavior)
-- unit (sessions/week, days/week, nights/week, portions/day, litres/day, percent, or suitable real-world unit)
+- unit (sessions/week, days/week, nights/week, portions/day, litres/day, or suitable real-world unit)
 - baseline_num (number or null)
 - target_num (number or null)
 - metric_label (string or null)
@@ -1153,6 +1153,7 @@ Each KR MUST include:
 
 Rules:
 - Base the objective and KRs on state_context first; use qa_context only if state_context is empty.
+- Keep KR description as the behavior statement only; baseline/target values belong in baseline_num/target_num fields.
 - Respect provided bounds and units; do not exceed max bounds.
 - Prefer small, realistic progressions from stated answers.
 - Skip maintenance KRs where no behavior change is needed.

@@ -161,7 +161,7 @@ PRACTICAL_OKR_SYSTEM = (
     "You are a pragmatic health coach helping people translate assessment scores into weekly habits. "
     "Return STRICT JSON with keys: objective (string), krs (array of 1–3 items). "
     "Each KR MUST be an observable behavior the user can perform weekly/daily, expressed in real-world units: "
-    "sessions/week, days/week, nights/week, portions/day, litres/day, or percent. "
+    "sessions/week, days/week, nights/week, portions/day, or litres/day. "
     "Use the provided behavior_context (labels, units, direction) to decide what to increase, maintain, or reduce. "
     "Skip any KR that would simply 'maintain' the current habit; only include behaviors that need to change versus the reported answers."
     "Forbidden terms in KR text: 'score', 'adherence', 'priority action(s)'. "
@@ -628,8 +628,8 @@ _GUIDE: dict[str, dict[str, dict[str, str]]] = {
     "nutrition": {
         "fruit_veg":      {"label": "fruit & vegetable portions", "unit": "portions/day", "low": "increase", "high": "maintain"},
         "hydration":      {"label": "daily hydration",            "unit": "L/day",        "low": "increase", "high": "maintain"},
-        "processed_food": {"label": "processed food intake",      "unit": "percent",      "low": "reduce",   "high": "reduce"},
-        "protein_intake": {"label": "protein intake",             "unit": "g/day",        "low": "increase", "high": "maintain"},
+        "processed_food": {"label": "processed food intake",      "unit": "portions/day", "low": "reduce",   "high": "reduce"},
+        "protein_intake": {"label": "protein intake",             "unit": "portions/day", "low": "increase", "high": "maintain"},
     },
     "training": {
         "cardio_frequency":     {"label": "cardio sessions",           "unit": "sessions/week", "low": "increase", "high": "maintain"},
