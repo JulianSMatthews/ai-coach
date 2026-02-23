@@ -3016,7 +3016,8 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 # block on assessment_scores/assessment_okr/coaching_approach LLM calls.
                 try:
                     run_id = state.get("run_id")
-                    if run_id and should_use_worker():
+                    worker_enabled = should_use_worker()
+                    if run_id:
                         job_id = enqueue_job(
                             "assessment_narratives_seed",
                             {"run_id": int(run_id), "user_id": user.id},
@@ -3026,8 +3027,64 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                             f"[assessment] enqueued assessment_narratives_seed "
                             f"run_id={run_id} user_id={user.id} job={job_id}"
                         )
+                        try:
+                            s.add(
+                                JobAudit(
+                                    job_name="assessment_narratives_seed_enqueue",
+                                    status="ok",
+                                    payload={
+                                        "run_id": int(run_id),
+                                        "user_id": int(user.id),
+                                        "job_id": int(job_id),
+                                        "worker_mode_enabled": bool(worker_enabled),
+                                    },
+                                )
+                            )
+                            if not worker_enabled:
+                                s.add(
+                                    JobAudit(
+                                        job_name="assessment_narratives_seed_worker_unavailable",
+                                        status="error",
+                                        payload={
+                                            "run_id": int(run_id),
+                                            "user_id": int(user.id),
+                                            "job_id": int(job_id),
+                                            "reason": "worker mode disabled; job queued but worker may not process it",
+                                        },
+                                        error="PROMPT_WORKER_MODE disabled or worker override off",
+                                    )
+                                )
+                        except Exception:
+                            pass
+                    else:
+                        print(
+                            f"[assessment] ERROR: unable to enqueue assessment_narratives_seed "
+                            f"user_id={user.id} reason=missing_run_id"
+                        )
+                        try:
+                            s.add(
+                                JobAudit(
+                                    job_name="assessment_narratives_seed_enqueue",
+                                    status="error",
+                                    payload={"run_id": run_id, "user_id": int(user.id)},
+                                    error="missing_run_id",
+                                )
+                            )
+                        except Exception:
+                            pass
                 except Exception as _narrative_enqueue_error:
-                    print(f"[assessment] WARN: enqueue assessment_narratives_seed failed: {_narrative_enqueue_error}")
+                    print(f"[assessment] ERROR: enqueue assessment_narratives_seed failed: {_narrative_enqueue_error}")
+                    try:
+                        s.add(
+                            JobAudit(
+                                job_name="assessment_narratives_seed_enqueue",
+                                status="error",
+                                payload={"run_id": state.get("run_id"), "user_id": int(user.id)},
+                                error=repr(_narrative_enqueue_error),
+                            )
+                        )
+                    except Exception:
+                        pass
 
                 # Deactivate session
                 try:

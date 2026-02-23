@@ -508,6 +508,57 @@ def _ensure_kr_actionable(pillar_slug: str, kr: dict, concept_scores: dict[str, 
         out["target_num"] = proposed
     return out
 
+
+def _format_kr_number(value: Any) -> str:
+    num = _safe_float(value)
+    if num is None:
+        return ""
+    if abs(num - round(num)) < 1e-9:
+        return str(int(round(num)))
+    return f"{num:.2f}".rstrip("0").rstrip(".")
+
+
+def _compose_kr_description_from_values(pillar_slug: str, kr: dict) -> str:
+    """
+    Compose a deterministic KR description from normalized baseline/target/unit.
+    This keeps one source of truth in DB while avoiding display-time rewrites.
+    """
+    guide = _GUIDE.get(pillar_slug, {}) or {}
+    concept_key = _normalize_concept_key((kr.get("concept_key") or "").split(".")[-1]) or _guess_concept_from_description(
+        pillar_slug, kr.get("description", "")
+    )
+    meta = guide.get(concept_key or "")
+
+    subject = (
+        (meta or {}).get("label")
+        or str(kr.get("metric_label") or "").strip()
+        or str(kr.get("description") or "").strip()
+        or "key habit"
+    )
+    unit = str(kr.get("unit") or "").strip()
+    baseline = _safe_float(kr.get("baseline_num"))
+    target = _safe_float(kr.get("target_num"))
+
+    suffix = ""
+    if unit:
+        suffix = "%" if unit in {"%", "percent"} else f" {unit}"
+
+    if baseline is not None and target is not None:
+        b_txt = _format_kr_number(baseline)
+        t_txt = _format_kr_number(target)
+        if target > baseline:
+            return f"Increase {subject} from {b_txt}{suffix} to {t_txt}{suffix}."
+        if target < baseline:
+            return f"Reduce {subject} from {b_txt}{suffix} to {t_txt}{suffix}."
+        return f"Maintain {subject} at {t_txt}{suffix}."
+    if target is not None:
+        t_txt = _format_kr_number(target)
+        return f"Target {subject} at {t_txt}{suffix}."
+    if baseline is not None:
+        b_txt = _format_kr_number(baseline)
+        return f"Current {subject}: {b_txt}{suffix}."
+    return str(kr.get("description") or "").strip() or f"Improve {subject}."
+
 def _enrich_kr_defaults(pillar_slug: str, kr: dict, concept_scores: dict[str, float], state_answers: dict[str, float]) -> dict:
     guide = _GUIDE.get(pillar_slug, {})
     concept_key = _normalize_concept_key((kr.get("concept_key") or "").split(".")[-1]) or _guess_concept_from_description(pillar_slug, kr.get("description", ""))
@@ -1052,11 +1103,12 @@ def make_structured_okr_llm(
         "- Base the Objective and ALL Key Results on the user's answers in state_context (prefer) or qa_context if state_context is empty.\n"
         "- Where bounds are given (min/max or unit), set realistic targets within bounds; do NOT exceed max. Respect units.\n"
         "- Write ONE objective focused on the main gaps implied by the answers.\n"
-        "- Return 2–4 Key Results that are weekly/daily habits with concrete units (sessions/week, portions/day, L/day, nights/week, days/week, or %).\n"
+        "- Return 2–4 Key Results that are weekly/daily habits with concrete units (sessions/week, portions/day, L/day, nights/week, days/week).\n"
         "- Forbidden in KR text: 'score', 'adherence', 'priority action(s)'. Use behaviors and units instead.\n"
         "- Prefer small, realistic progressions derived from the stated answers (e.g., from '1 session/week' move to '3 sessions/week').\n"
         "- DO NOT include a Key Result if the user is already at the recommended level or no improvement is needed; fewer KRs are preferred over maintenance targets.\n"
         "- Do NOT propose improvements for concepts already scoring ~100; focus on concepts materially below the top score.\n"
+        "- Keep KR description as the behavior statement only; put numbers in baseline_num/target_num fields.\n"
         "- Reuse the units mentioned in the user's answers (state_context meta); do not switch to different units like percentages if the question used days/week or portions/day.\n"
         "Return JSON only. Do not include markdown or code fences."
     )
@@ -2025,6 +2077,8 @@ def generate_and_update_okrs_for_pillar(
                     continue
         except Exception:
             pass
+        if isinstance(kr, dict):
+            kr["description"] = _compose_kr_description_from_values(pillar_key, kr)
         processed_krs.append(kr)
     # Guardrail: never persist an empty KR set.
     if not processed_krs:
@@ -2033,6 +2087,7 @@ def generate_and_update_okrs_for_pillar(
             if not isinstance(kr, dict):
                 continue
             fixed = _ensure_kr_actionable(pillar_key, kr, concept_scores or {})
+            fixed["description"] = _compose_kr_description_from_values(pillar_key, fixed)
             if (fixed.get("description") or "").strip():
                 recovered.append(fixed)
         if recovered:

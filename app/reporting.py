@@ -3175,16 +3175,27 @@ def build_assessment_dashboard_data(run_id: int, *, include_llm: bool = True) ->
     coaching_audio_url = None
     narratives_cached_flag = None
     if run_finished and has_pillar_scores:
+        cache_source = ""
         if narrative_row and (narrative_row.score_html or narrative_row.okr_html or narrative_row.coaching_html):
             meta = getattr(narrative_row, "meta", None) or {}
             narrative_meta = dict(meta)
-            score_audio_url = meta.get("score_audio_url")
-            okr_audio_url = meta.get("okr_audio_url")
-            coaching_audio_url = meta.get("coaching_audio_url")
-            cached_ok = True
-            score_narrative = narrative_row.score_html or ""
-            okr_narrative = narrative_row.okr_html or ""
-            coaching_text = narrative_row.coaching_html or ""
+            cache_source = str(narrative_meta.get("source") or "").strip().lower()
+            # Treat legacy fallback rows as non-cache for include_llm runs so worker can regenerate
+            # full LLM narratives deterministically.
+            fallback_only = cache_source == "fallback"
+            if include_llm and fallback_only:
+                cached_ok = False
+            elif not include_llm and fallback_only:
+                # Read-only app/admin access must not surface or persist fallback narratives.
+                cached_ok = False
+            else:
+                score_audio_url = meta.get("score_audio_url")
+                okr_audio_url = meta.get("okr_audio_url")
+                coaching_audio_url = meta.get("coaching_audio_url")
+                cached_ok = True
+                score_narrative = narrative_row.score_html or ""
+                okr_narrative = narrative_row.okr_html or ""
+                coaching_text = narrative_row.coaching_html or ""
             t5 = time.perf_counter()
             _report_log(f"[report_build] narratives_cached run_id={run_id} ms={int((t5 - t4)*1000)}")
             if include_llm and (not score_audio_url or not okr_audio_url or not coaching_audio_url):
@@ -3231,7 +3242,7 @@ def build_assessment_dashboard_data(run_id: int, *, include_llm: bool = True) ->
                             )
                 except Exception as e:
                     _report_log(f"[report_build] narrative_audio_cached_failed run_id={run_id} err={e!r}")
-        if not cached_ok:
+        if include_llm and not cached_ok:
             score_narrative = _score_narrative_from_llm(user, combined, pillar_payload) if include_llm else ""
             if not score_narrative:
                 score_narrative = _scores_narrative_fallback(combined, pillar_payload)
@@ -3377,7 +3388,7 @@ def build_assessment_dashboard_data(run_id: int, *, include_llm: bool = True) ->
             "narratives_cached": narratives_cached_flag,
             "narratives_source": None
             if narratives_cached_flag is None
-            else ("cached" if cached_ok else ("llm" if include_llm else "fallback")),
+            else ("cached" if cached_ok else ("llm" if include_llm else "pending_worker")),
         },
     }
 

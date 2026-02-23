@@ -1419,10 +1419,11 @@ def build_prompt(
                 "- Base the Objective and ALL Key Results on the user's answers in state_context (prefer) or qa_context if state_context is empty.\n"
                 "- Where bounds are given (min/max or unit), set realistic targets within bounds; do NOT exceed max. Respect units.\n"
                 "- Write ONE objective focused on the main gaps implied by the answers.\n"
-                "- Return 2-4 Key Results that are weekly/daily habits with concrete units (sessions/week, portions/day, L/day, nights/week, days/week, or %).\n"
+                "- Return 2-4 Key Results that are weekly/daily habits with concrete units (sessions/week, portions/day, L/day, nights/week, days/week).\n"
                 "- Forbidden in KR text: 'score', 'adherence', 'priority action(s)'. Use behaviors and units instead.\n"
                 "- Prefer small, realistic progressions derived from the stated answers.\n"
                 "- Do NOT include a Key Result if the user is already at the recommended level or no improvement is needed.\n"
+                "- Keep KR description as the behavior statement only; put numbers in baseline_num/target_num fields.\n"
                 "- Reuse the units mentioned in the user's answers.\n"
                 "Return JSON only. Do not include markdown or code fences."
             )
