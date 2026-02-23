@@ -48,6 +48,7 @@ export default async function AssessmentPage(props: PageProps) {
   const readinessResponses = safeData.readiness_responses || [];
   const reportedAt = safeData.meta?.reported_at;
   const narrativesCached = safeData.meta?.narratives_cached;
+  const narrativesPending = narrativesCached === false;
   const scoreAudio = narratives.score_audio_url || "";
   const okrAudio = narratives.okr_audio_url || "";
   const coachingAudio = narratives.coaching_audio_url || "";
@@ -133,12 +134,14 @@ export default async function AssessmentPage(props: PageProps) {
           />
         }
       />
-      {narrativesCached === false ? (
+      {narrativesPending ? (
         <Card className="border border-[#e7e1d6] bg-[#fffaf0] text-sm text-[#6b6257]">
-          Reviewing your results and generating a report…
+          {`We are preparing your assessment report, ${displayFirstName}. It will be ready shortly.`}
         </Card>
       ) : null}
 
+      {!narrativesPending ? (
+        <>
       <section id="overview" className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
         <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
           <h2 className="text-xl">How you’re doing</h2>
@@ -401,6 +404,8 @@ export default async function AssessmentPage(props: PageProps) {
         </Card>
       </section>
       {pillars.length ? <CarouselDots containerId="pillars" count={pillars.length + 1} /> : null}
+      </>
+      ) : null}
 
     </PageShell>
   );
