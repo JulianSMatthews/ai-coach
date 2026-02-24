@@ -1607,7 +1607,8 @@ def build_prompt(
             block_order_override=order_override or settings.get("default_block_order"),
         )
     if tp == "tuesday":
-        kr = primary_kr_payload(user_id)
+        week_no = data.get("week_no")
+        kr = primary_kr_payload(user_id, week_no=week_no)
         timeframe = data.get("timeframe", "Tuesday")
         history_text = data.get("history_text", "")
         scores_payload = data.get("scores") or []
@@ -1616,7 +1617,7 @@ def build_prompt(
         krs = _krs_for_okr_scope(
             okr_scope=okr_scope,
             user_id=user_id,
-            week_no=data.get("week_no"),
+            week_no=week_no,
             primary=kr or None,
             fallback_krs=[kr] if kr else [],
         )
@@ -1648,7 +1649,8 @@ def build_prompt(
             block_order_override=order_override or settings.get("default_block_order"),
         )
     if tp == "midweek":
-        kr = primary_kr_payload(user_id)
+        week_no = data.get("week_no")
+        kr = primary_kr_payload(user_id, week_no=week_no)
         timeframe = data.get("timeframe", "midweek check")
         history_text = data.get("history_text", "")
         scores_payload = data.get("scores") or []
@@ -1657,7 +1659,7 @@ def build_prompt(
         krs_for_okr = _krs_for_okr_scope(
             okr_scope=okr_scope,
             user_id=user_id,
-            week_no=data.get("week_no"),
+            week_no=week_no,
             primary=kr or None,
             fallback_krs=[kr] if kr else [],
         )
@@ -1689,7 +1691,8 @@ def build_prompt(
             block_order_override=order_override or settings.get("default_block_order"),
         )
     if tp == "saturday":
-        kr = primary_kr_payload(user_id)
+        week_no = data.get("week_no")
+        kr = primary_kr_payload(user_id, week_no=week_no)
         timeframe = data.get("timeframe", "Saturday")
         history_text = data.get("history_text", "")
         scores_payload = data.get("scores") or []
@@ -1698,7 +1701,7 @@ def build_prompt(
         krs = _krs_for_okr_scope(
             okr_scope=okr_scope,
             user_id=user_id,
-            week_no=data.get("week_no"),
+            week_no=week_no,
             primary=kr or None,
             fallback_krs=[kr] if kr else [],
         )
@@ -1730,7 +1733,8 @@ def build_prompt(
             block_order_override=order_override or settings.get("default_block_order"),
         )
     if tp == "sunday":
-        krs = kr_payload_list(user_id, max_krs=3)
+        week_no = data.get("week_no")
+        krs = kr_payload_list(user_id, week_no=week_no, max_krs=3)
         history_text = data.get("history_text", "")
         scores_payload = data.get("scores") or []
         psych_payload = data.get("psych_payload") or {}
@@ -1741,7 +1745,7 @@ def build_prompt(
             _krs_for_okr_scope(
                 okr_scope=okr_scope,
                 user_id=user_id,
-                week_no=data.get("week_no"),
+                week_no=week_no,
                 primary=primary,
                 fallback_krs=krs,
             ),

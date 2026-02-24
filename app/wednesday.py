@@ -163,6 +163,7 @@ def send_midweek_check(user: User, coach_name: str = "Gia") -> None:
             coach_name=coach_name,
             user_name=user.first_name or "",
             locale=getattr(user, "tz", "UK") or "UK",
+            week_no=week_no,
             timeframe="midweek check",
             history_text=history_text,
         )

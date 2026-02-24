@@ -276,6 +276,32 @@
       color:var(--muted);
       font-size:12px;
     }
+    .editor-quarter{
+      margin-top: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .editor-quarter label{
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .editor-quarter select,
+    .editor-quarter input{
+      border:1px solid var(--border);
+      border-radius:10px;
+      padding:8px 10px;
+      font-size:13px;
+      color:var(--fg);
+      background:#fff;
+      min-height:38px;
+    }
+    .editor-quarter select{ min-width: 150px; }
+    .editor-quarter input{ min-width: 140px; }
     [data-edit-id][contenteditable="true"]{
       outline: 2px dashed rgba(197,72,23,0.45);
       outline-offset: 2px;
@@ -292,11 +318,11 @@
         <img class="brand-logo" src="../../healthsense-app/public/healthsense-logo.svg" alt="HealthSense logo">
       </div>
       <div class="kicker">HealthSense • Expert System</div>
-      <h1>Founding Team Roles &amp; Q1 2026 OKRs</h1>
+      <h1>Founding Team Roles &amp; OKRs</h1>
       <div class="meta">Draft operating model for an early-stage two-person team (Founder + AI/Knowledge Lead)</div>
       <div class="tabs" role="navigation" aria-label="Sections">
         <a class="tab" href="#roles"><strong>Roles</strong></a>
-        <a class="tab" href="#okrs">Q1 OKRs</a>
+        <a class="tab" href="#okrs">OKRs</a>
       </div>
     </div>
   </div>
@@ -315,7 +341,14 @@
           <input id="import-file" type="file" accept="application/json" hidden>
         </div>
       </div>
-      <p id="editor-status" class="editor-note">View mode. Enable edit mode to update Q1 OKRs and save locally in this browser.</p>
+      <div class="editor-quarter" aria-label="Quarter controls">
+        <label for="quarter-select">Quarter</label>
+        <select id="quarter-select"></select>
+        <input id="new-quarter-name" type="text" placeholder="e.g. Q2 2026" maxlength="40">
+        <button id="add-quarter" class="btn" type="button">Add quarter</button>
+      </div>
+      <p class="editor-note">To set up a new quarter: add/select the quarter, enable edit mode, then update objectives and key results for that quarter.</p>
+      <p id="editor-status" class="editor-note">View mode. Enable edit mode to update OKRs and save locally in this browser.</p>
     </section>
 
     <!-- ROLES -->
@@ -449,7 +482,7 @@
 
     <!-- OKRS -->
     <section id="okrs" class="wide">
-      <h2>Q1 2026 OKRs (Team Version)</h2>
+      <h2 id="okrs-quarter-title">Q1 2026 OKRs (Team Version)</h2>
       <p class="summary">Theme: <strong>Launch, validate, convert.</strong> These are presented in “expert system” format for quick reference and ongoing iteration.</p>
 
       <div class="okrs">
@@ -555,7 +588,7 @@
       </div>
 
       <section class="footer" style="margin-top:16px;">
-        <h2 style="margin-bottom:6px;">Q1 success targets (summary)</h2>
+        <h2 id="okrs-targets-title" style="margin-bottom:6px;">Q1 success targets (summary)</h2>
         <div class="targets" aria-label="Success targets">
           <div class="target"><strong>Website live:</strong> 31 January</div>
           <div class="target"><strong>Free assessments launched:</strong> 1 February</div>
@@ -572,7 +605,10 @@
 
   <script>
     (function () {
-      const STORAGE_KEY = "hs_expert_okr_draft_v1";
+      const LEGACY_STORAGE_KEY = "hs_expert_okr_draft_v1";
+      const STORAGE_KEY = "hs_expert_okr_draft_v2";
+      const DEFAULT_QUARTER = "Q1 2026";
+      const MAX_QUARTER_LENGTH = 40;
       const okrRoot = document.querySelector("#okrs");
       const statusEl = document.querySelector("#editor-status");
       const editBtn = document.querySelector("#toggle-edit");
@@ -582,10 +618,15 @@
       const importBtn = document.querySelector("#import-okrs");
       const resetBtn = document.querySelector("#reset-okrs");
       const importFile = document.querySelector("#import-file");
-      if (!okrRoot || !statusEl || !editBtn || !completeModeBtn || !saveBtn || !exportBtn || !importBtn || !resetBtn || !importFile) {
+      const quarterSelect = document.querySelector("#quarter-select");
+      const newQuarterInput = document.querySelector("#new-quarter-name");
+      const addQuarterBtn = document.querySelector("#add-quarter");
+      const quarterTitleEl = document.querySelector("#okrs-quarter-title");
+      const targetsTitleEl = document.querySelector("#okrs-targets-title");
+      if (!okrRoot || !statusEl || !editBtn || !completeModeBtn || !saveBtn || !exportBtn || !importBtn || !resetBtn || !importFile || !quarterSelect || !newQuarterInput || !addQuarterBtn || !quarterTitleEl || !targetsTitleEl) {
         return;
       }
-      const STATUS_VIEW = "View mode. Enable edit mode to update Q1 OKRs and save locally in this browser.";
+      const STATUS_VIEW = "View mode. Enable edit mode to update OKRs and save locally in this browser.";
 
       const editableNodes = Array.from(
         okrRoot.querySelectorAll("h2, .summary, .okr-why, li, .subtle, .target")
@@ -607,6 +648,52 @@
       krNodes.forEach((node) => {
         defaultCompleted[node.dataset.krId] = node.classList.contains("kr-complete");
       });
+
+      function cloneSnapshot(snapshot) {
+        const out = {};
+        Object.keys(defaultSnapshot).forEach((key) => {
+          out[key] = Object.prototype.hasOwnProperty.call(snapshot || {}, key)
+            ? String(snapshot[key])
+            : defaultSnapshot[key];
+        });
+        return out;
+      }
+
+      function cloneCompletion(snapshot) {
+        const out = {};
+        Object.keys(defaultCompleted).forEach((key) => {
+          out[key] = Boolean(snapshot && snapshot[key]);
+        });
+        return out;
+      }
+
+      function buildQuarterRecord(content, completed, updatedAt) {
+        return {
+          content: cloneSnapshot(content),
+          completed: cloneCompletion(completed),
+          updated_at: updatedAt || null,
+        };
+      }
+
+      function normalizeQuarterName(raw) {
+        const clean = String(raw || "").trim().replace(/\s+/g, " ");
+        if (!clean) return "";
+        return clean.slice(0, MAX_QUARTER_LENGTH);
+      }
+
+      function createDefaultState() {
+        return {
+          version: 2,
+          updated_at: null,
+          active_quarter: DEFAULT_QUARTER,
+          quarter_order: [DEFAULT_QUARTER],
+          quarters: {
+            [DEFAULT_QUARTER]: buildQuarterRecord(defaultSnapshot, defaultCompleted, null),
+          },
+        };
+      }
+
+      let state = createDefaultState();
 
       function getCurrentSnapshot() {
         const snapshot = {};
@@ -642,31 +729,186 @@
         statusEl.textContent = message;
       }
 
+      function persistState() {
+        state.version = 2;
+        state.updated_at = new Date().toISOString();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        localStorage.removeItem(LEGACY_STORAGE_KEY);
+      }
+
+      function ensureQuarterRecord(quarterName) {
+        const name = normalizeQuarterName(quarterName);
+        if (!name) return null;
+        if (!state.quarters[name]) {
+          state.quarters[name] = buildQuarterRecord(defaultSnapshot, defaultCompleted, null);
+        }
+        if (!state.quarter_order.includes(name)) {
+          state.quarter_order.push(name);
+        }
+        return state.quarters[name];
+      }
+
+      function persistActiveQuarterToState() {
+        const record = ensureQuarterRecord(state.active_quarter);
+        if (!record) return;
+        record.content = getCurrentSnapshot();
+        record.completed = getCompletionSnapshot();
+        record.updated_at = new Date().toISOString();
+      }
+
+      function getActiveQuarterRecord() {
+        const record = ensureQuarterRecord(state.active_quarter);
+        return record || buildQuarterRecord(defaultSnapshot, defaultCompleted, null);
+      }
+
+      function renderQuarterOptions() {
+        const validOrder = state.quarter_order.filter((name) => state.quarters[name]);
+        if (!validOrder.length) validOrder.push(DEFAULT_QUARTER);
+        state.quarter_order = validOrder;
+
+        if (!state.quarters[state.active_quarter]) {
+          state.active_quarter = validOrder[0];
+        }
+
+        quarterSelect.innerHTML = "";
+        state.quarter_order.forEach((name) => {
+          const option = document.createElement("option");
+          option.value = name;
+          option.textContent = name;
+          quarterSelect.appendChild(option);
+        });
+        quarterSelect.value = state.active_quarter;
+        quarterTitleEl.textContent = state.active_quarter + " OKRs (Team Version)";
+        targetsTitleEl.textContent = state.active_quarter + " success targets (summary)";
+      }
+
       function saveDraft() {
-        const payload = {
-          version: 1,
-          updated_at: new Date().toISOString(),
-          content: getCurrentSnapshot(),
-          completed: getCompletionSnapshot(),
-        };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-        setStatus("Draft saved locally. Export JSON to share or version-control content updates.");
+        persistActiveQuarterToState();
+        persistState();
+        setStatus("Draft saved for " + state.active_quarter + ". Export JSON to share or version-control content updates.");
+      }
+
+      function normalizeState(raw) {
+        const next = createDefaultState();
+        if (!raw || typeof raw !== "object") return next;
+
+        const rawQuarters = raw.quarters && typeof raw.quarters === "object" ? raw.quarters : {};
+        const ordered = [];
+        const seen = new Set();
+        const candidates = []
+          .concat(Array.isArray(raw.quarter_order) ? raw.quarter_order : [])
+          .concat(Object.keys(rawQuarters));
+
+        candidates.forEach((nameRaw) => {
+          const name = normalizeQuarterName(nameRaw);
+          if (!name || seen.has(name)) return;
+          seen.add(name);
+          ordered.push(name);
+        });
+        if (!ordered.length) ordered.push(DEFAULT_QUARTER);
+
+        next.quarter_order = [];
+        next.quarters = {};
+        ordered.forEach((name) => {
+          const source = rawQuarters[name];
+          const content = source && typeof source === "object" ? source.content : null;
+          const completed = source && typeof source === "object" ? source.completed : null;
+          const updatedAt = source && typeof source === "object" ? source.updated_at : null;
+          next.quarter_order.push(name);
+          next.quarters[name] = buildQuarterRecord(content, completed, updatedAt);
+        });
+
+        const active = normalizeQuarterName(raw.active_quarter);
+        next.active_quarter = active && next.quarters[active] ? active : next.quarter_order[0];
+        if (typeof raw.updated_at === "string") next.updated_at = raw.updated_at;
+        return next;
       }
 
       function loadDraft() {
         try {
           const raw = localStorage.getItem(STORAGE_KEY);
-          if (!raw) return false;
-          const parsed = JSON.parse(raw);
-          if (!parsed || typeof parsed !== "object" || !parsed.content) return false;
-          applySnapshot(parsed.content);
-          applyCompletionSnapshot(parsed.completed || defaultCompleted);
-          setStatus("Loaded saved draft from this browser.");
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            if (parsed && typeof parsed === "object" && parsed.quarters) {
+              state = normalizeState(parsed);
+              const active = getActiveQuarterRecord();
+              applySnapshot(active.content);
+              applyCompletionSnapshot(active.completed);
+              renderQuarterOptions();
+              setStatus("Loaded saved draft for " + state.active_quarter + ".");
+              return true;
+            }
+          }
+        } catch (err) {
+          console.warn("Failed to load v2 OKR draft:", err);
+        }
+
+        try {
+          const rawLegacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+          if (!rawLegacy) return false;
+          const parsedLegacy = JSON.parse(rawLegacy);
+          if (!parsedLegacy || typeof parsedLegacy !== "object" || !parsedLegacy.content) return false;
+          state = createDefaultState();
+          state.quarters[DEFAULT_QUARTER] = buildQuarterRecord(
+            parsedLegacy.content,
+            parsedLegacy.completed || defaultCompleted,
+            parsedLegacy.updated_at || null
+          );
+          state.active_quarter = DEFAULT_QUARTER;
+          applySnapshot(state.quarters[DEFAULT_QUARTER].content);
+          applyCompletionSnapshot(state.quarters[DEFAULT_QUARTER].completed);
+          renderQuarterOptions();
+          persistState();
+          setStatus("Loaded saved draft for " + DEFAULT_QUARTER + ".");
           return true;
         } catch (err) {
-          console.warn("Failed to load OKR draft:", err);
+          console.warn("Failed to load legacy OKR draft:", err);
           return false;
         }
+      }
+
+      function setActiveQuarter(quarterName, announce) {
+        const name = normalizeQuarterName(quarterName);
+        if (!name) return;
+        if (name === state.active_quarter) {
+          renderQuarterOptions();
+          return;
+        }
+        persistActiveQuarterToState();
+        ensureQuarterRecord(name);
+        state.active_quarter = name;
+        const active = getActiveQuarterRecord();
+        applySnapshot(active.content);
+        applyCompletionSnapshot(active.completed);
+        renderQuarterOptions();
+        persistState();
+        if (announce !== false) {
+          setStatus("Switched to " + name + ". Save draft after making edits.");
+        }
+      }
+
+      function addQuarterFromInput() {
+        const name = normalizeQuarterName(newQuarterInput.value);
+        if (!name) {
+          setStatus("Enter a quarter name first (for example: Q2 2026).");
+          return;
+        }
+        if (state.quarters[name]) {
+          setActiveQuarter(name, true);
+          newQuarterInput.value = "";
+          return;
+        }
+        persistActiveQuarterToState();
+        const base = getActiveQuarterRecord();
+        state.quarters[name] = buildQuarterRecord(base.content, base.completed, null);
+        state.quarter_order.push(name);
+        state.active_quarter = name;
+        applySnapshot(state.quarters[name].content);
+        applyCompletionSnapshot(state.quarters[name].completed);
+        renderQuarterOptions();
+        persistState();
+        newQuarterInput.value = "";
+        setStatus("Created " + name + " from current OKR content. Edit and save when ready.");
       }
 
       let editMode = false;
@@ -704,12 +946,9 @@
       }
 
       function exportDraftJson() {
-        const payload = {
-          version: 1,
-          updated_at: new Date().toISOString(),
-          content: getCurrentSnapshot(),
-          completed: getCompletionSnapshot(),
-        };
+        persistActiveQuarterToState();
+        persistState();
+        const payload = JSON.parse(JSON.stringify(state));
         const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
         const href = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -728,13 +967,28 @@
         reader.onload = function () {
           try {
             const parsed = JSON.parse(String(reader.result || ""));
-            if (!parsed || typeof parsed !== "object" || !parsed.content) {
+            if (!parsed || typeof parsed !== "object") {
+              throw new Error("Invalid JSON payload");
+            }
+            if (parsed.quarters && typeof parsed.quarters === "object") {
+              state = normalizeState(parsed);
+            } else if (parsed.content) {
+              state = createDefaultState();
+              state.quarters[DEFAULT_QUARTER] = buildQuarterRecord(
+                parsed.content,
+                parsed.completed || defaultCompleted,
+                parsed.updated_at || null
+              );
+              state.active_quarter = DEFAULT_QUARTER;
+            } else {
               throw new Error("Invalid JSON format");
             }
-            applySnapshot(parsed.content);
-            applyCompletionSnapshot(parsed.completed || {});
-            saveDraft();
-            setStatus("Import complete and saved locally.");
+            const active = getActiveQuarterRecord();
+            applySnapshot(active.content);
+            applyCompletionSnapshot(active.completed);
+            renderQuarterOptions();
+            persistState();
+            setStatus("Import complete and saved locally. Active quarter: " + state.active_quarter + ".");
           } catch (err) {
             setStatus("Import failed: invalid JSON payload.");
           }
@@ -748,13 +1002,25 @@
       completeModeBtn.addEventListener("click", function () {
         setCompletionMode(!completionMode);
       });
+      quarterSelect.addEventListener("change", function () {
+        setActiveQuarter(quarterSelect.value, true);
+      });
+      addQuarterBtn.addEventListener("click", function () {
+        addQuarterFromInput();
+      });
+      newQuarterInput.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          addQuarterFromInput();
+        }
+      });
       okrRoot.addEventListener("click", function (event) {
         if (!completionMode) return;
         const item = event.target && event.target.closest ? event.target.closest("li[data-kr-id]") : null;
         if (!item || !okrRoot.contains(item)) return;
         event.preventDefault();
         item.classList.toggle("kr-complete");
-        setStatus("KR updated. Click Save draft to persist this completion state.");
+        setStatus("KR updated for " + state.active_quarter + ". Click Save draft to persist this completion state.");
       });
       saveBtn.addEventListener("click", saveDraft);
       exportBtn.addEventListener("click", exportDraftJson);
@@ -767,15 +1033,19 @@
         importFile.value = "";
       });
       resetBtn.addEventListener("click", function () {
-        applySnapshot(defaultSnapshot);
-        applyCompletionSnapshot(defaultCompleted);
+        state = createDefaultState();
+        applySnapshot(state.quarters[DEFAULT_QUARTER].content);
+        applyCompletionSnapshot(state.quarters[DEFAULT_QUARTER].completed);
+        renderQuarterOptions();
         localStorage.removeItem(STORAGE_KEY);
-        setStatus("Reset to document defaults and cleared local draft.");
+        localStorage.removeItem(LEGACY_STORAGE_KEY);
+        setStatus("Reset to document defaults and cleared local drafts.");
         setCompletionMode(false, false);
         setEditMode(false, false);
       });
 
       loadDraft();
+      renderQuarterOptions();
       setCompletionMode(false, false);
       setEditMode(false, false);
       if (!statusEl.textContent || statusEl.textContent === STATUS_VIEW) setStatus(STATUS_VIEW);

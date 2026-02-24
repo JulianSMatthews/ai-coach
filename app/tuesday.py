@@ -166,6 +166,7 @@ def send_tuesday_check(user: User, coach_name: str = COACH_NAME) -> None:
             coach_name=coach_name,
             user_name=user.first_name or "there",
             locale=getattr(user, "tz", "UK") or "UK",
+            week_no=week_no,
             history_text=history_text,
             timeframe="Tuesday",
         )
