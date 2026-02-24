@@ -2477,7 +2477,7 @@ async def twilio_inbound(request: Request):
             coachmycoach.handle(user, body)
             return Response(content="", media_type="text/plain", status_code=200)
 
-        if lower_body.startswith("psych") or psych.has_active_state(user.id):
+        if lower_body.startswith("psych"):
             try:
                 psych.handle_message(user, body)
             except Exception as e:

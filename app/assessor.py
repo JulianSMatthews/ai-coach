@@ -41,6 +41,7 @@ from .models import (
     OKRObjective,
     OKRKeyResult,
     UserPreference,
+    PsychProfile,
 )
 from .prompts import log_llm_prompt, _coerce_llm_content
 from .debug_utils import debug_log
@@ -153,6 +154,207 @@ def _too_similar(a: str, b: str, jaccard_threshold: float = 0.7) -> bool:
         return False
     jacc = len(aset & bset) / max(1, len(aset | bset))
     return jacc >= jaccard_threshold
+
+
+def _psych_progress_line(idx: int) -> str:
+    total = len(getattr(psych, "QUESTIONS", []) or [])
+    done = max(0, min(int(idx), total))
+    bar_parts = []
+    if done > 0:
+        bar_parts.append("🟩" * done)
+    if done < total:
+        remaining = max(total - done - 1, 0)
+        bar_parts.append("🟧")
+        bar_parts.append("⬜️" * remaining)
+    bar = f"[{''.join(bar_parts)}]"
+    return f"Progress: {bar} {done}/{total}"
+
+
+def _psych_ask_question(user: User, idx: int) -> None:
+    questions = getattr(psych, "QUESTIONS", []) or []
+    opts = getattr(psych, "OPTIONS", "Reply 1-5")
+    if idx < 0 or idx >= len(questions):
+        return
+    _, q_text = questions[idx]
+    _send_to_user(user, f"Q{idx+1}/{len(questions)}:\n{q_text}\n\n{opts}\n(Reply with 1-5.)")
+
+
+def _psych_ack(user: User, text: str, idx_after_answer: int) -> None:
+    snippet = (text or "").strip()
+    first = (getattr(user, "first_name", "") or "").strip()
+    prefix = f"Thanks {first}".strip() if first else "Thanks"
+    hint = " (type *redo* to change or *restart* to begin again)"
+    body = f'{prefix}, logged "{snippet}".{hint}'
+    _send_to_user(user, f"{body}\n\n{_psych_progress_line(idx_after_answer)}")
+
+
+def _derive_psych_profile(scores: dict) -> tuple[dict, dict, dict]:
+    sec = {
+        "readiness": (scores.get("q1", 0) + scores.get("q2", 0)) / 2,
+        "self_reg": (scores.get("q3", 0) + scores.get("q4", 0)) / 2,
+        "emotional": scores.get("q5", 0),
+        "confidence": scores.get("q6", 0),
+    }
+    flags = {
+        "high_readiness": sec["readiness"] >= 4 and sec["confidence"] >= 4,
+        "low_readiness": sec["readiness"] <= 2.5 or sec["confidence"] <= 2.5,
+        "stress_sensitive": scores.get("q4", 0) >= 4 or scores.get("q5", 0) >= 4,
+        "low_self_reg": scores.get("q3", 0) <= 2,
+        "perfectionism": False,
+        "high_accountability": scores.get("q6", 0) >= 4,
+    }
+    params = {
+        "kr_scale_hint": 0.7 if flags["low_readiness"] else 1.0,
+        "structure_level": "high" if flags["low_self_reg"] or flags["high_accountability"] else "normal",
+        "tone": "gentle" if flags["low_readiness"] or flags["stress_sensitive"] or flags["perfectionism"] else "standard",
+        "focus_bias": "resilience" if flags["stress_sensitive"] else "balanced",
+    }
+    return sec, flags, params
+
+
+def _latest_run_id_for_user(s, user_id: int) -> int | None:
+    try:
+        rid = (
+            s.execute(
+                select(AssessmentRun.id)
+                .where(AssessmentRun.user_id == user_id)
+                .order_by(AssessmentRun.id.desc())
+            )
+            .scalars()
+            .first()
+        )
+        return int(rid) if rid else None
+    except Exception:
+        return None
+
+
+def _continue_psych_phase(s, sess: AssessSession, state: dict, user: User, user_text: str) -> bool:
+    questions = list(getattr(psych, "QUESTIONS", []) or [])
+    total = len(questions)
+    if total <= 0:
+        _send_to_user(user, "Psych check is temporarily unavailable. We will continue your plan with current settings.")
+        try:
+            sess.is_active = False
+        except Exception:
+            pass
+        _commit_state(s, sess, state)
+        return True
+
+    cmd = (user_text or "").strip().lower()
+    psych_state = state.setdefault("psych", {"idx": 0, "answers": {}})
+    try:
+        idx = int(psych_state.get("idx") or 0)
+    except Exception:
+        idx = 0
+    answers = psych_state.get("answers") if isinstance(psych_state.get("answers"), dict) else {}
+    answers = dict(answers or {})
+
+    if cmd in {"restart", "reset"}:
+        state["psych"] = {"idx": 0, "answers": {}}
+        _commit_state(s, sess, state)
+        _send_to_user(user, "No problem—let’s restart. Here’s the first question.")
+        _psych_ask_question(user, 0)
+        return True
+
+    if cmd == "redo":
+        prev_idx = max(0, idx - 1)
+        if idx > 0 and idx - 1 < total:
+            prev_key, _ = questions[idx - 1]
+            answers.pop(prev_key, None)
+        state["psych"] = {"idx": prev_idx, "answers": answers}
+        _commit_state(s, sess, state)
+        _send_to_user(user, "Got it—let’s redo that one. (Reply 1-5; you can also type restart.)")
+        _psych_ask_question(user, prev_idx)
+        return True
+
+    msg = (user_text or "").strip()
+    if msg not in {"1", "2", "3", "4", "5"}:
+        _send_to_user(user, "Please reply with 1, 2, 3, 4, or 5. (Or type redo / restart.)")
+        return True
+
+    idx = max(0, min(idx, total - 1))
+    qkey, _ = questions[idx]
+    answers[qkey] = int(msg)
+    _psych_ack(user, msg, idx + 1)
+    idx += 1
+
+    if idx >= total:
+        completed_at = datetime.utcnow()
+        sec, flags, params = _derive_psych_profile(answers)
+
+        run_id = int(state.get("run_id") or 0) or _latest_run_id_for_user(s, int(user.id))
+        profile = PsychProfile(
+            user_id=int(user.id),
+            assessment_run_id=int(run_id) if run_id else None,
+            scores=answers,
+            section_averages=sec,
+            flags=flags,
+            parameters=params,
+            completed_at=completed_at,
+        )
+        s.add(profile)
+        try:
+            (
+                s.query(User)
+                .filter(User.id == int(user.id), User.first_assessment_completed.is_(None))
+                .update({"first_assessment_completed": completed_at}, synchronize_session=False)
+            )
+        except Exception:
+            pass
+
+        job_id = None
+        enqueue_error = None
+        if run_id:
+            try:
+                job_id = enqueue_job(
+                    "assessment_narratives_habit_seed",
+                    {"run_id": int(run_id), "user_id": int(user.id), "trigger": "psych_complete_main_path"},
+                    user_id=int(user.id),
+                )
+            except Exception as e:
+                enqueue_error = repr(e)
+        else:
+            enqueue_error = "missing_run_id"
+
+        try:
+            s.add(
+                JobAudit(
+                    job_name="assessment_narratives_habit_seed_enqueue_psych_complete",
+                    status="ok" if not enqueue_error else "error",
+                    payload={
+                        "run_id": int(run_id) if run_id else None,
+                        "user_id": int(user.id),
+                        "job_id": int(job_id) if job_id else None,
+                        "trigger": "psych_complete_main_path",
+                    },
+                    error=enqueue_error,
+                )
+            )
+        except Exception:
+            pass
+
+        pending_msg = str(state.get("pending_assessment_summary") or "").strip()
+        state["pending_assessment_summary"] = ""
+        state["phase"] = "complete"
+        state["psych"] = {"idx": total, "answers": answers}
+        try:
+            sess.is_active = False
+        except Exception:
+            pass
+        _commit_state(s, sess, state)
+
+        if pending_msg:
+            _send_to_user(user, pending_msg)
+        _send_to_user(
+            user,
+            "Thanks—saved your readiness profile. I’ll use this to set the right KR load and coaching style.",
+        )
+        return True
+
+    state["psych"] = {"idx": idx, "answers": answers}
+    _commit_state(s, sess, state)
+    _psych_ask_question(user, idx)
+    return True
 
 def _as_dialogue_simple(items: list[dict]) -> list[dict]:
     out = []
@@ -1685,6 +1887,7 @@ def start_combined_assessment(user: User, *, force_intro: bool = False):
         state = {
             "turns": [],
             "current": "nutrition",
+            "phase": "pillars",
             "results": {},
             "turn_idx": 0,
             "run_id": None,
@@ -1696,6 +1899,8 @@ def start_combined_assessment(user: User, *, force_intro: bool = False):
             "question_seq": 0,
             "question_numbers": {},
             "total_questions": 0,
+            "psych": {"idx": 0, "answers": {}},
+            "pending_assessment_summary": "",
         }
         sess = AssessSession(user_id=user.id, domain="combined", is_active=True, turn_count=0, state=state)
         s.add(sess); s.commit(); s.refresh(sess)
@@ -1827,6 +2032,9 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         if cmd in {"report", "pdf", "report please", "send report", "pdf report", "dashboard", "image report", "assessment"}:
             send_hsapp_assessment_link(user)
             return True
+
+        if str(state.get("phase") or "pillars").lower() == "psych":
+            return _continue_psych_phase(s, sess, state, user, user_text)
 
         # Quick correction command — "redo last"
         # Re-asks the most recent main question so the next reply overwrites that concept's answer.
@@ -2964,27 +3172,6 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     f"\n{breakdown}\n\n"
                     f"View your assessment in the HealthSense app: {login_url}"
                 )
-                # Mark any active assessment sessions as inactive before psych
-                try:
-                    s.execute(
-                        update(AssessSession)
-                        .where(AssessSession.user_id == user.id, AssessSession.is_active == True)
-                        .values(is_active=False, updated_at=datetime.utcnow())
-                    )
-                    s.commit()
-                except Exception:
-                    s.rollback()
-                try:
-                    psych.store_pending_summary(user.id, final_msg)
-                except Exception:
-                    _send_to_user(user, final_msg)
-
-                # Start psych readiness mini-assessment before closing (if not already active)
-                try:
-                    if not psych.has_active_state(user.id):
-                        psych.start(user, state.get("run_id"))
-                except Exception:
-                    pass
 
                 # Persist combined score + dashboard path onto AssessmentRun (for reporting)
                 resolved_run_id = _mark_assessment_run_finished(
@@ -2994,12 +3181,6 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 )
                 if resolved_run_id:
                     state["run_id"] = int(resolved_run_id)
-                    # Psych flow starts just above. Ensure active psych state carries the
-                    # canonical run_id so habit narrative enqueue always has context.
-                    try:
-                        psych.bind_assessment_run(user.id, int(resolved_run_id))
-                    except Exception:
-                        pass
                 else:
                     print(
                         f"[assessment] WARN: run completion not persisted "
@@ -3093,14 +3274,18 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     except Exception:
                         pass
 
-                # Deactivate session
-                try:
-                    sess.is_active = False; s.commit()
-                except Exception:
-                    pass
-
+                # Continue in the same assessment session with psych readiness questions.
+                state["phase"] = "psych"
+                state["psych"] = {"idx": 0, "answers": {}}
+                state["pending_assessment_summary"] = final_msg
                 _commit_state(s, sess, state)
-                return True     
+                _send_to_user(
+                    user,
+                    "I’m going to ask 6 quick questions about your habits and approach to change. "
+                    "This helps tailor your plan and coaching style.",
+                )
+                _psych_ask_question(user, 0)
+                return True
 
         # Not finished pillar: ask next concept main question
         next_index = int(concept_idx_map[pillar])
