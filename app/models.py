@@ -1104,6 +1104,7 @@ class BackgroundJob(Base):
     result     = Column(JSONType, nullable=True)
     error      = Column(Text, nullable=True)
     attempts   = Column(Integer, nullable=False, server_default=text("0"))
+    available_at = Column(DateTime, nullable=True)
     locked_at  = Column(DateTime, nullable=True)
     locked_by  = Column(String(120), nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
@@ -1111,6 +1112,7 @@ class BackgroundJob(Base):
 
     __table_args__ = (
         Index("ix_background_jobs_status_kind", "status", "kind"),
+        Index("ix_background_jobs_status_available_at", "status", "available_at"),
     )
 
 class WeeklyFocus(Base):

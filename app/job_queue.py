@@ -18,6 +18,13 @@ def ensure_job_table() -> None:
     except Exception:
         # Fallback: create all if table list not supported
         Base.metadata.create_all(bind=engine)
+    try:
+        with engine.connect() as conn:
+            conn.execute(sa_text("ALTER TABLE background_jobs ADD COLUMN IF NOT EXISTS available_at timestamp;"))
+            conn.execute(sa_text("CREATE INDEX IF NOT EXISTS ix_background_jobs_status_available_at ON background_jobs(status, available_at);"))
+            conn.commit()
+    except Exception:
+        pass
 
 _PROMPT_SETTINGS_SCHEMA_READY = False
 
@@ -53,6 +60,28 @@ def ensure_prompt_settings_schema() -> None:
 def _env_flag(name: str) -> bool:
     return (os.getenv(name) or "").strip().lower() in {"1", "true", "yes"}
 
+
+def _env_int(name: str, default: int) -> int:
+    raw = (os.getenv(name) or "").strip()
+    if not raw:
+        return int(default)
+    try:
+        return int(raw)
+    except Exception:
+        return int(default)
+
+
+def queue_requeue_delay_seconds(requeue_count: int) -> int:
+    """
+    Generic queue-level retry delay policy.
+    Delay grows linearly and is capped.
+    """
+    base = max(1, _env_int("QUEUE_REQUEUE_BASE_DELAY_SECONDS", 5))
+    step = max(0, _env_int("QUEUE_REQUEUE_STEP_SECONDS", 2))
+    max_delay = max(base, _env_int("QUEUE_REQUEUE_MAX_DELAY_SECONDS", 30))
+    delay = base + (max(0, int(requeue_count)) * step)
+    return min(max_delay, max(base, delay))
+
 def _get_worker_overrides() -> tuple[bool | None, bool | None]:
     ensure_prompt_settings_schema()
     try:
@@ -85,7 +114,13 @@ def should_use_podcast_worker() -> bool:
     return worker_enabled and _env_flag("PODCAST_WORKER_MODE")
 
 
-def enqueue_job(kind: str, payload: dict[str, Any], *, user_id: int | None = None) -> int:
+def enqueue_job(
+    kind: str,
+    payload: dict[str, Any],
+    *,
+    user_id: int | None = None,
+    available_at: datetime | None = None,
+) -> int:
     with SessionLocal() as s:
         try:
             job = BackgroundJob(
@@ -93,6 +128,7 @@ def enqueue_job(kind: str, payload: dict[str, Any], *, user_id: int | None = Non
                 payload=payload,
                 status="pending",
                 user_id=user_id,
+                available_at=available_at,
             )
             s.add(job)
             s.commit()
@@ -111,6 +147,7 @@ def enqueue_job(kind: str, payload: dict[str, Any], *, user_id: int | None = Non
                     payload=payload,
                     status="pending",
                     user_id=user_id,
+                    available_at=available_at,
                 )
                 s.add(job)
                 s.commit()
@@ -137,6 +174,7 @@ def claim_job(
                     and_(BackgroundJob.status == "running", BackgroundJob.locked_at.isnot(None), BackgroundJob.locked_at < stale),
                 )
             )
+            q = q.filter(or_(BackgroundJob.available_at.is_(None), BackgroundJob.available_at <= now))
             if kinds:
                 q = q.filter(BackgroundJob.kind.in_(list(kinds)))
             job = (

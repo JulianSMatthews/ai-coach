@@ -8,8 +8,16 @@ import socket
 import traceback
 import json
 import urllib.request
+from datetime import datetime, timedelta
 
-from app.job_queue import claim_job, ensure_job_table, mark_done, mark_error, enqueue_job
+from app.job_queue import (
+    claim_job,
+    ensure_job_table,
+    mark_done,
+    mark_error,
+    enqueue_job,
+    queue_requeue_delay_seconds,
+)
 from app import scheduler, assessor, monday, kickoff, thursday, friday
 from app.prompts import run_llm_prompt
 from app.usage import ensure_usage_schema
@@ -199,10 +207,13 @@ def _process_assessment_week1_habit_seed(payload: dict) -> dict:
         next_payload["max_requeues"] = max(1, max_requeues)
         next_payload["last_requeue_reason"] = reason
 
+        delay_seconds = queue_requeue_delay_seconds(requeue_count)
+        available_at = datetime.utcnow() + timedelta(seconds=delay_seconds)
+
         duplicate_found = False
         with SessionLocal() as s:
             candidates = (
-                s.query(BackgroundJob.id, BackgroundJob.payload)
+                s.query(BackgroundJob.id, BackgroundJob.payload, BackgroundJob.available_at)
                 .filter(
                     BackgroundJob.kind == "assessment_week1_habit_seed",
                     BackgroundJob.status.in_(["pending", "retry"]),
@@ -210,20 +221,30 @@ def _process_assessment_week1_habit_seed(payload: dict) -> dict:
                 )
                 .all()
             )
-            for _, existing_payload in candidates:
+            for _, existing_payload, existing_available_at in candidates:
                 body = existing_payload if isinstance(existing_payload, dict) else {}
-                if isinstance(body, dict) and _same_seed_payload(body, next_payload):
+                same_job = isinstance(body, dict) and _same_seed_payload(body, next_payload)
+                if not same_job:
+                    continue
+                # If we already have one scheduled for later, don't enqueue another.
+                if existing_available_at is None or existing_available_at >= available_at:
                     duplicate_found = True
                     break
 
         if not duplicate_found:
-            enqueue_job("assessment_week1_habit_seed", next_payload, user_id=int(user_id))
+            enqueue_job(
+                "assessment_week1_habit_seed",
+                next_payload,
+                user_id=int(user_id),
+                available_at=available_at,
+            )
 
         print(
             f"[worker] habit seed requeue user_id={user_id} "
             f"assess_session_id={assess_session_id} run_id={run_id} "
             f"week_no={week_no} requeue_count={requeue_count + 1}/{max(1, max_requeues)} "
-            f"reason={reason} duplicate_found={duplicate_found}"
+            f"reason={reason} delay_seconds={delay_seconds} "
+            f"available_at={available_at.isoformat()} duplicate_found={duplicate_found}"
         )
         return {
             "ok": True,
@@ -232,6 +253,8 @@ def _process_assessment_week1_habit_seed(payload: dict) -> dict:
             "requeued": True,
             "reason": reason,
             "requeue_count": requeue_count + 1,
+            "requeue_delay_seconds": delay_seconds,
+            "requeue_not_before": available_at.isoformat(),
             "duplicate_found": duplicate_found,
         }
 
