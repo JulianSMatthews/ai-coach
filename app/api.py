@@ -11191,6 +11191,7 @@ def admin_list_users(
         payload.append(
             {
                 "id": u.id,
+                "club_id": getattr(u, "club_id", None),
                 "first_name": getattr(u, "first_name", None),
                 "surname": getattr(u, "surname", None),
                 "display_name": display_full_name(u),
@@ -11205,6 +11206,8 @@ def admin_list_users(
                 "latest_run_finished_at": latest_finished.get(run_id) if run_id else None,
                 "first_assessment_completed_at": first_assessment_completed,
                 "status": status,
+                "is_superuser": bool(getattr(u, "is_superuser", False)),
+                "admin_role": getattr(u, "admin_role", None),
                 "prompt_state_override": prompt_overrides.get(u.id, ""),
                 "coaching_enabled": (coaching_pref.get(u.id, (None, "0"))[1].strip() == "1"),
                 "coaching_fast_minutes": coaching_fast_minutes.get(u.id),
@@ -11212,6 +11215,40 @@ def admin_list_users(
         )
 
     return {"count": len(payload), "users": payload}
+
+
+@admin.post("/users/{user_id}/role")
+def admin_user_set_role(user_id: int, payload: dict, admin_user: User = Depends(_require_admin)):
+    """
+    Set admin role for a user.
+    Body: { "admin_role": "member|club_admin|global_admin" }
+    """
+    if not _is_global_admin(admin_user):
+        raise HTTPException(status_code=403, detail="global admin required")
+
+    role_raw = str(payload.get("admin_role") or "").strip().lower()
+    if role_raw not in {ADMIN_ROLE_MEMBER, ADMIN_ROLE_CLUB, ADMIN_ROLE_GLOBAL}:
+        raise HTTPException(status_code=400, detail="admin_role must be member|club_admin|global_admin")
+
+    with SessionLocal() as s:
+        u = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not u:
+            raise HTTPException(status_code=404, detail="user not found")
+        if int(getattr(u, "id", 0) or 0) == int(getattr(admin_user, "id", 0) or 0):
+            raise HTTPException(status_code=400, detail="cannot change your own role")
+        if role_raw == ADMIN_ROLE_CLUB and getattr(u, "club_id", None) is None:
+            raise HTTPException(status_code=400, detail="club_admin requires user.club_id")
+        u.admin_role = role_raw
+        # Keep legacy flag aligned for compatibility with older role checks.
+        u.is_superuser = bool(role_raw == ADMIN_ROLE_GLOBAL)
+        s.commit()
+        s.refresh(u)
+        return {
+            "ok": True,
+            "user_id": int(u.id),
+            "admin_role": str(getattr(u, "admin_role", ADMIN_ROLE_MEMBER) or ADMIN_ROLE_MEMBER),
+            "is_superuser": bool(getattr(u, "is_superuser", False)),
+        }
 
 @admin.get("/users/{user_id}")
 def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin)):

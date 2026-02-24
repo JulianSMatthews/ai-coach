@@ -863,6 +863,7 @@ export type BillingCatalogPayload = {
 
 export type AdminUserSummary = {
   id: number;
+  club_id?: number | null;
   first_name?: string | null;
   surname?: string | null;
   display_name?: string | null;
@@ -877,6 +878,8 @@ export type AdminUserSummary = {
   latest_run_finished_at?: string | null;
   first_assessment_completed_at?: string | null;
   status?: string | null;
+  is_superuser?: boolean | null;
+  admin_role?: string | null;
   prompt_state_override?: string | null;
   coaching_enabled?: boolean | null;
   coaching_fast_minutes?: number | null;
@@ -1498,6 +1501,17 @@ export async function setAdminUserCoaching(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+  });
+}
+
+export async function setAdminUserRole(
+  userId: number,
+  adminRole: "member" | "club_admin" | "global_admin",
+): Promise<Record<string, unknown>> {
+  return apiAdmin<Record<string, unknown>>(`/admin/users/${userId}/role`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ admin_role: adminRole }),
   });
 }
 
