@@ -38,7 +38,12 @@ export type AssessmentResponse = {
   readiness?: { score?: number; label?: string; note?: string } | null;
   readiness_breakdown?: Array<{ key?: string; label?: string; value?: number }>;
   readiness_responses?: Array<{ key?: string; question?: string; answer?: number | string }>;
-  meta?: { reported_at?: string; narratives_cached?: boolean; narratives_source?: string };
+  meta?: {
+    reported_at?: string;
+    narratives_cached?: boolean;
+    narratives_source?: string;
+    habit_narrative_pending?: boolean;
+  };
   reports?: {
     assessment_html?: string;
     assessment_pdf?: string;

@@ -121,10 +121,7 @@ def _resolve_latest_run_id(session, user_id: int) -> Optional[int]:
         run = (
             session.query(AssessmentRun)
             .filter(AssessmentRun.user_id == user_id)
-            .order_by(
-                AssessmentRun.finished_at.desc().nullslast(),
-                AssessmentRun.id.desc(),
-            )
+            .order_by(AssessmentRun.id.desc())
             .first()
         )
         if run and getattr(run, "id", None):
@@ -289,33 +286,27 @@ def handle_message(user: User, text: str):
             s.commit()
 
             # Habit readiness is part of assessment completion. Once profile is saved,
-            # trigger habit-readiness narrative generation.
-            run_id = state.get("assessment_run_id")
-            run_id_source = "state"
-            if not run_id:
-                run_id = _resolve_latest_run_id(s, int(user.id))
-                run_id_source = "latest_run_lookup" if run_id else "missing"
+            # trigger full assessment narrative generation (score + OKR + habit).
+            run_id = _resolve_latest_run_id(s, int(user.id))
+            run_id_source = "latest_run_lookup" if run_id else "missing"
             if run_id:
                 try:
                     from .job_queue import enqueue_job
-                    from .job_queue import should_use_worker
 
-                    worker_enabled = bool(should_use_worker())
                     job_id = enqueue_job(
-                        "assessment_narratives_habit_seed",
+                        "assessment_narratives_seed",
                         {"run_id": int(run_id), "user_id": int(user.id), "trigger": "psych_complete"},
                         user_id=int(user.id),
                     )
                     try:
                         s.add(
                             JobAudit(
-                                job_name="assessment_narratives_habit_seed_enqueue_psych_complete",
+                                job_name="assessment_narratives_seed_enqueue_psych_complete",
                                 status="ok",
                                 payload={
                                     "run_id": int(run_id),
                                     "user_id": int(user.id),
                                     "job_id": int(job_id),
-                                    "worker_mode_enabled": worker_enabled,
                                     "run_id_source": run_id_source,
                                 },
                             )
@@ -327,7 +318,7 @@ def handle_message(user: User, text: str):
                     try:
                         s.add(
                             JobAudit(
-                                job_name="assessment_narratives_habit_seed_enqueue_psych_complete",
+                                job_name="assessment_narratives_seed_enqueue_psych_complete",
                                 status="error",
                                 payload={
                                     "run_id": int(run_id),
@@ -344,7 +335,7 @@ def handle_message(user: User, text: str):
                 try:
                     s.add(
                         JobAudit(
-                            job_name="assessment_narratives_habit_seed_enqueue_psych_complete",
+                            job_name="assessment_narratives_seed_enqueue_psych_complete",
                             status="error",
                             payload={"run_id": None, "user_id": int(user.id), "run_id_source": "missing"},
                             error="missing_run_id",

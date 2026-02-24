@@ -345,7 +345,6 @@ def _report_log(message: str) -> None:
         return
     print(message)
 
-
 def _collect_run_dialogue(run_id: int, limit_per_pillar: int | None = None) -> dict[str, list[dict]]:
     out: dict[str, list[dict]] = defaultdict(list)
     latest_by_concept: dict[str, dict[str, dict[str, Any]]] = defaultdict(dict)
@@ -3446,6 +3445,13 @@ def build_assessment_dashboard_data(
     for row in score_rows:
         row["bucket"] = _score_bucket(int(row["value"]))
 
+    habit_narrative_pending = bool(
+        run_finished
+        and has_pillar_scores
+        and has_psych_profile
+        and not str(coaching_text or "").strip()
+    )
+
     return {
         "user": {
             "id": getattr(user, "id", None),
@@ -3479,6 +3485,7 @@ def build_assessment_dashboard_data(
         "meta": {
             "reported_at": datetime.utcnow().strftime("%d %b %Y %H:%M UTC"),
             "narratives_cached": narratives_cached_flag,
+            "habit_narrative_pending": habit_narrative_pending,
             "narratives_source": None
             if narratives_cached_flag is None
             else ("cached" if cached_ok else ("llm" if include_llm else "pending_worker")),

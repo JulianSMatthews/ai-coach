@@ -50,6 +50,13 @@ export default async function AssessmentPage(props: PageProps) {
   const reportedAt = safeData.meta?.reported_at;
   const narrativesCached = safeData.meta?.narratives_cached;
   const narrativesPending = narrativesCached === false;
+  const habitNarrativePending = safeData.meta?.habit_narrative_pending === true;
+  const autoRefreshPending = narrativesPending || habitNarrativePending;
+  const habitReadinessHtml =
+    narratives.coaching_html ||
+    (habitNarrativePending
+      ? "<p>We are finalising your habit readiness notes. They will be ready shortly.</p>"
+      : "<p>No habit readiness notes yet.</p>");
   const scoreAudio = narratives.score_audio_url || "";
   const okrAudio = narratives.okr_audio_url || "";
   const coachingAudio = narratives.coaching_audio_url || "";
@@ -119,7 +126,7 @@ export default async function AssessmentPage(props: PageProps) {
 
   return (
     <PageShell>
-      <AutoRefreshOnPending enabled={narrativesPending} intervalMs={8000} />
+      <AutoRefreshOnPending enabled={autoRefreshPending} intervalMs={8000} />
       <TextScale defaultScale={textScale} />
       <AppNav userId={userId} promptBadge={promptBadge} />
       <SectionHeader
@@ -239,12 +246,12 @@ export default async function AssessmentPage(props: PageProps) {
               />
             </div>
           ) : null}
-          <div className="mt-4 hidden space-y-3 whitespace-pre-wrap text-sm text-[#3c332b] md:block" dangerouslySetInnerHTML={{ __html: narratives.coaching_html || "<p>No habit readiness notes yet.</p>" }} />
+          <div className="mt-4 hidden space-y-3 whitespace-pre-wrap text-sm text-[#3c332b] md:block" dangerouslySetInnerHTML={{ __html: habitReadinessHtml }} />
           <details className="mt-4 text-sm text-[#3c332b] md:hidden">
             <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[var(--accent)]">
               Read
             </summary>
-            <div className="mt-3 space-y-3 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: narratives.coaching_html || "<p>No habit readiness notes yet.</p>" }} />
+            <div className="mt-3 space-y-3 whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: habitReadinessHtml }} />
           </details>
         </Card>
       </section>

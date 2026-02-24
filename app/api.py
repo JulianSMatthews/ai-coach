@@ -5561,6 +5561,16 @@ def admin_assessment_health(
                     continue
                 pillar_map.setdefault(rid_i, set()).add(key)
 
+        psych_done_runs: set[int] = set()
+        if run_ids:
+            psych_rows = (
+                s.query(PsychProfile.assessment_run_id)
+                .filter(PsychProfile.assessment_run_id.in_(run_ids))
+                .filter(PsychProfile.completed_at.isnot(None))
+                .all()
+            )
+            psych_done_runs = {int(rid) for (rid,) in psych_rows if rid is not None}
+
         consent_map: dict[int, bool] = {}
         if user_ids:
             consent_rows = (
@@ -5594,6 +5604,11 @@ def admin_assessment_health(
             {"key": "training_done", "label": "Training completed", "description": "Training pillar result persisted."},
             {"key": "resilience_done", "label": "Resilience completed", "description": "Resilience pillar result persisted."},
             {"key": "recovery_done", "label": "Recovery completed", "description": "Recovery pillar result persisted."},
+            {
+                "key": "habit_readiness_done",
+                "label": "Habit readiness completed",
+                "description": "Habit-readiness profile captured after the pillar assessment.",
+            },
             {"key": "assessment_done", "label": "Assessment completed", "description": "Assessment run marked finished."},
         ]
 
@@ -5612,6 +5627,7 @@ def admin_assessment_health(
             training_done = "training" in pillars
             resilience_done = "resilience" in pillars
             recovery_done = "recovery" in pillars
+            habit_readiness_done = rid in psych_done_runs
             assessment_done = finished_at is not None
 
             reached = 0
@@ -5627,8 +5643,10 @@ def admin_assessment_health(
                 reached = 5
             if reached >= 5 and recovery_done:
                 reached = 6
-            if reached >= 6 and assessment_done:
+            if reached >= 6 and habit_readiness_done:
                 reached = 7
+            if reached >= 7 and assessment_done:
+                reached = 8
             reached_by_run[rid] = reached
 
         funnel_steps = []
