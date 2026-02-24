@@ -2994,6 +2994,12 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 )
                 if resolved_run_id:
                     state["run_id"] = int(resolved_run_id)
+                    # Psych flow starts just above. Ensure active psych state carries the
+                    # canonical run_id so habit narrative enqueue always has context.
+                    try:
+                        psych.bind_assessment_run(user.id, int(resolved_run_id))
+                    except Exception:
+                        pass
                 else:
                     print(
                         f"[assessment] WARN: run completion not persisted "

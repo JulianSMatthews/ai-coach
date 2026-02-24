@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Optional
 
 from .db import SessionLocal
-from .models import User, UserPreference, PsychProfile, AssessSession, JobAudit
+from .models import User, UserPreference, PsychProfile, AssessSession, AssessmentRun, JobAudit
 from . import nudges
 
 
@@ -97,6 +97,41 @@ def pop_pending_summary(session, user_id: int) -> Optional[str]:
 def has_active_state(user_id: int) -> bool:
     with SessionLocal() as s:
         return _get_state(s, user_id) is not None
+
+
+def bind_assessment_run(user_id: int, assessment_run_id: Optional[int]) -> bool:
+    """
+    Attach/update assessment_run_id on an active psych state.
+    Returns True when state was updated.
+    """
+    if not assessment_run_id:
+        return False
+    with SessionLocal() as s:
+        state = _get_state(s, user_id)
+        if not state:
+            return False
+        state["assessment_run_id"] = int(assessment_run_id)
+        _set_state(s, user_id, state)
+        s.commit()
+        return True
+
+
+def _resolve_latest_run_id(session, user_id: int) -> Optional[int]:
+    try:
+        run = (
+            session.query(AssessmentRun)
+            .filter(AssessmentRun.user_id == user_id)
+            .order_by(
+                AssessmentRun.finished_at.desc().nullslast(),
+                AssessmentRun.id.desc(),
+            )
+            .first()
+        )
+        if run and getattr(run, "id", None):
+            return int(run.id)
+    except Exception:
+        return None
+    return None
 
 
 def _ask_question(user: User, idx: int):
@@ -256,6 +291,10 @@ def handle_message(user: User, text: str):
             # Habit readiness is part of assessment completion. Once profile is saved,
             # trigger habit-readiness narrative generation.
             run_id = state.get("assessment_run_id")
+            run_id_source = "state"
+            if not run_id:
+                run_id = _resolve_latest_run_id(s, int(user.id))
+                run_id_source = "latest_run_lookup" if run_id else "missing"
             if run_id:
                 try:
                     from .job_queue import enqueue_job
@@ -277,6 +316,7 @@ def handle_message(user: User, text: str):
                                     "user_id": int(user.id),
                                     "job_id": int(job_id),
                                     "worker_mode_enabled": worker_enabled,
+                                    "run_id_source": run_id_source,
                                 },
                             )
                         )
@@ -289,13 +329,30 @@ def handle_message(user: User, text: str):
                             JobAudit(
                                 job_name="assessment_narratives_habit_seed_enqueue_psych_complete",
                                 status="error",
-                                payload={"run_id": int(run_id), "user_id": int(user.id)},
+                                payload={
+                                    "run_id": int(run_id),
+                                    "user_id": int(user.id),
+                                    "run_id_source": run_id_source,
+                                },
                                 error=repr(e),
                             )
                         )
                         s.commit()
                     except Exception:
                         s.rollback()
+            else:
+                try:
+                    s.add(
+                        JobAudit(
+                            job_name="assessment_narratives_habit_seed_enqueue_psych_complete",
+                            status="error",
+                            payload={"run_id": None, "user_id": int(user.id), "run_id_source": "missing"},
+                            error="missing_run_id",
+                        )
+                    )
+                    s.commit()
+                except Exception:
+                    s.rollback()
             if pending:
                 _send_safe(user, pending)
             _send_safe(
