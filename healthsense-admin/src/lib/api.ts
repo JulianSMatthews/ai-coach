@@ -643,6 +643,8 @@ export type PromptHistoryItem = {
   duration_ms?: number | null;
   execution_source?: string | null;
   worker_process?: boolean | null;
+  worker_id?: string | null;
+  worker_pid?: number | null;
   template_state?: string | null;
   template_version?: number | null;
   response_preview?: string | null;

@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import threading
 from datetime import datetime, timedelta
 from dataclasses import dataclass, field
@@ -1920,6 +1921,10 @@ def _in_worker_process() -> bool:
     return (os.getenv("PROMPT_WORKER_PROCESS") or "").strip().lower() in {"1", "true", "yes"}
 
 
+def _resolve_worker_id() -> str:
+    return (os.getenv("WORKER_ID") or "").strip() or socket.gethostname()
+
+
 def enqueue_llm_prompt(
     *,
     prompt: str,
@@ -2101,6 +2106,18 @@ def _log_llm_prompt_sync(
             worker_process_raw = context_meta.get("worker_process")
             if not isinstance(worker_process_raw, bool):
                 context_meta["worker_process"] = bool(in_worker)
+            if in_worker:
+                worker_id_raw = context_meta.get("worker_id")
+                worker_id = str(worker_id_raw).strip() if worker_id_raw is not None else ""
+                if not worker_id:
+                    context_meta["worker_id"] = _resolve_worker_id()
+                worker_pid_raw = context_meta.get("worker_pid")
+                try:
+                    worker_pid = int(worker_pid_raw) if worker_pid_raw is not None else None
+                except Exception:
+                    worker_pid = None
+                if worker_pid is None:
+                    context_meta["worker_pid"] = os.getpid()
         known_blocks, extra_blocks, resolved_order, assembled_from_blocks = _normalize_prompt_blocks(
             prompt_blocks, preferred_order=block_order
         )

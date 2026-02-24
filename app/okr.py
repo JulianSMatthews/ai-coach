@@ -83,6 +83,19 @@ def _resolve_okr_temperature(model_name: str | None, default_temp: float) -> flo
     return float(default_temp)
 
 
+def _kr_not_needed_threshold() -> float:
+    """
+    Score threshold at/above which a concept is treated as "KR not needed".
+    Defaults to 90 to align with existing low/medium/high score banding.
+    """
+    raw = (os.getenv("OKR_KR_NOT_NEEDED_SCORE") or "90").strip()
+    try:
+        val = float(raw)
+    except Exception:
+        val = 90.0
+    return max(0.0, min(100.0, val))
+
+
 # Pure-LLM OKR mode (no scaffolding, no clamps, no fallback)
 OKR_RAW_FROM_LLM = os.getenv("OKR_RAW_FROM_LLM", "0") == "1"
 # Explicit override for raw mode (takes precedence if set)
@@ -300,7 +313,18 @@ def _guess_concept_from_description(pillar_slug: str, desc: str) -> str | None:
     if pillar_slug == "training":
         if any(phrase in raw for phrase in ("mobility", "flexibility", "stretch", "yoga")):
             return "flexibility_mobility"
-        if any(phrase in raw for phrase in ("strength", "weights", "resistance band", "resistance bands", "bodyweight")):
+        if any(
+            phrase in raw
+            for phrase in (
+                "strength",
+                "weights",
+                "resistance",
+                "resistance band",
+                "resistance bands",
+                "bodyweight",
+                "progressive overload",
+            )
+        ):
             return "strength_training"
         if any(phrase in raw for phrase in ("cardio", "running", "cycling", "swimming")):
             return "cardio_frequency"
@@ -558,6 +582,108 @@ def _compose_kr_description_from_values(pillar_slug: str, kr: dict) -> str:
         b_txt = _format_kr_number(baseline)
         return f"Current {subject}: {b_txt}{suffix}."
     return str(kr.get("description") or "").strip() or f"Improve {subject}."
+
+
+def _kr_candidate_priority(kr: dict) -> tuple:
+    """
+    Rank KR candidates for de-duplication (higher tuple wins).
+    Preference order:
+    1) has concept key
+    2) has both baseline and target
+    3) larger baseline->target delta
+    4) has non-empty description
+    """
+    ckey = _normalize_concept_key((kr.get("concept_key") or "").split(".")[-1])
+    base = _safe_float(kr.get("baseline_num"))
+    target = _safe_float(kr.get("target_num"))
+    has_both = int(base is not None and target is not None)
+    delta = abs((target or 0.0) - (base or 0.0)) if has_both else -1.0
+    desc = (kr.get("description") or "").strip()
+    return (
+        int(bool(ckey)),
+        has_both,
+        delta,
+        int(bool(desc)),
+    )
+
+
+def _dedupe_krs_by_concept(pillar_slug: str, krs: list[dict]) -> list[dict]:
+    """
+    Keep at most one KR per concept to avoid duplicates (e.g., two strength KRs).
+    Unknown-concept KRs are retained as-is.
+    """
+    out: list[dict] = []
+    index_by_concept: dict[str, int] = {}
+    for kr in krs:
+        if not isinstance(kr, dict):
+            out.append(kr)
+            continue
+        ckey = _normalize_concept_key((kr.get("concept_key") or "").split(".")[-1])
+        if not ckey:
+            guessed = _normalize_concept_key(_guess_concept_from_description(pillar_slug, kr.get("description", "")))
+            if guessed:
+                ckey = guessed
+                kr["concept_key"] = ckey
+        if not ckey:
+            out.append(kr)
+            continue
+        existing_idx = index_by_concept.get(ckey)
+        if existing_idx is None:
+            index_by_concept[ckey] = len(out)
+            out.append(kr)
+            continue
+        current = out[existing_idx]
+        if not isinstance(current, dict):
+            out[existing_idx] = kr
+            continue
+        if _kr_candidate_priority(kr) > _kr_candidate_priority(current):
+            out[existing_idx] = kr
+    return out
+
+
+def _build_default_kr_for_concept(
+    *,
+    pillar_slug: str,
+    concept_key: str,
+    concept_scores: dict[str, float] | None,
+    state_answers: dict[str, float] | None,
+) -> dict:
+    """
+    Deterministic concept KR used when the model omits a concept that should
+    still get a KR under score-band policy.
+    """
+    concept_scores = concept_scores or {}
+    state_answers = state_answers or {}
+    meta = (_GUIDE.get(pillar_slug, {}) or {}).get(concept_key, {})
+    baseline = _safe_float(state_answers.get(concept_key))
+    if baseline is None:
+        baseline = _safe_float(concept_scores.get(concept_key))
+    if baseline is None:
+        baseline = 0.0
+    direction = _preferred_direction(meta, concept_scores, concept_key)
+    if direction == "reduce":
+        target = max(0.0, baseline - 1.0)
+    elif direction == "maintain":
+        target = baseline
+    else:
+        target = baseline + 1.0
+    if abs(target - baseline) < 1e-9:
+        target = baseline + (1.0 if direction != "reduce" else -1.0)
+        if target < 0:
+            target = 0.0
+
+    kr = {
+        "kr_key": f"{concept_key}_step",
+        "concept_key": concept_key,
+        "metric_label": meta.get("label") or concept_key.replace("_", " "),
+        "unit": meta.get("unit") or None,
+        "baseline_num": baseline,
+        "target_num": target,
+        "actual_num": baseline,
+        "score": _safe_float(concept_scores.get(concept_key)),
+    }
+    kr["description"] = _compose_kr_description_from_values(pillar_slug, kr)
+    return kr
 
 def _enrich_kr_defaults(pillar_slug: str, kr: dict, concept_scores: dict[str, float], state_answers: dict[str, float]) -> dict:
     guide = _GUIDE.get(pillar_slug, {})
@@ -1030,11 +1156,13 @@ def make_structured_okr_llm(
     concept_scores = concept_scores or {}
     mdl = model or DEFAULT_OKR_MODEL
     req_temp = _resolve_okr_temperature(mdl, temperature)
+    kr_not_needed_threshold = _kr_not_needed_threshold()
     audit_payload = {
         "pillar": pillar_slug,
         "model": mdl,
         "temperature_requested": temperature,
         "temperature_effective": req_temp,
+        "kr_not_needed_threshold": kr_not_needed_threshold,
         "mode": "structured_json",
         **(audit_context or {}),
     }
@@ -1106,6 +1234,9 @@ def make_structured_okr_llm(
         "- Return 2–4 Key Results that are weekly/daily habits with concrete units (sessions/week, portions/day, L/day, nights/week, days/week).\n"
         "- Forbidden in KR text: 'score', 'adherence', 'priority action(s)'. Use behaviors and units instead.\n"
         "- Prefer small, realistic progressions derived from the stated answers (e.g., from '1 session/week' move to '3 sessions/week').\n"
+        f"- Score-band omission rule: if concept score is >= {kr_not_needed_threshold:.0f}, treat it as high and do NOT include a KR for that concept.\n"
+        "- If concept score is 70–89, include only when there is a clear, practical improvement opportunity.\n"
+        "- If concept score is <70, prioritize including a KR unless data is missing.\n"
         "- DO NOT include a Key Result if the user is already at the recommended level or no improvement is needed; fewer KRs are preferred over maintenance targets.\n"
         "- Do NOT propose improvements for concepts already scoring ~100; focus on concepts materially below the top score.\n"
         "- Keep KR description as the behavior statement only; put numbers in baseline_num/target_num fields.\n"
@@ -2038,6 +2169,7 @@ def generate_and_update_okrs_for_pillar(
             "pillar_result_id": pillar_result_id,
         },
     )
+    state_answers = _answers_from_state_context(state_ctx or [])
 
     def _capitalise(text: Any) -> str:
         if text is None:
@@ -2048,6 +2180,7 @@ def generate_and_update_okrs_for_pillar(
         return s[0].upper() + s[1:]
 
     okr_struct["objective"] = _capitalise(okr_struct.get("objective"))
+    kr_not_needed_threshold = _kr_not_needed_threshold()
     normalised_krs: list = []
     for kr in okr_struct.get("krs", []) or []:
         if isinstance(kr, dict):
@@ -2063,6 +2196,30 @@ def generate_and_update_okrs_for_pillar(
         base = kr.get("baseline_num")
         target = kr.get("target_num")
         ckey = _normalize_concept_key((kr.get("concept_key") or "").split(".")[-1])
+        if not ckey and isinstance(kr, dict):
+            guessed = _guess_concept_from_description(pillar_key, kr.get("description", ""))
+            ckey = _normalize_concept_key(guessed)
+            if ckey:
+                kr["concept_key"] = ckey
+        concept_score = None
+        try:
+            if ckey and ckey in (concept_scores or {}):
+                concept_score = float(concept_scores.get(ckey))
+        except Exception:
+            concept_score = None
+        # Deterministic omission: high-scoring concepts do not need a KR.
+        if concept_score is not None and concept_score >= kr_not_needed_threshold:
+            _baseline_debug(
+                "skip_kr_high_score_threshold",
+                {
+                    "pillar": pillar_key,
+                    "concept": ckey,
+                    "score": concept_score,
+                    "threshold": kr_not_needed_threshold,
+                    "kr_key": kr.get("kr_key") if isinstance(kr, dict) else None,
+                },
+            )
+            continue
         # Skip maintenance KRs (no delta) or concepts already at/near 100
         try:
             if base is not None and target is not None and abs(float(base) - float(target)) < 1e-6:
@@ -2080,6 +2237,43 @@ def generate_and_update_okrs_for_pillar(
         if isinstance(kr, dict):
             kr["description"] = _compose_kr_description_from_values(pillar_key, kr)
         processed_krs.append(kr)
+    # Remove duplicate concept KRs (most visible issue in training pillar).
+    processed_krs = _dedupe_krs_by_concept(pillar_key, [kr for kr in processed_krs if isinstance(kr, dict)])
+
+    # Deterministic coverage for compact pillars where each concept is expected
+    # unless score-band threshold marks it as "KR not needed".
+    if pillar_key in {"nutrition", "training"}:
+        present_concepts: set[str] = set()
+        for kr in processed_krs:
+            ckey = _normalize_concept_key((kr.get("concept_key") or "").split(".")[-1])
+            if ckey:
+                present_concepts.add(ckey)
+        for concept_key in (_GUIDE.get(pillar_key, {}) or {}).keys():
+            try:
+                score_val = _safe_float((concept_scores or {}).get(concept_key))
+                if score_val is not None and score_val >= kr_not_needed_threshold:
+                    continue
+            except Exception:
+                pass
+            if concept_key in present_concepts:
+                continue
+            added = _build_default_kr_for_concept(
+                pillar_slug=pillar_key,
+                concept_key=concept_key,
+                concept_scores=concept_scores or {},
+                state_answers=state_answers,
+            )
+            processed_krs.append(added)
+            present_concepts.add(concept_key)
+            _baseline_debug(
+                "add_missing_concept_kr",
+                {
+                    "pillar": pillar_key,
+                    "concept": concept_key,
+                    "threshold": kr_not_needed_threshold,
+                    "score": _safe_float((concept_scores or {}).get(concept_key)),
+                },
+            )
     # Guardrail: never persist an empty KR set.
     if not processed_krs:
         recovered: list = []

@@ -333,57 +333,78 @@ Habit Steps were agreed on Sunday.
 Do not restate them.
 Do not re-list them.
 The user will see them immediately after this episode.
-Your role is to help them mentally rehearse the week ahead by offering general, high-quality advice on how to give themselves the best chance of succeeding with their Habit Steps. Give a clear example, make it relevant to the pillar they're currently in.
-The episode should be short (around 60–90 seconds in tone).
+Your role is NOT to teach behaviour, offer strategy, or explain how to carry out their Habit Steps.
+Your role is to set the tone for the week — calm, grounded, confident, and steady — so the user feels ready to move through their chosen actions with clarity.
+This episode should be short (around 60–90 seconds in tone).
 Core Intent
-• Strengthen belief
-• Reduce friction
-• Make execution feel simple
-• Set a calm, confident tone for the week
-• Provide behaviourally intelligent guidance that applies to any habit
-How To Structure It
-Begin by acknowledging the start of a new week.
-Tone should be calm, steady, and forward-looking.
-Offer general habit-execution guidance that applies to most people, such as:
-• Anchor habits to moments that already exist in the day.
-• Pre-decide when or where the habit fits to remove uncertainty.
-• Have an “easy version” ready for low-energy days.
-• Reduce friction by preparing small elements in advance.
-• Keep the focus on repetition, not perfection.
-Do not mention their specific Habit Steps.
-Instead, speak to universal behavioural principles that help habits stick.
-Reinforce simplicity.
-Emphasise that small, consistent reps build momentum far more effectively than intense effort.
-Add light belief reinforcement.
-Remind the user that clarity and rhythm, not intensity, drive progress across the week.
-Close with steady confidence—no hype, no push, no urgency.
-The tone should feel grounding and supportive.
+• Provide a sense of stability at the start of the week
+• Strengthen belief in their ability to follow their chosen Habit Steps
+• Reinforce that progress comes from rhythm, not intensity
+• Help the user feel centred, prepared, and steady
+• Make the week feel light and manageable
+• Create emotional alignment, not behavioural instruction
+How to Structure It
+Acknowledge the start of a new week
+Keep this simple, warm, and grounded.
+Avoid any recap of their Habit Steps or week plan.
+Reinforce the philosophy of HealthSense
+Focus on themes like:
+• calm consistency
+• small steps
+• steady rhythm
+• simple repetition
+• no pressure
+Keep this high-level and supportive.
+Set the emotional tone for the week
+Help them feel:
+• settled
+• confident
+• ready
+• supported
+• relaxed but purposeful
+Avoid offering behavioural tactics or “how-to” suggestions.
+Acknowledge real-life variability
+Briefly normalise that busy days happen and that progress still counts even when life isn’t perfect.
+Encourage a steady, grounded mindset
+Light, calm reassurance — not motivation and not push.
+Close with quiet confidence
+No hype.
+No urgency.
+No “let’s smash the week” language.
+Simply a calm, supportive close.
 Tone
-Clear
+Warm
+Calm
 Grounded
-Calmly energising
-Practical
-Forward-facing
+Supportive
+Clear
 Human
-No system language
-No OKR references
-No reviewing or checking tone
-Avoid sounding motivational, instructional, or corrective.
+Forward-facing
+Steady
+Avoid:
+• motivational hype
+• behaviour instruction
+• habit execution advice
+• corrective or checking tone
+• system or OKR language
 Do Not
-• Restate the habit steps
-• Modify or expand their habit steps
-• Refer to objectives, goals, or OKRs
-• Turn the message into a lesson or education module
-• Use hype language or motivational speeches
-• Suggest new actions
+• Do not restate Habit Steps
+• Do not reference, modify, or expand on Habit Steps
+• Do not give behavioural advice
+• Do not offer examples of habits
+• Do not teach habit strategy (anchoring, friction reduction, etc.)
+• Do not mention objectives, OKRs, or systems
+• Do not sound motivational or intense
+• Do not suggest new actions or tasks
 Emotional Outcome
 By the end of the episode, the user should feel:
 • Clear
-• Prepared
 • Grounded
-• Calmly committed
-• Confident in their ability to execute consistently
-• Ready to start the week with simplicity and purpose""",
+• Settled
+• Calmly confident
+• Ready to move through the week
+• Certain about their ability to follow through
+• Supported and not pressured""",
     },
     {
         "touchpoint": 'podcast_first_day',
@@ -394,94 +415,96 @@ By the end of the episode, the user should feel:
         "block_order": ['system', 'locale', 'context', 'history', 'okr', 'scores', 'habit', 'task', 'user'],
         "include_blocks": ['system', 'locale', 'context', 'history', 'okr', 'scores', 'habit', 'task', 'user'],
         "task_block": """You are delivering the First Coaching Welcome message.
-This message appears when a user first enters the coaching experience, before they have chosen their Habit Steps.
-Your role is to warmly welcome them, introduce the philosophy behind HealthSense, then gently introduce Habit Steps — what they are, why they matter, and how they fit into the Sunday start of their Nutrition 21-day block.
+This message appears when a user first enters the coaching experience and has just been given their personalised starter Habit Steps.
+Your role is to warmly welcome them, introduce the HealthSense approach, and help them understand that they can begin using their starter Habit Steps straight away while their officially chosen Habit Steps will begin on Sunday.
 This message should feel calm, supportive, warm, and human.
 Write in plain text only.
 Do not use bold, italics, or formatting symbols.
 Core Purpose
-• Give a warm welcome to the coaching experience.
-• Briefly introduce what HealthSense coaching is and the journey they’re stepping into.
-• Introduce the concept of Habit Steps in a natural, simple, and reassuring way.
-• Explain why Habit Steps are used, without making it sound technical.
-• Let them know that Sunday is when their first set of Habit Steps will be chosen and when their Nutrition 21-day block officially begins.
-• Reassure them that there is nothing they need to do until Sunday.
-• Prepare them for receiving some coaching messages beforehand that help them get familiar with the rhythm.
+• Welcome them into HealthSense coaching.
+• Briefly explain the structured, supportive nature of the journey.
+• Introduce Habit Steps in a simple, grounded way.
+• Make it clear that they already have personalised starter Habit Steps they can begin practising now.
+• Explain that Sunday is when they will choose their first official Habit Steps for their Nutrition 21-day block.
+• Reassure them that starting gently now is helpful, and support is available immediately.
+• Set expectations that early coaching messages are part of helping them get settled into the rhythm.
 Structure
 1. Warm welcome into coaching
-Set the tone: calm, confident, and supportive.
-Make them feel like they’ve just stepped into something structured and helpful.
-Example tone guidance:
-“Great to have you here. You’re now stepping into the coaching part of HealthSense — the part where things start to come together.”
-(This is tone guidance only, not script.)
+Set a calm, steady tone.
+Make them feel they’ve stepped into something structured and reassuring.
+Tone guidance example (not a script):
+“Great to have you here — this is where your coaching journey begins.”
 2. Introduce the coaching approach
-In simple language, explain that HealthSense uses a structured, layered approach to wellbeing:
-• Change is built weekly, not instantly
-• Progress comes from rhythm, not intensity
-• We focus on one pillar at a time
-Keep this light, not educational or detailed.
-3. Gentle introduction to Habit Steps
-Before explaining them, set the frame:
-• Mention that HealthSense uses small, weekly actions to make the process manageable.
-• Mention that these small actions (Habit Steps) form the core of each week.
-• Keep it warm and human, not technical.
-Example tone:
-“We keep things simple so you’re never overwhelmed — just a few small actions each week that build real momentum.”
-4. Now explain Habit Steps clearly and simply
-In plain language:
-• Habit Steps are small, repeatable actions that anchor progress
-• They make change feel doable
-• They fit into real life
-• They’re reviewed weekly so they always stay realistic
-• They build the foundation of each 21-day block
-Keep the explanation grounded, supportive, and not academic.
-5. Set expectations for Sunday
+Explain, in simple human language, that HealthSense works through:
+• steady weekly progress
+• small repeatable actions
+• one pillar at a time
+• building momentum, not intensity
+Keep this light.
+3. Introduce starter Habit Steps (this is the key change)
+Explain gently that:
+• They’ve already received a simple set of personalised starter Habit Steps.
+• These are designed to help them ease into the process straight away.
+• They are not expected to be perfect — just small actions to help them get moving.
+• Support is available from day one if they want help using them.
+Do not list the steps.
+Do not describe them.
+Just reinforce their purpose.
+4. Explain Habit Steps clearly
+In plain, warm language:
+• Habit Steps are small, repeatable actions
+• They create rhythm and make progress feel doable
+• They are reviewed weekly
+• They help anchor each 21-day block
+Keep it grounded and non-technical.
+5. Set expectations for Sunday (without implying “wait”)
 Explain that:
-• Their first official Habit Steps will be chosen on Sunday
-• That Sunday marks the beginning of their Nutrition 21-day block
-• This gives them a clear, structured starting point
-• Nothing is expected of them before Sunday
-Avoid any wording that implies they’re late or early.
-6. Set expectations for messages between now and Sunday
-Let them know gently:
-• They may receive a few coaching messages before Sunday
-• These messages help them get familiar with how coaching works
-• They are not expected to act on anything yet
-• It’s simply a chance to understand the rhythm and style of support
-Keep the tone calm and reassuring.
-7. Close with confidence
-End with a warm, steady, supportive tone:
-• “You’re in the right place.”
-• “We’ll take this one week at a time.”
-• “You’ll choose your Habit Steps on Sunday and begin your first block.”
-No hype. No pressure.
+• On Sunday, they will choose their first official Habit Steps for their Nutrition block.
+• This marks the start of their structured 21-day cycle.
+• What they’re doing now is simply easing in — beginning gently, getting traction early, and settling into the rhythm.
+Do not imply they should pause or wait.
+Do not imply nothing happens until Sunday.
+6. Set expectations for messages before Sunday
+Explain that:
+• They’ll receive a few coaching messages before Sunday.
+• These messages help them understand the rhythm and style of support.
+• They can use them alongside their starter Habit Steps.
+• The aim is to help them feel settled, supported, and already moving.
+Do not say “they don’t need to act on anything.”
+Instead: “use what feels helpful as you get started.”
+7. Close with confidence and reassurance
+End with a warm, steady, grounded line such as:
+“You’re in the right place — and we’ll take this step by step together.”
+No hype, no urgency.
 Tone
 Warm
 Calm
 Supportive
 Clear
-Human
 Reassuring
+Human
 Low-pressure
 Steady
 Not motivational
 Not intense
 Do Not
-• Do not mention joining midweek
-• Do not mention bridge periods
-• Do not mention OKRs or deep system mechanics
-• Do not give specific Habit Steps
-• Do not imply they should prepare for Sunday
-• Do not ask them to do tasks early
-• Do not use hype or urgency
+• Do not mention joining midweek.
+• Do not mention bridge periods.
+• Do not mention OKRs or internal system mechanics.
+• Do not list or restate their starter Habit Steps.
+• Do not imply they should wait until Sunday.
+• Do not tell them nothing is expected.
+• Do not apologise for timing.
+• Do not use hype.
 Emotional Outcome
 By the end of this message, the user should feel:
 • Welcomed
+• Settled
 • Clear on what Habit Steps are
-• Clear on why they matter
-• Reassured that nothing is expected until Sunday
-• Comfortable receiving a few messages beforehand
-• Excited and grounded ahead of starting their Nutrition block""",
+• Confident they can begin gently right now
+• Reassured that support is already available
+• Clear that Sunday simply marks the formal start of their Nutrition block
+• Calm, grounded, and ready to ease into the process""",
     },
     {
         "touchpoint": 'weekstart_support',

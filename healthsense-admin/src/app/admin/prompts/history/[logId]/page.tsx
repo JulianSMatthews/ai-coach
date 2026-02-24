@@ -35,6 +35,7 @@ export default async function PromptHistoryDetailPage({ params }: HistoryDetailP
     ["User", userLabel],
     ["Duration", detail.duration_ms ? `${detail.duration_ms} ms` : "—"],
     ["Run source", detail.execution_source || "—"],
+    ["Worker ID", detail.worker_id || "—"],
     ["Model", detail.model || "—"],
     ["Template", `${detail.template_state || "—"}${detail.template_version ? ` v${detail.template_version}` : ""}`],
   ];

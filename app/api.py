@@ -8928,9 +8928,13 @@ def admin_prompt_history(
         if isinstance(ctx, dict):
             item["execution_source"] = ctx.get("execution_source")
             item["worker_process"] = bool(ctx.get("worker_process")) if ctx.get("worker_process") is not None else None
+            item["worker_id"] = ctx.get("worker_id")
+            item["worker_pid"] = ctx.get("worker_pid")
         else:
             item["execution_source"] = None
             item["worker_process"] = None
+            item["worker_id"] = None
+            item["worker_pid"] = None
         items.append(item)
     return {"items": items}
 
@@ -8970,9 +8974,13 @@ def admin_prompt_history_detail(log_id: int, admin_user: User = Depends(_require
     if isinstance(ctx, dict):
         item["execution_source"] = ctx.get("execution_source")
         item["worker_process"] = bool(ctx.get("worker_process")) if ctx.get("worker_process") is not None else None
+        item["worker_id"] = ctx.get("worker_id")
+        item["worker_pid"] = ctx.get("worker_pid")
     else:
         item["execution_source"] = None
         item["worker_process"] = None
+        item["worker_id"] = None
+        item["worker_pid"] = None
     name = " ".join([str(item.get("first_name") or "").strip(), str(item.get("surname") or "").strip()]).strip()
     item["user_name"] = name or None
     audio_url = None

@@ -13,6 +13,14 @@ function formatDate(value?: string | null) {
   return String(value).slice(0, 19).replace("T", " ");
 }
 
+function formatSource(source?: string | null, workerId?: string | null) {
+  const src = (source || "").trim();
+  const wid = (workerId || "").trim();
+  if (!src) return "—";
+  if (src === "worker" && wid) return `worker (${wid})`;
+  return src;
+}
+
 export default async function PromptHistoryPage({ searchParams }: HistoryPageProps) {
   const resolved = await searchParams;
   const start = (resolved?.start || "").trim();
@@ -104,7 +112,7 @@ export default async function PromptHistoryPage({ searchParams }: HistoryPagePro
                       {row.duration_ms ? `${row.duration_ms} ms` : "—"}
                     </td>
                     <td className="py-3 text-[#6b6257]">
-                      {row.execution_source || "—"}
+                      {formatSource(row.execution_source, row.worker_id)}
                     </td>
                     <td className="py-3">
                       <Link

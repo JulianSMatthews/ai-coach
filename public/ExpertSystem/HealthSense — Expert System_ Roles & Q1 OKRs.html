@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HealthSense — Expert System: Roles &amp; Q1 OKRs</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@500;600;700&family=Inter:wght@400;500;600&display=swap');
+
+    :root{
+      --bg:#ffffff;
+      --fg:#1f1f1f;
+      --muted:#5f5a52;
+      --card:#ffffff;
+      --border:#e8dfd1;
+      --soft:#f8f4ee;
+      --shadow: 0 10px 24px rgba(70,52,28,0.08);
+      --accent:#c54817;
+      --accent-strong:#a53b13;
+      --good:#197d4b;
+      --warn:#b06f00;
+    }
+
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      background:var(--soft);
+      color:var(--fg);
+      font-family:'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      line-height:1.5;
+    }
+    h1,h2,h3{
+      font-family:'Outfit','Inter', system-ui, sans-serif;
+      margin:0 0 10px 0;
+      letter-spacing: -0.02em;
+    }
+    h1{ font-size: 28px; }
+    h2{ font-size: 20px; }
+    h3{ font-size: 16px; color: var(--muted); font-weight: 600; margin-top: 18px; }
+
+    .wrap{ max-width: 1040px; margin: 0 auto; padding: 22px 18px 64px; }
+    .header{
+      background:linear-gradient(180deg, rgba(197,72,23,0.20), rgba(197,72,23,0.00));
+      border-bottom: 1px solid var(--border);
+      padding: 28px 18px;
+    }
+    .header-inner{ max-width: 1040px; margin: 0 auto; }
+    .brand-row{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      margin-bottom:10px;
+    }
+    .brand-logo{
+      height:34px;
+      width:auto;
+      display:block;
+    }
+    .kicker{
+      display:inline-flex; align-items:center; gap:8px;
+      color:var(--accent); font-weight:600; font-size:13px;
+      letter-spacing:0.02em; text-transform:uppercase; margin-bottom:10px;
+    }
+    .meta{ color:var(--muted); font-size:13px; margin-top: 6px; }
+
+    .tabs{
+      display:flex; gap:10px; flex-wrap:wrap;
+      margin: 18px 0 0;
+    }
+    .tab{
+      border:1px solid var(--border);
+      background:#fff;
+      padding:8px 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      color: var(--muted);
+      text-decoration:none;
+    }
+    .tab strong{ color: var(--fg); font-weight:600; }
+    .tab:hover{ border-color: var(--accent); color: var(--accent-strong); }
+
+    .grid{
+      display:grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      margin-top: 18px;
+    }
+    @media (min-width: 900px){
+      .grid{ grid-template-columns: 1fr 1fr; }
+    }
+
+    .card{
+      background:var(--card);
+      border:1px solid var(--border);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 18px 18px 14px;
+    }
+
+    .role-title{
+      display:flex; align-items:flex-start; justify-content:space-between;
+      gap:12px; margin-bottom: 10px;
+    }
+    .badge{
+      display:inline-flex; align-items:center;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border:1px solid rgba(127,86,217,0.35);
+      background: rgba(127,86,217,0.10);
+      color: var(--accent);
+      font-weight: 600;
+      font-size: 12px;
+      white-space:nowrap;
+    }
+
+    .summary{ color:var(--muted); margin: 0 0 8px 0; }
+
+    ul{ margin: 8px 0 0 0; padding-left: 18px; }
+    li{ margin: 0 0 8px 0; }
+
+    .section{ margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
+
+    .pillars{ display:flex; flex-wrap:wrap; gap:8px; margin-top: 10px; }
+    .chip{
+      font-size:12px;
+      color: var(--muted);
+      border:1px solid var(--border);
+      background: #fff;
+      padding: 6px 10px;
+      border-radius: 999px;
+    }
+
+    .wide{ margin-top: 16px; }
+    .footer{
+      margin-top: 16px;
+      background: #fff;
+      border:1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px 18px;
+      box-shadow: var(--shadow);
+    }
+    .footer p{ margin: 0; color: var(--muted); }
+    .footer strong{ color: var(--fg); }
+
+    .okrs{
+      margin-top: 18px;
+      display:grid;
+      grid-template-columns: 1fr;
+      gap: 14px;
+    }
+    .okr{
+      background:#fff;
+      border:1px solid var(--border);
+      border-radius: 16px;
+      padding: 16px 18px;
+      box-shadow: var(--shadow);
+    }
+    .okr-head{
+      display:flex;
+      justify-content:space-between;
+      align-items:flex-start;
+      gap:12px;
+      margin-bottom: 6px;
+    }
+    .okr-id{
+      display:inline-flex;
+      align-items:center;
+      font-size: 12px;
+      font-weight:600;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(18,183,106,0.10);
+      border:1px solid rgba(18,183,106,0.30);
+      color: var(--good);
+      white-space:nowrap;
+    }
+    .okr-why{
+      color: var(--muted);
+      margin: 6px 0 10px;
+    }
+    .subtle{
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 10px;
+    }
+    .targets{
+      display:flex; flex-wrap:wrap; gap:8px;
+      margin-top: 10px;
+    }
+    .target{
+      border:1px solid var(--border);
+      background: var(--soft);
+      padding: 8px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .okr li[data-kr-id]{
+      position: relative;
+      transition: background 120ms ease;
+    }
+    .okr li[data-kr-id].kr-complete{
+      text-decoration: line-through;
+      color: #6b7280;
+    }
+    .okr li[data-kr-id].kr-complete::after{
+      content: "Completed";
+      display: inline-block;
+      margin-left: 8px;
+      padding: 1px 7px;
+      border-radius: 999px;
+      border: 1px solid rgba(25,125,75,0.35);
+      background: rgba(25,125,75,0.12);
+      color: var(--good);
+      font-size: 11px;
+      font-weight: 600;
+      text-decoration: none;
+      vertical-align: middle;
+    }
+    .kr-completion-mode .okr li[data-kr-id]{
+      cursor: pointer;
+      border-radius: 6px;
+      padding: 2px 6px;
+      margin-left: -6px;
+    }
+    .kr-completion-mode .okr li[data-kr-id]:hover{
+      background: rgba(25,125,75,0.10);
+    }
+
+    .editor{
+      margin-top: 16px;
+      background:#fff;
+      border:1px solid var(--border);
+      border-radius:16px;
+      box-shadow: var(--shadow);
+      padding: 14px 16px;
+    }
+    .editor-head{
+      display:flex;
+      flex-wrap:wrap;
+      justify-content:space-between;
+      gap:10px;
+      align-items:center;
+    }
+    .editor-title{
+      font-family:'Outfit','Inter', system-ui, sans-serif;
+      font-size:16px;
+      letter-spacing:0.05em;
+      text-transform:uppercase;
+      color:var(--muted);
+      margin:0;
+    }
+    .editor-buttons{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+    }
+    .btn{
+      border:1px solid var(--border);
+      border-radius:999px;
+      background:#fff;
+      color:var(--fg);
+      padding:7px 12px;
+      font-size:12px;
+      font-weight:600;
+      cursor:pointer;
+    }
+    .btn.primary{
+      background:var(--accent);
+      border-color:var(--accent);
+      color:#fff;
+    }
+    .btn.primary:hover{ background:var(--accent-strong); border-color:var(--accent-strong); }
+    .btn:hover{ border-color:var(--accent); color:var(--accent-strong); }
+    .editor-note{
+      margin:8px 0 0;
+      color:var(--muted);
+      font-size:12px;
+    }
+    [data-edit-id][contenteditable="true"]{
+      outline: 2px dashed rgba(197,72,23,0.45);
+      outline-offset: 2px;
+      border-radius: 6px;
+      background: rgba(197,72,23,0.06);
+    }
+  </style>
+</head>
+
+<body>
+  <div class="header">
+    <div class="header-inner">
+      <div class="brand-row">
+        <img class="brand-logo" src="../../healthsense-app/public/healthsense-logo.svg" alt="HealthSense logo">
+      </div>
+      <div class="kicker">HealthSense • Expert System</div>
+      <h1>Founding Team Roles &amp; Q1 2026 OKRs</h1>
+      <div class="meta">Draft operating model for an early-stage two-person team (Founder + AI/Knowledge Lead)</div>
+      <div class="tabs" role="navigation" aria-label="Sections">
+        <a class="tab" href="#roles"><strong>Roles</strong></a>
+        <a class="tab" href="#okrs">Q1 OKRs</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <section class="editor" aria-label="OKR editor controls">
+      <div class="editor-head">
+        <p class="editor-title">OKR Editing</p>
+        <div class="editor-buttons">
+          <button id="toggle-edit" class="btn" type="button">Enable edit mode</button>
+          <button id="toggle-complete-mode" class="btn" type="button">Enable KR completion mode</button>
+          <button id="save-okrs" class="btn primary" type="button">Save draft</button>
+          <button id="export-okrs" class="btn" type="button">Export JSON</button>
+          <button id="import-okrs" class="btn" type="button">Import JSON</button>
+          <button id="reset-okrs" class="btn" type="button">Reset defaults</button>
+          <input id="import-file" type="file" accept="application/json" hidden>
+        </div>
+      </div>
+      <p id="editor-status" class="editor-note">View mode. Enable edit mode to update Q1 OKRs and save locally in this browser.</p>
+    </section>
+
+    <!-- ROLES -->
+    <section id="roles" class="wide">
+      <h2>Roles</h2>
+      <p class="summary">Clear ownership with strong collaboration. Julian owns brand direction and product priorities; Rhys supports brand shaping and owns AI coaching systems, knowledge integrity, and content operations that drive growth.</p>
+
+      <div class="grid">
+        <!-- Founder -->
+        <section class="card">
+          <div class="role-title">
+            <div>
+              <h2>Founder, Product &amp; Brand Lead — Julian Matthews</h2>
+              <p class="summary">Owns the vision, product direction, brand identity, and commercial outcomes. Responsible for turning the HealthSense methodology into a product users trust and a business that grows.</p>
+            </div>
+            <div class="badge">Decision Owner</div>
+          </div>
+
+          <div class="section">
+            <h3>Role purpose</h3>
+            <p class="summary">Define what HealthSense should achieve for users and the market, and drive execution across product, brand, growth, partnerships, and revenue.</p>
+          </div>
+
+          <div class="section">
+            <h3>Core responsibilities</h3>
+            <ul>
+              <li>Set HealthSense vision, positioning, and product roadmap (what we build next and why).</li>
+              <li>Own brand identity and messaging; approve all outward-facing communications.</li>
+              <li>Design user journeys across assessment, OKRs/KRs, coaching flows, reports, podcasts, and portal experiences.</li>
+              <li>Own commercial strategy: pricing, packaging, distribution, partnerships, and early revenue.</li>
+              <li>Define customer acquisition strategy and channel priorities (organic, partnerships, paid tests).</li>
+              <li>Set the bar for customer experience and support outcomes; resolve escalations.</li>
+              <li>Ensure ethical and user-first application of AI and data; trust as a core product feature.</li>
+              <li>Represent HealthSense externally with early customers, partners, and investors.</li>
+            </ul>
+          </div>
+
+          <div class="section">
+            <h3>Early-stage focus</h3>
+            <ul>
+              <li>Hands-on product creation and rapid validation of product–market fit.</li>
+              <li>Fast iteration: build → test → learn → refine, driven by funnel and retention metrics.</li>
+              <li>Define “HealthSense standards” for coaching experience, safety boundaries, and outcomes.</li>
+            </ul>
+          </div>
+
+          <div class="section">
+            <h3>Decision ownership</h3>
+            <ul>
+              <li>Product scope and roadmap</li>
+              <li>Brand identity, positioning, and tone</li>
+              <li>Commercial model and go-to-market direction</li>
+            </ul>
+          </div>
+
+          <div class="pillars" aria-label="Related areas">
+            <span class="chip">Product</span>
+            <span class="chip">Brand</span>
+            <span class="chip">Growth strategy</span>
+            <span class="chip">Partnerships</span>
+            <span class="chip">Commercial</span>
+            <span class="chip">Support standards</span>
+          </div>
+        </section>
+
+        <!-- Rhys -->
+        <section class="card">
+          <div class="role-title">
+            <div>
+              <h2>AI Knowledge, Content &amp; Growth Lead — Rhys Williams</h2>
+              <p class="summary">Owns the knowledge base, prompt systems, audits, and content operations that keep the AI coach accurate and fast — and turns approved knowledge into growth content (social + podcast enablement).</p>
+            </div>
+            <div class="badge">System &amp; Content Ops</div>
+          </div>
+
+          <div class="section">
+            <h3>Role purpose</h3>
+            <p class="summary">Design and operate the AI coaching system so it delivers consistent, evidence-aligned guidance personalised to the user’s OKRs/KRs — while also producing content that drives awareness and customer acquisition.</p>
+          </div>
+
+          <div class="section">
+            <h3>Core responsibilities</h3>
+            <ul>
+              <li>Build and maintain the HealthSense Knowledge Base (RAG / vector retrieval) with approved snippets and metadata.</li>
+              <li>Own prompt templates and runtime configuration blocks (structure, tone guidance, boundaries, output formats).</li>
+              <li>Run prompt audits and QA to prevent “science drift” and improve coaching consistency.</li>
+              <li>Design safety/edge-case behaviours (refusal, escalation, clarifying questions) with the Founder.</li>
+              <li>Create and publish social content (drafts, campaigns, repurposing) to drive assessment traffic and coaching take-up; Founder approves final brand messaging.</li>
+              <li>Support podcast content creation by turning approved knowledge into outlines/scripts aligned to the user journey.</li>
+              <li>Support customer acquisition operations: landing page iterations, messaging tests, funnel insight, and experiment reporting.</li>
+              <li>Provide customer support assistance (triage, FAQs, “how to use” answers); escalate sensitive cases to Founder.</li>
+              <li>Assist with administration and accounting tasks where needed (invoicing support, expense capture, basic reporting), keeping Founder unblocked.</li>
+            </ul>
+          </div>
+
+          <div class="section">
+            <h3>Early-stage focus</h3>
+            <ul>
+              <li>Establish standards for accuracy, consistency, and user trust in AI outputs.</li>
+              <li>Keep response times fast by optimising retrieval (top-K, filters, caching) and prompt payload size.</li>
+              <li>Build repeatable content workflows (social + podcast) that scale without compromising scientific integrity.</li>
+            </ul>
+          </div>
+
+          <div class="section">
+            <h3>Decision ownership</h3>
+            <ul>
+              <li>Knowledge Base structure, versioning, and governance (approved vs draft content)</li>
+              <li>Prompt design and AI behavioural rules</li>
+              <li>Content ops workflow for social and podcasts (draft-to-approval pipeline)</li>
+            </ul>
+          </div>
+
+          <div class="pillars" aria-label="Related areas">
+            <span class="chip">Knowledge Base (RAG)</span>
+            <span class="chip">Prompt templates</span>
+            <span class="chip">Audits &amp; QA</span>
+            <span class="chip">Performance &amp; caching</span>
+            <span class="chip">Social content</span>
+            <span class="chip">Podcast enablement</span>
+            <span class="chip">Support &amp; admin assist</span>
+          </div>
+        </section>
+      </div>
+
+      <section class="footer">
+        <h2 style="margin-bottom:6px;">How the roles work together</h2>
+        <p><strong>Julian</strong> sets direction (product, brand, commercial priorities) and signs off final external messaging. <strong>Rhys</strong> makes the AI coach reliable and fast, and operationalises content and growth execution to drive uptake. Both collaborate daily on learnings, experiments, and iteration.</p>
+      </section>
+    </section>
+
+    <!-- OKRS -->
+    <section id="okrs" class="wide">
+      <h2>Q1 2026 OKRs (Team Version)</h2>
+      <p class="summary">Theme: <strong>Launch, validate, convert.</strong> These are presented in “expert system” format for quick reference and ongoing iteration.</p>
+
+      <div class="okrs">
+
+        <article class="okr">
+          <div class="okr-head">
+            <h2>Launch HealthSense and validate early demand</h2>
+            <span class="okr-id">Objective 1</span>
+          </div>
+          <p class="okr-why"><strong>Why this matters:</strong> Q1 is about proving people want HealthSense and are willing to engage with it, not about perfection.</p>
+          <h3>Key Results</h3>
+          <ul>
+            <li>Website live by <strong>31 January</strong> with clear explanation of what HealthSense does; free wellbeing assessment as main call to action.</li>
+            <li>Free assessment available to the public from <strong>1 February</strong>.</li>
+            <li><strong>500</strong> completed free assessments by <strong>31 March</strong>.</li>
+            <li>At least <strong>50%</strong> of visitors who start the assessment complete it.</li>
+            <li>Feedback collected from at least <strong>100</strong> assessment users.</li>
+          </ul>
+        </article>
+
+        <article class="okr">
+          <div class="okr-head">
+            <h2>Deliver beta coaching and convert early users</h2>
+            <span class="okr-id">Objective 2</span>
+          </div>
+          <p class="okr-why"><strong>Why this matters:</strong> Coaching subscriptions are the core revenue model for HealthSense.</p>
+          <h3>Key Results</h3>
+          <ul>
+            <li>Beta coaching live from <strong>1 February</strong> using WhatsApp and AI-supported delivery.</li>
+            <li>At least <strong>75</strong> users onboarded into beta coaching.</li>
+            <li><strong>50</strong> paying subscription users by <strong>31 March</strong>.</li>
+            <li>Stripe subscription payments live by <strong>1 March</strong>.</li>
+            <li>Monthly churn of beta subscribers no higher than <strong>10%</strong>.</li>
+          </ul>
+        </article>
+
+        <article class="okr">
+          <div class="okr-head">
+            <h2>Build a scalable AI and LLM foundation</h2>
+            <span class="okr-id">Objective 3</span>
+          </div>
+          <p class="okr-why"><strong>Why this matters:</strong> Our AI layer is a long-term competitive advantage and must be structured early.</p>
+          <h3>Key Results</h3>
+          <ul>
+            <li>LLM prompt template builder live by <strong>31 January</strong>.</li>
+            <li>Standard prompt templates in place for: Assessments and insights; Weekly coaching messages; Progress summaries.</li>
+            <li>Fine-tuning option defined and tested to lock in HealthSense tone and coaching logic.</li>
+            <li>Clear internal documentation of the AI and LLM setup.</li>
+            <li><strong>NEW:</strong> Knowledge Base (RAG) v1 live by <strong>28 February</strong> with approved snippets, metadata, and retrieval filters (pillar/intent/risk).</li>
+            <li><strong>NEW:</strong> Prompt &amp; retrieval performance baseline established by <strong>31 March</strong> (latency, token budgets, retrieval precision, “unsupported claim” rate), with an improvement plan.</li>
+          </ul>
+        </article>
+
+        <article class="okr">
+          <div class="okr-head">
+            <h2>Review Thrive psychometric testing</h2>
+            <span class="okr-id">Objective 4</span>
+          </div>
+          <p class="okr-why"><strong>Why this matters:</strong> Psychometrics could significantly deepen insight and differentiation.</p>
+          <h3>Key Results</h3>
+          <ul>
+            <li>Complete Thrive psychometric review by <strong>28 February</strong>.</li>
+            <li>Clear decision made: integrate, partner, or do not proceed.</li>
+            <li>Mapping defined between psychometric scores and coaching actions.</li>
+            <li>Prototype at least one psychometric-driven coaching flow.</li>
+            <li>Final recommendation and roadmap agreed by <strong>31 March</strong>.</li>
+          </ul>
+        </article>
+
+        <article class="okr">
+          <div class="okr-head">
+            <h2>Start development of the companion mobile app</h2>
+            <span class="okr-id">Objective 5</span>
+          </div>
+          <p class="okr-why"><strong>Why this matters:</strong> A mobile app will improve engagement, retention, and scalability.</p>
+          <h3>Key Results</h3>
+          <ul>
+            <li>Mobile app scope and MVP defined by <strong>28 February</strong>.</li>
+            <li>Core features defined including: User dashboard; content access; progress tracking.</li>
+            <li>UX wireframes completed for key user journeys.</li>
+            <li>Technical approach agreed (e.g. React Native, Flutter, or web wrapper).</li>
+            <li>Development started by <strong>31 March</strong>.</li>
+          </ul>
+        </article>
+
+        <article class="okr">
+          <div class="okr-head">
+            <h2>Put commercial and growth foundations in place</h2>
+            <span class="okr-id">Objective 6</span>
+          </div>
+          <p class="okr-why"><strong>Why this matters:</strong> HealthSense needs clear data on what converts and what drives revenue.</p>
+          <h3>Key Results</h3>
+          <ul>
+            <li>Stripe subscriptions live with a simple monthly plan.</li>
+            <li>End-to-end funnel tracking in place: Visitor → Assessment → Coaching → Subscription.</li>
+            <li>Early CAC baseline established.</li>
+            <li>First customer testimonials or success stories captured.</li>
+            <li>Internal weekly KPI dashboard live.</li>
+          </ul>
+          <p class="subtle">Note: “Funnel tracking” and “KPI dashboard” should be lightweight early — focus on actionable signals over perfect instrumentation.</p>
+        </article>
+
+      </div>
+
+      <section class="footer" style="margin-top:16px;">
+        <h2 style="margin-bottom:6px;">Q1 success targets (summary)</h2>
+        <div class="targets" aria-label="Success targets">
+          <div class="target"><strong>Website live:</strong> 31 January</div>
+          <div class="target"><strong>Free assessments launched:</strong> 1 February</div>
+          <div class="target"><strong>Free assessments completed:</strong> 500</div>
+          <div class="target"><strong>Paying subscribers:</strong> 50</div>
+          <div class="target"><strong>Stripe live:</strong> 1 March</div>
+          <div class="target"><strong>Mobile app started:</strong> by 31 March</div>
+        </div>
+        <p class="subtle">Source: HealthSense_Q1_OKRs_Team_Version.docx (uploaded)</p>
+      </section>
+    </section>
+
+  </div>
+
+  <script>
+    (function () {
+      const STORAGE_KEY = "hs_expert_okr_draft_v1";
+      const okrRoot = document.querySelector("#okrs");
+      const statusEl = document.querySelector("#editor-status");
+      const editBtn = document.querySelector("#toggle-edit");
+      const completeModeBtn = document.querySelector("#toggle-complete-mode");
+      const saveBtn = document.querySelector("#save-okrs");
+      const exportBtn = document.querySelector("#export-okrs");
+      const importBtn = document.querySelector("#import-okrs");
+      const resetBtn = document.querySelector("#reset-okrs");
+      const importFile = document.querySelector("#import-file");
+      if (!okrRoot || !statusEl || !editBtn || !completeModeBtn || !saveBtn || !exportBtn || !importBtn || !resetBtn || !importFile) {
+        return;
+      }
+      const STATUS_VIEW = "View mode. Enable edit mode to update Q1 OKRs and save locally in this browser.";
+
+      const editableNodes = Array.from(
+        okrRoot.querySelectorAll("h2, .summary, .okr-why, li, .subtle, .target")
+      ).filter((node) => !node.closest(".editor") && node.tagName !== "H3");
+      const krNodes = Array.from(okrRoot.querySelectorAll(".okr ul li"));
+
+      editableNodes.forEach((node, idx) => {
+        node.setAttribute("data-edit-id", String(idx + 1));
+      });
+      krNodes.forEach((node, idx) => {
+        node.setAttribute("data-kr-id", String(idx + 1));
+      });
+
+      const defaultSnapshot = {};
+      editableNodes.forEach((node) => {
+        defaultSnapshot[node.dataset.editId] = node.innerHTML;
+      });
+      const defaultCompleted = {};
+      krNodes.forEach((node) => {
+        defaultCompleted[node.dataset.krId] = node.classList.contains("kr-complete");
+      });
+
+      function getCurrentSnapshot() {
+        const snapshot = {};
+        editableNodes.forEach((node) => {
+          snapshot[node.dataset.editId] = node.innerHTML;
+        });
+        return snapshot;
+      }
+
+      function applySnapshot(snapshot) {
+        editableNodes.forEach((node) => {
+          const key = node.dataset.editId;
+          if (Object.prototype.hasOwnProperty.call(snapshot, key)) {
+            node.innerHTML = snapshot[key];
+          }
+        });
+      }
+      function getCompletionSnapshot() {
+        const snapshot = {};
+        krNodes.forEach((node) => {
+          snapshot[node.dataset.krId] = node.classList.contains("kr-complete");
+        });
+        return snapshot;
+      }
+      function applyCompletionSnapshot(snapshot) {
+        krNodes.forEach((node) => {
+          const key = node.dataset.krId;
+          const isComplete = Boolean(snapshot && snapshot[key]);
+          node.classList.toggle("kr-complete", isComplete);
+        });
+      }
+      function setStatus(message) {
+        statusEl.textContent = message;
+      }
+
+      function saveDraft() {
+        const payload = {
+          version: 1,
+          updated_at: new Date().toISOString(),
+          content: getCurrentSnapshot(),
+          completed: getCompletionSnapshot(),
+        };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+        setStatus("Draft saved locally. Export JSON to share or version-control content updates.");
+      }
+
+      function loadDraft() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (!raw) return false;
+          const parsed = JSON.parse(raw);
+          if (!parsed || typeof parsed !== "object" || !parsed.content) return false;
+          applySnapshot(parsed.content);
+          applyCompletionSnapshot(parsed.completed || defaultCompleted);
+          setStatus("Loaded saved draft from this browser.");
+          return true;
+        } catch (err) {
+          console.warn("Failed to load OKR draft:", err);
+          return false;
+        }
+      }
+
+      let editMode = false;
+      let completionMode = false;
+      function setEditMode(enabled, announce) {
+        editMode = Boolean(enabled);
+        if (editMode && completionMode) setCompletionMode(false, false);
+        editableNodes.forEach((node) => {
+          node.setAttribute("contenteditable", editMode && !completionMode ? "true" : "false");
+        });
+        editBtn.textContent = editMode ? "Disable edit mode" : "Enable edit mode";
+        if (announce !== false) {
+          if (editMode) {
+            setStatus("Edit mode enabled. Update content directly, then click Save draft.");
+          } else if (!completionMode && !statusEl.textContent.includes("saved")) {
+            setStatus(STATUS_VIEW);
+          }
+        }
+      }
+      function setCompletionMode(enabled, announce) {
+        completionMode = Boolean(enabled);
+        if (completionMode && editMode) setEditMode(false, false);
+        document.body.classList.toggle("kr-completion-mode", completionMode);
+        editableNodes.forEach((node) => {
+          node.setAttribute("contenteditable", completionMode ? "false" : (editMode ? "true" : "false"));
+        });
+        completeModeBtn.textContent = completionMode ? "Disable KR completion mode" : "Enable KR completion mode";
+        if (announce !== false) {
+          if (completionMode) {
+            setStatus("KR completion mode enabled. Click any key result line to toggle Completed.");
+          } else if (!editMode && !statusEl.textContent.includes("saved")) {
+            setStatus(STATUS_VIEW);
+          }
+        }
+      }
+
+      function exportDraftJson() {
+        const payload = {
+          version: 1,
+          updated_at: new Date().toISOString(),
+          content: getCurrentSnapshot(),
+          completed: getCompletionSnapshot(),
+        };
+        const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+        const href = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
+        a.href = href;
+        a.download = "healthsense-okr-draft-" + stamp + ".json";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(href);
+        setStatus("Export complete.");
+      }
+
+      function importDraftJson(file) {
+        const reader = new FileReader();
+        reader.onload = function () {
+          try {
+            const parsed = JSON.parse(String(reader.result || ""));
+            if (!parsed || typeof parsed !== "object" || !parsed.content) {
+              throw new Error("Invalid JSON format");
+            }
+            applySnapshot(parsed.content);
+            applyCompletionSnapshot(parsed.completed || {});
+            saveDraft();
+            setStatus("Import complete and saved locally.");
+          } catch (err) {
+            setStatus("Import failed: invalid JSON payload.");
+          }
+        };
+        reader.readAsText(file);
+      }
+
+      editBtn.addEventListener("click", function () {
+        setEditMode(!editMode);
+      });
+      completeModeBtn.addEventListener("click", function () {
+        setCompletionMode(!completionMode);
+      });
+      okrRoot.addEventListener("click", function (event) {
+        if (!completionMode) return;
+        const item = event.target && event.target.closest ? event.target.closest("li[data-kr-id]") : null;
+        if (!item || !okrRoot.contains(item)) return;
+        event.preventDefault();
+        item.classList.toggle("kr-complete");
+        setStatus("KR updated. Click Save draft to persist this completion state.");
+      });
+      saveBtn.addEventListener("click", saveDraft);
+      exportBtn.addEventListener("click", exportDraftJson);
+      importBtn.addEventListener("click", function () {
+        importFile.click();
+      });
+      importFile.addEventListener("change", function () {
+        const file = importFile.files && importFile.files[0];
+        if (file) importDraftJson(file);
+        importFile.value = "";
+      });
+      resetBtn.addEventListener("click", function () {
+        applySnapshot(defaultSnapshot);
+        applyCompletionSnapshot(defaultCompleted);
+        localStorage.removeItem(STORAGE_KEY);
+        setStatus("Reset to document defaults and cleared local draft.");
+        setCompletionMode(false, false);
+        setEditMode(false, false);
+      });
+
+      loadDraft();
+      setCompletionMode(false, false);
+      setEditMode(false, false);
+      if (!statusEl.textContent || statusEl.textContent === STATUS_VIEW) setStatus(STATUS_VIEW);
+    })();
+  </script>
+</body></html>
