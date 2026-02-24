@@ -19,6 +19,16 @@ function roleLabel(role: string): string {
   return "Member";
 }
 
+function roleDescription(role: string): string {
+  if (role === "global_admin") {
+    return "Full platform access across all clubs, including role management and system settings.";
+  }
+  if (role === "club_admin") {
+    return "Admin access scoped to one club: users, prompts, reporting, and operational tools.";
+  }
+  return "Standard access with no admin privileges.";
+}
+
 async function setRoleAction(formData: FormData) {
   "use server";
   const userId = Number(formData.get("user_id") || 0);
@@ -55,7 +65,7 @@ export default async function TeamRolesPage() {
           </div>
 
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[920px] text-left text-sm">
+            <table className="w-full min-w-[1180px] text-left text-sm">
               <thead className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
                 <tr>
                   <th className="py-2 pr-6">ID</th>
@@ -63,6 +73,7 @@ export default async function TeamRolesPage() {
                   <th className="py-2 pr-6">Phone</th>
                   <th className="py-2 pr-6">Club</th>
                   <th className="py-2 pr-6">Current role</th>
+                  <th className="py-2 pr-6">Role description</th>
                   <th className="py-2 pr-6">Set role</th>
                 </tr>
               </thead>
@@ -80,6 +91,7 @@ export default async function TeamRolesPage() {
                       <td className="py-3 pr-6">{u.phone || "—"}</td>
                       <td className="py-3 pr-6">{u.club_id ?? "—"}</td>
                       <td className="py-3 pr-6">{roleLabel(role)}</td>
+                      <td className="py-3 pr-6 text-[#6b6257]">{roleDescription(role)}</td>
                       <td className="py-3 pr-6">
                         <form action={setRoleAction} className="flex items-center gap-2">
                           <input type="hidden" name="user_id" value={u.id} />

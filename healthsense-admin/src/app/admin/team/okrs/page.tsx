@@ -3,8 +3,8 @@ import AdminNav from "@/components/AdminNav";
 
 export const dynamic = "force-dynamic";
 
-const EXPERT_SYSTEM_DOC =
-  "/ExpertSystem/HealthSense%20%E2%80%94%20Expert%20System_%20Roles%20%26%20Q1%20OKRs.html";
+const EXPERT_SYSTEM_DOC_NAME = "HealthSense — Expert System_ Roles & Q1 OKRs.html";
+const EXPERT_SYSTEM_DOC = `/ExpertSystem/${encodeURIComponent(EXPERT_SYSTEM_DOC_NAME)}`;
 
 export default function TeamOkrsPage() {
   return (

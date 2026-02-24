@@ -334,6 +334,31 @@ def _continue_psych_phase(s, sess: AssessSession, state: dict, user: User, user_
         except Exception:
             pass
 
+        combined = _combined_overall_from_state(state)
+        resolved_run_id = _mark_assessment_run_finished(
+            user_id=int(user.id),
+            run_id=state.get("run_id"),
+            combined=int(combined),
+        )
+        if resolved_run_id:
+            state["run_id"] = int(resolved_run_id)
+        else:
+            print(
+                f"[assessment] WARN: run completion not persisted after psych "
+                f"user_id={user.id} run_id={state.get('run_id')}"
+            )
+
+        try:
+            _rv_finish_run(run_id=state.get("run_id"), results=state.get("results"))
+        except Exception:
+            pass
+
+        try:
+            schedule_day3_followup(user.id)
+            schedule_week2_followup(user.id)
+        except Exception:
+            pass
+
         pending_msg = str(state.get("pending_assessment_summary") or "").strip()
         state["pending_assessment_summary"] = ""
         state["phase"] = "complete"
@@ -731,6 +756,26 @@ def _compose_final_summary_message(user: User, state: dict) -> str:
     except Exception:
         pass
     return msg
+
+
+def _combined_overall_from_state(state: dict) -> int:
+    results_map = state.get("results") or {}
+
+    def _pill_score(pillar_key: str):
+        v = results_map.get(pillar_key, {}) or {}
+        return v.get("overall")
+
+    per_list = [
+        x
+        for x in [
+            _pill_score("nutrition"),
+            _pill_score("training"),
+            _pill_score("resilience"),
+            _pill_score("recovery"),
+        ]
+        if x is not None
+    ]
+    return int(round(sum(per_list) / max(1, len(per_list)))) if per_list else 0
 
 def _compose_pillar_message(state: dict, run_id: int | None, pillar: str) -> str:
     res = (state.get("results") or {}).get(pillar)
@@ -3174,31 +3219,8 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     f"View your assessment in the HealthSense app: {login_url}"
                 )
 
-                # Persist combined score + dashboard path onto AssessmentRun (for reporting)
-                resolved_run_id = _mark_assessment_run_finished(
-                    user_id=int(user.id),
-                    run_id=state.get("run_id"),
-                    combined=int(combined),
-                )
-                if resolved_run_id:
-                    state["run_id"] = int(resolved_run_id)
-                else:
-                    print(
-                        f"[assessment] WARN: run completion not persisted "
-                        f"user_id={user.id} run_id={state.get('run_id')}"
-                    )
-                # Finish run in review_log
-                try:
-                    _rv_finish_run(run_id=state.get("run_id"), results=state.get("results"))
-                except Exception:
-                    pass
-
-                # Schedule follow-ups
-                try:
-                    schedule_day3_followup(user.id)
-                    schedule_week2_followup(user.id)
-                except Exception:
-                    pass
+                # Completion persistence happens after psych readiness finishes.
+                # This keeps funnel and completion semantics aligned.
 
                 # Narrative generation is intentionally deferred until psych completion.
                 # At psych completion we enqueue one combined job: assessment_narratives_seed.

@@ -195,12 +195,10 @@ def _simulate_monday_support(user: "User", week_no: int) -> None:
 # Optional models (best-effort) for consent/state detection
 try:
     from app.models import AssessSession, MessageLog, UserPreference  # type: ignore
-    from app import psych  # type: ignore
 except Exception:
     AssessSession = None  # type: ignore
     MessageLog = None     # type: ignore
     UserPreference = None  # type: ignore
-    psych = None  # type: ignore
 
 # Helper to fetch the latest assessment session id for a user
 def _latest_session_id_for(user: "User"):
@@ -217,6 +215,31 @@ def _latest_session_id_for(user: "User"):
             return getattr(sess, "id", None) if sess is not None else None
     except Exception:
         return None
+
+def _latest_combined_session_state_for(user: "User") -> tuple[int | None, bool, str]:
+    """
+    Returns (session_id, is_active, phase) from the latest combined assessment session.
+    phase is sourced from AssessSession.state['phase'] when available.
+    """
+    if AssessSession is None:
+        return None, False, ""
+    try:
+        with SessionLocal() as s:
+            sess = (
+                s.query(AssessSession)
+                 .filter(AssessSession.user_id == user.id, AssessSession.domain == "combined")
+                 .order_by(AssessSession.id.desc())
+                 .first()
+            )
+            if not sess:
+                return None, False, ""
+            state = getattr(sess, "state", None) or {}
+            phase = ""
+            if isinstance(state, dict):
+                phase = str(state.get("phase") or "").strip().lower()
+            return int(getattr(sess, "id", 0) or 0) or None, bool(getattr(sess, "is_active", False)), phase
+    except Exception:
+        return None, False, ""
 
 
 def _latest_assessment_state_for(user: "User") -> tuple[int | None, object | None, int]:
@@ -254,34 +277,6 @@ def _latest_assessment_state_for(user: "User") -> tuple[int | None, object | Non
 def _debug_list_sessions_for(user: "User", limit: int = 5):
     return
 
-# Psych helpers
-def _clear_psych_state(user_id: int):
-    if UserPreference is None:
-        return
-    try:
-        with SessionLocal() as s:
-            s.query(UserPreference).filter(
-                UserPreference.user_id == user_id,
-                UserPreference.key.in_(["psych_state", "pending_assessment_summary"]),
-            ).delete(synchronize_session=False)
-            s.commit()
-    except Exception:
-        pass
-
-def _psych_active(user_id: int) -> bool:
-    if UserPreference is None:
-        return False
-    try:
-        with SessionLocal() as s:
-            pref = (
-                s.query(UserPreference)
-                .filter(UserPreference.user_id == user_id, UserPreference.key == "psych_state")
-                .one_or_none()
-            )
-            return pref is not None
-    except Exception:
-        return False
-
 # Default psych answers (1–5 Likert) by level for scripted runs (6-question flow)
 PSYCH_ANSWERS = {
     "novice":       ["2", "3", "2", "4", "2", "3"],
@@ -294,7 +289,7 @@ PSYCH_ANSWERS = {
     "julianhigh":   ["5"] * 6,
 }
 
-# Wait for final completion message in MessageLog (best-effort)
+# Wait until either psych phase starts or run is finished.
 def _wait_for_completion_message(user: "User", timeout_s: float = 10.0, poll_s: float = 0.5) -> bool:
     mock = os.environ.get("MOCK_OUTBOUND", "1") == "1"
     started = time.time()
@@ -303,7 +298,10 @@ def _wait_for_completion_message(user: "User", timeout_s: float = 10.0, poll_s: 
         while time.time() - started < timeout_s:
             try:
                 run_id, finished_at, pr_count = _latest_assessment_state_for(user)
-                # Treat complete only when run finished_at is persisted.
+                _sid, is_active, phase = _latest_combined_session_state_for(user)
+                # Ready to proceed once psych phase is active, or fully complete.
+                if is_active and str(phase or "").lower() == "psych":
+                    return True
                 if run_id and finished_at is not None:
                     return True
                 # Helpful debug while waiting in long-running finalization phases.
@@ -324,6 +322,12 @@ def _wait_for_completion_message(user: "User", timeout_s: float = 10.0, poll_s: 
     with SessionLocal() as s:
         while time.time() - started < timeout_s:
             try:
+                run_id, finished_at, _pr_count = _latest_assessment_state_for(user)
+                _sid, is_active, phase = _latest_combined_session_state_for(user)
+                if is_active and str(phase or "").lower() == "psych":
+                    return True
+                if run_id and finished_at is not None:
+                    return True
                 q = (
                     s.query(MessageLog)
                      .filter(MessageLog.user_id == user.id)
@@ -1383,27 +1387,24 @@ def main():
             print("[finalize] skipping flush ticks due earlier step failure.")
 
         wait_window = max(20.0, float(args.call_timeout))
-        got_final = _wait_for_completion_message(user, timeout_s=wait_window, poll_s=0.5)
-        print(f"[finalize] completion_seen={got_final}")
-        if not got_final and not had_step_failure:
+        ready_for_psych_or_complete = _wait_for_completion_message(user, timeout_s=wait_window, poll_s=0.5)
+        print(f"[finalize] psych_or_completion_seen={ready_for_psych_or_complete}")
+        if not ready_for_psych_or_complete and not had_step_failure:
             _continue_with_timeout(user=user, text="", timeout_s=args.call_timeout)
             time.sleep(0.75)
-            got_final = _wait_for_completion_message(user, timeout_s=10.0, poll_s=0.5)
-            print(f"[finalize] retry completion_seen={got_final}")
+            ready_for_psych_or_complete = _wait_for_completion_message(user, timeout_s=10.0, poll_s=0.5)
+            print(f"[finalize] retry psych_or_completion_seen={ready_for_psych_or_complete}")
 
-        if not got_final:
+        if not ready_for_psych_or_complete:
             rid, finished_at, pr_count = _latest_assessment_state_for(user)
             print(
                 "[finalize] assessment not completed; skipping psych automation "
                 f"(run_id={rid}, finished_at={finished_at}, pillar_rows={pr_count})."
             )
 
-        # Drive psych readiness questions automatically (6 items) if available
-        if psych is not None and got_final:
-            try:
-                psych.start(user, close_assessment_sessions=True)
-            except Exception as e:
-                print(f"[warn] psych start failed: {e}")
+        # Drive psych readiness questions automatically (6 items) through the
+        # main assessor flow (same path as real users).
+        if ready_for_psych_or_complete and not had_step_failure:
             overall_level = None
             if isinstance(level_map, dict):
                 overall_level = level_map.get("overall") or next(iter(level_map.values()), None)
@@ -1415,13 +1416,20 @@ def main():
                 overall_level = "competent"
             psych_ans = PSYCH_ANSWERS.get(overall_level, PSYCH_ANSWERS["competent"])
             for j, ans in enumerate(psych_ans, 1):
+                _sid, is_active, phase = _latest_combined_session_state_for(user)
+                if not is_active or phase != "psych":
+                    print(f"[psych] skipped remaining answers (is_active={is_active}, phase='{phase or 'none'}').")
+                    break
                 try:
-                    psych.handle_message(user, ans)
-                    status = "ok"
+                    ok_psych = _continue_with_timeout(user=user, text=ans, timeout_s=args.call_timeout)
+                    status = "ok" if ok_psych else "warn"
                 except Exception as e:
                     status = f"warn ({e})"
                 print(f"[psych] Q{j:02d}/06 -> '{ans}' [{status}]")
                 time.sleep(0.2)
+
+            # Ensure run completion is persisted after psych phase.
+            _wait_for_completion_message(user, timeout_s=max(20.0, float(args.call_timeout)), poll_s=0.5)
 
         sid_final = _latest_session_id_for(user)
         print(f"[summary] latest run id={sid_final}")
