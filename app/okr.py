@@ -689,6 +689,14 @@ def _enrich_kr_defaults(pillar_slug: str, kr: dict, concept_scores: dict[str, fl
     guide = _GUIDE.get(pillar_slug, {})
     concept_key = _normalize_concept_key((kr.get("concept_key") or "").split(".")[-1]) or _guess_concept_from_description(pillar_slug, kr.get("description", ""))
     meta = guide.get(concept_key)
+    score_val = _safe_float(kr.get("score"))
+    if score_val is None and concept_key and concept_key in concept_scores:
+        score_val = _safe_float(concept_scores.get(concept_key))
+        if score_val is not None:
+            _baseline_debug("score_from_concept_score", {"concept": concept_key, "value": score_val})
+    if score_val is not None:
+        kr["score"] = score_val
+
     if meta:
         if not kr.get("metric_label"):
             kr["metric_label"] = meta.get("label")
@@ -1110,16 +1118,34 @@ def _build_state_context_from_models(session: "Session", *, user_id: int, run_id
 
 
 def _answers_from_state_context(rows: list[dict]) -> dict[str, float]:
+    def _normalize_state_answer(concept: str, value: float, unit: str, answer: str) -> float:
+        """
+        Keep concept-level state answers aligned to canonical KR units.
+        Hydration KRs are stored in L/day, so convert common alternatives.
+        """
+        c = _normalize_concept_key(concept)
+        u = (unit or "").strip().lower()
+        a = (answer or "").strip().lower()
+        if c == "hydration":
+            if "ml" in u or "ml" in a:
+                return value / 1000.0
+            if "glass" in u or "glasses" in a or "glass" in a:
+                return value * 0.25
+        return value
+
     out: dict[str, float] = {}
     for row in rows:
         concept = _normalize_concept_key(row.get("concept_code") or row.get("concept"))
         if not concept:
             _baseline_debug("missing_concept_code", row)
             continue
+        row_unit = str(row.get("unit") or "")
+        row_answer = str(row.get("answer") or "")
         val = row.get("value_num")
         if val is not None:
             try:
-                out[concept] = float(val)
+                parsed = float(val)
+                out[concept] = _normalize_state_answer(concept, parsed, row_unit, row_answer)
                 continue
             except Exception as exc:
                 _baseline_debug("value_num_cast_failed", {"concept": concept, "value": val, "err": str(exc)})
@@ -1127,7 +1153,8 @@ def _answers_from_state_context(rows: list[dict]) -> dict[str, float]:
         try:
             nums = _infer_numbers_from_text(ans)
             if nums:
-                out[concept] = nums[-1]
+                parsed = nums[-1]
+                out[concept] = _normalize_state_answer(concept, parsed, row_unit, row_answer)
             else:
                 _baseline_debug("no_numeric_in_answer", {"concept": concept, "answer": ans})
         except Exception as exc:

@@ -3012,25 +3012,26 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 except Exception:
                     pass
 
-                # Seed assessment narratives asynchronously on worker so API reads do not
-                # block on assessment_scores/assessment_okr/coaching_approach LLM calls.
+                # Seed core assessment narratives asynchronously on worker so API reads do not
+                # block on assessment_scores/assessment_okr LLM calls.
+                # Habit-readiness coaching narrative is generated only after psych completion.
                 try:
                     run_id = state.get("run_id")
                     worker_enabled = should_use_worker()
                     if run_id:
                         job_id = enqueue_job(
-                            "assessment_narratives_seed",
+                            "assessment_narratives_core_seed",
                             {"run_id": int(run_id), "user_id": user.id},
                             user_id=user.id,
                         )
                         print(
-                            f"[assessment] enqueued assessment_narratives_seed "
+                            f"[assessment] enqueued assessment_narratives_core_seed "
                             f"run_id={run_id} user_id={user.id} job={job_id}"
                         )
                         try:
                             s.add(
                                 JobAudit(
-                                    job_name="assessment_narratives_seed_enqueue",
+                                    job_name="assessment_narratives_core_seed_enqueue",
                                     status="ok",
                                     payload={
                                         "run_id": int(run_id),
@@ -3043,7 +3044,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                             if not worker_enabled:
                                 s.add(
                                     JobAudit(
-                                        job_name="assessment_narratives_seed_worker_unavailable",
+                                        job_name="assessment_narratives_core_seed_worker_unavailable",
                                         status="error",
                                         payload={
                                             "run_id": int(run_id),
@@ -3058,13 +3059,13 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                             pass
                     else:
                         print(
-                            f"[assessment] ERROR: unable to enqueue assessment_narratives_seed "
+                            f"[assessment] ERROR: unable to enqueue assessment_narratives_core_seed "
                             f"user_id={user.id} reason=missing_run_id"
                         )
                         try:
                             s.add(
                                 JobAudit(
-                                    job_name="assessment_narratives_seed_enqueue",
+                                    job_name="assessment_narratives_core_seed_enqueue",
                                     status="error",
                                     payload={"run_id": run_id, "user_id": int(user.id)},
                                     error="missing_run_id",
@@ -3073,11 +3074,11 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                         except Exception:
                             pass
                 except Exception as _narrative_enqueue_error:
-                    print(f"[assessment] ERROR: enqueue assessment_narratives_seed failed: {_narrative_enqueue_error}")
+                    print(f"[assessment] ERROR: enqueue assessment_narratives_core_seed failed: {_narrative_enqueue_error}")
                     try:
                         s.add(
                             JobAudit(
-                                job_name="assessment_narratives_seed_enqueue",
+                                job_name="assessment_narratives_core_seed_enqueue",
                                 status="error",
                                 payload={"run_id": state.get("run_id"), "user_id": int(user.id)},
                                 error=repr(_narrative_enqueue_error),

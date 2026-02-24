@@ -2987,7 +2987,13 @@ def generate_assessment_report_pdf(run_id: int) -> str:
     return out_path
 
 
-def build_assessment_dashboard_data(run_id: int, *, include_llm: bool = True) -> Dict[str, Any]:
+def build_assessment_dashboard_data(
+    run_id: int,
+    *,
+    include_llm: bool = True,
+    generate_core_narratives: bool = True,
+    generate_habit_narrative: bool = True,
+) -> Dict[str, Any]:
     t0 = time.perf_counter()
     _report_log(f"[report_build] start run_id={run_id} include_llm={include_llm}")
     user, run, pillars = _collect_report_data(run_id)
@@ -3093,6 +3099,7 @@ def build_assessment_dashboard_data(run_id: int, *, include_llm: bool = True) ->
     _report_log(f"[report_build] payloads run_id={run_id} pillars={len(pillar_payload)} okrs={len(okr_payload)} ms={int((t4 - t3)*1000)}")
 
     readiness = None
+    has_psych_profile = False
     readiness_breakdown: list[dict] = []
     readiness_responses: list[dict] = []
     try:
@@ -3104,6 +3111,7 @@ def build_assessment_dashboard_data(run_id: int, *, include_llm: bool = True) ->
                 .first()
             )
         if prof:
+            has_psych_profile = True
             sec = getattr(prof, "section_averages", {}) or {}
             scores = getattr(prof, "scores", {}) or {}
             vals = [v for v in sec.values() if isinstance(v, (int, float))]
@@ -3242,21 +3250,106 @@ def build_assessment_dashboard_data(run_id: int, *, include_llm: bool = True) ->
                             )
                 except Exception as e:
                     _report_log(f"[report_build] narrative_audio_cached_failed run_id={run_id} err={e!r}")
-        if include_llm and not cached_ok:
-            score_narrative = _score_narrative_from_llm(user, combined, pillar_payload) if include_llm else ""
-            if not score_narrative:
-                score_narrative = _scores_narrative_fallback(combined, pillar_payload)
-            t5 = time.perf_counter()
-            _report_log(f"[report_build] score_narrative run_id={run_id} llm={include_llm} ms={int((t5 - t4)*1000)}")
-            okr_narrative = _okr_narrative_from_llm(user, okr_payload) if include_llm else ""
-            if not okr_narrative:
-                okr_narrative = _okr_narrative_fallback(okr_payload)
-            t6 = time.perf_counter()
-            _report_log(f"[report_build] okr_narrative run_id={run_id} llm={include_llm} ms={int((t6 - t5)*1000)}")
+        if (
+            include_llm
+            and generate_habit_narrative
+            and cached_ok
+            and has_psych_profile
+            and not str(coaching_text or "").strip()
+        ):
+            # Psych profile completed after initial narrative seed. Fill coaching approach
+            # without regenerating score/OKR narratives.
             coaching_text = _coaching_approach_text(getattr(user, "id", None), allow_llm=include_llm)
-            t7 = time.perf_counter()
-            _report_log(f"[report_build] coaching_narrative run_id={run_id} llm={include_llm} ms={int((t7 - t6)*1000)}")
-            if include_llm:
+            _report_log(
+                f"[report_build] coaching_narrative_backfill run_id={run_id} "
+                f"llm={include_llm} generated={bool(str(coaching_text or '').strip())}"
+            )
+            if coaching_text:
+                if include_llm:
+                    try:
+                        import html as _html
+                        import re as _re
+                        from .podcast import generate_podcast_audio
+
+                        def _plain(text: str) -> str:
+                            if not text:
+                                return ""
+                            txt = _re.sub(r"<\\s*br\\s*/?>", "\\n", text, flags=_re.IGNORECASE)
+                            txt = _re.sub(r"</p>|</div>|</li>", "\\n", txt, flags=_re.IGNORECASE)
+                            txt = _re.sub(r"<[^>]+>", " ", txt)
+                            txt = " ".join(txt.split())
+                            return _html.unescape(txt).strip()
+
+                        if not coaching_audio_url:
+                            coaching_plain = _plain(coaching_text)
+                            if coaching_plain:
+                                coaching_audio_url = generate_podcast_audio(
+                                    coaching_plain,
+                                    user.id,
+                                    filename=f"assessment_{run.id}_coaching.mp3",
+                                    usage_tag="assessment",
+                                )
+                    except Exception as e:
+                        _report_log(f"[report_build] coaching_audio_backfill_failed run_id={run_id} err={e!r}")
+                try:
+                    with SessionLocal() as s:
+                        row = (
+                            s.query(AssessmentNarrative)
+                            .filter(AssessmentNarrative.run_id == run.id)
+                            .first()
+                        )
+                        if row:
+                            row.coaching_html = coaching_text
+                            current_meta = dict((getattr(row, "meta", None) or {}))
+                            row.meta = {
+                                **current_meta,
+                                "coaching_audio_url": coaching_audio_url or current_meta.get("coaching_audio_url"),
+                            }
+                            s.commit()
+                    _report_log(f"[report_build] coaching_narrative_backfill_saved run_id={run_id}")
+                except Exception as e:
+                    _report_log(f"[report_build] coaching_narrative_backfill_save_failed run_id={run_id} err={e!r}")
+
+        if include_llm and not cached_ok:
+            did_generate = False
+            t5 = t4
+            t6 = t4
+            if generate_core_narratives:
+                score_narrative = _score_narrative_from_llm(user, combined, pillar_payload)
+                if not score_narrative:
+                    score_narrative = _scores_narrative_fallback(combined, pillar_payload)
+                t5 = time.perf_counter()
+                _report_log(
+                    f"[report_build] score_narrative run_id={run_id} llm={include_llm} "
+                    f"ms={int((t5 - t4)*1000)}"
+                )
+                okr_narrative = _okr_narrative_from_llm(user, okr_payload)
+                if not okr_narrative:
+                    okr_narrative = _okr_narrative_fallback(okr_payload)
+                t6 = time.perf_counter()
+                _report_log(
+                    f"[report_build] okr_narrative run_id={run_id} llm={include_llm} "
+                    f"ms={int((t6 - t5)*1000)}"
+                )
+                did_generate = True
+            else:
+                _report_log(f"[report_build] score_okr_narratives skipped run_id={run_id} reason=core_disabled")
+
+            if generate_habit_narrative and has_psych_profile:
+                coaching_text = _coaching_approach_text(getattr(user, "id", None), allow_llm=include_llm)
+                t7 = time.perf_counter()
+                _report_log(
+                    f"[report_build] coaching_narrative run_id={run_id} llm={include_llm} "
+                    f"ms={int((t7 - t6)*1000)}"
+                )
+                did_generate = True
+            elif generate_habit_narrative and not has_psych_profile:
+                coaching_text = ""
+                _report_log(f"[report_build] coaching_narrative skipped run_id={run_id} reason=no_psych_profile")
+            else:
+                _report_log(f"[report_build] coaching_narrative skipped run_id={run_id} reason=habit_disabled")
+
+            if did_generate:
                 try:
                     import html as _html
                     import re as _re
@@ -3274,21 +3367,21 @@ def build_assessment_dashboard_data(run_id: int, *, include_llm: bool = True) ->
                     score_plain = _plain(score_narrative)
                     okr_plain = _plain(okr_narrative)
                     coaching_plain = _plain(coaching_text)
-                    if score_plain:
+                    if score_plain and not score_audio_url:
                         score_audio_url = generate_podcast_audio(
                             score_plain,
                             user.id,
                             filename=f"assessment_{run.id}_score.mp3",
                             usage_tag="assessment",
                         )
-                    if okr_plain:
+                    if okr_plain and not okr_audio_url:
                         okr_audio_url = generate_podcast_audio(
                             okr_plain,
                             user.id,
                             filename=f"assessment_{run.id}_okr.mp3",
                             usage_tag="assessment",
                         )
-                    if coaching_plain:
+                    if coaching_plain and not coaching_audio_url:
                         coaching_audio_url = generate_podcast_audio(
                             coaching_plain,
                             user.id,
@@ -3297,31 +3390,31 @@ def build_assessment_dashboard_data(run_id: int, *, include_llm: bool = True) ->
                         )
                 except Exception as e:
                     _report_log(f"[report_build] narrative_audio_failed run_id={run_id} err={e!r}")
-            try:
-                with SessionLocal() as s:
-                    row = (
-                        s.query(AssessmentNarrative)
-                        .filter(AssessmentNarrative.run_id == run.id)
-                        .first()
-                    )
-                    if not row:
-                        row = AssessmentNarrative(run_id=run.id)
-                        s.add(row)
-                    row.score_html = score_narrative
-                    row.okr_html = okr_narrative
-                    row.coaching_html = coaching_text
-                    row.meta = {
-                        **(narrative_meta or {}),
-                        "source": "llm" if include_llm else "fallback",
-                        "combined": int(combined),
-                        "score_audio_url": score_audio_url,
-                        "okr_audio_url": okr_audio_url,
-                        "coaching_audio_url": coaching_audio_url,
-                    }
-                    s.commit()
-                _report_log(f"[report_build] narratives_saved run_id={run_id}")
-            except Exception as e:
-                _report_log(f"[report_build] narratives_save_failed run_id={run_id} err={e!r}")
+                try:
+                    with SessionLocal() as s:
+                        row = (
+                            s.query(AssessmentNarrative)
+                            .filter(AssessmentNarrative.run_id == run.id)
+                            .first()
+                        )
+                        if not row:
+                            row = AssessmentNarrative(run_id=run.id)
+                            s.add(row)
+                        row.score_html = score_narrative
+                        row.okr_html = okr_narrative
+                        row.coaching_html = coaching_text
+                        row.meta = {
+                            **(narrative_meta or {}),
+                            "source": "llm" if include_llm else "fallback",
+                            "combined": int(combined),
+                            "score_audio_url": score_audio_url,
+                            "okr_audio_url": okr_audio_url,
+                            "coaching_audio_url": coaching_audio_url,
+                        }
+                        s.commit()
+                    _report_log(f"[report_build] narratives_saved run_id={run_id}")
+                except Exception as e:
+                    _report_log(f"[report_build] narratives_save_failed run_id={run_id} err={e!r}")
         if cached_ok and include_llm and (score_audio_url or okr_audio_url or coaching_audio_url):
             try:
                 with SessionLocal() as s:
@@ -3601,17 +3694,23 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
     return out_path
 
 
-def generate_assessment_narratives(run_id: int) -> dict:
+def generate_assessment_core_narratives(run_id: int) -> dict:
     """
-    Precompute and cache assessment narratives (score/OKR/coaching) and audio links.
-    Intended for async worker execution so app/API reads do not block on LLM calls.
+    Generate/cache score + OKR assessment narratives only.
+    Habit-readiness/coaching narrative is intentionally excluded here.
     """
     started = time.perf_counter()
-    data = build_assessment_dashboard_data(run_id, include_llm=True)
+    data = build_assessment_dashboard_data(
+        run_id,
+        include_llm=True,
+        generate_core_narratives=True,
+        generate_habit_narrative=False,
+    )
     user = data.get("user") or {}
     meta = data.get("meta") or {}
     result = {
         "ok": True,
+        "mode": "core",
         "run_id": int(run_id),
         "user_id": user.get("id"),
         "narratives_cached": meta.get("narratives_cached"),
@@ -3620,11 +3719,60 @@ def generate_assessment_narratives(run_id: int) -> dict:
     }
     try:
         with SessionLocal() as s:
-            s.add(JobAudit(job_name="assessment_narratives_generate", status="ok", payload=result))
+            s.add(JobAudit(job_name="assessment_narratives_core_generate", status="ok", payload=result))
             s.commit()
     except Exception:
         pass
     return result
+
+
+def generate_assessment_habit_narrative(run_id: int) -> dict:
+    """
+    Generate/cache habit-readiness coaching narrative only.
+    Intended to run after psych questions are completed.
+    """
+    started = time.perf_counter()
+    data = build_assessment_dashboard_data(
+        run_id,
+        include_llm=True,
+        generate_core_narratives=False,
+        generate_habit_narrative=True,
+    )
+    user = data.get("user") or {}
+    meta = data.get("meta") or {}
+    result = {
+        "ok": True,
+        "mode": "habit",
+        "run_id": int(run_id),
+        "user_id": user.get("id"),
+        "narratives_cached": meta.get("narratives_cached"),
+        "narratives_source": meta.get("narratives_source"),
+        "duration_ms": int((time.perf_counter() - started) * 1000),
+    }
+    try:
+        with SessionLocal() as s:
+            s.add(JobAudit(job_name="assessment_narratives_habit_generate", status="ok", payload=result))
+            s.commit()
+    except Exception:
+        pass
+    return result
+
+
+def generate_assessment_narratives(run_id: int) -> dict:
+    """
+    Legacy combined path. Retained for compatibility with old queued jobs.
+    """
+    core = generate_assessment_core_narratives(run_id)
+    habit = generate_assessment_habit_narrative(run_id)
+    return {
+        "ok": bool(core.get("ok")) and bool(habit.get("ok")),
+        "mode": "combined",
+        "run_id": int(run_id),
+        "user_id": core.get("user_id") or habit.get("user_id"),
+        "core": core,
+        "habit": habit,
+        "duration_ms": int((core.get("duration_ms") or 0) + (habit.get("duration_ms") or 0)),
+    }
 
 def generate_detailed_report_pdf_by_user(user_id: int) -> str:
     """Public entry point to generate the detailed (grouped) PDF for a user.

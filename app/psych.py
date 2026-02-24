@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Optional
 
 from .db import SessionLocal
-from .models import User, UserPreference, PsychProfile, AssessSession
+from .models import User, UserPreference, PsychProfile, AssessSession, JobAudit
 from . import nudges
 
 
@@ -252,6 +252,50 @@ def handle_message(user: User, text: str):
             _set_state(s, user.id, None)
             pending = pop_pending_summary(s, user.id)
             s.commit()
+
+            # Habit readiness is part of assessment completion. Once profile is saved,
+            # trigger habit-readiness narrative generation.
+            run_id = state.get("assessment_run_id")
+            if run_id:
+                try:
+                    from .job_queue import enqueue_job
+                    from .llm import should_use_worker
+
+                    worker_enabled = bool(should_use_worker())
+                    job_id = enqueue_job(
+                        "assessment_narratives_habit_seed",
+                        {"run_id": int(run_id), "user_id": int(user.id), "trigger": "psych_complete"},
+                        user_id=int(user.id),
+                    )
+                    try:
+                        s.add(
+                            JobAudit(
+                                job_name="assessment_narratives_habit_seed_enqueue_psych_complete",
+                                status="ok",
+                                payload={
+                                    "run_id": int(run_id),
+                                    "user_id": int(user.id),
+                                    "job_id": int(job_id),
+                                    "worker_mode_enabled": worker_enabled,
+                                },
+                            )
+                        )
+                        s.commit()
+                    except Exception:
+                        s.rollback()
+                except Exception as e:
+                    try:
+                        s.add(
+                            JobAudit(
+                                job_name="assessment_narratives_habit_seed_enqueue_psych_complete",
+                                status="error",
+                                payload={"run_id": int(run_id), "user_id": int(user.id)},
+                                error=repr(e),
+                            )
+                        )
+                        s.commit()
+                    except Exception:
+                        s.rollback()
             if pending:
                 _send_safe(user, pending)
             _send_safe(
