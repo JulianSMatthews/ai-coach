@@ -298,7 +298,7 @@ def handle_message(user: User, text: str):
             if run_id:
                 try:
                     from .job_queue import enqueue_job
-                    from .llm import should_use_worker
+                    from .job_queue import should_use_worker
 
                     worker_enabled = bool(should_use_worker())
                     job_id = enqueue_job(
