@@ -798,9 +798,30 @@ def _schedule_prompts_for_user(
             f"(start offset {resolved_fast}m, first_day={first_day}) for user {user.id} ({tz})"
         )
         return
-    # Start next-day onward (never same-day as assessment completion).
+    # Start next-day onward by default.
+    # When first-day coaching is pending, anchor scheduling from the day after
+    # assessment completion so delayed enablement does not push first-day out
+    # by an extra day.
     tz = _tz(user)
-    tomorrow_local = datetime.now(tz).date() + timedelta(days=1)
+    now_local = datetime.now(tz)
+    today_local = now_local.date()
+    tomorrow_local = today_local + timedelta(days=1)
+    schedule_anchor_day = tomorrow_local
+    try:
+        first_day_pref = _get_user_pref(session, int(user.id), FIRST_DAY_PENDING_PREF_KEY)
+        first_day_pending = bool(first_day_pref and str(first_day_pref.value or "").strip() == "1")
+    except Exception:
+        first_day_pending = False
+    if first_day_pending:
+        completed_at = getattr(user, "first_assessment_completed", None)
+        if isinstance(completed_at, datetime):
+            try:
+                completed_local_day = completed_at.astimezone(tz).date()
+            except Exception:
+                completed_local_day = completed_at.date()
+            # Earliest valid day is assessment completion + 1; never schedule in the past.
+            anchored_next_day = max(today_local, completed_local_day + timedelta(days=1))
+            schedule_anchor_day = min(tomorrow_local, anchored_next_day)
     # Start each day prompt from the next local occurrence so bridge days are included.
     dow_idx = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
     for day, default_time in defaults.items():
@@ -819,9 +840,9 @@ def _schedule_prompts_for_user(
         }.get(day)
         if not dow:
             continue
-        earliest_day = tomorrow_local
+        earliest_day = schedule_anchor_day
         if day == "monday":
-            earliest_day = first_monday_on_or_after(tomorrow_local) or tomorrow_local
+            earliest_day = first_monday_on_or_after(schedule_anchor_day) or schedule_anchor_day
         start_date = _next_weekday_occurrence(
             user,
             dow_idx.get(day, 0),
