@@ -6703,6 +6703,25 @@ def admin_assessment_health(
         if isinstance(coaching_payload, dict)
         else None
     )
+    coaching_sunday_sent = (
+        ((coaching_payload.get("day_funnel") or {}).get("completed_sunday"))
+        if isinstance(coaching_payload, dict)
+        else None
+    )
+    try:
+        coaching_sunday_sent_int = int(coaching_sunday_sent) if coaching_sunday_sent is not None else 0
+    except Exception:
+        coaching_sunday_sent_int = 0
+    try:
+        coaching_sunday_min_sample = max(
+            1,
+            int((os.getenv("COACHING_SUNDAY_REPLY_MIN_SAMPLE") or "5").strip()),
+        )
+    except Exception:
+        coaching_sunday_min_sample = 5
+    coaching_sunday_reply_for_state = (
+        coaching_sunday_reply if coaching_sunday_sent_int >= coaching_sunday_min_sample else None
+    )
     coaching_response_p95 = (
         ((coaching_payload.get("response_time_minutes") or {}).get("p95"))
         if isinstance(coaching_payload, dict)
@@ -6720,7 +6739,7 @@ def admin_assessment_health(
         lower_is_bad=True,
     )
     coaching_sunday_reply_state = _threshold_state(
-        coaching_sunday_reply,
+        coaching_sunday_reply_for_state,
         warn=thresholds["coaching_sunday_reply_pct"]["warn"],
         critical=thresholds["coaching_sunday_reply_pct"]["critical"],
         lower_is_bad=True,
@@ -6739,6 +6758,8 @@ def admin_assessment_health(
         if isinstance(coaching_payload.get("day_funnel"), dict):
             coaching_payload["day_funnel"]["week_completion_state"] = coaching_week_completion_state
             coaching_payload["day_funnel"]["sunday_reply_state"] = coaching_sunday_reply_state
+            coaching_payload["day_funnel"]["sunday_reply_min_sample"] = coaching_sunday_min_sample
+            coaching_payload["day_funnel"]["sunday_reply_sample_size"] = coaching_sunday_sent_int
         if isinstance(coaching_payload.get("response_time_minutes"), dict):
             coaching_payload["response_time_minutes"]["state"] = coaching_response_state
         if isinstance(coaching_payload.get("engagement_window"), dict):
