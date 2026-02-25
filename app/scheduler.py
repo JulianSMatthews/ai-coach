@@ -18,6 +18,7 @@ from .models import (
     User,
     JobAudit,
     AssessSession,
+    AssessmentRun,
     UserPreference,
     GlobalPromptSchedule,
     MessageLog,
@@ -402,6 +403,54 @@ def _user_pref_time(session, user_id: int, day_key: str) -> tuple[int, int] | No
         return None
 
 
+def _coaching_anchor_date_local(session, user: User, tz: zoneinfo.ZoneInfo) -> date | None:
+    """
+    Resolve the local completion day to anchor first-day coaching.
+    Order: first_assessment_completed -> latest assessment run times -> user.created_on.
+    """
+    user_id = int(getattr(user, "id", 0) or 0)
+    if user_id <= 0:
+        return None
+    completed = getattr(user, "first_assessment_completed", None)
+    if isinstance(completed, datetime):
+        try:
+            return completed.astimezone(tz).date()
+        except Exception:
+            return completed.date()
+    if isinstance(completed, date):
+        return completed
+
+    run = (
+        session.query(
+            AssessmentRun.finished_at,
+            AssessmentRun.started_at,
+            AssessmentRun.created_at,
+        )
+        .filter(AssessmentRun.user_id == user_id)
+        .order_by(AssessmentRun.id.desc())
+        .first()
+    )
+    if run:
+        for candidate in run:
+            if isinstance(candidate, datetime):
+                try:
+                    return candidate.astimezone(tz).date()
+                except Exception:
+                    return candidate.date()
+            if isinstance(candidate, date):
+                return candidate
+
+    created_on = getattr(user, "created_on", None)
+    if isinstance(created_on, datetime):
+        try:
+            return created_on.astimezone(tz).date()
+        except Exception:
+            return created_on.date()
+    if isinstance(created_on, date):
+        return created_on
+    return None
+
+
 def _base_default_times() -> dict[str, tuple[int, int]]:
     # Defaults in 24h: Sunday 18:00, Monday 08:00, Tuesday 19:00, Wednesday 08:00,
     # Thursday 19:00, Friday 08:00, Saturday 10:00
@@ -695,15 +744,11 @@ def _schedule_first_day_catchup_if_due(
     pending = bool(pref and str(pref.value or "").strip() == "1")
     if not pending:
         return
-    completed_at = getattr(user, "first_assessment_completed", None)
-    if not isinstance(completed_at, datetime):
-        return
     tz = _tz(user)
+    completed_local_day = _coaching_anchor_date_local(session, user, tz)
+    if not isinstance(completed_local_day, date):
+        return
     now_local = datetime.now(tz)
-    try:
-        completed_local_day = completed_at.astimezone(tz).date()
-    except Exception:
-        completed_local_day = completed_at.date()
     expected_day = completed_local_day + timedelta(days=1)
     day_names = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
     expected_day_key = day_names[expected_day.weekday()]
@@ -880,12 +925,8 @@ def _schedule_prompts_for_user(
     except Exception:
         first_day_pending = False
     if first_day_pending:
-        completed_at = getattr(user, "first_assessment_completed", None)
-        if isinstance(completed_at, datetime):
-            try:
-                completed_local_day = completed_at.astimezone(tz).date()
-            except Exception:
-                completed_local_day = completed_at.date()
+        completed_local_day = _coaching_anchor_date_local(session, user, tz)
+        if isinstance(completed_local_day, date):
             # Earliest valid day is assessment completion + 1; never schedule in the past.
             anchored_next_day = max(today_local, completed_local_day + timedelta(days=1))
             schedule_anchor_day = min(tomorrow_local, anchored_next_day)

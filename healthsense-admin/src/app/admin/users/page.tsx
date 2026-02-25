@@ -248,12 +248,12 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
           </div>
 
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[1100px] text-left text-sm">
+            <table className="w-full min-w-[1350px] text-left text-sm">
               <thead className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
                 <tr>
-                  <th className="py-2 pr-6 whitespace-nowrap">ID</th>
-                  <th className="py-2 pr-6 whitespace-nowrap">First name</th>
-                  <th className="py-2 pr-6 whitespace-nowrap">Surname</th>
+                  <th className="sticky left-0 z-20 min-w-[80px] bg-white py-2 pr-6 whitespace-nowrap">ID</th>
+                  <th className="sticky left-[80px] z-20 min-w-[160px] bg-white py-2 pr-6 whitespace-nowrap">First name</th>
+                  <th className="sticky left-[240px] z-20 min-w-[160px] bg-white py-2 pr-6 whitespace-nowrap">Surname</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Phone</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Created on</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Updated on</th>
@@ -278,9 +278,9 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                       : null;
                   return (
                     <tr key={u.id}>
-                    <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">#{u.id}</td>
-                    <td className="py-3 pr-6 whitespace-nowrap">{u.first_name || "—"}</td>
-                    <td className="py-3 pr-6 whitespace-nowrap">{u.surname || "—"}</td>
+                    <td className="sticky left-0 z-10 min-w-[80px] bg-white py-3 pr-6 whitespace-nowrap text-[#6b6257]">#{u.id}</td>
+                    <td className="sticky left-[80px] z-10 min-w-[160px] bg-white py-3 pr-6 whitespace-nowrap">{u.first_name || "—"}</td>
+                    <td className="sticky left-[240px] z-10 min-w-[160px] bg-white py-3 pr-6 whitespace-nowrap">{u.surname || "—"}</td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">{u.phone || "—"}</td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">{formatDate(u.created_on)}</td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">{formatDate(u.updated_on)}</td>

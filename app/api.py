@@ -9334,10 +9334,21 @@ def admin_coaching_scheduled(
             global_schedule_map[day_key] = {"time_local": (time_local or None), "enabled": bool(enabled)}
 
     jobs_by_user_day: dict[tuple[int, str], dict[str, object]] = {}
+    first_day_catchup_by_user: dict[int, dict[str, object]] = {}
     try:
         scheduler.ensure_apscheduler_tables()
         for job in scheduler.scheduler.get_jobs():
             job_id = str(getattr(job, "id", "") or "")
+            m_catchup = re.match(r"^auto_prompt_first_day_catchup_(\d+)$", job_id)
+            if m_catchup:
+                uid = int(m_catchup.group(1))
+                if uid in user_id_set:
+                    first_day_catchup_by_user[uid] = {
+                        "job_id": job_id,
+                        "next_run_time": getattr(job, "next_run_time", None),
+                        "trigger": str(getattr(job, "trigger", "") or ""),
+                    }
+                continue
             m = re.match(r"^auto_prompt_(monday|tuesday|wednesday|thursday|friday|saturday|sunday)_(\d+)$", job_id)
             if not m:
                 continue
@@ -9353,6 +9364,7 @@ def admin_coaching_scheduled(
             }
     except Exception:
         jobs_by_user_day = {}
+        first_day_catchup_by_user = {}
 
     items: list[dict[str, object]] = []
     enabled_users = 0
@@ -9473,6 +9485,27 @@ def admin_coaching_scheduled(
         row["planned_delivery"] = "podcast+text"
         row["planned_message"] = "First day of coaching welcome podcast and habit-step summary."
         row["first_day_override"] = True
+        catchup_job = first_day_catchup_by_user.get(uid)
+        catchup_next = catchup_job.get("next_run_time") if catchup_job else None
+        if isinstance(catchup_next, datetime):
+            try:
+                row["next_run_utc"] = catchup_next.astimezone(ZoneInfo("UTC")).isoformat()
+            except Exception:
+                row["next_run_utc"] = catchup_next.isoformat()
+            try:
+                row_tz = ZoneInfo(str(row.get("timezone") or "UTC"))
+            except Exception:
+                row_tz = ZoneInfo("UTC")
+            try:
+                row["next_run_local"] = catchup_next.astimezone(row_tz).isoformat()
+            except Exception:
+                row["next_run_local"] = catchup_next.isoformat()
+            row["job_id"] = catchup_job.get("job_id")
+            row["job_trigger"] = catchup_job.get("trigger")
+            row["status"] = "scheduled"
+            row["first_day_catchup"] = True
+        else:
+            row["first_day_catchup"] = False
 
     items.sort(
         key=lambda row: (

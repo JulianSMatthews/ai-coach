@@ -144,6 +144,7 @@ export default async function CoachingScheduledPage({ searchParams }: CoachingSc
                           {row.planned_touchpoint ? `touchpoint: ${row.planned_touchpoint}` : "touchpoint: —"}
                           {row.planned_delivery ? ` · ${row.planned_delivery}` : ""}
                           {row.first_day_override ? " · first-day override" : ""}
+                          {row.first_day_catchup ? " · catch-up job" : ""}
                         </p>
                       </td>
                       <td className="py-3 pr-4">
