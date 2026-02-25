@@ -679,6 +679,72 @@ def _run_day_prompt(user_id: int, day: str):
     _run_day_prompt_inline(user_id, day)
 
 
+def _schedule_first_day_catchup_if_due(
+    user: User,
+    session,
+    defaults: dict[str, tuple[int, int] | None],
+) -> None:
+    """
+    If first-day coaching is pending and the intended next-day slot is already in the past,
+    schedule a one-off near-immediate run so first-day does not drift by an extra day/week.
+    """
+    user_id = int(getattr(user, "id", 0) or 0)
+    if user_id <= 0:
+        return
+    pref = _get_user_pref(session, user_id, FIRST_DAY_PENDING_PREF_KEY)
+    pending = bool(pref and str(pref.value or "").strip() == "1")
+    if not pending:
+        return
+    completed_at = getattr(user, "first_assessment_completed", None)
+    if not isinstance(completed_at, datetime):
+        return
+    tz = _tz(user)
+    now_local = datetime.now(tz)
+    try:
+        completed_local_day = completed_at.astimezone(tz).date()
+    except Exception:
+        completed_local_day = completed_at.date()
+    expected_day = completed_local_day + timedelta(days=1)
+    day_names = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+    expected_day_key = day_names[expected_day.weekday()]
+    if expected_day_key == "sunday":
+        # Sunday starts follow the normal Sunday flow (no first-day override).
+        return
+    pref_time = _user_pref_time(session, user_id, expected_day_key)
+    default_time = defaults.get(expected_day_key)
+    scheduled_time = pref_time or default_time
+    if scheduled_time is None:
+        return
+    hh, mm = scheduled_time
+    due_now = False
+    if now_local.date() > expected_day:
+        due_now = True
+    elif now_local.date() == expected_day:
+        due_now = (now_local.hour, now_local.minute) >= (hh, mm)
+    if not due_now:
+        return
+    job_id = f"auto_prompt_first_day_catchup_{user_id}"
+    try:
+        scheduler.remove_job(job_id)
+    except Exception:
+        pass
+    run_date = datetime.utcnow() + timedelta(minutes=1)
+    _safe_add_job(
+        _run_day_prompt,
+        trigger="date",
+        run_date=run_date,
+        args=[user_id, expected_day_key],
+        id=job_id,
+        replace_existing=True,
+        misfire_grace_time=3600,
+        timezone="UTC",
+    )
+    debug_log(
+        f"scheduled first-day catchup for user {user_id} day={expected_day_key} run_date={run_date.isoformat()}Z",
+        tag="scheduler",
+    )
+
+
 def _next_weekday_occurrence(
     user: User,
     weekday_idx: int,
@@ -726,6 +792,7 @@ def _unschedule_prompts_for_user(user_id: int):
         f"auto_prompt_{day}_{user_id}"
         for day in ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
     ]
+    job_ids.append(f"auto_prompt_first_day_catchup_{user_id}")
     for job_id in job_ids:
         try:
             scheduler.remove_job(job_id)
@@ -851,6 +918,7 @@ def _schedule_prompts_for_user(
             earliest_date=earliest_day,
         )
         _schedule_prompt_for_user(user, day, dow, pref_time[0], pref_time[1], start_date=start_date)
+    _schedule_first_day_catchup_if_due(user, session, defaults)
     print(f"[scheduler] scheduled weekly prompts for user {user.id} ({tz})")
 
 
