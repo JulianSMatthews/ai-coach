@@ -262,6 +262,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                   <th className="py-2 pr-6 whitespace-nowrap">Last inbound</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Last template sent</th>
                   <th className="py-2 pr-6 whitespace-nowrap">First assessment</th>
+                  <th className="py-2 pr-6 whitespace-nowrap">Next scheduled</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Prompt state</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Coaching</th>
                   <th className="py-2 whitespace-nowrap">Actions</th>
@@ -293,6 +294,9 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                     </td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
                       {formatDate(u.first_assessment_completed_at)}
+                    </td>
+                    <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
+                      {formatDateTime(u.next_scheduled_at)}
                     </td>
                     <td className="py-3 pr-6 whitespace-nowrap">
                       <form action={setPromptStateAction} className="flex items-center gap-2">
@@ -408,7 +412,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                 })}
                 {!users.length ? (
                   <tr>
-                    <td className="py-6 text-sm text-[#6b6257]" colSpan={14}>
+                    <td className="py-6 text-sm text-[#6b6257]" colSpan={15}>
                       No users found. Try a different search.
                     </td>
                   </tr>

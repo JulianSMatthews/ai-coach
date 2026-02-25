@@ -6105,7 +6105,17 @@ def admin_assessment_health(
             key=lambda row: (-int(row.get("count") or 0), str(row.get("error_code") or "")),
         )
 
-        coaching_types = ["kickoff", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+        coaching_types = [
+            "kickoff",
+            "first_day",
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+        ]
         weekly_types = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
         tp_q = (
             s.query(
@@ -6512,6 +6522,9 @@ def admin_assessment_health(
         kickoff_sent = next((row["sent"] for row in day_stats_rows if row.get("day") == "kickoff"), 0)
         kickoff_replied = next((row["replied_24h"] for row in day_stats_rows if row.get("day") == "kickoff"), 0)
         kickoff_audio = next((row["with_audio"] for row in day_stats_rows if row.get("day") == "kickoff"), 0)
+        first_day_sent = next((row["sent"] for row in day_stats_rows if row.get("day") == "first_day"), 0)
+        first_day_replied = next((row["replied_24h"] for row in day_stats_rows if row.get("day") == "first_day"), 0)
+        first_day_audio = next((row["with_audio"] for row in day_stats_rows if row.get("day") == "first_day"), 0)
         sunday_sent_count = weekly_funnel_steps[6]["count"] if len(weekly_funnel_steps) > 6 else 0
         sunday_replied_count = weekly_funnel_steps[7]["count"] if len(weekly_funnel_steps) > 7 else 0
         week_completion_rate = (sunday_sent_count / weekly_started * 100.0) if weekly_started else None
@@ -6532,6 +6545,13 @@ def admin_assessment_health(
                 "response_rate_pct": round((kickoff_replied / kickoff_sent * 100.0), 2) if kickoff_sent else None,
                 "with_audio": int(kickoff_audio or 0),
                 "audio_rate_pct": round((kickoff_audio / kickoff_sent * 100.0), 2) if kickoff_sent else None,
+            },
+            "first_day": {
+                "sent": int(first_day_sent or 0),
+                "responded_24h": int(first_day_replied or 0),
+                "response_rate_pct": round((first_day_replied / first_day_sent * 100.0), 2) if first_day_sent else None,
+                "with_audio": int(first_day_audio or 0),
+                "audio_rate_pct": round((first_day_audio / first_day_sent * 100.0), 2) if first_day_sent else None,
             },
             "day_funnel": {
                 "started": int(weekly_started),
@@ -9179,6 +9199,301 @@ def admin_touchpoint_history(
 
     return {"items": items}
 
+
+@admin.get("/coaching/scheduled")
+def admin_coaching_scheduled(
+    limit: int = 200,
+    user_id: int | None = None,
+    only_enabled: bool = True,
+    admin_user: User = Depends(_require_admin),
+):
+    """
+    Return per-user coaching schedule rows (Mon-Sun) with next-run status.
+    Uses APScheduler jobs (auto_prompt_<day>_<user_id>) as source of truth.
+    """
+    max_limit = max(1, min(int(limit), 1000))
+    club_scope_id = getattr(admin_user, "club_id", None)
+    day_order = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+    auto_pref_keys = tuple(getattr(scheduler, "AUTO_PROMPT_PREF_KEYS", ("coaching", "auto_daily_prompts")))
+    first_day_pending_pref_key = str(
+        getattr(scheduler, "FIRST_DAY_PENDING_PREF_KEY", "coaching_first_day_pending")
+    ).strip() or "coaching_first_day_pending"
+    day_plan_map: dict[str, dict[str, str]] = {
+        "monday": {
+            "touchpoint": "podcast_weekstart",
+            "delivery": "podcast+text",
+            "message": "Weekstart podcast and Monday check-in for this week's focus.",
+        },
+        "tuesday": {
+            "touchpoint": "tuesday",
+            "delivery": "text",
+            "message": "Tuesday check-in message with quick-reply options.",
+        },
+        "wednesday": {
+            "touchpoint": "midweek",
+            "delivery": "text",
+            "message": "Midweek progress check and support prompt.",
+        },
+        "thursday": {
+            "touchpoint": "podcast_thursday",
+            "delivery": "podcast+text",
+            "message": "Thursday boost podcast followed by a short check-in.",
+        },
+        "friday": {
+            "touchpoint": "podcast_friday",
+            "delivery": "podcast+text",
+            "message": "Friday boost podcast and end-of-week check-in.",
+        },
+        "saturday": {
+            "touchpoint": "saturday",
+            "delivery": "text",
+            "message": "Saturday keepalive check-in with quick replies.",
+        },
+        "sunday": {
+            "touchpoint": "sunday",
+            "delivery": "text",
+            "message": "Sunday review and habit-step setup flow.",
+        },
+    }
+
+    with SessionLocal() as s:
+        users_q = s.query(User)
+        if club_scope_id is not None:
+            users_q = users_q.filter(User.club_id == club_scope_id)
+        if user_id:
+            users_q = users_q.filter(User.id == int(user_id))
+        users = users_q.order_by(User.id.asc()).limit(max_limit).all()
+
+        if not users:
+            return {"items": [], "summary": {"users": 0, "enabled_users": 0, "rows": 0, "scheduled_rows": 0, "missing_rows": 0}}
+
+        user_ids = [int(u.id) for u in users if getattr(u, "id", None) is not None]
+        user_id_set = set(user_ids)
+
+        pref_keys = (
+            list(auto_pref_keys)
+            + [f"coach_schedule_{day}" for day in day_order]
+            + ["coaching_fast_minutes", first_day_pending_pref_key]
+        )
+        pref_rows = (
+            s.query(UserPreference.user_id, UserPreference.key, UserPreference.value, UserPreference.updated_at)
+            .filter(UserPreference.user_id.in_(user_ids))
+            .filter(UserPreference.key.in_(pref_keys))
+            .order_by(UserPreference.user_id.asc(), UserPreference.updated_at.desc())
+            .all()
+        )
+
+        global_schedule_rows = (
+            s.query(GlobalPromptSchedule.day_key, GlobalPromptSchedule.time_local, GlobalPromptSchedule.enabled)
+            .filter(GlobalPromptSchedule.day_key.in_(day_order))
+            .all()
+        )
+
+    coaching_enabled_map: dict[int, bool] = {}
+    day_pref_map: dict[tuple[int, str], str | None] = {}
+    fast_minutes_map: dict[int, int | None] = {}
+    first_day_pending_map: dict[int, bool] = {}
+    seen_auto_pref: set[int] = set()
+
+    for uid_raw, key_raw, value_raw, _updated_at in pref_rows:
+        if uid_raw is None:
+            continue
+        uid = int(uid_raw)
+        key = str(key_raw or "").strip().lower()
+        val = str(value_raw or "").strip()
+
+        if key in auto_pref_keys and uid not in seen_auto_pref:
+            coaching_enabled_map[uid] = val == "1"
+            seen_auto_pref.add(uid)
+            continue
+
+        if key == "coaching_fast_minutes" and uid not in fast_minutes_map:
+            try:
+                fast_minutes_map[uid] = max(1, int(val))
+            except Exception:
+                fast_minutes_map[uid] = None
+            continue
+        if key == first_day_pending_pref_key and uid not in first_day_pending_map:
+            first_day_pending_map[uid] = val == "1"
+            continue
+
+        if key.startswith("coach_schedule_"):
+            day = key.replace("coach_schedule_", "", 1).strip().lower()
+            if day in day_order and (uid, day) not in day_pref_map:
+                day_pref_map[(uid, day)] = val or None
+
+    for uid in user_id_set:
+        coaching_enabled_map.setdefault(uid, False)
+        fast_minutes_map.setdefault(uid, None)
+        first_day_pending_map.setdefault(uid, False)
+
+    global_schedule_map: dict[str, dict[str, object]] = {}
+    for day_key_raw, time_local, enabled in global_schedule_rows:
+        day_key = str(day_key_raw or "").strip().lower()
+        if day_key in day_order:
+            global_schedule_map[day_key] = {"time_local": (time_local or None), "enabled": bool(enabled)}
+
+    jobs_by_user_day: dict[tuple[int, str], dict[str, object]] = {}
+    try:
+        scheduler.ensure_apscheduler_tables()
+        for job in scheduler.scheduler.get_jobs():
+            job_id = str(getattr(job, "id", "") or "")
+            m = re.match(r"^auto_prompt_(monday|tuesday|wednesday|thursday|friday|saturday|sunday)_(\d+)$", job_id)
+            if not m:
+                continue
+            day = m.group(1)
+            uid = int(m.group(2))
+            if uid not in user_id_set:
+                continue
+            next_run = getattr(job, "next_run_time", None)
+            jobs_by_user_day[(uid, day)] = {
+                "job_id": job_id,
+                "next_run_time": next_run,
+                "trigger": str(getattr(job, "trigger", "") or ""),
+            }
+    except Exception:
+        jobs_by_user_day = {}
+
+    items: list[dict[str, object]] = []
+    enabled_users = 0
+    scheduled_rows = 0
+    missing_rows = 0
+
+    for u in users:
+        uid = int(u.id)
+        enabled = bool(coaching_enabled_map.get(uid, False))
+        if only_enabled and not enabled:
+            continue
+        if enabled:
+            enabled_users += 1
+        tz_name = str(getattr(u, "tz", "") or "UTC")
+        try:
+            user_tz = ZoneInfo(tz_name)
+        except Exception:
+            tz_name = "UTC"
+            user_tz = ZoneInfo("UTC")
+        user_name = " ".join(
+            [str(getattr(u, "first_name", "") or "").strip(), str(getattr(u, "surname", "") or "").strip()]
+        ).strip() or None
+        fast_minutes = fast_minutes_map.get(uid)
+        schedule_mode = "fast" if fast_minutes else "weekly"
+
+        for day in day_order:
+            job = jobs_by_user_day.get((uid, day))
+            has_job = job is not None
+            if has_job:
+                scheduled_rows += 1
+            elif enabled:
+                missing_rows += 1
+
+            next_run = job.get("next_run_time") if job else None
+            next_run_utc = None
+            next_run_local = None
+            if isinstance(next_run, datetime):
+                try:
+                    next_run_utc = next_run.astimezone(ZoneInfo("UTC")).isoformat()
+                except Exception:
+                    next_run_utc = next_run.isoformat()
+                try:
+                    next_run_local = next_run.astimezone(user_tz).isoformat()
+                except Exception:
+                    next_run_local = next_run.isoformat()
+
+            if enabled and has_job:
+                status_val = "scheduled"
+            elif enabled and not has_job:
+                status_val = "missing_job"
+            elif (not enabled) and has_job:
+                status_val = "scheduled_while_disabled"
+            else:
+                status_val = "disabled"
+
+            day_override = day_pref_map.get((uid, day))
+            global_day = global_schedule_map.get(day) or {}
+            plan = day_plan_map.get(day) or {}
+            items.append(
+                {
+                    "user_id": uid,
+                    "user_name": user_name,
+                    "phone": getattr(u, "phone", None),
+                    "day_key": day,
+                    "coaching_enabled": enabled,
+                    "schedule_mode": schedule_mode,
+                    "fast_minutes": int(fast_minutes) if fast_minutes else None,
+                    "schedule_source": "user_override" if day_override else "global_default",
+                    "time_local": day_override or global_day.get("time_local"),
+                    "global_day_enabled": bool(global_day.get("enabled", True)),
+                    "job_id": job.get("job_id") if job else None,
+                    "job_trigger": job.get("trigger") if job else None,
+                    "next_run_utc": next_run_utc,
+                    "next_run_local": next_run_local,
+                    "timezone": tz_name,
+                    "status": status_val,
+                    "has_job": has_job,
+                    "planned_touchpoint": plan.get("touchpoint"),
+                    "planned_delivery": plan.get("delivery"),
+                    "planned_message": plan.get("message"),
+                    "first_day_pending": bool(first_day_pending_map.get(uid, False)),
+                    "first_day_override": False,
+                }
+            )
+
+    # If first-day coaching is pending, the user's next non-Sunday scheduled run is replaced once
+    # by first-day coaching content (welcome podcast + habit-step intro).
+    earliest_row_idx_by_user: dict[int, tuple[datetime, int]] = {}
+    for idx, row in enumerate(items):
+        uid_raw = row.get("user_id")
+        next_run_raw = row.get("next_run_utc")
+        if uid_raw is None or not next_run_raw:
+            continue
+        try:
+            uid = int(uid_raw)
+        except Exception:
+            continue
+        try:
+            next_run_dt = datetime.fromisoformat(str(next_run_raw))
+        except Exception:
+            continue
+        current = earliest_row_idx_by_user.get(uid)
+        if current is None or next_run_dt < current[0]:
+            earliest_row_idx_by_user[uid] = (next_run_dt, idx)
+
+    for uid, pending in first_day_pending_map.items():
+        if not pending:
+            continue
+        soonest = earliest_row_idx_by_user.get(uid)
+        if not soonest:
+            continue
+        idx = soonest[1]
+        row = items[idx]
+        day = str(row.get("day_key") or "").strip().lower()
+        if day == "sunday":
+            continue
+        row["planned_touchpoint"] = "podcast_first_day"
+        row["planned_delivery"] = "podcast+text"
+        row["planned_message"] = "First day of coaching welcome podcast and habit-step summary."
+        row["first_day_override"] = True
+
+    items.sort(
+        key=lambda row: (
+            str(row.get("status") or ""),
+            str(row.get("next_run_utc") or "9999-12-31T23:59:59+00:00"),
+            int(row.get("user_id") or 0),
+            str(row.get("day_key") or ""),
+        )
+    )
+
+    return {
+        "items": items,
+        "summary": {
+            "users": len({int(r.get("user_id") or 0) for r in items if r.get("user_id") is not None}),
+            "enabled_users": int(enabled_users),
+            "rows": len(items),
+            "scheduled_rows": int(scheduled_rows),
+            "missing_rows": int(missing_rows),
+        },
+    }
+
 @admin.post("/prompts/settings")
 def admin_prompt_settings_update(
     payload: dict,
@@ -11139,6 +11454,7 @@ def admin_list_users(
         query = query.order_by(desc(User.id)).limit(limit)
         users = list(s.execute(query).scalars().all())
         user_ids = [u.id for u in users]
+        user_id_set = {int(uid) for uid in user_ids if uid is not None}
         latest_runs: dict[int, int] = {}
         latest_finished: dict[int, datetime | None] = {}
         active_users: set[int] = set()
@@ -11218,6 +11534,30 @@ def admin_list_users(
             ).all()
             last_template_sent = {int(uid): ts for uid, ts in template_rows if uid}
 
+    next_scheduled_map: dict[int, datetime] = {}
+    if user_id_set:
+        try:
+            scheduler.ensure_apscheduler_tables()
+            for job in scheduler.scheduler.get_jobs():
+                job_id = str(getattr(job, "id", "") or "")
+                m = re.match(
+                    r"^auto_prompt_(monday|tuesday|wednesday|thursday|friday|saturday|sunday)_(\d+)$",
+                    job_id,
+                )
+                if not m:
+                    continue
+                uid = int(m.group(2))
+                if uid not in user_id_set:
+                    continue
+                next_run = getattr(job, "next_run_time", None)
+                if not isinstance(next_run, datetime):
+                    continue
+                current = next_scheduled_map.get(uid)
+                if current is None or next_run < current:
+                    next_scheduled_map[uid] = next_run
+        except Exception:
+            next_scheduled_map = {}
+
     payload = []
     for u in users:
         run_id = latest_runs.get(u.id)
@@ -11227,6 +11567,13 @@ def admin_list_users(
             status = "in_progress"
         elif first_assessment_completed:
             status = "completed"
+        next_scheduled = next_scheduled_map.get(u.id)
+        next_scheduled_iso = None
+        if isinstance(next_scheduled, datetime):
+            try:
+                next_scheduled_iso = next_scheduled.astimezone(ZoneInfo("UTC")).isoformat()
+            except Exception:
+                next_scheduled_iso = next_scheduled.isoformat()
         payload.append(
             {
                 "id": u.id,
@@ -11244,6 +11591,7 @@ def admin_list_users(
                 "latest_run_id": run_id,
                 "latest_run_finished_at": latest_finished.get(run_id) if run_id else None,
                 "first_assessment_completed_at": first_assessment_completed,
+                "next_scheduled_at": next_scheduled_iso,
                 "status": status,
                 "is_superuser": bool(getattr(u, "is_superuser", False)),
                 "admin_role": getattr(u, "admin_role", None),

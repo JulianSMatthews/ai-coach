@@ -491,6 +491,13 @@ export type AssessmentHealthPayload = {
       with_audio?: number;
       audio_rate_pct?: number | null;
     };
+    first_day?: {
+      sent?: number;
+      responded_24h?: number;
+      response_rate_pct?: number | null;
+      with_audio?: number;
+      audio_rate_pct?: number | null;
+    };
     day_funnel?: {
       started?: number;
       completed_sunday?: number;
@@ -715,6 +722,39 @@ export type GlobalScheduleItem = {
   updated_at?: string | null;
 };
 
+export type CoachingScheduledItem = {
+  user_id?: number | null;
+  user_name?: string | null;
+  phone?: string | null;
+  day_key?: string | null;
+  coaching_enabled?: boolean | null;
+  schedule_mode?: string | null;
+  fast_minutes?: number | null;
+  schedule_source?: string | null;
+  time_local?: string | null;
+  global_day_enabled?: boolean | null;
+  job_id?: string | null;
+  job_trigger?: string | null;
+  next_run_utc?: string | null;
+  next_run_local?: string | null;
+  timezone?: string | null;
+  status?: string | null;
+  has_job?: boolean | null;
+  planned_touchpoint?: string | null;
+  planned_delivery?: string | null;
+  planned_message?: string | null;
+  first_day_pending?: boolean | null;
+  first_day_override?: boolean | null;
+};
+
+export type CoachingScheduledSummary = {
+  users?: number | null;
+  enabled_users?: number | null;
+  rows?: number | null;
+  scheduled_rows?: number | null;
+  missing_rows?: number | null;
+};
+
 export type RecentReportItem = {
   run_id?: number;
   user_id?: number;
@@ -877,6 +917,7 @@ export type AdminUserSummary = {
   latest_run_id?: number | null;
   latest_run_finished_at?: string | null;
   first_assessment_completed_at?: string | null;
+  next_scheduled_at?: string | null;
   status?: string | null;
   is_superuser?: boolean | null;
   admin_role?: string | null;
@@ -1352,6 +1393,23 @@ export async function listTouchpointHistory(
     },
   });
   return data.items || [];
+}
+
+export async function listCoachingScheduled(
+  limit?: number,
+  userId?: number,
+  onlyEnabled?: boolean
+) {
+  return apiAdmin<{ items: CoachingScheduledItem[]; summary?: CoachingScheduledSummary }>(
+    "/admin/coaching/scheduled",
+    {
+      query: {
+        limit: limit || undefined,
+        user_id: userId || undefined,
+        only_enabled: onlyEnabled == null ? undefined : onlyEnabled,
+      },
+    }
+  );
 }
 
 export async function listRecentReports(limit?: number) {

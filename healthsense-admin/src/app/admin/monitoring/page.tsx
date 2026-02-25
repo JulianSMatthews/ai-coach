@@ -251,6 +251,16 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
       description: "Unique users who received at least one coaching touchpoint in this window.",
     },
     {
+      title: "First-day coaching reply",
+      value:
+        health?.coaching?.first_day?.response_rate_pct != null
+          ? `${formatNum(health.coaching.first_day.response_rate_pct)}%`
+          : "—",
+      state: "unknown",
+      subtitle: `${health?.coaching?.first_day?.responded_24h ?? 0} replied / ${health?.coaching?.first_day?.sent ?? 0} first-day prompts`,
+      description: "Share of first-day coaching messages that received a user reply within 24 hours.",
+    },
+    {
       title: "Weekly flow completion",
       value:
         health?.coaching?.day_funnel?.week_completion_rate_pct != null
