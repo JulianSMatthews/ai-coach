@@ -1077,7 +1077,7 @@ def build_prompt(
             ("locale", settings.get("locale_block") or locale_block(locale)),
             ("context", context_block("podcast_weekstart", "weekly audio brief", timeframe=data.get("week_no") or "")),
             ("task", instruction),
-            ("scores", f"Assessment scores: {scores}" if scores else ""),
+            ("scores", f"HealthSense Scores: {scores}" if scores else ""),
             ("habit", f"Habit readiness: {psych_payload}" if psych_payload else ""),
             ("history", f"History: {history_text}" if history_text else ""),
             ("programme", programme_txt),
@@ -1111,7 +1111,7 @@ def build_prompt(
             ("locale", settings.get("locale_block") or locale_block(locale)),
             ("context", context_block("podcast_kickoff", "kickoff audio intro")),
             ("task", instruction),
-            ("scores", f"Assessment scores: {scores}" if scores else ""),
+            ("scores", f"HealthSense Scores: {scores}" if scores else ""),
             ("habit", f"Habit readiness: {psych_payload}" if psych_payload else ""),
             ("programme", programme_txt),
             ("okr", okr_txt),
@@ -1410,7 +1410,7 @@ def build_prompt(
             psych_block = f"{psych_block}\n"
         if not default_task:
             default_task = (
-                "You are a pragmatic health coach helping people translate assessment scores into weekly habits. "
+                "You are a pragmatic health coach helping people translate HealthSense Scores into weekly habits. "
                 "Return STRICT JSON with keys: objective (string), krs (array of 1-3 items). "
                 "Each KR MUST include: kr_key, description, unit, baseline_num, target_num, metric_label, score, and optional concept_key. "
                 "Return JSON only."
@@ -2376,7 +2376,7 @@ def podcast_prompt(
 
     common_header = (
         common_prompt_header(coach_name, user_name, locale)
-        + f"\nAssessment scores: {scores}\nHabit readiness: {psych_payload}{history_block_txt}\n"
+        + f"\nHealthSense Scores: {scores}\nHabit readiness: {psych_payload}{history_block_txt}\n"
     )
     okr_str = f"Key Results: {okrs_by_pillar}"
 
@@ -2665,10 +2665,10 @@ def assessment_scores_prompt(
     payload: list[dict],
     locale: str = "UK",
 ) -> PromptAssembly:
-    """Assessment score narrative (2 short paragraphs) — now template-driven."""
+    """HealthSense Score narrative (2 short paragraphs) — now template-driven."""
     data_payload = {"combined": combined, "scores": payload}
     default_task = (
-        "You are a supportive wellbeing coach writing a concise summary of assessment scores. "
+        "You are a supportive wellbeing coach writing a concise summary of HealthSense Scores. "
         "Write two short paragraphs (under 140 words total) that explain what the combined score and per-pillar scores suggest, "
         "reference notable answers when helpful, treat Resilience gently, and encourage small next steps. "
         "Use second-person voice ('you'). Return plain text."
@@ -2680,8 +2680,8 @@ def assessment_scores_prompt(
     parts = [
         ("system", sys_block),
         ("locale", loc_block),
-        ("context", "Context: assessment scores summary"),
-        ("scores", f"Assessment scores: {json.dumps(data_payload, ensure_ascii=False)}"),
+        ("context", "Context: HealthSense Score summary"),
+        ("scores", f"HealthSense Scores: {json.dumps(data_payload, ensure_ascii=False)}"),
         ("task", (template or {}).get("task_block") or default_task),
     ]
     parts, order_override = _apply_prompt_template(parts, template)

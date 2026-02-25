@@ -1162,7 +1162,7 @@ The explanation should feel insightful but concise.""",
         "is_active": True,
         "block_order": ['system', 'locale', 'context', 'okr', 'task', 'user'],
         "include_blocks": ['system', 'locale', 'context', 'okr', 'task'],
-        "task_block": """You are a pragmatic health coach helping people translate assessment scores into weekly habits.
+        "task_block": """You are a pragmatic health coach helping people translate HealthSense Scores into weekly habits.
 Return STRICT JSON with keys: objective (string), krs (array of 1-3 items).
 Each KR MUST include:
 - kr_key (snake_case, <=32 chars)
