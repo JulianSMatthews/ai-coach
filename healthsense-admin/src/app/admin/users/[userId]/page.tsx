@@ -16,11 +16,16 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
   const status = detail.status as string | undefined;
   const latest = detail.latest_run as { id?: number; finished_at?: string } | undefined;
   const onboarding = (detail.onboarding || {}) as Record<string, unknown>;
-  const onboardingChecks = (onboarding.checks || {}) as Record<string, unknown>;
   const introContent = (onboarding.intro_content || {}) as Record<string, unknown>;
   const weeklyPlan = (detail.current_weekly_plan || null) as Record<string, unknown> | null;
   const weeklyPlanKrs = Array.isArray(weeklyPlan?.krs) ? (weeklyPlan?.krs as Record<string, unknown>[]) : [];
   const fields = user ? Object.entries(user) : [];
+  const firstAssessmentCompletedAt = onboarding.first_assessment_completed_at || onboarding.assessment_completed_at;
+  const assessmentCompletedMet = Boolean(firstAssessmentCompletedAt);
+  const firstLoginMet = Boolean(onboarding.first_app_login_at);
+  const assessmentReviewMet = Boolean(onboarding.assessment_reviewed_at);
+  const activationReady = Boolean(onboarding.coaching_activation_ready ?? (assessmentCompletedMet && firstLoginMet && assessmentReviewMet));
+  const coachingEnabledNow = Boolean(onboarding.coaching_enabled_now);
   const onboardingFields = [
     [
       "first_assessment_completed_at",
@@ -35,30 +40,20 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
     ["coaching_auto_enabled_at", onboarding.coaching_auto_enabled_at],
     ["coaching_first_day_sent_at", onboarding.coaching_first_day_sent_at],
   ] as const;
-  const checkFields = [
-    ["assessment_completed_met", onboardingChecks.assessment_completed_met],
-    ["first_login_met", onboardingChecks.first_login_met],
-    ["assessment_review_met", onboardingChecks.assessment_review_met],
-    ["intro_completed_met", onboardingChecks.intro_completed_met],
-    ["coaching_activation_ready", onboardingChecks.coaching_activation_ready],
-    ["coaching_enabled_now", onboardingChecks.coaching_enabled_now],
-    ["coaching_auto_enabled_recorded", onboardingChecks.coaching_auto_enabled_recorded],
-    ["intro_should_show_now", onboardingChecks.intro_should_show_now],
-  ] as const;
   const essentialActivationRows = [
     {
       label: "First Assessment Completed",
-      met: onboardingChecks.assessment_completed_met,
-      value: onboarding.first_assessment_completed_at || onboarding.assessment_completed_at,
+      met: assessmentCompletedMet,
+      value: firstAssessmentCompletedAt,
     },
     {
       label: "First app login",
-      met: onboardingChecks.first_login_met,
+      met: firstLoginMet,
       value: onboarding.first_app_login_at,
     },
     {
       label: "Assessment reviewed",
-      met: onboardingChecks.assessment_review_met,
+      met: assessmentReviewMet,
       value: onboarding.assessment_reviewed_at,
     },
   ] as const;
@@ -123,12 +118,6 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
                   <td className="px-4 py-3 font-medium">First day coaching sent on</td>
                   <td className="px-4 py-3 text-[#6b6257]">{formatValue(onboarding.coaching_first_day_sent_at)}</td>
                 </tr>
-                <tr>
-                  <td className="px-4 py-3 font-medium">Sent recorded</td>
-                  <td className="px-4 py-3 text-[#6b6257]">
-                    {formatValue(onboardingChecks.coaching_first_day_sent_recorded)}
-                  </td>
-                </tr>
               </tbody>
             </table>
           </div>
@@ -155,12 +144,12 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
                 ))}
                 <tr>
                   <td className="px-4 py-3 font-medium">Activation ready</td>
-                  <td className="px-4 py-3 text-[#6b6257]">{formatValue(onboardingChecks.coaching_activation_ready)}</td>
+                  <td className="px-4 py-3 text-[#6b6257]">{formatValue(activationReady)}</td>
                   <td className="px-4 py-3 text-[#6b6257]">All requirements above must be Yes</td>
                 </tr>
                 <tr>
                   <td className="px-4 py-3 font-medium">Coaching enabled now</td>
-                  <td className="px-4 py-3 text-[#6b6257]">{formatValue(onboardingChecks.coaching_enabled_now)}</td>
+                  <td className="px-4 py-3 text-[#6b6257]">{formatValue(coachingEnabledNow)}</td>
                   <td className="px-4 py-3 text-[#6b6257]">{formatValue(onboarding.coaching_auto_enabled_at)}</td>
                 </tr>
               </tbody>
@@ -179,12 +168,6 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
                   </thead>
                   <tbody className="divide-y divide-[#efe7db]">
                     {onboardingFields.map(([key, value]) => (
-                      <tr key={key}>
-                        <td className="px-4 py-3 font-medium">{key}</td>
-                        <td className="px-4 py-3 text-[#6b6257]">{formatValue(value)}</td>
-                      </tr>
-                    ))}
-                    {checkFields.map(([key, value]) => (
                       <tr key={key}>
                         <td className="px-4 py-3 font-medium">{key}</td>
                         <td className="px-4 py-3 text-[#6b6257]">{formatValue(value)}</td>
