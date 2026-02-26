@@ -3181,10 +3181,7 @@ def evaluate_and_enable_coaching(user_id: int) -> bool:
         assessment_completed_at = _latest_assessment_completed_at(s, user_id)
         first_login_at = _pref_value(s, user_id, ONBOARDING_PREF_KEYS["first_login"])
         assessment_reviewed_at = _pref_value(s, user_id, ONBOARDING_PREF_KEYS["assessment_reviewed"])
-        intro_listened_at = _pref_value(s, user_id, ONBOARDING_PREF_KEYS["intro_listened"])
-        intro_read_at = _pref_value(s, user_id, ONBOARDING_PREF_KEYS["intro_read"])
-        intro_completed = bool(intro_listened_at or intro_read_at)
-        if not (assessment_completed_at and first_login_at and assessment_reviewed_at and intro_completed):
+        if not (assessment_completed_at and first_login_at and assessment_reviewed_at):
             return False
         if _coaching_enabled_for_user(s, user_id):
             return False
@@ -11900,7 +11897,7 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
         and first_login_at
         and (not coaching_enabled or coaching_recently_enabled)
     )
-    activation_ready = bool(assessment_completed_at and first_login_at and assessment_reviewed_at and intro_completed_at)
+    activation_ready = bool(assessment_completed_at and first_login_at and assessment_reviewed_at)
 
     return {
         "user": {

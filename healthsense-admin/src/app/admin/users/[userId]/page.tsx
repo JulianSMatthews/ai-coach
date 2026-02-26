@@ -61,11 +61,6 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
       met: onboardingChecks.assessment_review_met,
       value: onboarding.assessment_reviewed_at,
     },
-    {
-      label: "Intro completed (listen/read)",
-      met: onboardingChecks.intro_completed_met,
-      value: onboarding.intro_content_completed_at,
-    },
   ] as const;
 
   const formatValue = (value: unknown) => {
