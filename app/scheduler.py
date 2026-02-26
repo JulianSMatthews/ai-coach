@@ -27,9 +27,8 @@ from .models import (
 
 # Preference key(s) for auto coaching prompts (new primary key: "coaching"; legacy: "auto_daily_prompts")
 AUTO_PROMPT_PREF_KEYS = ("coaching", "auto_daily_prompts")
-FIRST_DAY_PENDING_PREF_KEY = "coaching_first_day_pending"
 FIRST_DAY_SENT_AT_PREF_KEY = "coaching_first_day_sent_at"
-FIRST_DAY_SKIP_DAY_PREF_KEY = "coaching_first_day_skip_day"
+LEGACY_FIRST_DAY_PENDING_PREF_KEY = "coaching_first_day_pending"
 from .nudges import (
     send_message,
     send_whatsapp_template,
@@ -290,6 +289,11 @@ def _parse_pref_datetime(value: str | None) -> datetime | None:
         return datetime.fromisoformat(value)
     except Exception:
         return None
+
+
+def _first_day_sent_at(session, user_id: int) -> datetime | None:
+    pref = _get_user_pref(session, int(user_id), FIRST_DAY_SENT_AT_PREF_KEY)
+    return _parse_pref_datetime(pref.value if pref else None)
 
 
 def send_out_of_session_messages() -> None:
@@ -641,8 +645,28 @@ def _run_day_prompt_inline(user_id: int, day: str):
     try:
         if _run_first_day_coaching_if_needed(user, day):
             return
-        if _consume_first_day_skip_for_day(user_id, day):
-            return
+        # Do not send regular weekly prompts on the same local day first-day coaching
+        # was already sent. Weekly flow resumes the next day.
+        with SessionLocal() as s:
+            sent_pref = _get_user_pref(s, int(user_id), FIRST_DAY_SENT_AT_PREF_KEY)
+            sent_at = _parse_pref_datetime(sent_pref.value if sent_pref else None)
+        if sent_at:
+            tz = _tz(user)
+            try:
+                sent_local_day = sent_at.astimezone(tz).date()
+            except Exception:
+                sent_local_day = sent_at.date()
+            if sent_local_day == datetime.now(tz).date():
+                _audit(
+                    int(user_id),
+                    f"auto_prompt_{day}_skipped",
+                    {"day": day, "reason": "first_day_sent_today"},
+                )
+                debug_log(
+                    f"skip {day} prompt for user {user_id}: first-day already sent today",
+                    tag="scheduler",
+                )
+                return
         tp_type = "ad_hoc"  # fallback if not matched below
         if day == "monday":
             monday.start_weekstart(user)
@@ -689,25 +713,31 @@ def _run_first_day_coaching_if_needed(user: User, day: str) -> bool:
     if user_id <= 0:
         return False
     with SessionLocal() as s:
-        pref = _get_user_pref(s, user_id, FIRST_DAY_PENDING_PREF_KEY)
-        pending = bool(pref and str(pref.value or "").strip() == "1")
-        if not pending:
+        sent_at = _first_day_sent_at(s, user_id)
+        if sent_at:
             return False
-        if day == "sunday":
-            # If the user's first scheduled day is Sunday, keep the normal Sunday flow.
-            _set_user_pref(s, user_id, FIRST_DAY_PENDING_PREF_KEY, "0")
-            s.commit()
+        tz = _tz(user)
+        completed_local_day = _coaching_anchor_date_local(s, user, tz)
+        if not isinstance(completed_local_day, date):
+            return False
+        now_local = datetime.now(tz)
+        expected_day = completed_local_day + timedelta(days=1)
+        day_names = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+        expected_day_key = day_names[expected_day.weekday()]
+        if expected_day_key == "sunday":
+            # Sunday starts follow normal Sunday flow and do not use first-day override.
+            return False
+        if now_local.date() < expected_day:
+            return False
+        if str(day or "").strip().lower() == "sunday":
             return False
     try:
         first_day.send_first_day_coaching(user, scheduled_day=day)
     except Exception as e:
         print(f"[scheduler] first-day coaching prompt failed for user {user_id}: {e}")
-        # Keep pending flag as-is so we can retry on the next scheduled day.
         return False
     with SessionLocal() as s:
-        _set_user_pref(s, user_id, FIRST_DAY_PENDING_PREF_KEY, "0")
         _set_user_pref(s, user_id, FIRST_DAY_SENT_AT_PREF_KEY, datetime.utcnow().isoformat())
-        _set_user_pref(s, user_id, FIRST_DAY_SKIP_DAY_PREF_KEY, day)
         s.commit()
     _audit(user_id, "auto_prompt_first_day", {"day": day})
     return True
@@ -732,19 +762,36 @@ def _run_day_prompt(user_id: int, day: str):
     _run_day_prompt_inline(user_id, day)
 
 
-def _consume_first_day_skip_for_day(user_id: int, day: str) -> bool:
+def _run_first_day_catchup(user_id: int, scheduled_day: str) -> None:
+    """
+    One-off first-day runner used by date-based catch-up jobs.
+    Runs first-day coaching directly without invoking normal day handlers.
+    """
     with SessionLocal() as s:
-        pref = _get_user_pref(s, user_id, FIRST_DAY_SKIP_DAY_PREF_KEY)
-        if not pref:
-            return False
-        if str(pref.value or "").strip().lower() != str(day or "").strip().lower():
-            return False
-        try:
-            s.delete(pref)
-        except Exception:
-            pref.value = ""
+        user = s.get(User, int(user_id))
+        if not user:
+            return
+        sent_at = _first_day_sent_at(s, int(user_id))
+        if sent_at:
+            return
+        tz = _tz(user)
+        completed_local_day = _coaching_anchor_date_local(s, user, tz)
+        if not isinstance(completed_local_day, date):
+            return
+        expected_day = completed_local_day + timedelta(days=1)
+        day_names = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+        expected_day_key = day_names[expected_day.weekday()]
+        if expected_day_key == "sunday":
+            return
+    try:
+        first_day.send_first_day_coaching(user, scheduled_day=scheduled_day)
+    except Exception as e:
+        print(f"[scheduler] first-day catchup failed for user {user_id}: {e}")
+        return
+    with SessionLocal() as s:
+        _set_user_pref(s, int(user_id), FIRST_DAY_SENT_AT_PREF_KEY, datetime.utcnow().isoformat())
         s.commit()
-        return True
+    _audit(int(user_id), "auto_prompt_first_day", {"day": scheduled_day, "source": "catchup"})
 
 
 def _schedule_first_day_catchup_if_due(
@@ -759,9 +806,8 @@ def _schedule_first_day_catchup_if_due(
     user_id = int(getattr(user, "id", 0) or 0)
     if user_id <= 0:
         return
-    pref = _get_user_pref(session, user_id, FIRST_DAY_PENDING_PREF_KEY)
-    pending = bool(pref and str(pref.value or "").strip() == "1")
-    if not pending:
+    sent_at = _first_day_sent_at(session, user_id)
+    if sent_at:
         return
     tz = _tz(user)
     completed_local_day = _coaching_anchor_date_local(session, user, tz)
@@ -785,7 +831,7 @@ def _schedule_first_day_catchup_if_due(
     except Exception:
         pass
     _safe_add_job(
-        _run_day_prompt,
+        _run_first_day_catchup,
         trigger="date",
         run_date=run_date,
         args=[user_id, expected_day_key],
@@ -853,14 +899,6 @@ def _unschedule_prompts_for_user(user_id: int):
             scheduler.remove_job(job_id)
         except Exception:
             pass
-    with SessionLocal() as s:
-        pref = _get_user_pref(s, user_id, FIRST_DAY_SKIP_DAY_PREF_KEY)
-        if pref:
-            try:
-                s.delete(pref)
-            except Exception:
-                pref.value = ""
-            s.commit()
     debug_log(f"unscheduled all prompts for user {user_id}", tag="scheduler")
 
 
@@ -928,26 +966,26 @@ def _schedule_prompts_for_user(
             f"(start offset {resolved_fast}m, first_day={first_day}) for user {user.id} ({tz})"
         )
         return
-    # Start next-day onward by default.
-    # When first-day coaching is pending, anchor scheduling from the day after
-    # assessment completion so delayed enablement does not push first-day out
-    # by an extra day.
+    # Weekly schedule anchor is always "today" (local). This ensures rebuilds
+    # keep later-today prompts instead of shifting to tomorrow.
+    # First-day behavior is handled separately via the dedicated catch-up job.
     tz = _tz(user)
     now_local = datetime.now(tz)
     today_local = now_local.date()
-    tomorrow_local = today_local + timedelta(days=1)
-    schedule_anchor_day = tomorrow_local
+    schedule_anchor_day = today_local
     try:
-        first_day_pref = _get_user_pref(session, int(user.id), FIRST_DAY_PENDING_PREF_KEY)
-        first_day_pending = bool(first_day_pref and str(first_day_pref.value or "").strip() == "1")
+        sent_pref = _get_user_pref(session, int(user.id), FIRST_DAY_SENT_AT_PREF_KEY)
+        sent_at = _parse_pref_datetime(sent_pref.value if sent_pref else None)
+        if sent_at:
+            try:
+                sent_local_day = sent_at.astimezone(tz).date()
+            except Exception:
+                sent_local_day = sent_at.date()
+            if sent_local_day == today_local:
+                # If first-day was sent today, normal weekly flow starts tomorrow.
+                schedule_anchor_day = today_local + timedelta(days=1)
     except Exception:
-        first_day_pending = False
-    if first_day_pending:
-        completed_local_day = _coaching_anchor_date_local(session, user, tz)
-        if isinstance(completed_local_day, date):
-            # Earliest valid day is assessment completion + 1; never schedule in the past.
-            anchored_next_day = max(today_local, completed_local_day + timedelta(days=1))
-            schedule_anchor_day = min(tomorrow_local, anchored_next_day)
+        pass
     # Start each day prompt from the next local occurrence so bridge days are included.
     dow_idx = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
     for day, default_time in defaults.items():
@@ -1107,8 +1145,10 @@ def enable_coaching(user_id: int, fast_minutes: int | None = None) -> bool:
             pref.value = "1"
         else:
             s.add(UserPreference(user_id=user_id, key=key, value="1"))
+        legacy_pending = _get_user_pref(s, user_id, LEGACY_FIRST_DAY_PENDING_PREF_KEY)
+        if legacy_pending:
+            s.delete(legacy_pending)
         if not was_enabled:
-            _set_user_pref(s, user_id, FIRST_DAY_PENDING_PREF_KEY, "1")
             _set_user_pref(s, user_id, FIRST_DAY_SENT_AT_PREF_KEY, "")
         # Persist per-user fast mode so it survives restarts and global schedule changes.
         fast_pref = (
@@ -1172,7 +1212,9 @@ def disable_coaching(user_id: int) -> bool:
         )
         if fast_pref:
             s.delete(fast_pref)
-        _set_user_pref(s, user_id, FIRST_DAY_PENDING_PREF_KEY, "0")
+        legacy_pending = _get_user_pref(s, user_id, LEGACY_FIRST_DAY_PENDING_PREF_KEY)
+        if legacy_pending:
+            s.delete(legacy_pending)
         set_virtual_mode(s, user_id, enabled=False)
         s.commit()
         _unschedule_prompts_for_user(user_id)

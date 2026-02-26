@@ -146,6 +146,9 @@ export default async function CoachingScheduledPage({ searchParams }: CoachingSc
                           {row.first_day_override ? " · first-day override" : ""}
                           {row.first_day_catchup ? " · catch-up job" : ""}
                         </p>
+                        {row.first_day_sent_at ? (
+                          <p className="text-xs text-[#6b6257]">first-day sent: {formatDate(row.first_day_sent_at)}</p>
+                        ) : null}
                       </td>
                       <td className="py-3 pr-4">
                         {row.schedule_mode || "—"}

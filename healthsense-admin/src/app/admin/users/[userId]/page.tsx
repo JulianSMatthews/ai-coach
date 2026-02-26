@@ -33,6 +33,7 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
     ["intro_content_read_at", onboarding.intro_content_read_at],
     ["intro_content_completed_at", onboarding.intro_content_completed_at],
     ["coaching_auto_enabled_at", onboarding.coaching_auto_enabled_at],
+    ["coaching_first_day_sent_at", onboarding.coaching_first_day_sent_at],
   ] as const;
   const checkFields = [
     ["assessment_completed_met", onboardingChecks.assessment_completed_met],
@@ -115,6 +116,26 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Latest run finished</p>
               <p className="mt-2 text-sm text-[#6b6257]">{latest?.finished_at || "—"}</p>
             </div>
+          </div>
+
+          <div className="mt-6 overflow-hidden rounded-2xl border border-[#efe7db]">
+            <div className="border-b border-[#efe7db] bg-[#faf7f1] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">First-day coaching</p>
+            </div>
+            <table className="w-full text-left text-sm">
+              <tbody className="divide-y divide-[#efe7db]">
+                <tr>
+                  <td className="px-4 py-3 font-medium">First day coaching sent on</td>
+                  <td className="px-4 py-3 text-[#6b6257]">{formatValue(onboarding.coaching_first_day_sent_at)}</td>
+                </tr>
+                <tr>
+                  <td className="px-4 py-3 font-medium">Sent recorded</td>
+                  <td className="px-4 py-3 text-[#6b6257]">
+                    {formatValue(onboardingChecks.coaching_first_day_sent_recorded)}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
           <div className="mt-6 overflow-hidden rounded-2xl border border-[#efe7db]">

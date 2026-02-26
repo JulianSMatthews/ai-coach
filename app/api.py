@@ -2957,6 +2957,7 @@ ONBOARDING_PREF_KEYS = {
     "intro_listened": "intro_content_listened_at",
     "intro_read": "intro_content_read_at",
     "coaching_enabled_at": "coaching_auto_enabled_at",
+    "first_day_sent_at": "coaching_first_day_sent_at",
 }
 
 
@@ -3125,6 +3126,7 @@ def _get_onboarding_state(session, user_id: int) -> dict:
     intro_listened_val = _pref_value(session, user_id, ONBOARDING_PREF_KEYS["intro_listened"])
     intro_read_val = _pref_value(session, user_id, ONBOARDING_PREF_KEYS["intro_read"])
     coaching_enabled_at_val = _pref_value(session, user_id, ONBOARDING_PREF_KEYS["coaching_enabled_at"])
+    first_day_sent_at_val = _pref_value(session, user_id, ONBOARDING_PREF_KEYS["first_day_sent_at"])
     intro_completed_at_val = intro_listened_val or intro_read_val
     return {
         "assessment_completed_at": assessment_completed_val,
@@ -3136,6 +3138,7 @@ def _get_onboarding_state(session, user_id: int) -> dict:
         "intro_content_read_at": intro_read_val,
         "intro_content_completed_at": intro_completed_at_val,
         "coaching_auto_enabled_at": coaching_enabled_at_val,
+        "coaching_first_day_sent_at": first_day_sent_at_val,
     }
 
 
@@ -9215,9 +9218,9 @@ def admin_coaching_scheduled(
     club_scope_id = getattr(admin_user, "club_id", None)
     day_order = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
     auto_pref_keys = tuple(getattr(scheduler, "AUTO_PROMPT_PREF_KEYS", ("coaching", "auto_daily_prompts")))
-    first_day_pending_pref_key = str(
-        getattr(scheduler, "FIRST_DAY_PENDING_PREF_KEY", "coaching_first_day_pending")
-    ).strip() or "coaching_first_day_pending"
+    first_day_sent_pref_key = str(
+        getattr(scheduler, "FIRST_DAY_SENT_AT_PREF_KEY", "coaching_first_day_sent_at")
+    ).strip() or "coaching_first_day_sent_at"
     day_plan_map: dict[str, dict[str, str]] = {
         "monday": {
             "touchpoint": "podcast_weekstart",
@@ -9273,7 +9276,7 @@ def admin_coaching_scheduled(
         pref_keys = (
             list(auto_pref_keys)
             + [f"coach_schedule_{day}" for day in day_order]
-            + ["coaching_fast_minutes", first_day_pending_pref_key]
+            + ["coaching_fast_minutes", first_day_sent_pref_key]
         )
         pref_rows = (
             s.query(UserPreference.user_id, UserPreference.key, UserPreference.value, UserPreference.updated_at)
@@ -9292,6 +9295,7 @@ def admin_coaching_scheduled(
     coaching_enabled_map: dict[int, bool] = {}
     day_pref_map: dict[tuple[int, str], str | None] = {}
     fast_minutes_map: dict[int, int | None] = {}
+    first_day_sent_at_map: dict[int, str | None] = {}
     first_day_pending_map: dict[int, bool] = {}
     seen_auto_pref: set[int] = set()
 
@@ -9313,8 +9317,8 @@ def admin_coaching_scheduled(
             except Exception:
                 fast_minutes_map[uid] = None
             continue
-        if key == first_day_pending_pref_key and uid not in first_day_pending_map:
-            first_day_pending_map[uid] = val == "1"
+        if key == first_day_sent_pref_key and uid not in first_day_sent_at_map:
+            first_day_sent_at_map[uid] = val or None
             continue
 
         if key.startswith("coach_schedule_"):
@@ -9325,7 +9329,35 @@ def admin_coaching_scheduled(
     for uid in user_id_set:
         coaching_enabled_map.setdefault(uid, False)
         fast_minutes_map.setdefault(uid, None)
-        first_day_pending_map.setdefault(uid, False)
+        first_day_sent_at_map.setdefault(uid, None)
+    first_day_applicable_map: dict[int, bool] = {}
+    for u in users:
+        uid = int(u.id)
+        tz_name = str(getattr(u, "tz", "") or "UTC")
+        try:
+            user_tz = ZoneInfo(tz_name)
+        except Exception:
+            user_tz = ZoneInfo("UTC")
+        anchor_raw = getattr(u, "first_assessment_completed", None) or getattr(u, "created_on", None)
+        anchor_day = None
+        if isinstance(anchor_raw, datetime):
+            try:
+                anchor_day = anchor_raw.astimezone(user_tz).date()
+            except Exception:
+                anchor_day = anchor_raw.date()
+        elif isinstance(anchor_raw, date):
+            anchor_day = anchor_raw
+        if anchor_day is None:
+            first_day_applicable_map[uid] = False
+            continue
+        expected_day = anchor_day + timedelta(days=1)
+        first_day_applicable_map[uid] = expected_day.weekday() != 6
+    for uid in user_id_set:
+        first_day_pending_map[uid] = bool(
+            coaching_enabled_map.get(uid)
+            and first_day_applicable_map.get(uid, False)
+            and not first_day_sent_at_map.get(uid)
+        )
 
     global_schedule_map: dict[str, dict[str, object]] = {}
     for day_key_raw, time_local, enabled in global_schedule_rows:
@@ -9446,6 +9478,7 @@ def admin_coaching_scheduled(
                     "planned_delivery": plan.get("delivery"),
                     "planned_message": plan.get("message"),
                     "first_day_pending": bool(first_day_pending_map.get(uid, False)),
+                    "first_day_sent_at": first_day_sent_at_map.get(uid),
                     "first_day_override": False,
                 }
             )
@@ -11850,6 +11883,7 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
     intro_read_at = str(onboarding_state.get("intro_content_read_at") or "").strip() or None
     intro_completed_at = str(onboarding_state.get("intro_content_completed_at") or "").strip() or None
     coaching_auto_enabled_at = str(onboarding_state.get("coaching_auto_enabled_at") or "").strip() or None
+    coaching_first_day_sent_at = str(onboarding_state.get("coaching_first_day_sent_at") or "").strip() or None
     intro_active = bool(_intro_flow_enabled())
     intro_content_published = bool(intro_row)
     intro_content_has_audio = bool(intro_row and str(getattr(intro_row, "podcast_url", "") or "").strip())
@@ -11909,6 +11943,7 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
             "intro_content_read_at": intro_read_at,
             "intro_content_completed_at": intro_completed_at,
             "coaching_auto_enabled_at": coaching_auto_enabled_at,
+            "coaching_first_day_sent_at": coaching_first_day_sent_at,
             "checks": {
                 "assessment_completed_met": bool(assessment_completed_at),
                 "first_login_met": bool(first_login_at),
@@ -11917,6 +11952,7 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
                 "coaching_activation_ready": activation_ready,
                 "coaching_enabled_now": coaching_enabled,
                 "coaching_auto_enabled_recorded": bool(coaching_auto_enabled_at),
+                "coaching_first_day_sent_recorded": bool(coaching_first_day_sent_at),
                 "intro_should_show_now": intro_should_show,
             },
             "intro_content": {

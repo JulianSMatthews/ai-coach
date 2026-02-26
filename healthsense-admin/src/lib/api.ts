@@ -744,6 +744,7 @@ export type CoachingScheduledItem = {
   planned_delivery?: string | null;
   planned_message?: string | null;
   first_day_pending?: boolean | null;
+  first_day_sent_at?: string | null;
   first_day_override?: boolean | null;
   first_day_catchup?: boolean | null;
 };
