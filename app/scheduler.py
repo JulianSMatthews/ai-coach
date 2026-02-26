@@ -29,6 +29,7 @@ from .models import (
 AUTO_PROMPT_PREF_KEYS = ("coaching", "auto_daily_prompts")
 FIRST_DAY_PENDING_PREF_KEY = "coaching_first_day_pending"
 FIRST_DAY_SENT_AT_PREF_KEY = "coaching_first_day_sent_at"
+FIRST_DAY_SKIP_DAY_PREF_KEY = "coaching_first_day_skip_day"
 from .nudges import (
     send_message,
     send_whatsapp_template,
@@ -640,6 +641,8 @@ def _run_day_prompt_inline(user_id: int, day: str):
     try:
         if _run_first_day_coaching_if_needed(user, day):
             return
+        if _consume_first_day_skip_for_day(user_id, day):
+            return
         tp_type = "ad_hoc"  # fallback if not matched below
         if day == "monday":
             monday.start_weekstart(user)
@@ -704,6 +707,7 @@ def _run_first_day_coaching_if_needed(user: User, day: str) -> bool:
     with SessionLocal() as s:
         _set_user_pref(s, user_id, FIRST_DAY_PENDING_PREF_KEY, "0")
         _set_user_pref(s, user_id, FIRST_DAY_SENT_AT_PREF_KEY, datetime.utcnow().isoformat())
+        _set_user_pref(s, user_id, FIRST_DAY_SKIP_DAY_PREF_KEY, day)
         s.commit()
     _audit(user_id, "auto_prompt_first_day", {"day": day})
     return True
@@ -728,14 +732,29 @@ def _run_day_prompt(user_id: int, day: str):
     _run_day_prompt_inline(user_id, day)
 
 
+def _consume_first_day_skip_for_day(user_id: int, day: str) -> bool:
+    with SessionLocal() as s:
+        pref = _get_user_pref(s, user_id, FIRST_DAY_SKIP_DAY_PREF_KEY)
+        if not pref:
+            return False
+        if str(pref.value or "").strip().lower() != str(day or "").strip().lower():
+            return False
+        try:
+            s.delete(pref)
+        except Exception:
+            pref.value = ""
+        s.commit()
+        return True
+
+
 def _schedule_first_day_catchup_if_due(
     user: User,
     session,
     defaults: dict[str, tuple[int, int] | None],
 ) -> None:
     """
-    If first-day coaching is pending and the intended next-day slot is already in the past,
-    schedule a one-off near-immediate run so first-day does not drift by an extra day/week.
+    Schedule first-day coaching for 08:00 local on the day after assessment completion.
+    If that time is already in the past, schedule a near-immediate catch-up run.
     """
     user_id = int(getattr(user, "id", 0) or 0)
     if user_id <= 0:
@@ -755,25 +774,16 @@ def _schedule_first_day_catchup_if_due(
     if expected_day_key == "sunday":
         # Sunday starts follow the normal Sunday flow (no first-day override).
         return
-    pref_time = _user_pref_time(session, user_id, expected_day_key)
-    default_time = defaults.get(expected_day_key)
-    scheduled_time = pref_time or default_time
-    if scheduled_time is None:
-        return
-    hh, mm = scheduled_time
-    due_now = False
-    if now_local.date() > expected_day:
-        due_now = True
-    elif now_local.date() == expected_day:
-        due_now = (now_local.hour, now_local.minute) >= (hh, mm)
-    if not due_now:
-        return
+    target_local = datetime(expected_day.year, expected_day.month, expected_day.day, 8, 0, tzinfo=tz)
+    if target_local > now_local:
+        run_date = target_local.astimezone(zoneinfo.ZoneInfo("UTC"))
+    else:
+        run_date = datetime.utcnow() + timedelta(minutes=1)
     job_id = f"auto_prompt_first_day_catchup_{user_id}"
     try:
         scheduler.remove_job(job_id)
     except Exception:
         pass
-    run_date = datetime.utcnow() + timedelta(minutes=1)
     _safe_add_job(
         _run_day_prompt,
         trigger="date",
@@ -843,6 +853,14 @@ def _unschedule_prompts_for_user(user_id: int):
             scheduler.remove_job(job_id)
         except Exception:
             pass
+    with SessionLocal() as s:
+        pref = _get_user_pref(s, user_id, FIRST_DAY_SKIP_DAY_PREF_KEY)
+        if pref:
+            try:
+                s.delete(pref)
+            except Exception:
+                pref.value = ""
+            s.commit()
     debug_log(f"unscheduled all prompts for user {user_id}", tag="scheduler")
 
 

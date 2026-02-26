@@ -11573,13 +11573,19 @@ def admin_list_users(
             scheduler.ensure_apscheduler_tables()
             for job in scheduler.scheduler.get_jobs():
                 job_id = str(getattr(job, "id", "") or "")
-                m = re.match(
+                uid = None
+                m_day = re.match(
                     r"^auto_prompt_(monday|tuesday|wednesday|thursday|friday|saturday|sunday)_(\d+)$",
                     job_id,
                 )
-                if not m:
+                if m_day:
+                    uid = int(m_day.group(2))
+                else:
+                    m_first_day = re.match(r"^auto_prompt_first_day_catchup_(\d+)$", job_id)
+                    if m_first_day:
+                        uid = int(m_first_day.group(1))
+                if uid is None:
                     continue
-                uid = int(m.group(2))
                 if uid not in user_id_set:
                     continue
                 next_run = getattr(job, "next_run_time", None)
