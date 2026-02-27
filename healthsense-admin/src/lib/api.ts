@@ -1580,9 +1580,15 @@ export async function updateKbSnippet(id: number, payload: Record<string, unknow
   });
 }
 
-export async function listAdminUsers(query?: string): Promise<AdminUserSummary[]> {
+export async function listAdminUsers(
+  query?: string,
+  inboundWindow?: "all" | "outside_24h" | "inside_24h",
+): Promise<AdminUserSummary[]> {
   const data = await apiAdmin<{ users: AdminUserSummary[] }>("/admin/users", {
-    query: { q: query || undefined },
+    query: {
+      q: query || undefined,
+      inbound_window: inboundWindow && inboundWindow !== "all" ? inboundWindow : undefined,
+    },
   });
   return data.users || [];
 }

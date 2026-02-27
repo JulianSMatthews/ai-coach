@@ -10684,6 +10684,11 @@ def admin_touchpoint_history(
         reply_window_hours = max(1, int(reply_window_hours_raw))
     except Exception:
         reply_window_hours = 24
+    inbound_trigger_lookback_raw = (os.getenv("DIALOG_INBOUND_TRIGGER_LOOKBACK_SECONDS") or "120").strip()
+    try:
+        inbound_trigger_lookback_seconds = max(1, int(inbound_trigger_lookback_raw))
+    except Exception:
+        inbound_trigger_lookback_seconds = 120
 
     def _reply_after_outbound(uid: int | None, outbound_ts: datetime | None) -> tuple[bool, str | None]:
         if not uid or not outbound_ts:
@@ -10698,6 +10703,25 @@ def admin_touchpoint_history(
         if (reply_ts - outbound_ts).total_seconds() > float(reply_window_hours * 3600):
             return (False, None)
         return (True, reply_ts.isoformat())
+
+    def _inbound_trigger_before_outbound(uid: int | None, outbound_ts: datetime | None) -> tuple[bool, str | None]:
+        """
+        Detect an inbound message that immediately triggered an outbound reply.
+        This is used for reactive support messages (e.g., out_of_session) so they
+        are not mislabeled as stale-not-received when callbacks are missing.
+        """
+        if not uid or not outbound_ts:
+            return (False, None)
+        timeline = inbound_times_by_user.get(int(uid)) or []
+        if not timeline:
+            return (False, None)
+        idx = bisect.bisect_left(timeline, outbound_ts) - 1
+        if idx < 0:
+            return (False, None)
+        inbound_ts = timeline[idx]
+        if (outbound_ts - inbound_ts).total_seconds() <= float(inbound_trigger_lookback_seconds):
+            return (True, inbound_ts.isoformat())
+        return (False, None)
 
     def _engagement_state_for_message(
         *,
@@ -10780,7 +10804,19 @@ def admin_touchpoint_history(
         if canonical_touchpoint == "out_of_session" and not _is_out_of_session_message(getattr(msg, "meta", None), getattr(msg, "text", None)):
             continue
         delivery = _message_delivery_from_meta(getattr(msg, "meta", None))
+        inferred_tp = "out_of_session" if _is_out_of_session_message(getattr(msg, "meta", None), getattr(msg, "text", None)) else _coaching_day_from_message_text(getattr(msg, "text", None))
         reply_found, reply_at = _reply_after_outbound(getattr(msg, "user_id", None), getattr(msg, "created_at", None))
+        if (
+            not reply_found
+            and inferred_tp == "out_of_session"
+            and str(getattr(msg, "direction", "") or "").lower() == "outbound"
+        ):
+            triggered, triggered_at = _inbound_trigger_before_outbound(
+                getattr(msg, "user_id", None),
+                getattr(msg, "created_at", None),
+            )
+            if triggered:
+                reply_found, reply_at = True, triggered_at
         engagement_state = _engagement_state_for_message(
             direction=getattr(msg, "direction", None),
             delivery_state=str(delivery.get("delivery_state") or ""),
@@ -10792,7 +10828,6 @@ def admin_touchpoint_history(
             continue
         user = user_map.get(msg.user_id) if msg.user_id else None
         name = " ".join([str(getattr(user, "first_name", "") or "").strip(), str(getattr(user, "surname", "") or "").strip()]).strip()
-        inferred_tp = "out_of_session" if _is_out_of_session_message(getattr(msg, "meta", None), getattr(msg, "text", None)) else _coaching_day_from_message_text(getattr(msg, "text", None))
         items.append(
             {
                 "id": msg.id,
@@ -13238,6 +13273,7 @@ def admin_kb_snippet_update(snippet_id: int, payload: dict, admin_user: User = D
 @admin.get("/users")
 def admin_list_users(
     q: str | None = None,
+    inbound_window: str | None = None,
     limit: int = 50,
     admin_user: User = Depends(_require_admin),
 ):
@@ -13245,6 +13281,7 @@ def admin_list_users(
     List users in the admin's club scope with optional search.
     Query params:
       - q: filter by name or phone
+      - inbound_window: all|outside_24h|inside_24h
       - limit: max results (default 50, max 200)
     """
     try:
@@ -13252,6 +13289,10 @@ def admin_list_users(
     except Exception:
         limit = 50
     limit = max(1, min(limit, 200))
+    inbound_filter = (inbound_window or "all").strip().lower()
+    if inbound_filter not in {"all", "outside_24h", "inside_24h"}:
+        inbound_filter = "all"
+    cutoff_24h = datetime.utcnow() - timedelta(hours=24)
     club_scope_id = getattr(admin_user, "club_id", None)
     with SessionLocal() as s:
         query = select(User)
@@ -13266,6 +13307,15 @@ def admin_list_users(
                     User.phone.ilike(like),
                 )
             )
+        if inbound_filter == "outside_24h":
+            query = query.where(
+                or_(
+                    User.last_inbound_message_at.is_(None),
+                    User.last_inbound_message_at < cutoff_24h,
+                )
+            )
+        elif inbound_filter == "inside_24h":
+            query = query.where(User.last_inbound_message_at >= cutoff_24h)
         query = query.order_by(desc(User.id)).limit(limit)
         users = list(s.execute(query).scalars().all())
         user_ids = [u.id for u in users]
@@ -13320,6 +13370,7 @@ def admin_list_users(
                     UserPreference.user_id.in_(user_ids),
                     UserPreference.key == "coaching_fast_minutes",
                 )
+                .order_by(UserPreference.user_id.asc(), UserPreference.updated_at.desc())
             ).all()
             for uid, val, updated_at in coaching_rows:
                 if not uid:
@@ -13331,10 +13382,13 @@ def admin_list_users(
             for uid, val, _updated_at in fast_rows:
                 if not uid:
                     continue
+                uid_i = int(uid)
+                if uid_i in coaching_fast_minutes:
+                    continue
                 try:
                     parsed = int(str(val or "").strip())
                     if parsed > 0:
-                        coaching_fast_minutes[int(uid)] = parsed
+                        coaching_fast_minutes[uid_i] = parsed
                 except Exception:
                     continue
             template_rows = s.execute(

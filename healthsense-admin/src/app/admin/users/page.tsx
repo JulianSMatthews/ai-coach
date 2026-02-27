@@ -7,7 +7,7 @@ import {
 } from "@/lib/api";
 
 type UsersPageProps = {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; inbound_window?: string }>;
 };
 
 export const dynamic = "force-dynamic";
@@ -27,7 +27,14 @@ async function createUserAction(formData: FormData) {
 export default async function UsersPage({ searchParams }: UsersPageProps) {
   const resolvedSearchParams = await searchParams;
   const query = (resolvedSearchParams?.q || "").trim();
-  const users = await listAdminUsers(query || undefined);
+  const inboundWindowRaw = (resolvedSearchParams?.inbound_window || "").trim().toLowerCase();
+  const inboundWindow: "all" | "outside_24h" | "inside_24h" =
+    inboundWindowRaw === "outside_24h"
+      ? "outside_24h"
+      : inboundWindowRaw === "inside_24h"
+        ? "inside_24h"
+        : "all";
+  const users = await listAdminUsers(query || undefined, inboundWindow);
   const formatDate = (value?: string | null) => {
     if (!value) return "—";
     try {
@@ -63,6 +70,16 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
         .replace(",", "");
     } catch {
       return "—";
+    }
+  };
+  const isOutside24h = (value?: string | null) => {
+    if (!value) return true;
+    try {
+      const dt = new Date(value);
+      if (Number.isNaN(dt.getTime())) return true;
+      return Date.now() - dt.getTime() > 24 * 60 * 60 * 1000;
+    } catch {
+      return true;
     }
   };
 
@@ -108,6 +125,15 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                 placeholder="Search name or phone"
                 className="rounded-full border border-[#efe7db] px-3 py-2 text-sm"
               />
+              <select
+                name="inbound_window"
+                defaultValue={inboundWindow}
+                className="rounded-full border border-[#efe7db] px-3 py-2 text-sm"
+              >
+                <option value="all">All users</option>
+                <option value="outside_24h">Outside 24h window</option>
+                <option value="inside_24h">Inside 24h window</option>
+              </select>
               <button
                 type="submit"
                 className="rounded-full border border-[#efe7db] px-4 py-2 text-xs uppercase tracking-[0.2em]"
@@ -141,7 +167,9 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                     <td className="sticky left-[240px] z-10 min-w-[160px] bg-white py-3 pr-6 whitespace-nowrap">{u.surname || "—"}</td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">{u.phone || "—"}</td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">{u.consent_given ? "Yes" : "No"}</td>
-                    <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
+                    <td
+                      className={`py-3 pr-6 whitespace-nowrap ${isOutside24h(u.last_inbound_message_at) ? "text-[#b42318] font-semibold" : "text-[#6b6257]"}`}
+                    >
                       {formatDateTime(u.last_inbound_message_at)}
                     </td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
