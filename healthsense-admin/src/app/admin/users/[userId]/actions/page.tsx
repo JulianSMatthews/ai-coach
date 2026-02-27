@@ -195,10 +195,8 @@ export default async function UserActionsPage({ params, searchParams }: UserActi
 
   const promptState = (user.prompt_state_override || "live").toLowerCase();
   const coachingOn = Boolean(user.coaching_enabled);
-  const fastMinutes =
-    typeof user.coaching_fast_minutes === "number" && user.coaching_fast_minutes > 0
-      ? user.coaching_fast_minutes
-      : 2;
+  const hasFastMode = typeof user.coaching_fast_minutes === "number" && user.coaching_fast_minutes > 0;
+  const fastMinutes = hasFastMode ? user.coaching_fast_minutes : 2;
   const smsStatus = String(resolvedSearchParams?.sms || "").trim().toLowerCase();
 
   return (
@@ -212,7 +210,7 @@ export default async function UserActionsPage({ params, searchParams }: UserActi
         <section className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-[#e7e1d6] bg-white px-4 py-3 text-sm">
           <div className="text-[#6b6257]">
             User #{userId} · {user.phone || "No phone"} · Prompt state: {promptState} · Coaching:{" "}
-            {coachingOn ? `On${fastMinutes ? ` (${fastMinutes}m fast)` : ""}` : "Off"}
+            {coachingOn ? (hasFastMode ? `On (${fastMinutes}m fast)` : "On") : "Off"}
           </div>
           <div className="flex items-center gap-2">
             <Link href={`/admin/users/${userId}`} className="rounded-full border border-[#efe7db] px-3 py-1 text-xs">

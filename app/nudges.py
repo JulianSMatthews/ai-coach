@@ -348,7 +348,16 @@ def _normalize_approval_status(raw: str | None) -> str | None:
         return None
     if val in {"approved", "active", "accepted", "live"}:
         return "approved"
-    if val in {"pending", "submitted", "in_review", "queued", "received"}:
+    if val in {
+        "pending",
+        "submitted",
+        "in_review",
+        "under_review",
+        "underreview",
+        "inreview",
+        "queued",
+        "received",
+    }:
         return "pending"
     if val in {"rejected", "denied", "failed", "declined"}:
         return "rejected"

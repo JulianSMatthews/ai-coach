@@ -10710,16 +10710,17 @@ def admin_touchpoint_history(
         if str(direction or "").lower() != "outbound":
             return "inbound"
         status_val = str(delivery_status or "").strip().lower()
-        delivery_confirmed = status_val in {"delivered", "read"} or str(delivery_state or "").strip().lower() == "received"
-        if reply_found and delivery_confirmed:
+        state_val = str(delivery_state or "").strip().lower()
+        if state_val == "failed" or status_val in {"failed", "undelivered"}:
+            return "failed"
+        # If the member replied after this outbound within the reply window, treat it as replied
+        # even when Twilio callback status is missing/unknown.
+        if reply_found:
             return "replied"
         if status_val == "read":
             return "read"
         if status_val == "delivered":
             return "received"
-        state_val = str(delivery_state or "").strip().lower()
-        if state_val == "failed":
-            return "failed"
         if state_val in {"attempted", "unknown"}:
             if isinstance(message_created_at, datetime):
                 age_minutes = (now_utc - message_created_at).total_seconds() / 60.0
@@ -13843,24 +13844,33 @@ def admin_user_send_sms(user_id: int, payload: dict, admin_user: User = Depends(
         except Exception as log_err:
             print(f"[admin][sms] message log write failed (non-fatal): {log_err}")
 
-        s.add(
-            JobAudit(
-                job_name="admin_user_send_sms",
-                status="done",
-                payload={
-                    "admin_user_id": getattr(admin_user, "id", None),
-                    "target_user_id": int(user_id),
-                    "to": phone,
-                    "message_len": len(message),
-                },
-                result={
-                    "sid": sid,
-                },
+        audit_logged = True
+        try:
+            s.add(
+                JobAudit(
+                    job_name="admin_user_send_sms",
+                    status="done",
+                    payload={
+                        "admin_user_id": getattr(admin_user, "id", None),
+                        "target_user_id": int(user_id),
+                        "to": phone,
+                        "message_len": len(message),
+                    },
+                    result={
+                        "sid": sid,
+                    },
+                )
             )
-        )
-        s.commit()
+            s.commit()
+        except Exception as audit_err:
+            audit_logged = False
+            try:
+                s.rollback()
+            except Exception:
+                pass
+            print(f"[admin][sms] post-send audit commit failed (non-fatal): {audit_err}")
 
-    return {"status": "sent", "user_id": user_id, "sid": sid}
+    return {"status": "sent", "user_id": user_id, "sid": sid, "audit_logged": audit_logged}
 
 @admin.post("/users/{user_id}/start")
 def admin_start_user(user_id: int, admin_user: User = Depends(_require_admin)):
