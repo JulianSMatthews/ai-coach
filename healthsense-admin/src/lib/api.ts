@@ -1423,6 +1423,21 @@ export async function listPromptHistory(
   return data.items || [];
 }
 
+export async function listPromptHistoryTouchpoints(
+  userId?: number,
+  start?: string,
+  end?: string
+) {
+  const data = await apiAdmin<{ items: string[] }>("/admin/prompts/history/filter-touchpoints", {
+    query: {
+      user_id: userId || undefined,
+      start: start || undefined,
+      end: end || undefined,
+    },
+  });
+  return data.items || [];
+}
+
 export async function getPromptHistoryDetail(logId: number) {
   return apiAdmin<PromptHistoryDetail>(`/admin/prompts/history/${logId}`);
 }
@@ -1441,6 +1456,21 @@ export async function listTouchpointHistory(
       user_id: userId || undefined,
       touchpoint: touchpoint || undefined,
       delivery: delivery || undefined,
+      start: start || undefined,
+      end: end || undefined,
+    },
+  });
+  return data.items || [];
+}
+
+export async function listTouchpointHistoryTouchpoints(
+  userId?: number,
+  start?: string,
+  end?: string
+) {
+  const data = await apiAdmin<{ items: string[] }>("/admin/touchpoints/history/filter-touchpoints", {
+    query: {
+      user_id: userId || undefined,
       start: start || undefined,
       end: end || undefined,
     },

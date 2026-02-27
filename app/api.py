@@ -10366,6 +10366,55 @@ def admin_prompt_history(
     return {"items": items}
 
 
+@admin.get("/prompts/history/filter-touchpoints")
+def admin_prompt_history_filter_touchpoints(
+    user_id: int | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    admin_user: User = Depends(_require_admin),
+):
+    from .prompts import _ensure_llm_prompt_log_schema
+
+    _ensure_llm_prompt_log_schema()
+    club_scope_id = getattr(admin_user, "club_id", None)
+
+    def _parse_dt(raw: str | None, is_end: bool = False) -> datetime | None:
+        if not raw:
+            return None
+        try:
+            dt = datetime.fromisoformat(raw)
+            if is_end:
+                dt = dt + timedelta(days=1)
+            return dt
+        except Exception:
+            return None
+
+    start_dt = _parse_dt(start)
+    end_dt = _parse_dt(end, is_end=True)
+
+    with SessionLocal() as s:
+        q = (
+            s.query(LLMPromptLog.touchpoint)
+            .filter(LLMPromptLog.touchpoint.isnot(None))
+            .filter(func.trim(LLMPromptLog.touchpoint) != "")
+        )
+        if club_scope_id is not None:
+            q = q.join(User, LLMPromptLog.user_id == User.id).filter(User.club_id == club_scope_id)
+        if user_id:
+            q = q.filter(LLMPromptLog.user_id == int(user_id))
+        if start_dt:
+            q = q.filter(LLMPromptLog.created_at >= start_dt)
+        if end_dt:
+            q = q.filter(LLMPromptLog.created_at < end_dt)
+        rows = q.distinct().all()
+
+    items = sorted(
+        {str(row[0]).strip() for row in rows if row and str(row[0] or "").strip()},
+        key=lambda value: value.lower(),
+    )
+    return {"items": items}
+
+
 @admin.get("/prompts/history/{log_id}")
 def admin_prompt_history_detail(log_id: int, admin_user: User = Depends(_require_admin)):
     from .prompts import _ensure_llm_prompt_log_schema
@@ -10562,6 +10611,12 @@ def admin_touchpoint_history(
     for uid in list(inbound_times_by_user.keys()):
         inbound_times_by_user[uid] = sorted(inbound_times_by_user[uid])
 
+    reply_window_hours_raw = (os.getenv("DIALOG_REPLY_WINDOW_HOURS") or "24").strip()
+    try:
+        reply_window_hours = max(1, int(reply_window_hours_raw))
+    except Exception:
+        reply_window_hours = 24
+
     def _reply_after_outbound(uid: int | None, outbound_ts: datetime | None) -> tuple[bool, str | None]:
         if not uid or not outbound_ts:
             return (False, None)
@@ -10572,6 +10627,8 @@ def admin_touchpoint_history(
         if idx >= len(timeline):
             return (False, None)
         reply_ts = timeline[idx]
+        if (reply_ts - outbound_ts).total_seconds() > float(reply_window_hours * 3600):
+            return (False, None)
         return (True, reply_ts.isoformat())
 
     def _engagement_state_for_message(
@@ -10584,9 +10641,10 @@ def admin_touchpoint_history(
     ) -> str:
         if str(direction or "").lower() != "outbound":
             return "inbound"
-        if reply_found:
-            return "replied"
         status_val = str(delivery_status or "").strip().lower()
+        delivery_confirmed = status_val in {"delivered", "read"} or str(delivery_state or "").strip().lower() == "received"
+        if reply_found and delivery_confirmed:
+            return "replied"
         if status_val == "read":
             return "read"
         if status_val == "delivered":
@@ -10686,8 +10744,8 @@ def admin_touchpoint_history(
                 "delivery_error_description": delivery.get("delivery_error_description"),
                 "delivery_last_callback_at": delivery.get("delivery_last_callback_at"),
                 "engagement_state": engagement_state,
-                "reply_received": bool(reply_found),
-                "reply_at": reply_at,
+                "reply_received": bool(reply_found and engagement_state == "replied"),
+                "reply_at": reply_at if bool(reply_found and engagement_state == "replied") else None,
             }
         )
 
@@ -10695,6 +10753,68 @@ def admin_touchpoint_history(
     items = items[:max_limit]
 
     return {"items": items}
+
+
+@admin.get("/touchpoints/history/filter-touchpoints")
+def admin_touchpoint_history_filter_touchpoints(
+    user_id: int | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    admin_user: User = Depends(_require_admin),
+):
+    club_scope_id = getattr(admin_user, "club_id", None)
+
+    def _parse_dt(raw: str | None, is_end: bool = False) -> datetime | None:
+        if not raw:
+            return None
+        try:
+            dt = datetime.fromisoformat(raw)
+            if is_end:
+                dt = dt + timedelta(days=1)
+            return dt
+        except Exception:
+            return None
+
+    start_dt = _parse_dt(start)
+    end_dt = _parse_dt(end, is_end=True)
+
+    options: set[str] = {
+        "kickoff",
+        "first_day",
+        "monday",
+        "tuesday",
+        "wednesday",
+        "thursday",
+        "friday",
+        "saturday",
+        "sunday",
+        "out_of_session",
+    }
+
+    with SessionLocal() as s:
+        q = (
+            s.query(Touchpoint.type)
+            .filter(Touchpoint.type.isnot(None))
+            .filter(func.trim(Touchpoint.type) != "")
+        )
+        if club_scope_id is not None:
+            q = q.join(User, Touchpoint.user_id == User.id).filter(User.club_id == club_scope_id)
+        if user_id:
+            q = q.filter(Touchpoint.user_id == int(user_id))
+        tp_ts = func.coalesce(Touchpoint.sent_at, Touchpoint.created_at)
+        if start_dt:
+            q = q.filter(tp_ts >= start_dt)
+        if end_dt:
+            q = q.filter(tp_ts < end_dt)
+        rows = q.distinct().all()
+
+    for row in rows:
+        raw = row[0] if row else None
+        canonical = _canonical_touchpoint_filter(raw)
+        if canonical:
+            options.add(canonical)
+
+    return {"items": sorted(options)}
 
 
 @admin.get("/coaching/scheduled")

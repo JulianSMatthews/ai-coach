@@ -1,6 +1,6 @@
 import Link from "next/link";
 import AdminNav from "@/components/AdminNav";
-import { listAdminUsers, listPromptHistory } from "@/lib/api";
+import { listAdminUsers, listPromptHistory, listPromptHistoryTouchpoints } from "@/lib/api";
 
 type HistoryPageProps = {
   searchParams: Promise<{ start?: string; end?: string; user?: string; user_id?: string; touchpoint?: string }>;
@@ -31,6 +31,7 @@ export default async function PromptHistoryPage({ searchParams }: HistoryPagePro
 
   const rows = await listPromptHistory(100, userId || undefined, touchpoint || undefined, start || undefined, end || undefined);
   const users = await listAdminUsers();
+  const touchpointOptions = await listPromptHistoryTouchpoints(userId || undefined, start || undefined, end || undefined);
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -56,8 +57,14 @@ export default async function PromptHistoryPage({ searchParams }: HistoryPagePro
               name="touchpoint"
               defaultValue={touchpoint}
               placeholder="Touchpoint"
+              list="touchpoint-options"
               className="rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
             />
+            <datalist id="touchpoint-options">
+              {touchpointOptions.map((tp) => (
+                <option key={tp} value={tp} />
+              ))}
+            </datalist>
             <input
               name="user_id"
               defaultValue={user}

@@ -153,8 +153,6 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                     <td className="py-3 whitespace-nowrap">
                       <Link
                         href={`/admin/users/${u.id}/actions`}
-                        target="_blank"
-                        rel="noreferrer"
                         className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
                       >
                         action

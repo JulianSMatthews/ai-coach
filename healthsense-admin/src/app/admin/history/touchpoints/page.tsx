@@ -1,5 +1,5 @@
 import AdminNav from "@/components/AdminNav";
-import { listAdminUsers, listTouchpointHistory } from "@/lib/api";
+import { listAdminUsers, listTouchpointHistory, listTouchpointHistoryTouchpoints } from "@/lib/api";
 
 type TouchpointHistoryPageProps = {
   searchParams: Promise<{ start?: string; end?: string; user_id?: string; touchpoint?: string; delivery?: string }>;
@@ -42,6 +42,7 @@ export default async function TouchpointHistoryPage({ searchParams }: Touchpoint
     end || undefined
   );
   const users = await listAdminUsers();
+  const touchpointOptions = await listTouchpointHistoryTouchpoints(userId || undefined, start || undefined, end || undefined);
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -71,22 +72,7 @@ export default async function TouchpointHistoryPage({ searchParams }: Touchpoint
               className="rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
             />
             <datalist id="touchpoint-options">
-              {[
-                "kickoff",
-                "first_day",
-                "monday",
-                "tuesday",
-                "wednesday",
-                "thursday",
-                "friday",
-                "saturday",
-                "sunday",
-                "podcast_first_day",
-                "podcast_thursday",
-                "podcast_friday",
-                "midweek",
-                "out_of_session",
-              ].map((tp) => (
+              {touchpointOptions.map((tp) => (
                 <option key={tp} value={tp} />
               ))}
             </datalist>

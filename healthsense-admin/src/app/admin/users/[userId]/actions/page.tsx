@@ -16,6 +16,7 @@ import {
 
 type UserActionsPageProps = {
   params: Promise<{ userId: string }>;
+  searchParams: Promise<{ sms?: string }>;
 };
 
 export const dynamic = "force-dynamic";
@@ -154,8 +155,13 @@ async function sendSmsAction(formData: FormData) {
   const userId = Number(formData.get("user_id") || 0);
   const message = String(formData.get("sms_message") || "").trim();
   if (!userId || !message) return;
-  await sendAdminUserSms(userId, message);
-  revalidatePath(`/admin/users/${userId}/actions`);
+  try {
+    await sendAdminUserSms(userId, message);
+    revalidatePath(`/admin/users/${userId}/actions`);
+    redirect(`/admin/users/${userId}/actions?sms=sent`);
+  } catch {
+    redirect(`/admin/users/${userId}/actions?sms=failed`);
+  }
 }
 
 function ActionCard({
@@ -176,8 +182,9 @@ function ActionCard({
   );
 }
 
-export default async function UserActionsPage({ params }: UserActionsPageProps) {
+export default async function UserActionsPage({ params, searchParams }: UserActionsPageProps) {
   const resolvedParams = await params;
+  const resolvedSearchParams = await searchParams;
   const userId = Number(resolvedParams.userId);
   if (!Number.isFinite(userId) || userId <= 0) notFound();
 
@@ -191,6 +198,7 @@ export default async function UserActionsPage({ params }: UserActionsPageProps) 
     typeof user.coaching_fast_minutes === "number" && user.coaching_fast_minutes > 0
       ? user.coaching_fast_minutes
       : 2;
+  const smsStatus = String(resolvedSearchParams?.sms || "").trim().toLowerCase();
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -215,12 +223,23 @@ export default async function UserActionsPage({ params }: UserActionsPageProps) 
           </div>
         </section>
 
+        {smsStatus === "sent" ? (
+          <section className="rounded-2xl border border-[#b9e2c6] bg-[#ecf8f0] px-4 py-3 text-sm text-[#14532d]">
+            SMS sent successfully.
+          </section>
+        ) : null}
+        {smsStatus === "failed" ? (
+          <section className="rounded-2xl border border-[#f2c1b5] bg-[#fef1ee] px-4 py-3 text-sm text-[#8c1d1d]">
+            SMS failed to send. Please retry and check server logs for the provider error.
+          </section>
+        ) : null}
+
         <div className="grid gap-4 md:grid-cols-2">
           <ActionCard
             title="Access app"
             description="Open the member app as this user in a secure admin session. Use this to review exactly what the user sees."
           >
-            <form action={openAppAction} target="_blank">
+            <form action={openAppAction}>
               <input type="hidden" name="user_id" value={userId} />
               <button
                 type="submit"
