@@ -212,6 +212,53 @@ def _normalize_reports_url(raw: str | None) -> str | None:
         suffix += f"#{parsed.fragment}"
     return f"{base}{suffix}"
 
+
+def _build_coaching_window_payload(last_inbound_at: datetime | None) -> dict[str, object]:
+    """
+    Build member-app coaching window state and WhatsApp deep link for re-engagement.
+    """
+    now_utc = datetime.utcnow()
+    window_hours_raw = (os.getenv("COACHING_WHATSAPP_WINDOW_HOURS") or "24").strip()
+    try:
+        window_hours = max(1, int(window_hours_raw))
+    except Exception:
+        window_hours = 24
+
+    hours_since_last_inbound: float | None = None
+    if isinstance(last_inbound_at, datetime):
+        try:
+            hours_since_last_inbound = max(0.0, (now_utc - last_inbound_at).total_seconds() / 3600.0)
+        except Exception:
+            hours_since_last_inbound = None
+
+    outside_24h = bool(hours_since_last_inbound is None or hours_since_last_inbound > float(window_hours))
+    inside_24h = not outside_24h
+
+    twilio_from_raw = (
+        (os.getenv("TWILIO_WHATSAPP_FROM") or "").strip()
+        or (os.getenv("TWILIO_FROM") or "").strip()
+    )
+    whatsapp_number_raw = twilio_from_raw.replace("whatsapp:", "").strip()
+    whatsapp_digits = "".join(ch for ch in whatsapp_number_raw if ch.isdigit())
+
+    continue_command = "Hi - continue my daily streak"
+    continue_whatsapp_url: str | None
+    if whatsapp_digits:
+        continue_whatsapp_url = f"https://wa.me/{whatsapp_digits}?{urlencode({'text': continue_command})}"
+    else:
+        continue_whatsapp_url = f"https://api.whatsapp.com/send?{urlencode({'text': continue_command})}"
+
+    return {
+        "window_hours": int(window_hours),
+        "last_inbound_message_at": last_inbound_at.isoformat() if isinstance(last_inbound_at, datetime) else None,
+        "hours_since_last_inbound": round(hours_since_last_inbound, 2) if hours_since_last_inbound is not None else None,
+        "inside_24h": inside_24h,
+        "outside_24h": outside_24h,
+        "continue_command": continue_command,
+        "continue_whatsapp_url": continue_whatsapp_url,
+        "whatsapp_number": whatsapp_number_raw or None,
+    }
+
 # Utility to robustly resolve the OKR summary generator, with diagnostics
 def _resolve_okr_summary_gen():
     """Return callable generate_okr_summary_report or raise with useful diagnostics."""
@@ -3995,6 +4042,7 @@ def api_user_status_v1(
             "consent_at": getattr(u, "consent_at", None),
             "billing_status": getattr(u, "billing_status", None),
             "billing_provider": getattr(u, "billing_provider", None),
+            "last_inbound_message_at": getattr(u, "last_inbound_message_at", None),
         },
         "active_domain": active,
         "latest_run": None,
@@ -4011,6 +4059,7 @@ def api_user_status_v1(
         "prompt_state_override": pref_map.get("prompt_state_override", ""),
         "onboarding": onboarding_state,
         "intro": intro_payload,
+        "coaching_window": _build_coaching_window_payload(getattr(u, "last_inbound_message_at", None)),
     }
 
     if latest_run:
@@ -10429,9 +10478,24 @@ def admin_touchpoint_history(
 
     canonical_touchpoint = _canonical_touchpoint_filter(touchpoint)
     delivery_filter = str(delivery or "").strip().lower()
-    allowed_delivery_filters = {"all", "not_received", "received", "read", "replied", "failed", "pending"}
+    allowed_delivery_filters = {
+        "all",
+        "not_received",
+        "received",
+        "read",
+        "replied",
+        "failed",
+        "pending",
+        "stale_not_received",
+    }
     if delivery_filter and delivery_filter not in allowed_delivery_filters:
         delivery_filter = ""
+    pending_stale_minutes_raw = (os.getenv("DIALOG_PENDING_STALE_MINUTES") or "15").strip()
+    try:
+        pending_stale_minutes = max(1, int(pending_stale_minutes_raw))
+    except Exception:
+        pending_stale_minutes = 15
+    now_utc = datetime.utcnow()
     message_touchpoint_patterns = _touchpoint_message_like_patterns(canonical_touchpoint)
 
     with SessionLocal() as s:
@@ -10515,6 +10579,7 @@ def admin_touchpoint_history(
         direction: str | None,
         delivery_state: str | None,
         delivery_status: str | None,
+        message_created_at: datetime | None,
         reply_found: bool,
     ) -> str:
         if str(direction or "").lower() != "outbound":
@@ -10530,6 +10595,10 @@ def admin_touchpoint_history(
         if state_val == "failed":
             return "failed"
         if state_val in {"attempted", "unknown"}:
+            if isinstance(message_created_at, datetime):
+                age_minutes = (now_utc - message_created_at).total_seconds() / 60.0
+                if age_minutes >= float(pending_stale_minutes):
+                    return "stale_not_received"
             return "pending"
         return "pending"
 
@@ -10540,7 +10609,7 @@ def admin_touchpoint_history(
         if str(direction or "").lower() != "outbound":
             return False
         if f == "not_received":
-            return engagement_state in {"failed", "pending"}
+            return engagement_state in {"failed", "pending", "stale_not_received"}
         if f == "received":
             return engagement_state in {"received", "read", "replied"}
         return engagement_state == f
@@ -10589,6 +10658,7 @@ def admin_touchpoint_history(
             direction=getattr(msg, "direction", None),
             delivery_state=str(delivery.get("delivery_state") or ""),
             delivery_status=str(delivery.get("delivery_status") or ""),
+            message_created_at=getattr(msg, "created_at", None),
             reply_found=reply_found,
         )
         if not _matches_delivery_filter(delivery_filter, engagement_state, getattr(msg, "direction", None)):

@@ -1,5 +1,5 @@
 import type { CSSProperties } from "react";
-import { getBillingPlans, getProgress, getUserStatus } from "@/lib/api";
+import { getProgress, getUserStatus } from "@/lib/api";
 import { getPillarPalette } from "@/lib/pillars";
 import { Card, PageShell } from "@/components/ui";
 import CarouselDots from "@/components/CarouselDots";
@@ -7,12 +7,11 @@ import TextScale from "@/components/TextScale";
 import AppNav from "@/components/AppNav";
 import IntroInlinePanel from "@/components/IntroInlinePanel";
 import KRUpdateEditor from "@/components/KRUpdateEditor";
-import BillingCheckoutCard from "@/components/BillingCheckoutCard";
 import ProgrammeCalendar from "./ProgrammeCalendar";
 
 type PageProps = {
   params: Promise<{ userId: string }>;
-  searchParams: Promise<{ anchor_date?: string; billing?: string }>;
+  searchParams: Promise<{ anchor_date?: string }>;
 };
 
 type ProgressKr = {
@@ -53,15 +52,9 @@ type HabitStep = {
 
 export default async function ProgressPage(props: PageProps) {
   const { userId } = await props.params;
-  const { anchor_date, billing } = await props.searchParams;
+  const { anchor_date } = await props.searchParams;
   const data = await getProgress(userId, anchor_date);
   const status = await getUserStatus(userId);
-  let billingPlans: Awaited<ReturnType<typeof getBillingPlans>> = { plans: [], default_price_id: null };
-  try {
-    billingPlans = await getBillingPlans();
-  } catch {
-    billingPlans = { plans: [], default_price_id: null };
-  }
   const meta = data.meta || {};
   const focus = data.focus || {};
   const focusIds = new Set(
@@ -309,8 +302,11 @@ export default async function ProgressPage(props: PageProps) {
   const introShouldShow = Boolean(status.intro?.enabled && status.intro?.should_show);
   const headlineText =
     introShouldShow && introHeadline ? introHeadline : weekHeadline;
-  const userBillingStatus = (status as { user?: { billing_status?: string | null } })?.user?.billing_status || null;
-  const billingFlag = String(billing || "").trim().toLowerCase();
+  const coachingWindow = status.coaching_window || {};
+  const outside24hWindow = Boolean(coachingWindow.outside_24h);
+  const continueCommand = String(coachingWindow.continue_command || "Hi - continue my daily streak").trim();
+  const continueWhatsAppUrl = String(coachingWindow.continue_whatsapp_url || "").trim();
+  const showContinueDailyStreak = outside24hWindow && Boolean(continueWhatsAppUrl);
   const coachingActivatedAt =
     status.onboarding?.coaching_auto_enabled_at || status.intro?.onboarding?.coaching_auto_enabled_at || null;
   const anchorLabel = `${meta.anchor_label || "n/a"}${meta.is_virtual_date ? "*" : ""}${
@@ -399,16 +395,6 @@ export default async function ProgressPage(props: PageProps) {
               introCompleted={!introShouldShow}
             />
             <div className="mt-3 border-t border-[#efe7db] pt-3">
-              <BillingCheckoutCard
-                userId={userId}
-                billingState={userBillingStatus}
-                billingFlag={billingFlag}
-                plans={billingPlans.plans || []}
-                defaultPriceId={billingPlans.default_price_id ?? null}
-              />
-            </div>
-
-            <div className="mt-3 border-t border-[#efe7db] pt-3">
               <p className="text-sm font-semibold uppercase tracking-[0.2em] text-[#6b6257]">Daily Streak</p>
               <div className="mt-2 rounded-xl border border-[#f4c9a9] bg-white p-3">
                 {activeStreakIcons.length ? (
@@ -430,6 +416,22 @@ export default async function ProgressPage(props: PageProps) {
                 ) : (
                   <p className="text-sm text-[#6b6257]">No streak yet.</p>
                 )}
+                {showContinueDailyStreak ? (
+                  <div className="mt-3 border-t border-[#efe7db] pt-3">
+                    <p className="text-xs text-[#6b6257]">
+                      You are outside the 24-hour WhatsApp window. Tap below to continue your coaching and keep your streak active.
+                    </p>
+                    <a
+                      href={continueWhatsAppUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-flex items-center rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white"
+                    >
+                      Continue Daily Streak
+                    </a>
+                    <p className="mt-2 text-[11px] text-[#6b6257]">Message: {continueCommand}</p>
+                  </div>
+                ) : null}
               </div>
             </div>
 

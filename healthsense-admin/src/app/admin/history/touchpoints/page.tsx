@@ -18,6 +18,7 @@ function messageStatusClass(value?: string | null) {
   if (key === "read") return "border-[#1f6f8b] bg-[#e8f4f8] text-[#0f4c5f]";
   if (key === "received") return "border-[#2f8b55] bg-[#eaf7ef] text-[#14532d]";
   if (key === "failed") return "border-[#c43d3d] bg-[#fdeaea] text-[#8c1d1d]";
+  if (key === "stale_not_received") return "border-[#9f1239] bg-[#fdf2f8] text-[#831843]";
   if (key === "pending") return "border-[#cc9a2f] bg-[#fff6e6] text-[#825b0b]";
   if (key === "inbound") return "border-[#7a6f61] bg-[#f5efe7] text-[#4a433b]";
   return "border-[#d8d1c4] bg-[#f7f4ee] text-[#6b6257]";
@@ -103,6 +104,7 @@ export default async function TouchpointHistoryPage({ searchParams }: Touchpoint
             >
               <option value="all">Delivery: all</option>
               <option value="not_received">Delivery: not received</option>
+              <option value="stale_not_received">Delivery: stale not received</option>
               <option value="failed">Delivery: failed</option>
               <option value="pending">Delivery: pending</option>
               <option value="received">Delivery: received</option>

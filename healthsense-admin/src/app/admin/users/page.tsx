@@ -1,17 +1,9 @@
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
 import AdminNav from "@/components/AdminNav";
 import {
-  createAdminUserAppSession,
   createAdminUser,
-  deleteAdminUser,
   listAdminUsers,
-  resetAdminUser,
-  sendAdminUserSms,
-  setAdminUserCoaching,
-  setAdminUserPromptState,
-  startAdminUser,
 } from "@/lib/api";
 
 type UsersPageProps = {
@@ -19,51 +11,6 @@ type UsersPageProps = {
 };
 
 export const dynamic = "force-dynamic";
-
-function normalizeHsAppBase(raw: string | null | undefined): string | null {
-  const nodeEnv = (process.env.NODE_ENV || "").toLowerCase();
-  const isDev = nodeEnv === "development";
-  const isHosted =
-    (process.env.ENV || "").toLowerCase() === "production" ||
-    (process.env.RENDER || "").toLowerCase() === "true" ||
-    Boolean((process.env.RENDER_EXTERNAL_URL || "").trim());
-  const allowLocalInDev =
-    isDev &&
-    !isHosted &&
-    (process.env.HSAPP_ALLOW_LOCALHOST_URLS || "").trim() === "1";
-  const input = String(raw || "").trim();
-  if (!input) return null;
-  try {
-    const parsed = new URL(input.startsWith("http://") || input.startsWith("https://") ? input : `https://${input}`);
-    const host = parsed.hostname.toLowerCase();
-    const isLocalHost =
-      host === "localhost" ||
-      host === "127.0.0.1" ||
-      host === "0.0.0.0" ||
-      host.endsWith(".local");
-    if (isLocalHost && (!allowLocalInDev || isHosted)) return null;
-    if (!isDev && parsed.protocol !== "https:") return null;
-    // Always reduce to origin so stray path fragments in env vars cannot corrupt redirects.
-    return parsed.origin;
-  } catch {
-    return null;
-  }
-}
-
-function resolveHsAppBase(): string {
-  const rawCandidates = [
-    process.env.NEXT_PUBLIC_HSAPP_BASE_URL,
-    process.env.NEXT_PUBLIC_APP_BASE_URL,
-    process.env.HSAPP_PUBLIC_URL,
-    process.env.HSAPP_PUBLIC_DEFAULT_URL,
-    process.env.HSAPP_NGROK_DOMAIN,
-  ];
-  for (const raw of rawCandidates) {
-    const normalized = normalizeHsAppBase(raw);
-    if (normalized) return normalized;
-  }
-  return "https://app.healthsense.coach";
-}
 
 async function createUserAction(formData: FormData) {
   "use server";
@@ -75,93 +22,6 @@ async function createUserAction(formData: FormData) {
   }
   await createAdminUser({ first_name, surname, phone });
   revalidatePath("/admin/users");
-}
-
-async function startUserAction(formData: FormData) {
-  "use server";
-  const userId = Number(formData.get("user_id") || 0);
-  if (!userId) return;
-  await startAdminUser(userId);
-  revalidatePath("/admin/users");
-}
-
-async function setPromptStateAction(formData: FormData) {
-  "use server";
-  const userId = Number(formData.get("user_id") || 0);
-  const state = String(formData.get("state") || "").trim();
-  if (!userId || !state) return;
-  await setAdminUserPromptState(userId, state);
-  revalidatePath("/admin/users");
-}
-
-async function resetUserAction(formData: FormData) {
-  "use server";
-  const userId = Number(formData.get("user_id") || 0);
-  const confirm = String(formData.get("confirm") || "").trim().toLowerCase();
-  if (!userId || confirm !== "reset") return;
-  await resetAdminUser(userId);
-  revalidatePath("/admin/users");
-}
-
-async function deleteUserAction(formData: FormData) {
-  "use server";
-  const userId = Number(formData.get("user_id") || 0);
-  const confirm = String(formData.get("confirm") || "").trim().toLowerCase();
-  if (!userId || confirm !== "delete") return;
-  await deleteAdminUser(userId);
-  revalidatePath("/admin/users");
-}
-
-async function coachUserAction(formData: FormData) {
-  "use server";
-  const userId = Number(formData.get("user_id") || 0);
-  if (!userId) return;
-  await setAdminUserCoaching(userId, true);
-  revalidatePath("/admin/users");
-}
-
-async function fastCoachUserAction(formData: FormData) {
-  "use server";
-  const userId = Number(formData.get("user_id") || 0);
-  const fastMinutesRaw = String(formData.get("fast_minutes") || "").trim();
-  const fastMinutesParsed = Number.parseInt(fastMinutesRaw || "2", 10);
-  if (!userId || !Number.isFinite(fastMinutesParsed)) return;
-  const fastMinutes = Math.max(1, Math.min(120, fastMinutesParsed));
-  await setAdminUserCoaching(userId, true, fastMinutes);
-  revalidatePath("/admin/users");
-}
-
-async function stopCoachingAction(formData: FormData) {
-  "use server";
-  const userId = Number(formData.get("user_id") || 0);
-  if (!userId) return;
-  await setAdminUserCoaching(userId, false);
-  revalidatePath("/admin/users");
-}
-
-async function sendSmsAction(formData: FormData) {
-  "use server";
-  const userId = Number(formData.get("user_id") || 0);
-  const message = String(formData.get("sms_message") || "").trim();
-  if (!userId || !message) return;
-  await sendAdminUserSms(userId, message);
-  revalidatePath("/admin/users");
-}
-
-async function openAppAction(formData: FormData) {
-  "use server";
-  const userId = Number(formData.get("user_id") || 0);
-  if (!userId) return;
-  const session = await createAdminUserAppSession(userId);
-  const appBase = normalizeHsAppBase(session.app_base_url) || resolveHsAppBase();
-  const token = String(session.session_token || "").trim();
-  if (!token) return;
-  const nextPath = `/progress/${userId}`;
-  const url =
-    `${appBase}/api/auth/admin-app-login?session_token=${encodeURIComponent(token)}` +
-    `&user_id=${encodeURIComponent(String(userId))}` +
-    `&next=${encodeURIComponent(nextPath)}`;
-  redirect(url);
 }
 
 export default async function UsersPage({ searchParams }: UsersPageProps) {
@@ -258,49 +118,31 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
           </div>
 
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[1350px] text-left text-sm">
+            <table className="w-full min-w-[980px] text-left text-sm">
               <thead className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
                 <tr>
                   <th className="sticky left-0 z-20 min-w-[80px] bg-white py-2 pr-6 whitespace-nowrap">ID</th>
                   <th className="sticky left-[80px] z-20 min-w-[160px] bg-white py-2 pr-6 whitespace-nowrap">First name</th>
                   <th className="sticky left-[240px] z-20 min-w-[160px] bg-white py-2 pr-6 whitespace-nowrap">Surname</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Phone</th>
-                  <th className="py-2 pr-6 whitespace-nowrap">Created on</th>
-                  <th className="py-2 pr-6 whitespace-nowrap">Updated on</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Consent given</th>
-                  <th className="py-2 pr-6 whitespace-nowrap">Consent at</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Last inbound</th>
-                  <th className="py-2 pr-6 whitespace-nowrap">Last template sent</th>
                   <th className="py-2 pr-6 whitespace-nowrap">First assessment</th>
                   <th className="py-2 pr-6 whitespace-nowrap">Next scheduled</th>
-                  <th className="py-2 pr-6 whitespace-nowrap">Prompt state</th>
-                  <th className="py-2 pr-6 whitespace-nowrap">Coaching</th>
-                  <th className="py-2 whitespace-nowrap">Actions</th>
+                  <th className="py-2 whitespace-nowrap">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#efe7db]">
                 {users.map((u) => {
-                  const promptState = (u.prompt_state_override || "live").toLowerCase();
-                  const coachingOn = Boolean(u.coaching_enabled);
-                  const fastMinutes =
-                    typeof u.coaching_fast_minutes === "number" && u.coaching_fast_minutes > 0
-                      ? u.coaching_fast_minutes
-                      : null;
                   return (
                     <tr key={u.id}>
                     <td className="sticky left-0 z-10 min-w-[80px] bg-white py-3 pr-6 whitespace-nowrap text-[#6b6257]">#{u.id}</td>
                     <td className="sticky left-[80px] z-10 min-w-[160px] bg-white py-3 pr-6 whitespace-nowrap">{u.first_name || "—"}</td>
                     <td className="sticky left-[240px] z-10 min-w-[160px] bg-white py-3 pr-6 whitespace-nowrap">{u.surname || "—"}</td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">{u.phone || "—"}</td>
-                    <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">{formatDate(u.created_on)}</td>
-                    <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">{formatDate(u.updated_on)}</td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">{u.consent_given ? "Yes" : "No"}</td>
-                    <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">{formatDate(u.consent_at)}</td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
                       {formatDateTime(u.last_inbound_message_at)}
-                    </td>
-                    <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
-                      {formatDateTime(u.last_template_message_at)}
                     </td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
                       {formatDate(u.first_assessment_completed_at)}
@@ -308,144 +150,22 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
                       {formatDateTime(u.next_scheduled_at)}
                     </td>
-                    <td className="py-3 pr-6 whitespace-nowrap">
-                      <form action={setPromptStateAction} className="flex items-center gap-2">
-                        <input type="hidden" name="user_id" value={u.id} />
-                        <select
-                          name="state"
-                          defaultValue={promptState}
-                          className="rounded-full border border-[#efe7db] bg-white px-3 py-1 text-xs"
-                        >
-                          <option value="live">live</option>
-                          <option value="beta">beta</option>
-                        </select>
-                        <button
-                          type="submit"
-                          className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
-                        >
-                          set
-                        </button>
-                      </form>
-                    </td>
-                    <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
-                      {coachingOn ? (fastMinutes ? `Fast (${fastMinutes}m)` : "On") : "Off"}
-                    </td>
-                    <td className="py-3 align-top">
-                      <div className="min-w-[420px] rounded-2xl border border-[#efe7db] bg-[#faf8f3] p-3">
-                        <p className="text-[10px] uppercase tracking-[0.2em] text-[#8a8176]">Action</p>
-                        <div className="mt-2 flex flex-wrap items-center gap-2">
-                          <form action={openAppAction} target="_blank">
-                            <input type="hidden" name="user_id" value={u.id} />
-                            <button
-                              type="submit"
-                              className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
-                            >
-                              access app
-                            </button>
-                          </form>
-                          {!coachingOn ? (
-                            <form action={coachUserAction}>
-                              <input type="hidden" name="user_id" value={u.id} />
-                              <button
-                                type="submit"
-                                className="rounded-full border border-[var(--accent)] px-3 py-1 text-xs text-[var(--accent)]"
-                              >
-                                set coaching
-                              </button>
-                            </form>
-                          ) : (
-                            <form action={stopCoachingAction}>
-                              <input type="hidden" name="user_id" value={u.id} />
-                              <button
-                                type="submit"
-                                className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
-                              >
-                                stop coaching
-                              </button>
-                            </form>
-                          )}
-                          <form action={fastCoachUserAction} className="flex items-center gap-1">
-                            <input type="hidden" name="user_id" value={u.id} />
-                            <input
-                              type="number"
-                              name="fast_minutes"
-                              min={1}
-                              max={120}
-                              defaultValue={fastMinutes || 2}
-                              className="w-14 rounded-full border border-[#efe7db] px-2 py-1 text-xs"
-                              aria-label={`Fast coaching minutes for user ${u.id}`}
-                            />
-                            <button
-                              type="submit"
-                              className="rounded-full border border-[var(--accent)] px-3 py-1 text-xs text-[var(--accent)]"
-                            >
-                              fast on
-                            </button>
-                          </form>
-                        </div>
-
-                        <form action={sendSmsAction} className="mt-3 flex items-center gap-2">
-                          <input type="hidden" name="user_id" value={u.id} />
-                          <input
-                            type="text"
-                            name="sms_message"
-                            placeholder="Enter SMS message"
-                            maxLength={500}
-                            className="min-w-0 flex-1 rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-xs"
-                          />
-                          <button
-                            type="submit"
-                            className="rounded-full border border-[var(--accent)] px-3 py-2 text-xs text-[var(--accent)]"
-                          >
-                            send sms
-                          </button>
-                        </form>
-
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                          <Link
-                            href={`/admin/users/${u.id}`}
-                            className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
-                          >
-                            detail
-                          </Link>
-                          <form action={startUserAction}>
-                            <input type="hidden" name="user_id" value={u.id} />
-                            <button
-                              type="submit"
-                              className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
-                            >
-                              assess
-                            </button>
-                          </form>
-                          <form action={resetUserAction}>
-                            <input type="hidden" name="user_id" value={u.id} />
-                            <input type="hidden" name="confirm" value="reset" />
-                            <button
-                              type="submit"
-                              className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
-                            >
-                              reset
-                            </button>
-                          </form>
-                          <form action={deleteUserAction}>
-                            <input type="hidden" name="user_id" value={u.id} />
-                            <input type="hidden" name="confirm" value="delete" />
-                            <button
-                              type="submit"
-                              className="rounded-full border border-[#c43e1c] px-3 py-1 text-xs text-[#c43e1c]"
-                            >
-                              delete
-                            </button>
-                          </form>
-                        </div>
-                      </div>
+                    <td className="py-3 whitespace-nowrap">
+                      <Link
+                        href={`/admin/users/${u.id}/actions`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
+                      >
+                        action
+                      </Link>
                     </td>
                     </tr>
                   );
                 })}
                 {!users.length ? (
                   <tr>
-                    <td className="py-6 text-sm text-[#6b6257]" colSpan={15}>
+                    <td className="py-6 text-sm text-[#6b6257]" colSpan={9}>
                       No users found. Try a different search.
                     </td>
                   </tr>

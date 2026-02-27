@@ -117,6 +117,7 @@ export type UserStatusResponse = {
     consent_at?: string;
     billing_status?: string | null;
     billing_provider?: string | null;
+    last_inbound_message_at?: string | null;
   };
   active_domain?: string | null;
   latest_run?: { id?: number; finished_at?: string | null; combined_overall?: number };
@@ -163,6 +164,16 @@ export type UserStatusResponse = {
       intro_content_completed_at?: string | null;
       coaching_auto_enabled_at?: string | null;
     };
+  };
+  coaching_window?: {
+    window_hours?: number | null;
+    last_inbound_message_at?: string | null;
+    hours_since_last_inbound?: number | null;
+    inside_24h?: boolean;
+    outside_24h?: boolean;
+    continue_command?: string | null;
+    continue_whatsapp_url?: string | null;
+    whatsapp_number?: string | null;
   };
 };
 

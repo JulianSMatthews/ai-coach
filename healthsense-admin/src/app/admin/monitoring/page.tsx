@@ -318,6 +318,17 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
     failed_undelivered: 0,
     callback_pending_unknown: 0,
   };
+  const templateDelivery = health?.messaging?.out_of_session_template || {};
+  const templateSent = Math.max(0, Number(templateDelivery.attempted_messages ?? 0) || 0);
+  const templateReceived = Math.max(0, Number(templateDelivery.delivery_confirmed ?? 0) || 0);
+  const templateFailed = Math.max(0, Number(templateDelivery.failed_undelivered ?? 0) || 0);
+  const templatePendingRaw = Math.max(0, Number(templateDelivery.pending_unknown ?? 0) || 0);
+  const templatePending = Math.max(0, templateSent - templateReceived - templateFailed, templatePendingRaw);
+  const templateNotReceived = Math.max(0, templateFailed + templatePending);
+  const templateReceivedPct = templateSent > 0 ? (templateReceived / templateSent) * 100 : 0;
+  const templateFailedPct = templateSent > 0 ? (templateFailed / templateSent) * 100 : 0;
+  const templatePendingPct = templateSent > 0 ? (templatePending / templateSent) * 100 : 0;
+  const templateNotReceivedPct = templateSent > 0 ? (templateNotReceived / templateSent) * 100 : null;
   const appKpis = appEngagement?.top_kpis || {};
   const appDetail = appEngagement?.detail || {};
   const appOnboarding = appDetail.onboarding || {};
@@ -654,11 +665,25 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
                     {(health?.messaging?.out_of_session_template?.failure_state || "unknown").toUpperCase()}
                   </span>
                 </div>
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-semibold">
+                    not received {templateNotReceived}/{templateSent} (
+                    {templateSent ? `${formatNum(templateNotReceivedPct)}%` : "—"})
+                  </span>
+                  <span className="text-sm font-semibold">
+                    received {templateReceived}/{templateSent} (
+                    {templateSent ? `${formatNum(templateReceivedPct)}%` : "—"})
+                  </span>
+                </div>
+                <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-[#ece4d8]">
+                  <div className="flex h-full w-full">
+                    <div className="bg-[#1d6a4f]" style={{ width: `${templateReceivedPct}%` }} />
+                    <div className="bg-[#c43d3d]" style={{ width: `${templateFailedPct}%` }} />
+                    <div className="bg-[#b6ad9f]" style={{ width: `${templatePendingPct}%` }} />
+                  </div>
+                </div>
                 <div className="mt-1 text-xs text-[#6b6257]">
-                  sent {health?.messaging?.out_of_session_template?.attempted_messages ?? 0} | received{" "}
-                  {health?.messaging?.out_of_session_template?.delivery_confirmed ?? 0} | failed{" "}
-                  {health?.messaging?.out_of_session_template?.failed_undelivered ?? 0} | pending{" "}
-                  {health?.messaging?.out_of_session_template?.pending_unknown ?? 0}
+                  sent {templateSent} | received {templateReceived} | failed {templateFailed} | pending {templatePending}
                 </div>
                 <div className="mt-1 text-xs text-[#8a8176]">
                   failure rate{" "}
