@@ -1435,9 +1435,20 @@ def send_whatsapp_template(
     if not template_sid:
         raise ValueError("template_sid is required for send_whatsapp_template")
     vars_payload = json.dumps(variables or {})
+    preview_text = None
+    try:
+        preview = get_twilio_content_preview(template_sid) if template_sid else {}
+        raw_body = (preview.get("body") if isinstance(preview, dict) else None) or ""
+        rendered = str(raw_body or "")
+        if rendered and isinstance(variables, dict):
+            for k, v in variables.items():
+                rendered = rendered.replace(f"{{{{{k}}}}}", str(v))
+        preview_text = rendered.strip() or None
+    except Exception:
+        preview_text = None
     result_sid = _enqueue_and_send(
         to_norm=to_norm,
-        text=None,
+        text=preview_text or "(template message)",
         category=category,
         content_sid=template_sid,
         content_variables=vars_payload,
