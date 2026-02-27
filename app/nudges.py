@@ -371,6 +371,28 @@ def _extract_approval_status(payload: object, *, channel: str = "whatsapp") -> t
     seen: set[int] = set()
     channel_l = str(channel or "").strip().lower()
 
+    def _normalized_status_from_value(value: object) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return _normalize_approval_status(value)
+        if isinstance(value, (int, float, bool)):
+            return _normalize_approval_status(str(value))
+        if isinstance(value, dict):
+            for key in ("status", "approval_status", "submission_status", "channel_status", "state"):
+                if key in value:
+                    nested = _normalized_status_from_value(value.get(key))
+                    if nested:
+                        return nested
+            return None
+        if isinstance(value, list):
+            for item in value:
+                nested = _normalized_status_from_value(item)
+                if nested:
+                    return nested
+            return None
+        return None
+
     while stack:
         current = stack.pop()
         if isinstance(current, list):
@@ -392,6 +414,8 @@ def _extract_approval_status(payload: object, *, channel: str = "whatsapp") -> t
         # If a channel field is present and not WhatsApp, ignore this block.
         named_channel = str(
             current.get("channel")
+            or current.get("type")
+            or current.get("channel_type")
             or current.get("name")
             or current.get("provider")
             or ""
@@ -406,7 +430,16 @@ def _extract_approval_status(payload: object, *, channel: str = "whatsapp") -> t
             or current.get("channel_status")
             or current.get("state")
         )
-        normalized = _normalize_approval_status(raw_status if isinstance(raw_status, str) else str(raw_status or ""))
+        normalized = _normalized_status_from_value(raw_status)
+        if not normalized and channel_l:
+            for key, value in current.items():
+                key_l = str(key).strip().lower()
+                if not key_l:
+                    continue
+                if channel_l in key_l or key_l in channel_l:
+                    normalized = _normalized_status_from_value(value)
+                    if normalized:
+                        break
         if normalized:
             detail = str(
                 current.get("rejection_reason")
@@ -437,8 +470,9 @@ def get_twilio_template_approval_status(template_sid: str | None, *, channel: st
         try:
             data = _twilio_content_request("GET", path)
         except urllib.error.HTTPError as e:
-            # 404 usually means no approval request exists yet for this content/channel.
-            if int(getattr(e, "code", 0) or 0) == 404:
+            # 404: no approval request exists yet.
+            # 405: channel-specific ApprovalRequests path does not support GET.
+            if int(getattr(e, "code", 0) or 0) in (404, 405):
                 continue
             last_error = f"{path}: {e}"
             continue
