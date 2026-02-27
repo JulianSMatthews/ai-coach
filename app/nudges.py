@@ -342,6 +342,24 @@ def get_twilio_content_types(sid: str | None) -> list[str]:
     return sorted([k for k in types.keys() if k])
 
 
+def get_twilio_content_preview(sid: str | None) -> dict:
+    detail = _get_content_detail(sid)
+    types = detail.get("types") or {}
+    if not isinstance(types, dict):
+        return {}
+    qr = types.get("twilio/quick-reply") or {}
+    if not isinstance(qr, dict):
+        return {}
+    body = (qr.get("body") or "").strip() or None
+    actions = qr.get("actions") or []
+    button = None
+    if isinstance(actions, list) and actions:
+        first = actions[0] or {}
+        if isinstance(first, dict):
+            button = (first.get("title") or "").strip() or None
+    return {"body": body, "button": button}
+
+
 def _normalize_approval_status(raw: str | None) -> str | None:
     val = str(raw or "").strip().lower().replace("-", "_").replace(" ", "_")
     if not val:

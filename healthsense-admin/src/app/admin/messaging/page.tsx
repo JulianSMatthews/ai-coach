@@ -91,9 +91,10 @@ export default async function MessagingPage() {
   const templateIds = templates.map((t) => t.id).join(",");
   const scheduleDays = schedule.map((s) => s.day_key).join(",");
   const deleteFormId = "delete-template-form";
-  const sentence = (settingsData?.out_of_session_message || "").trim() || "Please tap below to continue your wellbeing journey.";
-  const previewBody = `Hi {{first_name}}, {{coach_name}} from HealthSense here. I’m ready to continue your coaching. ${sentence}`;
-  const previewButton = "Continue coaching";
+  const previewBody =
+    (sessionReopenTemplate?.preview_body || "").trim() ||
+    "Hi from HealthSense. I'm ready to continue your coaching. Please tap the button below to continue your wellbeing journey.";
+  const previewButton = (sessionReopenTemplate?.preview_button || "").trim() || "Continue coaching";
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -242,9 +243,7 @@ export default async function MessagingPage() {
                 {previewButton}
               </span>
             </div>
-            <p className="text-xs text-[#6b6257]">
-              Variables sent to Twilio: user first name, coach name, then the sentence shown above.
-            </p>
+            <p className="text-xs text-[#6b6257]">Preview source: Twilio template content for the configured session-reopen SID.</p>
           </div>
         </section>
 

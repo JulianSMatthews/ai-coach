@@ -11458,6 +11458,17 @@ def admin_list_twilio_templates(admin_user: User = Depends(_require_admin)):
                 content_types = get_twilio_content_types(row.sid)
             except Exception:
                 content_types = []
+        preview_body = None
+        preview_button = None
+        if str(row.template_type or "").strip().lower() == "session-reopen" and row.sid:
+            try:
+                from .nudges import get_twilio_content_preview  # type: ignore
+                preview = get_twilio_content_preview(row.sid) or {}
+                preview_body = preview.get("body")
+                preview_button = preview.get("button")
+            except Exception:
+                preview_body = None
+                preview_button = None
         if str(row.template_type or "").strip().lower() == "session-reopen":
             try:
                 from .nudges import get_twilio_template_approval_status  # type: ignore
@@ -11485,6 +11496,8 @@ def admin_list_twilio_templates(admin_user: User = Depends(_require_admin)):
                 "approval_detail": approval_detail,
                 "approval_source": approval_source,
                 "approval_checked_at": approval_checked_at,
+                "preview_body": preview_body,
+                "preview_button": preview_button,
             }
         )
     return {"templates": items}

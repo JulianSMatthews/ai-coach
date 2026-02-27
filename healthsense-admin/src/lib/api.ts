@@ -747,6 +747,8 @@ export type TwilioTemplateItem = {
   approval_detail?: string | null;
   approval_source?: string | null;
   approval_checked_at?: string | null;
+  preview_body?: string | null;
+  preview_button?: string | null;
 };
 
 export type MessagingSettings = {
