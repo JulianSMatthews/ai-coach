@@ -4789,23 +4789,16 @@ def api_user_coaching_history(
         ts = getattr(msg, "created_at", None)
         meta = _meta_dict(getattr(msg, "meta", None))
         raw_virtual = str(meta.get("virtual_date") or "").strip()
+        virtual_date_iso = None
         if raw_virtual:
             try:
                 vday = date.fromisoformat(raw_virtual[:10])
-                base = ts or datetime.utcnow()
-                virtual_ts = datetime(
-                    vday.year,
-                    vday.month,
-                    vday.day,
-                    base.hour,
-                    base.minute,
-                    base.second,
-                    base.microsecond,
-                )
-                return virtual_ts.isoformat(), vday.isoformat()
+                virtual_date_iso = vday.isoformat()
             except Exception:
-                pass
-        return (ts.isoformat() if ts else None), None
+                virtual_date_iso = None
+        # Always sort/display timeline by real message creation time.
+        # Keep virtual_date separately for debugging fast-mode/day-shift behavior.
+        return (ts.isoformat() if ts else None), virtual_date_iso
 
     items = []
     for tp in touchpoints:
