@@ -196,7 +196,7 @@ export default async function UserActionsPage({ params, searchParams }: UserActi
   const promptState = (user.prompt_state_override || "live").toLowerCase();
   const coachingOn = Boolean(user.coaching_enabled);
   const hasFastMode = typeof user.coaching_fast_minutes === "number" && user.coaching_fast_minutes > 0;
-  const fastMinutes = hasFastMode ? user.coaching_fast_minutes : 2;
+  const fastMinutes: number = hasFastMode ? Number(user.coaching_fast_minutes) : 2;
   const smsStatus = String(resolvedSearchParams?.sms || "").trim().toLowerCase();
 
   return (
