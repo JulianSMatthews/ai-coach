@@ -4843,7 +4843,17 @@ def api_user_coaching_history(
             }
         )
 
-    items.sort(key=lambda r: r.get("ts") or "", reverse=True)
+    def _sort_ts_value(row: dict[str, object]) -> float:
+        raw = row.get("ts")
+        if not raw:
+            return 0.0
+        try:
+            parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            return parsed.timestamp()
+        except Exception:
+            return 0.0
+
+    items.sort(key=_sort_ts_value, reverse=True)
     items = items[: max(1, min(int(limit), 200))]
 
     return {
@@ -10857,7 +10867,17 @@ def admin_touchpoint_history(
             }
         )
 
-    items.sort(key=lambda r: r.get("ts") or "", reverse=True)
+    def _sort_ts_value(row: dict[str, object]) -> float:
+        raw = row.get("ts")
+        if not raw:
+            return 0.0
+        try:
+            parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+            return parsed.timestamp()
+        except Exception:
+            return 0.0
+
+    items.sort(key=_sort_ts_value, reverse=True)
     items = items[:max_limit]
 
     return {"items": items}
@@ -14002,22 +14022,37 @@ def admin_user_send_24h_template(user_id: int, admin_user: User = Depends(_requi
                 s.commit()
                 raise HTTPException(status_code=502, detail=f"24h template send failed: {e_vars}")
 
-        s.add(
-            JobAudit(
-                job_name="admin_user_send_24h_template",
-                status="done",
-                payload={
-                    "admin_user_id": getattr(admin_user, "id", None),
-                    "target_user_id": int(user_id),
-                    "to": phone,
-                    "template_sid": template_sid,
-                },
-                result={"sid": sid},
+        audit_logged = True
+        try:
+            s.add(
+                JobAudit(
+                    job_name="admin_user_send_24h_template",
+                    status="done",
+                    payload={
+                        "admin_user_id": getattr(admin_user, "id", None),
+                        "target_user_id": int(user_id),
+                        "to": phone,
+                        "template_sid": template_sid,
+                    },
+                    result={"sid": sid},
+                )
             )
-        )
-        s.commit()
+            s.commit()
+        except Exception as audit_err:
+            audit_logged = False
+            try:
+                s.rollback()
+            except Exception:
+                pass
+            print(f"[admin][24h-template] post-send audit commit failed (non-fatal): {audit_err}")
 
-    return {"status": "sent", "user_id": user_id, "sid": sid, "template_sid": template_sid}
+    return {
+        "status": "sent",
+        "user_id": user_id,
+        "sid": sid,
+        "template_sid": template_sid,
+        "audit_logged": audit_logged,
+    }
 
 @admin.post("/users/{user_id}/start")
 def admin_start_user(user_id: int, admin_user: User = Depends(_require_admin)):
