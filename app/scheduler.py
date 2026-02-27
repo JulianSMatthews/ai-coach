@@ -500,16 +500,15 @@ def _coaching_anchor_date_local(session, user: User, tz: zoneinfo.ZoneInfo) -> d
 
 
 def _base_default_times() -> dict[str, tuple[int, int]]:
-    # Defaults in 24h: Sunday 18:00, Monday 08:00, Tuesday 19:00, Wednesday 08:00,
-    # Thursday 19:00, Friday 08:00, Saturday 10:00
+    # Unified coaching send time: 08:00 local for every day.
     return {
-        "sunday": (18, 0),
+        "sunday": (8, 0),
         "monday": (8, 0),
-        "tuesday": (19, 0),
+        "tuesday": (8, 0),
         "wednesday": (8, 0),
-        "thursday": (19, 0),
+        "thursday": (8, 0),
         "friday": (8, 0),
-        "saturday": (10, 0),
+        "saturday": (8, 0),
     }
 
 
@@ -525,20 +524,39 @@ def _default_times() -> dict[str, tuple[int, int] | None]:
                 if not getattr(row, "enabled", True):
                     defaults[day_key] = None
                     continue
-                time_val = (getattr(row, "time_local", "") or "").strip()
-                if not time_val:
-                    continue
-                try:
-                    hh, mm = time_val.split(":")
-                    hh_i = int(hh); mm_i = int(mm)
-                    if not (0 <= hh_i <= 23 and 0 <= mm_i <= 59):
-                        raise ValueError()
-                except Exception:
-                    continue
-                defaults[day_key] = (hh_i, mm_i)
+                defaults[day_key] = (8, 0)
     except Exception:
         pass
     return defaults
+
+
+def _sync_global_schedule_to_unified_8am(session) -> None:
+    """
+    Normalize global schedule rows so UI + runtime both reflect unified 08:00 sends.
+    Existing disabled rows stay disabled.
+    """
+    base = _base_default_times()
+    rows = session.query(GlobalPromptSchedule).all()
+    rows_by_day = {(getattr(r, "day_key", "") or "").strip().lower(): r for r in rows}
+    changed = False
+    for day_key in base.keys():
+        row = rows_by_day.get(day_key)
+        if row is None:
+            session.add(
+                GlobalPromptSchedule(
+                    day_key=day_key,
+                    time_local="08:00",
+                    enabled=True,
+                )
+            )
+            changed = True
+            continue
+        time_local = (getattr(row, "time_local", "") or "").strip()
+        if time_local != "08:00":
+            row.time_local = "08:00"
+            changed = True
+    if changed:
+        session.commit()
 
 
 def ensure_global_schedule_defaults() -> None:
@@ -548,18 +566,7 @@ def ensure_global_schedule_defaults() -> None:
         return
     try:
         with SessionLocal() as s:
-            existing = s.query(GlobalPromptSchedule).count()
-            if existing:
-                return
-            for day_key, (hh, mm) in _base_default_times().items():
-                s.add(
-                    GlobalPromptSchedule(
-                        day_key=day_key,
-                        time_local=f"{hh:02d}:{mm:02d}",
-                        enabled=True,
-                    )
-                )
-            s.commit()
+            _sync_global_schedule_to_unified_8am(s)
     except Exception:
         pass
 
@@ -1048,6 +1055,7 @@ def _schedule_prompts_for_user(
         if default_time is None:
             continue
         hh_default, mm_default = default_time
+        # Allow per-user schedule overrides when explicitly configured.
         pref_time = _user_pref_time(session, user.id, day) or (hh_default, mm_default)
         dow = {
             "monday": "mon",

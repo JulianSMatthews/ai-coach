@@ -155,13 +155,14 @@ async function sendSmsAction(formData: FormData) {
   const userId = Number(formData.get("user_id") || 0);
   const message = String(formData.get("sms_message") || "").trim();
   if (!userId || !message) return;
+  let failed = false;
   try {
     await sendAdminUserSms(userId, message);
-    revalidatePath(`/admin/users/${userId}/actions`);
-    redirect(`/admin/users/${userId}/actions?sms=sent`);
   } catch {
-    redirect(`/admin/users/${userId}/actions?sms=failed`);
+    failed = true;
   }
+  revalidatePath(`/admin/users/${userId}/actions`);
+  redirect(`/admin/users/${userId}/actions?sms=${failed ? "failed" : "sent"}`);
 }
 
 function ActionCard({

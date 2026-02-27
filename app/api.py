@@ -6542,19 +6542,29 @@ def admin_assessment_health(
             for day in coaching_types
         }
         coaching_day_message_ids: dict[str, set[int]] = {day: set() for day in coaching_types}
+        coaching_day_user_sets: dict[str, dict[str, set[int]]] = {
+            day: {
+                "attempted_users": set(),
+                "received_users": set(),
+                "replied_users": set(),
+                "listened_users": set(),
+            }
+            for day in coaching_types
+        }
+        coaching_day_message_meta: dict[int, dict[str, object]] = {}
         coaching_message_attempts_total = 0
         coaching_message_delivery_confirmed_total = 0
         coaching_message_failed_total = 0
         coaching_message_pending_total = 0
 
         outbound_day_msg_q = (
-            s.query(MessageLog.id, MessageLog.text)
+            s.query(MessageLog.id, MessageLog.text, MessageLog.user_id)
             .filter(MessageLog.direction == "outbound")
             .filter(MessageLog.created_at >= start_utc, MessageLog.created_at < end_utc)
         )
         if club_scope_id is not None:
             outbound_day_msg_q = outbound_day_msg_q.join(User, MessageLog.user_id == User.id).filter(User.club_id == club_scope_id)
-        for message_id, message_text in outbound_day_msg_q.all():
+        for message_id, message_text, message_user_id in outbound_day_msg_q.all():
             day_key = _coaching_day_from_message_text(message_text)
             if day_key is None:
                 continue
@@ -6562,10 +6572,21 @@ def admin_assessment_health(
                 mid = int(message_id)
             except Exception:
                 continue
+            uid = None
+            try:
+                if message_user_id is not None:
+                    uid = int(message_user_id)
+            except Exception:
+                uid = None
             ids = coaching_day_message_ids.get(day_key)
             if not isinstance(ids, set):
                 continue
             ids.add(mid)
+            coaching_day_message_meta[mid] = {
+                "day": day_key,
+                "user_id": uid,
+                "is_podcast_message": "podcast" in str(message_text or "").strip().lower(),
+            }
 
         for day_key, ids in coaching_day_message_ids.items():
             for mid in ids:
@@ -6582,10 +6603,34 @@ def admin_assessment_health(
                 latest_cb = latest_tw_callback_by_message_log_id.get(mid)
                 status_val = str((latest_cb or {}).get("status") or "").strip().lower()
                 error_code = _normalise_twilio_error_code((latest_cb or {}).get("error_code"))
+                msg_meta = coaching_day_message_meta.get(mid) or {}
+                uid_raw = msg_meta.get("user_id")
+                uid = int(uid_raw) if isinstance(uid_raw, int) else None
+                user_sets = coaching_day_user_sets.setdefault(
+                    day_key,
+                    {
+                        "attempted_users": set(),
+                        "received_users": set(),
+                        "replied_users": set(),
+                        "listened_users": set(),
+                    },
+                )
+                if uid is not None:
+                    attempted_users = user_sets.get("attempted_users")
+                    if isinstance(attempted_users, set):
+                        attempted_users.add(uid)
                 if error_code or status_val in {"failed", "undelivered"}:
                     row["failed_undelivered"] = int(row.get("failed_undelivered") or 0) + 1
                 elif status_val in {"delivered", "read"}:
                     row["delivery_confirmed"] = int(row.get("delivery_confirmed") or 0) + 1
+                    if uid is not None:
+                        received_users = user_sets.get("received_users")
+                        if isinstance(received_users, set):
+                            received_users.add(uid)
+                    if uid is not None and status_val == "read" and bool(msg_meta.get("is_podcast_message")):
+                        listened_users = user_sets.get("listened_users")
+                        if isinstance(listened_users, set):
+                            listened_users.add(uid)
                 else:
                     row["callback_pending_unknown"] = int(row.get("callback_pending_unknown") or 0) + 1
 
@@ -6796,7 +6841,15 @@ def admin_assessment_health(
                 row["response_minutes"] = None
 
         day_stats_map: dict[str, dict[str, object]] = {
-            day: {"day": day, "sent": 0, "users": set(), "replied_24h": 0, "with_audio": 0}
+            day: {
+                "day": day,
+                "sent": 0,
+                "users": set(),
+                "replied_24h": 0,
+                "replied_users": set(),
+                "with_audio": 0,
+                "received_users": set(),
+            }
             for day in coaching_types
         }
         for row in touchpoints:
@@ -6810,6 +6863,9 @@ def admin_assessment_health(
                 users_set.add(int(row["user_id"]))
             if bool(row.get("responded_24h")):
                 stats["replied_24h"] = int(stats["replied_24h"]) + 1
+                replied_users_set = stats.get("replied_users")
+                if isinstance(replied_users_set, set):
+                    replied_users_set.add(int(row["user_id"]))
             if row.get("audio_url"):
                 stats["with_audio"] = int(stats["with_audio"]) + 1
 
@@ -6821,7 +6877,14 @@ def admin_assessment_health(
             with_audio_n = int(stats.get("with_audio") or 0)
             users_set = stats.get("users")
             users_n = len(users_set) if isinstance(users_set, set) else 0
+            replied_users_set = stats.get("replied_users")
+            replied_users_n = len(replied_users_set) if isinstance(replied_users_set, set) else 0
             delivery_stats = coaching_delivery_by_day.get(day) or {}
+            delivery_user_sets = coaching_day_user_sets.get(day) or {}
+            received_users_set = delivery_user_sets.get("received_users")
+            received_users_n = len(received_users_set) if isinstance(received_users_set, set) else 0
+            listened_users_set = delivery_user_sets.get("listened_users")
+            listened_users_n = len(listened_users_set) if isinstance(listened_users_set, set) else 0
             attempted_messages_n = int(delivery_stats.get("attempted_messages") or 0)
             delivery_confirmed_n = int(delivery_stats.get("delivery_confirmed") or 0)
             failed_undelivered_n = int(delivery_stats.get("failed_undelivered") or 0)
@@ -6832,8 +6895,13 @@ def admin_assessment_health(
                     "sent": sent_n,
                     "attempted_current_logic": sent_n,
                     "users": users_n,
+                    "received_users": received_users_n,
+                    "listened_users": listened_users_n,
                     "replied_24h": replied_n,
+                    "replied_users": replied_users_n,
                     "reply_rate_pct": round((replied_n / sent_n * 100.0), 2) if sent_n else None,
+                    "reply_user_rate_pct": round((replied_users_n / users_n * 100.0), 2) if users_n else None,
+                    "listened_user_rate_pct": round((listened_users_n / users_n * 100.0), 2) if users_n else None,
                     "with_audio": with_audio_n,
                     "audio_rate_pct": round((with_audio_n / sent_n * 100.0), 2) if sent_n else None,
                     "attempted_messages": attempted_messages_n,
@@ -13758,6 +13826,22 @@ def admin_user_send_sms(user_id: int, payload: dict, admin_user: User = Depends(
             )
             s.commit()
             raise HTTPException(status_code=502, detail=f"sms send failed: {e}")
+
+        try:
+            from .message_log import write_log
+
+            write_log(
+                phone_e164=phone,
+                direction="outbound",
+                text=message,
+                category="admin_sms",
+                twilio_sid=sid,
+                user=u,
+                channel="sms",
+                meta={"to": phone, "twilio_sid": sid, "category": "admin_sms"},
+            )
+        except Exception as log_err:
+            print(f"[admin][sms] message log write failed (non-fatal): {log_err}")
 
         s.add(
             JobAudit(

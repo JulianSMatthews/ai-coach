@@ -4,6 +4,22 @@ import { getAdminAppEngagement, getAdminAssessmentHealth, getAdminProfile, getAd
 
 export const dynamic = "force-dynamic";
 
+function stateChipClass(state?: string | null): string {
+  const key = String(state || "").toLowerCase();
+  if (key === "critical") return "border-[#c43d3d] bg-[#fdeaea] text-[#8c1d1d]";
+  if (key === "warn") return "border-[#cc9a2f] bg-[#fff6e6] text-[#825b0b]";
+  if (key === "ok") return "border-[#2f8b55] bg-[#eaf7ef] text-[#14532d]";
+  return "border-[#d8d1c4] bg-[#f7f4ee] text-[#6b6257]";
+}
+
+function stateTileClass(state?: string | null): string {
+  const key = String(state || "").toLowerCase();
+  if (key === "critical") return "rounded-xl border border-[#c43d3d] bg-[#fdeaea] px-3 py-2";
+  if (key === "warn") return "rounded-xl border border-[#cc9a2f] bg-[#fff6e6] px-3 py-2";
+  if (key === "ok") return "rounded-xl border border-[#2f8b55] bg-[#eaf7ef] px-3 py-2";
+  return "rounded-xl bg-[#f7f4ee] px-3 py-2";
+}
+
 export default async function AdminHome() {
   const profile = await getAdminProfile();
   const name = profile.user?.display_name || "Admin";
@@ -32,6 +48,7 @@ export default async function AdminHome() {
     appEngagement = null;
   }
   const appKpis = appEngagement?.top_kpis || {};
+  const outside24hState = health?.coaching?.engagement_window?.outside_24h_state || "unknown";
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -172,8 +189,13 @@ export default async function AdminHome() {
                     : "—"}
                 </div>
               </div>
-              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Outside 24h</span>
+              <div className={stateTileClass(outside24hState)}>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Outside 24h</span>
+                  <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${stateChipClass(outside24hState)}`}>
+                    {String(outside24hState || "unknown").toUpperCase()}
+                  </span>
+                </div>
                 <div className="mt-1 text-xl font-semibold">
                   {health?.coaching?.engagement_window?.outside_24h_rate_pct != null
                     ? `${health.coaching.engagement_window.outside_24h_rate_pct}%`

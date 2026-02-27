@@ -575,8 +575,13 @@ export type AssessmentHealthPayload = {
       sent?: number;
       attempted_current_logic?: number;
       users?: number;
+      received_users?: number;
+      listened_users?: number;
       replied_24h?: number;
+      replied_users?: number;
       reply_rate_pct?: number | null;
+      reply_user_rate_pct?: number | null;
+      listened_user_rate_pct?: number | null;
       with_audio?: number;
       audio_rate_pct?: number | null;
       attempted_messages?: number;
