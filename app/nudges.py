@@ -52,8 +52,8 @@ _SESSION_REOPEN_DEFAULT_SENTENCE = "Please tap below to continue your wellbeing 
 _SESSION_REOPEN_DEFAULT_BUTTON_TITLE = "Continue coaching"
 _SESSION_REOPEN_DEFAULT_BUTTON_ID = "continue_coaching"
 _SESSION_REOPEN_DEFAULT_BODY = (
-    "Hi {{1}}, {{2}} from HealthSense here. "
-    "I'm ready to continue your coaching. {{3}}"
+    "Hi from HealthSense. "
+    "I'm ready to continue your coaching. Please tap the button below to continue your wellbeing journey."
 )
 _QR_BOOTSTRAP_ATTEMPTS: dict[int, float] = {}
 _QR_BOOTSTRAP_MIN_INTERVAL = 60.0
@@ -1009,29 +1009,43 @@ def _perform_twilio_send(
                 reopen_sid = _get_session_reopen_sid()
                 if reopen_sid and reopen_sid != content_sid:
                     try:
-                        user_id = _lookup_user_id_for_whatsapp(to_norm)
-                        first_name = None
-                        if user_id:
-                            try:
-                                with SessionLocal() as s:
-                                    u = s.query(User).get(int(user_id))
-                                    first_name = (getattr(u, "first_name", None) or None) if u else None
-                            except Exception:
-                                first_name = None
-                        reopen_vars = json.dumps(
-                            build_session_reopen_template_variables(
-                                user_first_name=first_name,
-                                coach_name=None,
-                                message_text=text or get_default_session_reopen_message_text(),
+                        reopen_vars = "{}"
+                        try:
+                            msg = client.messages.create(
+                                from_=from_norm,
+                                to=to_norm,
+                                content_sid=reopen_sid,
+                                content_variables=reopen_vars,
+                                status_callback=status_callback or None,
                             )
-                        )
-                        msg = client.messages.create(
-                            from_=from_norm,
-                            to=to_norm,
-                            content_sid=reopen_sid,
-                            content_variables=reopen_vars,
-                            status_callback=status_callback or None,
-                        )
+                        except TwilioRestException as exc_vars:
+                            # Compatibility fallback for older templates still requiring variables.
+                            err_text = str(getattr(exc_vars, "msg", "") or exc_vars).lower()
+                            if "variable" not in err_text and "content_variables" not in err_text and "content variable" not in err_text:
+                                raise
+                            user_id = _lookup_user_id_for_whatsapp(to_norm)
+                            first_name = None
+                            if user_id:
+                                try:
+                                    with SessionLocal() as s:
+                                        u = s.query(User).get(int(user_id))
+                                        first_name = (getattr(u, "first_name", None) or None) if u else None
+                                except Exception:
+                                    first_name = None
+                            reopen_vars = json.dumps(
+                                build_session_reopen_template_variables(
+                                    user_first_name=first_name,
+                                    coach_name=None,
+                                    message_text=text or get_default_session_reopen_message_text(),
+                                )
+                            )
+                            msg = client.messages.create(
+                                from_=from_norm,
+                                to=to_norm,
+                                content_sid=reopen_sid,
+                                content_variables=reopen_vars,
+                                status_callback=status_callback or None,
+                            )
                         reopened = True
                         content_sid = reopen_sid
                         content_variables = reopen_vars
