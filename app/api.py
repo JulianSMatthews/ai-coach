@@ -109,6 +109,10 @@ from .nudges import (
     send_whatsapp,
     send_whatsapp_media,
     send_sms,
+    send_whatsapp_template,
+    _get_session_reopen_sid,
+    build_session_reopen_template_variables,
+    get_default_session_reopen_coach_name,
     get_default_session_reopen_message_text,
 )
 from .checkins import record_checkin
@@ -13938,6 +13942,82 @@ def admin_user_send_sms(user_id: int, payload: dict, admin_user: User = Depends(
             print(f"[admin][sms] post-send audit commit failed (non-fatal): {audit_err}")
 
     return {"status": "sent", "user_id": user_id, "sid": sid, "audit_logged": audit_logged}
+
+
+@admin.post("/users/{user_id}/send-24h-template")
+def admin_user_send_24h_template(user_id: int, admin_user: User = Depends(_require_admin)):
+    """
+    Send the configured 24h out-of-session WhatsApp template immediately to a user.
+    """
+    with SessionLocal() as s:
+        u = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not u:
+            raise HTTPException(status_code=404, detail="user not found")
+        _ensure_club_scope(admin_user, u)
+        phone = str(getattr(u, "phone", "") or "").strip()
+        if not phone:
+            raise HTTPException(status_code=400, detail="user has no phone number")
+
+        template_sid = (_get_session_reopen_sid() or "").strip()
+        if not template_sid:
+            raise HTTPException(status_code=400, detail="24h template SID not configured")
+
+        first_name = str(getattr(u, "first_name", "") or "").strip() or None
+        sid = None
+        try:
+            # Preferred path for static templates.
+            sid = send_whatsapp_template(
+                to=phone,
+                template_sid=template_sid,
+                variables={},
+                category="out_of_session",
+            )
+        except Exception as e_static:
+            # Compatibility path for older templates still requiring variables.
+            try:
+                sid = send_whatsapp_template(
+                    to=phone,
+                    template_sid=template_sid,
+                    variables=build_session_reopen_template_variables(
+                        user_first_name=first_name,
+                        coach_name=get_default_session_reopen_coach_name(),
+                        message_text=get_default_session_reopen_message_text(),
+                    ),
+                    category="out_of_session",
+                )
+            except Exception as e_vars:
+                s.add(
+                    JobAudit(
+                        job_name="admin_user_send_24h_template",
+                        status="error",
+                        payload={
+                            "admin_user_id": getattr(admin_user, "id", None),
+                            "target_user_id": int(user_id),
+                            "to": phone,
+                            "template_sid": template_sid,
+                        },
+                        error=f"static={e_static}; vars={e_vars}",
+                    )
+                )
+                s.commit()
+                raise HTTPException(status_code=502, detail=f"24h template send failed: {e_vars}")
+
+        s.add(
+            JobAudit(
+                job_name="admin_user_send_24h_template",
+                status="done",
+                payload={
+                    "admin_user_id": getattr(admin_user, "id", None),
+                    "target_user_id": int(user_id),
+                    "to": phone,
+                    "template_sid": template_sid,
+                },
+                result={"sid": sid},
+            )
+        )
+        s.commit()
+
+    return {"status": "sent", "user_id": user_id, "sid": sid, "template_sid": template_sid}
 
 @admin.post("/users/{user_id}/start")
 def admin_start_user(user_id: int, admin_user: User = Depends(_require_admin)):

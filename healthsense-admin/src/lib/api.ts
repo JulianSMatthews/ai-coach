@@ -1669,6 +1669,14 @@ export async function sendAdminUserSms(
   });
 }
 
+export async function sendAdminUser24hTemplate(
+  userId: number,
+): Promise<Record<string, unknown>> {
+  return apiAdmin<Record<string, unknown>>(`/admin/users/${userId}/send-24h-template`, {
+    method: "POST",
+  });
+}
+
 export async function setAdminUserRole(
   userId: number,
   adminRole: "member" | "club_admin" | "global_admin",

@@ -8,6 +8,7 @@ import {
   deleteAdminUser,
   listAdminUsers,
   resetAdminUser,
+  sendAdminUser24hTemplate,
   sendAdminUserSms,
   setAdminUserCoaching,
   setAdminUserPromptState,
@@ -16,7 +17,7 @@ import {
 
 type UserActionsPageProps = {
   params: Promise<{ userId: string }>;
-  searchParams: Promise<{ sms?: string }>;
+  searchParams: Promise<{ sms?: string; reopen?: string }>;
 };
 
 export const dynamic = "force-dynamic";
@@ -165,6 +166,20 @@ async function sendSmsAction(formData: FormData) {
   redirect(`/admin/users/${userId}/actions?sms=${failed ? "failed" : "sent"}`);
 }
 
+async function send24hTemplateAction(formData: FormData) {
+  "use server";
+  const userId = Number(formData.get("user_id") || 0);
+  if (!userId) return;
+  let failed = false;
+  try {
+    await sendAdminUser24hTemplate(userId);
+  } catch {
+    failed = true;
+  }
+  revalidatePath(`/admin/users/${userId}/actions`);
+  redirect(`/admin/users/${userId}/actions?reopen=${failed ? "failed" : "sent"}`);
+}
+
 function ActionCard({
   title,
   description,
@@ -198,6 +213,7 @@ export default async function UserActionsPage({ params, searchParams }: UserActi
   const hasFastMode = typeof user.coaching_fast_minutes === "number" && user.coaching_fast_minutes > 0;
   const fastMinutes: number = hasFastMode ? Number(user.coaching_fast_minutes) : 2;
   const smsStatus = String(resolvedSearchParams?.sms || "").trim().toLowerCase();
+  const reopenStatus = String(resolvedSearchParams?.reopen || "").trim().toLowerCase();
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -230,6 +246,16 @@ export default async function UserActionsPage({ params, searchParams }: UserActi
         {smsStatus === "failed" ? (
           <section className="rounded-2xl border border-[#f2c1b5] bg-[#fef1ee] px-4 py-3 text-sm text-[#8c1d1d]">
             SMS failed to send. Please retry and check server logs for the provider error.
+          </section>
+        ) : null}
+        {reopenStatus === "sent" ? (
+          <section className="rounded-2xl border border-[#b9e2c6] bg-[#ecf8f0] px-4 py-3 text-sm text-[#14532d]">
+            24h+ template sent successfully.
+          </section>
+        ) : null}
+        {reopenStatus === "failed" ? (
+          <section className="rounded-2xl border border-[#f2c1b5] bg-[#fef1ee] px-4 py-3 text-sm text-[#8c1d1d]">
+            24h+ template failed to send. Please retry and check server logs for details.
           </section>
         ) : null}
 
@@ -363,6 +389,21 @@ export default async function UserActionsPage({ params, searchParams }: UserActi
                 className="rounded-full border border-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-[var(--accent)]"
               >
                 send sms
+              </button>
+            </form>
+          </ActionCard>
+
+          <ActionCard
+            title="Send 24h template"
+            description="Send the out-of-session WhatsApp template now (same template used when user is outside the 24h window)."
+          >
+            <form action={send24hTemplateAction}>
+              <input type="hidden" name="user_id" value={userId} />
+              <button
+                type="submit"
+                className="rounded-full border border-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-[var(--accent)]"
+              >
+                send 24h template
               </button>
             </form>
           </ActionCard>
