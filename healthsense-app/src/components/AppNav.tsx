@@ -9,6 +9,8 @@ type AppNavProps = {
   promptBadge?: string;
 };
 
+const APP_LABEL = process.env.NODE_ENV === "development" ? "App (Develop)" : "App";
+
 const makeLinks = (userId: string) => [
   { label: "Home", href: `/progress/${userId}` },
   { label: "Assessment", href: `/assessment/${userId}` },
@@ -34,7 +36,7 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
     <>
       <nav className="sticky top-0 z-30 -mx-6 mb-4 flex flex-col gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:flex-row md:flex-nowrap md:items-center md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
         <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
-          <a href={`/progress/${userId}`} className="flex items-center" aria-label="HealthSense home">
+          <a href={`/progress/${userId}`} className="flex items-center gap-2" aria-label="HealthSense home">
             <img
               src="/healthsense-logo.svg"
               alt="HealthSense"
@@ -45,6 +47,7 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
               alt="HealthSense"
               className="hidden h-8 w-auto md:block"
             />
+            <span className="text-[11px] uppercase tracking-[0.22em] text-[#6b6257]">{APP_LABEL}</span>
           </a>
           <button
             type="button"
@@ -93,8 +96,9 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
           }`}
         >
           <div className="flex items-center justify-between">
-            <a href={`/progress/${userId}`} className="flex items-center" aria-label="HealthSense home">
+            <a href={`/progress/${userId}`} className="flex items-center gap-2" aria-label="HealthSense home">
               <img src="/healthsense-logo.svg" alt="HealthSense" className="h-9 w-auto" />
+              <span className="text-[11px] uppercase tracking-[0.22em] text-[#6b6257]">{APP_LABEL}</span>
             </a>
             <button
               type="button"

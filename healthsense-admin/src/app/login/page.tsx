@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { friendlyAuthError } from "@/lib/authErrors";
 
 export default function LoginPage() {
+  const adminLabel = process.env.NODE_ENV === "development" ? "Admin (Develop)" : "Admin";
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [otpId, setOtpId] = useState<number | null>(null);
@@ -200,7 +201,7 @@ export default function LoginPage() {
         <div>
           <div className="flex items-center gap-3">
             <img src="/healthsense-logo.svg" alt="HealthSense" className="h-[2.0625rem] w-auto" />
-            <span className="text-xs uppercase tracking-[0.3em] text-[#6b6257]">Admin</span>
+            <span className="text-xs uppercase tracking-[0.3em] text-[#6b6257]">{adminLabel}</span>
           </div>
           <h1 className="mt-4 text-3xl">Sign in</h1>
           <p className="mt-2 text-sm text-[#6b6257]">Enter your phone number. We’ll send a code via WhatsApp or SMS.</p>

@@ -115,6 +115,8 @@ export type UserStatusResponse = {
     email?: string;
     consent_given?: boolean;
     consent_at?: string;
+    billing_status?: string | null;
+    billing_provider?: string | null;
   };
   active_domain?: string | null;
   latest_run?: { id?: number; finished_at?: string | null; combined_overall?: number };
@@ -197,6 +199,30 @@ export type LibraryContentResponse = {
       podcast_voice?: string | null;
     }>
   >;
+};
+
+export type BillingPriceOption = {
+  id?: number;
+  plan_id?: number;
+  currency?: string;
+  amount_minor?: number;
+  currency_exponent?: number;
+  interval?: string;
+  interval_count?: number;
+  is_default?: boolean;
+};
+
+export type BillingPlanOption = {
+  id?: number;
+  code?: string;
+  name?: string;
+  description?: string | null;
+  prices?: BillingPriceOption[];
+};
+
+export type BillingPlansResponse = {
+  plans?: BillingPlanOption[];
+  default_price_id?: number | null;
 };
 
 function getBaseUrl() {
@@ -325,4 +351,8 @@ export async function getCoachingHistory(
 
 export async function getLibraryContent(userId: string | number): Promise<LibraryContentResponse> {
   return apiGet<LibraryContentResponse>(`/api/v1/users/${userId}/library`);
+}
+
+export async function getBillingPlans(): Promise<BillingPlansResponse> {
+  return apiGet<BillingPlansResponse>("/api/v1/billing/plans");
 }

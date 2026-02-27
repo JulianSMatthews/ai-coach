@@ -1898,21 +1898,15 @@ def start_combined_assessment(user: User, *, force_intro: bool = False):
         # - consent_given is True
         # - consent_at timestamp exists (new field)
         # - consent_yes_at timestamp exists (legacy field)
+        # - first_assessment_completed exists (assessment could not complete without consent)
         has_consent = bool(getattr(u, "consent_given", False)) \
                       or bool(getattr(u, "consent_at", None)) \
-                      or bool(getattr(u, "consent_yes_at", None))
+                      or bool(getattr(u, "consent_yes_at", None)) \
+                      or bool(getattr(u, "first_assessment_completed", None))
 
-        # If forcing intro, clear consent so we wait for a fresh YES/NO before proceeding.
-        if force_intro:
-            try:
-                u.consent_given = False
-                if hasattr(u, "consent_at"):
-                    setattr(u, "consent_at", None)
-                if hasattr(u, "consent_yes_at"):
-                    setattr(u, "consent_yes_at", None)
-                s.commit()
-            except Exception:
-                s.rollback()
+        # force_intro should restart messaging flow, but must never erase previously
+        # recorded consent on an existing user.
+        if force_intro and not has_consent:
             has_consent = False
 
         # If consent is missing, send intro and wait for YES/NO before proceeding.
@@ -2007,7 +2001,8 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         # If consent hasn't been recorded in DB, interpret this message as the consent response.
         has_consent = bool(getattr(db_user, "consent_given", False)) \
                       or bool(getattr(db_user, "consent_at", None)) \
-                      or bool(getattr(db_user, "consent_yes_at", None))
+                      or bool(getattr(db_user, "consent_yes_at", None)) \
+                      or bool(getattr(db_user, "first_assessment_completed", None))
 
         if not has_consent:
             msg = (user_text or "").strip()

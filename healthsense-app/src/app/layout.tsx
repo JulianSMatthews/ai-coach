@@ -12,8 +12,10 @@ const bodyFont = Source_Sans_3({
   subsets: ["latin"],
 });
 
+const appTitle = process.env.NODE_ENV === "development" ? "HealthSense App (Develop)" : "HealthSense App";
+
 export const metadata: Metadata = {
-  title: "HealthSense App",
+  title: appTitle,
   description: "HealthSense assessment and progress dashboards",
   icons: {
     icon: "/healthsense-mark.svg",

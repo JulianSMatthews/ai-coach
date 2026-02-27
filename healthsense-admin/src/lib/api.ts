@@ -721,6 +721,9 @@ export type TouchpointHistoryItem = {
   delivery_error_code?: string | null;
   delivery_error_description?: string | null;
   delivery_last_callback_at?: string | null;
+  engagement_state?: string | null;
+  reply_received?: boolean | null;
+  reply_at?: string | null;
 };
 
 export type TwilioTemplateItem = {
@@ -1428,6 +1431,7 @@ export async function listTouchpointHistory(
   limit?: number,
   userId?: number,
   touchpoint?: string,
+  delivery?: string,
   start?: string,
   end?: string
 ) {
@@ -1436,6 +1440,7 @@ export async function listTouchpointHistory(
       limit: limit || undefined,
       user_id: userId || undefined,
       touchpoint: touchpoint || undefined,
+      delivery: delivery || undefined,
       start: start || undefined,
       end: end || undefined,
     },
@@ -1607,6 +1612,17 @@ export async function setAdminUserCoaching(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+  });
+}
+
+export async function sendAdminUserSms(
+  userId: number,
+  message: string,
+): Promise<Record<string, unknown>> {
+  return apiAdmin<Record<string, unknown>>(`/admin/users/${userId}/send-sms`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
   });
 }
 

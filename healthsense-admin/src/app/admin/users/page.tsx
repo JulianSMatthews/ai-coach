@@ -8,6 +8,7 @@ import {
   deleteAdminUser,
   listAdminUsers,
   resetAdminUser,
+  sendAdminUserSms,
   setAdminUserCoaching,
   setAdminUserPromptState,
   startAdminUser,
@@ -135,6 +136,15 @@ async function stopCoachingAction(formData: FormData) {
   const userId = Number(formData.get("user_id") || 0);
   if (!userId) return;
   await setAdminUserCoaching(userId, false);
+  revalidatePath("/admin/users");
+}
+
+async function sendSmsAction(formData: FormData) {
+  "use server";
+  const userId = Number(formData.get("user_id") || 0);
+  const message = String(formData.get("sms_message") || "").trim();
+  if (!userId || !message) return;
+  await sendAdminUserSms(userId, message);
   revalidatePath("/admin/users");
 }
 
@@ -320,91 +330,114 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">
                       {coachingOn ? (fastMinutes ? `Fast (${fastMinutes}m)` : "On") : "Off"}
                     </td>
-                    <td className="py-3 whitespace-nowrap">
-                      <div className="flex items-center gap-2 whitespace-nowrap">
-                        <form action={openAppAction} target="_blank">
-                          <input type="hidden" name="user_id" value={u.id} />
-                          <button
-                            type="submit"
-                            className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
-                          >
-                            app
-                          </button>
-                        </form>
-                        <Link
-                          href={`/admin/users/${u.id}`}
-                          className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
-                        >
-                          detail
-                        </Link>
-                        <form action={startUserAction}>
-                          <input type="hidden" name="user_id" value={u.id} />
-                          <button
-                            type="submit"
-                            className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
-                          >
-                            assess
-                          </button>
-                        </form>
-                        <form action={resetUserAction}>
-                          <input type="hidden" name="user_id" value={u.id} />
-                          <input type="hidden" name="confirm" value="reset" />
-                          <button
-                            type="submit"
-                            className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
-                          >
-                            reset
-                          </button>
-                        </form>
-                        <form action={fastCoachUserAction} className="flex items-center gap-1">
-                          <input type="hidden" name="user_id" value={u.id} />
-                          <input
-                            type="number"
-                            name="fast_minutes"
-                            min={1}
-                            max={120}
-                            defaultValue={fastMinutes || 2}
-                            className="w-14 rounded-full border border-[#efe7db] px-2 py-1 text-xs"
-                            aria-label={`Fast coaching minutes for user ${u.id}`}
-                          />
-                          <button
-                            type="submit"
-                            className="rounded-full border border-[var(--accent)] px-3 py-1 text-xs text-[var(--accent)]"
-                          >
-                            fast on
-                          </button>
-                        </form>
-                        <form action={deleteUserAction}>
-                          <input type="hidden" name="user_id" value={u.id} />
-                          <input type="hidden" name="confirm" value="delete" />
-                          <button
-                            type="submit"
-                            className="rounded-full border border-[#c43e1c] px-3 py-1 text-xs text-[#c43e1c]"
-                          >
-                            delete
-                          </button>
-                        </form>
-                        {!coachingOn ? (
-                          <form action={coachUserAction}>
-                            <input type="hidden" name="user_id" value={u.id} />
-                            <button
-                              type="submit"
-                              className="rounded-full border border-[var(--accent)] px-3 py-1 text-xs text-[var(--accent)]"
-                            >
-                              coach
-                            </button>
-                          </form>
-                        ) : (
-                          <form action={stopCoachingAction}>
+                    <td className="py-3 align-top">
+                      <div className="min-w-[420px] rounded-2xl border border-[#efe7db] bg-[#faf8f3] p-3">
+                        <p className="text-[10px] uppercase tracking-[0.2em] text-[#8a8176]">Action</p>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <form action={openAppAction} target="_blank">
                             <input type="hidden" name="user_id" value={u.id} />
                             <button
                               type="submit"
                               className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
                             >
-                              stop
+                              access app
                             </button>
                           </form>
-                        )}
+                          {!coachingOn ? (
+                            <form action={coachUserAction}>
+                              <input type="hidden" name="user_id" value={u.id} />
+                              <button
+                                type="submit"
+                                className="rounded-full border border-[var(--accent)] px-3 py-1 text-xs text-[var(--accent)]"
+                              >
+                                set coaching
+                              </button>
+                            </form>
+                          ) : (
+                            <form action={stopCoachingAction}>
+                              <input type="hidden" name="user_id" value={u.id} />
+                              <button
+                                type="submit"
+                                className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
+                              >
+                                stop coaching
+                              </button>
+                            </form>
+                          )}
+                          <form action={fastCoachUserAction} className="flex items-center gap-1">
+                            <input type="hidden" name="user_id" value={u.id} />
+                            <input
+                              type="number"
+                              name="fast_minutes"
+                              min={1}
+                              max={120}
+                              defaultValue={fastMinutes || 2}
+                              className="w-14 rounded-full border border-[#efe7db] px-2 py-1 text-xs"
+                              aria-label={`Fast coaching minutes for user ${u.id}`}
+                            />
+                            <button
+                              type="submit"
+                              className="rounded-full border border-[var(--accent)] px-3 py-1 text-xs text-[var(--accent)]"
+                            >
+                              fast on
+                            </button>
+                          </form>
+                        </div>
+
+                        <form action={sendSmsAction} className="mt-3 flex items-center gap-2">
+                          <input type="hidden" name="user_id" value={u.id} />
+                          <input
+                            type="text"
+                            name="sms_message"
+                            placeholder="Enter SMS message"
+                            maxLength={500}
+                            className="min-w-0 flex-1 rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-xs"
+                          />
+                          <button
+                            type="submit"
+                            className="rounded-full border border-[var(--accent)] px-3 py-2 text-xs text-[var(--accent)]"
+                          >
+                            send sms
+                          </button>
+                        </form>
+
+                        <div className="mt-3 flex flex-wrap items-center gap-2">
+                          <Link
+                            href={`/admin/users/${u.id}`}
+                            className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
+                          >
+                            detail
+                          </Link>
+                          <form action={startUserAction}>
+                            <input type="hidden" name="user_id" value={u.id} />
+                            <button
+                              type="submit"
+                              className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
+                            >
+                              assess
+                            </button>
+                          </form>
+                          <form action={resetUserAction}>
+                            <input type="hidden" name="user_id" value={u.id} />
+                            <input type="hidden" name="confirm" value="reset" />
+                            <button
+                              type="submit"
+                              className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
+                            >
+                              reset
+                            </button>
+                          </form>
+                          <form action={deleteUserAction}>
+                            <input type="hidden" name="user_id" value={u.id} />
+                            <input type="hidden" name="confirm" value="delete" />
+                            <button
+                              type="submit"
+                              className="rounded-full border border-[#c43e1c] px-3 py-1 text-xs text-[#c43e1c]"
+                            >
+                              delete
+                            </button>
+                          </form>
+                        </div>
                       </div>
                     </td>
                     </tr>

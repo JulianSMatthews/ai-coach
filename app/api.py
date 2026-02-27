@@ -981,6 +981,132 @@ def _log_inbound_direct(user: User, channel: str, body: str, from_raw: str) -> N
         print(f"⚠️ inbound direct-log failed (non-fatal): {e!r}")
 
 
+def _repair_missing_consent_for_completed_user(user: User) -> bool:
+    """
+    Backfill consent flags if a completed assessment exists but consent fields were
+    previously cleared by an older restart path.
+    """
+    user_id = int(getattr(user, "id", 0) or 0)
+    if not user_id:
+        return False
+    if bool(getattr(user, "consent_given", False)) or bool(getattr(user, "consent_at", None)):
+        return False
+    completed_at = getattr(user, "first_assessment_completed", None)
+    if not completed_at:
+        return False
+    try:
+        with SessionLocal() as s:
+            db_user = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+            if not db_user:
+                return False
+            if bool(getattr(db_user, "consent_given", False)) or bool(getattr(db_user, "consent_at", None)):
+                return False
+            db_user.consent_given = True
+            db_user.consent_at = completed_at or datetime.utcnow()
+            s.commit()
+        try:
+            user.consent_given = True
+            user.consent_at = completed_at
+        except Exception:
+            pass
+        print(
+            f"[consent] repaired missing consent for completed user_id={user_id} "
+            f"using first_assessment_completed={completed_at}"
+        )
+        return True
+    except Exception as e:
+        print(f"[consent] repair failed user_id={user_id} err={e!r}")
+        return False
+
+
+def _coaching_day_key_for_user(user_id: int) -> str:
+    day_names = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+    try:
+        with SessionLocal() as s:
+            effective_day = get_virtual_date(s, int(user_id), default_today=datetime.now(UK_TZ).date())
+        return day_names[int(effective_day.weekday())]
+    except Exception:
+        return day_names[datetime.now(UK_TZ).weekday()]
+
+
+def _coaching_touchpoint_sent_today(user_id: int, day_key: str) -> bool:
+    """
+    True when today's coaching touchpoint has already been logged for the user.
+    Includes first_day touchpoints to prevent duplicate same-day sends.
+    """
+    day = str(day_key or "").strip().lower()
+    if day not in {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}:
+        return False
+    now_uk = datetime.now(UK_TZ)
+    day_start_uk = datetime(now_uk.year, now_uk.month, now_uk.day, tzinfo=UK_TZ)
+    day_end_uk = day_start_uk + timedelta(days=1)
+    start_utc = day_start_uk.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+    end_utc = day_end_uk.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+    try:
+        with SessionLocal() as s:
+            row = (
+                s.query(Touchpoint.id)
+                .filter(Touchpoint.user_id == int(user_id))
+                .filter(Touchpoint.type.in_([day, "first_day"]))
+                .filter(func.coalesce(Touchpoint.sent_at, Touchpoint.created_at) >= start_utc)
+                .filter(func.coalesce(Touchpoint.sent_at, Touchpoint.created_at) < end_utc)
+                .order_by(Touchpoint.id.desc())
+                .first()
+            )
+            return bool(row)
+    except Exception:
+        return False
+
+
+def _is_greeting_message(body: str) -> bool:
+    normalized = " ".join(
+        re.sub(r"[^a-z0-9\s]+", " ", (body or "").strip().lower()).split()
+    )
+    return normalized in {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}
+
+
+def _handle_coaching_greeting(user: User, body: str) -> bool:
+    """
+    Coaching greeting behavior:
+    - If today's day flow has not been sent yet: send today's day flow.
+    - If already sent: route to general coach mode.
+    Returns True when handled.
+    """
+    if not _is_greeting_message(body):
+        return False
+    try:
+        with SessionLocal() as s:
+            coaching_enabled = _coaching_enabled_for_user(s, int(user.id))
+    except Exception:
+        coaching_enabled = False
+    if not coaching_enabled:
+        return False
+
+    day_key = _coaching_day_key_for_user(int(user.id))
+    if not _coaching_touchpoint_sent_today(int(user.id), day_key):
+        try:
+            scheduler._run_day_prompt(int(user.id), day_key)  # type: ignore[attr-defined]
+            return True
+        except Exception as e:
+            try:
+                print(f"[coaching] greeting day prompt failed user_id={user.id} day={day_key} err={e!r}")
+            except Exception:
+                pass
+
+    # Today's flow already sent (or fallback path): move into general coach mode.
+    try:
+        if not general_support.has_active_state(int(user.id)):
+            general_support.activate(int(user.id), source=day_key, week_no=None, send_intro=False)
+        general_support.handle_message(user, body)
+        return True
+    except Exception as e:
+        try:
+            print(f"[coaching] greeting general_support failed user_id={user.id} err={e!r}")
+        except Exception:
+            pass
+    return False
+
+
 def _awaiting_unknown_user_name_reply(phone_e164: str) -> bool:
     """
     True only when the last logged message for this phone is the name-capture prompt.
@@ -2422,6 +2548,9 @@ async def twilio_inbound(request: Request):
                 pass
             return Response(content="", media_type="text/plain", status_code=200)
 
+        # Safety backfill for legacy restarts that cleared consent flags incorrectly.
+        _repair_missing_consent_for_completed_user(user)
+
         # Global admin commands (broader scope)
         if body.lower().startswith("global"):
             _log_inbound_direct(user, channel, body, from_raw)
@@ -2477,6 +2606,12 @@ async def twilio_inbound(request: Request):
                     send_whatsapp(to=user.phone, text=msg)
             except Exception:
                 pass
+            return Response(content="", media_type="text/plain", status_code=200)
+
+        # Coaching greeting shortcut:
+        # - send today's day flow if not already sent
+        # - otherwise route to general coach mode
+        if _handle_coaching_greeting(user, body):
             return Response(content="", media_type="text/plain", status_code=200)
 
         # User coaching note command (available anytime)
@@ -2655,7 +2790,8 @@ async def twilio_inbound(request: Request):
             # If no active session but consent not recorded, continue assessment flow to capture consent/name
             has_consent = bool(getattr(user, "consent_given", False)) \
                           or bool(getattr(user, "consent_at", None)) \
-                          or bool(getattr(user, "consent_yes_at", None))
+                          or bool(getattr(user, "consent_yes_at", None)) \
+                          or bool(getattr(user, "first_assessment_completed", None))
             if not has_consent:
                 _continue_assessment_async(user, body)
                 return Response(content="", media_type="text/plain", status_code=200)
@@ -10265,6 +10401,7 @@ def admin_touchpoint_history(
     limit: int = 50,
     user_id: int | None = None,
     touchpoint: str | None = None,
+    delivery: str | None = None,
     start: str | None = None,
     end: str | None = None,
     admin_user: User = Depends(_require_admin),
@@ -10291,6 +10428,10 @@ def admin_touchpoint_history(
     end_dt = _parse_dt(end, is_end=True)
 
     canonical_touchpoint = _canonical_touchpoint_filter(touchpoint)
+    delivery_filter = str(delivery or "").strip().lower()
+    allowed_delivery_filters = {"all", "not_received", "received", "read", "replied", "failed", "pending"}
+    if delivery_filter and delivery_filter not in allowed_delivery_filters:
+        delivery_filter = ""
     message_touchpoint_patterns = _touchpoint_message_like_patterns(canonical_touchpoint)
 
     with SessionLocal() as s:
@@ -10330,6 +10471,80 @@ def admin_touchpoint_history(
             rows = s.execute(select(User).where(User.id.in_(list(user_ids)))).scalars().all()
             user_map = {u.id: u for u in rows if u}
 
+        outbound_rows = [m for m in messages if str(getattr(m, "direction", "") or "").lower() == "outbound"]
+        outbound_user_ids = {int(m.user_id) for m in outbound_rows if getattr(m, "user_id", None)}
+        min_outbound_ts = min(
+            (m.created_at for m in outbound_rows if getattr(m, "created_at", None)),
+            default=None,
+        )
+        inbound_reply_rows: list[MessageLog] = []
+        if outbound_user_ids and min_outbound_ts is not None:
+            in_q = s.query(MessageLog).filter(MessageLog.user_id.in_(list(outbound_user_ids)))
+            in_q = in_q.filter(MessageLog.direction == "inbound")
+            in_q = in_q.filter(MessageLog.created_at >= min_outbound_ts)
+            if end_dt:
+                in_q = in_q.filter(MessageLog.created_at < end_dt)
+            inbound_reply_rows = (
+                in_q.order_by(MessageLog.user_id.asc(), MessageLog.created_at.asc()).limit(max_limit * 40).all()
+            )
+
+    inbound_times_by_user: dict[int, list[datetime]] = {}
+    for row in inbound_reply_rows:
+        uid = int(getattr(row, "user_id", 0) or 0)
+        ts = getattr(row, "created_at", None)
+        if not uid or not ts:
+            continue
+        inbound_times_by_user.setdefault(uid, []).append(ts)
+    for uid in list(inbound_times_by_user.keys()):
+        inbound_times_by_user[uid] = sorted(inbound_times_by_user[uid])
+
+    def _reply_after_outbound(uid: int | None, outbound_ts: datetime | None) -> tuple[bool, str | None]:
+        if not uid or not outbound_ts:
+            return (False, None)
+        timeline = inbound_times_by_user.get(int(uid)) or []
+        if not timeline:
+            return (False, None)
+        idx = bisect.bisect_right(timeline, outbound_ts)
+        if idx >= len(timeline):
+            return (False, None)
+        reply_ts = timeline[idx]
+        return (True, reply_ts.isoformat())
+
+    def _engagement_state_for_message(
+        *,
+        direction: str | None,
+        delivery_state: str | None,
+        delivery_status: str | None,
+        reply_found: bool,
+    ) -> str:
+        if str(direction or "").lower() != "outbound":
+            return "inbound"
+        if reply_found:
+            return "replied"
+        status_val = str(delivery_status or "").strip().lower()
+        if status_val == "read":
+            return "read"
+        if status_val == "delivered":
+            return "received"
+        state_val = str(delivery_state or "").strip().lower()
+        if state_val == "failed":
+            return "failed"
+        if state_val in {"attempted", "unknown"}:
+            return "pending"
+        return "pending"
+
+    def _matches_delivery_filter(filter_val: str, engagement_state: str, direction: str | None) -> bool:
+        f = str(filter_val or "").strip().lower()
+        if not f or f == "all":
+            return True
+        if str(direction or "").lower() != "outbound":
+            return False
+        if f == "not_received":
+            return engagement_state in {"failed", "pending"}
+        if f == "received":
+            return engagement_state in {"received", "read", "replied"}
+        return engagement_state == f
+
     def _preview(text: str | None) -> str:
         if not text:
             return ""
@@ -10343,31 +10558,41 @@ def admin_touchpoint_history(
         return len(cleaned) > 180
 
     items: list[dict[str, object]] = []
-    for tp in touchpoints:
-        ts = tp.sent_at or tp.created_at
-        user = user_map.get(tp.user_id) if tp.user_id else None
-        name = " ".join([str(getattr(user, "first_name", "") or "").strip(), str(getattr(user, "surname", "") or "").strip()]).strip()
-        items.append(
-            {
-                "id": tp.id,
-                "kind": "touchpoint",
-                "ts": ts.isoformat() if ts else None,
-                "touchpoint_type": tp.type,
-                "week_no": tp.week_no,
-                "channel": tp.channel,
-                "audio_url": tp.audio_url,
-                "preview": _preview(tp.generated_text),
-                "full_text": (tp.generated_text or "").strip(),
-                "is_truncated": _is_truncated(tp.generated_text),
-                "user_id": tp.user_id,
-                "user_name": name or None,
-                "phone": getattr(user, "phone", None) if user else None,
-            }
-        )
+    if delivery_filter in {"", "all"}:
+        for tp in touchpoints:
+            ts = tp.sent_at or tp.created_at
+            user = user_map.get(tp.user_id) if tp.user_id else None
+            name = " ".join([str(getattr(user, "first_name", "") or "").strip(), str(getattr(user, "surname", "") or "").strip()]).strip()
+            items.append(
+                {
+                    "id": tp.id,
+                    "kind": "touchpoint",
+                    "ts": ts.isoformat() if ts else None,
+                    "touchpoint_type": tp.type,
+                    "week_no": tp.week_no,
+                    "channel": tp.channel,
+                    "audio_url": tp.audio_url,
+                    "preview": _preview(tp.generated_text),
+                    "full_text": (tp.generated_text or "").strip(),
+                    "is_truncated": _is_truncated(tp.generated_text),
+                    "user_id": tp.user_id,
+                    "user_name": name or None,
+                    "phone": getattr(user, "phone", None) if user else None,
+                }
+            )
     for msg in messages:
         if canonical_touchpoint == "out_of_session" and not _is_out_of_session_message(getattr(msg, "meta", None), getattr(msg, "text", None)):
             continue
         delivery = _message_delivery_from_meta(getattr(msg, "meta", None))
+        reply_found, reply_at = _reply_after_outbound(getattr(msg, "user_id", None), getattr(msg, "created_at", None))
+        engagement_state = _engagement_state_for_message(
+            direction=getattr(msg, "direction", None),
+            delivery_state=str(delivery.get("delivery_state") or ""),
+            delivery_status=str(delivery.get("delivery_status") or ""),
+            reply_found=reply_found,
+        )
+        if not _matches_delivery_filter(delivery_filter, engagement_state, getattr(msg, "direction", None)):
+            continue
         user = user_map.get(msg.user_id) if msg.user_id else None
         name = " ".join([str(getattr(user, "first_name", "") or "").strip(), str(getattr(user, "surname", "") or "").strip()]).strip()
         inferred_tp = "out_of_session" if _is_out_of_session_message(getattr(msg, "meta", None), getattr(msg, "text", None)) else _coaching_day_from_message_text(getattr(msg, "text", None))
@@ -10390,6 +10615,9 @@ def admin_touchpoint_history(
                 "delivery_error_code": delivery.get("delivery_error_code"),
                 "delivery_error_description": delivery.get("delivery_error_description"),
                 "delivery_last_callback_at": delivery.get("delivery_last_callback_at"),
+                "engagement_state": engagement_state,
+                "reply_received": bool(reply_found),
+                "reply_at": reply_at,
             }
         )
 
@@ -13301,6 +13529,64 @@ def admin_user_coaching(user_id: int, payload: dict, admin_user: User = Depends(
         "user_id": user_id,
         "fast_minutes": fast_minutes if enabled else None,
     }
+
+@admin.post("/users/{user_id}/send-sms")
+def admin_user_send_sms(user_id: int, payload: dict, admin_user: User = Depends(_require_admin)):
+    """
+    Send an ad-hoc SMS to a user from Admin User Management.
+    Body: { "message": "..." }
+    """
+    message = str(payload.get("message") or payload.get("text") or "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="message required")
+    if len(message) > 500:
+        raise HTTPException(status_code=400, detail="message must be 500 characters or fewer")
+
+    with SessionLocal() as s:
+        u = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not u:
+            raise HTTPException(status_code=404, detail="user not found")
+        _ensure_club_scope(admin_user, u)
+        phone = str(getattr(u, "phone", "") or "").strip()
+        if not phone:
+            raise HTTPException(status_code=400, detail="user has no phone number")
+        try:
+            sid = send_sms(to=phone, text=message)
+        except Exception as e:
+            s.add(
+                JobAudit(
+                    job_name="admin_user_send_sms",
+                    status="error",
+                    payload={
+                        "admin_user_id": getattr(admin_user, "id", None),
+                        "target_user_id": int(user_id),
+                        "to": phone,
+                        "message_len": len(message),
+                    },
+                    error=str(e),
+                )
+            )
+            s.commit()
+            raise HTTPException(status_code=502, detail=f"sms send failed: {e}")
+
+        s.add(
+            JobAudit(
+                job_name="admin_user_send_sms",
+                status="done",
+                payload={
+                    "admin_user_id": getattr(admin_user, "id", None),
+                    "target_user_id": int(user_id),
+                    "to": phone,
+                    "message_len": len(message),
+                },
+                result={
+                    "sid": sid,
+                },
+            )
+        )
+        s.commit()
+
+    return {"status": "sent", "user_id": user_id, "sid": sid}
 
 @admin.post("/users/{user_id}/start")
 def admin_start_user(user_id: int, admin_user: User = Depends(_require_admin)):

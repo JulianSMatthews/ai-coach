@@ -639,53 +639,90 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
             </section>
 
             <section className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Coaching day flow funnel</p>
-              <p className="mt-2 text-sm text-[#6b6257]">
-                Monday to Sunday progression for coaching touchpoints. Width is % of Monday starters.
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Day-by-day engagement</p>
+              <p className="mt-1 text-xs text-[#8a8176]">
+                Attempted touchpoints, Twilio delivery outcomes, 24-hour replies, and media usage by day.
               </p>
-              {!coachingFunnelSteps.length ? (
-                <p className="mt-4 text-sm text-[#8a8176]">No coaching funnel data in this window.</p>
-              ) : (
-                <div className="mt-4 space-y-3">
-                  {coachingFunnelSteps.map((step, idx) => (
-                    <div key={step.key || `${idx}`} className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-3">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div>
-                          <div className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                            {idx + 1}. {step.label || step.key || "step"}
-                          </div>
-                          <div className="mt-1 text-xs text-[#8a8176]">{step.description || "—"}</div>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-lg font-semibold">{step.count ?? 0}</div>
-                          <div className="text-xs text-[#6b6257]">
-                            {step.percent_of_start != null ? `${formatNum(step.percent_of_start)}% of Monday starters` : "—"}
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-3 h-3 w-full rounded-full bg-[#ece4d8]">
-                        <div className="h-3 rounded-full bg-[#1d6a4f]" style={{ width: barWidth(step.percent_of_start) }} />
-                      </div>
-                      <div className="mt-2 flex flex-wrap gap-4 text-xs text-[#6b6257]">
-                        <span>
-                          Conversion from previous:{" "}
-                          {idx === 0
-                            ? "—"
-                            : step.conversion_pct_from_prev != null
-                              ? `${formatNum(step.conversion_pct_from_prev)}%`
-                              : "—"}
-                        </span>
-                        <span>Drop-off from previous: {idx === 0 ? "—" : step.dropoff_from_prev ?? 0}</span>
-                      </div>
-                    </div>
-                  ))}
+              <div className="mt-3 rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">24h+ template delivery</span>
+                  <span
+                    className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.2em] ${stateBadgeClass(
+                      health?.messaging?.out_of_session_template?.failure_state,
+                    )}`}
+                  >
+                    {(health?.messaging?.out_of_session_template?.failure_state || "unknown").toUpperCase()}
+                  </span>
                 </div>
-              )}
+                <div className="mt-1 text-xs text-[#6b6257]">
+                  sent {health?.messaging?.out_of_session_template?.attempted_messages ?? 0} | received{" "}
+                  {health?.messaging?.out_of_session_template?.delivery_confirmed ?? 0} | failed{" "}
+                  {health?.messaging?.out_of_session_template?.failed_undelivered ?? 0} | pending{" "}
+                  {health?.messaging?.out_of_session_template?.pending_unknown ?? 0}
+                </div>
+                <div className="mt-1 text-xs text-[#8a8176]">
+                  failure rate{" "}
+                  {health?.messaging?.out_of_session_template?.failure_rate_pct != null
+                    ? `${formatNum(health.messaging.out_of_session_template.failure_rate_pct)}%`
+                    : "—"}
+                  {" "}· callbacks matched {health?.messaging?.out_of_session_template?.callbacks_matched ?? 0}
+                </div>
+              </div>
+              <div className="mt-3 space-y-2">
+                {!coachingDayStats.length ? (
+                  <p className="text-sm text-[#8a8176]">No day-level coaching data in this window.</p>
+                ) : (
+                  coachingDayStats.map((row) => {
+                    const attempted = Math.max(
+                      0,
+                      Number(row.attempted_messages ?? row.sent ?? row.attempted_current_logic ?? 0) || 0,
+                    );
+                    const received = Math.max(0, Number(row.delivery_confirmed ?? 0) || 0);
+                    const failed = Math.max(0, Number(row.failed_undelivered ?? 0) || 0);
+                    const pendingRaw = Math.max(0, Number(row.callback_pending_unknown ?? 0) || 0);
+                    const pending = Math.max(0, attempted - received - failed, pendingRaw);
+                    const receivedPct = attempted > 0 ? (received / attempted) * 100 : 0;
+                    const failedPct = attempted > 0 ? (failed / attempted) * 100 : 0;
+                    const pendingPct = attempted > 0 ? (pending / attempted) * 100 : 0;
+                    return (
+                      <div key={`day-${row.day || "unknown"}`} className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.day || "unknown"}</span>
+                          <span className="text-sm font-semibold">
+                            received {received}/{attempted} ({attempted ? `${formatNum(receivedPct)}%` : "—"})
+                          </span>
+                        </div>
+                        <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-[#ece4d8]">
+                          <div className="flex h-full w-full">
+                            <div className="bg-[#1d6a4f]" style={{ width: `${receivedPct}%` }} />
+                            <div className="bg-[#c43d3d]" style={{ width: `${failedPct}%` }} />
+                            <div className="bg-[#b6ad9f]" style={{ width: `${pendingPct}%` }} />
+                          </div>
+                        </div>
+                        <div className="mt-1 text-xs text-[#6b6257]">
+                          sent {attempted} | received {received} | failed {failed} | pending {pending}
+                        </div>
+                        <div className="mt-1 text-xs text-[#6b6257]">
+                          attempted (current logic) {row.attempted_current_logic ?? row.sent ?? 0}
+                        </div>
+                        <div className="mt-1 text-xs text-[#6b6257]">
+                          users {row.users ?? 0} | replies {row.replied_24h ?? 0} (
+                          {row.reply_rate_pct != null ? `${formatNum(row.reply_rate_pct)}%` : "—"})
+                        </div>
+                        <div className="mt-1 text-xs text-[#8a8176]">
+                          with audio {row.with_audio ?? 0} (
+                          {row.audio_rate_pct != null ? `${formatNum(row.audio_rate_pct)}%` : "—"})
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
             </section>
 
             <section className="grid gap-4 xl:grid-cols-2">
               <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Multi-week funnel</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Weekly flow funnel</p>
                 <p className="mt-1 text-xs text-[#8a8176]">
                   Per-week conversion through Monday → Sunday so you can spot week-on-week retention drift.
                 </p>
@@ -722,40 +759,48 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
               </div>
 
               <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Day-by-day engagement</p>
-                <p className="mt-1 text-xs text-[#8a8176]">
-                  Attempted touchpoints, Twilio delivery outcomes, 24-hour replies, and media usage by day.
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Coaching day flow funnel</p>
+                <p className="mt-2 text-sm text-[#6b6257]">
+                  Monday to Sunday progression for coaching touchpoints. Width is % of Monday starters.
                 </p>
-                <div className="mt-3 space-y-2">
-                  {!coachingDayStats.length ? (
-                    <p className="text-sm text-[#8a8176]">No day-level coaching data in this window.</p>
-                  ) : (
-                    coachingDayStats.map((row) => (
-                      <div key={`day-${row.day || "unknown"}`} className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.day || "unknown"}</span>
-                          <span className="text-sm font-semibold">{row.sent ?? 0} sent</span>
+                {!coachingFunnelSteps.length ? (
+                  <p className="mt-4 text-sm text-[#8a8176]">No coaching funnel data in this window.</p>
+                ) : (
+                  <div className="mt-4 space-y-3">
+                    {coachingFunnelSteps.map((step, idx) => (
+                      <div key={step.key || `${idx}`} className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-3">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                              {idx + 1}. {step.label || step.key || "step"}
+                            </div>
+                            <div className="mt-1 text-xs text-[#8a8176]">{step.description || "—"}</div>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-lg font-semibold">{step.count ?? 0}</div>
+                            <div className="text-xs text-[#6b6257]">
+                              {step.percent_of_start != null ? `${formatNum(step.percent_of_start)}% of Monday starters` : "—"}
+                            </div>
+                          </div>
                         </div>
-                        <div className="mt-1 text-xs text-[#6b6257]">
-                          attempted (current logic) {row.attempted_current_logic ?? row.sent ?? 0} | delivery confirmed{" "}
-                          {row.delivery_confirmed ?? 0} | failed/undelivered {row.failed_undelivered ?? 0}
+                        <div className="mt-3 h-3 w-full rounded-full bg-[#ece4d8]">
+                          <div className="h-3 rounded-full bg-[#1d6a4f]" style={{ width: barWidth(step.percent_of_start) }} />
                         </div>
-                        <div className="mt-1 text-xs text-[#6b6257]">
-                          callback pending/unknown {row.callback_pending_unknown ?? 0} | attempted messages{" "}
-                          {row.attempted_messages ?? 0}
-                        </div>
-                        <div className="mt-1 text-xs text-[#6b6257]">
-                          users {row.users ?? 0} | replies {row.replied_24h ?? 0} (
-                          {row.reply_rate_pct != null ? `${formatNum(row.reply_rate_pct)}%` : "—"})
-                        </div>
-                        <div className="mt-1 text-xs text-[#8a8176]">
-                          with audio {row.with_audio ?? 0} (
-                          {row.audio_rate_pct != null ? `${formatNum(row.audio_rate_pct)}%` : "—"})
+                        <div className="mt-2 flex flex-wrap gap-4 text-xs text-[#6b6257]">
+                          <span>
+                            Conversion from previous:{" "}
+                            {idx === 0
+                              ? "—"
+                              : step.conversion_pct_from_prev != null
+                                ? `${formatNum(step.conversion_pct_from_prev)}%`
+                                : "—"}
+                          </span>
+                          <span>Drop-off from previous: {idx === 0 ? "—" : step.dropoff_from_prev ?? 0}</span>
                         </div>
                       </div>
-                    ))
-                  )}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </section>
           </>
