@@ -382,6 +382,16 @@ export type AssessmentHealthPayload = {
       count?: number;
       description?: string | null;
     }>;
+    out_of_session_template?: {
+      attempted_messages?: number;
+      callbacks_matched?: number;
+      delivery_confirmed?: number;
+      failed_undelivered?: number;
+      attempted_only?: number;
+      pending_unknown?: number;
+      failure_rate_pct?: number | null;
+      failure_state?: string;
+    };
     twilio_failed_messages?: Array<{
       callback_at?: string | null;
       sid?: string | null;
@@ -553,14 +563,28 @@ export type AssessmentHealthPayload = {
       current_streak_days_p95?: number | null;
       current_streak_days_max?: number | null;
     };
+    delivery?: {
+      attempted_current_logic?: number;
+      attempted_messages?: number;
+      delivery_confirmed?: number;
+      failed_undelivered?: number;
+      callback_pending_unknown?: number;
+    };
     day_stats?: Array<{
       day?: string;
       sent?: number;
+      attempted_current_logic?: number;
       users?: number;
       replied_24h?: number;
       reply_rate_pct?: number | null;
       with_audio?: number;
       audio_rate_pct?: number | null;
+      attempted_messages?: number;
+      delivery_confirmed?: number;
+      failed_undelivered?: number;
+      callback_pending_unknown?: number;
+      delivery_confirmed_rate_pct?: number | null;
+      failed_undelivered_rate_pct?: number | null;
     }>;
   };
   alerts?: AssessmentHealthAlert[];
@@ -692,6 +716,11 @@ export type TouchpointHistoryItem = {
   user_id?: number | null;
   user_name?: string | null;
   phone?: string | null;
+  delivery_state?: string | null;
+  delivery_status?: string | null;
+  delivery_error_code?: string | null;
+  delivery_error_description?: string | null;
+  delivery_last_callback_at?: string | null;
 };
 
 export type TwilioTemplateItem = {
@@ -706,6 +735,10 @@ export type TwilioTemplateItem = {
   payload?: Record<string, unknown> | null;
   last_synced_at?: string | null;
   content_types?: string[] | null;
+  approval_status?: string | null;
+  approval_detail?: string | null;
+  approval_source?: string | null;
+  approval_checked_at?: string | null;
 };
 
 export type MessagingSettings = {
@@ -747,6 +780,12 @@ export type CoachingScheduledItem = {
   first_day_sent_at?: string | null;
   first_day_override?: boolean | null;
   first_day_catchup?: boolean | null;
+  last_message_at?: string | null;
+  last_delivery_state?: string | null;
+  last_delivery_status?: string | null;
+  last_delivery_error_code?: string | null;
+  last_delivery_error_description?: string | null;
+  last_delivery_last_callback_at?: string | null;
 };
 
 export type CoachingScheduledSummary = {
@@ -900,6 +939,13 @@ export type BillingCatalogPayload = {
     mode?: string | null;
     api_base?: string | null;
     publishable_key_configured?: boolean;
+    products?: Array<{
+      id?: string | null;
+      name?: string | null;
+      default_price?: string | null;
+      active?: boolean;
+    }>;
+    products_error?: string | null;
   };
 };
 

@@ -342,6 +342,138 @@ def get_twilio_content_types(sid: str | None) -> list[str]:
     return sorted([k for k in types.keys() if k])
 
 
+def _normalize_approval_status(raw: str | None) -> str | None:
+    val = str(raw or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if not val:
+        return None
+    if val in {"approved", "active", "accepted", "live"}:
+        return "approved"
+    if val in {"pending", "submitted", "in_review", "queued", "received"}:
+        return "pending"
+    if val in {"rejected", "denied", "failed", "declined"}:
+        return "rejected"
+    if val in {"not_submitted", "unsubmitted", "notrequested", "not_requested"}:
+        return "not_submitted"
+    return None
+
+
+def _extract_approval_status(payload: object, *, channel: str = "whatsapp") -> tuple[str | None, str | None]:
+    stack: list[object] = [payload]
+    seen: set[int] = set()
+    channel_l = str(channel or "").strip().lower()
+
+    while stack:
+        current = stack.pop()
+        if isinstance(current, list):
+            for item in current:
+                if isinstance(item, (dict, list)):
+                    stack.append(item)
+            continue
+        if not isinstance(current, dict):
+            continue
+        oid = id(current)
+        if oid in seen:
+            continue
+        seen.add(oid)
+
+        for value in current.values():
+            if isinstance(value, (dict, list)):
+                stack.append(value)
+
+        # If a channel field is present and not WhatsApp, ignore this block.
+        named_channel = str(
+            current.get("channel")
+            or current.get("name")
+            or current.get("provider")
+            or ""
+        ).strip().lower()
+        if channel_l and named_channel and channel_l not in named_channel:
+            continue
+
+        raw_status = (
+            current.get("status")
+            or current.get("approval_status")
+            or current.get("submission_status")
+            or current.get("channel_status")
+            or current.get("state")
+        )
+        normalized = _normalize_approval_status(raw_status if isinstance(raw_status, str) else str(raw_status or ""))
+        if normalized:
+            detail = str(
+                current.get("rejection_reason")
+                or current.get("reason")
+                or current.get("error_message")
+                or current.get("message")
+                or ""
+            ).strip() or None
+            return normalized, detail
+
+    return None, None
+
+
+def get_twilio_template_approval_status(template_sid: str | None, *, channel: str = "whatsapp") -> dict:
+    sid = str(template_sid or "").strip()
+    if not sid:
+        return {
+            "status": "missing_sid",
+            "detail": "Template SID missing.",
+            "source": "none",
+            "checked_at": datetime.utcnow().isoformat(),
+        }
+
+    checked_at = datetime.utcnow().isoformat()
+    last_error: str | None = None
+
+    for path in (f"Content/{sid}/ApprovalRequests/{channel}", f"Content/{sid}/ApprovalRequests"):
+        try:
+            data = _twilio_content_request("GET", path)
+        except urllib.error.HTTPError as e:
+            # 404 usually means no approval request exists yet for this content/channel.
+            if int(getattr(e, "code", 0) or 0) == 404:
+                continue
+            last_error = f"{path}: {e}"
+            continue
+        except Exception as e:
+            last_error = f"{path}: {e}"
+            continue
+
+        status, detail = _extract_approval_status(data, channel=channel)
+        if status:
+            return {
+                "status": status,
+                "detail": detail,
+                "source": path,
+                "checked_at": checked_at,
+            }
+
+    try:
+        detail_payload = _get_content_detail(sid)
+    except Exception as e:
+        detail_payload = {}
+        last_error = str(e)
+    status, detail = _extract_approval_status(detail_payload, channel=channel)
+    if status:
+        return {
+            "status": status,
+            "detail": detail,
+            "source": "Content detail",
+            "checked_at": checked_at,
+        }
+    if detail_payload:
+        return {
+            "status": "not_submitted",
+            "detail": "No WhatsApp approval request found for this template.",
+            "source": "inferred",
+            "checked_at": checked_at,
+        }
+    return {
+        "status": "unknown",
+        "detail": last_error or "Approval status unavailable.",
+        "source": "error",
+        "checked_at": checked_at,
+    }
+
+
 def _actions_need_upgrade(detail: dict) -> bool:
     types = detail.get("types") or {}
     qr = types.get("twilio/quick-reply") or {}

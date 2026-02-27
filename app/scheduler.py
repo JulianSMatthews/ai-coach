@@ -33,6 +33,7 @@ from .nudges import (
     send_message,
     send_whatsapp_template,
     _get_session_reopen_sid,
+    ensure_quick_reply_templates,
     build_session_reopen_template_variables,
     get_default_session_reopen_message_text,
 )
@@ -282,11 +283,23 @@ def _last_inbound_at(session, user_id: int) -> datetime | None:
     return row[0] if row else None
 
 
+def _to_utc_naive(dt: datetime | None) -> datetime | None:
+    if not isinstance(dt, datetime):
+        return None
+    if dt.tzinfo is None:
+        return dt
+    try:
+        return dt.astimezone(zoneinfo.ZoneInfo("UTC")).replace(tzinfo=None)
+    except Exception:
+        return dt.replace(tzinfo=None)
+
+
 def _parse_pref_datetime(value: str | None) -> datetime | None:
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value)
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return _to_utc_naive(parsed)
     except Exception:
         return None
 
@@ -311,24 +324,51 @@ def send_out_of_session_messages() -> None:
         reopen_message = (message or "").strip() or get_default_session_reopen_message_text()
         template_sid = _get_session_reopen_sid()
         if not template_sid:
-            debug_log("out-of-session skipped: missing TWILIO_REOPEN_CONTENT_SID", tag="scheduler")
-            return
+            try:
+                ensure_quick_reply_templates(always_log=False)
+            except Exception:
+                pass
+            template_sid = _get_session_reopen_sid()
+            if not template_sid:
+                debug_log("out-of-session skipped: missing TWILIO_REOPEN_CONTENT_SID", tag="scheduler")
+                return
         users = s.query(User).all()
+        stats = {
+            "users": 0,
+            "missing_phone": 0,
+            "onboarding_active": 0,
+            "coaching_off": 0,
+            "no_inbound": 0,
+            "inside_window": 0,
+            "cooldown": 0,
+            "sent": 0,
+            "failed": 0,
+        }
         for user in users:
+            stats["users"] += 1
             if not getattr(user, "phone", None):
+                stats["missing_phone"] += 1
                 continue
             if _user_onboarding_active(user.id):
+                stats["onboarding_active"] += 1
                 continue
             if not _coaching_enabled(s, user.id):
+                stats["coaching_off"] += 1
                 continue
             last_inbound = _last_inbound_at(s, user.id)
             if not last_inbound:
+                last_inbound = getattr(user, "last_inbound_message_at", None)
+            last_inbound = _to_utc_naive(last_inbound)
+            if not last_inbound:
+                stats["no_inbound"] += 1
                 continue
             if now - last_inbound < timedelta(hours=after_hours):
+                stats["inside_window"] += 1
                 continue
             pref = _get_user_pref(s, user.id, "out_of_session_last_sent_at")
             last_sent = _parse_pref_datetime(pref.value if pref else None)
             if last_sent and now - last_sent < timedelta(hours=cooldown_hours):
+                stats["cooldown"] += 1
                 continue
             try:
                 send_whatsapp_template(
@@ -343,8 +383,11 @@ def send_out_of_session_messages() -> None:
                 )
                 _set_user_pref(s, user.id, "out_of_session_last_sent_at", now.isoformat())
                 s.commit()
+                stats["sent"] += 1
             except Exception as e:
+                stats["failed"] += 1
                 debug_log("out-of-session send failed", {"user_id": user.id, "error": repr(e)}, tag="scheduler")
+        debug_log("out-of-session pass", stats, tag="scheduler")
 
 
 def _tz(user: User) -> zoneinfo.ZoneInfo:
@@ -522,16 +565,29 @@ def ensure_global_schedule_defaults() -> None:
 
 
 def _coaching_enabled(session, user_id: int) -> bool:
-    pref = (
+    # Prefer the canonical key first; fall back to legacy only if missing.
+    # This avoids false negatives when both keys exist with conflicting values.
+    coaching_pref = (
         session.query(UserPreference)
         .filter(
             UserPreference.user_id == user_id,
-            UserPreference.key.in_(AUTO_PROMPT_PREF_KEYS),
+            UserPreference.key == "coaching",
         )
-        .order_by(UserPreference.updated_at.desc())  # prefer most recent if both exist
+        .order_by(UserPreference.updated_at.desc())
         .first()
     )
-    return bool(pref and str(pref.value).strip() == "1")
+    if coaching_pref is not None:
+        return str(coaching_pref.value or "").strip() == "1"
+    legacy_pref = (
+        session.query(UserPreference)
+        .filter(
+            UserPreference.user_id == user_id,
+            UserPreference.key == "auto_daily_prompts",
+        )
+        .order_by(UserPreference.updated_at.desc())
+        .first()
+    )
+    return bool(legacy_pref and str(legacy_pref.value or "").strip() == "1")
 
 
 def _user_fast_minutes(session, user_id: int) -> int | None:

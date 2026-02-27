@@ -13,6 +13,23 @@ import { revalidatePath } from "next/cache";
 
 export const dynamic = "force-dynamic";
 
+function approvalBadgeClass(status?: string | null): string {
+  const key = String(status || "").toLowerCase();
+  if (key === "approved") return "border-[#16824a] bg-[#edf8f1] text-[#16824a]";
+  if (key === "pending") return "border-[#b56e0a] bg-[#fff7ea] text-[#b56e0a]";
+  if (key === "rejected") return "border-[#c43e1c] bg-[#fff5f2] text-[#c43e1c]";
+  if (key === "not_submitted" || key === "missing_sid") return "border-[#c43e1c] bg-[#fff5f2] text-[#c43e1c]";
+  return "border-[#efe7db] bg-[#fdfaf4] text-[#6b6257]";
+}
+
+function approvalLabel(status?: string | null): string {
+  const key = String(status || "").trim().toLowerCase();
+  if (!key) return "Unknown";
+  if (key === "not_submitted") return "Not submitted";
+  if (key === "missing_sid") return "Missing SID";
+  return key.replaceAll("_", " ");
+}
+
 async function syncTemplatesAction() {
   "use server";
   await syncTwilioTemplates();
@@ -200,7 +217,23 @@ export default async function MessagingPage() {
                   Template SID missing
                 </span>
               )}
+              <span
+                className={`rounded-full border px-3 py-1 text-xs uppercase tracking-[0.2em] ${approvalBadgeClass(
+                  sessionReopenTemplate?.approval_status,
+                )}`}
+              >
+                WhatsApp approval: {approvalLabel(sessionReopenTemplate?.approval_status)}
+              </span>
             </div>
+            {sessionReopenTemplate?.approval_detail ? (
+              <p className="text-xs text-[#6b6257]">{sessionReopenTemplate.approval_detail}</p>
+            ) : null}
+            {(sessionReopenTemplate?.approval_source || sessionReopenTemplate?.approval_checked_at) ? (
+              <p className="text-xs text-[#8a8176]">
+                Source: {sessionReopenTemplate?.approval_source || "—"}
+                {sessionReopenTemplate?.approval_checked_at ? ` · checked ${sessionReopenTemplate.approval_checked_at}` : ""}
+              </p>
+            ) : null}
             <div className="rounded-2xl border border-[#efe7db] bg-[#faf7f1] p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Message body preview</p>
               <p className="mt-2 text-sm text-[#1e1b16]">{previewBody}</p>

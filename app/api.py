@@ -16,6 +16,7 @@ import urllib.request
 import urllib.error
 import secrets
 import hashlib
+import hmac
 import base64
 import re
 import subprocess
@@ -93,6 +94,12 @@ from .models import (
     PreferenceInferenceAudit,
     BillingPlan,
     BillingPlanPrice,
+    BillingCustomer,
+    BillingSubscription,
+    BillingSubscriptionItem,
+    BillingInvoice,
+    BillingTransaction,
+    BillingWebhookEvent,
 )  # ensure model registered for metadata
 from . import monday, wednesday, thursday, friday, saturday, weekflow, tuesday, sunday, kickoff, admin_routes, general_support
 from . import psych
@@ -2607,6 +2614,28 @@ async def twilio_inbound(request: Request):
             )
         )
         if looks_like_marketing_cta:
+            completed_assessment = bool(getattr(user, "first_assessment_completed", None))
+            coaching_enabled = False
+            try:
+                with SessionLocal() as s:
+                    coaching_enabled = _coaching_enabled_for_user(s, int(user.id))
+            except Exception:
+                coaching_enabled = False
+            # Do not restart assessment for members already in coaching or already completed.
+            if completed_assessment or coaching_enabled:
+                try:
+                    print(
+                        "[api] marketing_cta_ignored"
+                        f" user_id={user.id}"
+                        f" normalized_body={normalized_body!r}"
+                        f" completed_assessment={completed_assessment}"
+                        f" coaching_enabled={coaching_enabled}"
+                    )
+                except Exception:
+                    pass
+                if normalized_body in {"hi", "hello", "start", "send", "hit start", "hit send", "tap start", "tap send"}:
+                    send_menu_options(user)
+                return Response(content="", media_type="text/plain", status_code=200)
             # Clear any stale active session and force fresh consent/name capture
             _start_assessment_async(user, force_intro=True)
             return Response(content="", media_type="text/plain", status_code=200)
@@ -3485,6 +3514,46 @@ def api_auth_me(request: Request):
     return payload
 
 
+@api_v1.get("/billing/plans")
+def api_billing_plans(request: Request):
+    session_user = _get_session_user(request)
+    if not session_user:
+        raise HTTPException(status_code=401, detail="session required")
+    with SessionLocal() as s:
+        rows = (
+            s.query(BillingPlanPrice, BillingPlan)
+            .join(BillingPlan, BillingPlanPrice.plan_id == BillingPlan.id)
+            .filter(BillingPlan.is_active == True, BillingPlanPrice.is_active == True)
+            .filter(BillingPlanPrice.stripe_price_id.isnot(None))
+            .order_by(
+                BillingPlan.code.asc(),
+                BillingPlanPrice.is_default.desc(),
+                BillingPlanPrice.amount_minor.asc(),
+                BillingPlanPrice.id.asc(),
+            )
+            .all()
+        )
+    plans_by_id: dict[int, BillingPlan] = {}
+    prices_by_plan: dict[int, list[BillingPlanPrice]] = {}
+    default_price_id: int | None = None
+    for price_row, plan_row in rows:
+        plan_id = int(plan_row.id)
+        plans_by_id[plan_id] = plan_row
+        prices_by_plan.setdefault(plan_id, []).append(price_row)
+        if default_price_id is None and bool(getattr(price_row, "is_default", False)):
+            default_price_id = int(price_row.id)
+    if default_price_id is None and rows:
+        default_price_id = int(rows[0][0].id)
+    plans = [
+        _billing_plan_public_payload(plan_row, prices_by_plan.get(plan_id, []))
+        for plan_id, plan_row in sorted(plans_by_id.items(), key=lambda item: str(item[1].code or ""))
+    ]
+    return {
+        "plans": plans,
+        "default_price_id": default_price_id,
+    }
+
+
 @api_v1.post("/auth/logout")
 def api_auth_logout(request: Request):
     token = _extract_session_token(request)
@@ -3788,6 +3857,8 @@ def api_user_status_v1(
             "email": getattr(u, "email", None),
             "consent_given": bool(getattr(u, "consent_given", False)),
             "consent_at": getattr(u, "consent_at", None),
+            "billing_status": getattr(u, "billing_status", None),
+            "billing_provider": getattr(u, "billing_provider", None),
         },
         "active_domain": active,
         "latest_run": None,
@@ -4726,6 +4797,93 @@ def _twilio_error_code_meaning(error_code: object, error_message: object = None)
     return "Twilio reported delivery failure for this code. Check Twilio error docs for full details."
 
 
+def _canonical_touchpoint_filter(raw_touchpoint: object) -> str | None:
+    raw = str(raw_touchpoint or "").strip().lower()
+    if not raw:
+        return None
+    if raw.startswith("podcast_"):
+        raw = raw.replace("podcast_", "", 1)
+    if raw in {"midweek"}:
+        return "wednesday"
+    if raw in {"weekstart"}:
+        return "monday"
+    if raw in {"first-day"}:
+        return "first_day"
+    if raw in {"out_of_session", "outside_24h", "session_reopen", "reopen"}:
+        return "out_of_session"
+    return raw
+
+
+def _coaching_day_from_message_text(raw_text: object) -> str | None:
+    text = str(raw_text or "").strip().lower()
+    if not text.startswith("*"):
+        return None
+    if text.startswith("*kickoff"):
+        return "kickoff"
+    if text.startswith("*first day") or text.startswith("*first-day"):
+        return "first_day"
+    if text.startswith("*coach*"):
+        return "out_of_session"
+    for day in ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"):
+        if text.startswith(f"*{day}"):
+            return day
+    return None
+
+
+def _touchpoint_message_like_patterns(canonical_touchpoint: str | None) -> list[str]:
+    if not canonical_touchpoint:
+        return []
+    tp = canonical_touchpoint.strip().lower()
+    if not tp:
+        return []
+    if tp == "kickoff":
+        return ["*kickoff%"]
+    if tp == "first_day":
+        return ["*first day%", "*first-day%"]
+    if tp == "out_of_session":
+        return ["*coach*%"]
+    if tp in {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}:
+        return [f"*{tp}%"]
+    return []
+
+
+def _is_out_of_session_message(meta_obj: object, text_obj: object) -> bool:
+    meta = _as_payload_dict(meta_obj)
+    category = str(meta.get("category") or "").strip().lower()
+    if category in {"session-reopen", "session_reopen", "out_of_session"}:
+        return True
+    text = str(text_obj or "").strip().lower()
+    if text.startswith("*coach* hi"):
+        return True
+    return False
+
+
+def _message_delivery_from_meta(meta_obj: object) -> dict[str, object]:
+    meta = _as_payload_dict(meta_obj)
+    status_raw = str(meta.get("twilio_status") or "").strip().lower()
+    error_code = _normalise_twilio_error_code(meta.get("twilio_error_code"))
+    error_message = str(meta.get("twilio_error_message") or "").strip() or None
+    callback_at = str(meta.get("twilio_last_callback_at") or "").strip() or None
+    desc = _twilio_error_code_meaning(error_code, error_message)
+
+    if error_code or status_raw in {"failed", "undelivered"}:
+        state = "failed"
+    elif status_raw in {"delivered", "read"}:
+        state = "received"
+    elif status_raw in {"queued", "accepted", "sending", "sent"}:
+        state = "attempted"
+    else:
+        state = "unknown"
+
+    return {
+        "delivery_state": state,
+        "delivery_status": status_raw or None,
+        "delivery_error_code": error_code,
+        "delivery_error_description": desc,
+        "delivery_last_callback_at": callback_at,
+    }
+
+
 def _annotate_message_log_with_twilio_status(
     session,
     *,
@@ -4753,7 +4911,8 @@ def _annotate_message_log_with_twilio_status(
     rows = q.order_by(MessageLog.created_at.desc(), MessageLog.id.desc()).limit(500).all()
     callback_ts = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
     for row in rows:
-        meta = _as_payload_dict(getattr(row, "meta", None))
+        # Work on a fresh dict so SQLAlchemy detects the assignment as a change.
+        meta = dict(_as_payload_dict(getattr(row, "meta", None)))
         if str(meta.get("twilio_sid") or "").strip() != sid_val:
             continue
 
@@ -5478,6 +5637,7 @@ def admin_assessment_health(
         "queue_oldest_pending_age_min": {"warn": 15.0, "critical": 60.0, "lower_is_bad": False},
         "queue_error_rate_1h_pct": {"warn": 2.0, "critical": 5.0, "lower_is_bad": False},
         "twilio_failure_rate_pct": {"warn": 2.0, "critical": 5.0, "lower_is_bad": False},
+        "twilio_out_of_session_failure_rate_pct": {"warn": 2.0, "critical": 5.0, "lower_is_bad": False},
         "coaching_week_completion_pct": {"warn": 60.0, "critical": 40.0, "lower_is_bad": True},
         "coaching_sunday_reply_pct": {"warn": 50.0, "critical": 30.0, "lower_is_bad": True},
         "coaching_response_p95_min": {"warn": 720.0, "critical": 1440.0, "lower_is_bad": False},
@@ -5926,6 +6086,24 @@ def admin_assessment_health(
         msg_map = {str(direction or "unknown"): int(count or 0) for direction, count in msg_rows}
         outbound_messages = int(msg_map.get("outbound", 0))
         inbound_messages = int(msg_map.get("inbound", 0))
+        out_of_session_message_ids: set[int] = set()
+        out_of_session_attempted_total = 0
+        out_of_session_query = (
+            s.query(MessageLog.id, MessageLog.meta, MessageLog.text)
+            .filter(MessageLog.direction == "outbound")
+            .filter(MessageLog.created_at >= start_utc, MessageLog.created_at < end_utc)
+        )
+        if club_scope_id is not None:
+            out_of_session_query = out_of_session_query.join(User, MessageLog.user_id == User.id).filter(User.club_id == club_scope_id)
+        for row in out_of_session_query.all():
+            meta = _as_payload_dict(getattr(row, "meta", None))
+            text = getattr(row, "text", None)
+            if _is_out_of_session_message(meta, text):
+                try:
+                    out_of_session_message_ids.add(int(row.id))
+                except Exception:
+                    continue
+        out_of_session_attempted_total = len(out_of_session_message_ids)
 
         tw_q = (
             s.query(JobAudit.created_at, JobAudit.payload)
@@ -6002,6 +6180,18 @@ def admin_assessment_health(
                 continue
             tw_matched_statuses.append((created_at, body, mid_i))
 
+        latest_tw_callback_by_message_log_id: dict[int, dict[str, object]] = {}
+        for created_at, body, message_log_id in tw_matched_statuses:
+            callback_dt: datetime | None = created_at if isinstance(created_at, datetime) else None
+            prev = latest_tw_callback_by_message_log_id.get(int(message_log_id))
+            prev_dt = prev.get("_callback_dt") if isinstance(prev, dict) else None
+            if prev is None or prev_dt is None or (callback_dt is not None and callback_dt >= prev_dt):
+                latest_tw_callback_by_message_log_id[int(message_log_id)] = {
+                    "_callback_dt": callback_dt,
+                    "status": str(body.get("status") or "").strip().lower(),
+                    "error_code": _normalise_twilio_error_code(body.get("error_code")),
+                }
+
         tw_total = len(tw_matched_statuses)
         tw_failed = 0
         tw_failed_messages: list[dict] = []
@@ -6068,6 +6258,32 @@ def admin_assessment_health(
                 elif group.get("latest_error_description") is None:
                     group["latest_error_description"] = _twilio_error_code_meaning(error_code, error_message)
         tw_failure_rate = (tw_failed / tw_total * 100.0) if tw_total else None
+        out_of_session_callbacks_matched = 0
+        out_of_session_delivery_confirmed = 0
+        out_of_session_failed = 0
+        out_of_session_attempted_only = 0
+        out_of_session_pending_unknown = 0
+        for message_log_id in out_of_session_message_ids:
+            latest = latest_tw_callback_by_message_log_id.get(int(message_log_id))
+            if not latest:
+                out_of_session_pending_unknown += 1
+                continue
+            out_of_session_callbacks_matched += 1
+            status_val = str(latest.get("status") or "").strip().lower()
+            error_code = _normalise_twilio_error_code(latest.get("error_code"))
+            if error_code or status_val in {"failed", "undelivered"}:
+                out_of_session_failed += 1
+            elif status_val in {"delivered", "read"}:
+                out_of_session_delivery_confirmed += 1
+            elif status_val in {"queued", "accepted", "sending", "sent"}:
+                out_of_session_attempted_only += 1
+            else:
+                out_of_session_pending_unknown += 1
+        out_of_session_failure_rate = (
+            (out_of_session_failed / out_of_session_callbacks_matched * 100.0)
+            if out_of_session_callbacks_matched
+            else None
+        )
 
         tw_failed_messages.sort(key=lambda row: str(row.get("callback_at") or ""), reverse=True)
         tw_failure_codes_source = list(tw_failed_messages)
@@ -6117,6 +6333,88 @@ def admin_assessment_health(
             "sunday",
         ]
         weekly_types = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+
+        def _coaching_day_from_message_text(raw_text: object) -> str | None:
+            text = str(raw_text or "").strip().lower()
+            if not text:
+                return None
+            if text.startswith("*kickoff*"):
+                return "kickoff"
+            if text.startswith("*first day*") or text.startswith("*first-day*"):
+                return "first_day"
+            for day_key in weekly_types:
+                if text.startswith(f"*{day_key}*"):
+                    return day_key
+            return None
+
+        coaching_delivery_by_day: dict[str, dict[str, int]] = {
+            day: {
+                "attempted_messages": 0,
+                "delivery_confirmed": 0,
+                "failed_undelivered": 0,
+                "callback_pending_unknown": 0,
+            }
+            for day in coaching_types
+        }
+        coaching_day_message_ids: dict[str, set[int]] = {day: set() for day in coaching_types}
+        coaching_message_attempts_total = 0
+        coaching_message_delivery_confirmed_total = 0
+        coaching_message_failed_total = 0
+        coaching_message_pending_total = 0
+
+        outbound_day_msg_q = (
+            s.query(MessageLog.id, MessageLog.text)
+            .filter(MessageLog.direction == "outbound")
+            .filter(MessageLog.created_at >= start_utc, MessageLog.created_at < end_utc)
+        )
+        if club_scope_id is not None:
+            outbound_day_msg_q = outbound_day_msg_q.join(User, MessageLog.user_id == User.id).filter(User.club_id == club_scope_id)
+        for message_id, message_text in outbound_day_msg_q.all():
+            day_key = _coaching_day_from_message_text(message_text)
+            if day_key is None:
+                continue
+            try:
+                mid = int(message_id)
+            except Exception:
+                continue
+            ids = coaching_day_message_ids.get(day_key)
+            if not isinstance(ids, set):
+                continue
+            ids.add(mid)
+
+        for day_key, ids in coaching_day_message_ids.items():
+            for mid in ids:
+                row = coaching_delivery_by_day.setdefault(
+                    day_key,
+                    {
+                        "attempted_messages": 0,
+                        "delivery_confirmed": 0,
+                        "failed_undelivered": 0,
+                        "callback_pending_unknown": 0,
+                    },
+                )
+                row["attempted_messages"] = int(row.get("attempted_messages") or 0) + 1
+                latest_cb = latest_tw_callback_by_message_log_id.get(mid)
+                status_val = str((latest_cb or {}).get("status") or "").strip().lower()
+                error_code = _normalise_twilio_error_code((latest_cb or {}).get("error_code"))
+                if error_code or status_val in {"failed", "undelivered"}:
+                    row["failed_undelivered"] = int(row.get("failed_undelivered") or 0) + 1
+                elif status_val in {"delivered", "read"}:
+                    row["delivery_confirmed"] = int(row.get("delivery_confirmed") or 0) + 1
+                else:
+                    row["callback_pending_unknown"] = int(row.get("callback_pending_unknown") or 0) + 1
+
+            coaching_message_attempts_total += int(coaching_delivery_by_day.get(day_key, {}).get("attempted_messages") or 0)
+            coaching_message_delivery_confirmed_total += int(
+                coaching_delivery_by_day.get(day_key, {}).get("delivery_confirmed") or 0
+            )
+            coaching_message_failed_total += int(
+                coaching_delivery_by_day.get(day_key, {}).get("failed_undelivered") or 0
+            )
+            coaching_message_pending_total += int(
+                coaching_delivery_by_day.get(day_key, {}).get("callback_pending_unknown") or 0
+            )
+
         tp_q = (
             s.query(
                 Touchpoint.id,
@@ -6338,15 +6636,31 @@ def admin_assessment_health(
             with_audio_n = int(stats.get("with_audio") or 0)
             users_set = stats.get("users")
             users_n = len(users_set) if isinstance(users_set, set) else 0
+            delivery_stats = coaching_delivery_by_day.get(day) or {}
+            attempted_messages_n = int(delivery_stats.get("attempted_messages") or 0)
+            delivery_confirmed_n = int(delivery_stats.get("delivery_confirmed") or 0)
+            failed_undelivered_n = int(delivery_stats.get("failed_undelivered") or 0)
+            callback_pending_unknown_n = int(delivery_stats.get("callback_pending_unknown") or 0)
             day_stats_rows.append(
                 {
                     "day": day,
                     "sent": sent_n,
+                    "attempted_current_logic": sent_n,
                     "users": users_n,
                     "replied_24h": replied_n,
                     "reply_rate_pct": round((replied_n / sent_n * 100.0), 2) if sent_n else None,
                     "with_audio": with_audio_n,
                     "audio_rate_pct": round((with_audio_n / sent_n * 100.0), 2) if sent_n else None,
+                    "attempted_messages": attempted_messages_n,
+                    "delivery_confirmed": delivery_confirmed_n,
+                    "failed_undelivered": failed_undelivered_n,
+                    "callback_pending_unknown": callback_pending_unknown_n,
+                    "delivery_confirmed_rate_pct": round((delivery_confirmed_n / attempted_messages_n * 100.0), 2)
+                    if attempted_messages_n
+                    else None,
+                    "failed_undelivered_rate_pct": round((failed_undelivered_n / attempted_messages_n * 100.0), 2)
+                    if attempted_messages_n
+                    else None,
                 }
             )
 
@@ -6582,6 +6896,13 @@ def admin_assessment_health(
                 "current_streak_days_p95": round(streak_p95, 2) if streak_p95 is not None else None,
                 "current_streak_days_max": int(max(streak_days)) if streak_days else None,
             },
+            "delivery": {
+                "attempted_current_logic": len(touchpoints),
+                "attempted_messages": int(coaching_message_attempts_total),
+                "delivery_confirmed": int(coaching_message_delivery_confirmed_total),
+                "failed_undelivered": int(coaching_message_failed_total),
+                "callback_pending_unknown": int(coaching_message_pending_total),
+            },
             "day_stats": day_stats_rows,
         }
 
@@ -6713,6 +7034,11 @@ def admin_assessment_health(
         warn=thresholds["twilio_failure_rate_pct"]["warn"],
         critical=thresholds["twilio_failure_rate_pct"]["critical"],
     )
+    twilio_out_of_session_state = _threshold_state(
+        out_of_session_failure_rate,
+        warn=thresholds["twilio_out_of_session_failure_rate_pct"]["warn"],
+        critical=thresholds["twilio_out_of_session_failure_rate_pct"]["critical"],
+    )
     coaching_week_completion = (
         ((coaching_payload.get("day_funnel") or {}).get("week_completion_rate_pct"))
         if isinstance(coaching_payload, dict)
@@ -6802,6 +7128,7 @@ def admin_assessment_health(
         "queue_oldest_pending_age_min": queue_oldest_pending_state,
         "queue_error_rate_1h_pct": queue_error_rate_state,
         "twilio_failure_rate_pct": twilio_state,
+        "twilio_out_of_session_failure_rate_pct": twilio_out_of_session_state,
         "coaching_week_completion_pct": coaching_week_completion_state,
         "coaching_sunday_reply_pct": coaching_sunday_reply_state,
         "coaching_response_p95_min": coaching_response_state,
@@ -6818,6 +7145,7 @@ def admin_assessment_health(
         "queue_oldest_pending_age_min": oldest_pending_age_min,
         "queue_error_rate_1h_pct": queue_error_rate_1h,
         "twilio_failure_rate_pct": tw_failure_rate,
+        "twilio_out_of_session_failure_rate_pct": out_of_session_failure_rate,
         "coaching_week_completion_pct": coaching_week_completion,
         "coaching_sunday_reply_pct": coaching_sunday_reply,
         "coaching_response_p95_min": coaching_response_p95,
@@ -6993,6 +7321,18 @@ def admin_assessment_health(
             "twilio_failed_messages": tw_failed_messages,
             "twilio_failed_message_groups": tw_failed_message_groups,
             "twilio_failure_codes": tw_failure_codes,
+            "out_of_session_template": {
+                "attempted_messages": int(out_of_session_attempted_total),
+                "callbacks_matched": int(out_of_session_callbacks_matched),
+                "delivery_confirmed": int(out_of_session_delivery_confirmed),
+                "failed_undelivered": int(out_of_session_failed),
+                "attempted_only": int(out_of_session_attempted_only),
+                "pending_unknown": int(out_of_session_pending_unknown),
+                "failure_rate_pct": round(out_of_session_failure_rate, 2)
+                if out_of_session_failure_rate is not None
+                else None,
+                "failure_state": twilio_out_of_session_state,
+            },
         },
         "worker": {
             "worker_mode_override": worker_override,
@@ -7324,6 +7664,95 @@ def _stripe_form_request(path: str, form: dict[str, object]) -> dict:
         raise RuntimeError(f"Stripe request failed: {e}") from e
 
 
+def _stripe_get_request(path: str, query: dict[str, object] | None = None) -> dict:
+    secret = _stripe_secret_key()
+    base = _stripe_api_base()
+    q = query or {}
+    params = urlencode(q, doseq=True)
+    url = f"{base}{path}" + (f"?{params}" if params else "")
+    req = urllib.request.Request(
+        url,
+        method="GET",
+        headers={"Authorization": f"Bearer {secret}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read().decode("utf-8")
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as e:
+        raw = ""
+        try:
+            raw = e.read().decode("utf-8")
+        except Exception:
+            raw = ""
+        try:
+            payload = json.loads(raw) if raw else {}
+        except Exception:
+            payload = {}
+        err = payload.get("error") if isinstance(payload, dict) else None
+        msg = (
+            (err.get("message") if isinstance(err, dict) else None)
+            or raw
+            or str(e.reason or "")
+            or "Stripe API error"
+        )
+        raise RuntimeError(f"Stripe API {e.code}: {msg}") from e
+    except Exception as e:
+        raise RuntimeError(f"Stripe request failed: {e}") from e
+
+
+def _stripe_list_products(limit: int = 100) -> list[dict]:
+    secret = _stripe_secret_key()
+    base = _stripe_api_base()
+    q_limit = max(1, min(int(limit or 100), 100))
+    qs = urlencode({"limit": q_limit})
+    req = urllib.request.Request(
+        f"{base}/products?{qs}",
+        method="GET",
+        headers={"Authorization": f"Bearer {secret}"},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            raw = resp.read().decode("utf-8")
+            payload = json.loads(raw) if raw else {}
+            rows = payload.get("data") if isinstance(payload, dict) else []
+            if not isinstance(rows, list):
+                return []
+            out: list[dict] = []
+            for item in rows:
+                if not isinstance(item, dict):
+                    continue
+                out.append(
+                    {
+                        "id": str(item.get("id") or "").strip() or None,
+                        "name": str(item.get("name") or "").strip() or None,
+                        "default_price": str(item.get("default_price") or "").strip() or None,
+                        "active": bool(item.get("active")),
+                    }
+                )
+            return [row for row in out if row.get("id")]
+    except urllib.error.HTTPError as e:
+        raw = ""
+        try:
+            raw = e.read().decode("utf-8")
+        except Exception:
+            raw = ""
+        try:
+            payload = json.loads(raw) if raw else {}
+        except Exception:
+            payload = {}
+        err = payload.get("error") if isinstance(payload, dict) else None
+        msg = (
+            (err.get("message") if isinstance(err, dict) else None)
+            or raw
+            or str(e.reason or "")
+            or "Stripe API error"
+        )
+        raise RuntimeError(f"Stripe API {e.code}: {msg}") from e
+    except Exception as e:
+        raise RuntimeError(f"Stripe request failed: {e}") from e
+
+
 def _stripe_lookup_key(plan_code: str, price_row: BillingPlanPrice) -> str:
     safe_code = re.sub(r"[^a-z0-9_-]+", "-", str(plan_code or "").strip().lower()).strip("-") or "plan"
     currency = str(getattr(price_row, "currency", "") or "").strip().lower() or "gbp"
@@ -7387,22 +7816,54 @@ def _sync_price_to_stripe(plan_row: BillingPlan, price_row: BillingPlanPrice, *,
         interval = str(getattr(price_row, "interval", "") or "month").strip().lower() or "month"
         interval_count = int(getattr(price_row, "interval_count", 1) or 1)
         amount_minor = int(getattr(price_row, "amount_minor", 0) or 0)
+        lookup_key = _stripe_lookup_key(plan_code, price_row)
         form = {
             "currency": currency,
             "unit_amount": amount_minor,
             "product": product_id,
             "active": price_active,
-            "lookup_key": _stripe_lookup_key(plan_code, price_row),
+            "lookup_key": lookup_key,
             **metadata,
         }
         if interval != "one_time":
             form["recurring[interval]"] = interval
             form["recurring[interval_count]"] = interval_count
-        price_obj = _stripe_form_request("/prices", form)
-        price_id = str(price_obj.get("id") or "").strip()
-        if not price_id:
-            raise RuntimeError("Stripe price create returned no id.")
-        created_new_price = True
+        try:
+            price_obj = _stripe_form_request("/prices", form)
+            price_id = str(price_obj.get("id") or "").strip()
+            if not price_id:
+                raise RuntimeError("Stripe price create returned no id.")
+            created_new_price = True
+        except Exception as e:
+            # If lookup_key already exists in Stripe, reuse the existing price id.
+            if "already uses that lookup key" not in str(e):
+                raise
+            existing = _stripe_get_request("/prices", {"limit": 100, "lookup_keys[]": lookup_key})
+            rows = existing.get("data") if isinstance(existing, dict) else None
+            if not isinstance(rows, list):
+                raise
+            first_any: str | None = None
+            first_matching_product: str | None = None
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                candidate_id = str(row.get("id") or "").strip()
+                if not candidate_id:
+                    continue
+                if first_any is None:
+                    first_any = candidate_id
+                candidate_product = row.get("product")
+                candidate_product_id = (
+                    str(candidate_product.get("id") or "").strip()
+                    if isinstance(candidate_product, dict)
+                    else str(candidate_product or "").strip()
+                )
+                if candidate_product_id and candidate_product_id == product_id:
+                    first_matching_product = candidate_id
+                    break
+            price_id = first_matching_product or first_any or ""
+            if not price_id:
+                raise
 
     return {
         "stripe_product_id": product_id,
@@ -7443,6 +7904,29 @@ def _billing_plan_payload(row: BillingPlan, prices: list[BillingPlanPrice]) -> d
     }
 
 
+def _billing_price_public_payload(row: BillingPlanPrice) -> dict:
+    return {
+        "id": int(row.id),
+        "plan_id": int(row.plan_id),
+        "currency": row.currency,
+        "amount_minor": row.amount_minor,
+        "currency_exponent": row.currency_exponent,
+        "interval": row.interval,
+        "interval_count": row.interval_count,
+        "is_default": bool(row.is_default),
+    }
+
+
+def _billing_plan_public_payload(row: BillingPlan, prices: list[BillingPlanPrice]) -> dict:
+    return {
+        "id": int(row.id),
+        "code": row.code,
+        "name": row.name,
+        "description": row.description,
+        "prices": [_billing_price_public_payload(price) for price in prices],
+    }
+
+
 @admin.get("/billing/plans")
 def admin_billing_plans(admin_user: User = Depends(_require_admin)):
     with SessionLocal() as s:
@@ -7466,6 +7950,13 @@ def admin_billing_plans(admin_user: User = Depends(_require_admin)):
             for price in prices:
                 prices_by_plan.setdefault(int(price.plan_id), []).append(price)
     secret = (os.getenv("STRIPE_SECRET_KEY") or os.getenv("STRIPE_API_KEY") or "").strip()
+    stripe_products: list[dict] = []
+    stripe_products_error: str | None = None
+    if secret:
+        try:
+            stripe_products = _stripe_list_products(limit=100)
+        except Exception as e:
+            stripe_products_error = str(e)
     return {
         "plans": [_billing_plan_payload(plan, prices_by_plan.get(int(plan.id), [])) for plan in plans],
         "stripe": {
@@ -7473,6 +7964,8 @@ def admin_billing_plans(admin_user: User = Depends(_require_admin)):
             "mode": _stripe_mode_from_key(secret),
             "api_base": _stripe_api_base(),
             "publishable_key_configured": bool((os.getenv("STRIPE_PUBLISHABLE_KEY") or "").strip()),
+            "products": stripe_products,
+            "products_error": stripe_products_error,
         },
     }
 
@@ -7669,6 +8162,696 @@ def admin_sync_billing_to_stripe(payload: dict | None = None, admin_user: User =
         "error_count": error_count,
         "results": results,
     }
+
+
+def _stripe_webhook_secret() -> str | None:
+    secret = (os.getenv("STRIPE_WEBHOOK_SECRET") or "").strip()
+    return secret or None
+
+
+def _stripe_signature_valid(payload: bytes, stripe_signature: str | None, secret: str) -> bool:
+    header = str(stripe_signature or "").strip()
+    if not header:
+        return False
+    parts: dict[str, list[str]] = {}
+    for token in header.split(","):
+        if "=" not in token:
+            continue
+        k, v = token.split("=", 1)
+        parts.setdefault(k.strip(), []).append(v.strip())
+    try:
+        timestamp = int((parts.get("t") or [""])[0])
+    except Exception:
+        return False
+    signatures = parts.get("v1") or []
+    if not signatures:
+        return False
+    signed_payload = f"{timestamp}.{payload.decode('utf-8')}".encode("utf-8")
+    expected = hmac.new(secret.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
+    if not any(hmac.compare_digest(expected, candidate) for candidate in signatures):
+        return False
+    tolerance = 300
+    return abs(int(time.time()) - timestamp) <= tolerance
+
+
+def _stripe_object_id(raw: object) -> str | None:
+    if isinstance(raw, dict):
+        val = str(raw.get("id") or "").strip()
+        return val or None
+    txt = str(raw or "").strip()
+    return txt or None
+
+
+def _stripe_metadata_user_id(obj: dict | None) -> int | None:
+    if not isinstance(obj, dict):
+        return None
+    metadata = obj.get("metadata")
+    if not isinstance(metadata, dict):
+        return None
+    for key in ("hs_user_id", "user_id"):
+        raw = metadata.get(key)
+        if raw in (None, ""):
+            continue
+        try:
+            user_id = int(str(raw).strip())
+        except Exception:
+            continue
+        if user_id > 0:
+            return user_id
+    return None
+
+
+def _stripe_datetime_from_unix(raw: object) -> datetime | None:
+    if raw in (None, ""):
+        return None
+    try:
+        return datetime.utcfromtimestamp(int(raw))
+    except Exception:
+        return None
+
+
+def _sync_user_billing_snapshot(
+    session,
+    *,
+    user_id: int | None,
+    billing_status: str | None,
+    stripe_customer_id: str | None = None,
+) -> None:
+    if not user_id:
+        return
+    user = session.get(User, int(user_id))
+    if not user:
+        return
+    user.billing_provider = "stripe"
+    if billing_status:
+        user.billing_status = str(billing_status).strip().lower()[:32]
+    if stripe_customer_id:
+        user.stripe_customer_id = str(stripe_customer_id).strip()
+    session.add(user)
+
+
+def _upsert_billing_customer(
+    session,
+    *,
+    user_id: int | None,
+    stripe_customer_id: str | None,
+) -> BillingCustomer | None:
+    stripe_id = str(stripe_customer_id or "").strip()
+    if not stripe_id:
+        return None
+    row = session.query(BillingCustomer).filter(BillingCustomer.stripe_customer_id == stripe_id).one_or_none()
+    if row:
+        if user_id and int(row.user_id) != int(user_id):
+            row.user_id = int(user_id)
+        session.add(row)
+        _sync_user_billing_snapshot(
+            session,
+            user_id=int(row.user_id) if getattr(row, "user_id", None) else None,
+            billing_status=None,
+            stripe_customer_id=stripe_id,
+        )
+        return row
+    if not user_id:
+        return None
+    by_user = session.query(BillingCustomer).filter(BillingCustomer.user_id == int(user_id)).one_or_none()
+    if by_user:
+        by_user.stripe_customer_id = stripe_id
+        session.add(by_user)
+        _sync_user_billing_snapshot(
+            session,
+            user_id=int(user_id),
+            billing_status=None,
+            stripe_customer_id=stripe_id,
+        )
+        return by_user
+    created = BillingCustomer(user_id=int(user_id), stripe_customer_id=stripe_id)
+    session.add(created)
+    session.flush()
+    _sync_user_billing_snapshot(
+        session,
+        user_id=int(user_id),
+        billing_status=None,
+        stripe_customer_id=stripe_id,
+    )
+    return created
+
+
+def _extract_price_id_from_subscription_object(subscription_obj: dict) -> str | None:
+    items = subscription_obj.get("items")
+    if not isinstance(items, dict):
+        return None
+    data = items.get("data")
+    if not isinstance(data, list) or not data:
+        return None
+    first = data[0]
+    if not isinstance(first, dict):
+        return None
+    price = first.get("price")
+    return _stripe_object_id(price)
+
+
+def _upsert_subscription_from_stripe(
+    session,
+    *,
+    subscription_obj: dict,
+    fallback_user_id: int | None = None,
+) -> BillingSubscription | None:
+    provider_subscription_id = _stripe_object_id(subscription_obj.get("id"))
+    if not provider_subscription_id:
+        return None
+    stripe_customer_id = _stripe_object_id(subscription_obj.get("customer"))
+    metadata_user_id = _stripe_metadata_user_id(subscription_obj)
+    resolved_user_id = fallback_user_id or metadata_user_id
+    customer_row = _upsert_billing_customer(
+        session,
+        user_id=resolved_user_id,
+        stripe_customer_id=stripe_customer_id,
+    )
+    if not resolved_user_id and customer_row:
+        resolved_user_id = int(customer_row.user_id)
+
+    row = (
+        session.query(BillingSubscription)
+        .filter(BillingSubscription.provider_subscription_id == provider_subscription_id)
+        .one_or_none()
+    )
+    if not row:
+        row = BillingSubscription(
+            provider="stripe",
+            provider_subscription_id=provider_subscription_id,
+            status="unknown",
+        )
+        session.add(row)
+
+    status_text = str(subscription_obj.get("status") or "unknown").strip().lower() or "unknown"
+    row.provider = "stripe"
+    row.provider_subscription_id = provider_subscription_id
+    row.status = status_text
+    row.provider_status = status_text
+    row.starts_at = _stripe_datetime_from_unix(subscription_obj.get("start_date"))
+    row.current_period_start = _stripe_datetime_from_unix(subscription_obj.get("current_period_start"))
+    row.current_period_end = _stripe_datetime_from_unix(subscription_obj.get("current_period_end"))
+    row.cancel_at_period_end = bool(subscription_obj.get("cancel_at_period_end"))
+    row.cancel_at = _stripe_datetime_from_unix(subscription_obj.get("cancel_at"))
+    row.canceled_at = _stripe_datetime_from_unix(subscription_obj.get("canceled_at"))
+    row.ended_at = _stripe_datetime_from_unix(subscription_obj.get("ended_at"))
+    row.meta = {
+        "latest_invoice": subscription_obj.get("latest_invoice"),
+        "collection_method": subscription_obj.get("collection_method"),
+        "metadata": subscription_obj.get("metadata") if isinstance(subscription_obj.get("metadata"), dict) else {},
+    }
+
+    if customer_row:
+        row.customer_id = int(customer_row.id)
+        if not row.user_id:
+            row.user_id = int(customer_row.user_id)
+    if resolved_user_id and not row.user_id:
+        row.user_id = int(resolved_user_id)
+
+    stripe_price_id = _extract_price_id_from_subscription_object(subscription_obj)
+    if stripe_price_id:
+        price_row = session.query(BillingPlanPrice).filter(BillingPlanPrice.stripe_price_id == stripe_price_id).one_or_none()
+        if price_row:
+            row.price_id = int(price_row.id)
+            row.plan_id = int(price_row.plan_id)
+    session.add(row)
+    session.flush()
+
+    items_obj = subscription_obj.get("items")
+    data = items_obj.get("data") if isinstance(items_obj, dict) else None
+    if isinstance(data, list):
+        existing = {
+            str(item.provider_item_id): item
+            for item in session.query(BillingSubscriptionItem)
+            .filter(BillingSubscriptionItem.subscription_id == int(row.id))
+            .all()
+        }
+        seen: set[str] = set()
+        for obj in data:
+            if not isinstance(obj, dict):
+                continue
+            provider_item_id = _stripe_object_id(obj.get("id"))
+            if not provider_item_id:
+                continue
+            seen.add(provider_item_id)
+            item_row = existing.get(provider_item_id)
+            if not item_row:
+                item_row = BillingSubscriptionItem(
+                    subscription_id=int(row.id),
+                    provider_item_id=provider_item_id,
+                )
+                session.add(item_row)
+            price_obj = obj.get("price")
+            provider_price_id = _stripe_object_id(price_obj)
+            item_row.provider_price_id = provider_price_id
+            local_price = None
+            if provider_price_id:
+                local_price = (
+                    session.query(BillingPlanPrice)
+                    .filter(BillingPlanPrice.stripe_price_id == provider_price_id)
+                    .one_or_none()
+                )
+            if local_price:
+                item_row.price_id = int(local_price.id)
+            quantity_raw = obj.get("quantity")
+            try:
+                quantity = int(quantity_raw) if quantity_raw is not None else 1
+            except Exception:
+                quantity = 1
+            item_row.quantity = max(1, quantity)
+            recurring = price_obj.get("recurring") if isinstance(price_obj, dict) else {}
+            item_row.currency = str((price_obj or {}).get("currency") or "").strip().lower() or None
+            item_row.unit_amount_minor = (price_obj or {}).get("unit_amount")
+            item_row.interval = str((recurring or {}).get("interval") or "").strip().lower() or None
+            item_row.interval_count = (recurring or {}).get("interval_count")
+            item_row.current_period_start = _stripe_datetime_from_unix(obj.get("current_period_start"))
+            item_row.current_period_end = _stripe_datetime_from_unix(obj.get("current_period_end"))
+            item_row.status = "active"
+            item_row.meta = {"metadata": obj.get("metadata") if isinstance(obj.get("metadata"), dict) else {}}
+            session.add(item_row)
+        for provider_item_id, stale in existing.items():
+            if provider_item_id not in seen:
+                stale.status = "deleted"
+                session.add(stale)
+
+    _sync_user_billing_snapshot(
+        session,
+        user_id=int(row.user_id) if row.user_id else None,
+        billing_status=row.status,
+        stripe_customer_id=stripe_customer_id,
+    )
+    return row
+
+
+def _upsert_invoice_from_stripe(
+    session,
+    *,
+    invoice_obj: dict,
+    fallback_user_id: int | None = None,
+) -> BillingInvoice | None:
+    provider_invoice_id = _stripe_object_id(invoice_obj.get("id"))
+    if not provider_invoice_id:
+        return None
+    row = (
+        session.query(BillingInvoice)
+        .filter(BillingInvoice.provider_invoice_id == provider_invoice_id)
+        .one_or_none()
+    )
+    if not row:
+        row = BillingInvoice(provider_invoice_id=provider_invoice_id)
+        session.add(row)
+
+    provider_subscription_id = _stripe_object_id(invoice_obj.get("subscription"))
+    sub_row = None
+    if provider_subscription_id:
+        sub_row = (
+            session.query(BillingSubscription)
+            .filter(BillingSubscription.provider_subscription_id == provider_subscription_id)
+            .one_or_none()
+        )
+    metadata_user_id = _stripe_metadata_user_id(invoice_obj)
+    resolved_user_id = fallback_user_id or metadata_user_id or (int(sub_row.user_id) if sub_row and sub_row.user_id else None)
+
+    row.subscription_id = int(sub_row.id) if sub_row else row.subscription_id
+    row.user_id = int(resolved_user_id) if resolved_user_id else row.user_id
+    row.invoice_number = str(invoice_obj.get("number") or "").strip() or None
+    row.currency = str(invoice_obj.get("currency") or "").strip().lower() or None
+    row.subtotal_minor = invoice_obj.get("subtotal")
+    row.tax_minor = invoice_obj.get("tax")
+    row.total_minor = invoice_obj.get("total")
+    row.amount_paid_minor = invoice_obj.get("amount_paid")
+    row.amount_due_minor = invoice_obj.get("amount_due")
+    row.status = str(invoice_obj.get("status") or "").strip().lower() or None
+    row.period_start = _stripe_datetime_from_unix(invoice_obj.get("period_start"))
+    row.period_end = _stripe_datetime_from_unix(invoice_obj.get("period_end"))
+    row.due_at = _stripe_datetime_from_unix(invoice_obj.get("due_date"))
+    status_transitions = invoice_obj.get("status_transitions") if isinstance(invoice_obj.get("status_transitions"), dict) else {}
+    row.paid_at = _stripe_datetime_from_unix(status_transitions.get("paid_at"))
+    row.failed_at = _stripe_datetime_from_unix(status_transitions.get("marked_uncollectible_at"))
+    last_error = invoice_obj.get("last_finalization_error") if isinstance(invoice_obj.get("last_finalization_error"), dict) else {}
+    row.failure_reason = str(last_error.get("message") or "").strip() or row.failure_reason
+    row.hosted_invoice_url = str(invoice_obj.get("hosted_invoice_url") or "").strip() or None
+    row.invoice_pdf_url = str(invoice_obj.get("invoice_pdf") or "").strip() or None
+    session.add(row)
+    session.flush()
+    return row
+
+
+def _upsert_invoice_transaction(
+    session,
+    *,
+    invoice_row: BillingInvoice | None,
+    subscription_row: BillingSubscription | None,
+    invoice_obj: dict,
+    event_type: str,
+) -> None:
+    if not invoice_row:
+        return
+    payment_intent_id = _stripe_object_id(invoice_obj.get("payment_intent"))
+    tx_status = "succeeded" if event_type == "invoice.paid" else "failed"
+    amount_minor = invoice_obj.get("amount_paid" if tx_status == "succeeded" else "amount_due")
+    try:
+        amount_minor_int = int(amount_minor or 0)
+    except Exception:
+        amount_minor_int = 0
+    existing = None
+    q = session.query(BillingTransaction).filter(
+        BillingTransaction.invoice_id == int(invoice_row.id),
+        BillingTransaction.type == "payment",
+        BillingTransaction.status == tx_status,
+    )
+    if payment_intent_id:
+        existing = q.filter(BillingTransaction.provider_payment_intent_id == payment_intent_id).one_or_none()
+    if not existing:
+        existing = q.order_by(BillingTransaction.id.desc()).first()
+    if existing:
+        return
+    row = BillingTransaction(
+        invoice_id=int(invoice_row.id),
+        subscription_id=int(subscription_row.id) if subscription_row else None,
+        user_id=int(invoice_row.user_id) if invoice_row.user_id else None,
+        type="payment",
+        status=tx_status,
+        currency=str(invoice_obj.get("currency") or "").strip().lower() or None,
+        amount_minor=amount_minor_int,
+        provider_payment_intent_id=payment_intent_id,
+        provider_charge_id=_stripe_object_id(invoice_obj.get("charge")),
+        occurred_at=datetime.utcnow(),
+        failure_reason=None if tx_status == "succeeded" else str(invoice_obj.get("status") or "payment_failed"),
+    )
+    session.add(row)
+    if subscription_row and subscription_row.user_id:
+        next_status = "active" if tx_status == "succeeded" else "past_due"
+        _sync_user_billing_snapshot(
+            session,
+            user_id=int(subscription_row.user_id),
+            billing_status=next_status,
+            stripe_customer_id=None,
+        )
+
+
+def _ensure_checkout_customer(session, user: User) -> BillingCustomer:
+    existing = session.query(BillingCustomer).filter(BillingCustomer.user_id == int(user.id)).one_or_none()
+    if existing and getattr(existing, "stripe_customer_id", None):
+        return existing
+    stripe_customer_id = str(getattr(user, "stripe_customer_id", "") or "").strip()
+    if not stripe_customer_id:
+        create_payload = {
+            "name": display_full_name(user) or f"user-{int(user.id)}",
+            "phone": str(getattr(user, "phone", "") or "").strip(),
+            "email": str(getattr(user, "email", "") or "").strip() or None,
+            "metadata[hs_user_id]": int(user.id),
+        }
+        created = _stripe_form_request("/customers", create_payload)
+        stripe_customer_id = str(created.get("id") or "").strip()
+        if not stripe_customer_id:
+            raise RuntimeError("Stripe customer create returned no id.")
+    customer = _upsert_billing_customer(
+        session,
+        user_id=int(user.id),
+        stripe_customer_id=stripe_customer_id,
+    )
+    if not customer:
+        raise RuntimeError("Unable to resolve billing customer.")
+    return customer
+
+
+def _resolve_checkout_urls(
+    *,
+    user_id: int,
+    success_path: str | None = None,
+    cancel_path: str | None = None,
+) -> tuple[str, str]:
+    base_url, _debug = _resolve_admin_hsapp_base_url()
+
+    def _build(default_path: str, override_value: str | None) -> str:
+        raw = str(override_value or "").strip()
+        if raw.startswith("http://") or raw.startswith("https://"):
+            return raw
+        path = raw or default_path
+        if not path.startswith("/"):
+            path = f"/{path}"
+        return f"{base_url}{path}"
+
+    success_url = _build(
+        default_path=f"/progress/{int(user_id)}?billing=success",
+        override_value=success_path,
+    )
+    cancel_url = _build(
+        default_path=f"/progress/{int(user_id)}?billing=cancel",
+        override_value=cancel_path,
+    )
+    if "CHECKOUT_SESSION_ID" not in success_url:
+        joiner = "&" if "?" in success_url else "?"
+        success_url = f"{success_url}{joiner}checkout_session_id={{CHECKOUT_SESSION_ID}}"
+    return success_url, cancel_url
+
+
+@api_v1.post("/users/{user_id}/billing/checkout-session")
+def api_user_billing_checkout_session(
+    user_id: int,
+    payload: dict,
+    request: Request,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    if _is_readonly_admin_preview_request(
+        request,
+        x_admin_token=x_admin_token,
+        x_admin_user_id=x_admin_user_id,
+    ):
+        raise HTTPException(status_code=403, detail="Admin app preview is read-only")
+    body = payload if isinstance(payload, dict) else {}
+    requested_price_id = body.get("price_id")
+    plan_code = str(body.get("plan_code") or "").strip().lower() or None
+    success_path = body.get("success_path")
+    cancel_path = body.get("cancel_path")
+    with SessionLocal() as s:
+        user = s.get(User, int(user_id))
+        if not user:
+            raise HTTPException(status_code=404, detail="user not found")
+        query = (
+            s.query(BillingPlanPrice, BillingPlan)
+            .join(BillingPlan, BillingPlanPrice.plan_id == BillingPlan.id)
+            .filter(BillingPlan.is_active == True, BillingPlanPrice.is_active == True)
+        )
+        if requested_price_id not in (None, "", 0):
+            try:
+                price_id_int = int(requested_price_id)
+            except Exception:
+                raise HTTPException(status_code=400, detail="price_id must be an integer")
+            query = query.filter(BillingPlanPrice.id == price_id_int)
+        elif plan_code:
+            query = query.filter(BillingPlan.code == plan_code)
+        selected = (
+            query.order_by(
+                BillingPlanPrice.is_default.desc(),
+                BillingPlanPrice.amount_minor.asc(),
+                BillingPlanPrice.id.asc(),
+            ).first()
+        )
+        if not selected:
+            raise HTTPException(status_code=404, detail="billing price not found")
+        price_row, plan_row = selected
+        stripe_price_id = str(price_row.stripe_price_id or "").strip()
+        if not stripe_price_id:
+            raise HTTPException(
+                status_code=400,
+                detail="Selected price is not synced to Stripe yet (missing stripe_price_id).",
+            )
+        try:
+            customer_row = _ensure_checkout_customer(s, user)
+            success_url, cancel_url = _resolve_checkout_urls(
+                user_id=int(user.id),
+                success_path=str(success_path) if success_path is not None else None,
+                cancel_path=str(cancel_path) if cancel_path is not None else None,
+            )
+            mode = "payment" if str(price_row.interval or "").strip().lower() == "one_time" else "subscription"
+            form: dict[str, object] = {
+                "mode": mode,
+                "customer": customer_row.stripe_customer_id,
+                "line_items[0][price]": stripe_price_id,
+                "line_items[0][quantity]": 1,
+                "success_url": success_url,
+                "cancel_url": cancel_url,
+                "client_reference_id": int(user.id),
+                "allow_promotion_codes": True,
+                "metadata[hs_user_id]": int(user.id),
+                "metadata[hs_plan_id]": int(plan_row.id),
+                "metadata[hs_price_id]": int(price_row.id),
+            }
+            if mode == "subscription":
+                form["subscription_data[metadata][hs_user_id]"] = int(user.id)
+                form["subscription_data[metadata][hs_plan_id]"] = int(plan_row.id)
+                form["subscription_data[metadata][hs_price_id]"] = int(price_row.id)
+            else:
+                form["payment_intent_data[metadata][hs_user_id]"] = int(user.id)
+                form["payment_intent_data[metadata][hs_plan_id]"] = int(plan_row.id)
+                form["payment_intent_data[metadata][hs_price_id]"] = int(price_row.id)
+            stripe_session = _stripe_form_request("/checkout/sessions", form)
+        except RuntimeError as e:
+            s.rollback()
+            raise HTTPException(status_code=502, detail=f"Stripe checkout session create failed: {e}")
+        except HTTPException:
+            s.rollback()
+            raise
+        except Exception as e:
+            s.rollback()
+            raise HTTPException(status_code=500, detail=f"Checkout setup failed: {e}")
+        s.commit()
+        return {
+            "ok": True,
+            "checkout_session_id": stripe_session.get("id"),
+            "checkout_url": stripe_session.get("url"),
+            "mode": mode,
+            "plan": {
+                "id": int(plan_row.id),
+                "code": plan_row.code,
+                "name": plan_row.name,
+            },
+            "price": _billing_price_payload(price_row),
+        }
+
+
+@app.post("/webhooks/stripe")
+async def stripe_webhook(request: Request):
+    payload_bytes = await request.body()
+    signature = request.headers.get("Stripe-Signature")
+    webhook_secret = _stripe_webhook_secret()
+    if webhook_secret and not _stripe_signature_valid(payload_bytes, signature, webhook_secret):
+        raise HTTPException(status_code=400, detail="invalid stripe signature")
+    try:
+        event = json.loads(payload_bytes.decode("utf-8") or "{}")
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid json payload")
+    if not isinstance(event, dict):
+        raise HTTPException(status_code=400, detail="invalid stripe event payload")
+
+    event_id = str(event.get("id") or "").strip()
+    event_type = str(event.get("type") or "").strip()
+    if not event_id or not event_type:
+        raise HTTPException(status_code=400, detail="missing event id/type")
+    livemode = bool(event.get("livemode"))
+    data = event.get("data") if isinstance(event.get("data"), dict) else {}
+    obj = data.get("object") if isinstance(data.get("object"), dict) else {}
+
+    with SessionLocal() as s:
+        existing = (
+            s.query(BillingWebhookEvent)
+            .filter(BillingWebhookEvent.provider == "stripe", BillingWebhookEvent.provider_event_id == event_id)
+            .one_or_none()
+        )
+        if existing:
+            return {"ok": True, "duplicate": True, "event_id": event_id, "status": existing.status}
+
+        webhook_row = BillingWebhookEvent(
+            provider="stripe",
+            provider_event_id=event_id,
+            event_type=event_type,
+            livemode=livemode,
+            payload=event,
+            status="pending",
+        )
+        s.add(webhook_row)
+        s.commit()
+        s.refresh(webhook_row)
+        webhook_id = int(webhook_row.id)
+
+        try:
+            fallback_user_id = _stripe_metadata_user_id(obj)
+            if event_type == "checkout.session.completed":
+                stripe_customer_id = _stripe_object_id(obj.get("customer"))
+                client_reference_id = obj.get("client_reference_id")
+                if not fallback_user_id and client_reference_id not in (None, ""):
+                    try:
+                        fallback_user_id = int(client_reference_id)
+                    except Exception:
+                        fallback_user_id = None
+                customer_row = _upsert_billing_customer(
+                    s,
+                    user_id=fallback_user_id,
+                    stripe_customer_id=stripe_customer_id,
+                )
+                provider_subscription_id = _stripe_object_id(obj.get("subscription"))
+                if provider_subscription_id:
+                    sub = (
+                        s.query(BillingSubscription)
+                        .filter(BillingSubscription.provider_subscription_id == provider_subscription_id)
+                        .one_or_none()
+                    )
+                    if not sub:
+                        sub = BillingSubscription(
+                            provider="stripe",
+                            provider_subscription_id=provider_subscription_id,
+                            status="pending",
+                            provider_status="pending_checkout",
+                        )
+                        s.add(sub)
+                    if customer_row:
+                        sub.customer_id = int(customer_row.id)
+                        if not sub.user_id:
+                            sub.user_id = int(customer_row.user_id)
+                    if fallback_user_id and not sub.user_id:
+                        sub.user_id = int(fallback_user_id)
+                    s.add(sub)
+                webhook_row.status = "processed"
+            elif event_type in {"customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"}:
+                sub_row = _upsert_subscription_from_stripe(
+                    s,
+                    subscription_obj=obj,
+                    fallback_user_id=fallback_user_id,
+                )
+                if sub_row is None:
+                    webhook_row.status = "ignored"
+                    webhook_row.error_message = "subscription object missing id"
+                else:
+                    webhook_row.status = "processed"
+            elif event_type in {"invoice.finalized", "invoice.paid", "invoice.payment_failed", "invoice.payment_action_required"}:
+                invoice_row = _upsert_invoice_from_stripe(
+                    s,
+                    invoice_obj=obj,
+                    fallback_user_id=fallback_user_id,
+                )
+                sub_row = None
+                provider_subscription_id = _stripe_object_id(obj.get("subscription"))
+                if provider_subscription_id:
+                    sub_row = (
+                        s.query(BillingSubscription)
+                        .filter(BillingSubscription.provider_subscription_id == provider_subscription_id)
+                        .one_or_none()
+                    )
+                if event_type in {"invoice.paid", "invoice.payment_failed"}:
+                    _upsert_invoice_transaction(
+                        s,
+                        invoice_row=invoice_row,
+                        subscription_row=sub_row,
+                        invoice_obj=obj,
+                        event_type=event_type,
+                    )
+                webhook_row.status = "processed" if invoice_row else "ignored"
+                if not invoice_row:
+                    webhook_row.error_message = "invoice object missing id"
+            else:
+                webhook_row.status = "ignored"
+
+            webhook_row.processed_at = datetime.utcnow()
+            if webhook_row.status != "error":
+                webhook_row.error_message = webhook_row.error_message if webhook_row.status == "ignored" else None
+            s.add(webhook_row)
+            s.commit()
+            return {"ok": True, "event_id": event_id, "status": webhook_row.status}
+        except Exception as e:
+            s.rollback()
+            failed = s.get(BillingWebhookEvent, webhook_id)
+            if failed:
+                failed.status = "error"
+                failed.error_message = str(e)[:2000]
+                failed.retry_count = int(getattr(failed, "retry_count", 0) or 0) + 1
+                failed.processed_at = datetime.utcnow()
+                s.add(failed)
+                s.commit()
+            raise HTTPException(status_code=500, detail=f"stripe webhook processing failed: {e}")
 
 
 def _meta_to_dict(value):
@@ -9107,14 +10290,17 @@ def admin_touchpoint_history(
     start_dt = _parse_dt(start)
     end_dt = _parse_dt(end, is_end=True)
 
+    canonical_touchpoint = _canonical_touchpoint_filter(touchpoint)
+    message_touchpoint_patterns = _touchpoint_message_like_patterns(canonical_touchpoint)
+
     with SessionLocal() as s:
         tp_query = s.query(Touchpoint)
         if club_scope_id is not None:
             tp_query = tp_query.join(User, Touchpoint.user_id == User.id).filter(User.club_id == club_scope_id)
         if user_id:
             tp_query = tp_query.filter(Touchpoint.user_id == int(user_id))
-        if touchpoint:
-            tp_query = tp_query.filter(Touchpoint.type == touchpoint)
+        if canonical_touchpoint:
+            tp_query = tp_query.filter(func.lower(Touchpoint.type) == canonical_touchpoint)
         tp_ts = func.coalesce(Touchpoint.sent_at, Touchpoint.created_at)
         if start_dt:
             tp_query = tp_query.filter(tp_ts >= start_dt)
@@ -9133,7 +10319,10 @@ def admin_touchpoint_history(
             msg_query = msg_query.filter(MessageLog.created_at >= start_dt)
         if end_dt:
             msg_query = msg_query.filter(MessageLog.created_at < end_dt)
-        messages = msg_query.order_by(desc(MessageLog.created_at)).limit(max_limit * 2).all()
+        if message_touchpoint_patterns:
+            like_clauses = [MessageLog.text.ilike(pat) for pat in message_touchpoint_patterns]
+            msg_query = msg_query.filter(or_(*like_clauses))
+        messages = msg_query.order_by(desc(MessageLog.created_at)).limit(max_limit * 6).all()
 
         user_ids = {tp.user_id for tp in touchpoints if tp.user_id} | {m.user_id for m in messages if m.user_id}
         user_map: dict[int, User] = {}
@@ -9176,8 +10365,12 @@ def admin_touchpoint_history(
             }
         )
     for msg in messages:
+        if canonical_touchpoint == "out_of_session" and not _is_out_of_session_message(getattr(msg, "meta", None), getattr(msg, "text", None)):
+            continue
+        delivery = _message_delivery_from_meta(getattr(msg, "meta", None))
         user = user_map.get(msg.user_id) if msg.user_id else None
         name = " ".join([str(getattr(user, "first_name", "") or "").strip(), str(getattr(user, "surname", "") or "").strip()]).strip()
+        inferred_tp = "out_of_session" if _is_out_of_session_message(getattr(msg, "meta", None), getattr(msg, "text", None)) else _coaching_day_from_message_text(getattr(msg, "text", None))
         items.append(
             {
                 "id": msg.id,
@@ -9185,12 +10378,18 @@ def admin_touchpoint_history(
                 "ts": msg.created_at.isoformat() if msg.created_at else None,
                 "direction": msg.direction,
                 "channel": msg.channel,
+                "touchpoint_type": inferred_tp,
                 "preview": _preview(msg.text),
                 "full_text": (msg.text or "").strip(),
                 "is_truncated": _is_truncated(msg.text),
                 "user_id": msg.user_id,
                 "user_name": name or None,
                 "phone": getattr(user, "phone", None) if user else None,
+                "delivery_state": delivery.get("delivery_state"),
+                "delivery_status": delivery.get("delivery_status"),
+                "delivery_error_code": delivery.get("delivery_error_code"),
+                "delivery_error_description": delivery.get("delivery_error_description"),
+                "delivery_last_callback_at": delivery.get("delivery_last_callback_at"),
             }
         )
 
@@ -9288,6 +10487,15 @@ def admin_coaching_scheduled(
             .filter(GlobalPromptSchedule.day_key.in_(day_order))
             .all()
         )
+        recent_outbound_rows = (
+            s.query(MessageLog.user_id, MessageLog.created_at, MessageLog.text, MessageLog.meta)
+            .filter(MessageLog.user_id.in_(user_ids))
+            .filter(MessageLog.direction == "outbound")
+            .filter(MessageLog.created_at >= (datetime.utcnow() - timedelta(days=30)))
+            .order_by(desc(MessageLog.created_at))
+            .limit(max_limit * 200)
+            .all()
+        )
 
     coaching_enabled_map: dict[int, bool] = {}
     day_pref_map: dict[tuple[int, str], str | None] = {}
@@ -9361,6 +10569,30 @@ def admin_coaching_scheduled(
         day_key = str(day_key_raw or "").strip().lower()
         if day_key in day_order:
             global_schedule_map[day_key] = {"time_local": (time_local or None), "enabled": bool(enabled)}
+
+    latest_delivery_by_user_day: dict[tuple[int, str], dict[str, object]] = {}
+    for uid_raw, created_at, text, meta in recent_outbound_rows:
+        if uid_raw is None:
+            continue
+        try:
+            uid = int(uid_raw)
+        except Exception:
+            continue
+        day_key = _coaching_day_from_message_text(text)
+        if not day_key:
+            continue
+        key = (uid, day_key)
+        if key in latest_delivery_by_user_day:
+            continue
+        delivery = _message_delivery_from_meta(meta)
+        latest_delivery_by_user_day[key] = {
+            "last_message_at": created_at.isoformat() if isinstance(created_at, datetime) else None,
+            "last_delivery_state": delivery.get("delivery_state"),
+            "last_delivery_status": delivery.get("delivery_status"),
+            "last_delivery_error_code": delivery.get("delivery_error_code"),
+            "last_delivery_error_description": delivery.get("delivery_error_description"),
+            "last_delivery_last_callback_at": delivery.get("delivery_last_callback_at"),
+        }
 
     jobs_by_user_day: dict[tuple[int, str], dict[str, object]] = {}
     first_day_catchup_by_user: dict[int, dict[str, object]] = {}
@@ -9452,6 +10684,7 @@ def admin_coaching_scheduled(
             day_override = day_pref_map.get((uid, day))
             global_day = global_schedule_map.get(day) or {}
             plan = day_plan_map.get(day) or {}
+            latest_delivery = latest_delivery_by_user_day.get((uid, day)) or {}
             items.append(
                 {
                     "user_id": uid,
@@ -9477,6 +10710,12 @@ def admin_coaching_scheduled(
                     "first_day_pending": bool(first_day_pending_map.get(uid, False)),
                     "first_day_sent_at": first_day_sent_at_map.get(uid),
                     "first_day_override": False,
+                    "last_message_at": latest_delivery.get("last_message_at"),
+                    "last_delivery_state": latest_delivery.get("last_delivery_state"),
+                    "last_delivery_status": latest_delivery.get("last_delivery_status"),
+                    "last_delivery_error_code": latest_delivery.get("last_delivery_error_code"),
+                    "last_delivery_error_description": latest_delivery.get("last_delivery_error_description"),
+                    "last_delivery_last_callback_at": latest_delivery.get("last_delivery_last_callback_at"),
                 }
             )
 
@@ -9515,6 +10754,14 @@ def admin_coaching_scheduled(
         row["planned_delivery"] = "podcast+text"
         row["planned_message"] = "First day of coaching welcome podcast and habit-step summary."
         row["first_day_override"] = True
+        first_day_delivery = latest_delivery_by_user_day.get((uid, "first_day")) or {}
+        if first_day_delivery:
+            row["last_message_at"] = first_day_delivery.get("last_message_at")
+            row["last_delivery_state"] = first_day_delivery.get("last_delivery_state")
+            row["last_delivery_status"] = first_day_delivery.get("last_delivery_status")
+            row["last_delivery_error_code"] = first_day_delivery.get("last_delivery_error_code")
+            row["last_delivery_error_description"] = first_day_delivery.get("last_delivery_error_description")
+            row["last_delivery_last_callback_at"] = first_day_delivery.get("last_delivery_last_callback_at")
         catchup_job = first_day_catchup_by_user.get(uid)
         catchup_next = catchup_job.get("next_run_time") if catchup_job else None
         if isinstance(catchup_next, datetime):
@@ -9679,12 +10926,26 @@ def admin_list_twilio_templates(admin_user: User = Depends(_require_admin)):
     items = []
     for row in rows:
         content_types = []
+        approval_status = None
+        approval_detail = None
+        approval_source = None
+        approval_checked_at = None
         if row.sid:
             try:
                 from .nudges import get_twilio_content_types  # type: ignore
                 content_types = get_twilio_content_types(row.sid)
             except Exception:
                 content_types = []
+        if str(row.template_type or "").strip().lower() == "session-reopen":
+            try:
+                from .nudges import get_twilio_template_approval_status  # type: ignore
+                approval = get_twilio_template_approval_status(row.sid, channel="whatsapp") or {}
+                approval_status = approval.get("status")
+                approval_detail = approval.get("detail")
+                approval_source = approval.get("source")
+                approval_checked_at = approval.get("checked_at")
+            except Exception:
+                approval_status = None
         items.append(
             {
                 "id": row.id,
@@ -9698,6 +10959,10 @@ def admin_list_twilio_templates(admin_user: User = Depends(_require_admin)):
                 "payload": row.payload,
                 "last_synced_at": row.last_synced_at.isoformat() if row.last_synced_at else None,
                 "content_types": content_types,
+                "approval_status": approval_status,
+                "approval_detail": approval_detail,
+                "approval_source": approval_source,
+                "approval_checked_at": approval_checked_at,
             }
         )
     return {"templates": items}

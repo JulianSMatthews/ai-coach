@@ -12,6 +12,14 @@ function formatDate(value?: string | null) {
   return String(value).slice(0, 19).replace("T", " ");
 }
 
+function deliveryStateClass(value?: string | null) {
+  const key = String(value || "").toLowerCase();
+  if (key === "received") return "border-[#2f8b55] bg-[#eaf7ef] text-[#14532d]";
+  if (key === "failed") return "border-[#c43d3d] bg-[#fdeaea] text-[#8c1d1d]";
+  if (key === "attempted") return "border-[#cc9a2f] bg-[#fff6e6] text-[#825b0b]";
+  return "border-[#d8d1c4] bg-[#f7f4ee] text-[#6b6257]";
+}
+
 export default async function TouchpointHistoryPage({ searchParams }: TouchpointHistoryPageProps) {
   const resolved = await searchParams;
   const start = (resolved?.start || "").trim();
@@ -47,8 +55,29 @@ export default async function TouchpointHistoryPage({ searchParams }: Touchpoint
               name="touchpoint"
               defaultValue={touchpoint}
               placeholder="Touchpoint type"
+              list="touchpoint-options"
               className="rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
             />
+            <datalist id="touchpoint-options">
+              {[
+                "kickoff",
+                "first_day",
+                "monday",
+                "tuesday",
+                "wednesday",
+                "thursday",
+                "friday",
+                "saturday",
+                "sunday",
+                "podcast_first_day",
+                "podcast_thursday",
+                "podcast_friday",
+                "midweek",
+                "out_of_session",
+              ].map((tp) => (
+                <option key={tp} value={tp} />
+              ))}
+            </datalist>
             <input
               name="user_id"
               defaultValue={userRaw}
@@ -101,18 +130,32 @@ export default async function TouchpointHistoryPage({ searchParams }: Touchpoint
                       <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{headline}</p>
                       <p className="mt-1 text-sm text-[#6b6257]">{meta || "—"}</p>
                     </div>
-                    {item.audio_url ? (
-                      <a
-                        href={item.audio_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
-                      >
-                        Play
-                      </a>
-                    ) : null}
+                    <div className="flex items-center gap-2">
+                      {item.kind === "message" ? (
+                        <span className={`rounded-full border px-2 py-1 text-[11px] uppercase tracking-[0.18em] ${deliveryStateClass(item.delivery_state)}`}>
+                          {String(item.delivery_state || "unknown")}
+                        </span>
+                      ) : null}
+                      {item.audio_url ? (
+                        <a
+                          href={item.audio_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="rounded-full border border-[#efe7db] px-3 py-1 text-xs"
+                        >
+                          Play
+                        </a>
+                      ) : null}
+                    </div>
                   </div>
                   <p className="mt-3 text-sm text-[#1e1b16]">{item.preview || "—"}</p>
+                  {item.kind === "message" ? (
+                    <p className="mt-2 text-xs text-[#6b6257]">
+                      delivery: {item.delivery_status || "—"} · callback: {formatDate(item.delivery_last_callback_at)}
+                      {item.delivery_error_code ? ` · error ${item.delivery_error_code}` : ""}
+                      {item.delivery_error_description ? ` · ${item.delivery_error_description}` : ""}
+                    </p>
+                  ) : null}
                   {item.is_truncated ? (
                     <details className="mt-3 text-sm text-[#1e1b16]">
                       <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[#6b6257]">

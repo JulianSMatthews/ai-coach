@@ -311,6 +311,13 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
       description: "Median consecutive-day inbound streak (UK day), anchored to today.",
     },
   ];
+  const coachingDelivery = health?.coaching?.delivery || {
+    attempted_current_logic: 0,
+    attempted_messages: 0,
+    delivery_confirmed: 0,
+    failed_undelivered: 0,
+    callback_pending_unknown: 0,
+  };
   const appKpis = appEngagement?.top_kpis || {};
   const appDetail = appEngagement?.detail || {};
   const appOnboarding = appDetail.onboarding || {};
@@ -609,6 +616,28 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
               ))}
             </section>
 
+            <section className="grid gap-4 md:grid-cols-3">
+              <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Attempted (current logic)</p>
+                <div className="mt-3 text-3xl font-semibold">{coachingDelivery.attempted_current_logic ?? 0}</div>
+                <p className="mt-2 text-sm text-[#6b6257]">Touchpoints attempted by the scheduler flow.</p>
+              </div>
+              <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Delivery confirmed (from Twilio callbacks)</p>
+                <div className="mt-3 text-3xl font-semibold">{coachingDelivery.delivery_confirmed ?? 0}</div>
+                <p className="mt-2 text-sm text-[#6b6257]">
+                  Latest callback status is <code>delivered</code> or <code>read</code>.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Failed/undelivered (with error codes)</p>
+                <div className="mt-3 text-3xl font-semibold">{coachingDelivery.failed_undelivered ?? 0}</div>
+                <p className="mt-2 text-sm text-[#6b6257]">
+                  Latest callback has <code>failed</code>/<code>undelivered</code> or an error code.
+                </p>
+              </div>
+            </section>
+
             <section className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Coaching day flow funnel</p>
               <p className="mt-2 text-sm text-[#6b6257]">
@@ -695,7 +724,7 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
               <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
                 <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Day-by-day engagement</p>
                 <p className="mt-1 text-xs text-[#8a8176]">
-                  Sent volume, 24-hour reply rate, and media usage by coaching touchpoint day.
+                  Attempted touchpoints, Twilio delivery outcomes, 24-hour replies, and media usage by day.
                 </p>
                 <div className="mt-3 space-y-2">
                   {!coachingDayStats.length ? (
@@ -706,6 +735,14 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.day || "unknown"}</span>
                           <span className="text-sm font-semibold">{row.sent ?? 0} sent</span>
+                        </div>
+                        <div className="mt-1 text-xs text-[#6b6257]">
+                          attempted (current logic) {row.attempted_current_logic ?? row.sent ?? 0} | delivery confirmed{" "}
+                          {row.delivery_confirmed ?? 0} | failed/undelivered {row.failed_undelivered ?? 0}
+                        </div>
+                        <div className="mt-1 text-xs text-[#6b6257]">
+                          callback pending/unknown {row.callback_pending_unknown ?? 0} | attempted messages{" "}
+                          {row.attempted_messages ?? 0}
                         </div>
                         <div className="mt-1 text-xs text-[#6b6257]">
                           users {row.users ?? 0} | replies {row.replied_24h ?? 0} (
@@ -1164,6 +1201,33 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
                   : "—"}
                 <div className="mt-1 text-xs text-[#8a8176]">
                   Failure percentage from matched Twilio callback outcomes.
+                </div>
+              </div>
+              <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span>
+                    24h template failures:{" "}
+                    {health?.messaging?.out_of_session_template?.failure_rate_pct != null
+                      ? `${formatNum(health.messaging.out_of_session_template.failure_rate_pct)}%`
+                      : "—"}
+                  </span>
+                  <span
+                    className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.2em] ${stateBadgeClass(
+                      health?.messaging?.out_of_session_template?.failure_state,
+                    )}`}
+                  >
+                    {(health?.messaging?.out_of_session_template?.failure_state || "unknown").toUpperCase()}
+                  </span>
+                </div>
+                <div className="mt-1 text-xs text-[#6b6257]">
+                  attempted {health?.messaging?.out_of_session_template?.attempted_messages ?? 0} · delivered/read{" "}
+                  {health?.messaging?.out_of_session_template?.delivery_confirmed ?? 0} · failed/undelivered{" "}
+                  {health?.messaging?.out_of_session_template?.failed_undelivered ?? 0}
+                </div>
+                <div className="mt-1 text-xs text-[#8a8176]">
+                  callbacks matched {health?.messaging?.out_of_session_template?.callbacks_matched ?? 0} · sent-only{" "}
+                  {health?.messaging?.out_of_session_template?.attempted_only ?? 0} · pending/unknown{" "}
+                  {health?.messaging?.out_of_session_template?.pending_unknown ?? 0}
                 </div>
               </div>
               <details className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">

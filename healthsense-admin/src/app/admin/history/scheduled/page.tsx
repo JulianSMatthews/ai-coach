@@ -27,6 +27,14 @@ function titleCase(value?: string | null) {
   return txt.charAt(0).toUpperCase() + txt.slice(1);
 }
 
+function deliveryStateClass(value?: string | null) {
+  const key = String(value || "").toLowerCase();
+  if (key === "received") return "border-[#2f8b55] bg-[#eaf7ef] text-[#14532d]";
+  if (key === "failed") return "border-[#c43d3d] bg-[#fdeaea] text-[#8c1d1d]";
+  if (key === "attempted") return "border-[#cc9a2f] bg-[#fff6e6] text-[#825b0b]";
+  return "border-[#d8d1c4] bg-[#f7f4ee] text-[#6b6257]";
+}
+
 export default async function CoachingScheduledPage({ searchParams }: CoachingScheduledPageProps) {
   const resolved = await searchParams;
   const userRaw = (resolved?.user_id || "").trim();
@@ -103,7 +111,7 @@ export default async function CoachingScheduledPage({ searchParams }: CoachingSc
           <h2 className="text-lg font-semibold">Schedule rows</h2>
           <p className="mt-2 text-sm text-[#6b6257]">Each row is one user-day schedule record (Mon-Sun).</p>
           <div className="mt-4 overflow-x-auto">
-            <table className="w-full min-w-[1380px] text-left text-sm">
+            <table className="w-full min-w-[1540px] text-left text-sm">
               <thead className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
                 <tr>
                   <th className="py-2 pr-4">User</th>
@@ -115,6 +123,7 @@ export default async function CoachingScheduledPage({ searchParams }: CoachingSc
                   <th className="py-2 pr-4">Mode</th>
                   <th className="py-2 pr-4">Source</th>
                   <th className="py-2 pr-4">Time local</th>
+                  <th className="py-2 pr-4">Latest delivery</th>
                   <th className="py-2 pr-4">Job ID</th>
                   <th className="py-2 pr-4">Trigger</th>
                 </tr>
@@ -156,6 +165,23 @@ export default async function CoachingScheduledPage({ searchParams }: CoachingSc
                       </td>
                       <td className="py-3 pr-4">{row.schedule_source || "—"}</td>
                       <td className="py-3 pr-4">{row.time_local || "—"}</td>
+                      <td className="py-3 pr-4">
+                        <div className="space-y-1">
+                          <span className={`inline-flex rounded-full border px-2 py-1 text-[11px] uppercase tracking-[0.18em] ${deliveryStateClass(row.last_delivery_state)}`}>
+                            {String(row.last_delivery_state || "unknown")}
+                          </span>
+                          <p className="text-xs text-[#6b6257]">
+                            status: {row.last_delivery_status || "—"}
+                            {row.last_delivery_error_code ? ` · error ${row.last_delivery_error_code}` : ""}
+                          </p>
+                          {row.last_delivery_error_description ? (
+                            <p className="max-w-[260px] text-xs text-[#8a8176]">{row.last_delivery_error_description}</p>
+                          ) : null}
+                          <p className="text-xs text-[#8a8176]">
+                            message: {formatDate(row.last_message_at)} · callback: {formatDate(row.last_delivery_last_callback_at)}
+                          </p>
+                        </div>
+                      </td>
                       <td className="py-3 pr-4 font-mono text-xs text-[#6b6257]">{row.job_id || "—"}</td>
                       <td className="py-3 pr-4 font-mono text-xs text-[#6b6257]">{row.job_trigger || "—"}</td>
                     </tr>
