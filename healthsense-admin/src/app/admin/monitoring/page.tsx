@@ -329,6 +329,25 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
   const templateFailedPct = templateSent > 0 ? (templateFailed / templateSent) * 100 : 0;
   const templatePendingPct = templateSent > 0 ? (templatePending / templateSent) * 100 : 0;
   const templateNotReceivedPct = templateSent > 0 ? (templateNotReceived / templateSent) * 100 : null;
+  const asOfDate = activeAsOf ? new Date(activeAsOf) : new Date();
+  const todayDayKey = new Intl.DateTimeFormat("en-GB", { weekday: "long", timeZone: "Europe/London" })
+    .format(asOfDate)
+    .toLowerCase();
+  const todayStatsRow = coachingDayStats.find((row) => String(row?.day || "").toLowerCase() === todayDayKey);
+  const todaySent = Math.max(
+    0,
+    Number(todayStatsRow?.attempted_messages ?? todayStatsRow?.sent ?? todayStatsRow?.attempted_current_logic ?? 0) || 0,
+  );
+  const todayReceived = Math.max(
+    0,
+    Number(todayStatsRow?.delivery_confirmed ?? todayStatsRow?.received_users ?? 0) || 0,
+  );
+  const todayResponded = Math.max(
+    0,
+    Number(todayStatsRow?.replied_users ?? todayStatsRow?.replied_24h ?? 0) || 0,
+  );
+  const todayRatioLabel = `${todaySent}:${todayReceived}:${todayResponded}`;
+  const todayDayLabel = todayDayKey ? `${todayDayKey.charAt(0).toUpperCase()}${todayDayKey.slice(1)}` : "Today";
   const appKpis = appEngagement?.top_kpis || {};
   const appDetail = appEngagement?.detail || {};
   const appOnboarding = appDetail.onboarding || {};
@@ -625,6 +644,17 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
                   <p className="mt-1 text-xs text-[#8a8176]">{item.description}</p>
                 </div>
               ))}
+            </section>
+
+            <section className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Coaching interactions for today (UK)</p>
+              <div className="mt-3 text-4xl font-semibold">{todayRatioLabel}</div>
+              <p className="mt-1 text-sm text-[#6b6257]">{todayDayLabel} · Sent:Received:Responded</p>
+              <p className="mt-2 text-xs text-[#8a8176]">
+                Legend: <span className="font-medium text-[#1e1b16]">Sent</span> = attempted coaching sends,{" "}
+                <span className="font-medium text-[#1e1b16]">Received</span> = Twilio delivered/read,{" "}
+                <span className="font-medium text-[#1e1b16]">Responded</span> = users who replied within 24h.
+              </p>
             </section>
 
             <section className="grid gap-4 md:grid-cols-3">
