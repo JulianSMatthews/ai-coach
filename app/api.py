@@ -4800,6 +4800,39 @@ def api_user_coaching_history(
         # Keep virtual_date separately for debugging fast-mode/day-shift behavior.
         return (ts.isoformat() if ts else None), virtual_date_iso
 
+    def _render_session_reopen_display_text(meta: dict) -> str:
+        preview_text = str(meta.get("template_preview_text") or "").strip()
+        if preview_text:
+            return preview_text
+        first_name = str(getattr(u, "first_name", "") or "").strip() or "there"
+        vars_map = build_session_reopen_template_variables(
+            user_first_name=first_name,
+            coach_name=get_default_session_reopen_coach_name(),
+            message_text=get_default_session_reopen_message_text(),
+        )
+        return f"Hi {vars_map.get('1', 'there')}, {vars_map.get('2', 'Gia')} from HealthSense here. {vars_map.get('3', '')}".strip()
+
+    def _message_display_text(msg: MessageLog) -> str:
+        raw_text = str(getattr(msg, "text", "") or "").strip()
+        if raw_text and raw_text not in {"(media)", "(template message)", "(message)"}:
+            return raw_text
+        meta = _meta_dict(getattr(msg, "meta", None))
+        category = str(meta.get("category") or "").strip().lower()
+        if category in {"session-reopen", "session_reopen", "out_of_session"}:
+            return _render_session_reopen_display_text(meta)
+        return raw_text
+
+    def _is_virtual_message(msg: MessageLog) -> bool:
+        meta = _meta_dict(getattr(msg, "meta", None))
+        raw_virtual = str(meta.get("virtual_date") or "").strip()
+        if not raw_virtual:
+            return False
+        try:
+            date.fromisoformat(raw_virtual[:10])
+            return True
+        except Exception:
+            return False
+
     items = []
     for tp in touchpoints:
         ts = tp.sent_at or tp.created_at
@@ -4820,18 +4853,29 @@ def api_user_coaching_history(
             }
         )
     for msg in messages:
+        if _is_virtual_message(msg):
+            continue
         msg_ts, msg_virtual_date = _message_ts_iso(msg)
+        display_text = _message_display_text(msg)
+        meta = _meta_dict(getattr(msg, "meta", None))
+        category = str(meta.get("category") or "").strip().lower()
+        touchpoint_type = None
+        if category in {"session-reopen", "session_reopen"}:
+            touchpoint_type = "session_reopen"
+        elif category == "out_of_session":
+            touchpoint_type = "out_of_session"
         items.append(
             {
                 "id": msg.id,
                 "ts": msg_ts,
                 "type": "dialog",
                 "title": "Message",
-                "preview": _preview(msg.text),
-                "full_text": (msg.text or "").strip(),
-                "is_truncated": _is_truncated(msg.text),
+                "preview": _preview(display_text),
+                "full_text": display_text,
+                "is_truncated": _is_truncated(display_text),
                 "direction": msg.direction,
                 "channel": msg.channel,
+                "touchpoint_type": touchpoint_type,
                 "virtual_date": msg_virtual_date,
             }
         )
@@ -5004,6 +5048,22 @@ def _canonical_touchpoint_filter(raw_touchpoint: object) -> str | None:
     if raw in {"out_of_session", "outside_24h", "session_reopen", "reopen"}:
         return "out_of_session"
     return raw
+
+
+def _touchpoint_filter_variant(raw_touchpoint: object) -> str | None:
+    """
+    Optional sub-filter for dialog history.
+    - session_reopen: scheduler-triggered 24h template sends
+    - out_of_session: admin/manual 24h template sends
+    """
+    raw = str(raw_touchpoint or "").strip().lower()
+    if not raw:
+        return None
+    if raw in {"session_reopen", "session-reopen", "reopen"}:
+        return "session_reopen"
+    if raw in {"out_of_session", "outside_24h"}:
+        return "out_of_session"
+    return None
 
 
 def _coaching_day_from_message_text(raw_text: object) -> str | None:
@@ -10601,6 +10661,7 @@ def admin_touchpoint_history(
     end_dt = _parse_dt(end, is_end=True)
 
     canonical_touchpoint = _canonical_touchpoint_filter(touchpoint)
+    touchpoint_variant = _touchpoint_filter_variant(touchpoint)
     delivery_filter = str(delivery or "").strip().lower()
     allowed_delivery_filters = {
         "all",
@@ -10621,6 +10682,10 @@ def admin_touchpoint_history(
         pending_stale_minutes = 15
     now_utc = datetime.utcnow()
     message_touchpoint_patterns = _touchpoint_message_like_patterns(canonical_touchpoint)
+    # Out-of-session/session-reopen messages are best filtered by meta category,
+    # not text prefix; text-only prefiltering can hide valid template rows.
+    if canonical_touchpoint == "out_of_session":
+        message_touchpoint_patterns = []
 
     with SessionLocal() as s:
         tp_query = s.query(Touchpoint)
@@ -10784,6 +10849,27 @@ def admin_touchpoint_history(
         cleaned = " ".join(str(text).split())
         return len(cleaned) > 180
 
+    def _is_virtual_message(meta_obj: object) -> bool:
+        meta = meta_obj
+        if isinstance(meta, str):
+            raw = meta.strip()
+            if not raw:
+                return False
+            try:
+                meta = json.loads(raw)
+            except Exception:
+                return False
+        if not isinstance(meta, dict):
+            return False
+        raw_virtual = str(meta.get("virtual_date") or "").strip()
+        if not raw_virtual:
+            return False
+        try:
+            date.fromisoformat(raw_virtual[:10])
+            return True
+        except Exception:
+            return False
+
     items: list[dict[str, object]] = []
     if delivery_filter in {"", "all"}:
         for tp in touchpoints:
@@ -10808,14 +10894,29 @@ def admin_touchpoint_history(
                 }
             )
     for msg in messages:
+        if _is_virtual_message(getattr(msg, "meta", None)):
+            continue
+        msg_meta = _as_payload_dict(getattr(msg, "meta", None))
+        raw_category = str(msg_meta.get("category") or "").strip().lower()
+        is_session_reopen_msg = raw_category in {"session-reopen", "session_reopen"}
+        is_out_of_session_msg = raw_category == "out_of_session"
         if canonical_touchpoint == "out_of_session" and not _is_out_of_session_message(getattr(msg, "meta", None), getattr(msg, "text", None)):
             continue
+        if touchpoint_variant == "session_reopen" and not is_session_reopen_msg:
+            continue
+        if touchpoint_variant == "out_of_session" and is_session_reopen_msg:
+            continue
         delivery = _message_delivery_from_meta(getattr(msg, "meta", None))
-        inferred_tp = "out_of_session" if _is_out_of_session_message(getattr(msg, "meta", None), getattr(msg, "text", None)) else _coaching_day_from_message_text(getattr(msg, "text", None))
+        if is_session_reopen_msg:
+            inferred_tp = "session_reopen"
+        elif is_out_of_session_msg or _is_out_of_session_message(getattr(msg, "meta", None), getattr(msg, "text", None)):
+            inferred_tp = "out_of_session"
+        else:
+            inferred_tp = _coaching_day_from_message_text(getattr(msg, "text", None))
         reply_found, reply_at = _reply_after_outbound(getattr(msg, "user_id", None), getattr(msg, "created_at", None))
         if (
             not reply_found
-            and inferred_tp == "out_of_session"
+            and inferred_tp in {"out_of_session", "session_reopen"}
             and str(getattr(msg, "direction", "") or "").lower() == "outbound"
         ):
             triggered, triggered_at = _inbound_trigger_before_outbound(
@@ -10910,6 +11011,7 @@ def admin_touchpoint_history_filter_touchpoints(
         "saturday",
         "sunday",
         "out_of_session",
+        "session_reopen",
     }
 
     with SessionLocal() as s:

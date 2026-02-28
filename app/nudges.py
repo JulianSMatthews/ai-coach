@@ -950,10 +950,23 @@ def _twilio_client() -> Client | None:
 
 
 # NOTE: write_log is defined ONLY in app.message_log and imported here; do not redefine.
-def _try_write_outbound_log(*, phone_e164: str, text: str, category: str | None, twilio_sid: str, to_norm: str):
+def _try_write_outbound_log(
+    *,
+    phone_e164: str,
+    text: str,
+    category: str | None,
+    twilio_sid: str,
+    to_norm: str,
+    extra_meta: dict | None = None,
+):
     """Log using the single canonical write_log from app.message_log; never raise."""
     try:
         meta_payload: dict[str, str] = {"to": to_norm}
+        if isinstance(extra_meta, dict):
+            for key, value in extra_meta.items():
+                if value is None:
+                    continue
+                meta_payload[str(key)] = value
         created_at_override = None
         user_id = _lookup_user_id_for_whatsapp(to_norm)
         if user_id:
@@ -984,6 +997,44 @@ def _perform_twilio_send(
     content_sid: str | None = None,
     content_variables: str | None = None,
 ) -> str:
+    def _parsed_template_variables(raw: str | None) -> dict[str, str]:
+        if not raw:
+            return {}
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            return {}
+        if not isinstance(parsed, dict):
+            return {}
+        out: dict[str, str] = {}
+        for key, value in parsed.items():
+            out[str(key)] = str(value)
+        return out
+
+    def _render_template_preview_text(
+        *,
+        template_sid: str | None,
+        raw_variables: str | None,
+        fallback_text: str | None = None,
+    ) -> str | None:
+        rendered_text: str | None = None
+        if template_sid:
+            try:
+                preview = get_twilio_content_preview(template_sid) or {}
+                raw_body = str(preview.get("body") or "").strip() if isinstance(preview, dict) else ""
+                if raw_body:
+                    rendered = raw_body
+                    vars_map = _parsed_template_variables(raw_variables)
+                    for key, value in vars_map.items():
+                        rendered = rendered.replace(f"{{{{{key}}}}}", value)
+                    rendered_text = _sanitize_whatsapp_template_text(rendered)
+            except Exception:
+                rendered_text = None
+        if rendered_text:
+            return rendered_text
+        fallback = _sanitize_whatsapp_template_text(fallback_text)
+        return fallback or None
+
     status_callback = (os.getenv("TWILIO_STATUS_CALLBACK_URL") or "").strip()
     if not status_callback:
         base = (os.getenv("API_PUBLIC_BASE_URL") or os.getenv("PUBLIC_BASE_URL") or "").strip().rstrip("/")
@@ -1081,12 +1132,35 @@ def _perform_twilio_send(
 
     phone_e164 = to_norm.replace("whatsapp:", "")
     try:
+        log_text = (text or "").strip() or None
+        template_preview_text = None
+        if content_sid:
+            template_preview_text = _render_template_preview_text(
+                template_sid=content_sid,
+                raw_variables=content_variables,
+                fallback_text=log_text,
+            )
+            if template_preview_text:
+                log_text = template_preview_text
+            elif not log_text:
+                log_text = "(template message)"
+        elif not log_text:
+            log_text = "(media)" if media_urls else "(message)"
+
+        meta_extra: dict[str, str] = {}
+        if content_sid:
+            meta_extra["template_sid"] = str(content_sid)
+        if content_variables:
+            meta_extra["template_variables"] = str(content_variables)
+        if template_preview_text:
+            meta_extra["template_preview_text"] = str(template_preview_text)
         _try_write_outbound_log(
             phone_e164=phone_e164,
-            text=text or "(media)",
+            text=log_text,
             category=category,
             twilio_sid=getattr(msg, "sid", None) or "",
             to_norm=to_norm,
+            extra_meta=meta_extra or None,
         )
     except Exception as e:
         print(f"⚠️ outbound logging wrapper failed (non-fatal): {e!r}")
