@@ -49,6 +49,34 @@ export default async function AdminHome() {
   }
   const appKpis = appEngagement?.top_kpis || {};
   const outside24hState = health?.coaching?.engagement_window?.outside_24h_state || "unknown";
+  const dashboardAsOf = health?.as_of_utc ? new Date(health.as_of_utc) : new Date();
+  const dashboardTodayDayKey = new Intl.DateTimeFormat("en-GB", {
+    weekday: "long",
+    timeZone: "Europe/London",
+  })
+    .format(dashboardAsOf)
+    .toLowerCase();
+  const dashboardTodayStats = (health?.coaching?.day_stats || []).find(
+    (row) => String(row?.day || "").toLowerCase() === dashboardTodayDayKey,
+  );
+  const dashboardTodaySent = Math.max(
+    0,
+    Number(
+      dashboardTodayStats?.attempted_messages ??
+        dashboardTodayStats?.sent ??
+        dashboardTodayStats?.attempted_current_logic ??
+        0,
+    ) || 0,
+  );
+  const dashboardTodayReceived = Math.max(
+    0,
+    Number(dashboardTodayStats?.delivery_confirmed ?? dashboardTodayStats?.received_users ?? 0) || 0,
+  );
+  const dashboardTodayResponded = Math.max(
+    0,
+    Number(dashboardTodayStats?.replied_users ?? dashboardTodayStats?.replied_24h ?? 0) || 0,
+  );
+  const dashboardTodayRatio = `${dashboardTodaySent}:${dashboardTodayReceived}:${dashboardTodayResponded}`;
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -80,7 +108,7 @@ export default async function AdminHome() {
               desc: "WhatsApp + in-app coaching touchpoints.",
               rows: [
                 { label: "Total", value: stats?.interactions?.total ?? "—" },
-                { label: "Today", value: stats?.interactions?.today ?? "—" },
+                { label: "Today", value: dashboardTodayRatio },
                 { label: "This week", value: stats?.interactions?.week ?? "—" },
               ],
             },
