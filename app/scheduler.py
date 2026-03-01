@@ -38,6 +38,7 @@ from .nudges import (
     ensure_quick_reply_templates,
     build_session_reopen_template_variables,
     get_default_session_reopen_message_text,
+    get_default_session_reopen_coach_name,
 )
 from .debug_utils import debug_log, debug_enabled
 from .llm import compose_prompt
@@ -328,17 +329,26 @@ def _outside_whatsapp_window(session, user: User, *, now_utc: datetime, after_ho
     return (now_utc - last_inbound) >= timedelta(hours=max(1, int(after_hours)))
 
 
-def _render_reopen_message_for_day(base_message: str | None, day: str) -> str:
+def _render_reopen_message_for_day(
+    base_message: str | None,
+    day: str,
+    *,
+    first_name: str | None = None,
+    coach_name: str | None = None,
+) -> str:
     day_label = _coaching_day_key(day).capitalize()
     raw = str(base_message or "").strip()
-    if "{day}" in raw:
-        return raw.replace("{day}", day_label)
-    if raw:
-        return raw
-    return (
+    if not raw:
+        raw = (
         f"Your {day_label} coaching message is ready. "
         "Please tap below to continue your wellbeing journey."
-    )
+        )
+    coach = (str(coach_name or "").strip() or get_default_session_reopen_coach_name())
+    fname = str(first_name or "").strip()
+    rendered = raw.replace("{day}", day_label)
+    rendered = rendered.replace("{first_name}", fname or "there")
+    rendered = rendered.replace("{coach_name}", coach)
+    return rendered
 
 
 def send_out_of_session_messages() -> None:
@@ -409,7 +419,12 @@ def send_out_of_session_messages() -> None:
                     variables=build_session_reopen_template_variables(
                         user_first_name=getattr(user, "first_name", None),
                         coach_name=None,
-                        message_text=reopen_message,
+                        message_text=_render_reopen_message_for_day(
+                            reopen_message,
+                            datetime.now(_tz(user)).strftime("%A").lower(),
+                            first_name=getattr(user, "first_name", None),
+                            coach_name=None,
+                        ),
                     ),
                     category="session-reopen",
                 )
@@ -772,7 +787,12 @@ def _run_day_prompt_inline(user_id: int, day: str):
                             variables=build_session_reopen_template_variables(
                                 user_first_name=getattr(user, "first_name", None),
                                 coach_name=None,
-                                message_text=_render_reopen_message_for_day(message, day_key),
+                                message_text=_render_reopen_message_for_day(
+                                    message,
+                                    day_key,
+                                    first_name=getattr(user, "first_name", None),
+                                    coach_name=None,
+                                ),
                             ),
                             category="session-reopen",
                         )

@@ -7,6 +7,7 @@ import {
   deleteTwilioTemplate,
   syncTwilioTemplates,
   updateGlobalPromptSchedule,
+  updateMessagingSettings,
   updateTwilioTemplates,
 } from "@/lib/api";
 import { revalidatePath } from "next/cache";
@@ -76,6 +77,17 @@ async function saveScheduleAction(formData: FormData) {
   if (items.length) {
     await updateGlobalPromptSchedule(items);
   }
+  revalidatePath("/admin/messaging");
+}
+
+async function saveMessagingSettingsAction(formData: FormData) {
+  "use server";
+  const enabled = Boolean(formData.get("out_of_session_enabled"));
+  const message = String(formData.get("out_of_session_message") || "").trim();
+  await updateMessagingSettings({
+    out_of_session_enabled: enabled,
+    out_of_session_message: message || null,
+  });
   revalidatePath("/admin/messaging");
 }
 
@@ -243,6 +255,37 @@ export default async function MessagingPage() {
                 {previewButton}
               </span>
             </div>
+            <form action={saveMessagingSettingsAction} className="rounded-2xl border border-[#efe7db] bg-[#faf7f1] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Message configuration</p>
+              <label className="mt-3 flex items-center gap-2 text-sm text-[#6b6257]">
+                <input
+                  type="checkbox"
+                  name="out_of_session_enabled"
+                  defaultChecked={Boolean(settingsData?.out_of_session_enabled)}
+                />
+                Enable 24h+ template messaging
+              </label>
+              <div className="mt-3">
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Template sentence</label>
+                <textarea
+                  name="out_of_session_message"
+                  defaultValue={settingsData?.out_of_session_message || ""}
+                  rows={4}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                  placeholder="Please tap below to continue your wellbeing journey."
+                />
+                <p className="mt-2 text-xs text-[#8a8176]">
+                  This is the sentence inserted into the approved Twilio template. Supported placeholders:{" "}
+                  <code>{"{day}"}</code>, <code>{"{first_name}"}</code>, <code>{"{coach_name}"}</code>.
+                </p>
+              </div>
+              <button
+                type="submit"
+                className="mt-4 rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white"
+              >
+                Save messaging settings
+              </button>
+            </form>
             <p className="text-xs text-[#6b6257]">Preview source: Twilio template content for the configured session-reopen SID.</p>
           </div>
         </section>

@@ -14194,6 +14194,23 @@ def admin_user_send_24h_template(user_id: int, admin_user: User = Depends(_requi
             raise HTTPException(status_code=400, detail="24h template SID not configured")
 
         first_name = str(getattr(u, "first_name", "") or "").strip() or None
+        coach_name = get_default_session_reopen_coach_name()
+        settings_row = s.query(MessagingSettings).order_by(MessagingSettings.id.asc()).first()
+        configured_message = (
+            str(getattr(settings_row, "out_of_session_message", "") or "").strip()
+            if settings_row
+            else ""
+        )
+        base_message = configured_message or get_default_session_reopen_message_text()
+        try:
+            rendered_message = scheduler._render_reopen_message_for_day(  # type: ignore[attr-defined]
+                base_message,
+                datetime.now(UK_TZ).strftime("%A").lower(),
+                first_name=first_name,
+                coach_name=coach_name,
+            )
+        except Exception:
+            rendered_message = base_message
         sid = None
         try:
             # Preferred path for static templates.
@@ -14211,8 +14228,8 @@ def admin_user_send_24h_template(user_id: int, admin_user: User = Depends(_requi
                     template_sid=template_sid,
                     variables=build_session_reopen_template_variables(
                         user_first_name=first_name,
-                        coach_name=get_default_session_reopen_coach_name(),
-                        message_text=get_default_session_reopen_message_text(),
+                        coach_name=coach_name,
+                        message_text=rendered_message,
                     ),
                     category="out_of_session",
                 )
