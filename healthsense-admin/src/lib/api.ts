@@ -574,6 +574,8 @@ export type AssessmentHealthPayload = {
       day?: string;
       sent?: number;
       attempted_current_logic?: number;
+      deferred_outside_24h?: number;
+      resumed_after_reopen?: number;
       users?: number;
       received_users?: number;
       listened_users?: number;

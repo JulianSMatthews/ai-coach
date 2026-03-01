@@ -29,6 +29,8 @@ from .models import (
 AUTO_PROMPT_PREF_KEYS = ("coaching", "auto_daily_prompts")
 FIRST_DAY_SENT_AT_PREF_KEY = "coaching_first_day_sent_at"
 LEGACY_FIRST_DAY_PENDING_PREF_KEY = "coaching_first_day_pending"
+PENDING_DAY_PROMPT_PREF_KEY = "coaching_pending_day_prompt"
+PENDING_DAY_PROMPT_SET_AT_PREF_KEY = "coaching_pending_day_prompt_set_at"
 from .nudges import (
     send_message,
     send_whatsapp_template,
@@ -307,6 +309,36 @@ def _parse_pref_datetime(value: str | None) -> datetime | None:
 def _first_day_sent_at(session, user_id: int) -> datetime | None:
     pref = _get_user_pref(session, int(user_id), FIRST_DAY_SENT_AT_PREF_KEY)
     return _parse_pref_datetime(pref.value if pref else None)
+
+
+def _coaching_day_key(day: str | None) -> str:
+    raw = str(day or "").strip().lower()
+    if raw in {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}:
+        return raw
+    return "monday"
+
+
+def _outside_whatsapp_window(session, user: User, *, now_utc: datetime, after_hours: int) -> bool:
+    last_inbound = _last_inbound_at(session, int(user.id))
+    if not last_inbound:
+        last_inbound = getattr(user, "last_inbound_message_at", None)
+    last_inbound = _to_utc_naive(last_inbound)
+    if not last_inbound:
+        return False
+    return (now_utc - last_inbound) >= timedelta(hours=max(1, int(after_hours)))
+
+
+def _render_reopen_message_for_day(base_message: str | None, day: str) -> str:
+    day_label = _coaching_day_key(day).capitalize()
+    raw = str(base_message or "").strip()
+    if "{day}" in raw:
+        return raw.replace("{day}", day_label)
+    if raw:
+        return raw
+    return (
+        f"Your {day_label} coaching message is ready. "
+        "Please tap below to continue your wellbeing journey."
+    )
 
 
 def send_out_of_session_messages() -> None:
@@ -692,6 +724,7 @@ def cancel_timeout_followup(user_id: int):
 
 def _run_day_prompt_inline(user_id: int, day: str):
     """Invoke the day-specific handler for a user."""
+    day_key = _coaching_day_key(day)
     virtual_mode = False
     with SessionLocal() as s:
         user = s.get(User, user_id)
@@ -703,10 +736,73 @@ def _run_day_prompt_inline(user_id: int, day: str):
         if not user:
             return
     if _user_onboarding_active(user_id):
-        print(f"[scheduler] skip {day} prompt for user {user_id}: onboarding active")
+        print(f"[scheduler] skip {day_key} prompt for user {user_id}: onboarding active")
         return
+    # Pre-check the WhatsApp 24h window before sending the day flow.
+    # If the window is closed, send reopen template and hold this day prompt
+    # until the user sends the next inbound message.
+    now_utc = datetime.utcnow()
+    after_hours = int(os.getenv("OUT_OF_SESSION_AFTER_HOURS", "24") or "24")
+    cooldown_hours = int(os.getenv("OUT_OF_SESSION_COOLDOWN_HOURS", str(after_hours)) or str(after_hours))
+    with SessionLocal() as s:
+        enabled, message = _get_messaging_settings(s)
+        if _outside_whatsapp_window(s, user, now_utc=now_utc, after_hours=after_hours):
+            template_sid = _get_session_reopen_sid() if enabled else None
+            if not template_sid:
+                try:
+                    if enabled:
+                        ensure_quick_reply_templates(always_log=False)
+                except Exception:
+                    pass
+                template_sid = _get_session_reopen_sid() if enabled else None
+            sent_template = False
+            send_error = None
+            cooldown_active = False
+            if template_sid:
+                pref = _get_user_pref(s, int(user_id), "out_of_session_last_sent_at")
+                last_sent = _parse_pref_datetime(pref.value if pref else None)
+                cooldown_active = bool(
+                    last_sent and (now_utc - last_sent) < timedelta(hours=max(1, cooldown_hours))
+                )
+                if not cooldown_active:
+                    try:
+                        send_whatsapp_template(
+                            to=getattr(user, "phone", None),
+                            template_sid=template_sid,
+                            variables=build_session_reopen_template_variables(
+                                user_first_name=getattr(user, "first_name", None),
+                                coach_name=None,
+                                message_text=_render_reopen_message_for_day(message, day_key),
+                            ),
+                            category="session-reopen",
+                        )
+                        _set_user_pref(s, int(user_id), "out_of_session_last_sent_at", now_utc.isoformat())
+                        sent_template = True
+                    except Exception as e:
+                        send_error = repr(e)
+            _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_PREF_KEY, day_key)
+            _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_SET_AT_PREF_KEY, now_utc.isoformat())
+            s.commit()
+            _audit(
+                int(user_id),
+                f"auto_prompt_{day_key}_deferred_out_of_session",
+                {
+                    "day": day_key,
+                    "outside_24h": True,
+                    "template_sid_set": bool(template_sid),
+                    "template_sent": bool(sent_template),
+                    "template_cooldown": bool(cooldown_active),
+                    "error": send_error,
+                },
+            )
+            debug_log(
+                f"deferred {day_key} prompt for user {user_id} outside 24h "
+                f"(template_sent={sent_template} cooldown={cooldown_active})",
+                tag="scheduler",
+            )
+            return
     try:
-        if _run_first_day_coaching_if_needed(user, day):
+        if _run_first_day_coaching_if_needed(user, day_key):
             return
         # Do not send regular weekly prompts on the same local day first-day coaching
         # was already sent. Weekly flow resumes the next day.
@@ -722,42 +818,46 @@ def _run_day_prompt_inline(user_id: int, day: str):
             if sent_local_day == datetime.now(tz).date():
                 _audit(
                     int(user_id),
-                    f"auto_prompt_{day}_skipped",
-                    {"day": day, "reason": "first_day_sent_today"},
+                    f"auto_prompt_{day_key}_skipped",
+                    {"day": day_key, "reason": "first_day_sent_today"},
                 )
                 debug_log(
-                    f"skip {day} prompt for user {user_id}: first-day already sent today",
+                    f"skip {day_key} prompt for user {user_id}: first-day already sent today",
                     tag="scheduler",
                 )
                 return
         tp_type = "ad_hoc"  # fallback if not matched below
-        if day == "monday":
+        if day_key == "monday":
             monday.start_weekstart(user)
             tp_type = "weekstart"
-        elif day == "tuesday":
+        elif day_key == "tuesday":
             tuesday.send_tuesday_check(user)
             tp_type = "adjust"
-        elif day == "wednesday":
+        elif day_key == "wednesday":
             wednesday.send_midweek_check(user)
             tp_type = "adjust"
-        elif day == "thursday":
+        elif day_key == "thursday":
             thursday.send_thursday_boost(user)
             tp_type = "adjust"
-        elif day == "friday":
+        elif day_key == "friday":
             friday.send_boost(user)
             tp_type = "adjust"
-        elif day == "saturday":
+        elif day_key == "saturday":
             saturday.send_saturday_keepalive(user)
             tp_type = "adjust"
-        elif day == "sunday":
+        elif day_key == "sunday":
             sunday.send_sunday_review(user)
             tp_type = "wrap"
         else:
-            print(f"[scheduler] unknown day prompt: {day}")
+            print(f"[scheduler] unknown day prompt: {day_key}")
             return
-        _audit(user_id, f"auto_prompt_{day}", {})
+        with SessionLocal() as s:
+            _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_PREF_KEY, "")
+            _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_SET_AT_PREF_KEY, "")
+            s.commit()
+        _audit(user_id, f"auto_prompt_{day_key}", {})
     except Exception as e:
-        print(f"[scheduler] {day} prompt failed for user {user_id}: {e}")
+        print(f"[scheduler] {day_key} prompt failed for user {user_id}: {e}")
     finally:
         if virtual_mode:
             try:
@@ -1215,18 +1315,19 @@ def enable_coaching(user_id: int, fast_minutes: int | None = None) -> bool:
         if not was_enabled:
             _set_user_pref(s, user_id, FIRST_DAY_SENT_AT_PREF_KEY, "")
         # Persist per-user fast mode so it survives restarts and global schedule changes.
-        fast_pref = (
+        fast_pref_rows = (
             s.query(UserPreference)
             .filter(UserPreference.user_id == user_id, UserPreference.key == "coaching_fast_minutes")
             .order_by(UserPreference.updated_at.desc())
-            .first()
+            .all()
         )
+        fast_pref_primary = fast_pref_rows[0] if fast_pref_rows else None
         if fast_minutes:
             tz = _tz(u)
             local_today = datetime.now(tz).date()
             virtual_start = local_today + timedelta(days=1)
-            if fast_pref:
-                fast_pref.value = str(max(1, int(fast_minutes)))
+            if fast_pref_primary:
+                fast_pref_primary.value = str(max(1, int(fast_minutes)))
             else:
                 s.add(
                     UserPreference(
@@ -1235,6 +1336,12 @@ def enable_coaching(user_id: int, fast_minutes: int | None = None) -> bool:
                         value=str(max(1, int(fast_minutes))),
                     )
                 )
+            # Remove duplicate stale rows if any.
+            for stale in fast_pref_rows[1:]:
+                try:
+                    s.delete(stale)
+                except Exception:
+                    pass
             set_virtual_mode(
                 s,
                 user_id,
@@ -1243,8 +1350,11 @@ def enable_coaching(user_id: int, fast_minutes: int | None = None) -> bool:
                 keep_existing_date=False,
             )
         else:
-            if fast_pref:
-                s.delete(fast_pref)
+            for pref_row in fast_pref_rows:
+                try:
+                    s.delete(pref_row)
+                except Exception:
+                    pass
             set_virtual_mode(s, user_id, enabled=False)
         s.commit()
         _schedule_prompts_for_user(u, defaults, s, fast_minutes=fast_minutes)
@@ -1268,14 +1378,17 @@ def disable_coaching(user_id: int) -> bool:
         if pref:
             pref.key = key
             pref.value = "0"
-        fast_pref = (
+        fast_pref_rows = (
             s.query(UserPreference)
             .filter(UserPreference.user_id == user_id, UserPreference.key == "coaching_fast_minutes")
             .order_by(UserPreference.updated_at.desc())
-            .first()
+            .all()
         )
-        if fast_pref:
-            s.delete(fast_pref)
+        for pref_row in fast_pref_rows:
+            try:
+                s.delete(pref_row)
+            except Exception:
+                pass
         legacy_pending = _get_user_pref(s, user_id, LEGACY_FIRST_DAY_PENDING_PREF_KEY)
         if legacy_pending:
             s.delete(legacy_pending)

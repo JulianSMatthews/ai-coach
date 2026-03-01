@@ -1116,6 +1116,57 @@ def _is_greeting_message(body: str) -> bool:
     return normalized in {"hi", "hello", "hey", "good morning", "good afternoon", "good evening"}
 
 
+def _handle_pending_coaching_day_resume(user: User, body: str) -> bool:
+    """
+    When a scheduled day prompt was deferred due to the 24h WhatsApp window,
+    run it as soon as we receive the next inbound from this user.
+    """
+    day_key: str | None = None
+    with SessionLocal() as s:
+        if not _coaching_enabled_for_user(s, int(user.id)):
+            return False
+        raw_day = (_pref_value(s, int(user.id), COACHING_PENDING_DAY_PREF_KEY) or "").strip().lower()
+        if raw_day not in {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}:
+            return False
+        day_key = raw_day
+        # Clear pending marker before dispatch to avoid duplicate sends if user replies again quickly.
+        _set_pref_value(s, int(user.id), COACHING_PENDING_DAY_PREF_KEY, "")
+        _set_pref_value(s, int(user.id), COACHING_PENDING_DAY_SET_AT_PREF_KEY, "")
+        s.add(
+            JobAudit(
+                job_name="pending_day_prompt_resumed",
+                status="ok",
+                payload={
+                    "user_id": int(user.id),
+                    "day": day_key,
+                    "inbound_text": str(body or "")[:80],
+                },
+            )
+        )
+        s.commit()
+    try:
+        scheduler._run_day_prompt(int(user.id), str(day_key))  # type: ignore[attr-defined]
+        return True
+    except Exception as e:
+        # Restore pending marker so the user can retry.
+        try:
+            with SessionLocal() as s:
+                _set_pref_value(s, int(user.id), COACHING_PENDING_DAY_PREF_KEY, str(day_key or ""))
+                _set_pref_value(s, int(user.id), COACHING_PENDING_DAY_SET_AT_PREF_KEY, _utc_now_iso())
+                s.add(
+                    JobAudit(
+                        job_name="pending_day_prompt_resumed",
+                        status="error",
+                        payload={"user_id": int(user.id), "day": day_key},
+                        error=repr(e),
+                    )
+                )
+                s.commit()
+        except Exception:
+            pass
+    return False
+
+
 def _handle_coaching_greeting(user: User, body: str) -> bool:
     """
     Coaching greeting behavior:
@@ -2659,6 +2710,10 @@ async def twilio_inbound(request: Request):
                 pass
             return Response(content="", media_type="text/plain", status_code=200)
 
+        # If a day prompt was deferred because the user was outside 24h, resume it now.
+        if _handle_pending_coaching_day_resume(user, body):
+            return Response(content="", media_type="text/plain", status_code=200)
+
         # Coaching greeting shortcut:
         # - send today's day flow if not already sent
         # - otherwise route to general coach mode
@@ -3175,6 +3230,14 @@ ONBOARDING_PREF_KEYS = {
     "coaching_enabled_at": "coaching_auto_enabled_at",
     "first_day_sent_at": "coaching_first_day_sent_at",
 }
+COACHING_PENDING_DAY_PREF_KEY = (
+    str(getattr(scheduler, "PENDING_DAY_PROMPT_PREF_KEY", "coaching_pending_day_prompt")).strip()
+    or "coaching_pending_day_prompt"
+)
+COACHING_PENDING_DAY_SET_AT_PREF_KEY = (
+    str(getattr(scheduler, "PENDING_DAY_PROMPT_SET_AT_PREF_KEY", "coaching_pending_day_prompt_set_at")).strip()
+    or "coaching_pending_day_prompt_set_at"
+)
 
 
 def _log_app_engagement_event(
@@ -6907,6 +6970,57 @@ def admin_assessment_health(
             else:
                 row["response_minutes"] = None
 
+        day_deferred_counts: dict[str, int] = {day: 0 for day in coaching_types}
+        day_resumed_counts: dict[str, int] = {day: 0 for day in coaching_types}
+        club_user_ids: set[int] | None = None
+        if club_scope_id is not None:
+            club_user_ids = {
+                int(uid)
+                for (uid,) in s.query(User.id).filter(User.club_id == club_scope_id).all()
+                if uid is not None
+            }
+
+        def _audit_day_from_job_name(raw_name: object) -> str | None:
+            name = str(raw_name or "").strip().lower()
+            prefix = "auto_prompt_"
+            suffix = "_deferred_out_of_session"
+            if not (name.startswith(prefix) and name.endswith(suffix)):
+                return None
+            day = name[len(prefix) : len(name) - len(suffix)]
+            if day in weekly_types:
+                return day
+            return None
+
+        audit_rows = (
+            s.query(JobAudit.job_name, JobAudit.status, JobAudit.payload)
+            .filter(JobAudit.created_at >= start_utc, JobAudit.created_at < end_utc)
+            .filter(
+                or_(
+                    JobAudit.job_name.like("auto_prompt_%_deferred_out_of_session"),
+                    JobAudit.job_name == "pending_day_prompt_resumed",
+                )
+            )
+            .all()
+        )
+        for job_name, status, payload in audit_rows:
+            body = payload if isinstance(payload, dict) else {}
+            if not isinstance(body, dict):
+                continue
+            uid_raw = body.get("user_id")
+            uid = int(uid_raw) if isinstance(uid_raw, int) else None
+            if club_user_ids is not None and (uid is None or uid not in club_user_ids):
+                continue
+            day = str(body.get("day") or "").strip().lower()
+            if day not in weekly_types:
+                day = _audit_day_from_job_name(job_name) or ""
+            if day not in weekly_types:
+                continue
+            if str(job_name or "").strip().lower() == "pending_day_prompt_resumed":
+                if str(status or "").strip().lower() == "ok":
+                    day_resumed_counts[day] = int(day_resumed_counts.get(day) or 0) + 1
+            else:
+                day_deferred_counts[day] = int(day_deferred_counts.get(day) or 0) + 1
+
         day_stats_map: dict[str, dict[str, object]] = {
             day: {
                 "day": day,
@@ -6961,6 +7075,8 @@ def admin_assessment_health(
                     "day": day,
                     "sent": sent_n,
                     "attempted_current_logic": sent_n,
+                    "deferred_outside_24h": int(day_deferred_counts.get(day) or 0),
+                    "resumed_after_reopen": int(day_resumed_counts.get(day) or 0),
                     "users": users_n,
                     "received_users": received_users_n,
                     "listened_users": listened_users_n,

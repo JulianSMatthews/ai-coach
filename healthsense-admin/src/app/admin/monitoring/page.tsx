@@ -731,6 +731,10 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
                           attempted (current logic) {row.attempted_current_logic ?? row.sent ?? 0}
                         </div>
                         <div className="mt-1 text-xs text-[#6b6257]">
+                          deferred outside 24h {row.deferred_outside_24h ?? 0} | resumed after reopen{" "}
+                          {row.resumed_after_reopen ?? 0}
+                        </div>
+                        <div className="mt-1 text-xs text-[#6b6257]">
                           users {row.users ?? 0} | received {row.received_users ?? 0} | listened {row.listened_users ?? 0}
                           {row.listened_user_rate_pct != null ? ` (${formatNum(row.listened_user_rate_pct)}%)` : ""} | replies{" "}
                           {row.replied_users ?? row.replied_24h ?? 0} (by user
