@@ -753,6 +753,19 @@ def _run_day_prompt_inline(user_id: int, day: str):
     if _user_onboarding_active(user_id):
         print(f"[scheduler] skip {day_key} prompt for user {user_id}: onboarding active")
         return
+    # If a deferred day prompt exists for a different day, expire it as not sent.
+    with SessionLocal() as s:
+        pending_pref = _get_user_pref(s, int(user_id), PENDING_DAY_PROMPT_PREF_KEY)
+        pending_day = str(getattr(pending_pref, "value", "") or "").strip().lower()
+        if pending_day in {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"} and pending_day != day_key:
+            _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_PREF_KEY, "")
+            _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_SET_AT_PREF_KEY, "")
+            s.commit()
+            _audit(
+                int(user_id),
+                "pending_day_prompt_expired",
+                {"day": pending_day, "current_day": day_key, "reason": "day_changed_scheduler"},
+            )
     # Pre-check the WhatsApp 24h window before sending the day flow.
     # If the window is closed, send reopen template and hold this day prompt
     # until the user sends the next inbound message.

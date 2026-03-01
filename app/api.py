@@ -1122,11 +1122,30 @@ def _handle_pending_coaching_day_resume(user: User, body: str) -> bool:
     run it as soon as we receive the next inbound from this user.
     """
     day_key: str | None = None
+    current_day = _coaching_day_key_for_user(int(user.id))
     with SessionLocal() as s:
         if not _coaching_enabled_for_user(s, int(user.id)):
             return False
         raw_day = (_pref_value(s, int(user.id), COACHING_PENDING_DAY_PREF_KEY) or "").strip().lower()
         if raw_day not in {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}:
+            return False
+        if raw_day != current_day:
+            _set_pref_value(s, int(user.id), COACHING_PENDING_DAY_PREF_KEY, "")
+            _set_pref_value(s, int(user.id), COACHING_PENDING_DAY_SET_AT_PREF_KEY, "")
+            s.add(
+                JobAudit(
+                    job_name="pending_day_prompt_expired",
+                    status="done",
+                    payload={
+                        "user_id": int(user.id),
+                        "day": raw_day,
+                        "current_day": current_day,
+                        "reason": "day_changed",
+                        "inbound_text": str(body or "")[:80],
+                    },
+                )
+            )
+            s.commit()
             return False
         day_key = raw_day
         # Clear pending marker before dispatch to avoid duplicate sends if user replies again quickly.
@@ -6972,6 +6991,7 @@ def admin_assessment_health(
 
         day_deferred_counts: dict[str, int] = {day: 0 for day in coaching_types}
         day_resumed_counts: dict[str, int] = {day: 0 for day in coaching_types}
+        day_expired_counts: dict[str, int] = {day: 0 for day in coaching_types}
         club_user_ids: set[int] | None = None
         if club_scope_id is not None:
             club_user_ids = {
@@ -6998,6 +7018,7 @@ def admin_assessment_health(
                 or_(
                     JobAudit.job_name.like("auto_prompt_%_deferred_out_of_session"),
                     JobAudit.job_name == "pending_day_prompt_resumed",
+                    JobAudit.job_name == "pending_day_prompt_expired",
                 )
             )
             .all()
@@ -7018,6 +7039,8 @@ def admin_assessment_health(
             if str(job_name or "").strip().lower() == "pending_day_prompt_resumed":
                 if str(status or "").strip().lower() == "ok":
                     day_resumed_counts[day] = int(day_resumed_counts.get(day) or 0) + 1
+            elif str(job_name or "").strip().lower() == "pending_day_prompt_expired":
+                day_expired_counts[day] = int(day_expired_counts.get(day) or 0) + 1
             else:
                 day_deferred_counts[day] = int(day_deferred_counts.get(day) or 0) + 1
 
@@ -7077,6 +7100,7 @@ def admin_assessment_health(
                     "attempted_current_logic": sent_n,
                     "deferred_outside_24h": int(day_deferred_counts.get(day) or 0),
                     "resumed_after_reopen": int(day_resumed_counts.get(day) or 0),
+                    "expired_after_day_change": int(day_expired_counts.get(day) or 0),
                     "users": users_n,
                     "received_users": received_users_n,
                     "listened_users": listened_users_n,
