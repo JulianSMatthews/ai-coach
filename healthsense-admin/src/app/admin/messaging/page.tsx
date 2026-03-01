@@ -2,12 +2,10 @@ import AdminNav from "@/components/AdminNav";
 import ConfirmDeleteButton from "@/components/ConfirmDeleteButton";
 import {
   getGlobalPromptSchedule,
-  getMessagingSettings,
   getTwilioTemplates,
   deleteTwilioTemplate,
   syncTwilioTemplates,
   updateGlobalPromptSchedule,
-  updateMessagingSettings,
   updateTwilioTemplates,
 } from "@/lib/api";
 import { revalidatePath } from "next/cache";
@@ -73,6 +71,23 @@ function isDailyPromptReawakeTemplate(template: {
     purpose.includes("daily") ||
     friendlyName.includes("daily")
   );
+}
+
+function twilioTemplateHeading(template: {
+  template_type?: string | null;
+  button_count?: number | null;
+  friendly_name?: string | null;
+  payload?: Record<string, unknown> | null;
+}): string {
+  if (isOutOfSessionTemplate(template)) {
+    return isDailyPromptReawakeTemplate(template)
+      ? "24+ hour message to reawake user to receive daily prompt"
+      : "General +24 hour message";
+  }
+  if (String(template.template_type || "").trim().toLowerCase() === "quick-reply") {
+    return `Quick reply${template.button_count ? ` · ${template.button_count} buttons` : ""}`;
+  }
+  return String(template.template_type || "Template").trim() || "Template";
 }
 
 function approvalBadgeClass(status?: string | null): string {
@@ -141,44 +156,16 @@ async function saveScheduleAction(formData: FormData) {
   revalidatePath("/admin/messaging");
 }
 
-async function saveMessagingSettingsAction(formData: FormData) {
-  "use server";
-  const enabled = Boolean(formData.get("out_of_session_enabled"));
-  const message = String(formData.get("out_of_session_message") || "").trim();
-  await updateMessagingSettings({
-    out_of_session_enabled: enabled,
-    out_of_session_message: message || null,
-  });
-  revalidatePath("/admin/messaging");
-}
-
 export default async function MessagingPage() {
   const [templateData, scheduleData] = await Promise.all([
     getTwilioTemplates(),
     getGlobalPromptSchedule(),
   ]);
-  const settingsData = await getMessagingSettings();
   const templates = templateData.templates || [];
-  const outOfSessionTemplates = templates.filter((tpl) => isOutOfSessionTemplate(tpl));
-  const dailyPromptReawakeTemplate = outOfSessionTemplates.find((tpl) => isDailyPromptReawakeTemplate(tpl)) || null;
-  const general24hTemplate =
-    outOfSessionTemplates.find((tpl) => !isDailyPromptReawakeTemplate(tpl)) ||
-    outOfSessionTemplates.find((tpl) => tpl.id !== dailyPromptReawakeTemplate?.id) ||
-    null;
-  const primaryOutOfSessionTemplate =
-    outOfSessionTemplates.find((tpl) => String(tpl.template_type || "").trim().toLowerCase() === "session-reopen") ||
-    general24hTemplate ||
-    outOfSessionTemplates[0] ||
-    null;
   const schedule = scheduleData.items || [];
   const templateIds = templates.map((t) => t.id).join(",");
   const scheduleDays = schedule.map((s) => s.day_key).join(",");
   const deleteFormId = "delete-template-form";
-  const previewBody =
-    (primaryOutOfSessionTemplate?.preview_body || "").trim() ||
-    "Hi from HealthSense. I'm ready to continue your coaching. Please tap the button below to continue your wellbeing journey.";
-  const previewButton = (primaryOutOfSessionTemplate?.preview_button || "").trim() || "Continue coaching";
-  const templateHasVariables = previewBody.includes("{{");
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -216,8 +203,7 @@ export default async function MessagingPage() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                        {tpl.template_type === "session-reopen" ? "Session reopen" : "Quick reply"}
-                        {tpl.button_count ? ` · ${tpl.button_count} buttons` : ""}
+                        {twilioTemplateHeading(tpl)}
                       </p>
                       <p className="mt-1 text-sm text-[#6b6257]">
                         Last synced: {tpl.last_synced_at ? tpl.last_synced_at : "—"}
@@ -232,6 +218,38 @@ export default async function MessagingPage() {
                       {tpl.status || "unknown"}
                     </span>
                   </div>
+                  {isOutOfSessionTemplate(tpl) ? (
+                    <div className="mt-3 space-y-2 rounded-xl border border-[#efe7db] bg-[#faf7f1] p-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span
+                          className={`rounded-full border px-3 py-1 text-xs uppercase tracking-[0.2em] ${approvalBadgeClass(
+                            tpl.approval_status,
+                          )}`}
+                        >
+                          WhatsApp approval: {approvalLabel(tpl.approval_status)}
+                        </span>
+                      </div>
+                      {tpl.approval_detail ? <p className="text-xs text-[#6b6257]">{tpl.approval_detail}</p> : null}
+                      {(tpl.approval_source || tpl.approval_checked_at) ? (
+                        <p className="text-xs text-[#8a8176]">
+                          Source: {tpl.approval_source || "—"}
+                          {tpl.approval_checked_at ? ` · checked ${tpl.approval_checked_at}` : ""}
+                        </p>
+                      ) : null}
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Twilio message preview</p>
+                        <p className="mt-1 text-sm text-[#1e1b16]">
+                          {(tpl.preview_body || "").trim() || "No Twilio message body preview available."}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Reply button</p>
+                        <span className="mt-1 inline-flex rounded-full border border-[#efe7db] bg-white px-3 py-1 text-xs font-medium">
+                          {(tpl.preview_button || "").trim() || "—"}
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
                   <div className="mt-4 grid gap-3 md:grid-cols-3">
                     <div>
                       <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Friendly name</label>
@@ -271,173 +289,6 @@ export default async function MessagingPage() {
               ))}
             </div>
           </form>
-        </section>
-
-        <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
-          <div>
-            <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Out-of-session template</p>
-            <h2 className="mt-2 text-xl">24h+ messaging</h2>
-            <p className="mt-2 text-sm text-[#6b6257]">
-              Sends a WhatsApp template message when a member has been inactive for more than 24 hours.
-            </p>
-          </div>
-          <div className="mt-6 space-y-4">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Status</span>
-              <span
-                className={`rounded-full border px-3 py-1 text-xs uppercase tracking-[0.2em] ${
-                  settingsData?.out_of_session_enabled
-                    ? "border-[#16824a] bg-[#edf8f1] text-[#16824a]"
-                    : "border-[#b56e0a] bg-[#fff7ea] text-[#b56e0a]"
-                }`}
-              >
-                {settingsData?.out_of_session_enabled ? "Enabled" : "Disabled"}
-              </span>
-              {outOfSessionTemplates.some((tpl) => Boolean((tpl.sid || "").trim())) ? (
-                <span className="rounded-full border border-[#efe7db] bg-[#fdfaf4] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                  Template SID set
-                </span>
-              ) : (
-                <span className="rounded-full border border-[#c43e1c] bg-[#fff5f2] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[#c43e1c]">
-                  Template SID missing
-                </span>
-              )}
-              <span
-                className={`rounded-full border px-3 py-1 text-xs uppercase tracking-[0.2em] ${approvalBadgeClass(
-                  primaryOutOfSessionTemplate?.approval_status,
-                )}`}
-              >
-                WhatsApp approval: {approvalLabel(primaryOutOfSessionTemplate?.approval_status)}
-              </span>
-            </div>
-            {primaryOutOfSessionTemplate?.approval_detail ? (
-              <p className="text-xs text-[#6b6257]">{primaryOutOfSessionTemplate.approval_detail}</p>
-            ) : null}
-            {(primaryOutOfSessionTemplate?.approval_source || primaryOutOfSessionTemplate?.approval_checked_at) ? (
-              <p className="text-xs text-[#8a8176]">
-                Source: {primaryOutOfSessionTemplate?.approval_source || "—"}
-                {primaryOutOfSessionTemplate?.approval_checked_at
-                  ? ` · checked ${primaryOutOfSessionTemplate.approval_checked_at}`
-                  : ""}
-              </p>
-            ) : null}
-            <div className="rounded-2xl border border-[#efe7db] bg-[#faf7f1] p-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Twilio template details (24h+)</p>
-              {outOfSessionTemplates.length ? (
-                <div className="mt-2 space-y-3">
-                  {[
-                    {
-                      key: "general",
-                      title: "General +24 hour message sent when the user exceeds the 24 hour period",
-                      template: general24hTemplate,
-                    },
-                    {
-                      key: "daily-reawake",
-                      title: "24+ hour message to reawake user to receive daily prompt",
-                      template: dailyPromptReawakeTemplate,
-                    },
-                  ].map((slot) => (
-                    <div key={slot.key} className="rounded-xl border border-[#efe7db] bg-white p-3">
-                      <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">{slot.title}</p>
-                      <dl className="mt-2 grid gap-2 text-sm md:grid-cols-2 lg:grid-cols-4">
-                        <div>
-                          <dt className="text-xs uppercase tracking-[0.15em] text-[#8a8176]">Template name</dt>
-                          <dd className="mt-1 font-medium">{slot.template?.friendly_name || "Not configured"}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs uppercase tracking-[0.15em] text-[#8a8176]">Template type</dt>
-                          <dd className="mt-1 font-medium">{slot.template?.template_type || "—"}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs uppercase tracking-[0.15em] text-[#8a8176]">Template SID</dt>
-                          <dd className="mt-1 font-mono text-xs break-all">{slot.template?.sid || "—"}</dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs uppercase tracking-[0.15em] text-[#8a8176]">WhatsApp approval</dt>
-                          <dd className="mt-1 font-medium">{approvalLabel(slot.template?.approval_status)}</dd>
-                        </div>
-                      </dl>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-2 text-sm text-[#6b6257]">No 24h template rows found.</p>
-              )}
-            </div>
-            <div className="rounded-2xl border border-[#efe7db] bg-[#faf7f1] p-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Message body preview</p>
-              <p className="mt-2 text-sm text-[#1e1b16]">{previewBody}</p>
-              <p className="mt-4 text-xs uppercase tracking-[0.2em] text-[#6b6257]">Reply button</p>
-              <span className="mt-2 inline-flex rounded-full border border-[#efe7db] bg-white px-3 py-1 text-xs font-medium">
-                {previewButton}
-              </span>
-              <div className="mt-3 rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-xs text-[#6b6257]">
-                <p className="font-semibold uppercase tracking-[0.15em] text-[#6b6257]">Where this runs</p>
-                <p className="mt-1">
-                  1) At scheduled coaching time, if user is outside 24h: this template is sent and that day’s coaching message is deferred.
-                </p>
-                <p className="mt-1">
-                  2) Periodic inactivity check: this template is sent to coaching users outside 24h.
-                </p>
-                <p className="mt-1">After user replies, the deferred day message is sent.</p>
-              </div>
-            </div>
-            <form action={saveMessagingSettingsAction} className="rounded-2xl border border-[#efe7db] bg-[#faf7f1] p-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Message configuration</p>
-              <label className="mt-3 flex items-center gap-2 text-sm text-[#6b6257]">
-                <input
-                  type="checkbox"
-                  name="out_of_session_enabled"
-                  defaultChecked={Boolean(settingsData?.out_of_session_enabled)}
-                />
-                Enable 24h+ template messaging
-              </label>
-              <div className="mt-3">
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Template sentence</label>
-                <textarea
-                  name="out_of_session_message"
-                  defaultValue={settingsData?.out_of_session_message || ""}
-                  rows={4}
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                  placeholder="Please tap below to continue your wellbeing journey."
-                />
-                <p className="mt-2 text-xs text-[#8a8176]">
-                  This is the sentence inserted into the approved Twilio template. Supported placeholders:{" "}
-                  <code>{"{day}"}</code>, <code>{"{first_name}"}</code>, <code>{"{coach_name}"}</code>.
-                </p>
-                <p className="mt-1 text-xs text-[#8a8176]">
-                  Example: <code>{"Hi {first_name}, {coach_name} here. Your {day} message is ready."}</code>
-                </p>
-              </div>
-              <div
-                className={`mt-3 rounded-xl border px-3 py-2 text-xs ${
-                  templateHasVariables
-                    ? "border-[#16824a] bg-[#edf8f1] text-[#16824a]"
-                    : "border-[#b56e0a] bg-[#fff7ea] text-[#8a5a00]"
-                }`}
-              >
-                {templateHasVariables ? (
-                  <p>
-                    Variable template detected in Twilio preview. The sentence and placeholders above will be applied in live sends.
-                  </p>
-                ) : (
-                  <p>
-                    Static template detected in Twilio preview. Editing the sentence above will not change the final WhatsApp body
-                    until the Twilio template is updated to include variables and approved.
-                  </p>
-                )}
-              </div>
-              <button
-                type="submit"
-                className="mt-4 rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white"
-              >
-                Save messaging settings
-              </button>
-            </form>
-            <p className="text-xs text-[#6b6257]">
-              Preview source: Twilio template content for the primary 24h template.
-            </p>
-          </div>
         </section>
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
