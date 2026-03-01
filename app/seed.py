@@ -47,10 +47,10 @@ DEFAULT_MONITORING_LLM_WORKER_P50_CRITICAL_MS = 28000.0
 DEFAULT_MONITORING_LLM_WORKER_P95_WARN_MS = 30000.0
 DEFAULT_MONITORING_LLM_WORKER_P95_CRITICAL_MS = 40000.0
 DEFAULT_OUT_OF_SESSION_ENABLED = True
-DEFAULT_OUT_OF_SESSION_MESSAGE = "Please tap below to continue your wellbeing journey."
+DEFAULT_OUT_OF_SESSION_MESSAGE = "Let's pick up where you left off."
 DEFAULT_SESSION_REOPEN_BODY = (
     "Hi {{1}}, {{2}} from HealthSense here. "
-    "I'm ready to continue your coaching. {{3}}"
+    "I'm ready to continue your coaching. {{3}} Please tap the button below to continue your wellbeing journey."
 )
 DEFAULT_SESSION_REOPEN_BUTTON_TITLE = "Continue coaching"
 DEFAULT_DAY_REOPEN_BODY = (
