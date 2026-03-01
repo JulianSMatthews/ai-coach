@@ -59,24 +59,15 @@ export default async function AdminHome() {
   const dashboardTodayStats = (health?.coaching?.day_stats || []).find(
     (row) => String(row?.day || "").toLowerCase() === dashboardTodayDayKey,
   );
-  const dashboardTodaySent = Math.max(
-    0,
-    Number(
-      dashboardTodayStats?.attempted_messages ??
-        dashboardTodayStats?.sent ??
-        dashboardTodayStats?.attempted_current_logic ??
-        0,
-    ) || 0,
-  );
-  const dashboardTodayReceived = Math.max(
-    0,
-    Number(dashboardTodayStats?.delivery_confirmed ?? dashboardTodayStats?.received_users ?? 0) || 0,
-  );
-  const dashboardTodayResponded = Math.max(
+  const dashboardTodayUsersSent = Math.max(0, Number(dashboardTodayStats?.users ?? 0) || 0);
+  const dashboardTodayOutside24hDeferred = Math.max(0, Number(dashboardTodayStats?.deferred_outside_24h ?? 0) || 0);
+  const dashboardTodayUsersToBeSent = dashboardTodayUsersSent + dashboardTodayOutside24hDeferred;
+  const dashboardTodayRepliedToReopen = Math.max(0, Number(dashboardTodayStats?.resumed_after_reopen ?? 0) || 0);
+  const dashboardTodayRepliedToDay = Math.max(
     0,
     Number(dashboardTodayStats?.replied_users ?? dashboardTodayStats?.replied_24h ?? 0) || 0,
   );
-  const dashboardTodayRatio = `${dashboardTodaySent}:${dashboardTodayReceived}:${dashboardTodayResponded}`;
+  const dashboardTodayRatio = `${dashboardTodayUsersToBeSent}:${dashboardTodayUsersSent}:${dashboardTodayOutside24hDeferred}:${dashboardTodayRepliedToReopen}:${dashboardTodayRepliedToDay}`;
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
