@@ -54,7 +54,7 @@ DEFAULT_SESSION_REOPEN_BODY = (
 )
 DEFAULT_SESSION_REOPEN_BUTTON_TITLE = "Continue coaching"
 DEFAULT_DAY_REOPEN_BODY = (
-    "Hi {{1}}, {{2}} from HealthSense here. {{3}}"
+    "Hi {{1}}, {{2}} from HealthSense here. {{3}} Please tap the button below to continue your wellbeing journey."
 )
 DEFAULT_DAY_REOPEN_BUTTON_TITLE = "Send daily message"
 
