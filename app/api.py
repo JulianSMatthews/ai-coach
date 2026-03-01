@@ -11664,6 +11664,36 @@ def admin_worker_status(admin_user: User = Depends(_require_admin)):
 
 @admin.get("/messaging/templates")
 def admin_list_twilio_templates(admin_user: User = Depends(_require_admin)):
+    def _is_out_of_session_template_row(row: TwilioTemplate) -> bool:
+        template_type = str(getattr(row, "template_type", "") or "").strip().lower()
+        if template_type in {
+            "session-reopen",
+            "session_reopen",
+            "out_of_session",
+            "out-of-session",
+            "day-reopen",
+            "day_reopen",
+            "session-reopen-day",
+            "session_reopen_day",
+        }:
+            return True
+        payload = getattr(row, "payload", None)
+        if isinstance(payload, dict):
+            purpose = str(payload.get("purpose") or "").strip().lower()
+            if purpose in {
+                "session-reopen",
+                "session_reopen",
+                "out_of_session",
+                "out-of-session",
+                "day-reopen",
+                "day_reopen",
+                "session-reopen-day",
+                "session_reopen_day",
+            }:
+                return True
+        friendly_name = str(getattr(row, "friendly_name", "") or "").strip().lower()
+        return "reopen" in friendly_name
+
     try:
         from .nudges import _ensure_twilio_templates_table  # type: ignore
         _ensure_twilio_templates_table()
@@ -11719,7 +11749,8 @@ def admin_list_twilio_templates(admin_user: User = Depends(_require_admin)):
                 content_types = []
         preview_body = None
         preview_button = None
-        if str(row.template_type or "").strip().lower() == "session-reopen" and row.sid:
+        is_out_of_session_template = _is_out_of_session_template_row(row)
+        if is_out_of_session_template and row.sid:
             try:
                 from .nudges import get_twilio_content_preview  # type: ignore
                 preview = get_twilio_content_preview(row.sid) or {}
@@ -11728,7 +11759,7 @@ def admin_list_twilio_templates(admin_user: User = Depends(_require_admin)):
             except Exception:
                 preview_body = None
                 preview_button = None
-        if str(row.template_type or "").strip().lower() == "session-reopen":
+        if is_out_of_session_template:
             try:
                 from .nudges import get_twilio_template_approval_status  # type: ignore
                 approval = get_twilio_template_approval_status(row.sid, channel="whatsapp") or {}

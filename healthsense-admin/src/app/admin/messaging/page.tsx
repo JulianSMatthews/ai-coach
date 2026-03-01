@@ -14,6 +14,70 @@ import { revalidatePath } from "next/cache";
 
 export const dynamic = "force-dynamic";
 
+function isOutOfSessionTemplate(template: {
+  template_type?: string | null;
+  friendly_name?: string | null;
+  payload?: Record<string, unknown> | null;
+}): boolean {
+  const templateType = String(template.template_type || "").trim().toLowerCase();
+  if (
+    [
+      "session-reopen",
+      "session_reopen",
+      "out_of_session",
+      "out-of-session",
+      "day-reopen",
+      "day_reopen",
+      "session-reopen-day",
+      "session_reopen_day",
+    ].includes(templateType)
+  ) {
+    return true;
+  }
+  const purpose = String((template.payload && template.payload["purpose"]) || "")
+    .trim()
+    .toLowerCase();
+  if (
+    [
+      "session-reopen",
+      "session_reopen",
+      "out_of_session",
+      "out-of-session",
+      "day-reopen",
+      "day_reopen",
+      "session-reopen-day",
+      "session_reopen_day",
+    ].includes(purpose)
+  ) {
+    return true;
+  }
+  const friendlyName = String(template.friendly_name || "").trim().toLowerCase();
+  return friendlyName.includes("reopen");
+}
+
+function outOfSessionTemplateHeading(template: {
+  template_type?: string | null;
+  friendly_name?: string | null;
+  payload?: Record<string, unknown> | null;
+}): string {
+  const templateType = String(template.template_type || "").trim().toLowerCase();
+  const purpose = String((template.payload && template.payload["purpose"]) || "")
+    .trim()
+    .toLowerCase();
+  const friendlyName = String(template.friendly_name || "").trim().toLowerCase();
+  const isDayPromptReawake =
+    templateType.includes("day") ||
+    purpose.includes("day") ||
+    friendlyName.includes("day") ||
+    templateType.includes("daily") ||
+    purpose.includes("daily") ||
+    friendlyName.includes("daily");
+  if (isDayPromptReawake) {
+    return "24+ hour message to reawake user to receive daily prompt";
+  }
+  return "General +24 hour message sent when the user exceeds the 24 hour period";
+}
+
 function approvalBadgeClass(status?: string | null): string {
   const key = String(status || "").toLowerCase();
   if (key === "approved") return "border-[#16824a] bg-[#edf8f1] text-[#16824a]";
@@ -98,15 +162,19 @@ export default async function MessagingPage() {
   ]);
   const settingsData = await getMessagingSettings();
   const templates = templateData.templates || [];
-  const sessionReopenTemplate = templates.find((tpl) => tpl.template_type === "session-reopen");
+  const outOfSessionTemplates = templates.filter((tpl) => isOutOfSessionTemplate(tpl));
+  const primaryOutOfSessionTemplate =
+    outOfSessionTemplates.find((tpl) => String(tpl.template_type || "").trim().toLowerCase() === "session-reopen") ||
+    outOfSessionTemplates[0] ||
+    null;
   const schedule = scheduleData.items || [];
   const templateIds = templates.map((t) => t.id).join(",");
   const scheduleDays = schedule.map((s) => s.day_key).join(",");
   const deleteFormId = "delete-template-form";
   const previewBody =
-    (sessionReopenTemplate?.preview_body || "").trim() ||
+    (primaryOutOfSessionTemplate?.preview_body || "").trim() ||
     "Hi from HealthSense. I'm ready to continue your coaching. Please tap the button below to continue your wellbeing journey.";
-  const previewButton = (sessionReopenTemplate?.preview_button || "").trim() || "Continue coaching";
+  const previewButton = (primaryOutOfSessionTemplate?.preview_button || "").trim() || "Continue coaching";
   const templateHasVariables = previewBody.includes("{{");
 
   return (
@@ -222,7 +290,7 @@ export default async function MessagingPage() {
               >
                 {settingsData?.out_of_session_enabled ? "Enabled" : "Disabled"}
               </span>
-              {sessionReopenTemplate?.sid ? (
+              {outOfSessionTemplates.some((tpl) => Boolean((tpl.sid || "").trim())) ? (
                 <span className="rounded-full border border-[#efe7db] bg-[#fdfaf4] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[#6b6257]">
                   Template SID set
                 </span>
@@ -233,37 +301,56 @@ export default async function MessagingPage() {
               )}
               <span
                 className={`rounded-full border px-3 py-1 text-xs uppercase tracking-[0.2em] ${approvalBadgeClass(
-                  sessionReopenTemplate?.approval_status,
+                  primaryOutOfSessionTemplate?.approval_status,
                 )}`}
               >
-                WhatsApp approval: {approvalLabel(sessionReopenTemplate?.approval_status)}
+                WhatsApp approval: {approvalLabel(primaryOutOfSessionTemplate?.approval_status)}
               </span>
             </div>
-            {sessionReopenTemplate?.approval_detail ? (
-              <p className="text-xs text-[#6b6257]">{sessionReopenTemplate.approval_detail}</p>
+            {primaryOutOfSessionTemplate?.approval_detail ? (
+              <p className="text-xs text-[#6b6257]">{primaryOutOfSessionTemplate.approval_detail}</p>
             ) : null}
-            {(sessionReopenTemplate?.approval_source || sessionReopenTemplate?.approval_checked_at) ? (
+            {(primaryOutOfSessionTemplate?.approval_source || primaryOutOfSessionTemplate?.approval_checked_at) ? (
               <p className="text-xs text-[#8a8176]">
-                Source: {sessionReopenTemplate?.approval_source || "—"}
-                {sessionReopenTemplate?.approval_checked_at ? ` · checked ${sessionReopenTemplate.approval_checked_at}` : ""}
+                Source: {primaryOutOfSessionTemplate?.approval_source || "—"}
+                {primaryOutOfSessionTemplate?.approval_checked_at
+                  ? ` · checked ${primaryOutOfSessionTemplate.approval_checked_at}`
+                  : ""}
               </p>
             ) : null}
             <div className="rounded-2xl border border-[#efe7db] bg-[#faf7f1] p-4">
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Twilio template details</p>
-              <dl className="mt-2 grid gap-2 text-sm md:grid-cols-3">
-                <div>
-                  <dt className="text-xs uppercase tracking-[0.15em] text-[#8a8176]">Template name</dt>
-                  <dd className="mt-1 font-medium">{sessionReopenTemplate?.friendly_name || "—"}</dd>
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Twilio template details (24h+)</p>
+              {outOfSessionTemplates.length ? (
+                <div className="mt-2 space-y-3">
+                  {outOfSessionTemplates.map((tpl) => (
+                    <div key={tpl.id} className="rounded-xl border border-[#efe7db] bg-white p-3">
+                      <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">
+                        {outOfSessionTemplateHeading(tpl)}
+                      </p>
+                      <dl className="grid gap-2 text-sm md:grid-cols-4">
+                        <div>
+                          <dt className="text-xs uppercase tracking-[0.15em] text-[#8a8176]">Template name</dt>
+                          <dd className="mt-1 font-medium">{tpl.friendly_name || "—"}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs uppercase tracking-[0.15em] text-[#8a8176]">Template type</dt>
+                          <dd className="mt-1 font-medium">{tpl.template_type || "—"}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs uppercase tracking-[0.15em] text-[#8a8176]">Template SID</dt>
+                          <dd className="mt-1 font-mono text-xs break-all">{tpl.sid || "—"}</dd>
+                        </div>
+                        <div>
+                          <dt className="text-xs uppercase tracking-[0.15em] text-[#8a8176]">WhatsApp approval</dt>
+                          <dd className="mt-1 font-medium">{approvalLabel(tpl.approval_status)}</dd>
+                        </div>
+                      </dl>
+                    </div>
+                  ))}
                 </div>
-                <div>
-                  <dt className="text-xs uppercase tracking-[0.15em] text-[#8a8176]">Template SID</dt>
-                  <dd className="mt-1 font-mono text-xs break-all">{sessionReopenTemplate?.sid || "—"}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs uppercase tracking-[0.15em] text-[#8a8176]">WhatsApp approval</dt>
-                  <dd className="mt-1 font-medium">{approvalLabel(sessionReopenTemplate?.approval_status)}</dd>
-                </div>
-              </dl>
+              ) : (
+                <p className="mt-2 text-sm text-[#6b6257]">No 24h template rows found.</p>
+              )}
             </div>
             <div className="rounded-2xl border border-[#efe7db] bg-[#faf7f1] p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Message body preview</p>
@@ -336,7 +423,7 @@ export default async function MessagingPage() {
               </button>
             </form>
             <p className="text-xs text-[#6b6257]">
-              Preview source: Twilio template content for the configured session-reopen SID.
+              Preview source: Twilio template content for the primary 24h template.
             </p>
           </div>
         </section>
