@@ -107,6 +107,7 @@ export default async function MessagingPage() {
     (sessionReopenTemplate?.preview_body || "").trim() ||
     "Hi from HealthSense. I'm ready to continue your coaching. Please tap the button below to continue your wellbeing journey.";
   const previewButton = (sessionReopenTemplate?.preview_button || "").trim() || "Continue coaching";
+  const templateHasVariables = previewBody.includes("{{");
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -248,12 +249,39 @@ export default async function MessagingPage() {
               </p>
             ) : null}
             <div className="rounded-2xl border border-[#efe7db] bg-[#faf7f1] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Twilio template details</p>
+              <dl className="mt-2 grid gap-2 text-sm md:grid-cols-3">
+                <div>
+                  <dt className="text-xs uppercase tracking-[0.15em] text-[#8a8176]">Template name</dt>
+                  <dd className="mt-1 font-medium">{sessionReopenTemplate?.friendly_name || "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-[0.15em] text-[#8a8176]">Template SID</dt>
+                  <dd className="mt-1 font-mono text-xs break-all">{sessionReopenTemplate?.sid || "—"}</dd>
+                </div>
+                <div>
+                  <dt className="text-xs uppercase tracking-[0.15em] text-[#8a8176]">WhatsApp approval</dt>
+                  <dd className="mt-1 font-medium">{approvalLabel(sessionReopenTemplate?.approval_status)}</dd>
+                </div>
+              </dl>
+            </div>
+            <div className="rounded-2xl border border-[#efe7db] bg-[#faf7f1] p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Message body preview</p>
               <p className="mt-2 text-sm text-[#1e1b16]">{previewBody}</p>
               <p className="mt-4 text-xs uppercase tracking-[0.2em] text-[#6b6257]">Reply button</p>
               <span className="mt-2 inline-flex rounded-full border border-[#efe7db] bg-white px-3 py-1 text-xs font-medium">
                 {previewButton}
               </span>
+              <div className="mt-3 rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-xs text-[#6b6257]">
+                <p className="font-semibold uppercase tracking-[0.15em] text-[#6b6257]">Where this runs</p>
+                <p className="mt-1">
+                  1) At scheduled coaching time, if user is outside 24h: this template is sent and that day’s coaching message is deferred.
+                </p>
+                <p className="mt-1">
+                  2) Periodic inactivity check: this template is sent to coaching users outside 24h.
+                </p>
+                <p className="mt-1">After user replies, the deferred day message is sent.</p>
+              </div>
             </div>
             <form action={saveMessagingSettingsAction} className="rounded-2xl border border-[#efe7db] bg-[#faf7f1] p-4">
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Message configuration</p>
@@ -278,6 +306,27 @@ export default async function MessagingPage() {
                   This is the sentence inserted into the approved Twilio template. Supported placeholders:{" "}
                   <code>{"{day}"}</code>, <code>{"{first_name}"}</code>, <code>{"{coach_name}"}</code>.
                 </p>
+                <p className="mt-1 text-xs text-[#8a8176]">
+                  Example: <code>{"Hi {first_name}, {coach_name} here. Your {day} message is ready."}</code>
+                </p>
+              </div>
+              <div
+                className={`mt-3 rounded-xl border px-3 py-2 text-xs ${
+                  templateHasVariables
+                    ? "border-[#16824a] bg-[#edf8f1] text-[#16824a]"
+                    : "border-[#b56e0a] bg-[#fff7ea] text-[#8a5a00]"
+                }`}
+              >
+                {templateHasVariables ? (
+                  <p>
+                    Variable template detected in Twilio preview. The sentence and placeholders above will be applied in live sends.
+                  </p>
+                ) : (
+                  <p>
+                    Static template detected in Twilio preview. Editing the sentence above will not change the final WhatsApp body
+                    until the Twilio template is updated to include variables and approved.
+                  </p>
+                )}
               </div>
               <button
                 type="submit"
@@ -286,7 +335,9 @@ export default async function MessagingPage() {
                 Save messaging settings
               </button>
             </form>
-            <p className="text-xs text-[#6b6257]">Preview source: Twilio template content for the configured session-reopen SID.</p>
+            <p className="text-xs text-[#6b6257]">
+              Preview source: Twilio template content for the configured session-reopen SID.
+            </p>
           </div>
         </section>
 
