@@ -55,27 +55,24 @@ function isOutOfSessionTemplate(template: {
   return friendlyName.includes("reopen");
 }
 
-function outOfSessionTemplateHeading(template: {
+function isDailyPromptReawakeTemplate(template: {
   template_type?: string | null;
   friendly_name?: string | null;
   payload?: Record<string, unknown> | null;
-}): string {
+}): boolean {
   const templateType = String(template.template_type || "").trim().toLowerCase();
   const purpose = String((template.payload && template.payload["purpose"]) || "")
     .trim()
     .toLowerCase();
   const friendlyName = String(template.friendly_name || "").trim().toLowerCase();
-  const isDayPromptReawake =
+  return (
     templateType.includes("day") ||
     purpose.includes("day") ||
     friendlyName.includes("day") ||
     templateType.includes("daily") ||
     purpose.includes("daily") ||
-    friendlyName.includes("daily");
-  if (isDayPromptReawake) {
-    return "24+ hour message to reawake user to receive daily prompt";
-  }
-  return "General +24 hour message sent when the user exceeds the 24 hour period";
+    friendlyName.includes("daily")
+  );
 }
 
 function approvalBadgeClass(status?: string | null): string {
@@ -163,8 +160,14 @@ export default async function MessagingPage() {
   const settingsData = await getMessagingSettings();
   const templates = templateData.templates || [];
   const outOfSessionTemplates = templates.filter((tpl) => isOutOfSessionTemplate(tpl));
+  const dailyPromptReawakeTemplate = outOfSessionTemplates.find((tpl) => isDailyPromptReawakeTemplate(tpl)) || null;
+  const general24hTemplate =
+    outOfSessionTemplates.find((tpl) => !isDailyPromptReawakeTemplate(tpl)) ||
+    outOfSessionTemplates.find((tpl) => tpl.id !== dailyPromptReawakeTemplate?.id) ||
+    null;
   const primaryOutOfSessionTemplate =
     outOfSessionTemplates.find((tpl) => String(tpl.template_type || "").trim().toLowerCase() === "session-reopen") ||
+    general24hTemplate ||
     outOfSessionTemplates[0] ||
     null;
   const schedule = scheduleData.items || [];
@@ -322,27 +325,36 @@ export default async function MessagingPage() {
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Twilio template details (24h+)</p>
               {outOfSessionTemplates.length ? (
                 <div className="mt-2 space-y-3">
-                  {outOfSessionTemplates.map((tpl) => (
-                    <div key={tpl.id} className="rounded-xl border border-[#efe7db] bg-white p-3">
-                      <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">
-                        {outOfSessionTemplateHeading(tpl)}
-                      </p>
-                      <dl className="grid gap-2 text-sm md:grid-cols-4">
+                  {[
+                    {
+                      key: "general",
+                      title: "General +24 hour message sent when the user exceeds the 24 hour period",
+                      template: general24hTemplate,
+                    },
+                    {
+                      key: "daily-reawake",
+                      title: "24+ hour message to reawake user to receive daily prompt",
+                      template: dailyPromptReawakeTemplate,
+                    },
+                  ].map((slot) => (
+                    <div key={slot.key} className="rounded-xl border border-[#efe7db] bg-white p-3">
+                      <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">{slot.title}</p>
+                      <dl className="mt-2 grid gap-2 text-sm md:grid-cols-2 lg:grid-cols-4">
                         <div>
                           <dt className="text-xs uppercase tracking-[0.15em] text-[#8a8176]">Template name</dt>
-                          <dd className="mt-1 font-medium">{tpl.friendly_name || "—"}</dd>
+                          <dd className="mt-1 font-medium">{slot.template?.friendly_name || "Not configured"}</dd>
                         </div>
                         <div>
                           <dt className="text-xs uppercase tracking-[0.15em] text-[#8a8176]">Template type</dt>
-                          <dd className="mt-1 font-medium">{tpl.template_type || "—"}</dd>
+                          <dd className="mt-1 font-medium">{slot.template?.template_type || "—"}</dd>
                         </div>
                         <div>
                           <dt className="text-xs uppercase tracking-[0.15em] text-[#8a8176]">Template SID</dt>
-                          <dd className="mt-1 font-mono text-xs break-all">{tpl.sid || "—"}</dd>
+                          <dd className="mt-1 font-mono text-xs break-all">{slot.template?.sid || "—"}</dd>
                         </div>
                         <div>
                           <dt className="text-xs uppercase tracking-[0.15em] text-[#8a8176]">WhatsApp approval</dt>
-                          <dd className="mt-1 font-medium">{approvalLabel(tpl.approval_status)}</dd>
+                          <dd className="mt-1 font-medium">{approvalLabel(slot.template?.approval_status)}</dd>
                         </div>
                       </dl>
                     </div>
