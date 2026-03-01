@@ -4900,7 +4900,7 @@ def api_user_coaching_history(
             return raw_text
         meta = _meta_dict(getattr(msg, "meta", None))
         category = str(meta.get("category") or "").strip().lower()
-        if category in {"session-reopen", "session_reopen", "out_of_session"}:
+        if category in {"session-reopen", "session_reopen", "out_of_session", "day-reopen", "day_reopen"}:
             return _render_session_reopen_display_text(meta)
         return raw_text
 
@@ -4942,7 +4942,7 @@ def api_user_coaching_history(
         meta = _meta_dict(getattr(msg, "meta", None))
         category = str(meta.get("category") or "").strip().lower()
         touchpoint_type = None
-        if category in {"session-reopen", "session_reopen"}:
+        if category in {"session-reopen", "session_reopen", "day-reopen", "day_reopen"}:
             touchpoint_type = "session_reopen"
         elif category == "out_of_session":
             touchpoint_type = "out_of_session"
@@ -5127,7 +5127,7 @@ def _canonical_touchpoint_filter(raw_touchpoint: object) -> str | None:
         return "monday"
     if raw in {"first-day"}:
         return "first_day"
-    if raw in {"out_of_session", "outside_24h", "session_reopen", "reopen"}:
+    if raw in {"out_of_session", "outside_24h", "session_reopen", "reopen", "day_reopen", "day-reopen"}:
         return "out_of_session"
     return raw
 
@@ -5141,7 +5141,7 @@ def _touchpoint_filter_variant(raw_touchpoint: object) -> str | None:
     raw = str(raw_touchpoint or "").strip().lower()
     if not raw:
         return None
-    if raw in {"session_reopen", "session-reopen", "reopen"}:
+    if raw in {"session_reopen", "session-reopen", "reopen", "day_reopen", "day-reopen"}:
         return "session_reopen"
     if raw in {"out_of_session", "outside_24h"}:
         return "out_of_session"
@@ -5184,7 +5184,7 @@ def _touchpoint_message_like_patterns(canonical_touchpoint: str | None) -> list[
 def _is_out_of_session_message(meta_obj: object, text_obj: object) -> bool:
     meta = _as_payload_dict(meta_obj)
     category = str(meta.get("category") or "").strip().lower()
-    if category in {"session-reopen", "session_reopen", "out_of_session"}:
+    if category in {"session-reopen", "session_reopen", "out_of_session", "day-reopen", "day_reopen"}:
         return True
     text = str(text_obj or "").strip().lower()
     if text.startswith("*coach* hi"):
@@ -11038,7 +11038,7 @@ def admin_touchpoint_history(
             continue
         msg_meta = _as_payload_dict(getattr(msg, "meta", None))
         raw_category = str(msg_meta.get("category") or "").strip().lower()
-        is_session_reopen_msg = raw_category in {"session-reopen", "session_reopen"}
+        is_session_reopen_msg = raw_category in {"session-reopen", "session_reopen", "day-reopen", "day_reopen"}
         is_out_of_session_msg = raw_category == "out_of_session"
         if canonical_touchpoint == "out_of_session" and not _is_out_of_session_message(getattr(msg, "meta", None), getattr(msg, "text", None)):
             continue
@@ -11701,37 +11701,57 @@ def admin_list_twilio_templates(admin_user: User = Depends(_require_admin)):
         pass
     with SessionLocal() as s:
         rows = s.query(TwilioTemplate).order_by(TwilioTemplate.template_type.asc(), TwilioTemplate.button_count.asc()).all()
-        if not rows:
-            defaults = [
+        existing_keys = {
+            (
+                str(getattr(row, "template_type", "") or "").strip().lower(),
+                int(row.button_count) if row.button_count is not None else None,
+            )
+            for row in rows
+        }
+        defaults = [
+            {
+                "template_type": "quick-reply",
+                "button_count": 2,
+                "friendly_name": os.getenv("TWILIO_QR_TEMPLATE_NAME_2", "hs_qr_2"),
+                "payload": {"button_count": 2},
+            },
+            {
+                "template_type": "quick-reply",
+                "button_count": 3,
+                "friendly_name": os.getenv("TWILIO_QR_TEMPLATE_NAME_3", "hs_qr_3"),
+                "payload": {"button_count": 3},
+            },
+            {
+                "template_type": "session-reopen",
+                "button_count": None,
+                "friendly_name": os.getenv("TWILIO_REOPEN_TEMPLATE_NAME", "hs_reopen"),
+                "payload": {"purpose": "session-reopen"},
+            },
+            {
+                "template_type": "day-reopen",
+                "button_count": None,
+                "friendly_name": os.getenv("TWILIO_DAY_REOPEN_TEMPLATE_NAME", "hs_day_reopen"),
+                "payload": {"purpose": "day-reopen"},
+            },
+        ]
+        missing_rows = []
+        for item in defaults:
+            key = (str(item["template_type"]).strip().lower(), item["button_count"])
+            if key in existing_keys:
+                continue
+            missing_rows.append(
                 TwilioTemplate(
                     provider="twilio",
-                    template_type="quick-reply",
-                    button_count=2,
-                    friendly_name=os.getenv("TWILIO_QR_TEMPLATE_NAME_2", "hs_qr_2"),
+                    template_type=item["template_type"],
+                    button_count=item["button_count"],
+                    friendly_name=item["friendly_name"],
                     status="missing",
                     language="en",
-                    payload={"button_count": 2},
-                ),
-                TwilioTemplate(
-                    provider="twilio",
-                    template_type="quick-reply",
-                    button_count=3,
-                    friendly_name=os.getenv("TWILIO_QR_TEMPLATE_NAME_3", "hs_qr_3"),
-                    status="missing",
-                    language="en",
-                    payload={"button_count": 3},
-                ),
-                TwilioTemplate(
-                    provider="twilio",
-                    template_type="session-reopen",
-                    button_count=None,
-                    friendly_name=os.getenv("TWILIO_REOPEN_TEMPLATE_NAME", "hs_reopen"),
-                    status="missing",
-                    language="en",
-                    payload={"purpose": "session-reopen"},
-                ),
-            ]
-            s.add_all(defaults)
+                    payload=item["payload"],
+                )
+            )
+        if missing_rows:
+            s.add_all(missing_rows)
             s.commit()
             rows = s.query(TwilioTemplate).order_by(TwilioTemplate.template_type.asc(), TwilioTemplate.button_count.asc()).all()
     items = []

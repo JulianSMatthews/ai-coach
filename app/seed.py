@@ -53,6 +53,10 @@ DEFAULT_SESSION_REOPEN_BODY = (
     "I'm ready to continue your coaching. {{3}}"
 )
 DEFAULT_SESSION_REOPEN_BUTTON_TITLE = "Continue coaching"
+DEFAULT_DAY_REOPEN_BODY = (
+    "Hi {{1}}, {{2}} from HealthSense here. {{3}}"
+)
+DEFAULT_DAY_REOPEN_BUTTON_TITLE = "Send daily message"
 
 PILLARS = [
     ("nutrition",  "Nutrition"),
@@ -1576,6 +1580,16 @@ def upsert_twilio_template_defaults(session: Session) -> int:
                 "purpose": "session-reopen",
                 "body": DEFAULT_SESSION_REOPEN_BODY,
                 "button_title": DEFAULT_SESSION_REOPEN_BUTTON_TITLE,
+            },
+        },
+        {
+            "template_type": "day-reopen",
+            "button_count": None,
+            "friendly_name": os.getenv("TWILIO_DAY_REOPEN_TEMPLATE_NAME", "hs_day_reopen"),
+            "payload": {
+                "purpose": "day-reopen",
+                "body": DEFAULT_DAY_REOPEN_BODY,
+                "button_title": DEFAULT_DAY_REOPEN_BUTTON_TITLE,
             },
         },
     ]

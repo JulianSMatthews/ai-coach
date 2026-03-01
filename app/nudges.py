@@ -46,6 +46,8 @@ _MAX_QUICK_REPLIES = 3
 _QUICK_REPLY_TITLE_LIMIT = 20
 _SESSION_REOPEN_ENV = "TWILIO_REOPEN_CONTENT_SID"
 _SESSION_REOPEN_TYPE = "session-reopen"
+_DAY_REOPEN_ENV = "TWILIO_DAY_REOPEN_CONTENT_SID"
+_DAY_REOPEN_TYPE = "day-reopen"
 _QUICK_REPLY_TYPE = "quick-reply"
 _BUTTON_CTA = "Please always respond by tapping a button (this keeps our support going)."
 _SESSION_REOPEN_DEFAULT_SENTENCE = "Please tap below to continue your wellbeing journey."
@@ -54,6 +56,12 @@ _SESSION_REOPEN_DEFAULT_BUTTON_ID = "continue_coaching"
 _SESSION_REOPEN_DEFAULT_BODY = (
     "Hi from HealthSense. "
     "I'm ready to continue your coaching. Please tap the button below to continue your wellbeing journey."
+)
+_DAY_REOPEN_DEFAULT_SENTENCE = "Your {day} coaching message is ready. Please tap below to receive it."
+_DAY_REOPEN_DEFAULT_BUTTON_TITLE = "Send daily message"
+_DAY_REOPEN_DEFAULT_BUTTON_ID = "send_daily_message"
+_DAY_REOPEN_DEFAULT_BODY = (
+    "Hi {{1}}, {{2}} from HealthSense here. {{3}}"
 )
 _QR_BOOTSTRAP_ATTEMPTS: dict[int, float] = {}
 _QR_BOOTSTRAP_MIN_INTERVAL = 60.0
@@ -136,6 +144,16 @@ def get_default_session_reopen_button_title() -> str:
     return raw or _SESSION_REOPEN_DEFAULT_BUTTON_TITLE
 
 
+def get_default_day_reopen_message_text() -> str:
+    raw = (os.getenv("TWILIO_DAY_REOPEN_DEFAULT_MESSAGE") or "").strip()
+    return raw or _DAY_REOPEN_DEFAULT_SENTENCE
+
+
+def get_default_day_reopen_button_title() -> str:
+    raw = (os.getenv("TWILIO_DAY_REOPEN_BUTTON_TITLE") or "").strip()
+    return raw or _DAY_REOPEN_DEFAULT_BUTTON_TITLE
+
+
 def build_session_reopen_template_variables(
     *,
     user_first_name: str | None,
@@ -145,6 +163,22 @@ def build_session_reopen_template_variables(
     first = (user_first_name or "").strip().title() or "there"
     coach = (coach_name or "").strip() or get_default_session_reopen_coach_name()
     sentence = (message_text or "").strip() or get_default_session_reopen_message_text()
+    return {
+        "1": first,
+        "2": coach,
+        "3": sentence,
+    }
+
+
+def build_day_reopen_template_variables(
+    *,
+    user_first_name: str | None,
+    coach_name: str | None = None,
+    message_text: str | None = None,
+) -> dict[str, str]:
+    first = (user_first_name or "").strip().title() or "there"
+    coach = (coach_name or "").strip() or get_default_session_reopen_coach_name()
+    sentence = (message_text or "").strip() or get_default_day_reopen_message_text()
     return {
         "1": first,
         "2": coach,
@@ -274,6 +308,22 @@ def _get_session_reopen_sid() -> str | None:
             template_type=_SESSION_REOPEN_TYPE,
             button_count=None,
             friendly_name=os.getenv("TWILIO_REOPEN_TEMPLATE_NAME", "hs_reopen"),
+            sid=env_sid,
+            status="active",
+        )
+    return env_sid
+
+
+def _get_day_reopen_sid() -> str | None:
+    sid = _get_twilio_template_sid(_DAY_REOPEN_TYPE, None)
+    if sid:
+        return sid
+    env_sid = (os.getenv(_DAY_REOPEN_ENV) or "").strip() or None
+    if env_sid:
+        _upsert_twilio_template(
+            template_type=_DAY_REOPEN_TYPE,
+            button_count=None,
+            friendly_name=os.getenv("TWILIO_DAY_REOPEN_TEMPLATE_NAME", "hs_day_reopen"),
             sid=env_sid,
             status="active",
         )
@@ -570,6 +620,23 @@ def _session_reopen_needs_upgrade(detail: dict) -> bool:
     return False
 
 
+def _day_reopen_needs_upgrade(detail: dict) -> bool:
+    types = detail.get("types") or {}
+    qr = types.get("twilio/quick-reply") or {}
+    body = (qr.get("body") or "").strip()
+    actions = qr.get("actions") or []
+    if body != _DAY_REOPEN_DEFAULT_BODY:
+        return True
+    if not actions:
+        return True
+    first = actions[0] or {}
+    if (first.get("title") or "").strip() != get_default_day_reopen_button_title():
+        return True
+    if (first.get("id") or "").strip() != _DAY_REOPEN_DEFAULT_BUTTON_ID:
+        return True
+    return False
+
+
 def _create_quick_reply_content(name: str, button_count: int) -> str | None:
     count = max(0, min(_MAX_QUICK_REPLIES, int(button_count)))
     if count <= 0:
@@ -616,6 +683,34 @@ def _create_session_reopen_content(name: str) -> str | None:
                     {
                         "title": get_default_session_reopen_button_title(),
                         "id": _SESSION_REOPEN_DEFAULT_BUTTON_ID,
+                    }
+                ],
+            }
+        },
+    }
+    try:
+        data = _twilio_content_request("POST", "Content", payload=payload)
+    except Exception:
+        return None
+    return data.get("sid") or data.get("content_sid")
+
+
+def _create_day_reopen_content(name: str) -> str | None:
+    payload = {
+        "friendly_name": name,
+        "language": "en",
+        "variables": {
+            "1": "User first name",
+            "2": "Coach name",
+            "3": "Prompt sentence",
+        },
+        "types": {
+            "twilio/quick-reply": {
+                "body": _DAY_REOPEN_DEFAULT_BODY,
+                "actions": [
+                    {
+                        "title": get_default_day_reopen_button_title(),
+                        "id": _DAY_REOPEN_DEFAULT_BUTTON_ID,
                     }
                 ],
             }
@@ -873,6 +968,117 @@ def ensure_quick_reply_templates(*, always_log: bool = False) -> None:
                         template_type=_SESSION_REOPEN_TYPE,
                         button_count=None,
                         friendly_name=reopen_name,
+                        sid=None,
+                        status="error",
+                    )
+    day_reopen_name = os.getenv("TWILIO_DAY_REOPEN_TEMPLATE_NAME", "hs_day_reopen")
+    day_reopen_dyn_name = f"{day_reopen_name}_dyn"
+    day_reopen_row = _get_twilio_template_row(_DAY_REOPEN_TYPE, None)
+    day_reopen_db_sid = getattr(day_reopen_row, "sid", None) if day_reopen_row else None
+    if day_reopen_db_sid and not os.getenv(_DAY_REOPEN_ENV):
+        os.environ[_DAY_REOPEN_ENV] = day_reopen_db_sid
+        log_lines.append(f"{_DAY_REOPEN_ENV}=db ({day_reopen_name})")
+
+    day_reopen_sid = (os.getenv(_DAY_REOPEN_ENV) or "").strip()
+    if day_reopen_sid:
+        if allow_upgrade and has_creds:
+            detail = _get_content_detail(day_reopen_sid)
+            needs_upgrade = _day_reopen_needs_upgrade(detail) if detail else True
+            already_dyn = bool(day_reopen_row and (getattr(day_reopen_row, "friendly_name", "") or "").endswith("_dyn"))
+            if needs_upgrade and not already_dyn:
+                upgraded_sid = _create_day_reopen_content(day_reopen_dyn_name)
+                if upgraded_sid:
+                    os.environ[_DAY_REOPEN_ENV] = upgraded_sid
+                    log_lines.append(f"{_DAY_REOPEN_ENV}=upgraded ({day_reopen_dyn_name})")
+                    _upsert_twilio_template(
+                        template_type=_DAY_REOPEN_TYPE,
+                        button_count=None,
+                        friendly_name=day_reopen_dyn_name,
+                        sid=upgraded_sid,
+                        status="active",
+                    )
+                    day_reopen_sid = upgraded_sid
+        _upsert_twilio_template(
+            template_type=_DAY_REOPEN_TYPE,
+            button_count=None,
+            friendly_name=os.getenv("TWILIO_DAY_REOPEN_TEMPLATE_NAME", "hs_day_reopen"),
+            sid=day_reopen_sid,
+            status="active",
+        )
+        if f"{_DAY_REOPEN_ENV}=upgraded ({day_reopen_dyn_name})" not in log_lines:
+            log_lines.append(f"{_DAY_REOPEN_ENV}=set (env)")
+    elif not has_creds:
+        log_lines.append(f"{_DAY_REOPEN_ENV}=missing (no creds)")
+        _upsert_twilio_template(
+            template_type=_DAY_REOPEN_TYPE,
+            button_count=None,
+            friendly_name=day_reopen_name,
+            sid=None,
+            status="missing",
+        )
+    else:
+        found_dyn = _find_content_sid_by_name(day_reopen_dyn_name)
+        if found_dyn:
+            os.environ[_DAY_REOPEN_ENV] = found_dyn
+            debug_log("twilio content found", {"name": day_reopen_dyn_name, "sid": found_dyn}, tag="twilio")
+            log_lines.append(f"{_DAY_REOPEN_ENV}=found ({day_reopen_dyn_name})")
+            _upsert_twilio_template(
+                template_type=_DAY_REOPEN_TYPE,
+                button_count=None,
+                friendly_name=day_reopen_dyn_name,
+                sid=found_dyn,
+                status="active",
+            )
+        else:
+            found = _find_content_sid_by_name(day_reopen_name)
+            if found:
+                if allow_upgrade:
+                    detail = _get_content_detail(found)
+                    needs_upgrade = _day_reopen_needs_upgrade(detail) if detail else True
+                    if needs_upgrade:
+                        upgraded_sid = _create_day_reopen_content(day_reopen_dyn_name)
+                        if upgraded_sid:
+                            os.environ[_DAY_REOPEN_ENV] = upgraded_sid
+                            debug_log("twilio content upgraded", {"name": day_reopen_dyn_name, "sid": upgraded_sid}, tag="twilio")
+                            log_lines.append(f"{_DAY_REOPEN_ENV}=upgraded ({day_reopen_dyn_name})")
+                            _upsert_twilio_template(
+                                template_type=_DAY_REOPEN_TYPE,
+                                button_count=None,
+                                friendly_name=day_reopen_dyn_name,
+                                sid=upgraded_sid,
+                                status="active",
+                            )
+                            found = ""
+                if found:
+                    os.environ[_DAY_REOPEN_ENV] = found
+                    debug_log("twilio content found", {"name": day_reopen_name, "sid": found}, tag="twilio")
+                    log_lines.append(f"{_DAY_REOPEN_ENV}=found ({day_reopen_name})")
+                    _upsert_twilio_template(
+                        template_type=_DAY_REOPEN_TYPE,
+                        button_count=None,
+                        friendly_name=day_reopen_name,
+                        sid=found,
+                        status="active",
+                    )
+            else:
+                created = _create_day_reopen_content(day_reopen_name)
+                if created:
+                    os.environ[_DAY_REOPEN_ENV] = created
+                    debug_log("twilio content created", {"name": day_reopen_name, "sid": created}, tag="twilio")
+                    log_lines.append(f"{_DAY_REOPEN_ENV}=created ({day_reopen_name})")
+                    _upsert_twilio_template(
+                        template_type=_DAY_REOPEN_TYPE,
+                        button_count=None,
+                        friendly_name=day_reopen_name,
+                        sid=created,
+                        status="active",
+                    )
+                else:
+                    log_lines.append(f"{_DAY_REOPEN_ENV}=error ({day_reopen_name})")
+                    _upsert_twilio_template(
+                        template_type=_DAY_REOPEN_TYPE,
+                        button_count=None,
+                        friendly_name=day_reopen_name,
                         sid=None,
                         status="error",
                     )

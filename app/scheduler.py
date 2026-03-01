@@ -35,9 +35,12 @@ from .nudges import (
     send_message,
     send_whatsapp_template,
     _get_session_reopen_sid,
+    _get_day_reopen_sid,
     ensure_quick_reply_templates,
     build_session_reopen_template_variables,
+    build_day_reopen_template_variables,
     get_default_session_reopen_message_text,
+    get_default_day_reopen_message_text,
     get_default_session_reopen_coach_name,
 )
 from .debug_utils import debug_log, debug_enabled
@@ -360,7 +363,7 @@ def send_out_of_session_messages() -> None:
     cooldown_hours = int(os.getenv("OUT_OF_SESSION_COOLDOWN_HOURS", str(after_hours)) or str(after_hours))
     now = datetime.utcnow()
     with SessionLocal() as s:
-        enabled, message = _get_messaging_settings(s)
+        enabled, _message = _get_messaging_settings(s)
         if not enabled:
             return
         reopen_message = (message or "").strip() or get_default_session_reopen_message_text()
@@ -775,19 +778,19 @@ def _run_day_prompt_inline(user_id: int, day: str):
     with SessionLocal() as s:
         enabled, message = _get_messaging_settings(s)
         if _outside_whatsapp_window(s, user, now_utc=now_utc, after_hours=after_hours):
-            template_sid = _get_session_reopen_sid() if enabled else None
+            template_sid = _get_day_reopen_sid() if enabled else None
             if not template_sid:
                 try:
                     if enabled:
                         ensure_quick_reply_templates(always_log=False)
                 except Exception:
                     pass
-                template_sid = _get_session_reopen_sid() if enabled else None
+                template_sid = _get_day_reopen_sid() if enabled else None
             sent_template = False
             send_error = None
             cooldown_active = False
             if template_sid:
-                pref = _get_user_pref(s, int(user_id), "out_of_session_last_sent_at")
+                pref = _get_user_pref(s, int(user_id), "out_of_session_day_last_sent_at")
                 last_sent = _parse_pref_datetime(pref.value if pref else None)
                 cooldown_active = bool(
                     last_sent and (now_utc - last_sent) < timedelta(hours=max(1, cooldown_hours))
@@ -797,19 +800,19 @@ def _run_day_prompt_inline(user_id: int, day: str):
                         send_whatsapp_template(
                             to=getattr(user, "phone", None),
                             template_sid=template_sid,
-                            variables=build_session_reopen_template_variables(
+                            variables=build_day_reopen_template_variables(
                                 user_first_name=getattr(user, "first_name", None),
                                 coach_name=None,
                                 message_text=_render_reopen_message_for_day(
-                                    message,
+                                    get_default_day_reopen_message_text(),
                                     day_key,
                                     first_name=getattr(user, "first_name", None),
                                     coach_name=None,
                                 ),
                             ),
-                            category="session-reopen",
+                            category="day-reopen",
                         )
-                        _set_user_pref(s, int(user_id), "out_of_session_last_sent_at", now_utc.isoformat())
+                        _set_user_pref(s, int(user_id), "out_of_session_day_last_sent_at", now_utc.isoformat())
                         sent_template = True
                     except Exception as e:
                         send_error = repr(e)
