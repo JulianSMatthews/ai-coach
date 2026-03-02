@@ -11180,6 +11180,373 @@ def admin_touchpoint_history_filter_touchpoints(
     return {"items": sorted(options)}
 
 
+@admin.get("/coaching/today-drilldown")
+def admin_coaching_today_drilldown(admin_user: User = Depends(_require_admin)):
+    """
+    Drill-down payload for today's coaching ratio:
+    to_be_sent : sent_day_message : deferred_outside_24h : replied_to_day_reopen : replied_to_day_message
+    """
+    club_scope_id = getattr(admin_user, "club_id", None)
+    now_uk = datetime.now(UK_TZ)
+    day_key = now_uk.strftime("%A").lower()
+    day_start_uk = datetime(now_uk.year, now_uk.month, now_uk.day, tzinfo=UK_TZ)
+    day_end_uk = day_start_uk + timedelta(days=1)
+    start_utc = day_start_uk.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+    end_utc = day_end_uk.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+
+    def _safe_user_name(u: User | None) -> str | None:
+        if not u:
+            return None
+        first = str(getattr(u, "first_name", "") or "").strip()
+        last = str(getattr(u, "surname", "") or "").strip()
+        name = f"{first} {last}".strip()
+        return name or None
+
+    def _first_inbound_between(
+        inbound_by_user: dict[int, list[datetime]],
+        user_id: int,
+        start_at: datetime,
+        end_at: datetime,
+    ) -> datetime | None:
+        stamps = inbound_by_user.get(user_id) or []
+        if not stamps:
+            return None
+        pos = bisect.bisect_left(stamps, start_at)
+        if pos < len(stamps) and stamps[pos] < end_at:
+            return stamps[pos]
+        return None
+
+    with SessionLocal() as s:
+        tp_q = (
+            s.query(
+                Touchpoint.id,
+                Touchpoint.user_id,
+                Touchpoint.type,
+                Touchpoint.generated_text,
+                Touchpoint.sent_at,
+                Touchpoint.created_at,
+            )
+            .filter(func.lower(Touchpoint.type) == day_key)
+            .filter(func.coalesce(Touchpoint.sent_at, Touchpoint.created_at) >= start_utc)
+            .filter(func.coalesce(Touchpoint.sent_at, Touchpoint.created_at) < end_utc)
+        )
+        if club_scope_id is not None:
+            tp_q = tp_q.join(User, Touchpoint.user_id == User.id).filter(User.club_id == club_scope_id)
+        tp_rows = tp_q.all()
+
+        day_touchpoints: list[dict[str, object]] = []
+        sent_user_ids: set[int] = set()
+        for tp_id, user_id, tp_type, generated_text, sent_at, created_at in tp_rows:
+            if user_id is None:
+                continue
+            try:
+                uid = int(user_id)
+            except Exception:
+                continue
+            ts = sent_at or created_at
+            if ts is None:
+                continue
+            day_touchpoints.append(
+                {
+                    "id": int(tp_id),
+                    "user_id": uid,
+                    "type": str(tp_type or "").strip().lower(),
+                    "ts": ts,
+                    "text": str(generated_text or "").strip() or None,
+                }
+            )
+            sent_user_ids.add(uid)
+
+        deferred_q = (
+            s.query(JobAudit.created_at, JobAudit.payload)
+            .filter(JobAudit.job_name == f"auto_prompt_{day_key}_deferred_out_of_session")
+            .filter(JobAudit.created_at >= start_utc, JobAudit.created_at < end_utc)
+        )
+        resumed_q = (
+            s.query(JobAudit.created_at, JobAudit.payload, JobAudit.status)
+            .filter(JobAudit.job_name == "pending_day_prompt_resumed")
+            .filter(JobAudit.created_at >= start_utc, JobAudit.created_at < end_utc)
+        )
+        deferred_rows = deferred_q.all()
+        resumed_rows = resumed_q.all()
+
+        club_user_ids: set[int] | None = None
+        if club_scope_id is not None:
+            club_user_ids = {
+                int(uid)
+                for (uid,) in s.query(User.id).filter(User.club_id == club_scope_id).all()
+                if uid is not None
+            }
+
+        deferred_user_ids: set[int] = set()
+        deferred_template_sent_by_user: dict[int, bool] = {}
+        deferred_at_by_user: dict[int, datetime] = {}
+        for created_at, payload in deferred_rows:
+            body = _as_payload_dict(payload)
+            raw_uid = body.get("user_id")
+            try:
+                uid = int(raw_uid) if raw_uid is not None else 0
+            except Exception:
+                uid = 0
+            if uid <= 0:
+                continue
+            if club_user_ids is not None and uid not in club_user_ids:
+                continue
+            deferred_user_ids.add(uid)
+            sent_flag = bool(body.get("template_sent"))
+            if uid not in deferred_template_sent_by_user:
+                deferred_template_sent_by_user[uid] = sent_flag
+            else:
+                deferred_template_sent_by_user[uid] = deferred_template_sent_by_user[uid] or sent_flag
+            prev_at = deferred_at_by_user.get(uid)
+            if prev_at is None or (isinstance(created_at, datetime) and created_at > prev_at):
+                if isinstance(created_at, datetime):
+                    deferred_at_by_user[uid] = created_at
+
+        resumed_user_ids: set[int] = set()
+        resumed_at_by_user: dict[int, datetime] = {}
+        for created_at, payload, status in resumed_rows:
+            if str(status or "").strip().lower() == "error":
+                continue
+            body = _as_payload_dict(payload)
+            if str(body.get("day") or "").strip().lower() != day_key:
+                continue
+            raw_uid = body.get("user_id")
+            try:
+                uid = int(raw_uid) if raw_uid is not None else 0
+            except Exception:
+                uid = 0
+            if uid <= 0:
+                continue
+            if club_user_ids is not None and uid not in club_user_ids:
+                continue
+            resumed_user_ids.add(uid)
+            prev_at = resumed_at_by_user.get(uid)
+            if prev_at is None or (isinstance(created_at, datetime) and created_at > prev_at):
+                if isinstance(created_at, datetime):
+                    resumed_at_by_user[uid] = created_at
+
+        # Resolve day-message replies by scanning inbound after each touchpoint send.
+        day_touchpoints.sort(key=lambda row: (int(row["user_id"]), row["ts"], int(row["id"])))
+        next_ts_by_touchpoint_id: dict[int, datetime | None] = {}
+        for idx, row in enumerate(day_touchpoints):
+            next_ts = None
+            if idx + 1 < len(day_touchpoints) and int(day_touchpoints[idx + 1]["user_id"]) == int(row["user_id"]):
+                next_ts = day_touchpoints[idx + 1]["ts"]
+            next_ts_by_touchpoint_id[int(row["id"])] = next_ts
+
+        inbound_by_user: dict[int, list[datetime]] = {}
+        all_candidate_user_ids = set(sent_user_ids) | set(deferred_user_ids) | set(resumed_user_ids)
+        if all_candidate_user_ids:
+            in_q = (
+                s.query(MessageLog.user_id, MessageLog.created_at)
+                .filter(MessageLog.direction == "inbound")
+                .filter(MessageLog.user_id.in_(list(all_candidate_user_ids)))
+                .filter(MessageLog.created_at >= start_utc)
+                .filter(MessageLog.created_at < (end_utc + timedelta(days=1)))
+            )
+            in_rows = in_q.all()
+            for uid, created_at in in_rows:
+                if uid is None or created_at is None:
+                    continue
+                try:
+                    uid_i = int(uid)
+                except Exception:
+                    continue
+                inbound_by_user.setdefault(uid_i, []).append(created_at)
+            for uid_i in list(inbound_by_user.keys()):
+                inbound_by_user[uid_i].sort()
+
+        replied_day_user_ids: set[int] = set()
+        day_reply_at_by_user: dict[int, datetime] = {}
+        for row in day_touchpoints:
+            uid = int(row["user_id"])
+            start_at = row["ts"]
+            end_at = start_at + timedelta(hours=24)
+            next_ts = next_ts_by_touchpoint_id.get(int(row["id"]))
+            if next_ts is not None and next_ts < end_at:
+                end_at = next_ts
+            first_inbound = _first_inbound_between(inbound_by_user, uid, start_at, end_at)
+            if first_inbound is None:
+                continue
+            replied_day_user_ids.add(uid)
+            prev_at = day_reply_at_by_user.get(uid)
+            if prev_at is None or first_inbound < prev_at:
+                day_reply_at_by_user[uid] = first_inbound
+
+        # Pull message rows for message previews/status.
+        message_rows = []
+        if all_candidate_user_ids:
+            msg_q = (
+                s.query(
+                    MessageLog.id,
+                    MessageLog.user_id,
+                    MessageLog.direction,
+                    MessageLog.text,
+                    MessageLog.meta,
+                    MessageLog.created_at,
+                )
+                .filter(MessageLog.user_id.in_(list(all_candidate_user_ids)))
+                .filter(MessageLog.created_at >= start_utc)
+                .filter(MessageLog.created_at < (end_utc + timedelta(days=1)))
+                .order_by(MessageLog.created_at.desc(), MessageLog.id.desc())
+            )
+            message_rows = msg_q.all()
+
+        day_message_by_user: dict[int, dict[str, object]] = {}
+        reopen_message_by_user: dict[int, dict[str, object]] = {}
+        latest_inbound_by_user: dict[int, dict[str, object]] = {}
+        for msg_id, raw_uid, direction, text, meta, created_at in message_rows:
+            if raw_uid is None:
+                continue
+            try:
+                uid = int(raw_uid)
+            except Exception:
+                continue
+            direction_val = str(direction or "").strip().lower()
+            text_val = str(text or "").strip()
+            if direction_val == "inbound" and uid not in latest_inbound_by_user:
+                latest_inbound_by_user[uid] = {
+                    "id": int(msg_id),
+                    "at": created_at.isoformat() if isinstance(created_at, datetime) else None,
+                    "text": text_val or None,
+                }
+            if direction_val != "outbound":
+                continue
+            meta_obj = _as_payload_dict(meta)
+            category = str(meta_obj.get("category") or "").strip().lower()
+            if category in {"day-reopen", "day_reopen"} and uid not in reopen_message_by_user:
+                delivery = _message_delivery_from_meta(meta)
+                reopen_message_by_user[uid] = {
+                    "id": int(msg_id),
+                    "at": created_at.isoformat() if isinstance(created_at, datetime) else None,
+                    "text": text_val or None,
+                    "delivery_state": delivery.get("delivery_state"),
+                    "delivery_status": delivery.get("delivery_status"),
+                    "delivery_error_code": delivery.get("delivery_error_code"),
+                    "delivery_error_description": delivery.get("delivery_error_description"),
+                }
+                continue
+            if _coaching_day_from_message_text(text_val) == day_key and uid not in day_message_by_user:
+                delivery = _message_delivery_from_meta(meta)
+                day_message_by_user[uid] = {
+                    "id": int(msg_id),
+                    "at": created_at.isoformat() if isinstance(created_at, datetime) else None,
+                    "text": text_val or None,
+                    "delivery_state": delivery.get("delivery_state"),
+                    "delivery_status": delivery.get("delivery_status"),
+                    "delivery_error_code": delivery.get("delivery_error_code"),
+                    "delivery_error_description": delivery.get("delivery_error_description"),
+                }
+
+        # Backfill day message details from touchpoints when message logs are missing.
+        latest_day_tp_by_user: dict[int, dict[str, object]] = {}
+        for row in day_touchpoints:
+            uid = int(row["user_id"])
+            prev = latest_day_tp_by_user.get(uid)
+            ts_val = row["ts"]
+            if prev is None or ts_val > prev["ts"]:
+                latest_day_tp_by_user[uid] = {"ts": ts_val, "text": row.get("text")}
+        for uid, fallback in latest_day_tp_by_user.items():
+            if uid in day_message_by_user:
+                continue
+            day_message_by_user[uid] = {
+                "id": None,
+                "at": fallback["ts"].isoformat(),
+                "text": fallback.get("text"),
+                "delivery_state": "unknown",
+                "delivery_status": None,
+                "delivery_error_code": None,
+                "delivery_error_description": None,
+            }
+
+        all_user_ids = sorted(set(sent_user_ids) | set(deferred_user_ids) | set(resumed_user_ids) | set(replied_day_user_ids))
+        users_by_id: dict[int, User] = {}
+        if all_user_ids:
+            uq = s.query(User).filter(User.id.in_(all_user_ids))
+            if club_scope_id is not None:
+                uq = uq.filter(User.club_id == club_scope_id)
+            for u in uq.all():
+                users_by_id[int(u.id)] = u
+
+    # Build user entries once, reuse across categories.
+    user_entry_by_id: dict[int, dict[str, object]] = {}
+    for uid in all_user_ids:
+        u = users_by_id.get(uid)
+        user_entry_by_id[uid] = {
+            "user_id": uid,
+            "user_name": _safe_user_name(u),
+            "phone": getattr(u, "phone", None) if u else None,
+            "day_message": day_message_by_user.get(uid),
+            "day_reopen_message": reopen_message_by_user.get(uid),
+            "latest_inbound": latest_inbound_by_user.get(uid),
+            "reply_to_day_message_at": day_reply_at_by_user.get(uid).isoformat() if day_reply_at_by_user.get(uid) else None,
+            "reply_to_day_reopen_at": resumed_at_by_user.get(uid).isoformat() if resumed_at_by_user.get(uid) else None,
+            "deferred_template_sent": bool(deferred_template_sent_by_user.get(uid, False)),
+            "deferred_at": deferred_at_by_user.get(uid).isoformat() if deferred_at_by_user.get(uid) else None,
+        }
+
+    def _entries_for(user_ids: set[int]) -> list[dict[str, object]]:
+        entries = [user_entry_by_id[uid] for uid in sorted(user_ids)]
+        entries.sort(key=lambda row: ((str(row.get("user_name") or "") or "~").lower(), int(row.get("user_id") or 0)))
+        return entries
+
+    users_to_be_sent = set(sent_user_ids) | set(deferred_user_ids)
+    categories = [
+        {
+            "key": "to_be_sent",
+            "label": "Users to be sent",
+            "description": f"Users targeted for today's {day_key.capitalize()} flow (sent now or deferred outside 24h).",
+            "total": len(users_to_be_sent),
+            "users": _entries_for(users_to_be_sent),
+        },
+        {
+            "key": "sent_day_message",
+            "label": "Users sent day message",
+            "description": f"Users who received the {day_key.capitalize()} day-flow message.",
+            "total": len(sent_user_ids),
+            "users": _entries_for(sent_user_ids),
+        },
+        {
+            "key": "outside_24h_deferred",
+            "label": "Users outside 24h (day-reopen path)",
+            "description": "Users deferred because they were outside the 24h window (day-reopen attempted).",
+            "total": len(deferred_user_ids),
+            "users": _entries_for(deferred_user_ids),
+        },
+        {
+            "key": "replied_day_reopen",
+            "label": "Replies to day-reopen",
+            "description": "Users who replied and resumed a deferred day prompt.",
+            "total": len(resumed_user_ids),
+            "users": _entries_for(resumed_user_ids),
+        },
+        {
+            "key": "replied_day_message",
+            "label": "Replies to day message",
+            "description": "Users who replied within 24h of the day message.",
+            "total": len(replied_day_user_ids),
+            "users": _entries_for(replied_day_user_ids),
+        },
+    ]
+
+    return {
+        "as_of_utc": datetime.utcnow().isoformat(),
+        "day_key": day_key,
+        "day_start_uk": day_start_uk.isoformat(),
+        "day_end_uk": day_end_uk.isoformat(),
+        "ratio": {
+            "users_to_be_sent": len(users_to_be_sent),
+            "users_sent_day_message": len(sent_user_ids),
+            "users_outside_24h_deferred": len(deferred_user_ids),
+            "users_replied_day_reopen": len(resumed_user_ids),
+            "users_replied_day_message": len(replied_day_user_ids),
+            "display": f"{len(users_to_be_sent)}:{len(sent_user_ids)}:{len(deferred_user_ids)}:{len(resumed_user_ids)}:{len(replied_day_user_ids)}",
+        },
+        "categories": categories,
+    }
+
+
 @admin.get("/coaching/scheduled")
 def admin_coaching_scheduled(
     limit: int = 200,

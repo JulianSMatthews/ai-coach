@@ -99,7 +99,7 @@ export default async function AdminHome() {
               desc: "WhatsApp + in-app coaching touchpoints.",
               rows: [
                 { label: "Total", value: stats?.interactions?.total ?? "—" },
-                { label: "Today", value: dashboardTodayRatio },
+                { label: "Today", value: dashboardTodayRatio, href: "/admin/monitoring/coaching-today" },
                 { label: "This week", value: stats?.interactions?.week ?? "—" },
               ],
             },
@@ -111,7 +111,13 @@ export default async function AdminHome() {
                 {item.rows.map((row) => (
                   <div key={row.label} className="flex items-center justify-between rounded-xl bg-[#f7f4ee] px-3 py-2">
                     <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.label}</span>
-                    <span className="text-lg font-semibold">{row.value}</span>
+                    {row.href ? (
+                      <Link href={row.href} className="text-lg font-semibold text-[#1d6a4f] underline-offset-2 hover:underline">
+                        {row.value}
+                      </Link>
+                    ) : (
+                      <span className="text-lg font-semibold">{row.value}</span>
+                    )}
                   </div>
                 ))}
               </div>

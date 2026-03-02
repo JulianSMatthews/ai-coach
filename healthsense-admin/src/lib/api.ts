@@ -734,6 +734,63 @@ export type TouchpointHistoryItem = {
   reply_at?: string | null;
 };
 
+export type CoachingTodayDrilldownUser = {
+  user_id?: number | null;
+  user_name?: string | null;
+  phone?: string | null;
+  day_message?: {
+    id?: number | null;
+    at?: string | null;
+    text?: string | null;
+    delivery_state?: string | null;
+    delivery_status?: string | null;
+    delivery_error_code?: string | null;
+    delivery_error_description?: string | null;
+  } | null;
+  day_reopen_message?: {
+    id?: number | null;
+    at?: string | null;
+    text?: string | null;
+    delivery_state?: string | null;
+    delivery_status?: string | null;
+    delivery_error_code?: string | null;
+    delivery_error_description?: string | null;
+  } | null;
+  latest_inbound?: {
+    id?: number | null;
+    at?: string | null;
+    text?: string | null;
+  } | null;
+  reply_to_day_message_at?: string | null;
+  reply_to_day_reopen_at?: string | null;
+  deferred_template_sent?: boolean | null;
+  deferred_at?: string | null;
+};
+
+export type CoachingTodayDrilldownCategory = {
+  key?: string | null;
+  label?: string | null;
+  description?: string | null;
+  total?: number | null;
+  users?: CoachingTodayDrilldownUser[];
+};
+
+export type CoachingTodayDrilldownPayload = {
+  as_of_utc?: string;
+  day_key?: string;
+  day_start_uk?: string;
+  day_end_uk?: string;
+  ratio?: {
+    users_to_be_sent?: number;
+    users_sent_day_message?: number;
+    users_outside_24h_deferred?: number;
+    users_replied_day_reopen?: number;
+    users_replied_day_message?: number;
+    display?: string;
+  };
+  categories?: CoachingTodayDrilldownCategory[];
+};
+
 export type TwilioTemplateItem = {
   id: number;
   provider?: string | null;
@@ -1486,6 +1543,10 @@ export async function listTouchpointHistoryTouchpoints(
     },
   });
   return data.items || [];
+}
+
+export async function getAdminCoachingTodayDrilldown() {
+  return apiAdmin<CoachingTodayDrilldownPayload>("/admin/coaching/today-drilldown");
 }
 
 export async function listCoachingScheduled(
