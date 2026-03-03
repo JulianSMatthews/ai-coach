@@ -13,10 +13,25 @@ type PageProps = {
   searchParams: Promise<{ run_id?: string }>;
 };
 
+function parseApiErrorMessage(error: unknown): { status?: number; message: string } {
+  const raw = error instanceof Error ? error.message : String(error || "");
+  const match = raw.match(/^API\s+(\d+)\s+/i);
+  const status = match ? Number.parseInt(match[1], 10) : undefined;
+  return { status, message: raw };
+}
+
 export default async function AssessmentPage(props: PageProps) {
   const { userId } = await props.params;
   const { run_id } = await props.searchParams;
-  const status = await getUserStatus(userId);
+  const assessmentPath = `/assessment/${userId}${run_id ? `?run_id=${encodeURIComponent(String(run_id))}` : ""}`;
+  const reloginHref = `/login?next=${encodeURIComponent(assessmentPath)}`;
+  let status: Awaited<ReturnType<typeof getUserStatus>> = {};
+  let statusLoadError: { status?: number; message: string } | null = null;
+  try {
+    status = await getUserStatus(userId);
+  } catch (error) {
+    statusLoadError = parseApiErrorMessage(error);
+  }
   const textScale = status.coaching_preferences?.text_scale
     ? Number.parseFloat(status.coaching_preferences.text_scale)
     : undefined;
@@ -27,15 +42,17 @@ export default async function AssessmentPage(props: PageProps) {
       : "";
   let data: Awaited<ReturnType<typeof getAssessment>> | null = null;
   let missing = false;
+  let assessmentLoadError: { status?: number; message: string } | null = null;
   try {
     data = await getAssessment(userId, run_id);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const parsed = parseApiErrorMessage(error);
+    const message = parsed.message;
     if (message.includes("404") && message.toLowerCase().includes("assessment run not found")) {
       missing = true;
       data = {};
     } else {
-      throw error;
+      assessmentLoadError = parsed;
     }
   }
   const safeData = data ?? {};
@@ -102,6 +119,45 @@ export default async function AssessmentPage(props: PageProps) {
     if (!Number.isFinite(num) || !labels[num]) return value === undefined || value === null ? "--" : String(value);
     return `${num} · ${labels[num]}`;
   };
+
+  if (statusLoadError || assessmentLoadError) {
+    const err = statusLoadError || assessmentLoadError;
+    const statusCode = err?.status;
+    const isAuthError = statusCode === 401 || statusCode === 403;
+    return (
+      <PageShell>
+        <AppNav userId={userId} promptBadge={promptBadge} />
+        <SectionHeader
+          eyebrow="Assessment"
+          title={<span className="text-xl">{`Your assessment, ${displayFirstName}`}</span>}
+          subtitle={assessmentDate}
+          side={<StatPill label="Combined" value="--" />}
+        />
+        <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
+          <h2 className="text-xl">Assessment unavailable</h2>
+          <p className="mt-2 text-sm text-[#6b6257]">
+            {isAuthError
+              ? "Your current app session cannot access this assessment. Sign in with the correct account and try again."
+              : "We couldn’t load this assessment right now. Please try again shortly."}
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <a
+              href={reloginHref}
+              className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white"
+            >
+              sign in again
+            </a>
+            <a
+              href={`/progress/${userId}`}
+              className="rounded-full border border-[#efe7db] px-4 py-2 text-xs uppercase tracking-[0.2em]"
+            >
+              go to home
+            </a>
+          </div>
+        </Card>
+      </PageShell>
+    );
+  }
 
   if (missing) {
     return (
