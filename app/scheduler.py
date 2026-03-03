@@ -47,7 +47,7 @@ from .nudges import (
 )
 from .debug_utils import debug_log, debug_enabled
 from .llm import compose_prompt
-from . import monday, tuesday, wednesday, thursday, friday, saturday, sunday, first_day
+from . import monday, tuesday, wednesday, thursday, friday, saturday, sunday, first_day, habit_selector
 from .job_queue import enqueue_job, should_use_worker
 from .programme_timeline import first_monday_on_or_after
 from .weekly_plan import ensure_weekly_plan
@@ -879,7 +879,7 @@ def _run_day_prompt_inline(user_id: int, day: str):
         # Shared habit-step gate:
         # If this week's required habit steps are missing, run setup first and defer day flow.
         try:
-            if not sunday.ensure_habit_steps_ready_for_day(user, day_key):
+            if not habit_selector.ensure_habit_steps_ready_for_day(user, day_key):
                 _audit(
                     int(user_id),
                     f"auto_prompt_{day_key}_deferred_missing_habit_steps",

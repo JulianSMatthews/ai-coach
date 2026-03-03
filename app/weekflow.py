@@ -7,7 +7,7 @@ from datetime import date
 
 from .models import User, WeeklyFocus
 from .nudges import send_whatsapp
-from . import monday, wednesday, friday, tuesday, saturday, sunday
+from . import monday, wednesday, friday, tuesday, saturday, sunday, habit_selector
 from .db import SessionLocal
 from .reporting import generate_progress_report_html, _reports_root_for_user
 from .weekly_plan import ensure_weekly_plan
@@ -78,7 +78,7 @@ def run_week_flow(user: User, week_no: int = 1) -> None:
 
     def _ensure_habit_gate(day_key: str) -> bool:
         try:
-            return bool(sunday.ensure_habit_steps_ready_for_day(user, day_key))
+            return bool(habit_selector.ensure_habit_steps_ready_for_day(user, day_key))
         except Exception as e:
             try:
                 print(f"[weekflow] habit-step gate check failed for {day_key}: {e}")

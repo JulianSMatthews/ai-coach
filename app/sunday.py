@@ -14,7 +14,7 @@ from typing import Optional
 
 from sqlalchemy.orm import Session
 
-from . import general_support
+from . import general_support, habit_selector
 from . import habit_steps as habit_flow
 from .db import SessionLocal
 from .job_queue import enqueue_job, should_use_worker
@@ -674,7 +674,7 @@ def send_sunday_review(user: User, coach_name: str = COACH_NAME) -> None:
         job_id = enqueue_job("day_prompt", {"user_id": user.id, "day": "sunday"}, user_id=user.id)
         print(f"[sunday] enqueued day prompt user_id={user.id} job={job_id}")
         return
-    if not ensure_habit_steps_ready_for_day(user, "sunday"):
+    if not habit_selector.ensure_habit_steps_ready_for_day(user, "sunday"):
         return
     send_sunday_daily(user, coach_name=coach_name)
 

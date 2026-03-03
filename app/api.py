@@ -101,7 +101,7 @@ from .models import (
     BillingTransaction,
     BillingWebhookEvent,
 )  # ensure model registered for metadata
-from . import monday, wednesday, thursday, friday, saturday, weekflow, tuesday, sunday, kickoff, admin_routes, general_support
+from . import monday, wednesday, thursday, friday, saturday, weekflow, tuesday, sunday, kickoff, admin_routes, general_support, habit_selector
 from . import psych
 from . import coachmycoach
 from . import scheduler
@@ -2752,6 +2752,13 @@ async def twilio_inbound(request: Request):
             except Exception as e:
                 send_whatsapp(to=user.phone, text=f"Psych check failed: {e}")
             return Response(content="", media_type="text/plain", status_code=200)
+        if habit_selector.has_active_state(user.id):
+            try:
+                habit_selector.handle_message(user, body)
+            except Exception as e:
+                send_whatsapp(to=user.phone, text=f"Habit steps failed: {e}")
+            return Response(content="", media_type="text/plain", status_code=200)
+
         if sunday.has_active_state(user.id):
             try:
                 sunday.handle_message(user, body)
@@ -2813,7 +2820,7 @@ async def twilio_inbound(request: Request):
         if lower_body.startswith("weekstart") or lower_body.startswith("monday") or monday.has_active_state(user.id):
             if (lower_body.startswith("weekstart") or lower_body.startswith("monday")) and not monday.has_active_state(user.id):
                 try:
-                    if not sunday.ensure_habit_steps_ready_for_day(user, "monday"):
+                    if not habit_selector.ensure_habit_steps_ready_for_day(user, "monday"):
                         return Response(content="", media_type="text/plain", status_code=200)
                 except Exception:
                     pass
