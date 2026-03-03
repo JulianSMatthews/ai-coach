@@ -281,6 +281,41 @@ def _set_user_pref(session, user_id: int, key: str, value: str) -> None:
         session.add(UserPreference(user_id=user_id, key=key, value=value))
 
 
+def _clear_coaching_runtime_state(session, user_id: int) -> None:
+    """
+    Remove runtime coaching flow state that can become stale across disable/enable cycles.
+    This intentionally excludes long-lived profile/settings prefs.
+    """
+    runtime_keys = [
+        # Deferred day-flow state
+        PENDING_DAY_PROMPT_PREF_KEY,
+        PENDING_DAY_PROMPT_SET_AT_PREF_KEY,
+        # 24h template cadence + counters
+        "out_of_session_day_last_sent_at",
+        OUT_OF_SESSION_DAY_SEND_COUNT_PREF_KEY,
+        "out_of_session_last_sent_at",
+        OUT_OF_SESSION_GENERAL_SEND_COUNT_PREF_KEY,
+        # Active chat/selection states
+        "habit_setup_state",
+        "sunday_state",
+        "weekstart_state",
+        "general_support_state",
+    ]
+    rows = (
+        session.query(UserPreference)
+        .filter(
+            UserPreference.user_id == int(user_id),
+            UserPreference.key.in_(runtime_keys),
+        )
+        .all()
+    )
+    for row in rows:
+        try:
+            session.delete(row)
+        except Exception:
+            pass
+
+
 def _last_inbound_at(session, user_id: int) -> datetime | None:
     row = (
         session.query(MessageLog.created_at)
@@ -803,12 +838,16 @@ def _run_day_prompt_inline(user_id: int, day: str):
         pending_day = str(getattr(pending_pref, "value", "") or "").strip().lower()
         if pending_day in {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"} and pending_day != day_key:
             if bool(fast_mode_active):
+                # In fast-mode, never let stale pending-day state block rotation.
+                _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_PREF_KEY, "")
+                _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_SET_AT_PREF_KEY, "")
+                s.commit()
                 _audit(
                     int(user_id),
-                    "pending_day_prompt_kept_fast_mode",
-                    {"pending_day": pending_day, "current_day": day_key, "reason": "fast_mode_rotation"},
+                    "pending_day_prompt_expired_fast_mode",
+                    {"day": pending_day, "current_day": day_key, "reason": "inside_24h"},
                 )
-                return
+                # continue to run current day prompt
             _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_PREF_KEY, "")
             _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_SET_AT_PREF_KEY, "")
             s.commit()
@@ -938,7 +977,7 @@ def _run_day_prompt_inline(user_id: int, day: str):
                 sent_local_day = sent_at.astimezone(tz).date()
             except Exception:
                 sent_local_day = sent_at.date()
-            if sent_local_day == datetime.now(tz).date():
+            if sent_local_day == datetime.now(tz).date() and not bool(fast_mode_active):
                 _audit(
                     int(user_id),
                     f"auto_prompt_{day_key}_skipped",
@@ -1029,6 +1068,8 @@ def _run_first_day_coaching_if_needed(user: User, day: str) -> bool:
         return False
     with SessionLocal() as s:
         _set_user_pref(s, user_id, FIRST_DAY_SENT_AT_PREF_KEY, datetime.utcnow().isoformat())
+        _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_PREF_KEY, "")
+        _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_SET_AT_PREF_KEY, "")
         s.commit()
     _audit(user_id, "auto_prompt_first_day", {"day": day})
     return True
@@ -1096,6 +1137,8 @@ def _run_first_day_catchup(user_id: int, scheduled_day: str) -> None:
         return
     with SessionLocal() as s:
         _set_user_pref(s, int(user_id), FIRST_DAY_SENT_AT_PREF_KEY, datetime.utcnow().isoformat())
+        _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_PREF_KEY, "")
+        _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_SET_AT_PREF_KEY, "")
         s.commit()
     _audit(int(user_id), "auto_prompt_first_day", {"day": scheduled_day, "source": "catchup"})
 
@@ -1535,6 +1578,7 @@ def disable_coaching(user_id: int) -> bool:
         legacy_pending = _get_user_pref(s, user_id, LEGACY_FIRST_DAY_PENDING_PREF_KEY)
         if legacy_pending:
             s.delete(legacy_pending)
+        _clear_coaching_runtime_state(s, int(user_id))
         set_virtual_mode(s, user_id, enabled=False)
         s.commit()
         _unschedule_prompts_for_user(user_id)
