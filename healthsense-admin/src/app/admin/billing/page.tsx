@@ -122,6 +122,10 @@ export default async function BillingPage() {
   const data = await getBillingCatalog();
   const plans = data.plans || [];
   const stripe = data.stripe || {};
+  const stripeProducts = Array.isArray(stripe.products) ? stripe.products : [];
+  const stripeProductsActive = stripeProducts.filter((p) => Boolean(p?.active));
+  const stripeProductsArchived = Math.max(0, stripeProducts.length - stripeProductsActive.length);
+  const stripeProductsError = String(stripe.products_error || "").trim();
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -137,6 +141,13 @@ export default async function BillingPage() {
                 Stripe is {stripe.configured ? "configured" : "not configured"} · mode {stripe.mode || "unknown"} · API{" "}
                 {stripe.api_base || "not set"}.
               </p>
+              {stripe.configured ? (
+                <p className="mt-1 text-xs text-[#6b6257]">
+                  Stripe products loaded: {stripeProducts.length} (active {stripeProductsActive.length}, archived{" "}
+                  {stripeProductsArchived})
+                  {stripeProductsError ? ` (error: ${stripeProductsError})` : ""}
+                </p>
+              ) : null}
             </div>
             <form action={syncStripeAction} className="flex flex-wrap items-center gap-3">
               <label className="flex items-center gap-2 text-sm text-[#6b6257]">
@@ -188,26 +199,39 @@ export default async function BillingPage() {
           </div>
           <form action={savePlanAction} className="grid gap-3 md:grid-cols-5">
             <input type="hidden" name="plan_id" value="" />
-            <input
-              name="code"
-              placeholder="beta_monthly"
-              className="rounded-xl border border-[#efe7db] px-3 py-2 text-sm md:col-span-1"
-              required
-            />
-            <input
-              name="name"
-              placeholder="HealthSense Monthly"
-              className="rounded-xl border border-[#efe7db] px-3 py-2 text-sm md:col-span-2"
-              required
-            />
-            <input
-              name="description"
-              placeholder="Monthly coaching subscription"
-              className="rounded-xl border border-[#efe7db] px-3 py-2 text-sm md:col-span-2"
-            />
-            <label className="flex items-center gap-2 text-sm text-[#6b6257] md:col-span-4">
+            <div className="md:col-span-1">
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Code</label>
+              <input
+                name="code"
+                placeholder="beta_monthly"
+                className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                required
+              />
+              <p className="mt-1 text-xs text-[#6b6257]">Unique internal key (lowercase + underscores), e.g. `beta_monthly`.</p>
+            </div>
+            <div className="md:col-span-2">
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Name</label>
+              <input
+                name="name"
+                placeholder="HealthSense Monthly"
+                className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                required
+              />
+              <p className="mt-1 text-xs text-[#6b6257]">Display name shown to team/users in billing views.</p>
+            </div>
+            <div className="md:col-span-2">
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Description</label>
+              <input
+                name="description"
+                placeholder="Monthly coaching subscription"
+                className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+              />
+              <p className="mt-1 text-xs text-[#6b6257]">Optional short summary used for context/documentation.</p>
+            </div>
+            <label className="flex items-center gap-2 text-sm text-[#6b6257] md:col-span-4 md:pt-2">
               <input type="checkbox" name="is_active" defaultChecked />
               Active
+              <span className="text-xs text-[#6b6257]">If off, this plan stays saved but will not be used for new signups.</span>
             </label>
             <button
               type="submit"
@@ -265,6 +289,9 @@ export default async function BillingPage() {
 
               <div className="mt-6 space-y-3">
                 <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Prices</p>
+                <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2 text-xs text-[#6b6257]">
+                  CCY = 3-letter currency code (e.g. `gbp`). Amount minor = smallest unit (e.g. `9900` = £99.00 when exponent is 2). Interval + Count define billing cadence (e.g. month + 1). Exp is currency exponent (normally 2).
+                </div>
                 {(plan.prices || []).map((price) => (
                   <form key={price.id} action={savePriceAction} className="grid gap-3 rounded-2xl border border-[#efe7db] p-4 md:grid-cols-12">
                     <input type="hidden" name="plan_id" value={plan.id} />
@@ -325,8 +352,12 @@ export default async function BillingPage() {
                       <input
                         name="stripe_product_id"
                         defaultValue={price.stripe_product_id || ""}
+                        list="stripe-products-list"
                         className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
                       />
+                      <p className="mt-1 text-xs text-[#6b6257]">
+                        Optional existing active Stripe Product ID. Leave blank to auto-create on sync.
+                      </p>
                     </div>
                     <div className="md:col-span-2">
                       <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Stripe price</label>
@@ -335,6 +366,7 @@ export default async function BillingPage() {
                         defaultValue={price.stripe_price_id || ""}
                         className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
                       />
+                      <p className="mt-1 text-xs text-[#6b6257]">Optional existing Stripe Price ID (auto-set after Stripe sync).</p>
                     </div>
                     <div className="md:col-span-8 flex flex-wrap items-center gap-4">
                       <label className="flex items-center gap-2 text-sm text-[#6b6257]">
@@ -360,6 +392,9 @@ export default async function BillingPage() {
                 <form action={savePriceAction} className="grid gap-3 rounded-2xl border border-dashed border-[#efe7db] p-4 md:grid-cols-12">
                   <input type="hidden" name="plan_id" value={plan.id} />
                   <input type="hidden" name="price_id" value="" />
+                  <p className="text-xs text-[#6b6257] md:col-span-12">
+                    Add a new price for this plan. Use amount in minor units (for GBP: pence, so 9900 = £99.00).
+                  </p>
                   <div className="md:col-span-1">
                     <input
                       name="currency"
@@ -410,7 +445,22 @@ export default async function BillingPage() {
                       placeholder="exp"
                     />
                   </div>
-                  <div className="md:col-span-5 flex flex-wrap items-center gap-4">
+                  <div className="md:col-span-2">
+                    <input
+                      name="stripe_product_id"
+                      list="stripe-products-list"
+                      className="w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                      placeholder="stripe product"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <input
+                      name="stripe_price_id"
+                      className="w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                      placeholder="stripe price"
+                    />
+                  </div>
+                  <div className="md:col-span-4 flex flex-wrap items-center gap-4">
                     <label className="flex items-center gap-2 text-sm text-[#6b6257]">
                       <input type="checkbox" name="is_active" defaultChecked />
                       Active
@@ -435,6 +485,14 @@ export default async function BillingPage() {
               No plans yet. Create a plan above to start your billing catalog.
             </div>
           ) : null}
+          <datalist id="stripe-products-list">
+            {stripeProductsActive.map((product) => {
+              const id = String(product?.id || "").trim();
+              if (!id) return null;
+              const name = String(product?.name || "").trim();
+              return <option key={id} value={id} label={name ? `${name} (${id})` : id} />;
+            })}
+          </datalist>
         </section>
       </div>
     </main>

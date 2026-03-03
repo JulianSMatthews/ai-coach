@@ -811,6 +811,12 @@ export type TwilioTemplateItem = {
   preview_button?: string | null;
 };
 
+export type TwilioTemplatesPayload = {
+  templates: TwilioTemplateItem[];
+  day_reopen_max_sends?: number | null;
+  day_reopen_max_sends_source?: string | null;
+};
+
 export type MessagingSettings = {
   out_of_session_enabled?: boolean | null;
   out_of_session_message?: string | null;
@@ -1925,8 +1931,8 @@ export async function generateOkrSummary(start?: string, end?: string, includePr
   });
 }
 
-export async function getTwilioTemplates(): Promise<{ templates: TwilioTemplateItem[] }> {
-  return apiAdmin<{ templates: TwilioTemplateItem[] }>("/admin/messaging/templates");
+export async function getTwilioTemplates(): Promise<TwilioTemplatesPayload> {
+  return apiAdmin<TwilioTemplatesPayload>("/admin/messaging/templates");
 }
 
 export async function updateTwilioTemplates(templates: Partial<TwilioTemplateItem>[]) {
@@ -1937,8 +1943,8 @@ export async function updateTwilioTemplates(templates: Partial<TwilioTemplateIte
   });
 }
 
-export async function syncTwilioTemplates(): Promise<{ templates: TwilioTemplateItem[] }> {
-  return apiAdmin<{ templates: TwilioTemplateItem[] }>("/admin/messaging/templates/sync", { method: "POST" });
+export async function syncTwilioTemplates(): Promise<TwilioTemplatesPayload> {
+  return apiAdmin<TwilioTemplatesPayload>("/admin/messaging/templates/sync", { method: "POST" });
 }
 
 export async function deleteTwilioTemplate(id: number, deleteRemote: boolean = true) {

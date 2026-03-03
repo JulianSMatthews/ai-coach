@@ -31,6 +31,7 @@ FIRST_DAY_SENT_AT_PREF_KEY = "coaching_first_day_sent_at"
 LEGACY_FIRST_DAY_PENDING_PREF_KEY = "coaching_first_day_pending"
 PENDING_DAY_PROMPT_PREF_KEY = "coaching_pending_day_prompt"
 PENDING_DAY_PROMPT_SET_AT_PREF_KEY = "coaching_pending_day_prompt_set_at"
+OUT_OF_SESSION_DAY_SEND_COUNT_PREF_KEY = "out_of_session_day_send_count"
 from .nudges import (
     send_message,
     send_whatsapp_template,
@@ -775,6 +776,11 @@ def _run_day_prompt_inline(user_id: int, day: str):
     now_utc = datetime.utcnow()
     after_hours = int(os.getenv("OUT_OF_SESSION_AFTER_HOURS", "24") or "24")
     cooldown_hours = int(os.getenv("OUT_OF_SESSION_COOLDOWN_HOURS", str(after_hours)) or str(after_hours))
+    day_max_sends_raw = (os.getenv("OUT_OF_SESSION_DAY_MAX_SENDS") or "0").strip()
+    try:
+        day_max_sends = max(0, int(day_max_sends_raw))
+    except Exception:
+        day_max_sends = 0
     with SessionLocal() as s:
         enabled, message = _get_messaging_settings(s)
         if _outside_whatsapp_window(s, user, now_utc=now_utc, after_hours=after_hours):
@@ -789,13 +795,21 @@ def _run_day_prompt_inline(user_id: int, day: str):
             sent_template = False
             send_error = None
             cooldown_active = False
+            max_sends_reached = False
+            send_count = 0
             if template_sid:
                 pref = _get_user_pref(s, int(user_id), "out_of_session_day_last_sent_at")
                 last_sent = _parse_pref_datetime(pref.value if pref else None)
                 cooldown_active = bool(
                     last_sent and (now_utc - last_sent) < timedelta(hours=max(1, cooldown_hours))
                 )
-                if not cooldown_active:
+                count_pref = _get_user_pref(s, int(user_id), OUT_OF_SESSION_DAY_SEND_COUNT_PREF_KEY)
+                try:
+                    send_count = max(0, int((count_pref.value if count_pref else "0") or "0"))
+                except Exception:
+                    send_count = 0
+                max_sends_reached = bool(day_max_sends > 0 and send_count >= day_max_sends)
+                if not cooldown_active and not max_sends_reached:
                     try:
                         send_whatsapp_template(
                             to=getattr(user, "phone", None),
@@ -813,6 +827,7 @@ def _run_day_prompt_inline(user_id: int, day: str):
                             category="day-reopen",
                         )
                         _set_user_pref(s, int(user_id), "out_of_session_day_last_sent_at", now_utc.isoformat())
+                        _set_user_pref(s, int(user_id), OUT_OF_SESSION_DAY_SEND_COUNT_PREF_KEY, str(send_count + 1))
                         sent_template = True
                     except Exception as e:
                         send_error = repr(e)
@@ -828,6 +843,9 @@ def _run_day_prompt_inline(user_id: int, day: str):
                     "template_sid_set": bool(template_sid),
                     "template_sent": bool(sent_template),
                     "template_cooldown": bool(cooldown_active),
+                    "template_send_count": int(send_count),
+                    "template_max_sends": int(day_max_sends),
+                    "template_max_reached": bool(max_sends_reached),
                     "error": send_error,
                 },
             )
@@ -890,6 +908,7 @@ def _run_day_prompt_inline(user_id: int, day: str):
         with SessionLocal() as s:
             _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_PREF_KEY, "")
             _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_SET_AT_PREF_KEY, "")
+            _set_user_pref(s, int(user_id), OUT_OF_SESSION_DAY_SEND_COUNT_PREF_KEY, "0")
             s.commit()
         _audit(user_id, f"auto_prompt_{day_key}", {})
     except Exception as e:

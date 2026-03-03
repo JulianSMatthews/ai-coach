@@ -107,6 +107,12 @@ function approvalLabel(status?: string | null): string {
   return key.replaceAll("_", " ");
 }
 
+function dayReopenMaxSendsLabel(value?: number | null): string {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n) || n <= 0) return "Unlimited (0)";
+  return String(Math.trunc(n));
+}
+
 async function syncTemplatesAction() {
   "use server";
   await syncTwilioTemplates();
@@ -248,6 +254,17 @@ export default async function MessagingPage() {
                           {(tpl.preview_button || "").trim() || "—"}
                         </span>
                       </div>
+                      {isDailyPromptReawakeTemplate(tpl) ? (
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Max sends per user</p>
+                          <p className="mt-1 text-sm text-[#1e1b16]">
+                            {dayReopenMaxSendsLabel(templateData.day_reopen_max_sends)}
+                            {templateData.day_reopen_max_sends_source
+                              ? ` · source: ${templateData.day_reopen_max_sends_source}`
+                              : ""}
+                          </p>
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                   <div className="mt-4 grid gap-3 md:grid-cols-3">

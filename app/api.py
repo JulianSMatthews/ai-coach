@@ -1151,6 +1151,7 @@ def _handle_pending_coaching_day_resume(user: User, body: str) -> bool:
         # Clear pending marker before dispatch to avoid duplicate sends if user replies again quickly.
         _set_pref_value(s, int(user.id), COACHING_PENDING_DAY_PREF_KEY, "")
         _set_pref_value(s, int(user.id), COACHING_PENDING_DAY_SET_AT_PREF_KEY, "")
+        _set_pref_value(s, int(user.id), COACHING_OUT_OF_SESSION_DAY_SEND_COUNT_PREF_KEY, "0")
         s.add(
             JobAudit(
                 job_name="pending_day_prompt_resumed",
@@ -3256,6 +3257,10 @@ COACHING_PENDING_DAY_PREF_KEY = (
 COACHING_PENDING_DAY_SET_AT_PREF_KEY = (
     str(getattr(scheduler, "PENDING_DAY_PROMPT_SET_AT_PREF_KEY", "coaching_pending_day_prompt_set_at")).strip()
     or "coaching_pending_day_prompt_set_at"
+)
+COACHING_OUT_OF_SESSION_DAY_SEND_COUNT_PREF_KEY = (
+    str(getattr(scheduler, "OUT_OF_SESSION_DAY_SEND_COUNT_PREF_KEY", "out_of_session_day_send_count")).strip()
+    or "out_of_session_day_send_count"
 )
 
 
@@ -12121,6 +12126,11 @@ def admin_list_twilio_templates(admin_user: User = Depends(_require_admin)):
             s.add_all(missing_rows)
             s.commit()
             rows = s.query(TwilioTemplate).order_by(TwilioTemplate.template_type.asc(), TwilioTemplate.button_count.asc()).all()
+    day_max_sends_raw = (os.getenv("OUT_OF_SESSION_DAY_MAX_SENDS") or "0").strip()
+    try:
+        day_max_sends = max(0, int(day_max_sends_raw))
+    except Exception:
+        day_max_sends = 0
     items = []
     for row in rows:
         content_types = []
@@ -12177,7 +12187,11 @@ def admin_list_twilio_templates(admin_user: User = Depends(_require_admin)):
                 "preview_button": preview_button,
             }
         )
-    return {"templates": items}
+    return {
+        "templates": items,
+        "day_reopen_max_sends": int(day_max_sends),
+        "day_reopen_max_sends_source": "OUT_OF_SESSION_DAY_MAX_SENDS",
+    }
 
 
 @admin.post("/messaging/templates")

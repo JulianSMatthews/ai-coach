@@ -3,6 +3,9 @@ import AdminNav from "@/components/AdminNav";
 import { getAdminCoachingTodayDrilldown } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
+type CoachingTodayPageProps = {
+  searchParams: Promise<{ category?: string }>;
+};
 
 function formatDateTime(value?: string | null) {
   if (!value) return "—";
@@ -24,7 +27,9 @@ function previewText(value?: string | null) {
   return cleaned.length > 140 ? `${cleaned.slice(0, 140)}…` : cleaned;
 }
 
-export default async function CoachingTodayDrilldownPage() {
+export default async function CoachingTodayDrilldownPage({ searchParams }: CoachingTodayPageProps) {
+  const resolved = await searchParams;
+  const selectedCategory = String(resolved?.category || "").trim();
   const data = await getAdminCoachingTodayDrilldown();
   const categories = data?.categories || [];
   const ratio = data?.ratio?.display || "—";
@@ -51,6 +56,8 @@ export default async function CoachingTodayDrilldownPage() {
 
         {categories.map((category) => {
           const users = category.users || [];
+          const categoryKey = String(category.key || "").trim();
+          const isSelected = Boolean(categoryKey) && selectedCategory === categoryKey;
           return (
             <section key={category.key || category.label} className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -58,13 +65,27 @@ export default async function CoachingTodayDrilldownPage() {
                   <h2 className="text-lg font-semibold">{category.label || "Category"}</h2>
                   <p className="mt-1 text-sm text-[#6b6257]">{category.description || "—"}</p>
                 </div>
-                <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
-                  <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Total</p>
-                  <p className="text-2xl font-semibold">{category.total ?? 0}</p>
+                <div className="flex items-center gap-2">
+                  {categoryKey ? (
+                    <Link
+                      href={isSelected ? "/admin/monitoring/coaching-today" : `/admin/monitoring/coaching-today?category=${encodeURIComponent(categoryKey)}`}
+                      className="rounded-full border border-[#1d6a4f] px-3 py-1 text-xs uppercase tracking-[0.16em] text-[#1d6a4f]"
+                    >
+                      {isSelected ? "Hide users" : "View users"}
+                    </Link>
+                  ) : null}
+                  <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                    <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Total</p>
+                    <p className="text-2xl font-semibold">{category.total ?? 0}</p>
+                  </div>
                 </div>
               </div>
 
-              {!users.length ? (
+              {!isSelected ? (
+                <p className="mt-4 text-sm text-[#8a8176]">
+                  Summary view. Click <span className="font-medium">View users</span> to drill down.
+                </p>
+              ) : !users.length ? (
                 <p className="mt-4 text-sm text-[#6b6257]">No users in this category today.</p>
               ) : (
                 <div className="mt-4 overflow-x-auto">
@@ -153,4 +174,3 @@ export default async function CoachingTodayDrilldownPage() {
     </main>
   );
 }
-
