@@ -12131,6 +12131,11 @@ def admin_list_twilio_templates(admin_user: User = Depends(_require_admin)):
         day_max_sends = max(0, int(day_max_sends_raw))
     except Exception:
         day_max_sends = 0
+    general_max_sends_raw = (os.getenv("OUT_OF_SESSION_GENERAL_MAX_SENDS") or "0").strip()
+    try:
+        general_max_sends = max(0, int(general_max_sends_raw))
+    except Exception:
+        general_max_sends = 0
     items = []
     for row in rows:
         content_types = []
@@ -12189,6 +12194,8 @@ def admin_list_twilio_templates(admin_user: User = Depends(_require_admin)):
         )
     return {
         "templates": items,
+        "general_reopen_max_sends": int(general_max_sends),
+        "general_reopen_max_sends_source": "OUT_OF_SESSION_GENERAL_MAX_SENDS",
         "day_reopen_max_sends": int(day_max_sends),
         "day_reopen_max_sends_source": "OUT_OF_SESSION_DAY_MAX_SENDS",
     }

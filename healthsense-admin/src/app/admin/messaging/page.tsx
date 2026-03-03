@@ -113,6 +113,19 @@ function dayReopenMaxSendsLabel(value?: number | null): string {
   return String(Math.trunc(n));
 }
 
+function templateSortPriority(template: {
+  template_type?: string | null;
+  friendly_name?: string | null;
+  payload?: Record<string, unknown> | null;
+}): number {
+  if (isOutOfSessionTemplate(template)) {
+    return isDailyPromptReawakeTemplate(template) ? 1 : 0;
+  }
+  const templateType = String(template.template_type || "").trim().toLowerCase();
+  if (templateType === "quick-reply") return 2;
+  return 3;
+}
+
 async function syncTemplatesAction() {
   "use server";
   await syncTwilioTemplates();
@@ -167,7 +180,14 @@ export default async function MessagingPage() {
     getTwilioTemplates(),
     getGlobalPromptSchedule(),
   ]);
-  const templates = templateData.templates || [];
+  const templates = [...(templateData.templates || [])].sort((a, b) => {
+    const p = templateSortPriority(a) - templateSortPriority(b);
+    if (p !== 0) return p;
+    const aType = String(a.template_type || "");
+    const bType = String(b.template_type || "");
+    if (aType !== bType) return aType.localeCompare(bType);
+    return String(a.friendly_name || "").localeCompare(String(b.friendly_name || ""));
+  });
   const schedule = scheduleData.items || [];
   const templateIds = templates.map((t) => t.id).join(",");
   const scheduleDays = schedule.map((s) => s.day_key).join(",");
@@ -268,7 +288,21 @@ export default async function MessagingPage() {
                             ) : null}
                           </div>
                         </div>
-                      ) : null}
+                      ) : (
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Max sends per user</p>
+                          <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                            <span className="text-base font-semibold text-[#1e1b16]">
+                              {dayReopenMaxSendsLabel(templateData.general_reopen_max_sends)}
+                            </span>
+                            {templateData.general_reopen_max_sends_source ? (
+                              <span className="text-[11px] text-[#8a8176]">
+                                source: {templateData.general_reopen_max_sends_source}
+                              </span>
+                            ) : null}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ) : null}
                   <div className="mt-4 grid gap-3 md:grid-cols-3">

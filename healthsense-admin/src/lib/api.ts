@@ -813,6 +813,8 @@ export type TwilioTemplateItem = {
 
 export type TwilioTemplatesPayload = {
   templates: TwilioTemplateItem[];
+  general_reopen_max_sends?: number | null;
+  general_reopen_max_sends_source?: string | null;
   day_reopen_max_sends?: number | null;
   day_reopen_max_sends_source?: string | null;
 };

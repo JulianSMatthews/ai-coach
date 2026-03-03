@@ -32,6 +32,7 @@ LEGACY_FIRST_DAY_PENDING_PREF_KEY = "coaching_first_day_pending"
 PENDING_DAY_PROMPT_PREF_KEY = "coaching_pending_day_prompt"
 PENDING_DAY_PROMPT_SET_AT_PREF_KEY = "coaching_pending_day_prompt_set_at"
 OUT_OF_SESSION_DAY_SEND_COUNT_PREF_KEY = "out_of_session_day_send_count"
+OUT_OF_SESSION_GENERAL_SEND_COUNT_PREF_KEY = "out_of_session_general_send_count"
 from .nudges import (
     send_message,
     send_whatsapp_template,
@@ -362,12 +363,17 @@ def send_out_of_session_messages() -> None:
     """
     after_hours = int(os.getenv("OUT_OF_SESSION_AFTER_HOURS", "24") or "24")
     cooldown_hours = int(os.getenv("OUT_OF_SESSION_COOLDOWN_HOURS", str(after_hours)) or str(after_hours))
+    general_max_sends_raw = (os.getenv("OUT_OF_SESSION_GENERAL_MAX_SENDS") or "0").strip()
+    try:
+        general_max_sends = max(0, int(general_max_sends_raw))
+    except Exception:
+        general_max_sends = 0
     now = datetime.utcnow()
     with SessionLocal() as s:
-        enabled, _message = _get_messaging_settings(s)
+        enabled, configured_message = _get_messaging_settings(s)
         if not enabled:
             return
-        reopen_message = (message or "").strip() or get_default_session_reopen_message_text()
+        reopen_message = (configured_message or "").strip() or get_default_session_reopen_message_text()
         template_sid = _get_session_reopen_sid()
         if not template_sid:
             try:
@@ -387,6 +393,7 @@ def send_out_of_session_messages() -> None:
             "no_inbound": 0,
             "inside_window": 0,
             "cooldown": 0,
+            "max_reached": 0,
             "sent": 0,
             "failed": 0,
         }
@@ -408,13 +415,25 @@ def send_out_of_session_messages() -> None:
             if not last_inbound:
                 stats["no_inbound"] += 1
                 continue
+            count_pref = _get_user_pref(s, int(user.id), OUT_OF_SESSION_GENERAL_SEND_COUNT_PREF_KEY)
+            try:
+                send_count = max(0, int((count_pref.value if count_pref else "0") or "0"))
+            except Exception:
+                send_count = 0
             if now - last_inbound < timedelta(hours=after_hours):
+                # User replied and is back in-session: reset generic reopen send counter.
+                if send_count:
+                    _set_user_pref(s, int(user.id), OUT_OF_SESSION_GENERAL_SEND_COUNT_PREF_KEY, "0")
+                    s.commit()
                 stats["inside_window"] += 1
                 continue
             pref = _get_user_pref(s, user.id, "out_of_session_last_sent_at")
             last_sent = _parse_pref_datetime(pref.value if pref else None)
             if last_sent and now - last_sent < timedelta(hours=cooldown_hours):
                 stats["cooldown"] += 1
+                continue
+            if general_max_sends > 0 and send_count >= general_max_sends:
+                stats["max_reached"] += 1
                 continue
             try:
                 send_whatsapp_template(
@@ -433,6 +452,7 @@ def send_out_of_session_messages() -> None:
                     category="session-reopen",
                 )
                 _set_user_pref(s, user.id, "out_of_session_last_sent_at", now.isoformat())
+                _set_user_pref(s, int(user.id), OUT_OF_SESSION_GENERAL_SEND_COUNT_PREF_KEY, str(send_count + 1))
                 s.commit()
                 stats["sent"] += 1
             except Exception as e:
