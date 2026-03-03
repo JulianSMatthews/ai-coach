@@ -73,19 +73,22 @@ export default async function CoachingTodayDrilldownPage({ searchParams }: Coach
                 </div>
               </div>
 
-              {!isSelected ? (
+              {categoryKey ? (
                 <div className="mt-4 flex flex-wrap items-center gap-3">
-                  <p className="text-sm text-[#8a8176]">Summary view.</p>
-                  {categoryKey ? (
-                    <Link
-                      href={`/admin/monitoring/coaching-today?category=${encodeURIComponent(categoryKey)}`}
-                      className="rounded-full border border-[#1d6a4f] px-3 py-1 text-sm text-[#1d6a4f]"
-                    >
-                      Click to view users
-                    </Link>
-                  ) : null}
+                  <Link
+                    href={
+                      isSelected
+                        ? "/admin/monitoring/coaching-today"
+                        : `/admin/monitoring/coaching-today?category=${encodeURIComponent(categoryKey)}`
+                    }
+                    className="rounded-full border border-[#1d6a4f] px-3 py-1 text-sm text-[#1d6a4f]"
+                  >
+                    {isSelected ? "Hide users" : "Click to view users"}
+                  </Link>
                 </div>
-              ) : !users.length ? (
+              ) : null}
+
+              {isSelected ? (!users.length ? (
                 <p className="mt-4 text-sm text-[#6b6257]">No users in this category today.</p>
               ) : (
                 <div className="mt-4 overflow-x-auto">
@@ -166,7 +169,7 @@ export default async function CoachingTodayDrilldownPage({ searchParams }: Coach
                     </tbody>
                   </table>
                 </div>
-              )}
+              )) : null}
             </section>
           );
         })}
