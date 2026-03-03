@@ -885,7 +885,7 @@ easy to respond to
 centred on their lived experience of the habit steps""",
     },
     {
-        "touchpoint": 'sunday_actions',
+        "touchpoint": 'sunday_daily',
         "okr_scope": 'week',
         "programme_scope": '',
         "response_format": '',
@@ -904,26 +904,6 @@ If review_mode = kr:
 - Ask for numeric updates for each goal in order, numbers only.
 
 End with: \"I'll summarise this and prep Monday's podcast.\"""",
-    },
-    {
-        "touchpoint": 'sunday_support',
-        "okr_scope": 'week',
-        "programme_scope": '',
-        "response_format": '',
-        "is_active": True,
-        "block_order": ['system', 'locale', 'context', 'history', 'okr', 'scores', 'habit', 'task', 'user'],
-        "include_blocks": ['system', 'locale', 'context', 'history', 'okr', 'scores', 'habit', 'task'],
-        "task_block": """You are responding to the user's Sunday check-in.
-The review focus depends on review_mode (habit or kr). Follow it.
-
-Briefly acknowledge what they shared, then ask one short follow-up that helps you support them.
-Keep the response concise, supportive, and conversational. Avoid judgement or advice overload.
-
-If review_mode = habit:
-- Ask whether they want to keep the habit steps as-is or tweak one small step.
-
-If review_mode = kr:
-- Ask about one key friction point or blocker that affected the numbers.""",
     },
     {
         "touchpoint": 'podcast_thursday',

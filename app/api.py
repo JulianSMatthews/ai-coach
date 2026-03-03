@@ -2007,8 +2007,9 @@ def _handle_admin_command(admin_user: User, text: str, *, source_phone: str | No
                     )
                     return True
 
-                # Trigger weekstart for that user
-                monday.start_weekstart(u, notes=notes)
+                # Trigger weekstart for that user via scheduler day runner so
+                # habit-step gating is consistently enforced.
+                scheduler._run_day_prompt(int(u.id), "monday")  # type: ignore[attr-defined]
             except Exception as e:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to plan weekstart: {e}")
             return True
@@ -2064,7 +2065,7 @@ def _handle_admin_command(admin_user: User, text: str, *, source_phone: str | No
                     )
                     return True
             try:
-                wednesday.send_midweek_check(u)
+                scheduler._run_day_prompt(int(u.id), "wednesday")  # type: ignore[attr-defined]
             except Exception as e:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to send midweek: {e}")
             return True
@@ -2166,7 +2167,7 @@ def _handle_admin_command(admin_user: User, text: str, *, source_phone: str | No
                     )
                     return True
             try:
-                tuesday.send_tuesday_check(u)
+                scheduler._run_day_prompt(int(u.id), "tuesday")  # type: ignore[attr-defined]
             except Exception as e:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to send Tuesday check: {e}")
             return True
@@ -2182,7 +2183,7 @@ def _handle_admin_command(admin_user: User, text: str, *, source_phone: str | No
                     )
                     return True
             try:
-                friday.send_boost(u)
+                scheduler._run_day_prompt(int(u.id), "friday")  # type: ignore[attr-defined]
             except Exception as e:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to send boost: {e}")
             return True
@@ -2198,7 +2199,7 @@ def _handle_admin_command(admin_user: User, text: str, *, source_phone: str | No
                     )
                     return True
             try:
-                saturday.send_saturday_keepalive(u)
+                scheduler._run_day_prompt(int(u.id), "saturday")  # type: ignore[attr-defined]
             except Exception as e:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to send Saturday keepalive: {e}")
             return True
@@ -2214,7 +2215,7 @@ def _handle_admin_command(admin_user: User, text: str, *, source_phone: str | No
                     )
                     return True
             try:
-                sunday.send_sunday_review(u)
+                scheduler._run_day_prompt(int(u.id), "sunday")  # type: ignore[attr-defined]
             except Exception as e:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to send Sunday review: {e}")
             return True
@@ -2230,7 +2231,7 @@ def _handle_admin_command(admin_user: User, text: str, *, source_phone: str | No
                     )
                     return True
             try:
-                thursday.send_thursday_boost(u)
+                scheduler._run_day_prompt(int(u.id), "thursday")  # type: ignore[attr-defined]
             except Exception as e:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to send Thursday boost: {e}")
             return True
@@ -2767,7 +2768,7 @@ async def twilio_inbound(request: Request):
 
         if lower_body.startswith("midweek") or lower_body.startswith("wednesday"):
             try:
-                wednesday.send_midweek_check(user)
+                scheduler._run_day_prompt(int(user.id), "wednesday")  # type: ignore[attr-defined]
             except Exception as e:
                 send_whatsapp(to=user.phone, text=f"Midweek failed: {e}")
             return Response(content="", media_type="text/plain", status_code=200)
@@ -2786,36 +2787,36 @@ async def twilio_inbound(request: Request):
             return Response(content="", media_type="text/plain", status_code=200)
         if lower_body.startswith("sunday"):
             try:
-                sunday.send_sunday_review(user)
+                scheduler._run_day_prompt(int(user.id), "sunday")  # type: ignore[attr-defined]
             except Exception as e:
                 send_whatsapp(to=user.phone, text=f"Sunday review failed: {e}")
             return Response(content="", media_type="text/plain", status_code=200)
         if lower_body.startswith("tuesday"):
             try:
-                tuesday.send_tuesday_check(user)
+                scheduler._run_day_prompt(int(user.id), "tuesday")  # type: ignore[attr-defined]
             except Exception as e:
                 send_whatsapp(to=user.phone, text=f"Tuesday check failed: {e}")
             return Response(content="", media_type="text/plain", status_code=200)
         if lower_body.startswith("thursday"):
             try:
-                thursday.send_thursday_boost(user)
+                scheduler._run_day_prompt(int(user.id), "thursday")  # type: ignore[attr-defined]
             except Exception as e:
                 send_whatsapp(to=user.phone, text=f"Thursday boost failed: {e}")
             return Response(content="", media_type="text/plain", status_code=200)
         if lower_body.startswith("saturday"):
             try:
-                saturday.send_saturday_keepalive(user)
+                scheduler._run_day_prompt(int(user.id), "saturday")  # type: ignore[attr-defined]
             except Exception as e:
                 send_whatsapp(to=user.phone, text=f"Saturday keepalive failed: {e}")
             return Response(content="", media_type="text/plain", status_code=200)
-        if lower_body.startswith("sunday"):
-            try:
-                sunday.send_sunday_review(user)
-            except Exception as e:
-                send_whatsapp(to=user.phone, text=f"Sunday review failed: {e}")
-            return Response(content="", media_type="text/plain", status_code=200)
 
         if lower_body.startswith("weekstart") or lower_body.startswith("monday") or monday.has_active_state(user.id):
+            if (lower_body.startswith("weekstart") or lower_body.startswith("monday")) and not monday.has_active_state(user.id):
+                try:
+                    if not sunday.ensure_habit_steps_ready_for_day(user, "monday"):
+                        return Response(content="", media_type="text/plain", status_code=200)
+                except Exception:
+                    pass
             try:
                 monday.handle_message(user, body)
             except Exception as e:
@@ -2823,7 +2824,7 @@ async def twilio_inbound(request: Request):
             return Response(content="", media_type="text/plain", status_code=200)
         if lower_body.startswith("boost") or lower_body.startswith("friday"):
             try:
-                friday.send_boost(user)
+                scheduler._run_day_prompt(int(user.id), "friday")  # type: ignore[attr-defined]
             except Exception as e:
                 send_whatsapp(to=user.phone, text=f"Boost failed: {e}")
             return Response(content="", media_type="text/plain", status_code=200)
@@ -6228,8 +6229,8 @@ def admin_assessment_health(
             "friday",
             "saturday",
             "sunday",
+            "sunday_daily",
             "sunday_actions",
-            "sunday_support",
             "habit_steps_generator",
             "weekstart_actions",
             "weekstart_support",

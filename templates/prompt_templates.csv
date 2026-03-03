@@ -358,7 +358,7 @@ Do not reference future programme blocks or timelines.
 The tone should be conversational and supportive, with the clear intention of starting a dialogue rather than evaluating performance.
 
 The desired outcome is an open, honest response that allows a natural conversation to begin.","[""system"", ""locale"", ""context"", ""history"", ""okr"", ""scores"", ""habit"", ""task"", ""user""]","[""system"", ""locale"", ""context"", ""history"", ""okr"", ""scores"", ""habit"", ""task"", ""user""]",week,,,true,2026-01-29 22:10:08.294329
-19,sunday_actions,,1,develop,,"You are sending a Sunday check-in. The review focus depends on review_mode (habit or kr). Follow it.
+19,sunday_daily,,1,develop,,"You are sending a Sunday check-in. The review focus depends on review_mode (habit or kr). Follow it.
 
 Keep this very short: 2-3 short sentences, max ~450 characters. Do not list the habit steps or KRs.
 
@@ -370,7 +370,7 @@ If review_mode = kr:
 - Ask for numeric updates for each goal in order, numbers only.
 
 End with: ""I'll summarise this and prep Monday's podcast.""","[""system"", ""locale"", ""context"", ""history"", ""okr"", ""scores"", ""habit"", ""task"", ""user""]","[""system"", ""locale"", ""context"", ""okr"", ""scores"", ""habit"", ""history"", ""task""]",week,,,true,2026-01-28 07:58:38.153522
-20,sunday_actions,,1,beta,,"You are sending a Sunday check-in. The review focus depends on review_mode (habit or kr). Follow it.
+20,sunday_daily,,1,beta,,"You are sending a Sunday check-in. The review focus depends on review_mode (habit or kr). Follow it.
 
 Keep this very short: 2-3 short sentences, max ~450 characters. Do not list the habit steps or KRs.
 
@@ -382,7 +382,7 @@ If review_mode = kr:
 - Ask for numeric updates for each goal in order, numbers only.
 
 End with: ""I'll summarise this and prep Monday's podcast.""","[""system"", ""locale"", ""context"", ""history"", ""okr"", ""scores"", ""habit"", ""task"", ""user""]","[""system"", ""locale"", ""context"", ""okr"", ""scores"", ""habit"", ""history"", ""task""]",week,,,true,2026-01-29 22:10:11.98508
-21,sunday_actions,,1,live,,"You are sending a Sunday check-in. The review focus depends on review_mode (habit or kr). Follow it.
+21,sunday_daily,,1,live,,"You are sending a Sunday check-in. The review focus depends on review_mode (habit or kr). Follow it.
 
 Keep this very short: 2-3 short sentences, max ~450 characters. Do not list the habit steps or KRs.
 

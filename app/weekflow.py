@@ -70,6 +70,22 @@ def run_week_flow(user: User, week_no: int = 1) -> None:
             os.environ.pop("WEEKFLOW_LOG_FILE", None)
         return
 
+    def _restore_weekflow_log_env() -> None:
+        if prev_log is not None:
+            os.environ["WEEKFLOW_LOG_FILE"] = prev_log
+        else:
+            os.environ.pop("WEEKFLOW_LOG_FILE", None)
+
+    def _ensure_habit_gate(day_key: str) -> bool:
+        try:
+            return bool(sunday.ensure_habit_steps_ready_for_day(user, day_key))
+        except Exception as e:
+            try:
+                print(f"[weekflow] habit-step gate check failed for {day_key}: {e}")
+            except Exception:
+                pass
+            return True
+
     # Determine anchor date (start of the current weekly focus) for reporting
     anchor_date: date | None = None
     with SessionLocal() as s:
@@ -93,6 +109,9 @@ def run_week_flow(user: User, week_no: int = 1) -> None:
     except Exception as e:
         print(f"[weekflow] progress report failed: {e}")
     # Monday weekstart (weekly touchpoint) with support state enabled
+    if not _ensure_habit_gate("monday"):
+        _restore_weekflow_log_env()
+        return
     try:
         monday.start_weekstart(user, notes=f"weekflow week {week_no}", debug=False, set_state=True, week_no=week_no)
     except Exception as e:
@@ -101,26 +120,44 @@ def run_week_flow(user: User, week_no: int = 1) -> None:
         except Exception:
             pass
     # Tuesday micro-check
+    if not _ensure_habit_gate("tuesday"):
+        _restore_weekflow_log_env()
+        return
     try:
         tuesday.send_tuesday_check(user)
     except Exception:
         pass
     # midweek
+    if not _ensure_habit_gate("wednesday"):
+        _restore_weekflow_log_env()
+        return
     wednesday.send_midweek_check(user)
     # thursday
+    if not _ensure_habit_gate("thursday"):
+        _restore_weekflow_log_env()
+        return
     try:
         from .thursday import send_thursday_boost
         send_thursday_boost(user, week_no=week_no)
     except Exception:
         pass
     # boost
+    if not _ensure_habit_gate("friday"):
+        _restore_weekflow_log_env()
+        return
     friday.send_boost(user, week_no=week_no)
     # saturday keepalive
+    if not _ensure_habit_gate("saturday"):
+        _restore_weekflow_log_env()
+        return
     try:
         saturday.send_saturday_keepalive(user)
     except Exception:
         pass
     # Sunday review
+    if not _ensure_habit_gate("sunday"):
+        _restore_weekflow_log_env()
+        return
     try:
         sunday.send_sunday_review(user)
     except Exception as e:
@@ -130,7 +167,4 @@ def run_week_flow(user: User, week_no: int = 1) -> None:
             pass
 
     # Restore previous logging setting
-    if prev_log is not None:
-        os.environ["WEEKFLOW_LOG_FILE"] = prev_log
-    else:
-        os.environ.pop("WEEKFLOW_LOG_FILE", None)
+    _restore_weekflow_log_env()

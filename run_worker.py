@@ -8,15 +8,12 @@ import socket
 import traceback
 import json
 import urllib.request
-from datetime import datetime, timedelta
 
 from app.job_queue import (
     claim_job,
     ensure_job_table,
     mark_done,
     mark_error,
-    enqueue_job,
-    queue_requeue_delay_seconds,
 )
 from app import scheduler, assessor, monday, kickoff, thursday, friday
 from app.prompts import run_llm_prompt
@@ -29,8 +26,8 @@ from app.reporting import (
     generate_assessment_habit_narrative,
 )
 from app.db import SessionLocal, _table_exists, engine
-from app.models import User, AssessSession, PillarResult, OKRKrHabitStep, BackgroundJob, OKRObjective
-from app.okr import generate_and_update_okrs_for_pillar, seed_week1_habit_steps_for_assessment
+from app.models import User, AssessSession, PillarResult
+from app.okr import generate_and_update_okrs_for_pillar
 
 os.environ.setdefault("PROMPT_WORKER_PROCESS", "1")
 
@@ -146,181 +143,15 @@ def _process_pillar_okr_sync(payload: dict) -> dict:
 
 
 def _process_assessment_week1_habit_seed(payload: dict) -> dict:
-    user_id = payload.get("user_id")
-    if not user_id:
-        raise ValueError("assessment_week1_habit_seed requires user_id")
-
-    assess_session_id = payload.get("assess_session_id")
-    run_id = payload.get("run_id")
-    week_no = int(payload.get("week_no") or 1)
-    require_seed = bool(payload.get("require_seed", True))
-
-    requeue_count = int(payload.get("requeue_count") or 0)
-    max_requeues = int(
-        payload.get("max_requeues")
-        or os.getenv("ASSESSMENT_WEEK1_HABIT_SEED_MAX_REQUEUES")
-        or 30
-    )
-
-    def _safe_int(value):
-        try:
-            if value is None:
-                return None
-            return int(value)
-        except Exception:
-            return None
-
-    def _pending_pillar_sync_count(session) -> int:
-        target_user = _safe_int(user_id)
-        target_session = _safe_int(assess_session_id)
-        target_run = _safe_int(run_id)
-        q = session.query(BackgroundJob).filter(
-            BackgroundJob.kind == "pillar_okr_sync",
-            BackgroundJob.status.in_(["pending", "running", "retry"]),
-        )
-        if target_user is not None:
-            q = q.filter(BackgroundJob.user_id == target_user)
-        pending = 0
-        for job in q.all():
-            body = job.payload if isinstance(job.payload, dict) else {}
-            if not isinstance(body, dict):
-                continue
-            job_session = _safe_int(body.get("assess_session_id"))
-            job_run = _safe_int(body.get("run_id"))
-            if target_session is not None and job_session == target_session:
-                pending += 1
-                continue
-            if target_run is not None and job_run == target_run:
-                pending += 1
-                continue
-        return pending
-
-    def _same_seed_payload(a: dict, b: dict) -> bool:
-        return (
-            _safe_int(a.get("user_id")) == _safe_int(b.get("user_id"))
-            and _safe_int(a.get("assess_session_id")) == _safe_int(b.get("assess_session_id"))
-            and _safe_int(a.get("run_id")) == _safe_int(b.get("run_id"))
-            and int(a.get("week_no") or 1) == int(b.get("week_no") or 1)
-        )
-
-    def _enqueue_seed_retry_if_needed(reason: str) -> dict:
-        if requeue_count >= max(1, max_requeues):
-            if require_seed:
-                raise RuntimeError(
-                    f"week-1 habit seed exceeded requeue limit user_id={user_id} "
-                    f"assess_session_id={assess_session_id} run_id={run_id} "
-                    f"requeue_count={requeue_count} max_requeues={max_requeues} reason={reason}"
-                )
-            return {
-                "ok": True,
-                "seeded_count": 0,
-                "week_no": week_no,
-                "requeue_exhausted": True,
-                "reason": reason,
-                "requeue_count": requeue_count,
-            }
-
-        next_payload = dict(payload)
-        next_payload["requeue_count"] = requeue_count + 1
-        next_payload["max_requeues"] = max(1, max_requeues)
-        next_payload["last_requeue_reason"] = reason
-
-        delay_seconds = queue_requeue_delay_seconds(requeue_count)
-        available_at = datetime.utcnow() + timedelta(seconds=delay_seconds)
-
-        duplicate_found = False
-        with SessionLocal() as s:
-            candidates = (
-                s.query(BackgroundJob.id, BackgroundJob.payload, BackgroundJob.available_at)
-                .filter(
-                    BackgroundJob.kind == "assessment_week1_habit_seed",
-                    BackgroundJob.status.in_(["pending", "retry"]),
-                    BackgroundJob.user_id == int(user_id),
-                )
-                .all()
-            )
-            for _, existing_payload, existing_available_at in candidates:
-                body = existing_payload if isinstance(existing_payload, dict) else {}
-                same_job = isinstance(body, dict) and _same_seed_payload(body, next_payload)
-                if not same_job:
-                    continue
-                # If we already have one scheduled for later, don't enqueue another.
-                if existing_available_at is None or existing_available_at >= available_at:
-                    duplicate_found = True
-                    break
-
-        if not duplicate_found:
-            enqueue_job(
-                "assessment_week1_habit_seed",
-                next_payload,
-                user_id=int(user_id),
-                available_at=available_at,
-            )
-
-        print(
-            f"[worker] habit seed requeue user_id={user_id} "
-            f"assess_session_id={assess_session_id} run_id={run_id} "
-            f"week_no={week_no} requeue_count={requeue_count + 1}/{max(1, max_requeues)} "
-            f"reason={reason} delay_seconds={delay_seconds} "
-            f"available_at={available_at.isoformat()} duplicate_found={duplicate_found}"
-        )
-        return {
-            "ok": True,
-            "seeded_count": 0,
-            "week_no": week_no,
-            "requeued": True,
-            "reason": reason,
-            "requeue_count": requeue_count + 1,
-            "requeue_delay_seconds": delay_seconds,
-            "requeue_not_before": available_at.isoformat(),
-            "duplicate_found": duplicate_found,
-        }
-
-    with SessionLocal() as s:
-        pending_sync = _pending_pillar_sync_count(s)
-        if pending_sync > 0:
-            return _enqueue_seed_retry_if_needed(f"pending_pillar_okr_sync={pending_sync}")
-
-        seeded_count = seed_week1_habit_steps_for_assessment(
-            s,
-            user_id=int(user_id),
-            assess_session_id=int(assess_session_id) if assess_session_id else None,
-            run_id=int(run_id) if run_id else None,
-            week_no=week_no,
-        )
-        if seeded_count:
-            s.commit()
-            return {"ok": True, "seeded_count": int(seeded_count), "week_no": week_no}
-
-        # If steps already exist, treat as success.
-        existing = (
-            s.query(OKRKrHabitStep.id)
-            .filter(
-                OKRKrHabitStep.user_id == int(user_id),
-                OKRKrHabitStep.week_no == int(week_no),
-                OKRKrHabitStep.status != "archived",
-            )
-            .first()
-        )
-        if existing:
-            return {"ok": True, "seeded_count": 0, "already_exists": True, "week_no": week_no}
-
-        nutrition_obj_query = (
-            s.query(OKRObjective.id)
-            .filter(
-                OKRObjective.owner_user_id == int(user_id),
-                OKRObjective.pillar_key == "nutrition",
-            )
-        )
-        if assess_session_id:
-            nutrition_obj_query = nutrition_obj_query.filter(
-                OKRObjective.source_assess_session_id == int(assess_session_id)
-            )
-        nutrition_obj_exists = nutrition_obj_query.first()
-        if not nutrition_obj_exists:
-            return _enqueue_seed_retry_if_needed("nutrition_objective_missing")
-
-        return _enqueue_seed_retry_if_needed("no_steps_seeded_yet")
+    # Deprecated path: week-1 habit seeding is now handled by the daily gate flow.
+    # Keep this handler as a no-op so any legacy queued jobs can drain cleanly.
+    return {
+        "ok": True,
+        "deprecated": True,
+        "reason": "handled_by_daily_habit_gate",
+        "user_id": payload.get("user_id"),
+        "week_no": int(payload.get("week_no") or 1),
+    }
 
 
 def _process_llm_prompt(payload: dict) -> dict:

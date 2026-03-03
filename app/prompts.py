@@ -1032,14 +1032,17 @@ def build_prompt(
     - weekstart_actions
     - initial_habit_steps_generator
     - assessment_okr_structured
-    - sunday_actions
-    - sunday_support
+    - sunday_daily
+    - sunday_actions (legacy alias)
     - tuesday
     - midweek
     - saturday
     - sunday
     """
     tp = touchpoint.lower()
+    # Legacy alias: keep old touchpoint key working while live templates are migrated.
+    if tp == "sunday_actions":
+        tp = "sunday_daily"
     settings = _load_prompt_settings()
     preferred_state = _canonical_state(use_state or "live")
     if preferred_state in {"live", None}:
@@ -1512,7 +1515,7 @@ def build_prompt(
             meta=_merge_template_meta(okr_meta, template),
             block_order_override=order_override or settings.get("default_block_order"),
         )
-    if tp == "sunday_actions":
+    if tp == "sunday_daily":
         review_mode = (data.get("review_mode") or "kr").strip().lower()
         timeframe = data.get("timeframe", "Sunday")
         okr_scope = (template or {}).get("okr_scope") or "week"
@@ -1554,54 +1557,8 @@ def build_prompt(
         parts.append(("task", task_text))
         parts, order_override = _apply_prompt_template(parts, template)
         return _prompt_assembly(
-            "sunday_actions",
-            "sunday_actions",
-            parts,
-            meta=_merge_template_meta(okr_meta, template),
-            block_order_override=order_override or settings.get("default_block_order"),
-        )
-    if tp == "sunday_support":
-        review_mode = (data.get("review_mode") or "kr").strip().lower()
-        timeframe = data.get("timeframe", "Sunday")
-        history = data.get("history", "")
-        okr_scope = (template or {}).get("okr_scope") or "week"
-        fallback_krs = data.get("krs")
-        primary = None
-        if isinstance(fallback_krs, list) and fallback_krs:
-            primary = fallback_krs[0]
-        okr_txt, okr_meta = okr_block_with_scope(
-            okr_scope,
-            _krs_for_okr_scope(
-                okr_scope=okr_scope,
-                user_id=user_id,
-                week_no=data.get("week_no"),
-                primary=primary,
-                fallback_krs=fallback_krs,
-            ),
-        )
-        if review_mode == "habit":
-            task_text = (
-                "Reply to the user’s habit-step check-in. "
-                "Acknowledge what they shared, suggest one tweak if helpful, and ask one follow-up question. "
-                "Keep it brief, warm, and plain language."
-            )
-        else:
-            task_text = (
-                "Reply to the user’s update on their goals. "
-                "Acknowledge, ask one focused follow-up (blocker or next step), and keep it short and supportive."
-            )
-        parts = [
-            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
-            ("locale", settings.get("locale_block") or locale_block(locale)),
-            ("context", context_block("sunday", "weekly review follow-up", timeframe=timeframe)),
-            ("okr", okr_txt),
-            ("history", history_block("conversation", history.splitlines()) if history else ""),
-            ("task", task_text),
-        ]
-        parts, order_override = _apply_prompt_template(parts, template)
-        return _prompt_assembly(
-            "sunday_support",
-            "sunday_support",
+            "sunday_daily",
+            "sunday_daily",
             parts,
             meta=_merge_template_meta(okr_meta, template),
             block_order_override=order_override or settings.get("default_block_order"),

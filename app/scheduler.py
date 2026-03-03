@@ -876,6 +876,28 @@ def _run_day_prompt_inline(user_id: int, day: str):
             )
             return
     try:
+        # Shared habit-step gate:
+        # If this week's required habit steps are missing, run setup first and defer day flow.
+        try:
+            if not sunday.ensure_habit_steps_ready_for_day(user, day_key):
+                _audit(
+                    int(user_id),
+                    f"auto_prompt_{day_key}_deferred_missing_habit_steps",
+                    {"day": day_key, "reason": "missing_habit_steps"},
+                )
+                debug_log(
+                    f"deferred {day_key} prompt for user {user_id}: habit steps setup started",
+                    tag="scheduler",
+                )
+                return
+        except Exception as e:
+            # Fail open: don't block day prompts if habit-step gate errors unexpectedly.
+            _audit(
+                int(user_id),
+                f"auto_prompt_{day_key}_habit_steps_gate_error",
+                {"day": day_key, "error": repr(e)},
+            )
+
         if _run_first_day_coaching_if_needed(user, day_key):
             return
         # Do not send regular weekly prompts on the same local day first-day coaching
@@ -920,7 +942,7 @@ def _run_day_prompt_inline(user_id: int, day: str):
             saturday.send_saturday_keepalive(user)
             tp_type = "adjust"
         elif day_key == "sunday":
-            sunday.send_sunday_review(user)
+            sunday.send_sunday_daily(user)
             tp_type = "wrap"
         else:
             print(f"[scheduler] unknown day prompt: {day_key}")
