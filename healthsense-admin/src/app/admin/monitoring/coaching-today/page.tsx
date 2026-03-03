@@ -66,14 +66,6 @@ export default async function CoachingTodayDrilldownPage({ searchParams }: Coach
                   <p className="mt-1 text-sm text-[#6b6257]">{category.description || "—"}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  {categoryKey ? (
-                    <Link
-                      href={isSelected ? "/admin/monitoring/coaching-today" : `/admin/monitoring/coaching-today?category=${encodeURIComponent(categoryKey)}`}
-                      className="rounded-full border border-[#1d6a4f] px-3 py-1 text-xs uppercase tracking-[0.16em] text-[#1d6a4f]"
-                    >
-                      {isSelected ? "Hide users" : "View users"}
-                    </Link>
-                  ) : null}
                   <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
                     <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Total</p>
                     <p className="text-2xl font-semibold">{category.total ?? 0}</p>
@@ -82,9 +74,17 @@ export default async function CoachingTodayDrilldownPage({ searchParams }: Coach
               </div>
 
               {!isSelected ? (
-                <p className="mt-4 text-sm text-[#8a8176]">
-                  Summary view. Click <span className="font-medium">View users</span> to drill down.
-                </p>
+                <div className="mt-4 flex flex-wrap items-center gap-3">
+                  <p className="text-sm text-[#8a8176]">Summary view.</p>
+                  {categoryKey ? (
+                    <Link
+                      href={`/admin/monitoring/coaching-today?category=${encodeURIComponent(categoryKey)}`}
+                      className="rounded-full border border-[#1d6a4f] px-3 py-1 text-sm text-[#1d6a4f]"
+                    >
+                      Click to view users
+                    </Link>
+                  ) : null}
+                </div>
               ) : !users.length ? (
                 <p className="mt-4 text-sm text-[#6b6257]">No users in this category today.</p>
               ) : (

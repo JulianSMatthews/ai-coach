@@ -257,12 +257,16 @@ export default async function MessagingPage() {
                       {isDailyPromptReawakeTemplate(tpl) ? (
                         <div>
                           <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Max sends per user</p>
-                          <p className="mt-1 text-sm text-[#1e1b16]">
-                            {dayReopenMaxSendsLabel(templateData.day_reopen_max_sends)}
-                            {templateData.day_reopen_max_sends_source
-                              ? ` · source: ${templateData.day_reopen_max_sends_source}`
-                              : ""}
-                          </p>
+                          <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                            <span className="text-base font-semibold text-[#1e1b16]">
+                              {dayReopenMaxSendsLabel(templateData.day_reopen_max_sends)}
+                            </span>
+                            {templateData.day_reopen_max_sends_source ? (
+                              <span className="text-[11px] text-[#8a8176]">
+                                source: {templateData.day_reopen_max_sends_source}
+                              </span>
+                            ) : null}
+                          </div>
                         </div>
                       ) : null}
                     </div>
