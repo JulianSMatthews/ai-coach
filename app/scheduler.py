@@ -772,16 +772,43 @@ def _run_day_prompt_inline(user_id: int, day: str):
                 virtual_mode = is_virtual_enabled(s, user_id)
             except Exception:
                 virtual_mode = False
+            try:
+                fast_mode_active = bool(_user_fast_minutes(s, int(user_id)) or _fast_minutes_env())
+            except Exception:
+                fast_mode_active = False
         if not user:
             return
     if _user_onboarding_active(user_id):
         print(f"[scheduler] skip {day_key} prompt for user {user_id}: onboarding active")
         return
+    # When habit setup is already active, pause day rotation until user finishes.
+    # This avoids fast-mode loops repeatedly rotating day prompts over an in-progress setup.
+    try:
+        if habit_selector.has_active_state(int(user_id)):
+            _audit(
+                int(user_id),
+                f"auto_prompt_{day_key}_deferred_habit_steps_active",
+                {"day": day_key, "reason": "habit_steps_active", "fast_mode": bool(fast_mode_active)},
+            )
+            debug_log(
+                f"deferred {day_key} prompt for user {user_id}: habit steps already active",
+                tag="scheduler",
+            )
+            return
+    except Exception:
+        pass
     # If a deferred day prompt exists for a different day, expire it as not sent.
     with SessionLocal() as s:
         pending_pref = _get_user_pref(s, int(user_id), PENDING_DAY_PROMPT_PREF_KEY)
         pending_day = str(getattr(pending_pref, "value", "") or "").strip().lower()
         if pending_day in {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"} and pending_day != day_key:
+            if bool(fast_mode_active):
+                _audit(
+                    int(user_id),
+                    "pending_day_prompt_kept_fast_mode",
+                    {"pending_day": pending_day, "current_day": day_key, "reason": "fast_mode_rotation"},
+                )
+                return
             _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_PREF_KEY, "")
             _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_SET_AT_PREF_KEY, "")
             s.commit()
@@ -1043,6 +1070,21 @@ def _run_first_day_catchup(user_id: int, scheduled_day: str) -> None:
         expected_day_key = day_names[expected_day.weekday()]
         if expected_day_key == "sunday":
             return
+    # Enforce the same habit-step gate used by normal day prompts.
+    try:
+        if not habit_selector.ensure_habit_steps_ready_for_day(user, scheduled_day):
+            _audit(
+                int(user_id),
+                "auto_prompt_first_day_deferred_missing_habit_steps",
+                {"day": scheduled_day, "reason": "missing_habit_steps"},
+            )
+            return
+    except Exception as e:
+        _audit(
+            int(user_id),
+            "auto_prompt_first_day_habit_steps_gate_error",
+            {"day": scheduled_day, "error": repr(e)},
+        )
     try:
         first_day.send_first_day_coaching(user, scheduled_day=scheduled_day)
     except Exception as e:

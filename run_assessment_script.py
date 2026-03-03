@@ -233,10 +233,18 @@ def _latest_combined_session_state_for(user: "User") -> tuple[int | None, bool, 
             )
             if not sess:
                 return None, False, ""
-            state = getattr(sess, "state", None) or {}
-            phase = ""
-            if isinstance(state, dict):
-                phase = str(state.get("phase") or "").strip().lower()
+            state_raw = getattr(sess, "state", None)
+            state: dict = {}
+            if isinstance(state_raw, dict):
+                state = state_raw
+            elif isinstance(state_raw, str) and state_raw.strip():
+                try:
+                    parsed = json.loads(state_raw)
+                    if isinstance(parsed, dict):
+                        state = parsed
+                except Exception:
+                    state = {}
+            phase = str(state.get("phase") or "").strip().lower()
             return int(getattr(sess, "id", 0) or 0) or None, bool(getattr(sess, "is_active", False)), phase
     except Exception:
         return None, False, ""

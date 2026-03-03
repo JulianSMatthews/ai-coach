@@ -475,8 +475,13 @@ def _start_habit_setup_flow(
 
 def ensure_habit_steps_ready_for_day(user: User, day_key: str) -> bool:
     day = _day_key(day_key)
-    general_support.clear(user.id)
     with SessionLocal() as s:
+        # If a habit-setting flow is already active, keep deferring day prompts
+        # until the user completes selections. Do not restart or resend the opener.
+        state, _state_key = _get_state(s, int(user.id))
+        if state and str(state.get("mode") or "") == "habit_setting":
+            return False
+        general_support.clear(user.id)
         today = get_effective_today(s, user.id, default_today=datetime.utcnow().date())
         resolved = _resolve_habit_setup_target_for_day(s, user, day_key=day, today_date=today)
         if not resolved:
