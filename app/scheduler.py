@@ -1003,6 +1003,10 @@ def _run_first_day_coaching_if_needed(user: User, day: str) -> bool:
         sent_at = _first_day_sent_at(s, user_id)
         if sent_at:
             return False
+        try:
+            fast_mode_active = bool(_user_fast_minutes(s, int(user_id)) or _fast_minutes_env())
+        except Exception:
+            fast_mode_active = False
         tz = _tz(user)
         completed_local_day = _coaching_anchor_date_local(s, user, tz)
         if not isinstance(completed_local_day, date):
@@ -1014,7 +1018,7 @@ def _run_first_day_coaching_if_needed(user: User, day: str) -> bool:
         if expected_day_key == "sunday":
             # Sunday starts follow normal Sunday flow and do not use first-day override.
             return False
-        if now_local.date() < expected_day:
+        if now_local.date() < expected_day and not fast_mode_active:
             return False
         if str(day or "").strip().lower() == "sunday":
             return False
