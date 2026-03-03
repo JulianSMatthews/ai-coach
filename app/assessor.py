@@ -751,8 +751,8 @@ def _compose_final_summary_message(user: User, state: dict) -> str:
     combined_bar = _score_bar("Combined", combined)
     msg = f"{intro} Your combined score is:\n{combined_bar}\n\n{breakdown}"
     try:
-        login_url = _hsapp_login_url_for_user(user, reason="compose_final_summary_message")
-        msg += f"\n\nView your assessment in the HealthSense app: {login_url}"
+        assessment_url = _hsapp_assessment_url_for_user(user, reason="compose_final_summary_message")
+        msg += f"\n\nView your assessment in the HealthSense app: {assessment_url}"
     except Exception:
         pass
     return msg
@@ -3207,11 +3207,11 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 # Build final message (will be sent after psych check completes)
                 name = (getattr(user, "first_name", "") or "").strip()
                 intro = f"🎯 *Assessment complete, {name}!*" if name else "🎯 *Assessment complete!*"
-                login_url = _hsapp_login_url_for_user(user, reason="assessment_completion_final_message")
+                assessment_url = _hsapp_assessment_url_for_user(user, reason="assessment_completion_final_message")
                 final_msg = (
                     f"{intro} Your combined score is *{combined}/100*\n"
                     f"\n{breakdown}\n\n"
-                    f"View your assessment in the HealthSense app: {login_url}"
+                    f"View your assessment in the HealthSense app: {assessment_url}"
                 )
 
                 # Completion persistence happens after psych readiness finishes.
@@ -3393,11 +3393,36 @@ def _hsapp_login_url_for_user(user: User | None, *, reason: str) -> str:
         raise
 
 
+def _hsapp_assessment_url_for_user(user: User | None, *, reason: str) -> str:
+    user_id = getattr(user, "id", None) if user is not None else None
+    try:
+        base, debug_payload = _resolve_hsapp_base_url()
+        if user_id is None:
+            raise ValueError("missing user id for assessment link")
+        assessment_url = f"{base}/assessment/{int(user_id)}"
+        _audit_hsapp_link_resolution(
+            user_id=int(user_id),
+            reason=reason,
+            payload={**debug_payload, "assessment_url": assessment_url},
+            status="ok",
+        )
+        return assessment_url
+    except Exception as e:
+        _audit_hsapp_link_resolution(
+            user_id=int(user_id) if user_id is not None else None,
+            reason=reason,
+            payload={},
+            status="error",
+            error=str(e),
+        )
+        raise
+
+
 def send_hsapp_assessment_link(user: User) -> None:
-    login_url = _hsapp_login_url_for_user(user, reason="send_hsapp_assessment_link")
+    assessment_url = _hsapp_assessment_url_for_user(user, reason="send_hsapp_assessment_link")
     _send_to_user(
         user,
-        f"Your assessment is now in the HealthSense app. Log in here: {login_url}",
+        f"Your assessment is now in the HealthSense app. Open here: {assessment_url}",
     )
 
 def send_dashboard_link(user: User) -> None:

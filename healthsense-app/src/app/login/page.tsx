@@ -111,10 +111,20 @@ export default function LoginPage() {
           window.sessionStorage.removeItem("hs_login_setup");
         } catch {}
       }
+      let requestedNext = "";
+      if (typeof window !== "undefined") {
+        requestedNext = String(new URLSearchParams(window.location.search).get("next") || "").trim();
+      }
+      const safeNext =
+        requestedNext && requestedNext.startsWith("/") && !requestedNext.startsWith("//") && !requestedNext.startsWith("/api")
+          ? requestedNext
+          : "";
       if (data.setup_required) {
-        window.location.href = "/setup-security";
+        window.location.href = safeNext
+          ? `/setup-security?next=${encodeURIComponent(safeNext)}`
+          : "/setup-security";
       } else {
-        window.location.href = `/progress/${userId}`;
+        window.location.href = safeNext || `/progress/${userId}`;
       }
     } catch (error) {
       setStatus(friendlyAuthError(error));

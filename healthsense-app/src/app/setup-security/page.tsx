@@ -75,7 +75,15 @@ export default function SetupSecurityPage() {
         const text = await res.text().catch(() => "");
         throw new Error(text || "Failed to save password.");
       }
-      router.replace(`/progress/${resolvedUserId}`);
+      let requestedNext = "";
+      if (typeof window !== "undefined") {
+        requestedNext = String(new URLSearchParams(window.location.search).get("next") || "").trim();
+      }
+      const safeNext =
+        requestedNext && requestedNext.startsWith("/") && !requestedNext.startsWith("//") && !requestedNext.startsWith("/api")
+          ? requestedNext
+          : "";
+      router.replace(safeNext || `/progress/${resolvedUserId}`);
     } catch (error) {
       setStatus(friendlyAuthError(error));
     } finally {

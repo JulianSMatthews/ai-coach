@@ -19,6 +19,10 @@ export function middleware(request: NextRequest) {
   const session = request.cookies.get("hs_session")?.value;
   if (!session) {
     const url = request.nextUrl.clone();
+    const nextPath = `${pathname}${request.nextUrl.search || ""}`;
+    if (nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")) {
+      url.searchParams.set("next", nextPath);
+    }
     url.pathname = "/login";
     return NextResponse.redirect(url);
   }
