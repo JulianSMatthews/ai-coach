@@ -7,6 +7,7 @@ import {
   createAdminUserAppSession,
   deleteAdminUser,
   listAdminUsers,
+  listTouchpointHistory,
   resetAdminUser,
   sendAdminUser24hTemplate,
   sendAdminUserSms,
@@ -64,6 +65,11 @@ function resolveHsAppBase(): string {
     if (normalized) return normalized;
   }
   return "https://app.healthsense.coach";
+}
+
+function formatDateTime(value?: string | null): string {
+  if (!value) return "—";
+  return String(value).slice(0, 19).replace("T", " ");
 }
 
 async function openAppAction(formData: FormData) {
@@ -214,6 +220,11 @@ export default async function UserActionsPage({ params, searchParams }: UserActi
   const fastMinutes: number = hasFastMode ? Number(user.coaching_fast_minutes) : 2;
   const smsStatus = String(resolvedSearchParams?.sms || "").trim().toLowerCase();
   const reopenStatus = String(resolvedSearchParams?.reopen || "").trim().toLowerCase();
+  const history = await listTouchpointHistory(200, userId);
+  const outboundHistory = history.filter(
+    (row) => row.kind === "message" && String(row.direction || "").toLowerCase() === "outbound",
+  );
+  const lastOutbound = outboundHistory[0] || null;
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -406,6 +417,34 @@ export default async function UserActionsPage({ params, searchParams }: UserActi
                 send 24h template
               </button>
             </form>
+          </ActionCard>
+
+          <ActionCard
+            title="Message history"
+            description="Review the latest outbound sent to this user, then drill down to full dialog history (latest first)."
+          >
+            {lastOutbound ? (
+              <div className="space-y-2 rounded-xl border border-[#efe7db] bg-white px-3 py-3 text-sm">
+                <div className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">
+                  Last outbound: {formatDateTime(lastOutbound.ts)}
+                </div>
+                <div className="text-[#6b6257]">
+                  touchpoint: {lastOutbound.touchpoint_type || "—"} · state:{" "}
+                  {lastOutbound.engagement_state || lastOutbound.delivery_state || "pending"}
+                </div>
+                <p className="text-[#1e1b16]">{lastOutbound.full_text || lastOutbound.preview || "(empty)"}</p>
+              </div>
+            ) : (
+              <p className="text-sm text-[#6b6257]">No outbound messages logged yet for this user.</p>
+            )}
+            <div className="mt-3">
+              <Link
+                href={`/admin/history/touchpoints?user_id=${userId}`}
+                className="inline-flex rounded-full border border-[#efe7db] px-4 py-2 text-xs uppercase tracking-[0.2em]"
+              >
+                history drill down (latest first)
+              </Link>
+            </div>
           </ActionCard>
 
           <ActionCard
