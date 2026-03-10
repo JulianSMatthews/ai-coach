@@ -397,6 +397,7 @@ try:
         get_active_domain,
         send_menu_options,
         send_dashboard_link,
+        assessment_delivery_context,
     )
     _dbg("[INFO] Correct assessor module imported successfully (module path: " +
          f"{start_combined_assessment.__module__})")
@@ -1030,6 +1031,114 @@ def _log_inbound_direct(user: User, channel: str, body: str, from_raw: str) -> N
                 print(f"⚠️ failed to set last_inbound_message_at user_id={user_id}: {e2!r}")
     except Exception as e:
         print(f"⚠️ inbound direct-log failed (non-fatal): {e!r}")
+
+
+def _log_app_chat_inbound(user: User, body: str) -> None:
+    """
+    Log app-chat inbound without updating WhatsApp last_inbound_message_at semantics.
+    """
+    txt = (body or "").strip()
+    if not txt:
+        return
+    try:
+        from .message_log import write_log
+
+        user_id = int(getattr(user, "id", 0) or 0)
+        virtual_now = get_virtual_now_for_user(user_id) if user_id else None
+        phone = str(getattr(user, "phone", "") or "").replace("whatsapp:", "").strip() or None
+        meta_payload: dict[str, object] = {
+            "surface": "assessment_chat",
+            "source": "app",
+        }
+        if virtual_now is not None:
+            meta_payload["virtual_date"] = virtual_now.date().isoformat()
+        write_log(
+            phone_e164=phone,
+            direction="inbound",
+            text=txt,
+            category=None,
+            twilio_sid=None,
+            user=user,
+            channel="app",
+            meta=meta_payload,
+            created_at=virtual_now,
+        )
+    except Exception as e:
+        print(f"⚠️ app chat inbound logging failed (non-fatal): {e!r}")
+
+
+def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> dict:
+    active_session_payload = None
+    with SessionLocal() as s:
+        active_session = (
+            s.execute(
+                select(AssessSession)
+                .where(
+                    AssessSession.user_id == int(user_id),
+                    AssessSession.domain == "combined",
+                    AssessSession.is_active == True,  # noqa: E712
+                )
+                .order_by(desc(AssessSession.id))
+            )
+            .scalars()
+            .first()
+        )
+        state_obj: dict = {}
+        if active_session is not None:
+            raw_state = getattr(active_session, "state", None)
+            if isinstance(raw_state, dict):
+                state_obj = raw_state
+            else:
+                try:
+                    state_obj = json.loads(raw_state or "{}")
+                except Exception:
+                    state_obj = {}
+            if not isinstance(state_obj, dict):
+                state_obj = {}
+            active_session_payload = {
+                "id": int(active_session.id),
+                "domain": str(getattr(active_session, "domain", "") or ""),
+                "is_active": bool(getattr(active_session, "is_active", False)),
+                "turn_count": int(getattr(active_session, "turn_count", 0) or 0),
+                "current": state_obj.get("current"),
+                "phase": state_obj.get("phase"),
+                "run_id": state_obj.get("run_id"),
+                "question_seq": state_obj.get("question_seq"),
+                "total_questions": state_obj.get("total_questions"),
+            }
+
+        rows = (
+            s.query(MessageLog)
+            .filter(
+                MessageLog.user_id == int(user_id),
+                MessageLog.channel == "app",
+                MessageLog.direction.in_(("inbound", "outbound")),
+            )
+            .order_by(desc(MessageLog.id))
+            .limit(max(1, int(message_limit)))
+            .all()
+        )
+
+    messages = []
+    for row in reversed(rows):
+        messages.append(
+            {
+                "id": int(getattr(row, "id", 0) or 0),
+                "direction": str(getattr(row, "direction", "") or ""),
+                "channel": str(getattr(row, "channel", "") or "app"),
+                "text": str(getattr(row, "text", "") or ""),
+                "created_at": (
+                    getattr(row, "created_at", None).isoformat()
+                    if getattr(row, "created_at", None) is not None
+                    else None
+                ),
+            }
+        )
+    return {
+        "active_session": active_session_payload,
+        "has_active_session": active_session_payload is not None,
+        "messages": messages,
+    }
 
 
 def _repair_missing_consent_for_completed_user(user: User) -> bool:
@@ -2731,6 +2840,30 @@ async def twilio_inbound(request: Request):
                 pass
             return Response(content="", media_type="text/plain", status_code=200)
 
+        # Active assessment session handling (consent/name or in-progress)
+        # Keep this before coaching/day-flow shortcuts so assessment replies are never hijacked.
+        try:
+            from .models import AssessSession
+            with SessionLocal() as s:
+                active_sess = (
+                    s.query(AssessSession)
+                    .filter(AssessSession.user_id == user.id, AssessSession.is_active == True)  # noqa: E712
+                    .first()
+                )
+            if active_sess:
+                _continue_assessment_async(user, body)
+                return Response(content="", media_type="text/plain", status_code=200)
+            # If no active session but consent not recorded, continue assessment flow to capture consent/name
+            has_consent = bool(getattr(user, "consent_given", False)) \
+                          or bool(getattr(user, "consent_at", None)) \
+                          or bool(getattr(user, "consent_yes_at", None)) \
+                          or bool(getattr(user, "first_assessment_completed", None))
+            if not has_consent:
+                _continue_assessment_async(user, body)
+                return Response(content="", media_type="text/plain", status_code=200)
+        except Exception:
+            pass
+
         # If a day prompt was deferred because the user was outside 24h, resume it now.
         if _handle_pending_coaching_day_resume(user, body):
             return Response(content="", media_type="text/plain", status_code=200)
@@ -2908,29 +3041,6 @@ async def twilio_inbound(request: Request):
             # Clear any stale active session and force fresh consent/name capture
             _start_assessment_async(user, force_intro=True)
             return Response(content="", media_type="text/plain", status_code=200)
-
-        # Active assessment session handling (consent/name or in-progress)
-        try:
-            from .models import AssessSession
-            with SessionLocal() as s:
-                active_sess = (
-                    s.query(AssessSession)
-                    .filter(AssessSession.user_id == user.id, AssessSession.is_active == True)  # noqa: E712
-                    .first()
-                )
-            if active_sess:
-                _continue_assessment_async(user, body)
-                return Response(content="", media_type="text/plain", status_code=200)
-            # If no active session but consent not recorded, continue assessment flow to capture consent/name
-            has_consent = bool(getattr(user, "consent_given", False)) \
-                          or bool(getattr(user, "consent_at", None)) \
-                          or bool(getattr(user, "consent_yes_at", None)) \
-                          or bool(getattr(user, "first_assessment_completed", None))
-            if not has_consent:
-                _continue_assessment_async(user, body)
-                return Response(content="", media_type="text/plain", status_code=200)
-        except Exception:
-            pass
 
         if general_support.has_active_state(user.id):
             general_support.handle_message(user, body)
@@ -3855,6 +3965,104 @@ def api_auth_logout(request: Request):
         sess.revoked_at = now
         s.commit()
     return {"ok": True}
+
+@api_v1.get("/users/{user_id}/assessment/chat/state")
+def api_user_assessment_chat_state(
+    user_id: int,
+    request: Request,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    return {
+        "ok": True,
+        **_assessment_chat_state_payload(user_id),
+    }
+
+
+@api_v1.post("/users/{user_id}/assessment/chat/start")
+def api_user_assessment_chat_start(
+    user_id: int,
+    payload: dict | None,
+    request: Request,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    user = _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    if _is_readonly_admin_preview_request(
+        request,
+        x_admin_token=x_admin_token,
+        x_admin_user_id=x_admin_user_id,
+    ):
+        raise HTTPException(status_code=403, detail="Admin app preview is read-only")
+    force_intro_raw = (payload or {}).get("force_intro") if isinstance(payload, dict) else None
+    if isinstance(force_intro_raw, str):
+        force_intro = force_intro_raw.strip().lower() in {"1", "true", "yes", "on"}
+    else:
+        force_intro = bool(force_intro_raw)
+
+    outbox: list[dict] = []
+    with assessment_delivery_context(
+        channel="app",
+        outbox=outbox,
+        source="api_v1_assessment_chat_start",
+    ):
+        handled = bool(start_combined_assessment(user, force_intro=force_intro))
+
+    chat_state = _assessment_chat_state_payload(user_id)
+    return {
+        "ok": True,
+        "handled": bool(handled or outbox),
+        "outbox": outbox,
+        **chat_state,
+    }
+
+
+@api_v1.post("/users/{user_id}/assessment/chat/send")
+def api_user_assessment_chat_send(
+    user_id: int,
+    payload: dict | None,
+    request: Request,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    user = _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    if _is_readonly_admin_preview_request(
+        request,
+        x_admin_token=x_admin_token,
+        x_admin_user_id=x_admin_user_id,
+    ):
+        raise HTTPException(status_code=403, detail="Admin app preview is read-only")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="payload must be a JSON object")
+    text_raw = payload.get("text")
+    if text_raw is None:
+        raise HTTPException(status_code=400, detail="text is required")
+    text_val = str(text_raw).strip()
+    if not text_val:
+        raise HTTPException(status_code=400, detail="text is required")
+    if len(text_val) > 4000:
+        raise HTTPException(status_code=400, detail="text is too long")
+
+    _log_app_chat_inbound(user, text_val)
+    outbox: list[dict] = []
+    with assessment_delivery_context(
+        channel="app",
+        outbox=outbox,
+        source="api_v1_assessment_chat_send",
+    ):
+        handled = bool(continue_combined_assessment(user, text_val))
+
+    chat_state = _assessment_chat_state_payload(user_id)
+    resolved_handled = bool(handled or outbox)
+    return {
+        "ok": True,
+        "handled": resolved_handled,
+        "needs_start": bool((not resolved_handled) and (not chat_state.get("has_active_session"))),
+        "outbox": outbox,
+        **chat_state,
+    }
+
 
 @api_v1.get("/users/{user_id}/assessment")
 def api_user_assessment(

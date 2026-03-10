@@ -19,6 +19,8 @@ import os
 import re
 import traceback
 import time 
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional, Literal
@@ -119,6 +121,40 @@ Notes:
 # ──────────────────────────────────────────────────────────────────────────────
 # Utils
 # ──────────────────────────────────────────────────────────────────────────────
+
+_ASSESSMENT_DELIVERY_CTX: ContextVar[dict | None] = ContextVar(
+    "_ASSESSMENT_DELIVERY_CTX",
+    default=None,
+)
+
+
+@contextmanager
+def assessment_delivery_context(
+    *,
+    channel: str = "whatsapp",
+    outbox: list[dict] | None = None,
+    source: str = "assessment",
+):
+    """
+    Scope assessor outbound delivery for the current request.
+    Default channel remains WhatsApp.
+    """
+    ctx = {
+        "channel": str(channel or "whatsapp").strip().lower(),
+        "outbox": outbox if isinstance(outbox, list) else None,
+        "source": str(source or "assessment").strip() or "assessment",
+    }
+    token = _ASSESSMENT_DELIVERY_CTX.set(ctx)
+    try:
+        yield
+    finally:
+        _ASSESSMENT_DELIVERY_CTX.reset(token)
+
+
+def _get_assessment_delivery_context() -> dict:
+    ctx = _ASSESSMENT_DELIVERY_CTX.get()
+    return ctx if isinstance(ctx, dict) else {}
+
 
 def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", (s or "").lower()).strip()
@@ -898,6 +934,41 @@ def _send_to_user(user: User, text: str) -> bool:
     msg = (text or "").strip()
     if not msg:
         return False
+
+    delivery_ctx = _get_assessment_delivery_context()
+    delivery_channel = str(delivery_ctx.get("channel") or "").strip().lower()
+    if delivery_channel == "app":
+        created_at = datetime.utcnow()
+        outbox = delivery_ctx.get("outbox")
+        outbox_entry = {
+            "direction": "outbound",
+            "channel": "app",
+            "text": msg,
+            "created_at": created_at.isoformat(),
+        }
+        if isinstance(outbox, list):
+            outbox.append(outbox_entry)
+        try:
+            from .message_log import write_log
+
+            phone_e164 = str(to or "").replace("whatsapp:", "").strip() or None
+            write_log(
+                phone_e164=phone_e164,
+                direction="outbound",
+                text=msg,
+                category=None,
+                twilio_sid=None,
+                user=user,
+                channel="app",
+                meta={
+                    "source": str(delivery_ctx.get("source") or "assessment"),
+                    "surface": "assessment_chat",
+                },
+                created_at=created_at,
+            )
+        except Exception as e:
+            print(f"⚠️ app-channel outbound logging failed (non-fatal): {e!r}")
+        return True
 
     channel = (os.getenv("TWILIO_CHANNEL") or "whatsapp").lower().strip()
     to_fmt = to
