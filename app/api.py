@@ -1140,7 +1140,7 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
                     )
                 ),
             )
-            .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
+            .order_by(UserPreference.updated_at.is_(None), UserPreference.updated_at.desc(), UserPreference.id.desc())
             .all()
         )
         for row in pref_rows:
@@ -3754,7 +3754,7 @@ def _pref_row(session, user_id: int, key: str) -> UserPreference | None:
     return (
         session.query(UserPreference)
         .filter(UserPreference.user_id == user_id, UserPreference.key == key)
-        .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
+        .order_by(UserPreference.updated_at.is_(None), UserPreference.updated_at.desc(), UserPreference.id.desc())
         .first()
     )
 
@@ -3778,7 +3778,7 @@ def _set_pref_value(
     rows = (
         session.query(UserPreference)
         .filter(UserPreference.user_id == user_id, UserPreference.key == key)
-        .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
+        .order_by(UserPreference.updated_at.is_(None), UserPreference.updated_at.desc(), UserPreference.id.desc())
         .all()
     )
     row = rows[0] if rows else None
@@ -3800,7 +3800,7 @@ def _coaching_enabled_for_user(session, user_id: int) -> bool:
     coaching_row = (
         session.query(UserPreference)
         .filter(UserPreference.user_id == user_id, UserPreference.key == "coaching")
-        .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
+        .order_by(UserPreference.updated_at.is_(None), UserPreference.updated_at.desc(), UserPreference.id.desc())
         .first()
     )
     if coaching_row is not None:
@@ -3809,7 +3809,7 @@ def _coaching_enabled_for_user(session, user_id: int) -> bool:
     legacy_row = (
         session.query(UserPreference)
         .filter(UserPreference.user_id == user_id, UserPreference.key == "auto_daily_prompts")
-        .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
+        .order_by(UserPreference.updated_at.is_(None), UserPreference.updated_at.desc(), UserPreference.id.desc())
         .first()
     )
     return bool(legacy_row and str(legacy_row.value or "").strip() == "1")
@@ -4913,7 +4913,7 @@ def api_user_status_v1(
                     )
                 ),
             )
-            .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
+            .order_by(UserPreference.updated_at.is_(None), UserPreference.updated_at.desc(), UserPreference.id.desc())
             .all()
         )
         pref_map: dict[str, str] = {}
@@ -5131,7 +5131,7 @@ def api_user_preferences_update(
                 pref = (
                     s.query(UserPreference)
                     .filter(UserPreference.user_id == user_id, UserPreference.key.in_(("coaching", "auto_daily_prompts")))
-                    .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
+                    .order_by(UserPreference.updated_at.is_(None), UserPreference.updated_at.desc(), UserPreference.id.desc())
                     .first()
                 )
                 if pref and pref.key != key:
@@ -5139,7 +5139,7 @@ def api_user_preferences_update(
                 coaching_rows = (
                     s.query(UserPreference)
                     .filter(UserPreference.user_id == user_id, UserPreference.key == key)
-                    .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
+                    .order_by(UserPreference.updated_at.is_(None), UserPreference.updated_at.desc(), UserPreference.id.desc())
                     .all()
                 )
                 pref = coaching_rows[0] if coaching_rows else None
@@ -5227,7 +5227,7 @@ def api_user_preferences_update(
             rows = (
                 s.query(UserPreference)
                 .filter(UserPreference.user_id == user_id, UserPreference.key == "preferred_channel")
-                .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
+                .order_by(UserPreference.updated_at.is_(None), UserPreference.updated_at.desc(), UserPreference.id.desc())
                 .all()
             )
             pref = rows[0] if rows else None

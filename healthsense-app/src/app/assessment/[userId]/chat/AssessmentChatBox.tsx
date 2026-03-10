@@ -112,6 +112,7 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
+  const [showScrollToLatest, setShowScrollToLatest] = useState(false);
   const logRef = useRef<HTMLDivElement | null>(null);
 
   const autoStart = useMemo(() => isTruthyToken(searchParams?.get("autostart")), [searchParams]);
@@ -166,11 +167,39 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
     }
   }, [userId, assessmentCompleted, applyChatPayload]);
 
-  useEffect(() => {
-    if (!logRef.current) return;
+  const scrollToLatest = useCallback((behavior: ScrollBehavior = "smooth") => {
     const target = logRef.current;
-    target.scrollTop = target.scrollHeight;
-  }, [messages]);
+    if (!target) return;
+    target.scrollTo({ top: target.scrollHeight, behavior });
+  }, []);
+
+  const updateScrollCtaState = useCallback(() => {
+    const target = logRef.current;
+    if (!target) return;
+    const remaining = target.scrollHeight - target.scrollTop - target.clientHeight;
+    setShowScrollToLatest((current) => {
+      const next = remaining > 96;
+      return current === next ? current : next;
+    });
+  }, []);
+
+  useEffect(() => {
+    scrollToLatest("auto");
+    setShowScrollToLatest(false);
+  }, [messages, scrollToLatest]);
+
+  useEffect(() => {
+    const target = logRef.current;
+    if (!target) return;
+    const onScroll = () => {
+      updateScrollCtaState();
+    };
+    target.addEventListener("scroll", onScroll, { passive: true });
+    updateScrollCtaState();
+    return () => {
+      target.removeEventListener("scroll", onScroll);
+    };
+  }, [messages.length, updateScrollCtaState]);
 
   useEffect(() => {
     let cancelled = false;
@@ -379,59 +408,71 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
         </div>
       ) : null}
 
-      <div
-        ref={logRef}
-        className="max-h-[56vh] min-h-[320px] overflow-y-auto rounded-2xl border border-[#efe7db] bg-[#fffaf0] p-4"
-      >
-        {messages.length === 0 ? (
-          <p className="text-sm text-[#6b6257]">
-            {leadFlow
-              ? "Connecting you to Gia and preparing your assessment…"
-              : assessmentCompleted
-                ? "Gia is ready. Send your message to continue coaching."
-                : hasActiveSession
-                  ? "Your assessment is in progress. Continue by sending your next answer."
-                  : "Start your assessment to begin chatting in-app."}
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {messages.map((message, index) => {
-              const isUser = (message.direction || "").toLowerCase() === "inbound";
-              const cta = extractAssessmentCta(String(message.text || ""), userId);
-              const ts = message.created_at
-                ? new Date(message.created_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
-                : "";
-              return (
-                <div
-                  key={`${message.id || "msg"}-${index}`}
-                  className={`flex ${isUser ? "justify-end" : "justify-start"}`}
-                >
+      <div className="relative">
+        <div
+          ref={logRef}
+          className="max-h-[56vh] min-h-[320px] overflow-y-auto rounded-2xl border border-[#efe7db] bg-[#fffaf0] p-4"
+        >
+          {messages.length === 0 ? (
+            <p className="text-sm text-[#6b6257]">
+              {leadFlow
+                ? "Connecting you to Gia and preparing your assessment…"
+                : assessmentCompleted
+                  ? "Gia is ready. Send your message to continue coaching."
+                  : hasActiveSession
+                    ? "Your assessment is in progress. Continue by sending your next answer."
+                    : "Start your assessment to begin chatting in-app."}
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {messages.map((message, index) => {
+                const isUser = (message.direction || "").toLowerCase() === "inbound";
+                const cta = extractAssessmentCta(String(message.text || ""), userId);
+                const ts = message.created_at
+                  ? new Date(message.created_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
+                  : "";
+                return (
                   <div
-                    className={`max-w-[86%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap ${
-                      isUser
-                        ? "bg-[var(--accent)] text-white"
-                        : "border border-[#efe7db] bg-white text-[#3c332b]"
-                    }`}
+                    key={`${message.id || "msg"}-${index}`}
+                    className="flex justify-start"
                   >
-                    {cta.cleanedText ? <p>{cta.cleanedText}</p> : null}
-                    {!isUser && cta.href ? (
-                      <button
-                        type="button"
-                        onClick={() => onAssessmentCtaClick(cta.href || `/assessment/${encodeURIComponent(userId)}`)}
-                        className="mt-3 inline-flex rounded-full border border-[var(--accent)] bg-[var(--accent)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white"
-                      >
-                        {identityRequired ? "Add details to view results" : "View assessment"}
-                      </button>
-                    ) : null}
-                    {ts ? (
-                      <p className={`mt-2 text-[10px] ${isUser ? "text-[#f5e5d8]" : "text-[#8c7f70]"}`}>{ts}</p>
-                    ) : null}
+                    {isUser ? (
+                      <div className="max-w-[95%] rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm whitespace-pre-wrap text-white">
+                        {cta.cleanedText ? <p>{cta.cleanedText}</p> : null}
+                        {ts ? <p className="mt-2 text-[10px] text-[#f5e5d8]">{ts}</p> : null}
+                      </div>
+                    ) : (
+                      <div className="w-full px-1 py-1 text-[15px] leading-relaxed whitespace-pre-wrap text-[#3c332b]">
+                        {cta.cleanedText ? <p>{cta.cleanedText}</p> : null}
+                        {cta.href ? (
+                          <button
+                            type="button"
+                            onClick={() => onAssessmentCtaClick(cta.href || `/assessment/${encodeURIComponent(userId)}`)}
+                            className="mt-3 inline-flex rounded-full border border-[var(--accent)] bg-[var(--accent)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white"
+                          >
+                            {identityRequired ? "Add details to view results" : "View assessment"}
+                          </button>
+                        ) : null}
+                        {ts ? <p className="mt-2 text-[10px] text-[#8c7f70]">{ts}</p> : null}
+                      </div>
+                    )}
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </div>
+        {showScrollToLatest ? (
+          <button
+            type="button"
+            onClick={() => scrollToLatest("smooth")}
+            className="absolute bottom-3 right-3 inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#e0d4c3] bg-white text-lg text-[#3c332b] shadow-sm transition hover:bg-[#fff3dc]"
+            aria-label="Jump to latest message"
+            title="Latest message"
+          >
+            ↓
+          </button>
+        ) : null}
       </div>
 
       {showIdentityGate ? (

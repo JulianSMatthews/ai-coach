@@ -57,7 +57,7 @@ def preferred_channel_for_user(session, user_id: int, *, default: str = "whatsap
         row = (
             session.query(UserPreference)
             .filter(UserPreference.user_id == int(user_id), UserPreference.key == "preferred_channel")
-            .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
+            .order_by(UserPreference.updated_at.is_(None), UserPreference.updated_at.desc(), UserPreference.id.desc())
             .first()
         )
         if not row:
