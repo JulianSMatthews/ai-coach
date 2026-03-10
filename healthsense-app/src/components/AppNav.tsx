@@ -13,8 +13,8 @@ const APP_LABEL = process.env.NODE_ENV === "development" ? "App (Develop)" : "Ap
 
 const makeLinks = (userId: string) => [
   { label: "Home", href: `/progress/${userId}` },
+  { label: "My Coach Gia", href: `/assessment/${userId}/chat` },
   { label: "Assessment", href: `/assessment/${userId}` },
-  { label: "Assessment chat", href: `/assessment/${userId}/chat` },
   { label: "Library", href: `/library/${userId}` },
   { label: "Preferences", href: `/preferences/${userId}` },
   { label: "History", href: `/history/${userId}` },

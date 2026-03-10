@@ -1069,6 +1069,7 @@ def _log_app_chat_inbound(user: User, body: str) -> None:
 
 def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> dict:
     active_session_payload = None
+    pref_map: dict[str, str] = {}
     with SessionLocal() as s:
         active_session = (
             s.execute(
@@ -1118,6 +1119,28 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
             .limit(max(1, int(message_limit)))
             .all()
         )
+        pref_rows = (
+            s.query(UserPreference)
+            .filter(
+                UserPreference.user_id == int(user_id),
+                UserPreference.key.in_(
+                    (
+                        "lead_identity_required",
+                        "lead_source",
+                        "lead_campaign",
+                        "lead_created_at",
+                        "lead_claimed_at",
+                    )
+                ),
+            )
+            .order_by(UserPreference.updated_at.desc())
+            .all()
+        )
+        for row in pref_rows:
+            key = str(getattr(row, "key", "") or "").strip()
+            if not key or key in pref_map:
+                continue
+            pref_map[key] = str(getattr(row, "value", "") or "").strip()
 
     messages = []
     for row in reversed(rows):
@@ -1138,6 +1161,11 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
         "active_session": active_session_payload,
         "has_active_session": active_session_payload is not None,
         "messages": messages,
+        "identity_required": str(pref_map.get("lead_identity_required") or "").strip() == "1",
+        "lead_source": pref_map.get("lead_source") or None,
+        "lead_campaign": pref_map.get("lead_campaign") or None,
+        "lead_created_at": pref_map.get("lead_created_at") or None,
+        "lead_claimed_at": pref_map.get("lead_claimed_at") or None,
     }
 
 
@@ -1447,6 +1475,38 @@ _PW_ITERATIONS = int(os.getenv("PASSWORD_HASH_ITERATIONS", "120000"))
 _OTP_TTL_MINUTES = int(os.getenv("OTP_TTL_MINUTES", "5"))
 _SESSION_TTL_DAYS = int(os.getenv("SESSION_TTL_DAYS", "7"))
 _SESSION_TTL_DAYS_REMEMBER = int(os.getenv("SESSION_TTL_DAYS_REMEMBER", "30"))
+_LEAD_START_TTL_MINUTES = int(os.getenv("LEAD_START_TTL_MINUTES", "180"))
+
+
+def _lead_start_enabled() -> bool:
+    return (os.getenv("PUBLIC_LEAD_START_ENABLED") or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _lead_start_key_valid(provided_key: str | None) -> bool:
+    required = (os.getenv("PUBLIC_LEAD_START_KEY") or "").strip()
+    if not required:
+        return True
+    candidate = str(provided_key or "").strip()
+    if not candidate:
+        return False
+    return hmac.compare_digest(required, candidate)
+
+
+def _generate_lead_proxy_phone(session) -> str:
+    prefix = (os.getenv("LEAD_PROXY_PHONE_PREFIX") or "+999").strip()
+    if not prefix.startswith("+"):
+        prefix = f"+{prefix}"
+    prefix_digits = "".join(ch for ch in prefix if ch.isdigit())
+    if not prefix_digits:
+        prefix_digits = "999"
+    normalized_prefix = f"+{prefix_digits}"
+    for _ in range(24):
+        suffix = f"{secrets.randbelow(10_000_000_000):010d}"
+        phone = f"{normalized_prefix}{suffix}"
+        exists = session.execute(select(User.id).where(User.phone == phone)).scalar_one_or_none()
+        if not exists:
+            return phone
+    raise RuntimeError("failed to allocate proxy lead phone")
 
 def _b64(data: bytes) -> str:
     return base64.b64encode(data).decode("ascii")
@@ -3636,6 +3696,102 @@ def evaluate_and_enable_coaching(user_id: int) -> bool:
 api_v1 = APIRouter(prefix="/api/v1", tags=["api"])
 
 
+@api_v1.post("/public/assessment/lead-start")
+def api_public_assessment_lead_start(payload: dict | None, request: Request):
+    if not _lead_start_enabled():
+        raise HTTPException(status_code=403, detail="public lead start is disabled")
+    body = payload if isinstance(payload, dict) else {}
+    lead_key = (
+        body.get("lead_key")
+        or request.headers.get("X-Lead-Key")
+        or request.query_params.get("k")
+    )
+    if not _lead_start_key_valid(str(lead_key or "")):
+        raise HTTPException(status_code=401, detail="invalid lead key")
+
+    source = str(body.get("source") or request.query_params.get("source") or "instagram").strip().lower()[:64]
+    campaign = str(body.get("campaign") or request.query_params.get("campaign") or "").strip()[:120]
+    utm_payload = body.get("utm")
+    utm_clean: dict[str, str] = {}
+    if isinstance(utm_payload, dict):
+        for key, value in utm_payload.items():
+            k = str(key or "").strip()[:64]
+            v = str(value or "").strip()[:180]
+            if k and v:
+                utm_clean[k] = v
+    for utm_key in (
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_term",
+        "utm_content",
+    ):
+        if utm_key in utm_clean:
+            continue
+        val = str(request.query_params.get(utm_key) or "").strip()[:180]
+        if val:
+            utm_clean[utm_key] = val
+
+    ttl_minutes = max(10, min(24 * 60, int(_LEAD_START_TTL_MINUTES)))
+    now = datetime.utcnow()
+    with SessionLocal() as s:
+        club_id = _resolve_default_club_id(s)
+        proxy_phone = _generate_lead_proxy_phone(s)
+        lead_suffix = f"{secrets.randbelow(1_000_000):06d}"
+        user = User(
+            first_name="Guest",
+            surname=f"Lead{lead_suffix}",
+            phone=proxy_phone,
+            club_id=club_id,
+            created_on=now,
+            updated_on=now,
+            consent_given=True,
+            consent_at=now,
+        )
+        if hasattr(user, "consent_yes_at"):
+            try:
+                setattr(user, "consent_yes_at", now)
+            except Exception:
+                pass
+        s.add(user)
+        s.flush()
+        user_id = int(getattr(user, "id", 0) or 0)
+        if not user_id:
+            raise HTTPException(status_code=500, detail="failed to create lead user")
+
+        _set_pref_value(s, user_id, "lead_identity_required", "1")
+        _set_pref_value(s, user_id, "lead_source", source or "instagram")
+        if campaign:
+            _set_pref_value(s, user_id, "lead_campaign", campaign)
+        if utm_clean:
+            _set_pref_value(s, user_id, "lead_utm", json.dumps(utm_clean))
+        _set_pref_value(s, user_id, "lead_created_at", now.replace(microsecond=0).isoformat())
+
+        session_token = secrets.token_urlsafe(32)
+        auth_sess = AuthSession(
+            user_id=user_id,
+            token_hash=_hash_token(session_token),
+            created_at=now,
+            expires_at=now + timedelta(minutes=ttl_minutes),
+            ip=getattr(request.client, "host", None),
+            user_agent=request.headers.get("user-agent"),
+        )
+        s.add(auth_sess)
+        s.commit()
+
+    next_path = f"/assessment/{user_id}/chat?autostart=1&lead=1"
+    return {
+        "ok": True,
+        "user_id": user_id,
+        "session_token": session_token,
+        "expires_at": (now + timedelta(minutes=ttl_minutes)).isoformat(),
+        "session_ttl_seconds": int(ttl_minutes * 60),
+        "next_path": next_path,
+        "source": source or "instagram",
+        "campaign": campaign or None,
+    }
+
+
 @api_v1.post("/auth/login/request")
 def api_auth_login_request(payload: dict, request: Request):
     phone_raw = (payload or {}).get("phone")
@@ -4064,6 +4220,81 @@ def api_user_assessment_chat_send(
     }
 
 
+@api_v1.post("/users/{user_id}/assessment/chat/claim-identity")
+def api_user_assessment_chat_claim_identity(
+    user_id: int,
+    payload: dict | None,
+    request: Request,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    if _is_readonly_admin_preview_request(
+        request,
+        x_admin_token=x_admin_token,
+        x_admin_user_id=x_admin_user_id,
+    ):
+        raise HTTPException(status_code=403, detail="Admin app preview is read-only")
+    body = payload if isinstance(payload, dict) else {}
+
+    def _titlecase_name(value: object) -> str:
+        raw = _strip_invisible(str(value or "")).strip()
+        if not raw:
+            return ""
+        return " ".join(part.capitalize() for part in raw.split())
+
+    first_name = _titlecase_name(body.get("first_name"))
+    surname = _titlecase_name(body.get("surname"))
+    phone_raw = _strip_invisible(str(body.get("phone") or "")).strip()
+    if not first_name or not surname:
+        raise HTTPException(status_code=400, detail="first_name and surname are required")
+    if not phone_raw:
+        raise HTTPException(status_code=400, detail="phone is required")
+    if len(first_name) > 120 or len(surname) > 120:
+        raise HTTPException(status_code=400, detail="name is too long")
+    phone_norm = _norm_phone(phone_raw)
+    digits = "".join(ch for ch in phone_norm if ch.isdigit())
+    if not phone_norm.startswith("+") or len(digits) < 8:
+        raise HTTPException(status_code=400, detail="phone must be a valid international number")
+
+    with SessionLocal() as s:
+        db_user = s.execute(select(User).where(User.id == int(user_id))).scalar_one_or_none()
+        if not db_user:
+            raise HTTPException(status_code=404, detail="user not found")
+        existing = s.execute(
+            select(User).where(
+                User.phone == phone_norm,
+                User.id != int(user_id),
+            )
+        ).scalar_one_or_none()
+        if existing:
+            raise HTTPException(status_code=409, detail="phone already in use")
+
+        db_user.first_name = first_name
+        db_user.surname = surname
+        db_user.phone = phone_norm
+        try:
+            db_user.updated_on = datetime.utcnow()
+        except Exception:
+            pass
+        _set_pref_value(s, int(user_id), "lead_identity_required", "0")
+        _set_pref_value(s, int(user_id), "lead_claimed_at", _utc_now_iso())
+        _set_pref_value(s, int(user_id), "lead_claim_source", "assessment_chat")
+        s.commit()
+
+    return {
+        "ok": True,
+        "user": {
+            "id": int(user_id),
+            "first_name": first_name,
+            "surname": surname,
+            "display_name": f"{first_name} {surname}",
+            "phone": phone_norm,
+        },
+        "identity_required": False,
+    }
+
+
 @api_v1.get("/users/{user_id}/assessment")
 def api_user_assessment(
     user_id: int,
@@ -4090,6 +4321,9 @@ def api_user_assessment(
         u = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
         if not u:
             raise HTTPException(status_code=404, detail="user not found")
+        identity_required = str(_pref_value(s, user_id, "lead_identity_required") or "").strip() == "1"
+        if identity_required:
+            raise HTTPException(status_code=403, detail="identity details are required before viewing assessment")
         if not readonly_preview:
             assessment_review_marked = _set_pref_value(
                 s,
@@ -4168,6 +4402,9 @@ def api_public_user_assessment(user_id: int, run_id: int | None = None, fast: bo
         u = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
         if not u:
             raise HTTPException(status_code=404, detail="user not found")
+        identity_required = str(_pref_value(s, user_id, "lead_identity_required") or "").strip() == "1"
+        if identity_required:
+            raise HTTPException(status_code=403, detail="identity details are required before viewing assessment")
         rid = run_id
         if rid is None:
             latest_finished = s.execute(

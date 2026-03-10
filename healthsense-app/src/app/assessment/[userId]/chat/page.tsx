@@ -27,15 +27,15 @@ export default async function AssessmentChatPage(props: PageProps) {
       <TextScale defaultScale={textScale} />
       <AppNav userId={userId} promptBadge={promptBadge} />
       <SectionHeader
-        eyebrow="Assessment"
-        title="In-app assessment chat"
-        subtitle={`${displayFirstName} · Complete your assessment directly in the app`}
+        eyebrow="Coach Chat"
+        title="My Coach Gia"
+        subtitle={`${displayFirstName} · Chat with Gia directly in the app`}
       />
 
       <section className="grid gap-6">
         <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
           <p className="text-sm text-[#6b6257]">
-            This chat uses the same assessment flow as WhatsApp, but runs fully in-app.
+            This chat runs in-app with Gia and starts with your assessment flow.
           </p>
           <div className="mt-5">
             <AssessmentChatBox userId={userId} />

@@ -785,7 +785,10 @@ def _compose_final_summary_message(user: User, state: dict) -> str:
     name = (getattr(user, "first_name", "") or "").strip()
     intro = f"🎯 *Assessment complete, {name}!*" if name else "🎯 *Assessment complete!*"
     combined_bar = _score_bar("Combined", combined)
-    msg = f"{intro} Your combined score is:\n{combined_bar}\n\n{breakdown}"
+    if _lead_identity_required(int(getattr(user, "id", 0) or 0)):
+        msg = f"{intro} Your full report is now ready in the HealthSense app."
+    else:
+        msg = f"{intro} Your combined score is:\n{combined_bar}\n\n{breakdown}"
     try:
         assessment_url = _hsapp_assessment_url_for_user(user, reason="compose_final_summary_message")
         msg += f"\n\nView your assessment in the HealthSense app: {assessment_url}"
@@ -1059,6 +1062,12 @@ def _set_user_preference_value(user_id: int, key: str, value: str | None) -> Non
             db.commit()
         except Exception:
             db.rollback()
+
+
+def _lead_identity_required(user_id: int) -> bool:
+    val = _get_user_preference_value(user_id, "lead_identity_required")
+    return str(val or "").strip() == "1"
+
 
 # DB helpers
 
@@ -3237,11 +3246,17 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 name = (getattr(user, "first_name", "") or "").strip()
                 intro = f"🎯 *Assessment complete, {name}!*" if name else "🎯 *Assessment complete!*"
                 assessment_url = _hsapp_assessment_url_for_user(user, reason="assessment_completion_final_message")
-                final_msg = (
-                    f"{intro} Your combined score is *{combined}/100*\n"
-                    f"\n{breakdown}\n\n"
-                    f"View your assessment in the HealthSense app: {assessment_url}"
-                )
+                if _lead_identity_required(int(getattr(user, "id", 0) or 0)):
+                    final_msg = (
+                        f"{intro} Your full report is now ready in the HealthSense app.\n\n"
+                        f"View your assessment in the HealthSense app: {assessment_url}"
+                    )
+                else:
+                    final_msg = (
+                        f"{intro} Your combined score is *{combined}/100*\n"
+                        f"\n{breakdown}\n\n"
+                        f"View your assessment in the HealthSense app: {assessment_url}"
+                    )
 
                 # Completion persistence happens after psych readiness finishes.
                 # This keeps funnel and completion semantics aligned.
