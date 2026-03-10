@@ -4,12 +4,21 @@ import TextScale from "@/components/TextScale";
 import AppNav from "@/components/AppNav";
 import AssessmentChatBox from "./AssessmentChatBox";
 
+function isTruthyToken(value: string | string[] | undefined): boolean {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const token = String(raw || "").trim().toLowerCase();
+  return token === "1" || token === "true" || token === "yes" || token === "on";
+}
+
 type PageProps = {
   params: Promise<{ userId: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 export default async function AssessmentChatPage(props: PageProps) {
   const { userId } = await props.params;
+  const resolvedSearchParams = (await props.searchParams) || {};
+  const leadFlow = isTruthyToken(resolvedSearchParams.lead);
   const status = await getUserStatus(userId);
   const prefs = status.coaching_preferences || {};
   const user = status.user || {};
@@ -25,11 +34,15 @@ export default async function AssessmentChatPage(props: PageProps) {
   return (
     <PageShell>
       <TextScale defaultScale={textScale} />
-      <AppNav userId={userId} promptBadge={promptBadge} />
+      {!leadFlow ? <AppNav userId={userId} promptBadge={promptBadge} /> : null}
       <SectionHeader
         eyebrow="Coach Chat"
         title="My Coach Gia"
-        subtitle={`${displayFirstName} · Chat with Gia directly in the app`}
+        subtitle={
+          leadFlow
+            ? `${displayFirstName} · Let’s complete your assessment now`
+            : `${displayFirstName} · Chat with Gia directly in the app`
+        }
       />
 
       <section className="grid gap-6">

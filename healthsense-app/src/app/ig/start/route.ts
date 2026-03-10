@@ -26,6 +26,24 @@ function getPublicOrigin(request: Request): string {
   return `${proto}://${host}`;
 }
 
+async function warmStartAssessment(base: string, userId: string, sessionToken: string): Promise<void> {
+  const safeUserId = encodeURIComponent(String(userId || "").trim());
+  if (!safeUserId || !sessionToken) return;
+  try {
+    await fetch(`${base}/api/v1/users/${safeUserId}/assessment/chat/start`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Session-Token": sessionToken,
+      },
+      body: JSON.stringify({ force_intro: false }),
+      cache: "no-store",
+    });
+  } catch {
+    // Best-effort only: client autostart remains the fallback path.
+  }
+}
+
 export async function GET(request: Request) {
   const reqUrl = new URL(request.url);
   const origin = getPublicOrigin(request);
@@ -80,6 +98,8 @@ export async function GET(request: Request) {
       fail.searchParams.set("lead", "missing");
       return NextResponse.redirect(fail);
     }
+
+    await warmStartAssessment(base, userId, sessionToken);
 
     const ttlSecondsRaw = Number(data.session_ttl_seconds || 0);
     const ttlSeconds = Number.isFinite(ttlSecondsRaw) && ttlSecondsRaw > 0 ? Math.floor(ttlSecondsRaw) : 60 * 60 * 3;

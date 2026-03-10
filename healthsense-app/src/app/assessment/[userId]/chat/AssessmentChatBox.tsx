@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type ChatMessage = {
   id?: number;
@@ -114,6 +114,7 @@ export default function AssessmentChatBox({ userId }: AssessmentChatBoxProps) {
   const logRef = useRef<HTMLDivElement | null>(null);
 
   const autoStart = useMemo(() => isTruthyToken(searchParams?.get("autostart")), [searchParams]);
+  const leadFlow = useMemo(() => isTruthyToken(searchParams?.get("lead")), [searchParams]);
   const busy = loading || starting || sending || claiming;
 
   const messageCountLabel = useMemo(() => {
@@ -237,6 +238,14 @@ export default function AssessmentChatBox({ userId }: AssessmentChatBoxProps) {
     }
   }
 
+  function onDraftKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
+    if (event.key !== "Enter" || event.shiftKey) return;
+    if (event.nativeEvent.isComposing) return;
+    if (busy || !draft.trim()) return;
+    event.preventDefault();
+    event.currentTarget.form?.requestSubmit();
+  }
+
   function onAssessmentCtaClick(href: string) {
     if (!identityRequired) {
       if (typeof window !== "undefined") {
@@ -302,31 +311,35 @@ export default function AssessmentChatBox({ userId }: AssessmentChatBoxProps) {
         <span className="rounded-full border border-[#efe7db] bg-white px-3 py-1">{messageCountLabel}</span>
       </div>
 
-      <div className="flex flex-wrap gap-2">
-        <button
-          type="button"
-          className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={busy}
-          onClick={() => void startAssessment(false)}
-        >
-          {starting ? "Starting…" : hasActiveSession ? "Continue chat" : "Start chat"}
-        </button>
-        <button
-          type="button"
-          className="rounded-full border border-[#efe7db] bg-white px-4 py-2 text-xs uppercase tracking-[0.2em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
-          disabled={busy}
-          onClick={() => void startAssessment(true)}
-        >
-          Restart
-        </button>
-      </div>
+      {!leadFlow ? (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={busy}
+            onClick={() => void startAssessment(false)}
+          >
+            {starting ? "Starting…" : hasActiveSession ? "Continue chat" : "Start chat"}
+          </button>
+          <button
+            type="button"
+            className="rounded-full border border-[#efe7db] bg-white px-4 py-2 text-xs uppercase tracking-[0.2em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={busy}
+            onClick={() => void startAssessment(true)}
+          >
+            Restart
+          </button>
+        </div>
+      ) : null}
 
       <div
         ref={logRef}
         className="max-h-[56vh] min-h-[320px] overflow-y-auto rounded-2xl border border-[#efe7db] bg-[#fffaf0] p-4"
       >
         {messages.length === 0 ? (
-          <p className="text-sm text-[#6b6257]">Start the assessment to begin chatting in-app.</p>
+          <p className="text-sm text-[#6b6257]">
+            {leadFlow ? "Connecting you to Gia and preparing your assessment…" : "Start the assessment to begin chatting in-app."}
+          </p>
         ) : (
           <div className="space-y-3">
             {messages.map((message, index) => {
@@ -434,9 +447,11 @@ export default function AssessmentChatBox({ userId }: AssessmentChatBoxProps) {
             rows={3}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={onDraftKeyDown}
             placeholder="Type your answer…"
             disabled={busy}
           />
+          <p className="mt-2 text-[11px] text-[#8c7f70]">Press Enter to send, Shift+Enter for a new line.</p>
         </div>
         <button
           type="submit"
