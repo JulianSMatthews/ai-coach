@@ -559,14 +559,34 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
                             {identityRequired ? "Add details to view results" : "View assessment"}
                           </button>
                         ) : null}
-                        {mediaPayload.mediaUrl ? (
+                        {mediaPayload.mediaUrl && mediaPayload.isPodcast ? (
+                          <div className="mt-3 space-y-2">
+                            <audio
+                              controls
+                              preload="none"
+                              src={mediaPayload.mediaUrl}
+                              className="w-full"
+                            >
+                              Your browser does not support audio playback.
+                            </audio>
+                            <a
+                              href={mediaPayload.mediaUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex rounded-full border border-[#e0d4c3] bg-[#fff8ef] px-3 py-1 text-xs font-semibold text-[#3c332b]"
+                            >
+                              Open podcast in new tab
+                            </a>
+                          </div>
+                        ) : null}
+                        {mediaPayload.mediaUrl && !mediaPayload.isPodcast ? (
                           <a
                             href={mediaPayload.mediaUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="mt-3 inline-flex rounded-full border border-[var(--accent)] bg-[var(--accent)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white"
                           >
-                            {mediaPayload.isPodcast ? "Listen to podcast" : "Open media"}
+                            Open media
                           </a>
                         ) : null}
                         {quickReplyPayload.quickReplies.length > 0 ? (
