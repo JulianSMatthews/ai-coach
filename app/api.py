@@ -77,6 +77,7 @@ from .models import (
     GlobalPromptSchedule,
     MessagingSettings,
     Concept,
+    ConceptQuestion,
     KBSnippet,
     KBVector,
     ScriptRun,
@@ -1191,16 +1192,54 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
         direction_val = str(getattr(row, "direction", "") or "")
         text_val = str(getattr(row, "text", "") or "")
         if hide_in_chat and direction_val.lower() == "inbound":
+            def _split_quick_reply_value(raw_item: object) -> tuple[str, str]:
+                raw_val = str(raw_item or "").strip()
+                if not raw_val:
+                    return "", ""
+                if "||" in raw_val:
+                    title_raw, payload_raw = raw_val.split("||", 1)
+                    title_val = str(title_raw or "").strip()
+                    payload_val = str(payload_raw or "").strip()
+                    if not payload_val:
+                        payload_val = title_val
+                    if not title_val:
+                        title_val = payload_val
+                    return title_val, payload_val
+                return raw_val, raw_val
+
+            inbound_val = str(text_val or "").strip()
+            inbound_lc = inbound_val.lower()
             for prev in reversed(messages):
                 if str(prev.get("direction", "")).lower() != "outbound":
                     continue
                 prev_quick_replies = prev.get("quick_replies")
                 if not isinstance(prev_quick_replies, list):
                     continue
-                if text_val and text_val in prev_quick_replies:
-                    prev["selected_quick_reply"] = text_val
+                selected_payload = ""
+                selected_title = ""
+                for candidate in prev_quick_replies:
+                    candidate_raw = str(candidate or "").strip()
+                    if not candidate_raw:
+                        continue
+                    candidate_title, candidate_payload = _split_quick_reply_value(candidate_raw)
+                    candidate_set = {
+                        candidate_raw,
+                        candidate_title,
+                        candidate_payload,
+                        candidate_raw.lower(),
+                        candidate_title.lower(),
+                        candidate_payload.lower(),
+                    }
+                    if inbound_val and (inbound_val in candidate_set or inbound_lc in candidate_set):
+                        selected_payload = candidate_payload or candidate_raw
+                        selected_title = candidate_title or candidate_payload or candidate_raw
+                        break
+                if selected_payload:
+                    prev["selected_quick_reply"] = selected_payload
                     if quick_reply_label:
                         prev["selected_quick_reply_label"] = quick_reply_label
+                    elif selected_title:
+                        prev["selected_quick_reply_label"] = selected_title[:40]
                     break
             continue
         messages.append(
@@ -1723,6 +1762,364 @@ _OTP_TTL_MINUTES = int(os.getenv("OTP_TTL_MINUTES", "5"))
 _SESSION_TTL_DAYS = int(os.getenv("SESSION_TTL_DAYS", "7"))
 _SESSION_TTL_DAYS_REMEMBER = int(os.getenv("SESSION_TTL_DAYS_REMEMBER", "30"))
 _LEAD_START_TTL_MINUTES = int(os.getenv("LEAD_START_TTL_MINUTES", "180"))
+_LEAD_PENDING_TOKEN_VERSION = 1
+_LEAD_PENDING_RUNTIME_SECRET = secrets.token_urlsafe(48)
+_LEAD_Q1_FALLBACK = (
+    "Q1/15 · Nutrition: In the last 7 days, how many portions of fruit and vegetables did you "
+    "*eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving "
+    "of vegetables, or 1 handful of salad or berries."
+)
+
+
+def _is_truthy_token(value: object) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _lead_pending_secret() -> str:
+    env_secret = (
+        (os.getenv("PUBLIC_LEAD_PENDING_SECRET") or "").strip()
+        or (os.getenv("PUBLIC_LEAD_START_KEY") or "").strip()
+        or (os.getenv("ADMIN_API_TOKEN") or "").strip()
+    )
+    return env_secret or _LEAD_PENDING_RUNTIME_SECRET
+
+
+def _b64url_encode(raw: bytes) -> str:
+    return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+
+
+def _b64url_decode(token: str) -> bytes:
+    pad_len = (-len(token)) % 4
+    padded = f"{token}{'=' * pad_len}"
+    return base64.urlsafe_b64decode(padded.encode("ascii"))
+
+
+def _sign_lead_pending_body(body_token: str) -> str:
+    digest = hmac.new(
+        _lead_pending_secret().encode("utf-8"),
+        body_token.encode("utf-8"),
+        hashlib.sha256,
+    ).digest()
+    return _b64url_encode(digest)
+
+
+def _mint_lead_pending_token(
+    *,
+    source: str,
+    campaign: str | None,
+    utm: dict[str, str],
+    meta: dict[str, str],
+    landing_path: str | None,
+    referrer_url: str | None,
+    client_ip: str | None,
+    user_agent: str | None,
+    lead_key_used: bool,
+    ttl_seconds: int,
+) -> tuple[str, int]:
+    now_ts = int(time.time())
+    exp_ts = now_ts + max(60, int(ttl_seconds))
+    payload = {
+        "v": int(_LEAD_PENDING_TOKEN_VERSION),
+        "iat": int(now_ts),
+        "exp": int(exp_ts),
+        "nonce": secrets.token_urlsafe(12),
+        "source": str(source or "instagram"),
+        "campaign": campaign or None,
+        "utm": dict(utm or {}),
+        "meta": dict(meta or {}),
+        "landing_path": landing_path or None,
+        "referrer_url": referrer_url or None,
+        "client_ip": client_ip or None,
+        "user_agent": user_agent or None,
+        "lead_key_used": bool(lead_key_used),
+    }
+    raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    body_token = _b64url_encode(raw)
+    sig_token = _sign_lead_pending_body(body_token)
+    return f"{body_token}.{sig_token}", int(exp_ts)
+
+
+def _parse_lead_pending_token(token: str | None) -> dict | None:
+    raw = str(token or "").strip()
+    if not raw or "." not in raw:
+        return None
+    body_token, sig_token = raw.rsplit(".", 1)
+    expected_sig = _sign_lead_pending_body(body_token)
+    if not hmac.compare_digest(expected_sig, sig_token):
+        return None
+    try:
+        payload = json.loads(_b64url_decode(body_token).decode("utf-8"))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    try:
+        version = int(payload.get("v") or 0)
+        exp_ts = int(payload.get("exp") or 0)
+    except Exception:
+        return None
+    if version != int(_LEAD_PENDING_TOKEN_VERSION):
+        return None
+    if exp_ts <= int(time.time()):
+        return None
+    return payload
+
+
+def _lead_first_question_preview_text() -> str:
+    fallback = _LEAD_Q1_FALLBACK
+    try:
+        with SessionLocal() as s:
+            concept_rows = s.execute(select(Concept.pillar_key, Concept.code, Concept.name)).all()
+            buckets: dict[str, list[tuple[str, str]]] = {}
+            for pillar_key, code, name in concept_rows:
+                pk = str(pillar_key or "").strip().lower()
+                cc = str(code or "").strip()
+                nm = str(name or "").strip()
+                if not pk or not cc:
+                    continue
+                buckets.setdefault(pk, []).append((cc, nm))
+            capped: dict[str, list[str]] = {}
+            for pk, items in buckets.items():
+                ordered = sorted(items, key=lambda row: (row[0].lower(), row[1].lower()))
+                capped[pk] = [code for code, _name in ordered[:5]]
+            total_questions = sum(len(items) for items in capped.values())
+            if total_questions <= 0:
+                total_questions = 20
+            nutrition_codes = capped.get("nutrition") or []
+            if not nutrition_codes:
+                return fallback
+            first_code = nutrition_codes[0]
+            concept_id = s.execute(
+                select(Concept.id)
+                .where(Concept.pillar_key == "nutrition", Concept.code == first_code)
+                .limit(1)
+            ).scalar_one_or_none()
+            if not concept_id:
+                return fallback
+            question = s.execute(
+                select(ConceptQuestion.text)
+                .where(ConceptQuestion.concept_id == int(concept_id), ConceptQuestion.is_primary == True)
+                .limit(1)
+            ).scalar_one_or_none()
+            q_text = _track_text(question, max_len=3000)
+            if not q_text:
+                return fallback
+            return f"Q1/{int(total_questions)} · Nutrition: {q_text}"
+    except Exception as e:
+        print(f"[marketing] failed to build lead first-question preview: {e}")
+        return fallback
+
+
+def _collect_public_lead_tracking(
+    body: dict,
+    request: Request,
+    *,
+    lead_key: str | None,
+) -> dict[str, object]:
+    source = (_track_text(body.get("source") or request.query_params.get("source"), max_len=64) or "instagram").lower()
+    campaign = _track_text(body.get("campaign") or request.query_params.get("campaign"), max_len=120)
+
+    utm_clean = _clean_tracking_map(body.get("utm"), max_key_len=64, max_val_len=180)
+    for utm_key in (
+        "utm_source",
+        "utm_medium",
+        "utm_campaign",
+        "utm_term",
+        "utm_content",
+    ):
+        if utm_key in utm_clean:
+            continue
+        val = _track_text(request.query_params.get(utm_key), max_len=180)
+        if val:
+            utm_clean[utm_key] = val
+
+    meta_clean = _clean_tracking_map(body.get("meta"), max_key_len=64, max_val_len=255)
+    for meta_key in (
+        "fbclid",
+        "gclid",
+        "msclkid",
+        "ttclid",
+        "campaign_id",
+        "adset_id",
+        "ad_id",
+        "creative_id",
+        "placement",
+        "meta_campaign_id",
+        "meta_adset_id",
+        "meta_ad_id",
+        "meta_creative_id",
+    ):
+        if meta_key in meta_clean:
+            continue
+        val = _track_text(request.query_params.get(meta_key), max_len=255)
+        if val:
+            meta_clean[meta_key] = val
+
+    fbclid = _track_text(meta_clean.get("fbclid"), max_len=255)
+    gclid = _track_text(meta_clean.get("gclid"), max_len=255)
+    msclkid = _track_text(meta_clean.get("msclkid"), max_len=255)
+    ttclid = _track_text(meta_clean.get("ttclid"), max_len=255)
+    meta_campaign_id = _track_text(meta_clean.get("meta_campaign_id") or meta_clean.get("campaign_id"), max_len=96)
+    meta_adset_id = _track_text(meta_clean.get("meta_adset_id") or meta_clean.get("adset_id"), max_len=96)
+    meta_ad_id = _track_text(meta_clean.get("meta_ad_id") or meta_clean.get("ad_id"), max_len=96)
+    meta_creative_id = _track_text(meta_clean.get("meta_creative_id") or meta_clean.get("creative_id"), max_len=96)
+    placement = _track_text(meta_clean.get("placement"), max_len=120)
+
+    landing_path = _track_text(body.get("landing_path"), max_len=2000)
+    if not landing_path:
+        landing_path = _track_text(request.url.path, max_len=2000)
+    referrer_url = _track_text(body.get("referrer_url") or request.headers.get("referer"), max_len=2000)
+    user_agent = _track_text(body.get("user_agent") or request.headers.get("user-agent"), max_len=1200)
+    client_ip = _extract_client_ip(
+        body.get("client_ip")
+        or request.headers.get("x-forwarded-for")
+        or getattr(request.client, "host", None)
+    )
+    raw_meta_payload: dict[str, object] = {}
+    if utm_clean:
+        raw_meta_payload["utm"] = utm_clean
+    if meta_clean:
+        raw_meta_payload["meta"] = meta_clean
+    return {
+        "source": source or "instagram",
+        "campaign": campaign,
+        "utm_clean": utm_clean,
+        "meta_clean": meta_clean,
+        "fbclid": fbclid,
+        "gclid": gclid,
+        "msclkid": msclkid,
+        "ttclid": ttclid,
+        "meta_campaign_id": meta_campaign_id,
+        "meta_adset_id": meta_adset_id,
+        "meta_ad_id": meta_ad_id,
+        "meta_creative_id": meta_creative_id,
+        "placement": placement,
+        "landing_path": landing_path,
+        "referrer_url": referrer_url,
+        "user_agent": user_agent,
+        "client_ip": client_ip,
+        "raw_meta_payload": raw_meta_payload or None,
+        "lead_key_used": bool(_track_text(lead_key, max_len=256)),
+    }
+
+
+def _create_public_lead_user_and_tracking(
+    *,
+    tracking: dict[str, object],
+    now: datetime | None = None,
+) -> dict[str, object]:
+    created_at = now or datetime.utcnow()
+    ttl_minutes = max(10, min(24 * 60, int(_LEAD_START_TTL_MINUTES)))
+    source = _track_text(tracking.get("source"), max_len=64) or "instagram"
+    campaign = _track_text(tracking.get("campaign"), max_len=120)
+    utm_clean = _clean_tracking_map(tracking.get("utm_clean"), max_key_len=64, max_val_len=180)
+    meta_clean = _clean_tracking_map(tracking.get("meta_clean"), max_key_len=64, max_val_len=255)
+    fbclid = _track_text(tracking.get("fbclid"), max_len=255)
+    gclid = _track_text(tracking.get("gclid"), max_len=255)
+    msclkid = _track_text(tracking.get("msclkid"), max_len=255)
+    ttclid = _track_text(tracking.get("ttclid"), max_len=255)
+    meta_campaign_id = _track_text(tracking.get("meta_campaign_id"), max_len=96)
+    meta_adset_id = _track_text(tracking.get("meta_adset_id"), max_len=96)
+    meta_ad_id = _track_text(tracking.get("meta_ad_id"), max_len=96)
+    meta_creative_id = _track_text(tracking.get("meta_creative_id"), max_len=96)
+    placement = _track_text(tracking.get("placement"), max_len=120)
+    landing_path = _track_text(tracking.get("landing_path"), max_len=2000)
+    referrer_url = _track_text(tracking.get("referrer_url"), max_len=2000)
+    user_agent = _track_text(tracking.get("user_agent"), max_len=1200)
+    client_ip = _extract_client_ip(tracking.get("client_ip"))
+    raw_meta_payload = tracking.get("raw_meta_payload")
+    if not isinstance(raw_meta_payload, dict):
+        raw_meta_payload = None
+    lead_key_used = bool(tracking.get("lead_key_used"))
+
+    with SessionLocal() as s:
+        club_id = _resolve_default_club_id(s)
+        proxy_phone = _generate_lead_proxy_phone(s)
+        lead_suffix = f"{secrets.randbelow(1_000_000):06d}"
+        user = User(
+            first_name="Guest",
+            surname=f"Lead{lead_suffix}",
+            phone=proxy_phone,
+            club_id=club_id,
+            created_on=created_at,
+            updated_on=created_at,
+            consent_given=True,
+            consent_at=created_at,
+        )
+        if hasattr(user, "consent_yes_at"):
+            try:
+                setattr(user, "consent_yes_at", created_at)
+            except Exception:
+                pass
+        s.add(user)
+        s.flush()
+        user_id = int(getattr(user, "id", 0) or 0)
+        if not user_id:
+            raise HTTPException(status_code=500, detail="failed to create lead user")
+
+        _set_pref_value(s, user_id, "lead_identity_required", "1")
+        _set_pref_value(s, user_id, "lead_source", source or "instagram")
+        if campaign:
+            _set_pref_value(s, user_id, "lead_campaign", campaign)
+        if utm_clean:
+            _set_pref_value(s, user_id, "lead_utm", json.dumps(utm_clean))
+        _set_pref_value(s, user_id, "lead_created_at", created_at.replace(microsecond=0).isoformat())
+
+        session_token = secrets.token_urlsafe(32)
+        auth_sess = AuthSession(
+            user_id=user_id,
+            token_hash=_hash_token(session_token),
+            created_at=created_at,
+            expires_at=created_at + timedelta(minutes=ttl_minutes),
+            ip=client_ip,
+            user_agent=user_agent,
+        )
+        s.add(auth_sess)
+        s.commit()
+
+    try:
+        with SessionLocal() as s:
+            lead_row = MarketingLead(
+                user_id=user_id,
+                source=source or "instagram",
+                campaign=campaign,
+                utm_source=utm_clean.get("utm_source"),
+                utm_medium=utm_clean.get("utm_medium"),
+                utm_campaign=utm_clean.get("utm_campaign"),
+                utm_term=utm_clean.get("utm_term"),
+                utm_content=utm_clean.get("utm_content"),
+                fbclid=fbclid,
+                gclid=gclid,
+                msclkid=msclkid,
+                ttclid=ttclid,
+                meta_campaign_id=meta_campaign_id,
+                meta_adset_id=meta_adset_id,
+                meta_ad_id=meta_ad_id,
+                meta_creative_id=meta_creative_id,
+                placement=placement,
+                lead_key_used=bool(lead_key_used),
+                landing_path=landing_path,
+                referrer_url=referrer_url,
+                client_ip=client_ip,
+                user_agent=user_agent,
+                raw_meta=raw_meta_payload,
+                created_at=created_at,
+                updated_at=created_at,
+            )
+            s.add(lead_row)
+            s.commit()
+    except Exception as e:
+        print(f"[marketing] failed to persist lead tracking for user_id={user_id}: {e}")
+
+    return {
+        "user_id": int(user_id),
+        "session_token": session_token,
+        "created_at": created_at,
+        "expires_at": created_at + timedelta(minutes=ttl_minutes),
+        "session_ttl_seconds": int(ttl_minutes * 60),
+        "source": source or "instagram",
+        "campaign": campaign,
+    }
 
 
 def _lead_start_enabled() -> bool:
@@ -4041,163 +4438,199 @@ def api_public_assessment_lead_start(payload: dict | None, request: Request):
     )
     if not _lead_start_key_valid(str(lead_key or "")):
         raise HTTPException(status_code=401, detail="invalid lead key")
-
-    source = (_track_text(body.get("source") or request.query_params.get("source"), max_len=64) or "instagram").lower()
-    campaign = _track_text(body.get("campaign") or request.query_params.get("campaign"), max_len=120)
-
-    utm_clean = _clean_tracking_map(body.get("utm"), max_key_len=64, max_val_len=180)
-    for utm_key in (
-        "utm_source",
-        "utm_medium",
-        "utm_campaign",
-        "utm_term",
-        "utm_content",
-    ):
-        if utm_key in utm_clean:
-            continue
-        val = _track_text(request.query_params.get(utm_key), max_len=180)
-        if val:
-            utm_clean[utm_key] = val
-
-    meta_clean = _clean_tracking_map(body.get("meta"), max_key_len=64, max_val_len=255)
-    for meta_key in (
-        "fbclid",
-        "gclid",
-        "msclkid",
-        "ttclid",
-        "campaign_id",
-        "adset_id",
-        "ad_id",
-        "creative_id",
-        "placement",
-        "meta_campaign_id",
-        "meta_adset_id",
-        "meta_ad_id",
-        "meta_creative_id",
-    ):
-        if meta_key in meta_clean:
-            continue
-        val = _track_text(request.query_params.get(meta_key), max_len=255)
-        if val:
-            meta_clean[meta_key] = val
-
-    fbclid = _track_text(meta_clean.get("fbclid"), max_len=255)
-    gclid = _track_text(meta_clean.get("gclid"), max_len=255)
-    msclkid = _track_text(meta_clean.get("msclkid"), max_len=255)
-    ttclid = _track_text(meta_clean.get("ttclid"), max_len=255)
-    meta_campaign_id = _track_text(meta_clean.get("meta_campaign_id") or meta_clean.get("campaign_id"), max_len=96)
-    meta_adset_id = _track_text(meta_clean.get("meta_adset_id") or meta_clean.get("adset_id"), max_len=96)
-    meta_ad_id = _track_text(meta_clean.get("meta_ad_id") or meta_clean.get("ad_id"), max_len=96)
-    meta_creative_id = _track_text(meta_clean.get("meta_creative_id") or meta_clean.get("creative_id"), max_len=96)
-    placement = _track_text(meta_clean.get("placement"), max_len=120)
-
-    landing_path = _track_text(body.get("landing_path"), max_len=2000)
-    if not landing_path:
-        landing_path = _track_text(request.url.path, max_len=2000)
-    referrer_url = _track_text(body.get("referrer_url") or request.headers.get("referer"), max_len=2000)
-    user_agent = _track_text(body.get("user_agent") or request.headers.get("user-agent"), max_len=1200)
-    client_ip = _extract_client_ip(
-        body.get("client_ip")
-        or request.headers.get("x-forwarded-for")
-        or getattr(request.client, "host", None)
+    tracking = _collect_public_lead_tracking(
+        body,
+        request,
+        lead_key=_track_text(lead_key, max_len=256),
     )
-    raw_meta_payload: dict[str, object] = {}
-    if utm_clean:
-        raw_meta_payload["utm"] = utm_clean
-    if meta_clean:
-        raw_meta_payload["meta"] = meta_clean
-
-    ttl_minutes = max(10, min(24 * 60, int(_LEAD_START_TTL_MINUTES)))
-    now = datetime.utcnow()
-    with SessionLocal() as s:
-        club_id = _resolve_default_club_id(s)
-        proxy_phone = _generate_lead_proxy_phone(s)
-        lead_suffix = f"{secrets.randbelow(1_000_000):06d}"
-        user = User(
-            first_name="Guest",
-            surname=f"Lead{lead_suffix}",
-            phone=proxy_phone,
-            club_id=club_id,
-            created_on=now,
-            updated_on=now,
-            consent_given=True,
-            consent_at=now,
+    ttl_seconds = max(60, min(24 * 60 * 60, int(_LEAD_START_TTL_MINUTES) * 60))
+    defer_create = _is_truthy_token(body.get("defer_create") or request.query_params.get("defer_create"))
+    if defer_create:
+        lead_token, exp_ts = _mint_lead_pending_token(
+            source=str(tracking.get("source") or "instagram"),
+            campaign=_track_text(tracking.get("campaign"), max_len=120),
+            utm=_clean_tracking_map(tracking.get("utm_clean"), max_key_len=64, max_val_len=180),
+            meta=_clean_tracking_map(tracking.get("meta_clean"), max_key_len=64, max_val_len=255),
+            landing_path=_track_text(tracking.get("landing_path"), max_len=2000),
+            referrer_url=_track_text(tracking.get("referrer_url"), max_len=2000),
+            client_ip=_extract_client_ip(tracking.get("client_ip")),
+            user_agent=_track_text(tracking.get("user_agent"), max_len=1200),
+            lead_key_used=bool(tracking.get("lead_key_used")),
+            ttl_seconds=ttl_seconds,
         )
-        if hasattr(user, "consent_yes_at"):
-            try:
-                setattr(user, "consent_yes_at", now)
-            except Exception:
-                pass
-        s.add(user)
-        s.flush()
-        user_id = int(getattr(user, "id", 0) or 0)
-        if not user_id:
-            raise HTTPException(status_code=500, detail="failed to create lead user")
+        return {
+            "ok": True,
+            "deferred": True,
+            "lead_token": lead_token,
+            "expires_at": datetime.utcfromtimestamp(exp_ts).isoformat(),
+            "session_ttl_seconds": int(ttl_seconds),
+            "next_path": "/assessment/lead/chat?autostart=1&lead=1",
+            "first_question": _lead_first_question_preview_text(),
+            "source": str(tracking.get("source") or "instagram"),
+            "campaign": _track_text(tracking.get("campaign"), max_len=120),
+        }
 
-        _set_pref_value(s, user_id, "lead_identity_required", "1")
-        _set_pref_value(s, user_id, "lead_source", source or "instagram")
-        if campaign:
-            _set_pref_value(s, user_id, "lead_campaign", campaign)
-        if utm_clean:
-            _set_pref_value(s, user_id, "lead_utm", json.dumps(utm_clean))
-        _set_pref_value(s, user_id, "lead_created_at", now.replace(microsecond=0).isoformat())
-
-        session_token = secrets.token_urlsafe(32)
-        auth_sess = AuthSession(
-            user_id=user_id,
-            token_hash=_hash_token(session_token),
-            created_at=now,
-            expires_at=now + timedelta(minutes=ttl_minutes),
-            ip=client_ip,
-            user_agent=user_agent or request.headers.get("user-agent"),
-        )
-        s.add(auth_sess)
-        s.commit()
-
-    try:
-        with SessionLocal() as s:
-            lead_row = MarketingLead(
-                user_id=user_id,
-                source=source or "instagram",
-                campaign=campaign,
-                utm_source=utm_clean.get("utm_source"),
-                utm_medium=utm_clean.get("utm_medium"),
-                utm_campaign=utm_clean.get("utm_campaign"),
-                utm_term=utm_clean.get("utm_term"),
-                utm_content=utm_clean.get("utm_content"),
-                fbclid=fbclid,
-                gclid=gclid,
-                msclkid=msclkid,
-                ttclid=ttclid,
-                meta_campaign_id=meta_campaign_id,
-                meta_adset_id=meta_adset_id,
-                meta_ad_id=meta_ad_id,
-                meta_creative_id=meta_creative_id,
-                placement=placement,
-                lead_key_used=bool(_track_text(lead_key, max_len=256)),
-                landing_path=landing_path,
-                referrer_url=referrer_url,
-                client_ip=client_ip,
-                user_agent=user_agent,
-                raw_meta=raw_meta_payload or None,
-                created_at=now,
-                updated_at=now,
-            )
-            s.add(lead_row)
-            s.commit()
-    except Exception as e:
-        print(f"[marketing] failed to persist lead tracking for user_id={user_id}: {e}")
-
+    created = _create_public_lead_user_and_tracking(tracking=tracking, now=datetime.utcnow())
+    user_id = int(created.get("user_id") or 0)
+    session_token = str(created.get("session_token") or "")
+    expires_at = created.get("expires_at")
     next_path = f"/assessment/{user_id}/chat?autostart=1&lead=1"
     return {
         "ok": True,
         "user_id": user_id,
         "session_token": session_token,
-        "expires_at": (now + timedelta(minutes=ttl_minutes)).isoformat(),
-        "session_ttl_seconds": int(ttl_minutes * 60),
+        "expires_at": expires_at.isoformat() if isinstance(expires_at, datetime) else None,
+        "session_ttl_seconds": int(created.get("session_ttl_seconds") or ttl_seconds),
         "next_path": next_path,
-        "source": source or "instagram",
-        "campaign": campaign,
+        "source": str(created.get("source") or tracking.get("source") or "instagram"),
+        "campaign": _track_text(created.get("campaign"), max_len=120),
+    }
+
+
+@api_v1.post("/public/assessment/lead-first-reply")
+def api_public_assessment_lead_first_reply(payload: dict | None, request: Request):
+    if not _lead_start_enabled():
+        raise HTTPException(status_code=403, detail="public lead start is disabled")
+    try:
+        ensure_marketing_schema()
+    except Exception as e:
+        print(f"[marketing] ensure schema failed during lead-first-reply: {e}")
+
+    body = payload if isinstance(payload, dict) else {}
+    lead_token = (
+        body.get("lead_token")
+        or request.headers.get("X-Lead-Token")
+        or request.cookies.get("hs_lead_token")
+    )
+    pending = _parse_lead_pending_token(_track_text(lead_token, max_len=8192))
+    if not pending:
+        raise HTTPException(status_code=401, detail="invalid or expired lead token")
+
+    text_raw = body.get("text")
+    if text_raw is None:
+        raise HTTPException(status_code=400, detail="text is required")
+    text_val = str(text_raw).strip()
+    if not text_val:
+        raise HTTPException(status_code=400, detail="text is required")
+    if len(text_val) > 4000:
+        raise HTTPException(status_code=400, detail="text is too long")
+
+    created = _create_public_lead_user_and_tracking(
+        tracking={
+            "source": _track_text(pending.get("source"), max_len=64) or "instagram",
+            "campaign": _track_text(pending.get("campaign"), max_len=120),
+            "utm_clean": _clean_tracking_map(pending.get("utm"), max_key_len=64, max_val_len=180),
+            "meta_clean": _clean_tracking_map(pending.get("meta"), max_key_len=64, max_val_len=255),
+            "fbclid": _track_text((pending.get("meta") or {}).get("fbclid") if isinstance(pending.get("meta"), dict) else None, max_len=255),
+            "gclid": _track_text((pending.get("meta") or {}).get("gclid") if isinstance(pending.get("meta"), dict) else None, max_len=255),
+            "msclkid": _track_text((pending.get("meta") or {}).get("msclkid") if isinstance(pending.get("meta"), dict) else None, max_len=255),
+            "ttclid": _track_text((pending.get("meta") or {}).get("ttclid") if isinstance(pending.get("meta"), dict) else None, max_len=255),
+            "meta_campaign_id": _track_text(
+                (
+                    (pending.get("meta") or {}).get("meta_campaign_id")
+                    or (pending.get("meta") or {}).get("campaign_id")
+                )
+                if isinstance(pending.get("meta"), dict)
+                else None,
+                max_len=96,
+            ),
+            "meta_adset_id": _track_text(
+                (
+                    (pending.get("meta") or {}).get("meta_adset_id")
+                    or (pending.get("meta") or {}).get("adset_id")
+                )
+                if isinstance(pending.get("meta"), dict)
+                else None,
+                max_len=96,
+            ),
+            "meta_ad_id": _track_text(
+                (
+                    (pending.get("meta") or {}).get("meta_ad_id")
+                    or (pending.get("meta") or {}).get("ad_id")
+                )
+                if isinstance(pending.get("meta"), dict)
+                else None,
+                max_len=96,
+            ),
+            "meta_creative_id": _track_text(
+                (
+                    (pending.get("meta") or {}).get("meta_creative_id")
+                    or (pending.get("meta") or {}).get("creative_id")
+                )
+                if isinstance(pending.get("meta"), dict)
+                else None,
+                max_len=96,
+            ),
+            "placement": _track_text((pending.get("meta") or {}).get("placement") if isinstance(pending.get("meta"), dict) else None, max_len=120),
+            "landing_path": _track_text(pending.get("landing_path"), max_len=2000),
+            "referrer_url": _track_text(pending.get("referrer_url"), max_len=2000),
+            "client_ip": _extract_client_ip(pending.get("client_ip")),
+            "user_agent": _track_text(pending.get("user_agent"), max_len=1200),
+            "raw_meta_payload": {
+                "utm": _clean_tracking_map(pending.get("utm"), max_key_len=64, max_val_len=180),
+                "meta": _clean_tracking_map(pending.get("meta"), max_key_len=64, max_val_len=255),
+            },
+            "lead_key_used": bool(pending.get("lead_key_used")),
+        },
+        now=datetime.utcnow(),
+    )
+
+    user_id = int(created.get("user_id") or 0)
+    if user_id <= 0:
+        raise HTTPException(status_code=500, detail="failed to create lead user")
+    with SessionLocal() as s:
+        user = s.execute(select(User).where(User.id == int(user_id))).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=500, detail="lead user not found after creation")
+        db_user = user
+
+    quick_reply_meta: dict[str, object] | None = None
+    quick_reply_payload = body.get("quick_reply")
+    if isinstance(quick_reply_payload, dict):
+        used = bool(quick_reply_payload.get("used"))
+        hide_in_chat = bool(quick_reply_payload.get("hide_in_chat"))
+        label_val = str(quick_reply_payload.get("label") or "").strip()
+        if used or hide_in_chat or label_val:
+            quick_reply_meta = {
+                "quick_reply_used": bool(used),
+                "ui_hide_in_chat": bool(hide_in_chat),
+            }
+            if label_val:
+                quick_reply_meta["quick_reply_label"] = label_val[:40]
+    _log_app_chat_inbound(db_user, text_val, meta_extra=quick_reply_meta)
+
+    outbox: list[dict] = []
+    with assessment_delivery_context(
+        channel="app",
+        outbox=outbox,
+        source="api_v1_public_lead_first_reply",
+    ), coaching_delivery_context(
+        channel="app",
+        outbox=outbox,
+        source="api_v1_public_lead_first_reply",
+    ):
+        start_combined_assessment(db_user, force_intro=False)
+        handled = bool(continue_combined_assessment(db_user, text_val))
+        if not handled:
+            handled = bool(_handle_app_chat_non_assessment(db_user, text_val))
+
+    chat_state = _assessment_chat_state_payload(user_id)
+    if chat_state.get("has_active_session"):
+        _mark_marketing_stage(user_id, stage_key="assessment_started_at")
+
+    expires_at = created.get("expires_at")
+    next_path = f"/assessment/{user_id}/chat?lead=1"
+    return {
+        "ok": True,
+        "converted": True,
+        "user_id": user_id,
+        "session_token": str(created.get("session_token") or ""),
+        "expires_at": expires_at.isoformat() if isinstance(expires_at, datetime) else None,
+        "session_ttl_seconds": int(created.get("session_ttl_seconds") or 0),
+        "next_path": next_path,
+        "handled": bool(handled or outbox),
+        "outbox": outbox,
+        **chat_state,
     }
 
 

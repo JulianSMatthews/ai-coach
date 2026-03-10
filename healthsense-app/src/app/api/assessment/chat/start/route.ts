@@ -25,11 +25,48 @@ function getCookieValue(cookieHeader: string, key: string): string | null {
   return match ? match[1] : null;
 }
 
+function decodeCookieToken(value: string | null): string {
+  if (!value) return "";
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+function isLeadGuestUserId(value: unknown): boolean {
+  const token = String(value ?? "").trim().toLowerCase();
+  return token === "lead" || token === "0" || token === "guest";
+}
+
+const LEAD_Q1_FALLBACK =
+  "Q1/15 · Nutrition: In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries.";
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const cookieHeader = request.headers.get("cookie") || "";
     const userId = body.userId ?? getCookieValue(cookieHeader, "hs_user_id");
+    const leadToken = getCookieValue(cookieHeader, "hs_lead_token");
+    const leadMode = isLeadGuestUserId(userId) || (!userId && Boolean(leadToken));
+    if (leadMode) {
+      const firstQuestion = decodeCookieToken(getCookieValue(cookieHeader, "hs_lead_q1")) || LEAD_Q1_FALLBACK;
+      return NextResponse.json({
+        ok: true,
+        handled: false,
+        has_active_session: false,
+        identity_required: true,
+        messages: [
+          {
+            id: 0,
+            direction: "outbound",
+            channel: "app",
+            text: firstQuestion,
+            created_at: new Date().toISOString(),
+          },
+        ],
+      });
+    }
     if (!userId) {
       return NextResponse.json({ error: "userId is required" }, { status: 400 });
     }

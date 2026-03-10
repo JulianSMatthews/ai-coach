@@ -25,15 +25,16 @@ function getCookieValue(cookieHeader: string, key: string): string | null {
   return match ? match[1] : null;
 }
 
+function isLeadGuestUserId(value: unknown): boolean {
+  const token = String(value ?? "").trim().toLowerCase();
+  return token === "lead" || token === "0" || token === "guest";
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const cookieHeader = request.headers.get("cookie") || "";
     const userId = body.userId ?? getCookieValue(cookieHeader, "hs_user_id");
-    if (!userId) {
-      return NextResponse.json({ error: "userId is required" }, { status: 400 });
-    }
-
     const textValue = String(body.text || "").trim();
     if (!textValue) {
       return NextResponse.json({ error: "text is required" }, { status: 400 });
@@ -46,6 +47,78 @@ export async function POST(request: Request) {
           ? body.quick_reply
           : undefined,
     };
+    const leadToken = getCookieValue(cookieHeader, "hs_lead_token");
+    const leadMode = isLeadGuestUserId(userId) || (!userId && Boolean(leadToken));
+
+    const base = getBaseUrl();
+    if (leadMode) {
+      if (!leadToken) {
+        return NextResponse.json({ error: "Lead session expired. Please reopen the assessment link." }, { status: 401 });
+      }
+      const res = await fetch(`${base}/api/v1/public/assessment/lead-first-reply`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          lead_token: leadToken,
+          text: textValue,
+          quick_reply: payload.quick_reply,
+        }),
+        cache: "no-store",
+      });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        return NextResponse.json({ error: text || "Failed to send assessment message" }, { status: res.status });
+      }
+      let data: Record<string, unknown> = {};
+      if (text) {
+        try {
+          data = JSON.parse(text) as Record<string, unknown>;
+        } catch {
+          return NextResponse.json({ error: "Upstream returned invalid response." }, { status: 502 });
+        }
+      }
+      const response = NextResponse.json(data);
+      const sessionToken = String(data.session_token || "").trim();
+      const resolvedUserId = String(data.user_id || "").trim();
+      if (sessionToken && resolvedUserId) {
+        const ttlSecondsRaw = Number(data.session_ttl_seconds || 0);
+        const ttlSeconds = Number.isFinite(ttlSecondsRaw) && ttlSecondsRaw > 0 ? Math.floor(ttlSecondsRaw) : 60 * 60 * 3;
+        response.cookies.set("hs_session", sessionToken, {
+          httpOnly: true,
+          sameSite: "lax",
+          path: "/",
+          maxAge: ttlSeconds,
+          secure: process.env.NODE_ENV === "production",
+        });
+        response.cookies.set("hs_user_id", resolvedUserId, {
+          httpOnly: false,
+          sameSite: "lax",
+          path: "/",
+          maxAge: ttlSeconds,
+          secure: process.env.NODE_ENV === "production",
+        });
+      }
+      response.cookies.set("hs_lead_token", "", {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 0,
+        secure: process.env.NODE_ENV === "production",
+      });
+      response.cookies.set("hs_lead_q1", "", {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        maxAge: 0,
+        secure: process.env.NODE_ENV === "production",
+      });
+      return response;
+    }
+    if (!userId) {
+      return NextResponse.json({ error: "userId is required" }, { status: 400 });
+    }
 
     const session = getCookieValue(cookieHeader, "hs_session");
     const headers: Record<string, string> = {
@@ -57,7 +130,6 @@ export async function POST(request: Request) {
       Object.assign(headers, getAdminHeaders());
     }
 
-    const base = getBaseUrl();
     const url = `${base}/api/v1/users/${encodeURIComponent(String(userId))}/assessment/chat/send`;
     const res = await fetch(url, {
       method: "POST",

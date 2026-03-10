@@ -1,4 +1,4 @@
-import { getUserStatus } from "@/lib/api";
+import { getUserStatus, type UserStatusResponse } from "@/lib/api";
 import { Card, PageShell, SectionHeader } from "@/components/ui";
 import TextScale from "@/components/TextScale";
 import AppNav from "@/components/AppNav";
@@ -19,7 +19,8 @@ export default async function AssessmentChatPage(props: PageProps) {
   const { userId } = await props.params;
   const resolvedSearchParams = (await props.searchParams) || {};
   const leadFlow = isTruthyToken(resolvedSearchParams.lead);
-  const status = await getUserStatus(userId);
+  const leadGuest = String(userId || "").trim().toLowerCase() === "lead";
+  const status: UserStatusResponse = leadGuest ? {} : await getUserStatus(userId);
   const prefs = status.coaching_preferences || {};
   const user = status.user || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
@@ -28,7 +29,7 @@ export default async function AssessmentChatPage(props: PageProps) {
     promptState && promptState !== "live"
       ? `${promptState.charAt(0).toUpperCase()}${promptState.slice(1)} mode`
       : "";
-  const displayName = user.display_name || user.first_name || "User";
+  const displayName = user.display_name || user.first_name || (leadGuest ? "Guest" : "User");
   const displayFirstName = displayName.split(" ")[0];
   const assessmentCompleted =
     status.status === "completed" ||
@@ -50,7 +51,7 @@ export default async function AssessmentChatPage(props: PageProps) {
       <SectionHeader
         brandMark={
           leadFlow ? (
-          <a href={`/assessment/${userId}/chat`} className="inline-flex items-center gap-2" aria-label="HealthSense">
+          <a href={`/assessment/${userId}/chat?lead=1`} className="inline-flex items-center gap-2" aria-label="HealthSense">
             <img src="/healthsense-logo.svg" alt="HealthSense" className="h-8 w-auto" />
           </a>
           ) : undefined
@@ -70,7 +71,7 @@ export default async function AssessmentChatPage(props: PageProps) {
             {chatIntroText}
           </p>
           <div className="mt-5">
-            <AssessmentChatBox userId={userId} assessmentCompleted={assessmentCompleted} />
+            <AssessmentChatBox userId={userId} assessmentCompleted={assessmentCompleted} isLeadGuest={leadGuest} />
           </div>
         </Card>
       </section>

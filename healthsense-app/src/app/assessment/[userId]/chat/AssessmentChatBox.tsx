@@ -22,12 +22,15 @@ type ChatResponse = {
   has_active_session?: boolean;
   identity_required?: boolean;
   messages?: ChatMessage[];
+  user_id?: number | string;
+  next_path?: string;
   error?: string;
 };
 
 type AssessmentChatBoxProps = {
   userId: string;
   assessmentCompleted?: boolean;
+  isLeadGuest?: boolean;
 };
 
 type AssessmentCta = {
@@ -226,7 +229,17 @@ function isTruthyToken(value: string | null | undefined): boolean {
   return token === "1" || token === "true" || token === "yes" || token === "on";
 }
 
-export default function AssessmentChatBox({ userId, assessmentCompleted = false }: AssessmentChatBoxProps) {
+function parsePositiveUserId(value: unknown): number | null {
+  const token = Number.parseInt(String(value ?? "").trim(), 10);
+  if (!Number.isFinite(token) || token <= 0) return null;
+  return token;
+}
+
+export default function AssessmentChatBox({
+  userId,
+  assessmentCompleted = false,
+  isLeadGuest = false,
+}: AssessmentChatBoxProps) {
   const searchParams = useSearchParams();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -251,10 +264,10 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
   const chatReady = hasActiveSession || assessmentCompleted || messages.length > 0;
   const stageLabel = assessmentCompleted
     ? "Coaching active"
-    : hasActiveSession
+    : isLeadGuest || hasActiveSession
       ? "Assessment active"
       : "Assessment not started";
-  const showAssessmentControls = !assessmentCompleted && (!leadFlow || !chatReady);
+  const showAssessmentControls = !assessmentCompleted && !isLeadGuest && (!leadFlow || !chatReady);
 
   const messageCountLabel = useMemo(() => {
     const count = messages.length;
@@ -351,6 +364,7 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
         if (cancelled) return;
         applyChatPayload(data);
         const shouldAutoStart =
+          !isLeadGuest &&
           !Boolean(data.has_active_session) &&
           !assessmentCompleted &&
           (autoStart || leadFlow);
@@ -370,7 +384,7 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
     return () => {
       cancelled = true;
     };
-  }, [userId, autoStart, leadFlow, assessmentCompleted, startAssessment, applyChatPayload]);
+  }, [userId, autoStart, leadFlow, assessmentCompleted, startAssessment, applyChatPayload, isLeadGuest]);
 
   useEffect(() => {
     let cancelled = false;
@@ -444,6 +458,20 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
       }
       const data = (text ? (JSON.parse(text) as ChatResponse) : {}) as ChatResponse;
       applyChatPayload(data);
+      if (isLeadGuest) {
+        const resolvedUserId = parsePositiveUserId(data.user_id);
+        if (resolvedUserId) {
+          const nextPathRaw = String(data.next_path || "").trim();
+          const nextPath =
+            nextPathRaw.startsWith("/") && !nextPathRaw.startsWith("//")
+              ? nextPathRaw
+              : `/assessment/${encodeURIComponent(String(resolvedUserId))}/chat?lead=1`;
+          if (typeof window !== "undefined") {
+            window.location.href = nextPath;
+            return;
+          }
+        }
+      }
       if (data.needs_start && !assessmentCompleted) {
         setStatus("No active chat session. Use Start assessment to begin.");
       }
