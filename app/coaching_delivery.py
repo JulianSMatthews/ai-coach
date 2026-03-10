@@ -44,8 +44,10 @@ def _get_context() -> dict[str, Any]:
 
 def _normalize_channel(raw: str | None) -> str:
     val = str(raw or "").strip().lower()
-    if val == "app":
+    if val in {"app", "app_chat", "app-chat", "appchat", "inapp", "in-app", "chatbox"}:
         return "app"
+    if val in {"whatsapp", "wa", "whats_app", "whats-app"}:
+        return "whatsapp"
     return "whatsapp"
 
 
@@ -55,13 +57,14 @@ def preferred_channel_for_user(session, user_id: int, *, default: str = "whatsap
         row = (
             session.query(UserPreference)
             .filter(UserPreference.user_id == int(user_id), UserPreference.key == "preferred_channel")
-            .order_by(UserPreference.updated_at.desc())
+            .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
             .first()
         )
         if not row:
             return _normalize_channel(default)
         val = str(getattr(row, "value", "") or "").strip().lower()
-        return val if val in _ALLOWED_CHANNELS else _normalize_channel(default)
+        normalized = _normalize_channel(val)
+        return normalized if normalized in _ALLOWED_CHANNELS else _normalize_channel(default)
     except Exception:
         return _normalize_channel(default)
 

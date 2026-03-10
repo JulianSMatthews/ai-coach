@@ -269,15 +269,26 @@ def _get_user_pref(session, user_id: int, key: str) -> UserPreference | None:
     return (
         session.query(UserPreference)
         .filter(UserPreference.user_id == user_id, UserPreference.key == key)
-        .order_by(UserPreference.updated_at.desc())
+        .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
         .first()
     )
 
 
 def _set_user_pref(session, user_id: int, key: str, value: str) -> None:
-    pref = _get_user_pref(session, user_id, key)
+    rows = (
+        session.query(UserPreference)
+        .filter(UserPreference.user_id == user_id, UserPreference.key == key)
+        .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
+        .all()
+    )
+    pref = rows[0] if rows else None
     if pref:
         pref.value = value
+        for stale in rows[1:]:
+            try:
+                session.delete(stale)
+            except Exception:
+                pass
     else:
         session.add(UserPreference(user_id=user_id, key=key, value=value))
 
@@ -691,7 +702,7 @@ def _coaching_enabled(session, user_id: int) -> bool:
             UserPreference.user_id == user_id,
             UserPreference.key == "coaching",
         )
-        .order_by(UserPreference.updated_at.desc())
+        .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
         .first()
     )
     if coaching_pref is not None:
@@ -702,7 +713,7 @@ def _coaching_enabled(session, user_id: int) -> bool:
             UserPreference.user_id == user_id,
             UserPreference.key == "auto_daily_prompts",
         )
-        .order_by(UserPreference.updated_at.desc())
+        .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
         .first()
     )
     return bool(legacy_pref and str(legacy_pref.value or "").strip() == "1")
@@ -719,7 +730,7 @@ def _user_fast_minutes(session, user_id: int) -> int | None:
     pref = (
         session.query(UserPreference)
         .filter(UserPreference.user_id == user_id, UserPreference.key == "coaching_fast_minutes")
-        .order_by(UserPreference.updated_at.desc())
+        .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
         .first()
     )
     if not pref or not pref.value:
@@ -1505,7 +1516,7 @@ def enable_coaching(user_id: int, fast_minutes: int | None = None) -> bool:
         pref = (
             s.query(UserPreference)
             .filter(UserPreference.user_id == user_id, UserPreference.key.in_(AUTO_PROMPT_PREF_KEYS))
-            .order_by(UserPreference.updated_at.desc())
+            .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
             .first()
         )
         was_enabled = bool(pref and str(pref.value or "").strip() == "1")
@@ -1524,7 +1535,7 @@ def enable_coaching(user_id: int, fast_minutes: int | None = None) -> bool:
         fast_pref_rows = (
             s.query(UserPreference)
             .filter(UserPreference.user_id == user_id, UserPreference.key == "coaching_fast_minutes")
-            .order_by(UserPreference.updated_at.desc())
+            .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
             .all()
         )
         fast_pref_primary = fast_pref_rows[0] if fast_pref_rows else None
@@ -1577,7 +1588,7 @@ def disable_coaching(user_id: int) -> bool:
         pref = (
             s.query(UserPreference)
             .filter(UserPreference.user_id == user_id, UserPreference.key.in_(AUTO_PROMPT_PREF_KEYS))
-            .order_by(UserPreference.updated_at.desc())
+            .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
             .first()
         )
         key = AUTO_PROMPT_PREF_KEYS[0]
@@ -1587,7 +1598,7 @@ def disable_coaching(user_id: int) -> bool:
         fast_pref_rows = (
             s.query(UserPreference)
             .filter(UserPreference.user_id == user_id, UserPreference.key == "coaching_fast_minutes")
-            .order_by(UserPreference.updated_at.desc())
+            .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
             .all()
         )
         for pref_row in fast_pref_rows:

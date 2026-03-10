@@ -1140,7 +1140,7 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
                     )
                 ),
             )
-            .order_by(UserPreference.updated_at.desc())
+            .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
             .all()
         )
         for row in pref_rows:
@@ -3177,26 +3177,11 @@ async def twilio_inbound(request: Request):
 
         # App-channel members should continue via the in-app chat surface for coaching.
         # Keep this after active-assessment handling so legacy WhatsApp assessments are not interrupted.
+        # For strict channel separation, do not send coaching replies on WhatsApp when app is selected.
         try:
             with SessionLocal() as s:
                 preferred_channel = (_pref_value(s, int(user.id), "preferred_channel") or "").strip().lower()
             if preferred_channel == "app":
-                app_base = (
-                    (os.getenv("HSAPP_PUBLIC_URL") or "").strip()
-                    or (os.getenv("HSAPP_BASE_URL") or "").strip()
-                    or (os.getenv("APP_BASE_URL") or "").strip()
-                    or (os.getenv("NEXT_PUBLIC_HSAPP_BASE_URL") or "").strip()
-                    or (os.getenv("NEXT_PUBLIC_APP_BASE_URL") or "").strip()
-                    or "https://app.healthsense.coach"
-                )
-                if not app_base.startswith(("http://", "https://")):
-                    app_base = f"https://{app_base}"
-                app_base = app_base.rstrip("/")
-                app_chat_url = f"{app_base}/assessment/{int(user.id)}/chat"
-                send_whatsapp(
-                    to=user.phone,
-                    text=f"You're set to app chat. Continue here: {app_chat_url}",
-                )
                 return Response(content="", media_type="text/plain", status_code=200)
         except Exception:
             pass
@@ -3769,7 +3754,7 @@ def _pref_row(session, user_id: int, key: str) -> UserPreference | None:
     return (
         session.query(UserPreference)
         .filter(UserPreference.user_id == user_id, UserPreference.key == key)
-        .order_by(UserPreference.updated_at.desc())
+        .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
         .first()
     )
 
@@ -3790,11 +3775,22 @@ def _set_pref_value(
     *,
     only_if_missing: bool = False,
 ) -> bool:
-    row = _pref_row(session, user_id, key)
+    rows = (
+        session.query(UserPreference)
+        .filter(UserPreference.user_id == user_id, UserPreference.key == key)
+        .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
+        .all()
+    )
+    row = rows[0] if rows else None
     if row:
         if only_if_missing and str(row.value or "").strip():
             return False
         row.value = value
+        for stale in rows[1:]:
+            try:
+                session.delete(stale)
+            except Exception:
+                pass
         return True
     session.add(UserPreference(user_id=user_id, key=key, value=value))
     return True
@@ -3804,7 +3800,7 @@ def _coaching_enabled_for_user(session, user_id: int) -> bool:
     coaching_row = (
         session.query(UserPreference)
         .filter(UserPreference.user_id == user_id, UserPreference.key == "coaching")
-        .order_by(UserPreference.updated_at.desc())
+        .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
         .first()
     )
     if coaching_row is not None:
@@ -3813,7 +3809,7 @@ def _coaching_enabled_for_user(session, user_id: int) -> bool:
     legacy_row = (
         session.query(UserPreference)
         .filter(UserPreference.user_id == user_id, UserPreference.key == "auto_daily_prompts")
-        .order_by(UserPreference.updated_at.desc())
+        .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
         .first()
     )
     return bool(legacy_row and str(legacy_row.value or "").strip() == "1")
@@ -4917,14 +4913,18 @@ def api_user_status_v1(
                     )
                 ),
             )
-            .order_by(UserPreference.updated_at.desc())
+            .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
             .all()
         )
-        pref_map = {row.key: row.value for row in pref_rows if row}
-        auto_pref = next(
-            (row for row in pref_rows if row.key in {"coaching", "auto_daily_prompts"}),
-            None,
-        )
+        pref_map: dict[str, str] = {}
+        for row in pref_rows:
+            key = str(getattr(row, "key", "") or "").strip()
+            if not key or key in pref_map:
+                continue
+            pref_map[key] = str(getattr(row, "value", "") or "")
+        auto_pref = next((row for row in pref_rows if row.key == "coaching"), None)
+        if auto_pref is None:
+            auto_pref = next((row for row in pref_rows if row.key == "auto_daily_prompts"), None)
         auto_val = (auto_pref.value or "").strip() if auto_pref else ""
         if auto_val == "1":
             auto_status = "on"
@@ -5131,20 +5131,37 @@ def api_user_preferences_update(
                 pref = (
                     s.query(UserPreference)
                     .filter(UserPreference.user_id == user_id, UserPreference.key.in_(("coaching", "auto_daily_prompts")))
-                    .order_by(UserPreference.updated_at.desc())
+                    .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
                     .first()
                 )
                 if pref and pref.key != key:
                     s.delete(pref)
-                pref = (
+                coaching_rows = (
                     s.query(UserPreference)
                     .filter(UserPreference.user_id == user_id, UserPreference.key == key)
-                    .one_or_none()
+                    .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
+                    .all()
                 )
+                pref = coaching_rows[0] if coaching_rows else None
                 if pref:
                     pref.value = "1" if auto_val == "on" else "0"
                 else:
                     s.add(UserPreference(user_id=user_id, key=key, value="1" if auto_val == "on" else "0"))
+                for stale in coaching_rows[1:]:
+                    try:
+                        s.delete(stale)
+                    except Exception:
+                        pass
+                legacy_rows = (
+                    s.query(UserPreference)
+                    .filter(UserPreference.user_id == user_id, UserPreference.key == "auto_daily_prompts")
+                    .all()
+                )
+                for stale in legacy_rows:
+                    try:
+                        s.delete(stale)
+                    except Exception:
+                        pass
             elif auto_val:
                 raise HTTPException(status_code=400, detail="auto_prompts must be 'on' or 'off'")
 
@@ -5207,11 +5224,13 @@ def api_user_preferences_update(
             channel_val = str(preferred_channel).strip().lower()
             if channel_val and channel_val not in allowed_channels:
                 raise HTTPException(status_code=400, detail="preferred_channel must be whatsapp|app|sms|email")
-            pref = (
+            rows = (
                 s.query(UserPreference)
                 .filter(UserPreference.user_id == user_id, UserPreference.key == "preferred_channel")
-                .one_or_none()
+                .order_by(UserPreference.updated_at.desc(), UserPreference.id.desc())
+                .all()
             )
+            pref = rows[0] if rows else None
             if channel_val:
                 if pref:
                     pref.value = channel_val
@@ -5220,6 +5239,11 @@ def api_user_preferences_update(
             else:
                 if pref:
                     s.delete(pref)
+            for stale in rows[1:]:
+                try:
+                    s.delete(stale)
+                except Exception:
+                    pass
 
         marketing_opt_in = payload.get("marketing_opt_in") if isinstance(payload, dict) else None
         if marketing_opt_in is not None:
