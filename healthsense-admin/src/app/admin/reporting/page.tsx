@@ -1,5 +1,6 @@
 import AdminNav from "@/components/AdminNav";
 import FetchRatesButton from "@/components/FetchRatesButton";
+import CopyValueField from "@/components/CopyValueField";
 import {
   fetchUsageSettings,
   getAdminMarketingFunnel,
@@ -147,6 +148,24 @@ export default async function ReportingPage({
   const llmMiniOutput = modelRates["gpt-5-mini"]?.output ?? "";
   const llm51Input = modelRates["gpt-5.1"]?.input ?? "";
   const llm51Output = modelRates["gpt-5.1"]?.output ?? "";
+  const appBaseRaw = (
+    process.env.NEXT_PUBLIC_HSAPP_BASE_URL ||
+    process.env.HSAPP_PUBLIC_URL ||
+    process.env.NEXT_PUBLIC_APP_BASE_URL ||
+    process.env.APP_BASE_URL ||
+    "https://app.healthsense.coach"
+  ).trim();
+  const appBase =
+    (appBaseRaw.startsWith("http://") || appBaseRaw.startsWith("https://") ? appBaseRaw : `https://${appBaseRaw}`)
+      .replace(/\/+$/, "");
+  const leadStartKey = (process.env.PUBLIC_LEAD_START_KEY || "").trim();
+  const campaignToken = (campaignRaw || "assessment_launch").trim();
+  const metaLaunchUrl =
+    `${appBase}/ig/start?` +
+    (leadStartKey ? `k=${encodeURIComponent(leadStartKey)}&` : "") +
+    `source=instagram&campaign=${encodeURIComponent(campaignToken)}` +
+    `&utm_source=instagram&utm_medium=paid_social&utm_campaign=${encodeURIComponent(campaignToken)}` +
+    "&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}&placement={{placement}}&site_source_name={{site_source_name}}";
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -280,6 +299,15 @@ export default async function ReportingPage({
           <p className="mt-2 text-sm text-[#6b6257]">
             Filters: source {sourceRaw || "all"} · campaign {campaignRaw || "all"}
           </p>
+          <div className="mt-4 rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
+            <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Meta URL</p>
+            <p className="mt-1 text-sm text-[#6b6257]">
+              Use this as the destination URL in Meta ads.
+            </p>
+            <div className="mt-3">
+              <CopyValueField value={metaLaunchUrl} />
+            </div>
+          </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-5">
             {(marketing?.funnel?.steps || []).map((step) => (

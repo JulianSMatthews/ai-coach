@@ -198,12 +198,16 @@ def send_coaching_text(
         return "app"
 
     target = to or getattr(user, "phone", None)
-    return send_whatsapp(
-        text=msg,
-        to=target,
-        category=category,
-        quick_replies=quick_replies,
-    )
+    try:
+        return send_whatsapp(
+            text=msg,
+            to=target,
+            category=category,
+            quick_replies=quick_replies,
+        )
+    except Exception as e:
+        print(f"[delivery] whatsapp send failed for user_id={getattr(user, 'id', None)} err={e!r}")
+        raise
 
 
 def send_coaching_media(
@@ -240,10 +244,14 @@ def send_coaching_media(
         )
 
     target = to or getattr(user, "phone", None)
-    return send_whatsapp_media(
-        to=target,
-        media_url=media,
-        caption=caption,
-        category=category,
-        quick_replies=quick_replies,
-    )
+    try:
+        return send_whatsapp_media(
+            to=target,
+            media_url=media,
+            caption=caption,
+            category=category,
+            quick_replies=quick_replies,
+        )
+    except Exception as e:
+        print(f"[delivery] whatsapp media send failed for user_id={getattr(user, 'id', None)} err={e!r}")
+        raise

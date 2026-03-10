@@ -131,7 +131,7 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
     return `${count} messages`;
   }, [messages.length]);
 
-  function applyChatPayload(data: ChatResponse) {
+  const applyChatPayload = useCallback((data: ChatResponse) => {
     setMessages(normalizeMessages(data.messages));
     setHasActiveSession(Boolean(data.has_active_session));
     const required = Boolean(data.identity_required);
@@ -139,7 +139,7 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
     if (!required) {
       setShowIdentityGate(false);
     }
-  }
+  }, []);
 
   const startAssessment = useCallback(async (forceIntro = false) => {
     setStarting(true);
@@ -164,7 +164,7 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
     } finally {
       setStarting(false);
     }
-  }, [userId, assessmentCompleted]);
+  }, [userId, assessmentCompleted, applyChatPayload]);
 
   useEffect(() => {
     if (!logRef.current) return;
@@ -216,7 +216,42 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
     return () => {
       cancelled = true;
     };
-  }, [userId, autoStart, leadFlow, assessmentCompleted, startAssessment]);
+  }, [userId, autoStart, leadFlow, assessmentCompleted, startAssessment, applyChatPayload]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/assessment/chat/state?userId=${encodeURIComponent(userId)}`, {
+          method: "GET",
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const text = await res.text().catch(() => "");
+        if (!text) return;
+        let data: ChatResponse = {};
+        try {
+          data = JSON.parse(text) as ChatResponse;
+        } catch {
+          return;
+        }
+        if (cancelled) return;
+        applyChatPayload(data);
+      } catch {
+        // Silent polling failures; next cycle retries.
+      }
+    };
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState && document.visibilityState !== "visible") return;
+      void poll();
+    }, 8000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [userId, applyChatPayload]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
