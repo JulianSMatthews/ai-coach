@@ -1151,12 +1151,41 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
 
     messages = []
     for row in reversed(rows):
+        quick_replies: list[str] = []
+        media_url: str | None = None
+        meta_raw = getattr(row, "meta", None)
+        meta_obj: dict | None = None
+        if isinstance(meta_raw, dict):
+            meta_obj = meta_raw
+        elif isinstance(meta_raw, str):
+            try:
+                parsed_meta = json.loads(meta_raw)
+                if isinstance(parsed_meta, dict):
+                    meta_obj = parsed_meta
+            except Exception:
+                meta_obj = None
+        if isinstance(meta_obj, dict):
+            raw_qr = meta_obj.get("quick_replies")
+            if isinstance(raw_qr, list):
+                for item in raw_qr:
+                    val = str(item or "").strip()
+                    if val and val not in quick_replies:
+                        quick_replies.append(val)
+                    if len(quick_replies) >= 6:
+                        break
+            raw_media = meta_obj.get("media_url")
+            if raw_media is not None:
+                media_val = str(raw_media or "").strip()
+                if media_val:
+                    media_url = media_val
         messages.append(
             {
                 "id": int(getattr(row, "id", 0) or 0),
                 "direction": str(getattr(row, "direction", "") or ""),
                 "channel": str(getattr(row, "channel", "") or "app"),
                 "text": str(getattr(row, "text", "") or ""),
+                "quick_replies": quick_replies,
+                "media_url": media_url,
                 "created_at": (
                     getattr(row, "created_at", None).isoformat()
                     if getattr(row, "created_at", None) is not None

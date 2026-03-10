@@ -8,6 +8,8 @@ type ChatMessage = {
   direction?: string;
   channel?: string;
   text?: string;
+  quick_replies?: string[];
+  media_url?: string | null;
   created_at?: string | null;
 };
 
@@ -31,6 +33,17 @@ type AssessmentCta = {
   href: string | null;
 };
 
+type QuickReplyPayload = {
+  cleanedText: string;
+  quickReplies: string[];
+};
+
+type MediaPayload = {
+  cleanedText: string;
+  mediaUrl: string | null;
+  isPodcast: boolean;
+};
+
 function parseApiError(text: string, fallback: string) {
   if (!text) return fallback;
   try {
@@ -49,11 +62,19 @@ function normalizeMessages(raw: unknown): ChatMessage[] {
     const row = msg as Record<string, unknown>;
     const text = typeof row.text === "string" ? row.text : "";
     if (!text) return;
+    const quickReplies = Array.isArray(row.quick_replies)
+      ? row.quick_replies
+          .map((item) => (typeof item === "string" ? item.trim() : ""))
+          .filter((item) => Boolean(item))
+          .slice(0, 6)
+      : [];
     normalized.push({
       id: typeof row.id === "number" ? row.id : undefined,
       direction: typeof row.direction === "string" ? row.direction : "",
       channel: typeof row.channel === "string" ? row.channel : "app",
       text,
+      quick_replies: quickReplies,
+      media_url: typeof row.media_url === "string" ? row.media_url : null,
       created_at: typeof row.created_at === "string" ? row.created_at : null,
     });
   });
@@ -89,6 +110,82 @@ function extractAssessmentCta(text: string, userId: string): AssessmentCta {
     .replace(/\n{3,}/g, "\n\n")
     .trim();
   return { cleanedText, href };
+}
+
+function extractQuickReplies(text: string, quickRepliesFromMeta?: string[]): QuickReplyPayload {
+  const raw = String(text || "");
+  const metaReplies = Array.isArray(quickRepliesFromMeta)
+    ? quickRepliesFromMeta
+        .map((item) => String(item || "").trim())
+        .filter((item) => Boolean(item))
+        .slice(0, 6)
+    : [];
+  const marker = /\n{0,2}Quick replies:\s*([^\n]+)\s*$/i;
+  const match = raw.match(marker);
+  const footerReplies =
+    match && !metaReplies.length
+      ? String(match[1] || "")
+          .split(/·|\||,/g)
+          .map((item) => item.trim())
+          .filter((item) => Boolean(item))
+          .slice(0, 6)
+      : [];
+  const deduped = [...metaReplies, ...footerReplies].filter(
+    (item, index, all) => all.indexOf(item) === index,
+  );
+  const cleanedText = raw
+    .replace(marker, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  return {
+    cleanedText,
+    quickReplies: deduped.slice(0, 6),
+  };
+}
+
+function normalizeMediaUrl(raw: string | null | undefined): string | null {
+  const candidate = String(raw || "").trim();
+  if (!candidate) return null;
+  if (!/^https?:\/\//i.test(candidate)) return null;
+  return candidate;
+}
+
+function isPodcastUrl(url: string | null): boolean {
+  const val = String(url || "").toLowerCase();
+  if (!val) return false;
+  return [".mp3", ".m4a", ".wav", ".aac", ".ogg", "podcast", "/audio", "audio/"].some((token) =>
+    val.includes(token),
+  );
+}
+
+function extractMediaPayload(text: string, mediaUrlFromMeta?: string | null): MediaPayload {
+  const raw = String(text || "");
+  let mediaUrl = normalizeMediaUrl(mediaUrlFromMeta);
+
+  if (!mediaUrl) {
+    const matches = raw.match(/https?:\/\/\S+/gi) || [];
+    const likelyPodcast = [...matches].reverse().find((candidate) => isPodcastUrl(candidate));
+    mediaUrl = normalizeMediaUrl(likelyPodcast || null);
+  }
+
+  if (!mediaUrl) {
+    return {
+      cleanedText: raw,
+      mediaUrl: null,
+      isPodcast: false,
+    };
+  }
+
+  const cleanedText = raw
+    .replace(mediaUrl, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+
+  return {
+    cleanedText,
+    mediaUrl,
+    isPodcast: isPodcastUrl(mediaUrl),
+  };
 }
 
 function isTruthyToken(value: string | null | undefined): boolean {
@@ -184,11 +281,6 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
   }, []);
 
   useEffect(() => {
-    scrollToLatest("auto");
-    setShowScrollToLatest(false);
-  }, [messages, scrollToLatest]);
-
-  useEffect(() => {
     const target = logRef.current;
     if (!target) return;
     const onScroll = () => {
@@ -282,20 +374,16 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
     };
   }, [userId, applyChatPayload]);
 
-  async function onSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const textValue = draft.trim();
-    if (!textValue || sending) return;
-
+  async function sendMessage(textValue: string, options?: { restoreDraftOnError?: boolean }) {
+    const outbound = String(textValue || "").trim();
+    if (!outbound || sending) return;
     setSending(true);
     setStatus(null);
-    setDraft("");
-
     try {
       const res = await fetch("/api/assessment/chat/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, text: textValue }),
+        body: JSON.stringify({ userId, text: outbound }),
       });
       const text = await res.text().catch(() => "");
       if (!res.ok) {
@@ -308,10 +396,26 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
       }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
-      setDraft(textValue);
+      if (options?.restoreDraftOnError) {
+        setDraft(outbound);
+      }
     } finally {
       setSending(false);
     }
+  }
+
+  async function onSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const textValue = draft.trim();
+    if (!textValue || sending) return;
+    setDraft("");
+    await sendMessage(textValue, { restoreDraftOnError: true });
+  }
+
+  function onQuickReplyClick(reply: string) {
+    const textValue = String(reply || "").trim();
+    if (!textValue || busy) return;
+    void sendMessage(textValue);
   }
 
   function onDraftKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -411,7 +515,7 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
       <div className="relative">
         <div
           ref={logRef}
-          className="max-h-[56vh] min-h-[320px] overflow-y-auto rounded-2xl border border-[#efe7db] bg-[#fffaf0] p-4"
+          className="max-h-[56vh] min-h-[320px] overflow-y-auto rounded-2xl border border-[#efe7db] bg-white p-4"
         >
           {messages.length === 0 ? (
             <p className="text-sm text-[#6b6257]">
@@ -428,6 +532,8 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
               {messages.map((message, index) => {
                 const isUser = (message.direction || "").toLowerCase() === "inbound";
                 const cta = extractAssessmentCta(String(message.text || ""), userId);
+                const quickReplyPayload = extractQuickReplies(cta.cleanedText, message.quick_replies);
+                const mediaPayload = extractMediaPayload(quickReplyPayload.cleanedText, message.media_url);
                 const ts = message.created_at
                   ? new Date(message.created_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
                   : "";
@@ -438,12 +544,12 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
                   >
                     {isUser ? (
                       <div className="max-w-[95%] rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm whitespace-pre-wrap text-white">
-                        {cta.cleanedText ? <p>{cta.cleanedText}</p> : null}
+                        {mediaPayload.cleanedText ? <p>{mediaPayload.cleanedText}</p> : null}
                         {ts ? <p className="mt-2 text-[10px] text-[#f5e5d8]">{ts}</p> : null}
                       </div>
                     ) : (
-                      <div className="w-full px-1 py-1 text-[15px] leading-relaxed whitespace-pre-wrap text-[#3c332b]">
-                        {cta.cleanedText ? <p>{cta.cleanedText}</p> : null}
+                      <div className="max-w-[95%] rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap text-[#3c332b]">
+                        {mediaPayload.cleanedText ? <p>{mediaPayload.cleanedText}</p> : null}
                         {cta.href ? (
                           <button
                             type="button"
@@ -452,6 +558,31 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
                           >
                             {identityRequired ? "Add details to view results" : "View assessment"}
                           </button>
+                        ) : null}
+                        {mediaPayload.mediaUrl ? (
+                          <a
+                            href={mediaPayload.mediaUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-3 inline-flex rounded-full border border-[var(--accent)] bg-[var(--accent)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white"
+                          >
+                            {mediaPayload.isPodcast ? "Listen to podcast" : "Open media"}
+                          </a>
+                        ) : null}
+                        {quickReplyPayload.quickReplies.length > 0 ? (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {quickReplyPayload.quickReplies.map((reply, replyIndex) => (
+                              <button
+                                key={`quick-reply-${message.id || index}-${replyIndex}`}
+                                type="button"
+                                onClick={() => onQuickReplyClick(reply)}
+                                disabled={busy}
+                                className="rounded-full border border-[#e0d4c3] bg-[#fff8ef] px-3 py-1 text-xs font-semibold text-[#3c332b] transition hover:bg-[#ffeccc] disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {reply}
+                              </button>
+                            ))}
+                          </div>
                         ) : null}
                         {ts ? <p className="mt-2 text-[10px] text-[#8c7f70]">{ts}</p> : null}
                       </div>
