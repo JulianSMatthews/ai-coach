@@ -200,13 +200,25 @@ function extractMediaPayload(text: string, mediaUrlFromMeta?: string | null): Me
 }
 
 function quickReplyOptions(quickReplies: string[]): QuickReplyOption[] {
-  return quickReplies.map((value, index) => {
-    const letter = String.fromCharCode(65 + index);
-    return {
-      label: `Option ${letter}`,
-      value,
-    };
-  });
+  return quickReplies
+    .map((raw) => {
+      const value = String(raw || "").trim();
+      if (!value) return null;
+      if (value.includes("||")) {
+        const [titleRaw, payloadRaw] = value.split("||", 2);
+        const title = String(titleRaw || "").trim();
+        const payload = String(payloadRaw || "").trim();
+        return {
+          label: title || payload || value,
+          value: payload || title || value,
+        };
+      }
+      return {
+        label: value,
+        value,
+      };
+    })
+    .filter((item): item is QuickReplyOption => Boolean(item));
 }
 
 function isTruthyToken(value: string | null | undefined): boolean {
