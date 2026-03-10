@@ -144,18 +144,17 @@ export default function SetupSecurityPage() {
             />
           </div>
           <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Preferred channel (general comms)</label>
+            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Preferred channel (coaching + assessment)</label>
             <select
               className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
               value={preferredChannel}
               onChange={(e) => setPreferredChannel(e.target.value)}
             >
               <option value="whatsapp">WhatsApp</option>
-              <option value="sms">SMS</option>
-              <option value="email">Email</option>
+              <option value="app">App chat box</option>
             </select>
             <p className="mt-2 text-xs text-[#6b6257]">
-              Transactional coaching messages still use WhatsApp by default.
+              All coaching and assessment replies follow this channel.
             </p>
           </div>
           <div className="rounded-xl border border-[#efe7db] bg-[#fffaf0] p-3">

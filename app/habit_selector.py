@@ -11,7 +11,7 @@ from . import general_support
 from . import habit_steps as habit_flow
 from .db import SessionLocal
 from .models import AssessmentRun, OKRKeyResult, OKRKrHabitStep, User, UserPreference, WeeklyFocus
-from .nudges import send_whatsapp
+from .coaching_delivery import send_coaching_text
 from .programme_timeline import BLOCK_WEEKS, PILLAR_SEQUENCE, week_anchor_date, week_no_for_focus_start
 from .prompts import kr_payload_list
 from .touchpoints import log_touchpoint
@@ -59,17 +59,18 @@ def _prefix_habit(text: str | None) -> str | None:
 
 
 def _send_habit(
+    user: User,
     *,
     day_key: str | None,
     text: str,
-    to: str | None = None,
     quick_replies: list[str] | None = None,
 ) -> str:
-    return send_whatsapp(
+    return send_coaching_text(
+        user=user,
         text=_prefix_habit(text) or text,
-        to=to,
         category="habit-setup",
         quick_replies=quick_replies,
+        source=f"habit_selector:{_day_key(day_key)}",
     )
 
 
@@ -419,12 +420,12 @@ def _start_habit_setup_flow(
 ) -> bool:
     krs = _ordered_krs(session, kr_ids)
     if not krs:
-        _send_habit(day_key=day_key, to=user.phone, text="I couldn't load your key results right now. Please try again shortly.")
+        _send_habit(user, day_key=day_key, text="I couldn't load your key results right now. Please try again shortly.")
         return False
 
     options_by_index = _build_habit_options(user, krs, target_week)
     if not options_by_index or not options_by_index[0]:
-        _send_habit(day_key=day_key, to=user.phone, text="I couldn't prepare habit options right now. Please try again in a moment.")
+        _send_habit(user, day_key=day_key, text="I couldn't prepare habit options right now. Please try again in a moment.")
         return False
 
     name = (getattr(user, "first_name", "") or "").strip().title() or "there"
@@ -433,11 +434,9 @@ def _start_habit_setup_flow(
         f"let's quickly set your habit steps for week {target_week}. "
         "Pick one option for each KR."
     )
-    _send_habit(day_key=day_key, to=user.phone, text=intro)
+    _send_habit(user, day_key=day_key, text=intro)
     first_msg = habit_flow.build_actions_for_kr(1, krs[0], options_by_index[0])
-    _send_habit(
-        day_key=day_key,
-        to=user.phone,
+    _send_habit(user, day_key=day_key,
         text=first_msg,
         quick_replies=habit_flow.kr_quick_replies(1, options_by_index[0]),
     )
@@ -541,7 +540,7 @@ def handle_message(user: User, body: str) -> None:
         if not krs:
             _set_state(s, user.id, None, state_key)
             s.commit()
-            _send_habit(day_key=day_key, to=user.phone, text="I couldn't load your KRs just now. Please try again.")
+            _send_habit(user, day_key=day_key, text="I couldn't load your KRs just now. Please try again.")
             return
 
         options_by_index = state.get("options") or []
@@ -559,14 +558,12 @@ def handle_message(user: User, body: str) -> None:
             if 0 <= current_idx < len(krs):
                 options = options_by_index[current_idx] if current_idx < len(options_by_index) else []
                 kr_msg = habit_flow.build_actions_for_kr(current_idx + 1, krs[current_idx], options)
-                _send_habit(
-                    day_key=day_key,
-                    to=user.phone,
+                _send_habit(user, day_key=day_key,
                     text=kr_msg,
                     quick_replies=habit_flow.kr_quick_replies(current_idx + 1, options),
                 )
             else:
-                _send_habit(day_key=day_key, to=user.phone, text="Please choose an option (e.g., KR1 A).")
+                _send_habit(user, day_key=day_key, text="Please choose an option (e.g., KR1 A).")
             return
 
         merged_selections = {**stored_selections, **selections}
@@ -597,7 +594,7 @@ def handle_message(user: User, body: str) -> None:
 
             chosen = habit_flow.resolve_chosen_steps(krs, options_by_index, merged_selections, merged_edits)
             confirm_msg = habit_flow.confirmation_message(krs, chosen)
-            _send_habit(day_key=day_key, to=user.phone, text=confirm_msg)
+            _send_habit(user, day_key=day_key, text=confirm_msg)
             _set_state(s, user.id, None, state_key)
             s.commit()
             try:
@@ -605,9 +602,7 @@ def handle_message(user: User, body: str) -> None:
 
                 scheduler._run_day_prompt(int(user.id), resume_day)  # type: ignore[attr-defined]
             except Exception:
-                _send_habit(
-                    day_key=day_key,
-                    to=user.phone,
+                _send_habit(user, day_key=day_key,
                     text=f"I saved your habit steps, but couldn't resume today’s {_DAY_LABEL.get(resume_day, 'day')} message. Please say {resume_day} to retry.",
                 )
             return
@@ -618,9 +613,7 @@ def handle_message(user: User, body: str) -> None:
         if next_idx < len(krs):
             next_options = options_by_index[next_idx] if next_idx < len(options_by_index) else []
             next_msg = habit_flow.build_actions_for_kr(next_idx + 1, krs[next_idx], next_options)
-            _send_habit(
-                day_key=day_key,
-                to=user.phone,
+            _send_habit(user, day_key=day_key,
                 text=next_msg,
                 quick_replies=habit_flow.kr_quick_replies(next_idx + 1, next_options),
             )

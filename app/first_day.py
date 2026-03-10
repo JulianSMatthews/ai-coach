@@ -11,7 +11,8 @@ import os
 from .db import SessionLocal
 from .kickoff import COACH_NAME
 from .models import AssessmentRun, User, WeeklyFocus
-from .nudges import append_button_cta, send_whatsapp, send_whatsapp_media
+from .nudges import append_button_cta
+from .coaching_delivery import send_coaching_text, send_coaching_media
 from .podcast import generate_podcast_audio
 from .programme_timeline import week_no_for_date
 from .prompts import build_prompt, kr_payload_list, run_llm_prompt
@@ -40,12 +41,19 @@ def _apply_first_day_marker(text: str | None) -> str | None:
     return text
 
 
-def _send_first_day(*, text: str, to: str | None = None, category: str | None = None, quick_replies: list[str] | None = None) -> str:
-    return send_whatsapp(
+def _send_first_day(
+    user: User,
+    *,
+    text: str,
+    category: str | None = None,
+    quick_replies: list[str] | None = None,
+) -> str:
+    return send_coaching_text(
+        user=user,
         text=_apply_first_day_marker(text) or text,
-        to=to,
         category=category,
         quick_replies=quick_replies,
+        source="first_day",
     )
 
 
@@ -171,15 +179,16 @@ def send_first_day_coaching(user: User, coach_name: str = COACH_NAME, scheduled_
     )
     if audio_url:
         try:
-            send_whatsapp_media(
-                to=user.phone,
+            send_coaching_media(
+                user=user,
                 media_url=audio_url,
                 caption=intro_msg,
+                source="first_day",
             )
         except Exception:
-            _send_first_day(to=user.phone, text=f"{intro_msg} {audio_url}")
+            _send_first_day(user, text=f"{intro_msg} {audio_url}")
     else:
-        _send_first_day(to=user.phone, text=append_button_cta(intro_msg))
+        _send_first_day(user, text=append_button_cta(intro_msg))
 
     steps_msg = (
         f"{_first_day_tag()} Habit steps for this week:\n"
@@ -187,7 +196,7 @@ def send_first_day_coaching(user: User, coach_name: str = COACH_NAME, scheduled_
         + "\n\nReply if you want to adjust any step."
     )
     _send_first_day(
-        to=user.phone,
+        user,
         text=append_button_cta(steps_msg),
         quick_replies=["All good", "Need help"],
     )

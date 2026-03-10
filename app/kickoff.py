@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from .db import SessionLocal
 from .job_queue import enqueue_job, should_use_worker
-from .nudges import send_whatsapp, send_whatsapp_media
+from .coaching_delivery import send_coaching_text, send_coaching_media
 from .debug_utils import debug_enabled
 from .models import (
     User,
@@ -62,12 +62,19 @@ def _apply_kickoff_marker(text: str | None) -> str | None:
     return text
 
 
-def _send_kickoff(*, text: str, to: str | None = None, category: str | None = None, quick_replies: list[str] | None = None) -> str:
-    return send_whatsapp(
+def _send_kickoff(
+    user: User,
+    *,
+    text: str,
+    category: str | None = None,
+    quick_replies: list[str] | None = None,
+) -> str:
+    return send_coaching_text(
+        user=user,
         text=_apply_kickoff_marker(text) or text,
-        to=to,
         category=category,
         quick_replies=quick_replies,
+        source="kickoff",
     )
 
 
@@ -364,28 +371,29 @@ def send_kickoff_podcast_message(
         try:
             # For audio media, clients may not reliably render captions.
             # Send companion text separately so the context is always visible.
-            send_whatsapp_media(
-                to=user.phone,
+            send_coaching_media(
+                user=user,
                 media_url=audio_url,
                 caption=None,
+                source="kickoff",
             )
             media_sent = True
         except Exception:
             media_sent = False
         if not media_sent:
             _send_kickoff(
-                to=user.phone,
+                user,
                 text=f"{intro} {audio_url}",
             )
         try:
             _send_kickoff(
-                to=user.phone,
+                user,
                 text=message,
                 quick_replies=quick_replies,
             )
         except Exception:
             _send_kickoff(
-                to=user.phone,
+                user,
                 text=message,
             )
     else:
@@ -396,7 +404,7 @@ def send_kickoff_podcast_message(
             "I couldn’t generate your kickoff audio just now, but the plan is ready—let’s proceed.\n\n"
             f"{cta}"
         )
-        _send_kickoff(to=user.phone, text=message, quick_replies=quick_replies)
+        _send_kickoff(user, text=message, quick_replies=quick_replies)
     try:
         log_touchpoint(
             user_id=user.id,
@@ -507,7 +515,7 @@ def _support_conversation(
     prompt = _support_prompt(krs, history, user_message)
     if debug:
         try:
-            _send_kickoff(to=user.phone, text="(i Inst) " + prompt)
+            _send_kickoff(user, text="(i Inst) " + prompt)
         except Exception:
             pass
     text = None
@@ -573,7 +581,7 @@ def start_kickoff(user: User, notes: str | None = None, debug: bool = False) -> 
         selected = select_top_krs_for_user(s, user.id, limit=None, week_no=week_no)
         kr_ids = [kr_id for kr_id, _ in selected]
         if not kr_ids:
-            _send_kickoff(to=user.phone, text="No active KRs found to propose. Please set OKRs first.")
+            _send_kickoff(user, text="No active KRs found to propose. Please set OKRs first.")
             return
 
         today = datetime.utcnow().date()
@@ -647,7 +655,7 @@ def start_kickoff(user: User, notes: str | None = None, debug: bool = False) -> 
         except Exception:
             pass
         _send_kickoff(
-            to=user.phone,
+            user,
             text="*Kickoff* Sorry—something went wrong sending your kickoff. Please try again shortly.",
         )
 
@@ -662,4 +670,4 @@ def handle_message(user: User, text: str) -> None:
         return
 
     # No other stateful kickoff chat: politely prompt the user to use the keyword
-    _send_kickoff(to=user.phone, text="Say kickoff to start your weekly focus.")
+    _send_kickoff(user, text="Say kickoff to start your weekly focus.")

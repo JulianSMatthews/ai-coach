@@ -40,7 +40,9 @@ export default function PreferencesForm({
   const [voice, setVoice] = useState(initialVoice || "");
   const [textScale, setTextScale] = useState(initialTextScale || "1.0");
   const [trainingObjective, setTrainingObjective] = useState(initialTrainingObjective || "");
-  const [preferredChannel, setPreferredChannel] = useState(initialPreferredChannel || "whatsapp");
+  const [preferredChannel, setPreferredChannel] = useState(
+    String(initialPreferredChannel || "").toLowerCase() === "app" ? "app" : "whatsapp",
+  );
   const [marketingOptIn, setMarketingOptIn] = useState(initialMarketingOptIn === "1");
   const [changePassword, setChangePassword] = useState(false);
   const [password, setPassword] = useState("");
@@ -151,18 +153,17 @@ export default function PreferencesForm({
 
       <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
         <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
-          <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Preferred channel (general comms)</label>
+          <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Preferred channel (coaching + assessment)</label>
           <select
             className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
             value={preferredChannel}
             onChange={(e) => setPreferredChannel(e.target.value)}
           >
             <option value="whatsapp">WhatsApp</option>
-            <option value="sms">SMS</option>
-            <option value="email">Email</option>
+            <option value="app">App chat box</option>
           </select>
           <p className="mt-2 text-xs text-[#6b6257]">
-            Transactional coaching messages still use WhatsApp by default.
+            All coaching and assessment replies follow this channel.
           </p>
         </div>
         <div className="rounded-2xl border border-[#efe7db] bg-white p-4">

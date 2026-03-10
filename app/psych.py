@@ -9,12 +9,11 @@ from typing import Optional
 
 from .db import SessionLocal
 from .models import User, UserPreference, PsychProfile, AssessSession, AssessmentRun, JobAudit
-from . import nudges
+from .coaching_delivery import send_coaching_text
 
 
 def _send_safe(user: User, text: str):
-    """Send outbound; mocking is handled by script-level patches to nudges.send_whatsapp."""
-    nudges.send_whatsapp(to=user.phone, text=text)
+    send_coaching_text(user=user, text=text, source="psych")
 
 STATE_KEY = "psych_state"
 PENDING_SUMMARY_KEY = "pending_assessment_summary"

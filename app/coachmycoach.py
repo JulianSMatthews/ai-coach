@@ -9,7 +9,7 @@ from typing import Optional
 
 from .db import SessionLocal
 from .models import User, UserPreference
-from .nudges import send_whatsapp
+from .coaching_delivery import send_coaching_text
 
 
 def _note_key() -> str:
@@ -86,7 +86,7 @@ def handle(user: User, body: str) -> None:
         if arg.lower() == "clear":
             _set_note(s, user.id, None)
             s.commit()
-            send_whatsapp(to=user.phone, text="Cleared your coaching preference note.")
+            send_coaching_text(user=user, text="Cleared your coaching preference note.", source="coachmycoach")
             return
 
         if arg:
@@ -103,27 +103,30 @@ def handle(user: User, body: str) -> None:
                 else:
                     s.add(UserPreference(user_id=user.id, key=_voice_key(), value=low))
                 s.commit()
-                send_whatsapp(
-                    to=user.phone,
+                send_coaching_text(
+                    user=user,
                     text=f"Set your podcast voice preference to {low}.",
+                    source="coachmycoach",
                 )
                 return
             if low.startswith("time "):
                 # Format: coachmycoach time <day> <HH:MM>
                 tokens = low.split()
                 if len(tokens) != 3:
-                    send_whatsapp(
-                        to=user.phone,
+                    send_coaching_text(
+                        user=user,
                         text="Usage: coachmycoach time <day> <HH:MM> (e.g., coachmycoach time monday 08:00)",
+                        source="coachmycoach",
                     )
                     return
                 _, day, hhmm = tokens
                 day = day.lower()
                 valid_days = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
                 if day not in valid_days:
-                    send_whatsapp(
-                        to=user.phone,
+                    send_coaching_text(
+                        user=user,
                         text=f"Day must be one of: {', '.join(sorted(valid_days))}",
+                        source="coachmycoach",
                     )
                     return
                 try:
@@ -132,9 +135,10 @@ def handle(user: User, body: str) -> None:
                     if not (0 <= hh_int <= 23 and 0 <= mm_int <= 59):
                         raise ValueError()
                 except Exception:
-                    send_whatsapp(
-                        to=user.phone,
+                    send_coaching_text(
+                        user=user,
                         text="Time must be HH:MM in 24h format (e.g., 08:00 or 19:00).",
+                        source="coachmycoach",
                     )
                     return
                 pref = (
@@ -148,19 +152,21 @@ def handle(user: User, body: str) -> None:
                 else:
                     s.add(UserPreference(user_id=user.id, key=_time_key(day), value=val))
                 s.commit()
-                send_whatsapp(
-                    to=user.phone,
+                send_coaching_text(
+                    user=user,
                     text=f"Set your {day.title()} prompt time to {val} (24h).",
+                    source="coachmycoach",
                 )
                 return
             _set_note(s, user.id, arg)
             s.commit()
-            send_whatsapp(
-                to=user.phone,
+            send_coaching_text(
+                user=user,
                 text=(
                     "Saved your coaching note. I’ll use this to tailor support in future touchpoints.\n"
                     f"Note: {arg}"
                 ),
+                source="coachmycoach",
             )
             return
 
@@ -193,4 +199,4 @@ def handle(user: User, body: str) -> None:
             "'coachmycoach male' / 'coachmycoach female' for voice, or "
             "'coachmycoach time <day> <HH:MM>' to set a daily prompt time. Auto prompts can be turned on/off by your coach."
         )
-        send_whatsapp(to=user.phone, text=reply)
+        send_coaching_text(user=user, text=reply, source="coachmycoach")

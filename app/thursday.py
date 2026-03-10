@@ -7,7 +7,8 @@ from datetime import datetime, timedelta
 
 from .db import SessionLocal
 from .job_queue import enqueue_job, should_use_worker
-from .nudges import send_whatsapp, send_whatsapp_media, append_button_cta
+from .nudges import append_button_cta
+from .coaching_delivery import send_coaching_text, send_coaching_media
 from .models import User, WeeklyFocus, AssessmentRun
 from .kickoff import COACH_NAME
 from .prompts import primary_kr_payload, build_prompt, run_llm_prompt
@@ -42,12 +43,19 @@ def _apply_thursday_marker(text: str | None) -> str | None:
     return text
 
 
-def _send_thursday(*, text: str, to: str | None = None, category: str | None = None, quick_replies: list[str] | None = None) -> str:
-    return send_whatsapp(
+def _send_thursday(
+    user: User,
+    *,
+    text: str,
+    category: str | None = None,
+    quick_replies: list[str] | None = None,
+) -> str:
+    return send_coaching_text(
+        user=user,
         text=_apply_thursday_marker(text) or text,
-        to=to,
         category=category,
         quick_replies=quick_replies,
+        source="thursday",
     )
 
 def _resolve_week_context(session, user_id: int, week_no: int | None) -> tuple[int | None, int | None]:
@@ -128,7 +136,7 @@ def send_thursday_boost(user: User, coach_name: str = COACH_NAME, week_no: int |
         week_no = resolved_week_no
         primary = primary_kr_payload(user.id, session=s, week_no=week_no)
     if not primary:
-        _send_thursday(to=user.phone, text="Your weekly plan is still being prepared. Please try again shortly.")
+        _send_thursday(user, text="Your weekly plan is still being prepared. Please try again shortly.")
         return
     touchpoint_week_no = week_no
 
@@ -174,26 +182,27 @@ def send_thursday_boost(user: User, coach_name: str = COACH_NAME, week_no: int |
             "Here’s your Thursday boost podcast—give it a quick listen."
         )
         try:
-            send_whatsapp_media(
-                to=user.phone,
+            send_coaching_media(
+                user=user,
                 media_url=combined_url,
                 caption=message,
+                source="thursday",
             )
         except Exception:
             _send_thursday(
-                to=user.phone,
+                user,
                 text=f"{message} {combined_url}",
             )
         checkin = f"{_thursday_tag()} Quick check-in: what stood out from today’s boost?"
         _send_thursday(
-            to=user.phone,
+            user,
             text=append_button_cta(checkin),
             quick_replies=["All good", "Need help"],
         )
     else:
         message = transcript if transcript.startswith("*Thursday*") else f"*Thursday* {transcript}"
         _send_thursday(
-            to=user.phone,
+            user,
             text=append_button_cta(message),
             quick_replies=["All good", "Need help"],
         )

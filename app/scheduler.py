@@ -48,6 +48,7 @@ from .nudges import (
 from .debug_utils import debug_log, debug_enabled
 from .llm import compose_prompt
 from . import monday, tuesday, wednesday, thursday, friday, saturday, sunday, first_day, habit_selector
+from .coaching_delivery import preferred_channel_for_user
 from .job_queue import enqueue_job, should_use_worker
 from .programme_timeline import first_monday_on_or_after
 from .weekly_plan import ensure_weekly_plan
@@ -425,6 +426,7 @@ def send_out_of_session_messages() -> None:
             "missing_phone": 0,
             "onboarding_active": 0,
             "coaching_off": 0,
+            "app_channel": 0,
             "no_inbound": 0,
             "inside_window": 0,
             "cooldown": 0,
@@ -442,6 +444,9 @@ def send_out_of_session_messages() -> None:
                 continue
             if not _coaching_enabled(s, user.id):
                 stats["coaching_off"] += 1
+                continue
+            if _preferred_channel(s, int(user.id)) == "app":
+                stats["app_channel"] += 1
                 continue
             last_inbound = _last_inbound_at(s, user.id)
             if not last_inbound:
@@ -703,6 +708,13 @@ def _coaching_enabled(session, user_id: int) -> bool:
     return bool(legacy_pref and str(legacy_pref.value or "").strip() == "1")
 
 
+def _preferred_channel(session, user_id: int) -> str:
+    try:
+        return preferred_channel_for_user(session, int(user_id))
+    except Exception:
+        return "whatsapp"
+
+
 def _user_fast_minutes(session, user_id: int) -> int | None:
     pref = (
         session.query(UserPreference)
@@ -800,6 +812,7 @@ def _run_day_prompt_inline(user_id: int, day: str):
     """Invoke the day-specific handler for a user."""
     day_key = _coaching_day_key(day)
     virtual_mode = False
+    fast_mode_active = False
     with SessionLocal() as s:
         user = s.get(User, user_id)
         if user:
@@ -869,7 +882,14 @@ def _run_day_prompt_inline(user_id: int, day: str):
         day_max_sends = 0
     with SessionLocal() as s:
         enabled, message = _get_messaging_settings(s)
-        if _outside_whatsapp_window(s, user, now_utc=now_utc, after_hours=after_hours):
+        channel_pref = _preferred_channel(s, int(user_id))
+        if channel_pref == "app":
+            # App-channel users do not use WhatsApp 24h template reopen handling.
+            _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_PREF_KEY, "")
+            _set_user_pref(s, int(user_id), PENDING_DAY_PROMPT_SET_AT_PREF_KEY, "")
+            _set_user_pref(s, int(user_id), OUT_OF_SESSION_DAY_SEND_COUNT_PREF_KEY, "0")
+            s.commit()
+        if channel_pref != "app" and _outside_whatsapp_window(s, user, now_utc=now_utc, after_hours=after_hours):
             template_sid = _get_day_reopen_sid() if enabled else None
             if not template_sid:
                 try:

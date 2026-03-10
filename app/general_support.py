@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from .db import SessionLocal
 from .models import User, UserPreference, WeeklyFocus, AssessmentRun
-from .nudges import send_whatsapp
+from .coaching_delivery import send_coaching_text
 from .programme_timeline import week_no_for_focus_start
 from .prompts import build_prompt, run_llm_prompt
 COACH_NAME = os.getenv("COACH_NAME", "Gia")
@@ -83,7 +83,7 @@ def activate(
         name = (getattr(user, "first_name", None) or "there").strip().title()
         intro = f"*Coach* Hi {name}, {COACH_NAME} here. I'm here if you want a hand, have a good day."
         print(f"[coach] prompt started source={source or 'unknown'} user_id={user_id}")
-        send_whatsapp(to=user.phone, text=intro)
+        send_coaching_text(user=user, text=intro, source="general_support")
 
 
 def _latest_weekly_focus(session: Session, user_id: int) -> Optional[WeeklyFocus]:
@@ -203,7 +203,7 @@ def handle_message(user: User, text: str) -> None:
             name = (getattr(user, "first_name", None) or "there").strip().title()
             intro = f"*Coach* Hi {name}, {COACH_NAME} here. I'm here if you want a hand, have a good day."
             print(f"[coach] prompt started source={source or 'unknown'} user_id={user.id}")
-            send_whatsapp(to=user.phone, text=intro)
+            send_coaching_text(user=user, text=intro, source="general_support")
             state["intro_sent"] = True
             _set_state(s, user.id, state)
             s.commit()
@@ -245,4 +245,4 @@ def handle_message(user: User, text: str) -> None:
         )
         s.commit()
 
-    send_whatsapp(to=user.phone, text=text_out)
+    send_coaching_text(user=user, text=text_out, source="general_support")

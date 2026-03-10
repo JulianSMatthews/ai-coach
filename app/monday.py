@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from .db import SessionLocal
 from .job_queue import enqueue_job, should_use_worker
-from .nudges import send_whatsapp, send_whatsapp_media
+from .coaching_delivery import send_coaching_text, send_coaching_media
 from .debug_utils import debug_enabled
 from .models import (
     User,
@@ -56,12 +56,19 @@ def _apply_monday_marker(text: str | None) -> str | None:
     return text
 
 
-def _send_monday(*, text: str, to: str | None = None, category: str | None = None, quick_replies: list[str] | None = None) -> str:
-    return send_whatsapp(
+def _send_monday(
+    user: User,
+    *,
+    text: str,
+    category: str | None = None,
+    quick_replies: list[str] | None = None,
+) -> str:
+    return send_coaching_text(
+        user=user,
         text=_apply_monday_marker(text) or text,
-        to=to,
         category=category,
         quick_replies=quick_replies,
+        source="monday",
     )
 
 
@@ -127,21 +134,22 @@ def _send_weekly_briefing(user: User, week_no: int) -> tuple[Optional[str], Opti
                 f"{COACH_NAME} here. Here’s your Week {week_no} podcast—give it a listen."
             )
             try:
-                send_whatsapp_media(
-                    to=user.phone,
+                send_coaching_media(
+                    user=user,
                     media_url=audio_url,
                     caption=caption,
+                    source="monday",
                 )
             except Exception:
                 _send_monday(
-                    to=user.phone,
+                    user,
                     text=f"{caption} {audio_url}",
                 )
         else:
             # Fallback: send transcript if audio generation failed
             if transcript:
                 _send_monday(
-                    to=user.phone,
+                    user,
                     text=f"*Monday* Podcast unavailable right now—here’s the briefing:\n\n{transcript}",
                 )
             print(f"[monday] podcast generation returned no URL (user={user.id}, week={week_no})")
@@ -353,19 +361,19 @@ def start_weekstart(user: User, notes: str | None = None, debug: bool = False, s
         label_week = int(getattr(wf, "week_no", None) or (week_no or 1)) if wf else int(week_no or 1)
 
         if not wf:
-            _send_monday(to=user.phone, text="Your weekly plan is still being prepared. Please try again shortly.")
+            _send_monday(user, text="Your weekly plan is still being prepared. Please try again shortly.")
             return
         if not kr_ids:
             kr_ids = [kr["id"] for kr in kr_payload_list(user.id, session=s, week_no=label_week, max_krs=3)]
         if not kr_ids:
-            _send_monday(to=user.phone, text="No active KRs found to propose. Please set OKRs first.")
+            _send_monday(user, text="No active KRs found to propose. Please set OKRs first.")
             return
         s.commit()
 
         audio_url, _transcript = _send_weekly_briefing(user, week_no=label_week)
         confirm_msg = _build_podcast_confirm_message(user, COACH_NAME)
         _send_monday(
-            to=user.phone,
+            user,
             text=confirm_msg,
             quick_replies=["Listened", "Later"],
         )
@@ -415,7 +423,7 @@ def handle_message(user: User, text: str) -> None:
             return
 
         if state is None:
-            _send_monday(to=user.phone, text="Say monday to start your weekly focus.")
+            _send_monday(user, text="Say monday to start your weekly focus.")
             return
 
         debug = bool(state.get("debug"))
@@ -461,13 +469,13 @@ def handle_message(user: User, text: str) -> None:
                         "I can’t see this week’s habit steps yet. "
                         "Reply *sunday* if you want to set them now."
                     )
-                _send_monday(to=user.phone, text=msg_txt)
+                _send_monday(user, text=msg_txt)
                 _set_state(s, user.id, None)
                 s.commit()
                 general_support.activate(user.id, source="monday", week_no=week_no, send_intro=True)
                 return
             _send_monday(
-                to=user.phone,
+                user,
                 text="*Monday* No rush — reply “Listened” when you’re ready.",
                 quick_replies=["Listened", "Later"],
             )
@@ -475,7 +483,7 @@ def handle_message(user: User, text: str) -> None:
 
         if mode in {"proposal", "support"}:
             _send_monday(
-                to=user.phone,
+                user,
                 text=(
                     "*Monday* Habit-step setting now runs on Sunday. "
                     "For today, your weekstart is confirmed after the podcast."
@@ -487,4 +495,4 @@ def handle_message(user: User, text: str) -> None:
             return
 
         _set_state(s, user.id, None); s.commit()
-        _send_monday(to=user.phone, text="Session reset. Say monday to start your weekly focus.")
+        _send_monday(user, text="Session reset. Say monday to start your weekly focus.")

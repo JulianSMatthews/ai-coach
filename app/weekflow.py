@@ -6,7 +6,7 @@ from __future__ import annotations
 from datetime import date
 
 from .models import User, WeeklyFocus
-from .nudges import send_whatsapp
+from .coaching_delivery import send_coaching_text
 from . import monday, wednesday, friday, tuesday, saturday, sunday, habit_selector
 from .db import SessionLocal
 from .reporting import generate_progress_report_html, _reports_root_for_user
@@ -29,7 +29,11 @@ def _ensure_weekly_focus(user: User, week_no: int) -> bool:
             force_refresh_kr_links=True,
         )
         if not kr_ids:
-            send_whatsapp(to=user.phone, text="No active KRs found to propose. Please set OKRs first.")
+            send_coaching_text(
+                user=user,
+                text="No active KRs found to propose. Please set OKRs first.",
+                source="weekflow",
+            )
             return False
         s.commit()
         return True
@@ -162,7 +166,11 @@ def run_week_flow(user: User, week_no: int = 1) -> None:
         sunday.send_sunday_review(user)
     except Exception as e:
         try:
-            send_whatsapp(to=user.phone, text=f"*Sunday* review could not start: {e}")
+            send_coaching_text(
+                user=user,
+                text=f"*Sunday* review could not start: {e}",
+                source="weekflow",
+            )
         except Exception:
             pass
 

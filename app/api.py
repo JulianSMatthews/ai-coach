@@ -106,6 +106,7 @@ from . import monday, wednesday, thursday, friday, saturday, weekflow, tuesday, 
 from . import psych
 from . import coachmycoach
 from . import scheduler
+from .coaching_delivery import coaching_delivery_context, send_coaching_text
 from .nudges import (
     send_whatsapp,
     send_whatsapp_media,
@@ -1370,6 +1371,190 @@ def _handle_coaching_greeting(user: User, body: str) -> bool:
         except Exception:
             pass
     return False
+
+
+def _handle_app_chat_non_assessment(user: User, body: str) -> bool:
+    """
+    Route in-app chat replies through the same coaching command/state handlers that
+    WhatsApp uses after assessment is complete.
+    """
+    lower_body = (body or "").strip().lower()
+
+    if _handle_pending_coaching_day_resume(user, body):
+        return True
+
+    if _handle_coaching_greeting(user, body):
+        return True
+
+    if lower_body.startswith("coachmycoach"):
+        coachmycoach.handle(user, body)
+        return True
+
+    if lower_body.startswith("psych"):
+        try:
+            psych.handle_message(user, body)
+        except Exception as e:
+            send_coaching_text(user=user, text=f"Psych check failed: {e}", source="app_chat")
+        return True
+
+    if habit_selector.has_active_state(user.id):
+        try:
+            habit_selector.handle_message(user, body)
+        except Exception as e:
+            send_coaching_text(user=user, text=f"Habit steps failed: {e}", source="app_chat")
+        return True
+
+    if sunday.has_active_state(user.id):
+        try:
+            sunday.handle_message(user, body)
+        except Exception as e:
+            send_coaching_text(user=user, text=f"Sunday review failed: {e}", source="app_chat")
+        return True
+
+    if lower_body.startswith("kickoff"):
+        send_coaching_text(
+            user=user,
+            text="Kickoff has been retired. We’ll continue with your standard weekly coaching flow.",
+            source="app_chat",
+        )
+        return True
+
+    if lower_body.startswith("midweek") or lower_body.startswith("wednesday"):
+        try:
+            scheduler._run_day_prompt(int(user.id), "wednesday")  # type: ignore[attr-defined]
+        except Exception as e:
+            send_coaching_text(user=user, text=f"Midweek failed: {e}", source="app_chat")
+        return True
+
+    if lower_body.startswith("week"):
+        parts = lower_body.split()
+        week_no = 1
+        if len(parts) > 1:
+            try:
+                week_no = int(parts[1])
+            except Exception:
+                week_no = 1
+        try:
+            weekflow.run_week_flow(user, week_no=week_no)
+        except Exception as e:
+            send_coaching_text(user=user, text=f"Week flow failed: {e}", source="app_chat")
+        return True
+
+    if lower_body.startswith("sunday"):
+        try:
+            scheduler._run_day_prompt(int(user.id), "sunday")  # type: ignore[attr-defined]
+        except Exception as e:
+            send_coaching_text(user=user, text=f"Sunday review failed: {e}", source="app_chat")
+        return True
+
+    if lower_body.startswith("tuesday"):
+        try:
+            scheduler._run_day_prompt(int(user.id), "tuesday")  # type: ignore[attr-defined]
+        except Exception as e:
+            send_coaching_text(user=user, text=f"Tuesday check failed: {e}", source="app_chat")
+        return True
+
+    if lower_body.startswith("thursday"):
+        try:
+            scheduler._run_day_prompt(int(user.id), "thursday")  # type: ignore[attr-defined]
+        except Exception as e:
+            send_coaching_text(user=user, text=f"Thursday boost failed: {e}", source="app_chat")
+        return True
+
+    if lower_body.startswith("saturday"):
+        try:
+            scheduler._run_day_prompt(int(user.id), "saturday")  # type: ignore[attr-defined]
+        except Exception as e:
+            send_coaching_text(user=user, text=f"Saturday keepalive failed: {e}", source="app_chat")
+        return True
+
+    if lower_body.startswith("weekstart") or lower_body.startswith("monday") or monday.has_active_state(user.id):
+        if (lower_body.startswith("weekstart") or lower_body.startswith("monday")) and not monday.has_active_state(user.id):
+            try:
+                if not habit_selector.ensure_habit_steps_ready_for_day(user, "monday"):
+                    return True
+            except Exception:
+                pass
+        try:
+            monday.handle_message(user, body)
+        except Exception as e:
+            send_coaching_text(user=user, text=f"Monday flow failed: {e}", source="app_chat")
+        return True
+
+    if lower_body.startswith("boost") or lower_body.startswith("friday"):
+        try:
+            scheduler._run_day_prompt(int(user.id), "friday")  # type: ignore[attr-defined]
+        except Exception as e:
+            send_coaching_text(user=user, text=f"Boost failed: {e}", source="app_chat")
+        return True
+
+    if lower_body in {"menu", "help", "options"}:
+        send_menu_options(user)
+        return True
+
+    if lower_body == "assessment":
+        send_dashboard_link(user)
+        return True
+
+    if lower_body == "progress":
+        try:
+            from .reporting import generate_progress_report_html
+
+            _ = generate_progress_report_html(user.id)
+            url = _public_report_url(user.id, "progress.html")
+            send_coaching_text(user=user, text=f"Your progress report: {url}", source="app_chat")
+        except Exception as e:
+            send_coaching_text(user=user, text=f"Couldn't refresh your progress report: {e}", source="app_chat")
+        return True
+
+    normalized_body = " ".join(re.sub(r"[^a-z0-9\s]+", " ", (body or "").strip().lower()).split())
+    marketing_start_tokens = {
+        "send",
+        "start",
+        "hit start",
+        "hit send",
+        "tap start",
+        "tap send",
+        "start free assessment",
+        "hit start to start free assessment",
+        "hit send to start free assessment",
+        "free assessment",
+        "start assessment",
+        "hi",
+        "hello",
+    }
+    looks_like_marketing_cta = (
+        normalized_body in marketing_start_tokens
+        or (
+            "hit send" in normalized_body
+            and "start" in normalized_body
+            and "free assessment" in normalized_body
+        )
+    )
+    if looks_like_marketing_cta:
+        completed_assessment = bool(getattr(user, "first_assessment_completed", None))
+        coaching_enabled = False
+        try:
+            with SessionLocal() as s:
+                coaching_enabled = _coaching_enabled_for_user(s, int(user.id))
+        except Exception:
+            coaching_enabled = False
+        if completed_assessment or coaching_enabled:
+            if normalized_body in {"hi", "hello", "start", "send", "hit start", "hit send", "tap start", "tap send"}:
+                send_menu_options(user)
+            return True
+        _start_assessment_async(user, force_intro=True)
+        return True
+
+    if general_support.has_active_state(user.id):
+        general_support.handle_message(user, body)
+        return True
+
+    try:
+        _record_freeform_checkin(user, body)
+    except Exception:
+        pass
+    return True
 
 
 def _awaiting_unknown_user_name_reply(phone_e164: str) -> bool:
@@ -2990,6 +3175,32 @@ async def twilio_inbound(request: Request):
         except Exception:
             pass
 
+        # App-channel members should continue via the in-app chat surface for coaching.
+        # Keep this after active-assessment handling so legacy WhatsApp assessments are not interrupted.
+        try:
+            with SessionLocal() as s:
+                preferred_channel = (_pref_value(s, int(user.id), "preferred_channel") or "").strip().lower()
+            if preferred_channel == "app":
+                app_base = (
+                    (os.getenv("HSAPP_PUBLIC_URL") or "").strip()
+                    or (os.getenv("HSAPP_BASE_URL") or "").strip()
+                    or (os.getenv("APP_BASE_URL") or "").strip()
+                    or (os.getenv("NEXT_PUBLIC_HSAPP_BASE_URL") or "").strip()
+                    or (os.getenv("NEXT_PUBLIC_APP_BASE_URL") or "").strip()
+                    or "https://app.healthsense.coach"
+                )
+                if not app_base.startswith(("http://", "https://")):
+                    app_base = f"https://{app_base}"
+                app_base = app_base.rstrip("/")
+                app_chat_url = f"{app_base}/assessment/{int(user.id)}/chat"
+                send_whatsapp(
+                    to=user.phone,
+                    text=f"You're set to app chat. Continue here: {app_chat_url}",
+                )
+                return Response(content="", media_type="text/plain", status_code=200)
+        except Exception:
+            pass
+
         # If a day prompt was deferred because the user was outside 24h, resume it now.
         if _handle_pending_coaching_day_resume(user, body):
             return Response(content="", media_type="text/plain", status_code=200)
@@ -4354,8 +4565,14 @@ def api_user_assessment_chat_send(
         channel="app",
         outbox=outbox,
         source="api_v1_assessment_chat_send",
+    ), coaching_delivery_context(
+        channel="app",
+        outbox=outbox,
+        source="api_v1_assessment_chat_send",
     ):
         handled = bool(continue_combined_assessment(user, text_val))
+        if not handled:
+            handled = bool(_handle_app_chat_non_assessment(user, text_val))
 
     chat_state = _assessment_chat_state_payload(user_id)
     resolved_handled = bool(handled or outbox)
@@ -4818,7 +5035,7 @@ def api_user_preferences_update(
     Update coaching preferences for a user (note, voice, auto prompts, schedule).
     """
     allowed_days = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
-    allowed_channels = {"whatsapp", "sms", "email"}
+    allowed_channels = {"whatsapp", "app", "sms", "email"}
     _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
     if _is_readonly_admin_preview_request(
         request,
@@ -4989,7 +5206,7 @@ def api_user_preferences_update(
         if preferred_channel is not None:
             channel_val = str(preferred_channel).strip().lower()
             if channel_val and channel_val not in allowed_channels:
-                raise HTTPException(status_code=400, detail="preferred_channel must be whatsapp|sms|email")
+                raise HTTPException(status_code=400, detail="preferred_channel must be whatsapp|app|sms|email")
             pref = (
                 s.query(UserPreference)
                 .filter(UserPreference.user_id == user_id, UserPreference.key == "preferred_channel")
@@ -14616,6 +14833,127 @@ def admin_reports_recent(
             }
         )
     return {"count": len(items), "items": items}
+
+
+@admin.get("/reports/sections")
+def admin_reports_sections(
+    days: int | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    user_id: int | None = None,
+    source: str | None = None,
+    campaign: str | None = None,
+    tag: str | None = None,
+    prompt_limit: int = 25,
+    admin_user: User = Depends(_require_admin),
+):
+    """
+    Reporting payload structured for two admin sections:
+    - Marketing
+    - Cost Analysis
+    """
+    try:
+        resolved_days = int(days or 30)
+    except Exception:
+        resolved_days = 30
+    resolved_days = max(1, min(resolved_days, 365))
+
+    try:
+        prompt_limit_val = int(prompt_limit or 25)
+    except Exception:
+        prompt_limit_val = 25
+    prompt_limit_val = max(1, min(prompt_limit_val, 200))
+
+    marketing = admin_marketing_funnel(
+        days=resolved_days,
+        start=start,
+        end=end,
+        user_id=user_id,
+        source=source,
+        campaign=campaign,
+        admin_user=admin_user,
+    )
+    usage_summary = admin_usage_summary(
+        days=resolved_days,
+        start=start,
+        end=end,
+        user_id=user_id,
+        tag=tag,
+        admin_user=admin_user,
+    )
+    prompt_costs = admin_usage_prompt_costs(
+        days=resolved_days,
+        start=start,
+        end=end,
+        user_id=user_id,
+        limit=prompt_limit_val,
+        admin_user=admin_user,
+    )
+
+    totals = marketing.get("totals") or {}
+    funnel = marketing.get("funnel") or {}
+    marketing_summary = {
+        "leads": int(totals.get("leads") or 0),
+        "assessment_started": int(totals.get("assessment_started") or 0),
+        "assessment_completed": int(totals.get("assessment_completed") or 0),
+        "identity_claimed": int(totals.get("identity_claimed") or 0),
+        "results_viewed": int(totals.get("results_viewed") or 0),
+        "start_to_complete_pct": funnel.get("start_to_complete_pct"),
+        "complete_to_claim_pct": funnel.get("complete_to_claim_pct"),
+        "claim_to_results_view_pct": funnel.get("claim_to_results_view_pct"),
+    }
+
+    llm_total = usage_summary.get("llm_total") or {}
+    total_tts = usage_summary.get("total_tts") or {}
+    whatsapp_total = usage_summary.get("whatsapp_total") or {}
+    cost_summary = {
+        "combined_cost_gbp": float(usage_summary.get("combined_cost_gbp") or 0.0),
+        "llm_cost_gbp": float(llm_total.get("cost_est_gbp") or 0.0),
+        "tts_cost_gbp": float(total_tts.get("cost_est_gbp") or 0.0),
+        "whatsapp_cost_gbp": float(whatsapp_total.get("cost_est_gbp") or 0.0),
+        "llm_tokens_in": int(llm_total.get("tokens_in") or 0),
+        "llm_tokens_out": int(llm_total.get("tokens_out") or 0),
+        "prompt_cost_total_gbp": float(prompt_costs.get("total_cost_gbp") or 0.0),
+        "prompt_rows": int(len(prompt_costs.get("rows") or [])),
+    }
+
+    sections = [
+        {
+            "key": "marketing",
+            "title": "Marketing",
+            "description": "Lead funnel performance, source/campaign breakdown, and recent lead progression.",
+            "summary": marketing_summary,
+            "data": {
+                "filters": marketing.get("filters"),
+                "funnel": marketing.get("funnel"),
+                "breakdown": marketing.get("breakdown"),
+                "recent": marketing.get("recent"),
+            },
+        },
+        {
+            "key": "cost_analysis",
+            "title": "Cost Analysis",
+            "description": "Estimated platform cost by channel plus prompt-level model cost breakdown.",
+            "summary": cost_summary,
+            "data": {
+                "usage_summary": usage_summary,
+                "prompt_costs": prompt_costs,
+            },
+        },
+    ]
+
+    return {
+        "as_of_uk": datetime.now(UK_TZ).isoformat(),
+        "window": usage_summary.get("window") or marketing.get("window"),
+        "user": usage_summary.get("user") or marketing.get("user"),
+        "sections": sections,
+        "routes": {
+            "marketing": "/admin/marketing/funnel",
+            "cost_summary": "/admin/usage/summary",
+            "prompt_costs": "/admin/usage/prompt-costs",
+            "recent_reports": "/admin/reports/recent",
+        },
+    }
 
 
 @admin.post("/reports/retention/run")

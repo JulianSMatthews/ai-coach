@@ -152,14 +152,32 @@ export default async function ReportingPage({
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto w-full max-w-5xl space-y-6">
         <AdminNav
-          title="Reporting & costs"
-          subtitle="Review weekly usage and update cost assumptions."
+          title="Reporting"
+          subtitle="Two sections: Marketing and Cost Analysis."
         />
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
+          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Sections</p>
+          <div className="mt-3 flex flex-wrap gap-3">
+            <a
+              href="#reporting-marketing"
+              className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white"
+            >
+              Marketing
+            </a>
+            <a
+              href="#reporting-cost-analysis"
+              className="rounded-full border border-[#efe7db] bg-[#fdfaf4] px-4 py-2 text-xs uppercase tracking-[0.2em] text-[#3c332b]"
+            >
+              Cost Analysis
+            </a>
+          </div>
+        </section>
+
+        <section id="reporting-cost-analysis" className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Usage summary</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Cost analysis overview</p>
               <p className="mt-2 text-sm text-[#6b6257]">
                 Window: {usage?.window?.start_utc ?? "—"} → {usage?.window?.end_utc ?? "—"}
               </p>
@@ -302,10 +320,10 @@ export default async function ReportingPage({
           </div>
         </section>
 
-        <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
+        <section id="reporting-marketing" className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Marketing funnel</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Marketing</p>
               <p className="mt-2 text-sm text-[#6b6257]">
                 Window: {marketing?.window?.start_utc ?? "—"} → {marketing?.window?.end_utc ?? "—"}
               </p>
@@ -417,7 +435,7 @@ export default async function ReportingPage({
         </section>
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
-          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Prompt cost breakdown</p>
+          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Cost analysis · Prompt cost breakdown</p>
           <p className="mt-2 text-sm text-[#6b6257]">
             Drill into LLM prompt costs for the selected user and period.
           </p>
@@ -498,7 +516,7 @@ export default async function ReportingPage({
         </section>
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
-          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Cost assumptions</p>
+          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Cost analysis · Cost assumptions</p>
           <p className="mt-2 text-sm text-[#6b6257]">
             These values override environment defaults. Leave blank to use env rates.
           </p>

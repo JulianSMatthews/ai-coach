@@ -37,9 +37,11 @@ export default async function AssessmentChatPage(props: PageProps) {
       {!leadFlow ? <AppNav userId={userId} promptBadge={promptBadge} /> : null}
       <SectionHeader
         brandMark={
+          leadFlow ? (
           <a href={`/assessment/${userId}/chat`} className="inline-flex items-center gap-2" aria-label="HealthSense">
             <img src="/healthsense-logo.svg" alt="HealthSense" className="h-8 w-auto" />
           </a>
+          ) : undefined
         }
         eyebrow="Coach Chat"
         title="My Coach Gia"

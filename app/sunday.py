@@ -20,7 +20,7 @@ from .db import SessionLocal
 from .job_queue import enqueue_job, should_use_worker
 from .kickoff import COACH_NAME
 from .models import AssessmentRun, JobAudit, OKRKeyResult, OKRKrEntry, OKRKrHabitStep, User, UserPreference, WeeklyFocus
-from .nudges import send_whatsapp
+from .coaching_delivery import send_coaching_text
 from .prompts import build_prompt, kr_payload_list, run_llm_prompt
 from .programme_timeline import BLOCK_WEEKS, PILLAR_SEQUENCE, week_anchor_date, week_no_for_date, week_no_for_focus_start
 from .touchpoints import log_touchpoint
@@ -50,15 +50,22 @@ def _apply_sunday_marker(text: str | None) -> str | None:
     return text
 
 
-def _send_sunday(*, text: str, to: str | None = None, category: str | None = None, quick_replies: list[str] | None = None) -> str:
+def _send_sunday(
+    user: User,
+    *,
+    text: str,
+    category: str | None = None,
+    quick_replies: list[str] | None = None,
+) -> str:
     outbound = _apply_sunday_marker(text) or text
     if outbound and not outbound.lower().startswith("*sunday"):
         outbound = f"{_sunday_tag()} {outbound}"
-    return send_whatsapp(
+    return send_coaching_text(
+        user=user,
         text=outbound,
-        to=to,
         category=category,
         quick_replies=quick_replies,
+        source="sunday",
     )
 
 
@@ -401,12 +408,12 @@ def _start_habit_setup_flow(
 ) -> bool:
     krs = _ordered_krs(session, kr_ids)
     if not krs:
-        _send_sunday(to=user.phone, text="I couldn't load your key results right now. Please try again shortly.")
+        _send_sunday(user, text="I couldn't load your key results right now. Please try again shortly.")
         return False
 
     options_by_index = _build_habit_options(user, krs, target_week)
     if not options_by_index or not options_by_index[0]:
-        _send_sunday(to=user.phone, text="I couldn't prepare habit options right now. Please try again in a moment.")
+        _send_sunday(user, text="I couldn't prepare habit options right now. Please try again in a moment.")
         return False
 
     name = (getattr(user, "first_name", "") or "").strip().title() or "there"
@@ -422,11 +429,9 @@ def _start_habit_setup_flow(
             "Pick one option for each KR."
         )
 
-    _send_sunday(to=user.phone, text=intro)
+    _send_sunday(user, text=intro)
     first_msg = habit_flow.build_actions_for_kr(1, krs[0], options_by_index[0])
-    _send_sunday(
-        to=user.phone,
-        text=first_msg,
+    _send_sunday(user, text=first_msg,
         quick_replies=habit_flow.kr_quick_replies(1, options_by_index[0]),
     )
 
@@ -592,7 +597,7 @@ def send_sunday_daily(user: User, coach_name: str = COACH_NAME) -> None:
         today = get_effective_today(s, user.id, default_today=datetime.utcnow().date())
         wf = _resolve_weekly_focus(s, user.id, today)
         if not wf:
-            _send_sunday(to=user.phone, text="Your weekly plan is still being prepared. Please try again shortly.")
+            _send_sunday(user, text="Your weekly plan is still being prepared. Please try again shortly.")
             return
 
         week_no = getattr(wf, "week_no", None) or _infer_week_no(s, user.id, wf)
@@ -634,9 +639,7 @@ def send_sunday_daily(user: User, coach_name: str = COACH_NAME) -> None:
                 "and is there one step you want to tweak for next week?"
             )
 
-        _send_sunday(
-            to=user.phone,
-            text=message,
+        _send_sunday(user, text=message,
             quick_replies=["All good", "Need help"],
         )
         log_touchpoint(
@@ -649,9 +652,7 @@ def send_sunday_daily(user: User, coach_name: str = COACH_NAME) -> None:
             generated_text=message,
         )
         if kr_ids:
-            _send_sunday(
-                to=user.phone,
-                text="*Sunday* Would you like to update your KR numbers now?",
+            _send_sunday(user, text="*Sunday* Would you like to update your KR numbers now?",
                 quick_replies=["WhatsApp", "App", "Not now"],
             )
             _set_state(
@@ -730,7 +731,7 @@ def handle_message(user: User, body: str) -> None:
             if not krs:
                 _set_state(s, user.id, None)
                 s.commit()
-                _send_sunday(to=user.phone, text="I couldn't load your KRs just now. Reply sunday to try again.")
+                _send_sunday(user, text="I couldn't load your KRs just now. Reply sunday to try again.")
                 return
             options_by_index = state.get("options") or []
             current_idx = int(state.get("current_idx") or 0)
@@ -747,13 +748,11 @@ def handle_message(user: User, body: str) -> None:
                 if 0 <= current_idx < len(krs):
                     options = options_by_index[current_idx] if current_idx < len(options_by_index) else []
                     kr_msg = habit_flow.build_actions_for_kr(current_idx + 1, krs[current_idx], options)
-                    _send_sunday(
-                        to=user.phone,
-                        text=kr_msg,
+                    _send_sunday(user, text=kr_msg,
                         quick_replies=habit_flow.kr_quick_replies(current_idx + 1, options),
                     )
                 else:
-                    _send_sunday(to=user.phone, text="Please choose an option (e.g., KR1 A).")
+                    _send_sunday(user, text="Please choose an option (e.g., KR1 A).")
                 return
 
             merged_selections = {**stored_selections, **selections}
@@ -786,7 +785,7 @@ def handle_message(user: User, body: str) -> None:
                 confirm_msg = habit_flow.confirmation_message(krs, chosen)
                 if not confirm_msg.lower().startswith("*sunday*"):
                     confirm_msg = "*Sunday* " + confirm_msg
-                _send_sunday(to=user.phone, text=confirm_msg)
+                _send_sunday(user, text=confirm_msg)
                 if resume_day in {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}:
                     _set_state(s, user.id, None)
                     s.commit()
@@ -795,14 +794,10 @@ def handle_message(user: User, body: str) -> None:
 
                         scheduler._run_day_prompt(int(user.id), resume_day)  # type: ignore[attr-defined]
                     except Exception:
-                        _send_sunday(
-                            to=user.phone,
-                            text=f"I saved your habit steps, but couldn't resume today’s {resume_day.capitalize()} message. Please say {resume_day} to retry.",
+                        _send_sunday(user, text=f"I saved your habit steps, but couldn't resume today’s {resume_day.capitalize()} message. Please say {resume_day} to retry.",
                         )
                     return
-                _send_sunday(
-                    to=user.phone,
-                    text="*Sunday* Would you like to update your KR numbers now?",
+                _send_sunday(user, text="*Sunday* Would you like to update your KR numbers now?",
                     quick_replies=["WhatsApp", "App", "Not now"],
                 )
                 _set_state(
@@ -824,9 +819,7 @@ def handle_message(user: User, body: str) -> None:
             if next_idx < len(krs):
                 next_options = options_by_index[next_idx] if next_idx < len(options_by_index) else []
                 next_msg = habit_flow.build_actions_for_kr(next_idx + 1, krs[next_idx], next_options)
-                _send_sunday(
-                    to=user.phone,
-                    text=next_msg,
+                _send_sunday(user, text=next_msg,
                     quick_replies=habit_flow.kr_quick_replies(next_idx + 1, next_options),
                 )
                 _set_state(
@@ -850,7 +843,7 @@ def handle_message(user: User, body: str) -> None:
         if mode == "okr_update_choice":
             cleaned = re.sub(r"\s+", " ", text.strip().lower())
             if cleaned in {"not now", "no", "skip", "later", "no thanks"}:
-                _send_sunday(to=user.phone, text="*Sunday* No problem. We can update KRs later.")
+                _send_sunday(user, text="*Sunday* No problem. We can update KRs later.")
                 _set_state(s, user.id, None)
                 s.commit()
                 general_support.activate(user.id, source="sunday", week_no=week_no, send_intro=False)
@@ -860,9 +853,7 @@ def handle_message(user: User, body: str) -> None:
                     user_id=int(getattr(user, "id", 0) or 0) or None,
                     reason="sunday_okr_update_choice_app",
                 )
-                _send_sunday(
-                    to=user.phone,
-                    text=(
+                _send_sunday(user, text=(
                         "*Sunday* Great. Update your KRs in the app using 'Update KRs' on Home.\n"
                         f"Log in here: {app_url}"
                     ),
@@ -872,9 +863,7 @@ def handle_message(user: User, body: str) -> None:
                 general_support.activate(user.id, source="sunday", week_no=week_no, send_intro=False)
                 return
             if "whatsapp" in cleaned or "what's app" in cleaned or "whats app" in cleaned:
-                _send_sunday(
-                    to=user.phone,
-                    text="*Sunday* Reply with one number per KR in order (e.g., 3 4 2).",
+                _send_sunday(user, text="*Sunday* Reply with one number per KR in order (e.g., 3 4 2).",
                 )
                 _set_state(
                     s,
@@ -888,9 +877,7 @@ def handle_message(user: User, body: str) -> None:
                 )
                 s.commit()
                 return
-            _send_sunday(
-                to=user.phone,
-                text="*Sunday* Choose how to update: WhatsApp, App, or Not now.",
+            _send_sunday(user, text="*Sunday* Choose how to update: WhatsApp, App, or Not now.",
                 quick_replies=["WhatsApp", "App", "Not now"],
             )
             return
@@ -899,14 +886,14 @@ def handle_message(user: User, body: str) -> None:
             if not krs:
                 _set_state(s, user.id, None)
                 s.commit()
-                _send_sunday(to=user.phone, text="I couldn't load your KRs just now. Reply sunday to restart.")
+                _send_sunday(user, text="I couldn't load your KRs just now. Reply sunday to restart.")
                 return
             ok = _apply_okr_updates_in_whatsapp(s, krs, text)
             if not ok:
-                _send_sunday(to=user.phone, text="*Sunday* Please send one number per KR in order (e.g., 3 4 2).")
+                _send_sunday(user, text="*Sunday* Please send one number per KR in order (e.g., 3 4 2).")
                 return
             s.commit()
-            _send_sunday(to=user.phone, text="*Sunday* Saved. Your KR updates are recorded.")
+            _send_sunday(user, text="*Sunday* Saved. Your KR updates are recorded.")
             _set_state(s, user.id, None)
             s.commit()
             general_support.activate(user.id, source="sunday", week_no=week_no, send_intro=False)

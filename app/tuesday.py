@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 
 from .db import SessionLocal
 from .job_queue import enqueue_job, should_use_worker
-from .nudges import send_whatsapp, append_button_cta
+from .nudges import append_button_cta
+from .coaching_delivery import send_coaching_text
 from .models import WeeklyFocus, User, AssessmentRun
 from .kickoff import COACH_NAME
 from .prompts import format_checkin_history, primary_kr_payload, build_prompt, run_llm_prompt
@@ -42,12 +43,19 @@ def _apply_tuesday_marker(text: str | None) -> str | None:
     return text
 
 
-def _send_tuesday(*, text: str, to: str | None = None, category: str | None = None, quick_replies: list[str] | None = None) -> str:
-    return send_whatsapp(
+def _send_tuesday(
+    user: User,
+    *,
+    text: str,
+    category: str | None = None,
+    quick_replies: list[str] | None = None,
+) -> str:
+    return send_coaching_text(
+        user=user,
         text=_apply_tuesday_marker(text) or text,
-        to=to,
         category=category,
         quick_replies=quick_replies,
+        source="tuesday",
     )
 
 
@@ -137,7 +145,7 @@ def send_tuesday_check(user: User, coach_name: str = COACH_NAME) -> None:
         today = get_effective_today(s, user.id, default_today=datetime.utcnow().date())
         wf = _resolve_weekly_focus(s, user.id, today)
         if not wf:
-            _send_tuesday(to=user.phone, text="Your weekly plan is still being prepared. Please try again shortly.")
+            _send_tuesday(user, text="Your weekly plan is still being prepared. Please try again shortly.")
             return
         week_no = getattr(wf, "week_no", None)
         if not week_no:
@@ -149,7 +157,7 @@ def send_tuesday_check(user: User, coach_name: str = COACH_NAME) -> None:
                 pass
         kr = primary_kr_payload(user.id, session=s, week_no=week_no)
         if not kr:
-            _send_tuesday(to=user.phone, text="No key results found for this week. Say monday to set them up.")
+            _send_tuesday(user, text="No key results found for this week. Say monday to set them up.")
             return
 
         history_text = ""
@@ -193,7 +201,7 @@ def send_tuesday_check(user: User, coach_name: str = COACH_NAME) -> None:
             )
 
         _send_tuesday(
-            to=user.phone,
+            user,
             text=append_button_cta(message),
             quick_replies=["All good", "Need help"],
         )
