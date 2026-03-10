@@ -13,9 +13,23 @@ function toBool(value: string | null | undefined): boolean {
   return token === "1" || token === "true" || token === "yes" || token === "on";
 }
 
+function getPublicOrigin(request: Request): string {
+  const reqUrl = new URL(request.url);
+  const forwardedHostRaw = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
+  const forwardedProtoRaw = request.headers.get("x-forwarded-proto") || reqUrl.protocol.replace(":", "");
+  const host = forwardedHostRaw.split(",")[0]?.trim();
+  const protoToken = forwardedProtoRaw.split(",")[0]?.trim().toLowerCase();
+  const proto = protoToken === "http" || protoToken === "https" ? protoToken : reqUrl.protocol.replace(":", "");
+  if (!host) {
+    return reqUrl.origin;
+  }
+  return `${proto}://${host}`;
+}
+
 export async function GET(request: Request) {
   const reqUrl = new URL(request.url);
-  const fallback = new URL("/login", reqUrl.origin);
+  const origin = getPublicOrigin(request);
+  const fallback = new URL("/login", origin);
   try {
     const base = getBaseUrl();
     const leadKey = (reqUrl.searchParams.get("k") || "").trim();
@@ -43,7 +57,7 @@ export async function GET(request: Request) {
     });
     const text = await upstream.text().catch(() => "");
     if (!upstream.ok || !text.trim()) {
-      const fail = new URL("/login", reqUrl.origin);
+      const fail = new URL("/login", origin);
       fail.searchParams.set("lead", "failed");
       return NextResponse.redirect(fail);
     }
@@ -52,7 +66,7 @@ export async function GET(request: Request) {
     try {
       data = JSON.parse(text) as Record<string, unknown>;
     } catch {
-      const fail = new URL("/login", reqUrl.origin);
+      const fail = new URL("/login", origin);
       fail.searchParams.set("lead", "invalid");
       return NextResponse.redirect(fail);
     }
@@ -62,7 +76,7 @@ export async function GET(request: Request) {
     const nextPathRaw = String(data.next_path || "").trim();
     const nextPath = nextPathRaw.startsWith("/") && !nextPathRaw.startsWith("//") ? nextPathRaw : `/assessment/${userId}/chat?autostart=1&lead=1`;
     if (!sessionToken || !userId) {
-      const fail = new URL("/login", reqUrl.origin);
+      const fail = new URL("/login", origin);
       fail.searchParams.set("lead", "missing");
       return NextResponse.redirect(fail);
     }
@@ -70,7 +84,7 @@ export async function GET(request: Request) {
     const ttlSecondsRaw = Number(data.session_ttl_seconds || 0);
     const ttlSeconds = Number.isFinite(ttlSecondsRaw) && ttlSecondsRaw > 0 ? Math.floor(ttlSecondsRaw) : 60 * 60 * 3;
 
-    const redirectUrl = new URL(nextPath, reqUrl.origin);
+    const redirectUrl = new URL(nextPath, origin);
     if (toBool(reqUrl.searchParams.get("debug"))) {
       redirectUrl.searchParams.set("lead_debug", "1");
     }
