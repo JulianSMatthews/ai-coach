@@ -30,6 +30,18 @@ export default async function AssessmentChatPage(props: PageProps) {
       : "";
   const displayName = user.display_name || user.first_name || "User";
   const displayFirstName = displayName.split(" ")[0];
+  const assessmentCompleted =
+    status.status === "completed" ||
+    Boolean(status.onboarding?.assessment_completed_at) ||
+    Boolean(status.latest_run?.finished_at);
+  const assessmentInProgress = status.status === "in_progress";
+  const chatIntroText = assessmentCompleted
+    ? "Your assessment is complete. Continue coaching with Gia in this chat."
+    : assessmentInProgress
+      ? "Your assessment is in progress. Continue with Gia here."
+      : leadFlow
+        ? "You are in assessment mode with Gia. Answer each question to continue."
+        : "Start your assessment with Gia in this chat.";
 
   return (
     <PageShell>
@@ -55,10 +67,10 @@ export default async function AssessmentChatPage(props: PageProps) {
       <section className="grid gap-6">
         <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
           <p className="text-sm text-[#6b6257]">
-            This chat runs in-app with Gia and starts with your assessment flow.
+            {chatIntroText}
           </p>
           <div className="mt-5">
-            <AssessmentChatBox userId={userId} />
+            <AssessmentChatBox userId={userId} assessmentCompleted={assessmentCompleted} />
           </div>
         </Card>
       </section>

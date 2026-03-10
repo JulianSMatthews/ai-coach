@@ -23,6 +23,7 @@ type ChatResponse = {
 
 type AssessmentChatBoxProps = {
   userId: string;
+  assessmentCompleted?: boolean;
 };
 
 type AssessmentCta = {
@@ -95,7 +96,7 @@ function isTruthyToken(value: string | null | undefined): boolean {
   return token === "1" || token === "true" || token === "yes" || token === "on";
 }
 
-export default function AssessmentChatBox({ userId }: AssessmentChatBoxProps) {
+export default function AssessmentChatBox({ userId, assessmentCompleted = false }: AssessmentChatBoxProps) {
   const searchParams = useSearchParams();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -116,6 +117,13 @@ export default function AssessmentChatBox({ userId }: AssessmentChatBoxProps) {
   const autoStart = useMemo(() => isTruthyToken(searchParams?.get("autostart")), [searchParams]);
   const leadFlow = useMemo(() => isTruthyToken(searchParams?.get("lead")), [searchParams]);
   const busy = loading || starting || sending || claiming;
+  const chatReady = hasActiveSession || assessmentCompleted || messages.length > 0;
+  const stageLabel = assessmentCompleted
+    ? "Coaching active"
+    : hasActiveSession
+      ? "Assessment active"
+      : "Assessment not started";
+  const showAssessmentControls = !assessmentCompleted && (!leadFlow || !chatReady);
 
   const messageCountLabel = useMemo(() => {
     const count = messages.length;
@@ -148,7 +156,7 @@ export default function AssessmentChatBox({ userId }: AssessmentChatBoxProps) {
       }
       const data = (text ? (JSON.parse(text) as ChatResponse) : {}) as ChatResponse;
       applyChatPayload(data);
-      if (!data.handled && !data.has_active_session) {
+      if (!data.handled && !data.has_active_session && !assessmentCompleted) {
         setStatus("Chat is not active yet. Provide requested details, then start chat again.");
       }
     } catch (error) {
@@ -156,7 +164,7 @@ export default function AssessmentChatBox({ userId }: AssessmentChatBoxProps) {
     } finally {
       setStarting(false);
     }
-  }, [userId]);
+  }, [userId, assessmentCompleted]);
 
   useEffect(() => {
     if (!logRef.current) return;
@@ -188,7 +196,11 @@ export default function AssessmentChatBox({ userId }: AssessmentChatBoxProps) {
         }
         if (cancelled) return;
         applyChatPayload(data);
-        if (autoStart && !Boolean(data.has_active_session)) {
+        const shouldAutoStart =
+          !Boolean(data.has_active_session) &&
+          !assessmentCompleted &&
+          (autoStart || leadFlow);
+        if (shouldAutoStart) {
           void startAssessment(false);
         }
       } catch (error) {
@@ -204,7 +216,7 @@ export default function AssessmentChatBox({ userId }: AssessmentChatBoxProps) {
     return () => {
       cancelled = true;
     };
-  }, [userId, autoStart, startAssessment]);
+  }, [userId, autoStart, leadFlow, assessmentCompleted, startAssessment]);
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -227,8 +239,8 @@ export default function AssessmentChatBox({ userId }: AssessmentChatBoxProps) {
       }
       const data = (text ? (JSON.parse(text) as ChatResponse) : {}) as ChatResponse;
       applyChatPayload(data);
-      if (data.needs_start) {
-        setStatus("No active chat session. Use Start chat to begin.");
+      if (data.needs_start && !assessmentCompleted) {
+        setStatus("No active chat session. Use Start assessment to begin.");
       }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
@@ -303,7 +315,7 @@ export default function AssessmentChatBox({ userId }: AssessmentChatBoxProps) {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.2em] text-[#6b6257]">
         <span className="rounded-full border border-[#efe7db] bg-[#fffaf0] px-3 py-1">
-          {hasActiveSession ? "Chat active" : "Chat not started"}
+          {stageLabel}
         </span>
         {identityRequired ? (
           <span className="rounded-full border border-[#f5d0a0] bg-[#fff3dc] px-3 py-1">Results locked</span>
@@ -311,7 +323,7 @@ export default function AssessmentChatBox({ userId }: AssessmentChatBoxProps) {
         <span className="rounded-full border border-[#efe7db] bg-white px-3 py-1">{messageCountLabel}</span>
       </div>
 
-      {!leadFlow ? (
+      {showAssessmentControls ? (
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -319,7 +331,7 @@ export default function AssessmentChatBox({ userId }: AssessmentChatBoxProps) {
             disabled={busy}
             onClick={() => void startAssessment(false)}
           >
-            {starting ? "Starting…" : hasActiveSession ? "Continue chat" : "Start chat"}
+            {starting ? "Starting…" : hasActiveSession ? "Continue assessment" : "Start assessment"}
           </button>
           <button
             type="button"
@@ -338,7 +350,13 @@ export default function AssessmentChatBox({ userId }: AssessmentChatBoxProps) {
       >
         {messages.length === 0 ? (
           <p className="text-sm text-[#6b6257]">
-            {leadFlow ? "Connecting you to Gia and preparing your assessment…" : "Start the assessment to begin chatting in-app."}
+            {leadFlow
+              ? "Connecting you to Gia and preparing your assessment…"
+              : assessmentCompleted
+                ? "Gia is ready. Send your message to continue coaching."
+                : hasActiveSession
+                  ? "Your assessment is in progress. Continue by sending your next answer."
+                  : "Start your assessment to begin chatting in-app."}
           </p>
         ) : (
           <div className="space-y-3">

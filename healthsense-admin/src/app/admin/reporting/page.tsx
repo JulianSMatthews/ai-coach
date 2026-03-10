@@ -174,161 +174,12 @@ export default async function ReportingPage({
           </div>
         </section>
 
-        <section id="reporting-cost-analysis" className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Cost analysis overview</p>
-              <p className="mt-2 text-sm text-[#6b6257]">
-                Window: {usage?.window?.start_utc ?? "—"} → {usage?.window?.end_utc ?? "—"}
-              </p>
-              {usage?.user ? (
-                <p className="mt-1 text-sm text-[#6b6257]">
-                  User: {usage.user.display_name || usage.user.phone || usage.user.id}
-                </p>
-              ) : null}
-            </div>
-            <form method="get" className="flex flex-wrap items-end gap-3">
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Period</label>
-                <select
-                  name="period"
-                  defaultValue={period}
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                >
-                  <option value="7">Last 7 days</option>
-                  <option value="14">Last 14 days</option>
-                  <option value="30">Last 30 days</option>
-                  <option value="90">Last 90 days</option>
-                  <option value="custom">Custom</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Start</label>
-                <input
-                  type="date"
-                  name="start"
-                  defaultValue={start || ""}
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">End</label>
-                <input
-                  type="date"
-                  name="end"
-                  defaultValue={end || ""}
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">User</label>
-                <select
-                  name="user_id"
-                  defaultValue={userIdRaw}
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                >
-                  <option value="">All users</option>
-                  {(users || []).map((user) => {
-                    const label =
-                      user.display_name ||
-                      [user.first_name, user.surname].filter(Boolean).join(" ") ||
-                      user.phone ||
-                      `User ${user.id}`;
-                    return (
-                      <option key={user.id} value={String(user.id)}>
-                        {label} (#{user.id})
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Source</label>
-                <input
-                  type="text"
-                  name="source"
-                  defaultValue={sourceRaw}
-                  placeholder="instagram"
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Campaign</label>
-                <input
-                  type="text"
-                  name="campaign"
-                  defaultValue={campaignRaw}
-                  placeholder="assessment_launch"
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                />
-              </div>
-              <button
-                type="submit"
-                className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white"
-              >
-                Run
-              </button>
-            </form>
-          </div>
-          <div className="mt-4 grid gap-4 lg:grid-cols-4">
-            {[
-              {
-                title: "TTS",
-                rows: [
-                  { label: "Events", value: usage?.total_tts?.events ?? "—" },
-                  { label: "Minutes (est)", value: usage?.total_tts?.minutes_est ?? "—" },
-                  { label: "Cost (est)", value: usage?.total_tts?.cost_est_gbp != null ? `£${usage.total_tts.cost_est_gbp}` : "—" },
-                ],
-              },
-              {
-                title: "LLM",
-                rows: [
-                  { label: "Tokens in", value: usage?.llm_total?.tokens_in ?? "—" },
-                  { label: "Tokens out", value: usage?.llm_total?.tokens_out ?? "—" },
-                  { label: "Cost (est)", value: usage?.llm_total?.cost_est_gbp != null ? `£${usage.llm_total.cost_est_gbp}` : "—" },
-                ],
-              },
-              {
-                title: "WhatsApp",
-                rows: [
-                  { label: "Messages", value: usage?.whatsapp_total?.messages ?? "—" },
-                  { label: "Cost (est)", value: usage?.whatsapp_total?.cost_est_gbp != null ? `£${usage.whatsapp_total.cost_est_gbp}` : "—" },
-                ],
-              },
-              {
-                title: "Combined",
-                rows: [
-                  {
-                    label: "Total cost (est)",
-                    value: usage?.combined_cost_gbp != null ? `£${usage.combined_cost_gbp}` : "—",
-                  },
-                ],
-              },
-            ].map((card) => (
-              <div key={card.title} className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{card.title}</p>
-                <div className="mt-3 space-y-2">
-                  {card.rows.map((row) => (
-                    <div key={row.label} className="flex items-center justify-between rounded-xl bg-white px-3 py-2">
-                      <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.label}</span>
-                      <span className="text-lg font-semibold">{row.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
         <section id="reporting-marketing" className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Marketing</p>
               <p className="mt-2 text-sm text-[#6b6257]">
                 Window: {marketing?.window?.start_utc ?? "—"} → {marketing?.window?.end_utc ?? "—"}
-              </p>
-              <p className="mt-1 text-sm text-[#6b6257]">
-                Filters: source {sourceRaw || "all"} · campaign {campaignRaw || "all"}
               </p>
             </div>
             <div className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] px-4 py-3">
@@ -344,6 +195,91 @@ export default async function ReportingPage({
               </p>
             </div>
           </div>
+          <form method="get" className="mt-4 flex flex-wrap items-end gap-3">
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Period</label>
+              <select
+                name="period"
+                defaultValue={period}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+              >
+                <option value="7">Last 7 days</option>
+                <option value="14">Last 14 days</option>
+                <option value="30">Last 30 days</option>
+                <option value="90">Last 90 days</option>
+                <option value="custom">Custom</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Start</label>
+              <input
+                type="date"
+                name="start"
+                defaultValue={start || ""}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">End</label>
+              <input
+                type="date"
+                name="end"
+                defaultValue={end || ""}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">User</label>
+              <select
+                name="user_id"
+                defaultValue={userIdRaw}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+              >
+                <option value="">All users</option>
+                {(users || []).map((user) => {
+                  const label =
+                    user.display_name ||
+                    [user.first_name, user.surname].filter(Boolean).join(" ") ||
+                    user.phone ||
+                    `User ${user.id}`;
+                  return (
+                    <option key={user.id} value={String(user.id)}>
+                      {label} (#{user.id})
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Source</label>
+              <input
+                type="text"
+                name="source"
+                defaultValue={sourceRaw}
+                placeholder="instagram"
+                className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Campaign</label>
+              <input
+                type="text"
+                name="campaign"
+                defaultValue={campaignRaw}
+                placeholder="assessment_launch"
+                className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+              />
+            </div>
+            <button
+              type="submit"
+              className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white"
+            >
+              Run marketing report
+            </button>
+          </form>
+          <p className="mt-2 text-sm text-[#6b6257]">
+            Filters: source {sourceRaw || "all"} · campaign {campaignRaw || "all"}
+          </p>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-5">
             {(marketing?.funnel?.steps || []).map((step) => (
@@ -431,6 +367,132 @@ export default async function ReportingPage({
                 </table>
               </div>
             </details>
+          </div>
+        </section>
+
+        <section id="reporting-cost-analysis" className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Cost analysis overview</p>
+              <p className="mt-2 text-sm text-[#6b6257]">
+                Window: {usage?.window?.start_utc ?? "—"} → {usage?.window?.end_utc ?? "—"}
+              </p>
+              {usage?.user ? (
+                <p className="mt-1 text-sm text-[#6b6257]">
+                  User: {usage.user.display_name || usage.user.phone || usage.user.id}
+                </p>
+              ) : null}
+            </div>
+            <form method="get" className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Period</label>
+                <select
+                  name="period"
+                  defaultValue={period}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                >
+                  <option value="7">Last 7 days</option>
+                  <option value="14">Last 14 days</option>
+                  <option value="30">Last 30 days</option>
+                  <option value="90">Last 90 days</option>
+                  <option value="custom">Custom</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Start</label>
+                <input
+                  type="date"
+                  name="start"
+                  defaultValue={start || ""}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">End</label>
+                <input
+                  type="date"
+                  name="end"
+                  defaultValue={end || ""}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">User</label>
+                <select
+                  name="user_id"
+                  defaultValue={userIdRaw}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                >
+                  <option value="">All users</option>
+                  {(users || []).map((user) => {
+                    const label =
+                      user.display_name ||
+                      [user.first_name, user.surname].filter(Boolean).join(" ") ||
+                      user.phone ||
+                      `User ${user.id}`;
+                    return (
+                      <option key={user.id} value={String(user.id)}>
+                        {label} (#{user.id})
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+              <button
+                type="submit"
+                className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white"
+              >
+                Run cost analysis
+              </button>
+            </form>
+          </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-4">
+            {[
+              {
+                title: "TTS",
+                rows: [
+                  { label: "Events", value: usage?.total_tts?.events ?? "—" },
+                  { label: "Minutes (est)", value: usage?.total_tts?.minutes_est ?? "—" },
+                  { label: "Cost (est)", value: usage?.total_tts?.cost_est_gbp != null ? `£${usage.total_tts.cost_est_gbp}` : "—" },
+                ],
+              },
+              {
+                title: "LLM",
+                rows: [
+                  { label: "Tokens in", value: usage?.llm_total?.tokens_in ?? "—" },
+                  { label: "Tokens out", value: usage?.llm_total?.tokens_out ?? "—" },
+                  { label: "Cost (est)", value: usage?.llm_total?.cost_est_gbp != null ? `£${usage.llm_total.cost_est_gbp}` : "—" },
+                ],
+              },
+              {
+                title: "WhatsApp",
+                rows: [
+                  { label: "Messages", value: usage?.whatsapp_total?.messages ?? "—" },
+                  { label: "Cost (est)", value: usage?.whatsapp_total?.cost_est_gbp != null ? `£${usage.whatsapp_total.cost_est_gbp}` : "—" },
+                ],
+              },
+              {
+                title: "Combined",
+                rows: [
+                  {
+                    label: "Total cost (est)",
+                    value: usage?.combined_cost_gbp != null ? `£${usage.combined_cost_gbp}` : "—",
+                  },
+                ],
+              },
+            ].map((card) => (
+              <div key={card.title} className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{card.title}</p>
+                <div className="mt-3 space-y-2">
+                  {card.rows.map((row) => (
+                    <div key={row.label} className="flex items-center justify-between rounded-xl bg-white px-3 py-2">
+                      <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.label}</span>
+                      <span className="text-lg font-semibold">{row.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </section>
 
