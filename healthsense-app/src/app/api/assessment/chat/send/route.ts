@@ -41,6 +41,10 @@ export async function POST(request: Request) {
 
     const payload = {
       text: textValue,
+      quick_reply:
+        body.quick_reply && typeof body.quick_reply === "object"
+          ? body.quick_reply
+          : undefined,
     };
 
     const session = getCookieValue(cookieHeader, "hs_session");

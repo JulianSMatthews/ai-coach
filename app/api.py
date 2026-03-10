@@ -1040,7 +1040,7 @@ def _log_inbound_direct(user: User, channel: str, body: str, from_raw: str) -> N
         print(f"⚠️ inbound direct-log failed (non-fatal): {e!r}")
 
 
-def _log_app_chat_inbound(user: User, body: str) -> None:
+def _log_app_chat_inbound(user: User, body: str, *, meta_extra: dict[str, object] | None = None) -> None:
     """
     Log app-chat inbound without updating WhatsApp last_inbound_message_at semantics.
     """
@@ -1057,6 +1057,10 @@ def _log_app_chat_inbound(user: User, body: str) -> None:
             "surface": "assessment_chat",
             "source": "app",
         }
+        if isinstance(meta_extra, dict):
+            for key, value in meta_extra.items():
+                if key:
+                    meta_payload[str(key)] = value
         if virtual_now is not None:
             meta_payload["virtual_date"] = virtual_now.date().isoformat()
         write_log(
@@ -1153,6 +1157,8 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
     for row in reversed(rows):
         quick_replies: list[str] = []
         media_url: str | None = None
+        quick_reply_label: str | None = None
+        hide_in_chat = False
         meta_raw = getattr(row, "meta", None)
         meta_obj: dict | None = None
         if isinstance(meta_raw, dict):
@@ -1178,13 +1184,34 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
                 media_val = str(raw_media or "").strip()
                 if media_val:
                     media_url = media_val
+            hide_in_chat = bool(meta_obj.get("ui_hide_in_chat"))
+            raw_label = str(meta_obj.get("quick_reply_label") or "").strip()
+            if raw_label:
+                quick_reply_label = raw_label[:40]
+        direction_val = str(getattr(row, "direction", "") or "")
+        text_val = str(getattr(row, "text", "") or "")
+        if hide_in_chat and direction_val.lower() == "inbound":
+            for prev in reversed(messages):
+                if str(prev.get("direction", "")).lower() != "outbound":
+                    continue
+                prev_quick_replies = prev.get("quick_replies")
+                if not isinstance(prev_quick_replies, list):
+                    continue
+                if text_val and text_val in prev_quick_replies:
+                    prev["selected_quick_reply"] = text_val
+                    if quick_reply_label:
+                        prev["selected_quick_reply_label"] = quick_reply_label
+                    break
+            continue
         messages.append(
             {
                 "id": int(getattr(row, "id", 0) or 0),
-                "direction": str(getattr(row, "direction", "") or ""),
+                "direction": direction_val,
                 "channel": str(getattr(row, "channel", "") or "app"),
-                "text": str(getattr(row, "text", "") or ""),
+                "text": text_val,
                 "quick_replies": quick_replies,
+                "selected_quick_reply": None,
+                "selected_quick_reply_label": None,
                 "media_url": media_url,
                 "created_at": (
                     getattr(row, "created_at", None).isoformat()
@@ -4584,7 +4611,20 @@ def api_user_assessment_chat_send(
     if len(text_val) > 4000:
         raise HTTPException(status_code=400, detail="text is too long")
 
-    _log_app_chat_inbound(user, text_val)
+    quick_reply_meta: dict[str, object] | None = None
+    quick_reply_payload = payload.get("quick_reply")
+    if isinstance(quick_reply_payload, dict):
+        used = bool(quick_reply_payload.get("used"))
+        hide_in_chat = bool(quick_reply_payload.get("hide_in_chat"))
+        label_val = str(quick_reply_payload.get("label") or "").strip()
+        if used or hide_in_chat or label_val:
+            quick_reply_meta = {
+                "quick_reply_used": bool(used),
+                "ui_hide_in_chat": bool(hide_in_chat),
+            }
+            if label_val:
+                quick_reply_meta["quick_reply_label"] = label_val[:40]
+    _log_app_chat_inbound(user, text_val, meta_extra=quick_reply_meta)
     outbox: list[dict] = []
     with assessment_delivery_context(
         channel="app",

@@ -9,6 +9,8 @@ type ChatMessage = {
   channel?: string;
   text?: string;
   quick_replies?: string[];
+  selected_quick_reply?: string | null;
+  selected_quick_reply_label?: string | null;
   media_url?: string | null;
   created_at?: string | null;
 };
@@ -36,6 +38,11 @@ type AssessmentCta = {
 type QuickReplyPayload = {
   cleanedText: string;
   quickReplies: string[];
+};
+
+type QuickReplyOption = {
+  label: string;
+  value: string;
 };
 
 type MediaPayload = {
@@ -74,6 +81,10 @@ function normalizeMessages(raw: unknown): ChatMessage[] {
       channel: typeof row.channel === "string" ? row.channel : "app",
       text,
       quick_replies: quickReplies,
+      selected_quick_reply:
+        typeof row.selected_quick_reply === "string" ? row.selected_quick_reply : null,
+      selected_quick_reply_label:
+        typeof row.selected_quick_reply_label === "string" ? row.selected_quick_reply_label : null,
       media_url: typeof row.media_url === "string" ? row.media_url : null,
       created_at: typeof row.created_at === "string" ? row.created_at : null,
     });
@@ -186,6 +197,16 @@ function extractMediaPayload(text: string, mediaUrlFromMeta?: string | null): Me
     mediaUrl,
     isPodcast: isPodcastUrl(mediaUrl),
   };
+}
+
+function quickReplyOptions(quickReplies: string[]): QuickReplyOption[] {
+  return quickReplies.map((value, index) => {
+    const letter = String.fromCharCode(65 + index);
+    return {
+      label: `Option ${letter}`,
+      value,
+    };
+  });
 }
 
 function isTruthyToken(value: string | null | undefined): boolean {
@@ -374,7 +395,17 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
     };
   }, [userId, applyChatPayload]);
 
-  async function sendMessage(textValue: string, options?: { restoreDraftOnError?: boolean }) {
+  async function sendMessage(
+    textValue: string,
+    options?: {
+      restoreDraftOnError?: boolean;
+      quickReply?: {
+        used: boolean;
+        hideInChat: boolean;
+        label?: string;
+      };
+    },
+  ) {
     const outbound = String(textValue || "").trim();
     if (!outbound || sending) return;
     setSending(true);
@@ -383,7 +414,17 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
       const res = await fetch("/api/assessment/chat/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, text: outbound }),
+        body: JSON.stringify({
+          userId,
+          text: outbound,
+          quick_reply: options?.quickReply
+            ? {
+                used: Boolean(options.quickReply.used),
+                hide_in_chat: Boolean(options.quickReply.hideInChat),
+                label: options.quickReply.label || undefined,
+              }
+            : undefined,
+        }),
       });
       const text = await res.text().catch(() => "");
       if (!res.ok) {
@@ -412,10 +453,16 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
     await sendMessage(textValue, { restoreDraftOnError: true });
   }
 
-  function onQuickReplyClick(reply: string) {
+  function onQuickReplyClick(reply: string, label?: string) {
     const textValue = String(reply || "").trim();
     if (!textValue || busy) return;
-    void sendMessage(textValue);
+    void sendMessage(textValue, {
+      quickReply: {
+        used: true,
+        hideInChat: true,
+        label,
+      },
+    });
   }
 
   function onDraftKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -534,6 +581,8 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
                 const cta = extractAssessmentCta(String(message.text || ""), userId);
                 const quickReplyPayload = extractQuickReplies(cta.cleanedText, message.quick_replies);
                 const mediaPayload = extractMediaPayload(quickReplyPayload.cleanedText, message.media_url);
+                const options = quickReplyOptions(quickReplyPayload.quickReplies);
+                const selectedQuickReply = String(message.selected_quick_reply || "").trim();
                 const ts = message.created_at
                   ? new Date(message.created_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
                   : "";
@@ -589,19 +638,27 @@ export default function AssessmentChatBox({ userId, assessmentCompleted = false 
                             Open media
                           </a>
                         ) : null}
-                        {quickReplyPayload.quickReplies.length > 0 ? (
+                        {options.length > 0 ? (
                           <div className="mt-3 flex flex-wrap gap-2">
-                            {quickReplyPayload.quickReplies.map((reply, replyIndex) => (
-                              <button
-                                key={`quick-reply-${message.id || index}-${replyIndex}`}
-                                type="button"
-                                onClick={() => onQuickReplyClick(reply)}
-                                disabled={busy}
-                                className="rounded-full border border-[#e0d4c3] bg-[#fff8ef] px-3 py-1 text-xs font-semibold text-[#3c332b] transition hover:bg-[#ffeccc] disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {reply}
-                              </button>
-                            ))}
+                            {options.map((option, replyIndex) => {
+                              const selected = Boolean(selectedQuickReply) && selectedQuickReply === option.value;
+                              return (
+                                <button
+                                  key={`quick-reply-${message.id || index}-${replyIndex}`}
+                                  type="button"
+                                  onClick={() => onQuickReplyClick(option.value, option.label)}
+                                  disabled={busy || selected}
+                                  title={option.value}
+                                  className={
+                                    selected
+                                      ? "rounded-full border border-[var(--accent)] bg-[var(--accent)] px-3 py-1 text-xs font-semibold text-white"
+                                      : "rounded-full border border-[#e0d4c3] bg-[#fff8ef] px-3 py-1 text-xs font-semibold text-[#3c332b] transition hover:bg-[#ffeccc] disabled:cursor-not-allowed disabled:opacity-60"
+                                  }
+                                >
+                                  {option.label}
+                                </button>
+                              );
+                            })}
                           </div>
                         ) : null}
                         {ts ? <p className="mt-2 text-[10px] text-[#8c7f70]">{ts}</p> : null}
