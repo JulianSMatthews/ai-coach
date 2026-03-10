@@ -13,6 +13,28 @@ function toBool(value: string | null | undefined): boolean {
   return token === "1" || token === "true" || token === "yes" || token === "on";
 }
 
+function cleanValue(value: string | null | undefined, maxLen = 255): string | undefined {
+  const raw = String(value || "").trim();
+  if (!raw) return undefined;
+  return raw.slice(0, maxLen);
+}
+
+function firstToken(value: string | null | undefined, maxLen = 64): string | undefined {
+  const raw = cleanValue(value, 512);
+  if (!raw) return undefined;
+  const token = raw.split(",")[0]?.trim();
+  if (!token) return undefined;
+  return token.slice(0, maxLen);
+}
+
+function buildLandingPath(url: URL): string {
+  const params = new URLSearchParams(url.searchParams);
+  params.delete("k");
+  const qs = params.toString();
+  const path = `${url.pathname}${qs ? `?${qs}` : ""}`;
+  return path.slice(0, 2000);
+}
+
 function getPublicOrigin(request: Request): string {
   const reqUrl = new URL(request.url);
   const forwardedHostRaw = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
@@ -60,11 +82,48 @@ export async function GET(request: Request) {
       if (value) utm[key] = value;
     });
 
+    const meta: Record<string, string> = {};
+    const captureMeta = (targetKey: string, queryKeys: string[]) => {
+      for (const key of queryKeys) {
+        const value = cleanValue(reqUrl.searchParams.get(key), 255);
+        if (value) {
+          meta[targetKey] = value;
+          return;
+        }
+      }
+    };
+    captureMeta("fbclid", ["fbclid"]);
+    captureMeta("gclid", ["gclid"]);
+    captureMeta("msclkid", ["msclkid"]);
+    captureMeta("ttclid", ["ttclid"]);
+    captureMeta("campaign_id", ["campaign_id", "meta_campaign_id"]);
+    captureMeta("adset_id", ["adset_id", "meta_adset_id"]);
+    captureMeta("ad_id", ["ad_id", "meta_ad_id"]);
+    captureMeta("creative_id", ["creative_id", "meta_creative_id"]);
+    captureMeta("placement", ["placement"]);
+
+    const passThroughKeys = [
+      "ad_name",
+      "adset_name",
+      "campaign_name",
+      "site_source_name",
+      "platform",
+    ];
+    passThroughKeys.forEach((key) => {
+      const value = cleanValue(reqUrl.searchParams.get(key), 255);
+      if (value) meta[key] = value;
+    });
+
     const payload = {
       lead_key: leadKey || undefined,
       source,
       campaign: campaign || undefined,
       utm,
+      meta: Object.keys(meta).length ? meta : undefined,
+      landing_path: buildLandingPath(reqUrl),
+      referrer_url: cleanValue(request.headers.get("referer"), 2000),
+      client_ip: firstToken(request.headers.get("x-forwarded-for"), 64),
+      user_agent: cleanValue(request.headers.get("user-agent"), 1200),
     };
 
     const upstream = await fetch(`${base}/api/v1/public/assessment/lead-start`, {

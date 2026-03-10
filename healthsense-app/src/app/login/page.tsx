@@ -124,7 +124,7 @@ export default function LoginPage() {
           ? `/setup-security?next=${encodeURIComponent(safeNext)}`
           : "/setup-security";
       } else {
-        window.location.href = safeNext || `/progress/${userId}`;
+        window.location.href = safeNext || `/assessment/${userId}/chat`;
       }
     } catch (error) {
       setStatus(friendlyAuthError(error));

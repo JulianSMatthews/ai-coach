@@ -36,7 +36,7 @@ export function middleware(request: NextRequest) {
       "1";
     const userId = String(rawUserId).replace(/[^0-9]/g, "") || "1";
     const url = request.nextUrl.clone();
-    url.pathname = `/progress/${userId}`;
+    url.pathname = `/assessment/${userId}/chat`;
     return NextResponse.redirect(url);
   }
   return NextResponse.next();

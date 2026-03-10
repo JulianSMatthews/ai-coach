@@ -83,7 +83,7 @@ export default function SetupSecurityPage() {
         requestedNext && requestedNext.startsWith("/") && !requestedNext.startsWith("//") && !requestedNext.startsWith("/api")
           ? requestedNext
           : "";
-      router.replace(safeNext || `/progress/${resolvedUserId}`);
+      router.replace(safeNext || `/assessment/${resolvedUserId}/chat`);
     } catch (error) {
       setStatus(friendlyAuthError(error));
     } finally {

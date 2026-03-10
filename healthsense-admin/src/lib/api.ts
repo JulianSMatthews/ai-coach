@@ -148,6 +148,82 @@ export type AppEngagementSummary = {
   };
 };
 
+export type MarketingFunnelStep = {
+  key?: string;
+  label?: string;
+  count?: number;
+  percent_of_start?: number | null;
+  conversion_pct_from_prev?: number | null;
+  dropoff_from_prev?: number | null;
+};
+
+export type MarketingFunnelGroup = {
+  key?: string;
+  leads?: number;
+  assessment_started?: number;
+  assessment_completed?: number;
+  identity_claimed?: number;
+  results_viewed?: number;
+  start_to_complete_pct?: number | null;
+  claim_rate_pct?: number | null;
+  results_view_rate_pct?: number | null;
+};
+
+export type MarketingFunnelSummary = {
+  as_of_uk?: string;
+  window?: { start_utc?: string; end_utc?: string };
+  filters?: {
+    days?: number;
+    source?: string | null;
+    campaign?: string | null;
+  };
+  user?: { id?: number; display_name?: string; phone?: string } | null;
+  totals?: {
+    leads?: number;
+    assessment_started?: number;
+    assessment_completed?: number;
+    identity_claimed?: number;
+    results_viewed?: number;
+  };
+  funnel?: {
+    steps?: MarketingFunnelStep[];
+    start_to_complete_pct?: number | null;
+    complete_to_claim_pct?: number | null;
+    claim_to_results_view_pct?: number | null;
+  };
+  breakdown?: {
+    by_source?: MarketingFunnelGroup[];
+    by_campaign?: MarketingFunnelGroup[];
+    daily?: Array<{
+      day?: string;
+      leads?: number;
+      assessment_started?: number;
+      assessment_completed?: number;
+      identity_claimed?: number;
+      results_viewed?: number;
+    }>;
+  };
+  recent?: Array<{
+    lead_id?: number;
+    user_id?: number | null;
+    user_name?: string | null;
+    source?: string | null;
+    campaign?: string | null;
+    utm_source?: string | null;
+    utm_medium?: string | null;
+    utm_campaign?: string | null;
+    created_at?: string | null;
+    assessment_started_at?: string | null;
+    assessment_completed?: boolean;
+    identity_claimed_at?: string | null;
+    results_viewed_at?: string | null;
+    fbclid?: string | null;
+    meta_campaign_id?: string | null;
+    meta_adset_id?: string | null;
+    meta_ad_id?: string | null;
+  }>;
+};
+
 export type PromptCostRow = {
   prompt_id: number;
   created_at?: string | null;
@@ -1182,6 +1258,26 @@ export async function getAdminAppEngagement(params: {
       start: params.start,
       end: params.end,
       user_id: params.user_id,
+    },
+  });
+}
+
+export async function getAdminMarketingFunnel(params: {
+  days?: number;
+  start?: string;
+  end?: string;
+  user_id?: number;
+  source?: string;
+  campaign?: string;
+} = {}): Promise<MarketingFunnelSummary> {
+  return apiAdmin<MarketingFunnelSummary>("/admin/marketing/funnel", {
+    query: {
+      days: params.days,
+      start: params.start,
+      end: params.end,
+      user_id: params.user_id,
+      source: params.source,
+      campaign: params.campaign,
     },
   });
 }

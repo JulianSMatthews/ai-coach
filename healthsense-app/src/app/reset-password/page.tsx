@@ -98,7 +98,7 @@ export default function ResetPasswordPage() {
           window.sessionStorage.removeItem("hs_reset_phone");
         } catch {}
       }
-      window.location.href = `/progress/${userId}`;
+      window.location.href = `/assessment/${userId}/chat`;
     } catch (error) {
       setStatus(friendlyAuthError(error));
     } finally {

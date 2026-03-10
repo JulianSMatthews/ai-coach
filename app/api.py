@@ -85,6 +85,7 @@ from .models import (
     PromptTemplateVersionLog,
     LLMPromptLog,
     UsageEvent,
+    MarketingLead,
     JobAudit,
     BackgroundJob,
     UserConceptState,
@@ -131,6 +132,7 @@ from .usage import (
     log_usage_event,
 )
 from .usage_rates import fetch_provider_rates
+from .marketing import ensure_marketing_schema
 from .okr import ensure_cycle
 from .reporting import (
     generate_detailed_report_pdf_by_user,
@@ -582,6 +584,10 @@ def on_startup():
                 _ensure_message_log_schema()
             except Exception as e:
                 print(f"⚠️  Could not ensure message log schema: {e!r}")
+            try:
+                ensure_marketing_schema()
+            except Exception as e:
+                print(f"⚠️  Could not ensure marketing schema: {e!r}")
             # Ensure job queue table exists (non-destructive)
             try:
                 ensure_job_table()
@@ -1507,6 +1513,66 @@ def _generate_lead_proxy_phone(session) -> str:
         if not exists:
             return phone
     raise RuntimeError("failed to allocate proxy lead phone")
+
+
+def _track_text(value: object, *, max_len: int = 255) -> str | None:
+    raw = _strip_invisible(str(value or "")).strip()
+    if not raw:
+        return None
+    return raw[: max(1, int(max_len))]
+
+
+def _extract_client_ip(value: object) -> str | None:
+    raw = _track_text(value, max_len=256)
+    if not raw:
+        return None
+    token = raw.split(",")[0].strip()
+    return token[:64] if token else None
+
+
+def _clean_tracking_map(payload: object, *, max_key_len: int = 64, max_val_len: int = 255) -> dict[str, str]:
+    cleaned: dict[str, str] = {}
+    if not isinstance(payload, dict):
+        return cleaned
+    for key, value in payload.items():
+        k = _track_text(key, max_len=max_key_len)
+        v = _track_text(value, max_len=max_val_len)
+        if not k or not v:
+            continue
+        norm_key = k.lower()
+        if norm_key in cleaned:
+            continue
+        cleaned[norm_key] = v
+    return cleaned
+
+
+def _mark_marketing_stage(user_id: int, *, stage_key: str, at: datetime | None = None) -> None:
+    if not user_id:
+        return
+    valid_keys = {"assessment_started_at", "identity_claimed_at", "results_viewed_at"}
+    if stage_key not in valid_keys:
+        return
+    when = at or datetime.utcnow()
+    try:
+        with SessionLocal() as s:
+            row = (
+                s.query(MarketingLead)
+                .filter(MarketingLead.user_id == int(user_id))
+                .order_by(MarketingLead.created_at.desc(), MarketingLead.id.desc())
+                .first()
+            )
+            if not row:
+                return
+            if getattr(row, stage_key, None):
+                return
+            setattr(row, stage_key, when)
+            try:
+                row.updated_at = when
+            except Exception:
+                pass
+            s.commit()
+    except Exception as e:
+        print(f"[marketing] failed to update stage '{stage_key}' for user_id={user_id}: {e}")
 
 def _b64(data: bytes) -> str:
     return base64.b64encode(data).decode("ascii")
@@ -3700,6 +3766,10 @@ api_v1 = APIRouter(prefix="/api/v1", tags=["api"])
 def api_public_assessment_lead_start(payload: dict | None, request: Request):
     if not _lead_start_enabled():
         raise HTTPException(status_code=403, detail="public lead start is disabled")
+    try:
+        ensure_marketing_schema()
+    except Exception as e:
+        print(f"[marketing] ensure schema failed during lead-start: {e}")
     body = payload if isinstance(payload, dict) else {}
     lead_key = (
         body.get("lead_key")
@@ -3709,16 +3779,10 @@ def api_public_assessment_lead_start(payload: dict | None, request: Request):
     if not _lead_start_key_valid(str(lead_key or "")):
         raise HTTPException(status_code=401, detail="invalid lead key")
 
-    source = str(body.get("source") or request.query_params.get("source") or "instagram").strip().lower()[:64]
-    campaign = str(body.get("campaign") or request.query_params.get("campaign") or "").strip()[:120]
-    utm_payload = body.get("utm")
-    utm_clean: dict[str, str] = {}
-    if isinstance(utm_payload, dict):
-        for key, value in utm_payload.items():
-            k = str(key or "").strip()[:64]
-            v = str(value or "").strip()[:180]
-            if k and v:
-                utm_clean[k] = v
+    source = (_track_text(body.get("source") or request.query_params.get("source"), max_len=64) or "instagram").lower()
+    campaign = _track_text(body.get("campaign") or request.query_params.get("campaign"), max_len=120)
+
+    utm_clean = _clean_tracking_map(body.get("utm"), max_key_len=64, max_val_len=180)
     for utm_key in (
         "utm_source",
         "utm_medium",
@@ -3728,9 +3792,57 @@ def api_public_assessment_lead_start(payload: dict | None, request: Request):
     ):
         if utm_key in utm_clean:
             continue
-        val = str(request.query_params.get(utm_key) or "").strip()[:180]
+        val = _track_text(request.query_params.get(utm_key), max_len=180)
         if val:
             utm_clean[utm_key] = val
+
+    meta_clean = _clean_tracking_map(body.get("meta"), max_key_len=64, max_val_len=255)
+    for meta_key in (
+        "fbclid",
+        "gclid",
+        "msclkid",
+        "ttclid",
+        "campaign_id",
+        "adset_id",
+        "ad_id",
+        "creative_id",
+        "placement",
+        "meta_campaign_id",
+        "meta_adset_id",
+        "meta_ad_id",
+        "meta_creative_id",
+    ):
+        if meta_key in meta_clean:
+            continue
+        val = _track_text(request.query_params.get(meta_key), max_len=255)
+        if val:
+            meta_clean[meta_key] = val
+
+    fbclid = _track_text(meta_clean.get("fbclid"), max_len=255)
+    gclid = _track_text(meta_clean.get("gclid"), max_len=255)
+    msclkid = _track_text(meta_clean.get("msclkid"), max_len=255)
+    ttclid = _track_text(meta_clean.get("ttclid"), max_len=255)
+    meta_campaign_id = _track_text(meta_clean.get("meta_campaign_id") or meta_clean.get("campaign_id"), max_len=96)
+    meta_adset_id = _track_text(meta_clean.get("meta_adset_id") or meta_clean.get("adset_id"), max_len=96)
+    meta_ad_id = _track_text(meta_clean.get("meta_ad_id") or meta_clean.get("ad_id"), max_len=96)
+    meta_creative_id = _track_text(meta_clean.get("meta_creative_id") or meta_clean.get("creative_id"), max_len=96)
+    placement = _track_text(meta_clean.get("placement"), max_len=120)
+
+    landing_path = _track_text(body.get("landing_path"), max_len=2000)
+    if not landing_path:
+        landing_path = _track_text(request.url.path, max_len=2000)
+    referrer_url = _track_text(body.get("referrer_url") or request.headers.get("referer"), max_len=2000)
+    user_agent = _track_text(body.get("user_agent") or request.headers.get("user-agent"), max_len=1200)
+    client_ip = _extract_client_ip(
+        body.get("client_ip")
+        or request.headers.get("x-forwarded-for")
+        or getattr(request.client, "host", None)
+    )
+    raw_meta_payload: dict[str, object] = {}
+    if utm_clean:
+        raw_meta_payload["utm"] = utm_clean
+    if meta_clean:
+        raw_meta_payload["meta"] = meta_clean
 
     ttl_minutes = max(10, min(24 * 60, int(_LEAD_START_TTL_MINUTES)))
     now = datetime.utcnow()
@@ -3773,11 +3885,45 @@ def api_public_assessment_lead_start(payload: dict | None, request: Request):
             token_hash=_hash_token(session_token),
             created_at=now,
             expires_at=now + timedelta(minutes=ttl_minutes),
-            ip=getattr(request.client, "host", None),
-            user_agent=request.headers.get("user-agent"),
+            ip=client_ip,
+            user_agent=user_agent or request.headers.get("user-agent"),
         )
         s.add(auth_sess)
         s.commit()
+
+    try:
+        with SessionLocal() as s:
+            lead_row = MarketingLead(
+                user_id=user_id,
+                source=source or "instagram",
+                campaign=campaign,
+                utm_source=utm_clean.get("utm_source"),
+                utm_medium=utm_clean.get("utm_medium"),
+                utm_campaign=utm_clean.get("utm_campaign"),
+                utm_term=utm_clean.get("utm_term"),
+                utm_content=utm_clean.get("utm_content"),
+                fbclid=fbclid,
+                gclid=gclid,
+                msclkid=msclkid,
+                ttclid=ttclid,
+                meta_campaign_id=meta_campaign_id,
+                meta_adset_id=meta_adset_id,
+                meta_ad_id=meta_ad_id,
+                meta_creative_id=meta_creative_id,
+                placement=placement,
+                lead_key_used=bool(_track_text(lead_key, max_len=256)),
+                landing_path=landing_path,
+                referrer_url=referrer_url,
+                client_ip=client_ip,
+                user_agent=user_agent,
+                raw_meta=raw_meta_payload or None,
+                created_at=now,
+                updated_at=now,
+            )
+            s.add(lead_row)
+            s.commit()
+    except Exception as e:
+        print(f"[marketing] failed to persist lead tracking for user_id={user_id}: {e}")
 
     next_path = f"/assessment/{user_id}/chat?autostart=1&lead=1"
     return {
@@ -3788,7 +3934,7 @@ def api_public_assessment_lead_start(payload: dict | None, request: Request):
         "session_ttl_seconds": int(ttl_minutes * 60),
         "next_path": next_path,
         "source": source or "instagram",
-        "campaign": campaign or None,
+        "campaign": campaign,
     }
 
 
@@ -4166,6 +4312,8 @@ def api_user_assessment_chat_start(
         handled = bool(start_combined_assessment(user, force_intro=force_intro))
 
     chat_state = _assessment_chat_state_payload(user_id)
+    if chat_state.get("has_active_session"):
+        _mark_marketing_stage(int(user_id), stage_key="assessment_started_at")
     return {
         "ok": True,
         "handled": bool(handled or outbox),
@@ -4280,6 +4428,19 @@ def api_user_assessment_chat_claim_identity(
         _set_pref_value(s, int(user_id), "lead_identity_required", "0")
         _set_pref_value(s, int(user_id), "lead_claimed_at", _utc_now_iso())
         _set_pref_value(s, int(user_id), "lead_claim_source", "assessment_chat")
+        now_utc = datetime.utcnow()
+        lead_row = (
+            s.query(MarketingLead)
+            .filter(MarketingLead.user_id == int(user_id))
+            .order_by(MarketingLead.created_at.desc(), MarketingLead.id.desc())
+            .first()
+        )
+        if lead_row and not lead_row.identity_claimed_at:
+            lead_row.identity_claimed_at = now_utc
+            try:
+                lead_row.updated_at = now_utc
+            except Exception:
+                pass
         s.commit()
 
     return {
@@ -4366,6 +4527,7 @@ def api_user_assessment(
         "assessment_image": _public_report_url(user_id, "latest.jpeg"),
     }
     if not readonly_preview:
+        _mark_marketing_stage(int(user_id), stage_key="results_viewed_at")
         _log_app_engagement_event(
             user_id=user_id,
             unit_type="page_view",
@@ -4436,6 +4598,7 @@ def api_public_user_assessment(user_id: int, run_id: int | None = None, fast: bo
         "assessment_pdf": _public_report_url(user_id, "latest.pdf"),
         "assessment_image": _public_report_url(user_id, "latest.jpeg"),
     }
+    _mark_marketing_stage(int(user_id), stage_key="results_viewed_at")
     debug_log(
         "public assessment ok",
         {"user_id": user_id, "run_id": rid, "ms": int((time.perf_counter() - t0) * 1000)},
@@ -10543,6 +10706,443 @@ def admin_usage_app_engagement(
             },
             "daily": daily_rows,
         },
+    }
+
+
+@admin.get("/marketing/funnel")
+def admin_marketing_funnel(
+    days: int | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    user_id: int | None = None,
+    source: str | None = None,
+    campaign: str | None = None,
+    admin_user: User = Depends(_require_admin),
+):
+    target_user = None
+    if user_id:
+        with SessionLocal() as s:
+            target_user = s.get(User, user_id)
+        if not target_user:
+            raise HTTPException(status_code=404, detail="user not found")
+        _ensure_club_scope(admin_user, target_user)
+
+    end_utc = _parse_uk_date(end, end_of_day=True) if end else None
+    if not end_utc:
+        end_utc = datetime.now(ZoneInfo("UTC")).replace(tzinfo=None)
+    start_utc = _parse_uk_date(start, end_of_day=False) if start else None
+    if not start_utc:
+        try:
+            days_val = int(days or 30)
+        except Exception:
+            days_val = 30
+        days_val = max(1, min(days_val, 365))
+        start_utc = end_utc - timedelta(days=days_val)
+    if end_utc <= start_utc:
+        end_utc = start_utc + timedelta(days=1)
+
+    source_filter = _track_text(source, max_len=64)
+    source_filter = source_filter.lower() if source_filter else None
+    campaign_filter = _track_text(campaign, max_len=120)
+    campaign_filter_lc = campaign_filter.lower() if campaign_filter else None
+    club_scope_id = getattr(admin_user, "club_id", None)
+
+    with SessionLocal() as s:
+        lead_q = (
+            s.query(MarketingLead)
+            .filter(
+                MarketingLead.created_at >= start_utc,
+                MarketingLead.created_at < end_utc,
+            )
+        )
+        if user_id is not None:
+            lead_q = lead_q.filter(MarketingLead.user_id == int(user_id))
+        elif club_scope_id is not None:
+            lead_q = lead_q.join(User, MarketingLead.user_id == User.id).filter(User.club_id == club_scope_id)
+        if source_filter:
+            lead_q = lead_q.filter(func.lower(MarketingLead.source) == source_filter)
+        if campaign_filter_lc:
+            lead_q = lead_q.filter(func.lower(MarketingLead.campaign) == campaign_filter_lc)
+        lead_rows = (
+            lead_q
+            .order_by(MarketingLead.created_at.desc(), MarketingLead.id.desc())
+            .all()
+        )
+
+        lead_user_ids = sorted({int(row.user_id) for row in lead_rows if row.user_id is not None})
+        run_finished_by_user: dict[int, datetime] = {}
+        user_map: dict[int, dict[str, object]] = {}
+        if lead_user_ids:
+            run_rows = (
+                s.query(AssessmentRun.user_id, func.max(AssessmentRun.finished_at))
+                .filter(
+                    AssessmentRun.user_id.in_(lead_user_ids),
+                    AssessmentRun.finished_at.isnot(None),
+                )
+                .group_by(AssessmentRun.user_id)
+                .all()
+            )
+            run_finished_by_user = {
+                int(uid): finished_at
+                for uid, finished_at in run_rows
+                if uid is not None and finished_at is not None
+            }
+            user_rows = (
+                s.query(User.id, User.first_name, User.surname, User.phone)
+                .filter(User.id.in_(lead_user_ids))
+                .all()
+            )
+            for uid, first_name, surname, phone in user_rows:
+                display = " ".join(part for part in (str(first_name or "").strip(), str(surname or "").strip()) if part)
+                if not display:
+                    display = str(phone or "") or f"User {int(uid)}"
+                user_map[int(uid)] = {
+                    "id": int(uid),
+                    "display_name": display,
+                    "phone": phone,
+                }
+
+    def _as_utc_naive(ts: datetime | None) -> datetime | None:
+        if not isinstance(ts, datetime):
+            return None
+        if ts.tzinfo is not None:
+            return ts.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+        return ts
+
+    def _to_iso(ts: datetime | None) -> str | None:
+        val = _as_utc_naive(ts)
+        return val.isoformat() if val else None
+
+    def _to_uk_day(ts: datetime | None) -> str | None:
+        val = _as_utc_naive(ts)
+        if not val:
+            return None
+        return val.replace(tzinfo=ZoneInfo("UTC")).astimezone(UK_TZ).date().isoformat()
+
+    def _is_completed(row: MarketingLead) -> bool:
+        uid = int(row.user_id or 0)
+        if uid <= 0:
+            return False
+        finished = _as_utc_naive(run_finished_by_user.get(uid))
+        if not finished:
+            return False
+        created = _as_utc_naive(getattr(row, "created_at", None))
+        if not created:
+            return True
+        return finished >= created
+
+    def _row_counts(rows: list[MarketingLead]) -> dict[str, int]:
+        total = len(rows)
+        started = sum(1 for row in rows if getattr(row, "assessment_started_at", None) is not None)
+        completed = sum(1 for row in rows if _is_completed(row))
+        claimed = sum(1 for row in rows if getattr(row, "identity_claimed_at", None) is not None)
+        viewed = sum(1 for row in rows if getattr(row, "results_viewed_at", None) is not None)
+        return {
+            "leads": total,
+            "assessment_started": started,
+            "assessment_completed": completed,
+            "identity_claimed": claimed,
+            "results_viewed": viewed,
+        }
+
+    def _pct(num: int, den: int) -> float | None:
+        if den <= 0:
+            return None
+        return round((num / den) * 100.0, 1)
+
+    def _conversion_steps(counts: dict[str, int]) -> list[dict[str, object]]:
+        ordered = [
+            ("leads", "Leads started"),
+            ("assessment_started", "Assessment started"),
+            ("assessment_completed", "Assessment completed"),
+            ("identity_claimed", "Identity claimed"),
+            ("results_viewed", "Results viewed"),
+        ]
+        steps: list[dict[str, object]] = []
+        previous: int | None = None
+        base = int(counts.get("leads") or 0)
+        for key, label in ordered:
+            count = int(counts.get(key) or 0)
+            conversion = _pct(count, previous or 0) if previous else None
+            dropoff = (previous - count) if previous is not None else None
+            steps.append(
+                {
+                    "key": key,
+                    "label": label,
+                    "count": count,
+                    "percent_of_start": _pct(count, base),
+                    "conversion_pct_from_prev": conversion,
+                    "dropoff_from_prev": dropoff,
+                }
+            )
+            previous = count
+        return steps
+
+    totals = _row_counts(lead_rows)
+
+    source_groups: dict[str, list[MarketingLead]] = {}
+    campaign_groups: dict[str, list[MarketingLead]] = {}
+    daily_groups: dict[str, dict[str, int | str]] = {}
+    for row in lead_rows:
+        src = (_track_text(getattr(row, "source", None), max_len=64) or "unknown").lower()
+        source_groups.setdefault(src, []).append(row)
+        camp = _track_text(getattr(row, "campaign", None), max_len=120) or "(none)"
+        campaign_groups.setdefault(camp, []).append(row)
+
+        day_key = _to_uk_day(getattr(row, "created_at", None)) or "unknown"
+        day = daily_groups.setdefault(
+            day_key,
+            {
+                "day": day_key,
+                "leads": 0,
+                "assessment_started": 0,
+                "assessment_completed": 0,
+                "identity_claimed": 0,
+                "results_viewed": 0,
+            },
+        )
+        day["leads"] = int(day["leads"]) + 1
+        if getattr(row, "assessment_started_at", None) is not None:
+            day["assessment_started"] = int(day["assessment_started"]) + 1
+        if _is_completed(row):
+            day["assessment_completed"] = int(day["assessment_completed"]) + 1
+        if getattr(row, "identity_claimed_at", None) is not None:
+            day["identity_claimed"] = int(day["identity_claimed"]) + 1
+        if getattr(row, "results_viewed_at", None) is not None:
+            day["results_viewed"] = int(day["results_viewed"]) + 1
+
+    def _group_payload(groups: dict[str, list[MarketingLead]]) -> list[dict[str, object]]:
+        out: list[dict[str, object]] = []
+        for key, rows in groups.items():
+            counts = _row_counts(rows)
+            out.append(
+                {
+                    "key": key,
+                    **counts,
+                    "start_to_complete_pct": _pct(int(counts["assessment_completed"]), int(counts["leads"])),
+                    "claim_rate_pct": _pct(int(counts["identity_claimed"]), int(counts["assessment_completed"])),
+                    "results_view_rate_pct": _pct(int(counts["results_viewed"]), int(counts["identity_claimed"])),
+                }
+            )
+        out.sort(key=lambda row: int(row.get("leads") or 0), reverse=True)
+        return out
+
+    recent_rows = []
+    for row in lead_rows[:50]:
+        uid = int(row.user_id) if row.user_id is not None else None
+        user_meta = user_map.get(uid or -1, {}) if uid else {}
+        recent_rows.append(
+            {
+                "lead_id": int(row.id),
+                "user_id": uid,
+                "user_name": user_meta.get("display_name"),
+                "source": getattr(row, "source", None),
+                "campaign": getattr(row, "campaign", None),
+                "utm_source": getattr(row, "utm_source", None),
+                "utm_medium": getattr(row, "utm_medium", None),
+                "utm_campaign": getattr(row, "utm_campaign", None),
+                "created_at": _to_iso(getattr(row, "created_at", None)),
+                "assessment_started_at": _to_iso(getattr(row, "assessment_started_at", None)),
+                "assessment_completed": _is_completed(row),
+                "identity_claimed_at": _to_iso(getattr(row, "identity_claimed_at", None)),
+                "results_viewed_at": _to_iso(getattr(row, "results_viewed_at", None)),
+                "fbclid": getattr(row, "fbclid", None),
+                "meta_campaign_id": getattr(row, "meta_campaign_id", None),
+                "meta_adset_id": getattr(row, "meta_adset_id", None),
+                "meta_ad_id": getattr(row, "meta_ad_id", None),
+            }
+        )
+
+    daily_rows = list(daily_groups.values())
+    daily_rows.sort(key=lambda row: str(row.get("day") or ""))
+
+    return {
+        "as_of_uk": datetime.now(UK_TZ).isoformat(),
+        "window": {"start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat()},
+        "filters": {
+            "days": int(days or 30),
+            "source": source_filter,
+            "campaign": campaign_filter,
+        },
+        "user": {"id": target_user.id, "display_name": target_user.display_name, "phone": target_user.phone}
+        if target_user
+        else None,
+        "totals": totals,
+        "funnel": {
+            "steps": _conversion_steps(totals),
+            "start_to_complete_pct": _pct(int(totals["assessment_completed"]), int(totals["leads"])),
+            "complete_to_claim_pct": _pct(int(totals["identity_claimed"]), int(totals["assessment_completed"])),
+            "claim_to_results_view_pct": _pct(int(totals["results_viewed"]), int(totals["identity_claimed"])),
+        },
+        "breakdown": {
+            "by_source": _group_payload(source_groups),
+            "by_campaign": _group_payload(campaign_groups)[:25],
+            "daily": daily_rows,
+        },
+        "recent": recent_rows,
+    }
+
+
+@admin.post("/marketing/backfill")
+def admin_marketing_backfill(
+    limit: int = 5000,
+    dry_run: bool = False,
+    admin_user: User = Depends(_require_admin),
+):
+    """
+    Backfill marketing_leads from existing lead-related user preferences.
+    Safe for live databases; only inserts rows for users that do not yet have a lead row.
+    """
+    try:
+        ensure_marketing_schema()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"failed to ensure marketing schema: {e}")
+
+    try:
+        limit_val = int(limit or 5000)
+    except Exception:
+        limit_val = 5000
+    limit_val = max(1, min(limit_val, 20000))
+
+    pref_keys = (
+        "lead_source",
+        "lead_campaign",
+        "lead_created_at",
+        "lead_claimed_at",
+        "lead_utm",
+    )
+    club_scope_id = getattr(admin_user, "club_id", None)
+    scanned = 0
+    created = 0
+    skipped_existing = 0
+    skipped_no_user = 0
+    sample_created_user_ids: list[int] = []
+
+    with SessionLocal() as s:
+        pref_q = (
+            s.query(UserPreference.user_id, UserPreference.key, UserPreference.value, UserPreference.updated_at)
+            .filter(UserPreference.key.in_(pref_keys))
+            .order_by(UserPreference.user_id.asc(), UserPreference.updated_at.desc())
+        )
+        if club_scope_id is not None:
+            pref_q = pref_q.join(User, UserPreference.user_id == User.id).filter(User.club_id == club_scope_id)
+        pref_rows = pref_q.all()
+
+        pref_map: dict[int, dict[str, str]] = {}
+        for uid, key, value, _updated_at in pref_rows:
+            if uid is None or not key:
+                continue
+            user_id_int = int(uid)
+            user_entry = pref_map.setdefault(user_id_int, {})
+            if key in user_entry:
+                continue
+            user_entry[key] = str(value or "").strip()
+
+        candidate_user_ids = sorted(pref_map.keys())[:limit_val]
+        scanned = len(candidate_user_ids)
+        if not candidate_user_ids:
+            return {
+                "ok": True,
+                "dry_run": bool(dry_run),
+                "scanned_users": 0,
+                "created_rows": 0,
+                "skipped_existing": 0,
+                "skipped_no_user": 0,
+            }
+
+        existing_rows = (
+            s.query(MarketingLead.user_id)
+            .filter(MarketingLead.user_id.in_(candidate_user_ids))
+            .all()
+        )
+        existing_user_ids = {int(uid) for (uid,) in existing_rows if uid is not None}
+
+        for user_id_int in candidate_user_ids:
+            if user_id_int in existing_user_ids:
+                skipped_existing += 1
+                continue
+
+            user = s.get(User, user_id_int)
+            if not user:
+                skipped_no_user += 1
+                continue
+
+            prefs = pref_map.get(user_id_int) or {}
+            source = _track_text(prefs.get("lead_source"), max_len=64) or "instagram"
+            campaign = _track_text(prefs.get("lead_campaign"), max_len=120)
+            created_at = _parse_pref_timestamp(prefs.get("lead_created_at"))
+            if not created_at:
+                created_on_val = getattr(user, "created_on", None)
+                if isinstance(created_on_val, datetime):
+                    if created_on_val.tzinfo is not None:
+                        created_on_val = created_on_val.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+                    created_at = created_on_val
+                else:
+                    created_at = datetime.utcnow()
+            identity_claimed_at = _parse_pref_timestamp(prefs.get("lead_claimed_at"))
+
+            utm_source = None
+            utm_medium = None
+            utm_campaign = None
+            utm_term = None
+            utm_content = None
+            lead_utm_raw = prefs.get("lead_utm")
+            lead_utm_obj: dict[str, object] | None = None
+            if lead_utm_raw:
+                try:
+                    parsed = json.loads(lead_utm_raw)
+                    if isinstance(parsed, dict):
+                        lead_utm_obj = parsed
+                except Exception:
+                    lead_utm_obj = None
+            if lead_utm_obj:
+                utm_source = _track_text(lead_utm_obj.get("utm_source"), max_len=180)
+                utm_medium = _track_text(lead_utm_obj.get("utm_medium"), max_len=180)
+                utm_campaign = _track_text(lead_utm_obj.get("utm_campaign"), max_len=180)
+                utm_term = _track_text(lead_utm_obj.get("utm_term"), max_len=180)
+                utm_content = _track_text(lead_utm_obj.get("utm_content"), max_len=180)
+
+            if dry_run:
+                created += 1
+                if len(sample_created_user_ids) < 25:
+                    sample_created_user_ids.append(user_id_int)
+                continue
+
+            row = MarketingLead(
+                user_id=user_id_int,
+                source=source,
+                campaign=campaign,
+                utm_source=utm_source,
+                utm_medium=utm_medium,
+                utm_campaign=utm_campaign,
+                utm_term=utm_term,
+                utm_content=utm_content,
+                identity_claimed_at=identity_claimed_at,
+                raw_meta={
+                    "backfilled": True,
+                    "source": "user_preferences",
+                },
+                created_at=created_at,
+                updated_at=datetime.utcnow(),
+            )
+            s.add(row)
+            created += 1
+            if len(sample_created_user_ids) < 25:
+                sample_created_user_ids.append(user_id_int)
+
+        if dry_run:
+            s.rollback()
+        else:
+            s.commit()
+
+    return {
+        "ok": True,
+        "dry_run": bool(dry_run),
+        "scanned_users": scanned,
+        "created_rows": created,
+        "skipped_existing": skipped_existing,
+        "skipped_no_user": skipped_no_user,
+        "sample_created_user_ids": sample_created_user_ids,
     }
 
 

@@ -12,5 +12,5 @@ export default async function DashboardPage(props: PageProps) {
   if (!userId) {
     throw new Error(`Invalid user id: ${rawUserId}`);
   }
-  redirect(`/progress/${userId}`);
+  redirect(`/assessment/${userId}/chat`);
 }

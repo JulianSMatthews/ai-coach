@@ -73,7 +73,7 @@ export async function GET(request: Request) {
     nextRaw && nextRaw.startsWith("/") && !nextRaw.startsWith("//")
       ? nextRaw
       : userId
-        ? `/progress/${userId}`
+        ? `/assessment/${userId}/chat`
         : "/login";
 
   const publicOrigin = resolvePublicAppOrigin(request);

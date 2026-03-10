@@ -1036,6 +1036,45 @@ class UsageSettings(Base):
     updated_at                   = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
 
 
+class MarketingLead(Base):
+    __tablename__ = "marketing_leads"
+
+    id                  = Column(Integer, primary_key=True)
+    user_id             = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    source              = Column(String(64), nullable=False, server_default=text("'instagram'"), index=True)
+    campaign            = Column(String(120), nullable=True, index=True)
+    utm_source          = Column(String(180), nullable=True)
+    utm_medium          = Column(String(180), nullable=True)
+    utm_campaign        = Column(String(180), nullable=True)
+    utm_term            = Column(String(180), nullable=True)
+    utm_content         = Column(String(180), nullable=True)
+    fbclid              = Column(String(255), nullable=True)
+    gclid               = Column(String(255), nullable=True)
+    msclkid             = Column(String(255), nullable=True)
+    ttclid              = Column(String(255), nullable=True)
+    meta_campaign_id    = Column(String(96), nullable=True)
+    meta_adset_id       = Column(String(96), nullable=True)
+    meta_ad_id          = Column(String(96), nullable=True)
+    meta_creative_id    = Column(String(96), nullable=True)
+    placement           = Column(String(120), nullable=True)
+    lead_key_used       = Column(Boolean, nullable=False, server_default=text("false"))
+    landing_path        = Column(Text, nullable=True)
+    referrer_url        = Column(Text, nullable=True)
+    client_ip           = Column(String(64), nullable=True)
+    user_agent          = Column(Text, nullable=True)
+    raw_meta            = Column(JSONType, nullable=True)
+    assessment_started_at = Column(DateTime, nullable=True)
+    identity_claimed_at = Column(DateTime, nullable=True)
+    results_viewed_at   = Column(DateTime, nullable=True)
+    created_at          = Column(DateTime, nullable=False, server_default=func.now(), index=True)
+    updated_at          = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_marketing_leads_source_campaign_created", "source", "campaign", "created_at"),
+        Index("ix_marketing_leads_meta_campaign", "meta_campaign_id"),
+    )
+
+
 class ContentPromptSettings(Base):
     __tablename__ = "content_prompt_settings"
     id                 = Column(Integer, primary_key=True)

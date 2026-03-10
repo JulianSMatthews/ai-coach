@@ -2,6 +2,7 @@ import AdminNav from "@/components/AdminNav";
 import FetchRatesButton from "@/components/FetchRatesButton";
 import {
   fetchUsageSettings,
+  getAdminMarketingFunnel,
   getAdminPromptCosts,
   getAdminUsageSummary,
   getUsageSettings,
@@ -60,24 +61,41 @@ type ReportingSearchParams = {
   start?: string;
   end?: string;
   user_id?: string;
+  source?: string;
+  campaign?: string;
 };
 
-export default async function ReportingPage({ searchParams }: { searchParams?: ReportingSearchParams }) {
+export default async function ReportingPage({
+  searchParams,
+}: {
+  searchParams: Promise<ReportingSearchParams>;
+}) {
+  const resolvedSearchParams = (await searchParams) || {};
   const apiBase = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "";
-  const period = typeof searchParams?.period === "string" ? searchParams.period : "7";
-  const start = typeof searchParams?.start === "string" ? searchParams.start : undefined;
-  const end = typeof searchParams?.end === "string" ? searchParams.end : undefined;
-  const userIdRaw = typeof searchParams?.user_id === "string" ? searchParams.user_id : "";
+  const period = typeof resolvedSearchParams?.period === "string" ? resolvedSearchParams.period : "7";
+  const start = typeof resolvedSearchParams?.start === "string" ? resolvedSearchParams.start : undefined;
+  const end = typeof resolvedSearchParams?.end === "string" ? resolvedSearchParams.end : undefined;
+  const userIdRaw = typeof resolvedSearchParams?.user_id === "string" ? resolvedSearchParams.user_id : "";
+  const sourceRaw = typeof resolvedSearchParams?.source === "string" ? resolvedSearchParams.source : "";
+  const campaignRaw = typeof resolvedSearchParams?.campaign === "string" ? resolvedSearchParams.campaign : "";
   const userId = userIdRaw ? Number(userIdRaw) : undefined;
   const days = period === "custom" ? undefined : Number(period || 7);
 
-  const [settings, usage, promptCosts, users] = await Promise.all([
+  const [settings, usage, marketing, promptCosts, users] = await Promise.all([
     getUsageSettings(),
     getAdminUsageSummary({
       days: Number.isFinite(days) ? days : 7,
       start: period === "custom" ? start : undefined,
       end: period === "custom" ? end : undefined,
       user_id: Number.isFinite(userId) ? userId : undefined,
+    }),
+    getAdminMarketingFunnel({
+      days: Number.isFinite(days) ? days : 7,
+      start: period === "custom" ? start : undefined,
+      end: period === "custom" ? end : undefined,
+      user_id: Number.isFinite(userId) ? userId : undefined,
+      source: sourceRaw || undefined,
+      campaign: campaignRaw || undefined,
     }),
     getAdminPromptCosts({
       days: Number.isFinite(days) ? days : 7,
@@ -206,6 +224,26 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
                   })}
                 </select>
               </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Source</label>
+                <input
+                  type="text"
+                  name="source"
+                  defaultValue={sourceRaw}
+                  placeholder="instagram"
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Campaign</label>
+                <input
+                  type="text"
+                  name="campaign"
+                  defaultValue={campaignRaw}
+                  placeholder="assessment_launch"
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                />
+              </div>
               <button
                 type="submit"
                 className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white"
@@ -261,6 +299,120 @@ export default async function ReportingPage({ searchParams }: { searchParams?: R
                 </div>
               </div>
             ))}
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Marketing funnel</p>
+              <p className="mt-2 text-sm text-[#6b6257]">
+                Window: {marketing?.window?.start_utc ?? "—"} → {marketing?.window?.end_utc ?? "—"}
+              </p>
+              <p className="mt-1 text-sm text-[#6b6257]">
+                Filters: source {sourceRaw || "all"} · campaign {campaignRaw || "all"}
+              </p>
+            </div>
+            <div className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] px-4 py-3">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Key rates</p>
+              <p className="mt-1 text-sm text-[#3c332b]">
+                Start → Complete: {marketing?.funnel?.start_to_complete_pct ?? "—"}%
+              </p>
+              <p className="text-sm text-[#3c332b]">
+                Complete → Claimed: {marketing?.funnel?.complete_to_claim_pct ?? "—"}%
+              </p>
+              <p className="text-sm text-[#3c332b]">
+                Claimed → Results viewed: {marketing?.funnel?.claim_to_results_view_pct ?? "—"}%
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-5">
+            {(marketing?.funnel?.steps || []).map((step) => (
+              <div key={step.key || step.label} className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{step.label || step.key}</p>
+                <p className="mt-2 text-2xl font-semibold">{step.count ?? 0}</p>
+                <p className="mt-1 text-xs text-[#8a8176]">
+                  {step.percent_of_start != null ? `${step.percent_of_start}% of leads` : "—"}
+                </p>
+                <p className="mt-1 text-xs text-[#8a8176]">
+                  {step.conversion_pct_from_prev != null
+                    ? `${step.conversion_pct_from_prev}% from previous`
+                    : "Start stage"}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <details className="rounded-2xl border border-[#efe7db] bg-white" open>
+              <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-[#3c332b]">
+                Breakdown by source ({marketing?.breakdown?.by_source?.length ?? 0})
+              </summary>
+              <div className="overflow-x-auto border-t border-[#efe7db]">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-[#f7f4ee] text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                    <tr>
+                      <th className="px-4 py-3">Source</th>
+                      <th className="px-4 py-3">Leads</th>
+                      <th className="px-4 py-3">Completed</th>
+                      <th className="px-4 py-3">Claimed</th>
+                      <th className="px-4 py-3">Viewed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(marketing?.breakdown?.by_source || []).map((row) => (
+                      <tr key={row.key} className="border-t border-[#efe7db]">
+                        <td className="px-4 py-3">{row.key || "unknown"}</td>
+                        <td className="px-4 py-3">{row.leads ?? 0}</td>
+                        <td className="px-4 py-3">
+                          {row.assessment_completed ?? 0}
+                          <span className="ml-2 text-xs text-[#8a8176]">({row.start_to_complete_pct ?? "—"}%)</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {row.identity_claimed ?? 0}
+                          <span className="ml-2 text-xs text-[#8a8176]">({row.claim_rate_pct ?? "—"}%)</span>
+                        </td>
+                        <td className="px-4 py-3">
+                          {row.results_viewed ?? 0}
+                          <span className="ml-2 text-xs text-[#8a8176]">({row.results_view_rate_pct ?? "—"}%)</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+
+            <details className="rounded-2xl border border-[#efe7db] bg-white" open>
+              <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-[#3c332b]">
+                Top campaigns ({marketing?.breakdown?.by_campaign?.length ?? 0})
+              </summary>
+              <div className="overflow-x-auto border-t border-[#efe7db]">
+                <table className="min-w-full text-left text-sm">
+                  <thead className="bg-[#f7f4ee] text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                    <tr>
+                      <th className="px-4 py-3">Campaign</th>
+                      <th className="px-4 py-3">Leads</th>
+                      <th className="px-4 py-3">Started</th>
+                      <th className="px-4 py-3">Completed</th>
+                      <th className="px-4 py-3">Viewed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(marketing?.breakdown?.by_campaign || []).map((row) => (
+                      <tr key={row.key} className="border-t border-[#efe7db]">
+                        <td className="px-4 py-3">{row.key || "(none)"}</td>
+                        <td className="px-4 py-3">{row.leads ?? 0}</td>
+                        <td className="px-4 py-3">{row.assessment_started ?? 0}</td>
+                        <td className="px-4 py-3">{row.assessment_completed ?? 0}</td>
+                        <td className="px-4 py-3">{row.results_viewed ?? 0}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
           </div>
         </section>
 
