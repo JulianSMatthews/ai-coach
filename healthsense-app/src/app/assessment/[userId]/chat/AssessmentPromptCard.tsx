@@ -47,14 +47,30 @@ type Props = {
   onRestart: () => void;
 };
 
-function helperText(prompt: AssessmentCurrentPrompt): string {
-  if (prompt.kind === "readiness_scale") {
-    return "One = Strongly disagree. Three = Unsure. Five = Strongly agree.";
+function helperText(): string | null {
+  return null;
+}
+
+function isRedundantHint(text: string | null | undefined): boolean {
+  const normalized = String(text || "").trim().toLowerCase();
+  return normalized === "tap the number that best fits your last 7 days.";
+}
+
+function sectionPct(section: AssessmentPromptSection): number {
+  const total = Number(section.total || 0);
+  const value = Number(section.value || section.answered || 0);
+  if (total <= 0) {
+    return section.status === "complete" ? 100 : 0;
   }
-  if (prompt.measure_label) {
-    return `Measure: ${prompt.measure_label}`;
+  return Math.max(0, Math.min(100, (value / total) * 100));
+}
+
+function promptHint(prompt: AssessmentCurrentPrompt): string | null {
+  const hint = String(prompt.hint || "").trim();
+  if (hint && !isRedundantHint(hint)) {
+    return hint;
   }
-  return "Tap the number that best fits your last 7 days.";
+  return helperText();
 }
 
 function renderFormattedQuestion(text: string): ReactNode {
@@ -78,11 +94,31 @@ export default function AssessmentPromptCard({
   onRestart,
 }: Props) {
   const tone = prompt.kind === "readiness_scale" ? "#d3541b" : "var(--accent)";
+  const hint = promptHint(prompt);
 
   return (
     <section className="w-full rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
       <div className="space-y-5">
         <div className="space-y-3">
+          {prompt.sections.length ? (
+            <div
+              className="grid gap-2"
+              style={{ gridTemplateColumns: `repeat(${prompt.sections.length}, minmax(0, 1fr))` }}
+              aria-label="Overall assessment progress"
+            >
+              {prompt.sections.map((section) => (
+                <div key={section.key} className="h-2 overflow-hidden rounded-full bg-[#eadfce]">
+                  <div
+                    className="h-full rounded-full"
+                    style={{
+                      width: `${sectionPct(section)}%`,
+                      background: tone,
+                    }}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : null}
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <h2 className="text-2xl text-[#1e1b16]">{prompt.section_label}</h2>
@@ -96,7 +132,7 @@ export default function AssessmentPromptCard({
 
         <div className="space-y-4">
           <h3 className="text-xl leading-snug text-[#1e1b16] sm:text-[1.75rem]">{renderFormattedQuestion(prompt.question)}</h3>
-          <p className="text-sm text-[#6b6257]">{prompt.hint || helperText(prompt)}</p>
+          {hint ? <p className="text-sm text-[#6b6257]">{hint}</p> : null}
         </div>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
@@ -123,7 +159,6 @@ export default function AssessmentPromptCard({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs text-[#8c7f70]">{helperText(prompt)}</p>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"

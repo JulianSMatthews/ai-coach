@@ -34,8 +34,9 @@ function resolveAssessmentUserId(rawUserId: unknown, cookieHeader: string): stri
   const requestedUserId = String(rawUserId ?? "").trim();
   const sessionUserId = String(getCookieValue(cookieHeader, "hs_user_id") || "").trim();
   const leadToken = getCookieValue(cookieHeader, "hs_lead_token");
-  if (requestedUserId && isLeadGuestUserId(requestedUserId) && !leadToken && sessionUserId) {
-    return sessionUserId;
+  if (requestedUserId && isLeadGuestUserId(requestedUserId)) {
+    if (leadToken) return requestedUserId;
+    return null;
   }
   if (requestedUserId) return requestedUserId;
   return sessionUserId || null;

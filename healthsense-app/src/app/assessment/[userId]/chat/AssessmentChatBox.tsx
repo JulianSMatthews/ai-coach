@@ -2,6 +2,8 @@
 
 import { useSearchParams } from "next/navigation";
 import { type ReactNode, FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { getPillarPalette } from "@/lib/pillars";
+import { ProgressBar, ScoreRing } from "@/components/ui";
 import AssessmentPromptCard, {
   type AssessmentCurrentPrompt,
   type AssessmentPromptOption,
@@ -27,10 +29,30 @@ type ChatResponse = {
   has_active_session?: boolean;
   identity_required?: boolean;
   current_prompt?: unknown;
+  result_summary?: unknown;
   messages?: ChatMessage[];
+  outbox?: ChatMessage[];
   user_id?: number | string;
   next_path?: string;
   error?: string;
+};
+
+type AssessmentResultPillar = {
+  pillar_key: string;
+  label: string;
+  score: number;
+};
+
+type AssessmentResultSummary = {
+  run_id?: number;
+  finished_at?: string | null;
+  combined: number;
+  pillars: AssessmentResultPillar[];
+  readiness?: {
+    score?: number | null;
+    label?: string | null;
+    note?: string | null;
+  } | null;
 };
 
 type AssessmentChatBoxProps = {
@@ -191,6 +213,53 @@ function normalizeCurrentPrompt(raw: unknown): AssessmentCurrentPrompt | null {
   };
 }
 
+function normalizeResultPillar(raw: unknown): AssessmentResultPillar | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const pillarKey = typeof row.pillar_key === "string" ? row.pillar_key.trim() : "";
+  const label = typeof row.label === "string" ? row.label.trim() : "";
+  const score = Number.parseInt(String(row.score ?? ""), 10);
+  if (!pillarKey || !label || !Number.isFinite(score)) return null;
+  return {
+    pillar_key: pillarKey,
+    label,
+    score,
+  };
+}
+
+function normalizeResultSummary(raw: unknown): AssessmentResultSummary | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const combined = Number.parseInt(String(row.combined ?? ""), 10);
+  if (!Number.isFinite(combined)) return null;
+  const pillars = Array.isArray(row.pillars)
+    ? row.pillars.map(normalizeResultPillar).filter((item): item is AssessmentResultPillar => Boolean(item))
+    : [];
+  return {
+    run_id: Number.parseInt(String(row.run_id ?? ""), 10) || undefined,
+    finished_at: typeof row.finished_at === "string" ? row.finished_at : null,
+    combined,
+    pillars,
+    readiness:
+      row.readiness && typeof row.readiness === "object"
+        ? {
+            score:
+              row.readiness && Number.isFinite(Number((row.readiness as Record<string, unknown>).score))
+                ? Number((row.readiness as Record<string, unknown>).score)
+                : null,
+            label:
+              typeof (row.readiness as Record<string, unknown>).label === "string"
+                ? String((row.readiness as Record<string, unknown>).label)
+                : null,
+            note:
+              typeof (row.readiness as Record<string, unknown>).note === "string"
+                ? String((row.readiness as Record<string, unknown>).note)
+                : null,
+          }
+        : null,
+  };
+}
+
 function resolveAssessmentHref(rawUrl: string, userId: string): string {
   const fallback = `/assessment/${encodeURIComponent(userId)}`;
   const candidate = String(rawUrl || "").trim();
@@ -341,15 +410,15 @@ export default function AssessmentChatBox({
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [hasActiveSession, setHasActiveSession] = useState(false);
-  const [identityRequired, setIdentityRequired] = useState(false);
+  const [, setIdentityRequired] = useState(false);
   const [currentPrompt, setCurrentPrompt] = useState<AssessmentCurrentPrompt | null>(null);
+  const [resultSummary, setResultSummary] = useState<AssessmentResultSummary | null>(null);
   const [selectedPromptValue, setSelectedPromptValue] = useState<string | null>(null);
   const [showIdentityGate, setShowIdentityGate] = useState(false);
   const [claimFirstName, setClaimFirstName] = useState("");
   const [claimSurname, setClaimSurname] = useState("");
   const [claimPhone, setClaimPhone] = useState("");
   const [claiming, setClaiming] = useState(false);
-  const [pendingAssessmentHref, setPendingAssessmentHref] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
@@ -361,13 +430,17 @@ export default function AssessmentChatBox({
   const busy = loading || starting || sending || claiming;
   const chatReady = hasActiveSession || assessmentCompleted || messages.length > 0;
   const promptActive = Boolean(currentPrompt);
+  const showResultCard = Boolean(resultSummary) && !promptActive;
   const showAssessmentControls = !assessmentCompleted && !isLeadGuest && !promptActive && (!leadFlow || !chatReady);
 
   const applyChatPayload = useCallback((data: ChatResponse) => {
     const nextPrompt = normalizeCurrentPrompt(data.current_prompt);
-    setMessages(normalizeMessages(data.messages));
+    const persistedMessages = normalizeMessages(data.messages);
+    const fallbackOutboxMessages = normalizeMessages(data.outbox);
+    setMessages(persistedMessages.length > 0 ? persistedMessages : fallbackOutboxMessages);
     setHasActiveSession(Boolean(data.has_active_session));
     setCurrentPrompt(nextPrompt);
+    setResultSummary(normalizeResultSummary(data.result_summary));
     setSelectedPromptValue(null);
     const required = Boolean(data.identity_required);
     setIdentityRequired(required);
@@ -628,18 +701,6 @@ export default function AssessmentChatBox({
     event.currentTarget.form?.requestSubmit();
   }
 
-  function onAssessmentCtaClick(href: string) {
-    if (!identityRequired) {
-      if (typeof window !== "undefined") {
-        window.location.href = href;
-      }
-      return;
-    }
-    setPendingAssessmentHref(href);
-    setShowIdentityGate(true);
-    setStatus("Please add your name and mobile number to unlock your results.");
-  }
-
   async function onClaimIdentity(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const firstName = claimFirstName.trim();
@@ -669,10 +730,8 @@ export default function AssessmentChatBox({
       }
       setIdentityRequired(false);
       setShowIdentityGate(false);
-      const targetHref = pendingAssessmentHref || `/assessment/${encodeURIComponent(userId)}`;
-      setPendingAssessmentHref(null);
       if (typeof window !== "undefined") {
-        window.location.href = targetHref;
+        window.location.href = `/assessment/${encodeURIComponent(userId)}`;
       }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
@@ -680,6 +739,58 @@ export default function AssessmentChatBox({
       setClaiming(false);
     }
   }
+
+  const resultCard = resultSummary ? (
+    <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
+      <div className="space-y-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="space-y-2">
+            <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Assessment complete</p>
+            <h2 className="text-2xl text-[#1e1b16]">Your HealthSense Score</h2>
+            {resultSummary.finished_at ? (
+              <p className="text-sm text-[#6b6257]">
+                Completed {new Date(resultSummary.finished_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex items-center gap-4 rounded-3xl border border-[#efe7db] bg-white px-5 py-4">
+            <ScoreRing value={resultSummary.combined} tone="var(--accent)" />
+            <div>
+              <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Overall</p>
+              <p className="text-3xl font-semibold text-[#1e1b16]">{resultSummary.combined}</p>
+            </div>
+          </div>
+        </div>
+
+        {resultSummary.pillars.length ? (
+          <div className="grid gap-3">
+            {resultSummary.pillars.map((pillar) => {
+              const palette = getPillarPalette(pillar.pillar_key);
+              return (
+                <div key={pillar.pillar_key} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-[#1e1b16]">{pillar.label}</p>
+                    <p className="text-sm font-semibold" style={{ color: palette.accent }}>{pillar.score}</p>
+                  </div>
+                  <ProgressBar value={pillar.score} max={100} tone={palette.accent} />
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {resultSummary.readiness?.label ? (
+          <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Habit readiness</p>
+            <p className="mt-1 text-lg font-semibold text-[#1e1b16]">{resultSummary.readiness.label}</p>
+            {resultSummary.readiness.note ? (
+              <p className="mt-2 text-sm text-[#6b6257]">{resultSummary.readiness.note}</p>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  ) : null;
 
   const conversationLog = (
     <div className="relative">
@@ -722,15 +833,6 @@ export default function AssessmentChatBox({
                   ) : (
                     <div className="max-w-[95%] rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap text-[#3c332b]">
                       {mediaPayload.cleanedText ? <p>{renderFormattedText(mediaPayload.cleanedText)}</p> : null}
-                      {cta.href ? (
-                        <button
-                          type="button"
-                          onClick={() => onAssessmentCtaClick(cta.href || `/assessment/${encodeURIComponent(userId)}`)}
-                          className="mt-3 inline-flex rounded-full border border-[var(--accent)] bg-[var(--accent)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white"
-                        >
-                          {identityRequired ? "Add details to view results" : "View assessment"}
-                        </button>
-                      ) : null}
                       {mediaPayload.mediaUrl && mediaPayload.isPodcast ? (
                         <div className="mt-3 space-y-2">
                           <audio
@@ -847,6 +949,8 @@ export default function AssessmentChatBox({
             <div className="mt-4">{conversationLog}</div>
           </details>
         </div>
+      ) : showResultCard ? (
+        resultCard
       ) : (
         conversationLog
       )}
@@ -906,7 +1010,7 @@ export default function AssessmentChatBox({
         </div>
       ) : null}
 
-      {!currentPrompt ? (
+      {!currentPrompt && !showResultCard ? (
         <form onSubmit={onSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="flex-1">
             <label htmlFor="assessment-chat-input" className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">

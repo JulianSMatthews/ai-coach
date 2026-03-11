@@ -48,11 +48,25 @@ function getPublicOrigin(request: Request): string {
   return `${proto}://${host}`;
 }
 
+function isMetaAnalyserUserAgent(value: string | null | undefined): boolean {
+  const ua = String(value || "").trim().toLowerCase();
+  if (!ua) return false;
+  return [
+    "facebookexternalhit",
+    "facebot",
+    "meta-externalagent",
+    "meta-externalfetcher",
+  ].some((token) => ua.includes(token));
+}
+
 export async function GET(request: Request) {
   const reqUrl = new URL(request.url);
   const origin = getPublicOrigin(request);
   const fallback = new URL("/login", origin);
   try {
+    if (isMetaAnalyserUserAgent(request.headers.get("user-agent"))) {
+      return NextResponse.redirect(fallback);
+    }
     const base = getBaseUrl();
     const leadKey = (reqUrl.searchParams.get("k") || "").trim();
     const campaign = (reqUrl.searchParams.get("campaign") || reqUrl.searchParams.get("utm_campaign") || "").trim();

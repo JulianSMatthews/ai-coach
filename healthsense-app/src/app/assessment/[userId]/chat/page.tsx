@@ -1,6 +1,5 @@
 import Image from "next/image";
 import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
 import { getUserStatus, type UserStatusResponse } from "@/lib/api";
 import { Card, PageShell, SectionHeader } from "@/components/ui";
 import TextScale from "@/components/TextScale";
@@ -33,11 +32,30 @@ export default async function AssessmentChatPage(props: PageProps) {
   const leadFlow = isTruthyToken(resolvedSearchParams.lead);
   const leadGuest = String(userId || "").trim().toLowerCase() === "lead";
   const cookieStore = await cookies();
-  const sessionUserId = String(cookieStore.get("hs_user_id")?.value || "").trim();
   const leadToken = String(cookieStore.get("hs_lead_token")?.value || "").trim();
 
-  if (leadFlow && leadGuest && !leadToken && /^\d+$/.test(sessionUserId)) {
-    redirect(`/assessment/${encodeURIComponent(sessionUserId)}/chat?lead=1`);
+  if (leadFlow && leadGuest && !leadToken) {
+    return (
+      <PageShell className="px-4 py-6 sm:px-6 sm:py-8" contentClassName="space-y-6">
+        <SectionHeader
+          title={
+            <span className="inline-grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 leading-none">
+              <Image src="/healthsense-mark.svg" alt="HealthSense" width={34} height={34} className="h-8 w-8 flex-none" />
+              <span className="min-w-0 leading-tight">
+                <span className="block">Find out your</span>
+                <span className="block">HealthSense Score</span>
+              </span>
+            </span>
+          }
+        />
+        <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
+          <h2 className="text-xl">Assessment link expired</h2>
+          <p className="mt-2 text-sm text-[#6b6257]">
+            This link no longer has an active lead session. Reopen the latest assessment link to start a new session.
+          </p>
+        </Card>
+      </PageShell>
+    );
   }
 
   let status: UserStatusResponse = {};

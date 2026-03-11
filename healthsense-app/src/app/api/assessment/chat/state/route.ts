@@ -44,8 +44,9 @@ function resolveAssessmentUserId(rawUserId: unknown, cookieHeader: string): stri
   const requestedUserId = String(rawUserId ?? "").trim();
   const sessionUserId = String(getCookieValue(cookieHeader, "hs_user_id") || "").trim();
   const leadToken = getCookieValue(cookieHeader, "hs_lead_token");
-  if (requestedUserId && isLeadGuestUserId(requestedUserId) && !leadToken && sessionUserId) {
-    return sessionUserId;
+  if (requestedUserId && isLeadGuestUserId(requestedUserId)) {
+    if (leadToken) return requestedUserId;
+    return null;
   }
   if (requestedUserId) return requestedUserId;
   return sessionUserId || null;
@@ -60,6 +61,9 @@ export async function GET(request: Request) {
     const leadToken = getCookieValue(cookieHeader, "hs_lead_token");
     const leadMode = (isLeadGuestUserId(requestedUserId) || (!userId && Boolean(leadToken))) && !(userId && !isLeadGuestUserId(userId));
     if (leadMode) {
+      if (!leadToken) {
+        return NextResponse.json({ error: "Lead session expired. Please reopen the assessment link." }, { status: 401 });
+      }
       const firstQuestion = decodeCookieToken(getCookieValue(cookieHeader, "hs_lead_q1")) || LEAD_Q1_FALLBACK;
       return NextResponse.json({
         ok: true,

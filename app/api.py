@@ -1126,6 +1126,22 @@ def _assessment_scale_options(min_value: int, max_value: int, *, details: dict[s
     return opts
 
 
+def _assessment_readiness_options() -> list[dict[str, str]]:
+    opts: list[dict[str, str]] = []
+    for value in range(1, 6):
+        detail_val = _READINESS_OPTION_DETAILS.get(str(value))
+        if not detail_val:
+            continue
+        opts.append(
+            {
+                "value": str(value),
+                "label": detail_val,
+                "detail": detail_val,
+            }
+        )
+    return opts
+
+
 def _assessment_main_question_total(state_obj: dict) -> int:
     pillar_concepts = state_obj.get("pillar_concepts") if isinstance(state_obj.get("pillar_concepts"), dict) else {}
     total = 0
@@ -1239,8 +1255,8 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
             "question_key": str(question_key),
             "question": str(question_text or "").strip(),
             "measure_label": "agreement scale",
-            "hint": "One = Strongly disagree. Five = Strongly agree.",
-            "options": _assessment_scale_options(1, 5, details=_READINESS_OPTION_DETAILS),
+            "hint": None,
+            "options": _assessment_readiness_options(),
             "sections": section_progress,
         }
 
@@ -1315,6 +1331,7 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
 def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> dict:
     active_session_payload = None
     current_prompt_payload = None
+    result_summary_payload = None
     pref_map: dict[str, str] = {}
     with SessionLocal() as s:
         active_session = (
@@ -1354,6 +1371,97 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
                 "total_questions": state_obj.get("total_questions"),
             }
             current_prompt_payload = _assessment_current_prompt_payload(s, state_obj)
+
+        latest_finished_run = (
+            s.execute(
+                select(AssessmentRun)
+                .where(
+                    AssessmentRun.user_id == int(user_id),
+                    AssessmentRun.finished_at.isnot(None),
+                )
+                .order_by(desc(AssessmentRun.id))
+            )
+            .scalars()
+            .first()
+        )
+        if latest_finished_run is not None:
+            pillar_rows = (
+                s.execute(
+                    select(PillarResult)
+                    .where(PillarResult.run_id == int(latest_finished_run.id))
+                    .order_by(PillarResult.id.asc())
+                )
+                .scalars()
+                .all()
+            )
+            pillar_map = {
+                str(getattr(row, "pillar_key", "") or "").strip().lower(): row
+                for row in pillar_rows
+                if str(getattr(row, "pillar_key", "") or "").strip()
+            }
+            ordered_pillar_keys = [key for key in PILLAR_ORDER if key in pillar_map]
+            ordered_pillar_keys.extend([key for key in pillar_map.keys() if key not in ordered_pillar_keys])
+            pillar_payload = []
+            for pillar_key in ordered_pillar_keys:
+                row = pillar_map.get(pillar_key)
+                if row is None:
+                    continue
+                pillar_payload.append(
+                    {
+                        "pillar_key": pillar_key,
+                        "label": pillar_key.replace("_", " ").title(),
+                        "score": int(getattr(row, "overall", 0) or 0),
+                    }
+                )
+
+            combined_overall = getattr(latest_finished_run, "combined_overall", None)
+            if combined_overall is None and pillar_payload:
+                combined_overall = round(
+                    sum(int(item.get("score") or 0) for item in pillar_payload) / max(1, len(pillar_payload))
+                )
+
+            readiness_payload = None
+            psych_profile = (
+                s.query(PsychProfile)
+                .filter(
+                    PsychProfile.user_id == int(user_id),
+                    PsychProfile.assessment_run_id == int(latest_finished_run.id),
+                    PsychProfile.completed_at.isnot(None),
+                )
+                .order_by(PsychProfile.completed_at.desc(), PsychProfile.id.desc())
+                .first()
+            )
+            if psych_profile is not None:
+                section_averages = getattr(psych_profile, "section_averages", None) or {}
+                vals = [value for value in section_averages.values() if isinstance(value, (int, float))]
+                avg = (sum(vals) / len(vals)) if vals else None
+                if avg is not None:
+                    if avg < 2.6:
+                        label = "Low"
+                        note = "We’ll keep things light, add structure, and focus on simple wins this week."
+                    elif avg < 3.6:
+                        label = "Moderate"
+                        note = "We’ll balance guidance with autonomy and check in on any sticking points."
+                    else:
+                        label = "High"
+                        note = "You can handle more autonomy; we’ll keep nudges concise and goal-focused."
+                    readiness_payload = {
+                        "score": round(float(avg), 1),
+                        "label": label,
+                        "note": note,
+                    }
+
+            result_summary_payload = {
+                "run_id": int(latest_finished_run.id),
+                "finished_at": (
+                    getattr(latest_finished_run, "finished_at", None).isoformat()
+                    if getattr(latest_finished_run, "finished_at", None) is not None
+                    else None
+                ),
+                "combined": int(combined_overall or 0),
+                "pillars": pillar_payload,
+                "readiness": readiness_payload,
+            }
 
         rows = (
             s.query(MessageLog)
@@ -1498,6 +1606,7 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
         "active_session": active_session_payload,
         "has_active_session": active_session_payload is not None,
         "current_prompt": current_prompt_payload,
+        "result_summary": result_summary_payload,
         "messages": messages,
         "identity_required": str(pref_map.get("lead_identity_required") or "").strip() == "1",
         "lead_source": pref_map.get("lead_source") or None,
@@ -2150,6 +2259,30 @@ def _lead_first_question_preview_text() -> str:
         return fallback
 
 
+def _is_meta_analyser_user_agent(user_agent: str | None) -> bool:
+    """
+    Exclude known Meta link-preview/analyser crawlers from marketing lead counts
+    without blocking real Instagram/Facebook in-app browsers.
+    """
+    ua = str(user_agent or "").strip().lower()
+    if not ua:
+        return False
+    meta_bot_tokens = (
+        "facebookexternalhit",
+        "facebot",
+        "meta-externalagent",
+        "meta-externalfetcher",
+    )
+    return any(token in ua for token in meta_bot_tokens)
+
+
+def _should_skip_marketing_lead_tracking(tracking: dict[str, object] | None) -> bool:
+    if not isinstance(tracking, dict):
+        return False
+    user_agent = _track_text(tracking.get("user_agent"), max_len=1200)
+    return _is_meta_analyser_user_agent(user_agent)
+
+
 def _collect_public_lead_tracking(
     body: dict,
     request: Request,
@@ -2249,6 +2382,8 @@ def _create_public_landing_lead_tracking(
     club_id: int | None,
     now: datetime | None = None,
 ) -> int | None:
+    if _should_skip_marketing_lead_tracking(tracking):
+        return None
     created_at = now or datetime.utcnow()
     source = _track_text(tracking.get("source"), max_len=64) or "instagram"
     campaign = _track_text(tracking.get("campaign"), max_len=120)
@@ -2439,6 +2574,17 @@ def _create_public_lead_user_and_tracking(
         )
         s.add(auth_sess)
         s.commit()
+
+    if _should_skip_marketing_lead_tracking(tracking):
+        return {
+            "user_id": int(user_id),
+            "session_token": session_token,
+            "created_at": created_at,
+            "expires_at": created_at + timedelta(minutes=ttl_minutes),
+            "session_ttl_seconds": int(ttl_minutes * 60),
+            "source": source or "instagram",
+            "campaign": campaign,
+        }
 
     try:
         with SessionLocal() as s:
@@ -11931,6 +12077,10 @@ def admin_marketing_funnel(
             .order_by(MarketingLead.created_at.desc(), MarketingLead.id.desc())
             .all()
         )
+        lead_rows = [
+            row for row in lead_rows
+            if not _is_meta_analyser_user_agent(getattr(row, "user_agent", None))
+        ]
 
         lead_user_ids = sorted({int(row.user_id) for row in lead_rows if row.user_id is not None})
         run_finished_by_user: dict[int, datetime] = {}
