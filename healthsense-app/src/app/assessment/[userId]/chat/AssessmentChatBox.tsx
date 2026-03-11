@@ -1145,7 +1145,6 @@ export default function AssessmentChatBox({
           </div>
 
           <div className="space-y-3 text-sm text-[#6b6257]">
-            <p>I just need to confirm your consent.</p>
             <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4 text-[#3c332b]">
               <p className="mt-2">Your answers are stored securely and only used to personalise your wellbeing programme.</p>
               <p className="mt-2">We never share your information with third parties, and you can stop at any time.</p>

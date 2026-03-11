@@ -1368,8 +1368,10 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
         return None
 
     try:
-        display_min = min(int(zero_score), int(max_score))
-        display_max = max(int(zero_score), int(max_score))
+        actual_min = min(int(zero_score), int(max_score))
+        actual_max = max(int(zero_score), int(max_score))
+        display_min = actual_min
+        display_max = max(actual_max, 5)
     except Exception:
         return None
 
@@ -2220,11 +2222,7 @@ _SESSION_TTL_DAYS_REMEMBER = int(os.getenv("SESSION_TTL_DAYS_REMEMBER", "30"))
 _LEAD_START_TTL_MINUTES = int(os.getenv("LEAD_START_TTL_MINUTES", "180"))
 _LEAD_PENDING_TOKEN_VERSION = 1
 _LEAD_PENDING_RUNTIME_SECRET = secrets.token_urlsafe(48)
-_LEAD_Q1_FALLBACK = (
-    "Q1/15 · Nutrition: In the last 7 days, how many portions of fruit and vegetables did you "
-    "*eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving "
-    "of vegetables, or 1 handful of salad or berries."
-)
+_LEAD_Q1_FALLBACK = REFLECTION_PROMPT_TEXT
 
 
 def _is_truthy_token(value: object) -> bool:
@@ -2326,48 +2324,7 @@ def _parse_lead_pending_token(token: str | None) -> dict | None:
 
 
 def _lead_first_question_preview_text() -> str:
-    fallback = _LEAD_Q1_FALLBACK
-    try:
-        with SessionLocal() as s:
-            concept_rows = s.execute(select(Concept.pillar_key, Concept.code, Concept.name)).all()
-            buckets: dict[str, list[tuple[str, str]]] = {}
-            for pillar_key, code, name in concept_rows:
-                pk = str(pillar_key or "").strip().lower()
-                cc = str(code or "").strip()
-                nm = str(name or "").strip()
-                if not pk or not cc:
-                    continue
-                buckets.setdefault(pk, []).append((cc, nm))
-            capped: dict[str, list[str]] = {}
-            for pk, items in buckets.items():
-                ordered = sorted(items, key=lambda row: (row[0].lower(), row[1].lower()))
-                capped[pk] = [code for code, _name in ordered[:5]]
-            total_questions = sum(len(items) for items in capped.values())
-            if total_questions <= 0:
-                total_questions = 20
-            nutrition_codes = capped.get("nutrition") or []
-            if not nutrition_codes:
-                return fallback
-            first_code = nutrition_codes[0]
-            concept_id = s.execute(
-                select(Concept.id)
-                .where(Concept.pillar_key == "nutrition", Concept.code == first_code)
-                .limit(1)
-            ).scalar_one_or_none()
-            if not concept_id:
-                return fallback
-            question = s.execute(
-                select(ConceptQuestion.text)
-                .where(ConceptQuestion.concept_id == int(concept_id), ConceptQuestion.is_primary == True)
-                .limit(1)
-            ).scalar_one_or_none()
-            q_text = _track_text(question, max_len=3000)
-            if not q_text:
-                return fallback
-            return f"Q1/{int(total_questions)} · Nutrition: {q_text}"
-    except Exception as e:
-        print(f"[marketing] failed to build lead first-question preview: {e}")
-        return fallback
+    return _LEAD_Q1_FALLBACK
 
 
 def _is_meta_analyser_user_agent(user_agent: str | None) -> bool:

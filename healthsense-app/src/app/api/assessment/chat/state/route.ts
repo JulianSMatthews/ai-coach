@@ -66,17 +66,18 @@ export async function GET(request: Request) {
         return NextResponse.json({ error: "Lead session expired. Please reopen the assessment link." }, { status: 401 });
       }
       const firstQuestion = decodeCookieToken(getCookieValue(cookieHeader, "hs_lead_q1")) || LEAD_Q1_FALLBACK;
+      const prompt = buildLeadFirstPrompt(firstQuestion);
       return NextResponse.json({
         ok: true,
         has_active_session: false,
         identity_required: true,
-        current_prompt: buildLeadFirstPrompt(firstQuestion),
+        current_prompt: prompt,
         messages: [
           {
             id: 0,
             direction: "outbound",
             channel: "app",
-            text: firstQuestion,
+            text: prompt.question,
             created_at: new Date().toISOString(),
           },
         ],
