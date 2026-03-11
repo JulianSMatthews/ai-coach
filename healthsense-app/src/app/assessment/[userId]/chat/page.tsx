@@ -1,4 +1,6 @@
 import Image from "next/image";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import { getUserStatus, type UserStatusResponse } from "@/lib/api";
 import { PageShell, SectionHeader } from "@/components/ui";
 import TextScale from "@/components/TextScale";
@@ -21,6 +23,14 @@ export default async function AssessmentChatPage(props: PageProps) {
   const resolvedSearchParams = (await props.searchParams) || {};
   const leadFlow = isTruthyToken(resolvedSearchParams.lead);
   const leadGuest = String(userId || "").trim().toLowerCase() === "lead";
+  const cookieStore = await cookies();
+  const sessionUserId = String(cookieStore.get("hs_user_id")?.value || "").trim();
+  const leadToken = String(cookieStore.get("hs_lead_token")?.value || "").trim();
+
+  if (leadFlow && leadGuest && !leadToken && /^\d+$/.test(sessionUserId)) {
+    redirect(`/assessment/${encodeURIComponent(sessionUserId)}/chat?lead=1`);
+  }
+
   const status: UserStatusResponse = leadGuest ? {} : await getUserStatus(userId);
   const prefs = status.coaching_preferences || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
@@ -39,7 +49,7 @@ export default async function AssessmentChatPage(props: PageProps) {
     : assessmentInProgress
       ? "Your assessment is in progress. Continue with Gia here using the guided question cards."
       : leadFlow
-        ? "You are in assessment mode with Gia. Tap each answer to continue."
+        ? ""
         : "Start your assessment with Gia here. Each question will guide you one step at a time.";
 
   return (
@@ -47,18 +57,20 @@ export default async function AssessmentChatPage(props: PageProps) {
       <TextScale defaultScale={textScale} />
       {!leadFlow ? <AppNav userId={userId} promptBadge={promptBadge} /> : null}
       <SectionHeader
-        brandMark={
+        title={
           leadFlow ? (
-          <a href={`/assessment/${userId}/chat?lead=1`} className="inline-flex items-center gap-2" aria-label="HealthSense">
-            <Image src="/healthsense-logo.svg" alt="HealthSense" width={146} height={32} className="h-8 w-auto" />
-          </a>
-          ) : undefined
+            <span className="inline-flex flex-wrap items-center gap-3">
+              <Image src="/healthsense-mark.svg" alt="HealthSense" width={34} height={34} className="h-8 w-8 flex-none" />
+              <span>Find out your HealthSense Score</span>
+            </span>
+          ) : (
+            "My Coach Gia"
+          )
         }
-        title={leadFlow ? "Find out your HealthSense Score" : "My Coach Gia"}
       />
 
       <section className="space-y-4">
-        <p className="text-sm text-[#6b6257]">{chatIntroText}</p>
+        {chatIntroText ? <p className="text-sm text-[#6b6257]">{chatIntroText}</p> : null}
         <AssessmentChatBox userId={userId} assessmentCompleted={assessmentCompleted} isLeadGuest={leadGuest} />
       </section>
     </PageShell>

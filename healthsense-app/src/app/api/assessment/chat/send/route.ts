@@ -30,11 +30,23 @@ function isLeadGuestUserId(value: unknown): boolean {
   return token === "lead" || token === "0" || token === "guest";
 }
 
+function resolveAssessmentUserId(rawUserId: unknown, cookieHeader: string): string | null {
+  const requestedUserId = String(rawUserId ?? "").trim();
+  const sessionUserId = String(getCookieValue(cookieHeader, "hs_user_id") || "").trim();
+  const leadToken = getCookieValue(cookieHeader, "hs_lead_token");
+  if (requestedUserId && isLeadGuestUserId(requestedUserId) && !leadToken && sessionUserId) {
+    return sessionUserId;
+  }
+  if (requestedUserId) return requestedUserId;
+  return sessionUserId || null;
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const cookieHeader = request.headers.get("cookie") || "";
-    const userId = body.userId ?? getCookieValue(cookieHeader, "hs_user_id");
+    const requestedUserId = body.userId ?? getCookieValue(cookieHeader, "hs_user_id");
+    const userId = resolveAssessmentUserId(requestedUserId, cookieHeader);
     const textValue = String(body.text || "").trim();
     if (!textValue) {
       return NextResponse.json({ error: "text is required" }, { status: 400 });
@@ -48,7 +60,7 @@ export async function POST(request: Request) {
           : undefined,
     };
     const leadToken = getCookieValue(cookieHeader, "hs_lead_token");
-    const leadMode = isLeadGuestUserId(userId) || (!userId && Boolean(leadToken));
+    const leadMode = (isLeadGuestUserId(requestedUserId) || (!userId && Boolean(leadToken))) && !(userId && !isLeadGuestUserId(userId));
 
     const base = getBaseUrl();
     if (leadMode) {

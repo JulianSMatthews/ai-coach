@@ -25,11 +25,27 @@ function getCookieValue(cookieHeader: string, key: string): string | null {
   return match ? match[1] : null;
 }
 
+function isLeadGuestUserId(value: unknown): boolean {
+  const token = String(value ?? "").trim().toLowerCase();
+  return token === "lead" || token === "0" || token === "guest";
+}
+
+function resolveAssessmentUserId(rawUserId: unknown, cookieHeader: string): string | null {
+  const requestedUserId = String(rawUserId ?? "").trim();
+  const sessionUserId = String(getCookieValue(cookieHeader, "hs_user_id") || "").trim();
+  const leadToken = getCookieValue(cookieHeader, "hs_lead_token");
+  if (requestedUserId && isLeadGuestUserId(requestedUserId) && !leadToken && sessionUserId) {
+    return sessionUserId;
+  }
+  if (requestedUserId) return requestedUserId;
+  return sessionUserId || null;
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const cookieHeader = request.headers.get("cookie") || "";
-    const userId = body.userId ?? getCookieValue(cookieHeader, "hs_user_id");
+    const userId = resolveAssessmentUserId(body.userId ?? getCookieValue(cookieHeader, "hs_user_id"), cookieHeader);
     if (!userId) {
       return NextResponse.json({ error: "userId is required" }, { status: 400 });
     }

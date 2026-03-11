@@ -774,8 +774,8 @@ export default function AssessmentChatBox({
                                 title={option.value}
                                 className={
                                   selected
-                                    ? "rounded-full border border-[#1e1b16] bg-[#1e1b16] px-3 py-1 text-xs font-semibold text-white"
-                                    : "rounded-full border border-[#e0d4c3] bg-[#fff8ef] px-3 py-1 text-xs font-semibold text-[#3c332b] transition hover:bg-[#ffeccc] disabled:cursor-not-allowed disabled:opacity-60"
+                                    ? "rounded-full border border-[var(--accent)] bg-white px-3 py-1 text-xs font-semibold text-[var(--accent)]"
+                                    : "rounded-full border border-[var(--accent)] bg-[var(--accent)] px-3 py-1 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                                 }
                               >
                                 {option.label}

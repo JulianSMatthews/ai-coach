@@ -40,13 +40,25 @@ function isLeadGuestUserId(value: unknown): boolean {
   return token === "lead" || token === "0" || token === "guest";
 }
 
+function resolveAssessmentUserId(rawUserId: unknown, cookieHeader: string): string | null {
+  const requestedUserId = String(rawUserId ?? "").trim();
+  const sessionUserId = String(getCookieValue(cookieHeader, "hs_user_id") || "").trim();
+  const leadToken = getCookieValue(cookieHeader, "hs_lead_token");
+  if (requestedUserId && isLeadGuestUserId(requestedUserId) && !leadToken && sessionUserId) {
+    return sessionUserId;
+  }
+  if (requestedUserId) return requestedUserId;
+  return sessionUserId || null;
+}
+
 export async function GET(request: Request) {
   try {
     const urlObj = new URL(request.url);
     const cookieHeader = request.headers.get("cookie") || "";
-    const userId = urlObj.searchParams.get("userId") || getCookieValue(cookieHeader, "hs_user_id");
+    const requestedUserId = urlObj.searchParams.get("userId") || getCookieValue(cookieHeader, "hs_user_id");
+    const userId = resolveAssessmentUserId(requestedUserId, cookieHeader);
     const leadToken = getCookieValue(cookieHeader, "hs_lead_token");
-    const leadMode = isLeadGuestUserId(userId) || (!userId && Boolean(leadToken));
+    const leadMode = (isLeadGuestUserId(requestedUserId) || (!userId && Boolean(leadToken))) && !(userId && !isLeadGuestUserId(userId));
     if (leadMode) {
       const firstQuestion = decodeCookieToken(getCookieValue(cookieHeader, "hs_lead_q1")) || LEAD_Q1_FALLBACK;
       return NextResponse.json({

@@ -110,11 +110,11 @@ export default function AssessmentPromptCard({
                 disabled={busy}
                 className={
                   isSelected
-                    ? "rounded-2xl border border-[#1e1b16] bg-[#1e1b16] px-4 py-5 text-left text-white transition disabled:cursor-not-allowed disabled:opacity-70"
-                    : "rounded-2xl border border-[#e7e1d6] bg-[#fffaf0] px-4 py-5 text-left transition hover:border-[var(--accent)] hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                    ? "rounded-2xl border border-[var(--accent)] bg-white px-4 py-5 text-left text-[var(--accent)] transition disabled:cursor-not-allowed disabled:opacity-70"
+                    : "rounded-2xl border border-[var(--accent)] bg-[var(--accent)] px-4 py-5 text-left text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                 }
               >
-                <span className={isSelected ? "block text-lg font-semibold text-white" : "block text-lg font-semibold text-[#1e1b16]"}>
+                <span className={isSelected ? "block text-lg font-semibold text-[var(--accent)]" : "block text-lg font-semibold text-white"}>
                   {option.label}
                 </span>
               </button>
