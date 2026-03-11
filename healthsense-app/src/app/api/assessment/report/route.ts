@@ -88,6 +88,9 @@ export async function GET(request: Request) {
     const sessionMatch = cookieHeader.match(/(?:^|; )hs_session=([^;]+)/);
     const session = sessionMatch ? sessionMatch[1] : null;
     const res = await fetchAssessmentWithFallbacks(base, userId, runId || null, session);
+    if (!res) {
+      return NextResponse.json({ error: "We couldn't load the coaching plan right now." }, { status: 502 });
+    }
 
     if (!res.ok) {
       const text = await res.text().catch(() => "");
