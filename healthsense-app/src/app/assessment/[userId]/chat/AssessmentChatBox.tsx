@@ -9,6 +9,7 @@ import AssessmentPromptCard, {
   type AssessmentPromptOption,
   type AssessmentPromptSection,
 } from "./AssessmentPromptCard";
+import LeadAssessmentBranding from "./LeadAssessmentBranding";
 
 type ChatMessage = {
   id?: number;
@@ -49,8 +50,9 @@ type AssessmentResultSummary = {
   combined: number;
   pillars: AssessmentResultPillar[];
   readiness?: {
+    title?: string | null;
     score?: number | null;
-    label?: string | null;
+    level?: string | null;
     note?: string | null;
   } | null;
 };
@@ -60,6 +62,7 @@ type AssessmentChatBoxProps = {
   assessmentCompleted?: boolean;
   isLeadGuest?: boolean;
   leadToken?: string;
+  showLeadBranding?: boolean;
 };
 
 type AssessmentCta = {
@@ -83,12 +86,33 @@ type MediaPayload = {
   isPodcast: boolean;
 };
 
+type AssessmentCoachingPlanItem = {
+  pillarKey: string;
+  pillarName: string;
+  score: number | null;
+  objective: string;
+  keyResults: string[];
+};
+
+type AssessmentCoachingPlan = {
+  okrs: AssessmentCoachingPlanItem[];
+};
+
 function parseApiError(text: string, fallback: string) {
   if (!text) return fallback;
   try {
     const parsed = JSON.parse(text) as { error?: string; detail?: string };
-    return parsed.error || parsed.detail || text;
+    const message = parsed.error || parsed.detail || text;
+    const normalized = String(message || "").trim().toLowerCase();
+    if (!normalized || normalized === "internal server error") {
+      return fallback;
+    }
+    return message;
   } catch {
+    const normalized = String(text || "").trim().toLowerCase();
+    if (!normalized || normalized === "internal server error") {
+      return fallback;
+    }
     return text;
   }
 }
@@ -244,13 +268,19 @@ function normalizeResultSummary(raw: unknown): AssessmentResultSummary | null {
     readiness:
       row.readiness && typeof row.readiness === "object"
         ? {
+            title:
+              typeof (row.readiness as Record<string, unknown>).title === "string"
+                ? String((row.readiness as Record<string, unknown>).title)
+                : null,
             score:
               row.readiness && Number.isFinite(Number((row.readiness as Record<string, unknown>).score))
                 ? Number((row.readiness as Record<string, unknown>).score)
                 : null,
-            label:
-              typeof (row.readiness as Record<string, unknown>).label === "string"
-                ? String((row.readiness as Record<string, unknown>).label)
+            level:
+              typeof (row.readiness as Record<string, unknown>).level === "string"
+                ? String((row.readiness as Record<string, unknown>).level)
+                : typeof (row.readiness as Record<string, unknown>).label === "string"
+                  ? String((row.readiness as Record<string, unknown>).label)
                 : null,
             note:
               typeof (row.readiness as Record<string, unknown>).note === "string"
@@ -259,6 +289,40 @@ function normalizeResultSummary(raw: unknown): AssessmentResultSummary | null {
           }
         : null,
   };
+}
+
+function normalizeCoachingPlanItem(raw: unknown): AssessmentCoachingPlanItem | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const pillarKey = typeof row.pillar_key === "string" ? row.pillar_key.trim() : "";
+  const pillarName = typeof row.pillar_name === "string" ? row.pillar_name.trim() : "";
+  const objective = typeof row.objective === "string" ? row.objective.trim() : "";
+  const keyResults = Array.isArray(row.key_results)
+    ? row.key_results
+        .map((item) => (typeof item === "string" ? item.trim() : ""))
+        .filter((item) => Boolean(item))
+    : [];
+  const rawScore = Number(row.score);
+  const score = Number.isFinite(rawScore) ? rawScore : null;
+  if (!pillarKey && !pillarName && !objective && !keyResults.length) return null;
+  return {
+    pillarKey,
+    pillarName,
+    score,
+    objective,
+    keyResults,
+  };
+}
+
+function normalizeCoachingPlan(raw: unknown): AssessmentCoachingPlan {
+  if (!raw || typeof raw !== "object") {
+    return { okrs: [] };
+  }
+  const row = raw as Record<string, unknown>;
+  const okrs = Array.isArray(row.okrs)
+    ? row.okrs.map(normalizeCoachingPlanItem).filter((item): item is AssessmentCoachingPlanItem => Boolean(item))
+    : [];
+  return { okrs };
 }
 
 function resolveAssessmentHref(rawUrl: string, userId: string): string {
@@ -414,6 +478,7 @@ export default function AssessmentChatBox({
   assessmentCompleted = false,
   isLeadGuest = false,
   leadToken,
+  showLeadBranding = false,
 }: AssessmentChatBoxProps) {
   const searchParams = useSearchParams();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -428,8 +493,12 @@ export default function AssessmentChatBox({
   const [claimSurname, setClaimSurname] = useState("");
   const [claimPhone, setClaimPhone] = useState("");
   const [claimEmail, setClaimEmail] = useState("");
-  const [claimConsentChoice, setClaimConsentChoice] = useState<"" | "yes" | "no">("");
   const [claiming, setClaiming] = useState(false);
+  const [showCoachingPlan, setShowCoachingPlan] = useState(false);
+  const [coachingPlan, setCoachingPlan] = useState<AssessmentCoachingPlan | null>(null);
+  const [coachingPlanLoading, setCoachingPlanLoading] = useState(false);
+  const [coachingPlanError, setCoachingPlanError] = useState<string | null>(null);
+  const [loadedCoachingPlanRunId, setLoadedCoachingPlanRunId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
@@ -448,6 +517,7 @@ export default function AssessmentChatBox({
   const showResultsGate = Boolean(resultSummary) && !promptActive && identityRequired;
   const showResultCard = Boolean(resultSummary) && !promptActive && !identityRequired;
   const showAssessmentControls = !assessmentCompleted && !isLeadGuest && !promptActive && (!leadFlow || !chatReady);
+  const showLeadBrandingInConversation = showLeadBranding && !promptActive && !showResultCard && !showResultsGate;
 
   const applyChatPayload = useCallback((data: ChatResponse) => {
     const nextPrompt = normalizeCurrentPrompt(data.current_prompt);
@@ -597,6 +667,14 @@ export default function AssessmentChatBox({
     };
   }, [userId, applyChatPayload, leadTokenQuery]);
 
+  useEffect(() => {
+    setShowCoachingPlan(false);
+    setCoachingPlan(null);
+    setCoachingPlanError(null);
+    setCoachingPlanLoading(false);
+    setLoadedCoachingPlanRunId(null);
+  }, [resultSummary?.run_id]);
+
   async function sendMessage(
     textValue: string,
     options?: {
@@ -720,7 +798,6 @@ export default function AssessmentChatBox({
     const surname = claimSurname.trim();
     const phone = claimPhone.trim();
     const email = claimEmail.trim().toLowerCase();
-    const consent = claimConsentChoice === "yes";
     if (!firstName || !surname) {
       setStatus("First name and surname are required.");
       return;
@@ -731,10 +808,6 @@ export default function AssessmentChatBox({
     }
     if (email && !looksLikeEmail(email)) {
       setStatus("That email doesn’t look right. Please check it.");
-      return;
-    }
-    if (!consent) {
-      setStatus("Consent is required before we can reveal your results.");
       return;
     }
 
@@ -769,9 +842,53 @@ export default function AssessmentChatBox({
     }
   }
 
+  async function onCoachingPlanClick() {
+    if (coachingPlanLoading) return;
+    if (showCoachingPlan) {
+      setShowCoachingPlan(false);
+      return;
+    }
+
+    setShowCoachingPlan(true);
+    setCoachingPlanError(null);
+
+    const runId = Number.isFinite(Number(resultSummary?.run_id)) ? Number(resultSummary?.run_id) : null;
+    if (coachingPlan && loadedCoachingPlanRunId === runId) {
+      return;
+    }
+
+    setCoachingPlanLoading(true);
+    try {
+      const params = new URLSearchParams({ userId });
+      if (runId) {
+        params.set("runId", String(runId));
+      }
+      const res = await fetch(`/api/assessment/report?${params.toString()}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        throw new Error(parseApiError(text, "Failed to load coaching plan."));
+      }
+      const payload = text ? JSON.parse(text) : {};
+      setCoachingPlan(normalizeCoachingPlan(payload));
+      setLoadedCoachingPlanRunId(runId);
+    } catch (error) {
+      setCoachingPlanError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCoachingPlanLoading(false);
+    }
+  }
+
   const resultCard = resultSummary ? (
     <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
       <div className="space-y-6">
+        {showLeadBranding ? (
+          <div className="border-b border-[#eadfce] pb-5">
+            <LeadAssessmentBranding />
+          </div>
+        ) : null}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="space-y-2">
             <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Assessment complete</p>
@@ -791,7 +908,7 @@ export default function AssessmentChatBox({
           </div>
         </div>
 
-        {resultSummary.pillars.length ? (
+        {resultSummary.pillars.length || Number.isFinite(Number(resultSummary.readiness?.score)) ? (
           <div className="grid gap-3">
             {resultSummary.pillars.map((pillar) => {
               const palette = getPillarPalette(pillar.pillar_key);
@@ -805,18 +922,106 @@ export default function AssessmentChatBox({
                 </div>
               );
             })}
-          </div>
-        ) : null}
-
-        {resultSummary.readiness?.label ? (
-          <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
-            <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Habit readiness</p>
-            <p className="mt-1 text-lg font-semibold text-[#1e1b16]">{resultSummary.readiness.label}</p>
-            {resultSummary.readiness.note ? (
-              <p className="mt-2 text-sm text-[#6b6257]">{resultSummary.readiness.note}</p>
+            {Number.isFinite(Number(resultSummary.readiness?.score)) ? (
+              <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-[#1e1b16]">
+                    {String(resultSummary.readiness?.title || "Habit Readiness")}
+                  </p>
+                  <p className="text-sm font-semibold text-[#c54817]">
+                    {Math.round(Number(resultSummary.readiness?.score || 0))}
+                  </p>
+                </div>
+                <ProgressBar value={Math.round(Number(resultSummary.readiness?.score || 0))} max={100} tone="#c54817" />
+              </div>
             ) : null}
           </div>
         ) : null}
+
+        <div className="border-t border-[#eadfce] pt-4">
+          <button
+            type="button"
+            onClick={() => void onCoachingPlanClick()}
+            disabled={coachingPlanLoading}
+            className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {coachingPlanLoading
+              ? "Loading coaching plan…"
+              : showCoachingPlan
+                ? "Hide coaching plan"
+                : "View coaching plan to help you improve your wellbeing"}
+          </button>
+        </div>
+      </div>
+    </section>
+  ) : null;
+
+  const coachingPlanPanel = showCoachingPlan ? (
+    <section className="rounded-[28px] border border-[#e7e1d6] bg-white px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
+      <div className="space-y-5">
+        <div className="space-y-2">
+          <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Objectives and key results</p>
+          <h2 className="text-2xl text-[#1e1b16]">Your coaching plan</h2>
+          <p className="text-sm text-[#6b6257]">
+            These OKRs and KRs are designed to help you improve your wellbeing.
+          </p>
+        </div>
+
+        {coachingPlanLoading ? (
+          <p className="text-sm text-[#6b6257]">Loading your coaching plan…</p>
+        ) : coachingPlanError ? (
+          <p className="text-sm text-[#6b6257]">{coachingPlanError}</p>
+        ) : coachingPlan?.okrs.length ? (
+          <div className="grid gap-3">
+            {coachingPlan.okrs.map((item) => {
+              const palette = getPillarPalette(item.pillarKey || item.pillarName);
+              const title = item.pillarName || palette.label || item.pillarKey.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+              return (
+                <div
+                  key={`${item.pillarKey || title}-${item.objective || item.keyResults.join("|")}`}
+                  className="rounded-2xl border px-4 py-4"
+                  style={{
+                    borderColor: palette.border,
+                    background: palette.bg,
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-[#1e1b16]">{title}</p>
+                    {Number.isFinite(Number(item.score)) ? (
+                      <p className="text-sm font-semibold" style={{ color: palette.accent }}>
+                        {Math.round(Number(item.score || 0))}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4 space-y-2 text-sm text-[#3c332b]">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">OKR</p>
+                      <p className="mt-1 whitespace-pre-wrap">{item.objective || "Objective coming soon."}</p>
+                    </div>
+
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">KRs</p>
+                      {item.keyResults.length ? (
+                        <ul className="mt-2 list-disc space-y-1 pl-5">
+                          {item.keyResults.map((kr) => (
+                            <li key={`${title}-${kr}`} className="whitespace-pre-wrap">
+                              {kr}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <p className="mt-1 text-[#6b6257]">No key results captured yet.</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-sm text-[#6b6257]">No coaching plan is available yet.</p>
+        )}
       </div>
     </section>
   ) : null;
@@ -825,11 +1030,15 @@ export default function AssessmentChatBox({
     <form onSubmit={onClaimIdentity} className="space-y-4" autoComplete="on">
       <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
         <div className="space-y-4">
+          {showLeadBranding ? (
+            <div className="border-b border-[#eadfce] pb-5">
+              <LeadAssessmentBranding />
+            </div>
+          ) : null}
           <div className="space-y-2">
-            <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Card 1 of 2</p>
             <h2 className="text-2xl text-[#1e1b16]">Tell us who you are</h2>
             <p className="text-sm text-[#6b6257]">
-              Before we reveal your HealthSense Score, add your first name, surname, and either a mobile number or email address.
+              Before we reveal your HealthSense Score, please add your first name, surname, and either a mobile number or email address.
             </p>
           </div>
 
@@ -880,46 +1089,16 @@ export default function AssessmentChatBox({
       <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
         <div className="space-y-4">
           <div className="space-y-2">
-            <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Card 2 of 2</p>
             <h2 className="text-2xl text-[#1e1b16]">Confirm your consent</h2>
           </div>
 
           <div className="space-y-3 text-sm text-[#6b6257]">
-            <p>Before we get started, I just need to confirm your consent.</p>
+            <p>I just need to confirm your consent.</p>
             <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4 text-[#3c332b]">
-              <p className="font-semibold">Your data</p>
               <p className="mt-2">Your answers are stored securely and only used to personalise your wellbeing programme.</p>
               <p className="mt-2">We never share your information with third parties, and you can stop at any time.</p>
               <p className="mt-2">Replying is optional, and you can request deletion of your data whenever you want.</p>
             </div>
-            <p>If you’re happy to continue, select Yes to give consent. If not, select No to opt out.</p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex items-start gap-3 rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm text-[#3c332b]">
-              <input
-                type="radio"
-                name="assessment-consent"
-                value="yes"
-                checked={claimConsentChoice === "yes"}
-                onChange={() => setClaimConsentChoice("yes")}
-                disabled={claiming}
-                className="mt-1"
-              />
-              <span>I consent to my data being used to personalise my wellbeing programme.</span>
-            </label>
-            <label className="flex items-start gap-3 rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm text-[#3c332b]">
-              <input
-                type="radio"
-                name="assessment-consent"
-                value="no"
-                checked={claimConsentChoice === "no"}
-                onChange={() => setClaimConsentChoice("no")}
-                disabled={claiming}
-                className="mt-1"
-              />
-              <span>I do not consent.</span>
-            </label>
           </div>
 
           <div className="flex flex-wrap gap-2">
@@ -928,7 +1107,7 @@ export default function AssessmentChatBox({
               className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
               disabled={claiming}
             >
-              {claiming ? "Saving…" : "Save and view results"}
+              {claiming ? "Saving…" : "Consent to save data and view results"}
             </button>
           </div>
         </div>
@@ -942,6 +1121,11 @@ export default function AssessmentChatBox({
         ref={logRef}
         className="max-h-[56vh] min-h-[320px] overflow-y-auto rounded-2xl border border-[#efe7db] bg-white p-4"
       >
+        {showLeadBrandingInConversation ? (
+          <div className="mb-4 border-b border-[#efe7db] pb-4">
+            <LeadAssessmentBranding />
+          </div>
+        ) : null}
         {messages.length === 0 ? (
           <p className="text-sm text-[#6b6257]">
             {leadFlow
@@ -1082,6 +1266,7 @@ export default function AssessmentChatBox({
             prompt={currentPrompt}
             busy={busy}
             selectedValue={selectedPromptValue}
+            showLeadBranding={showLeadBranding}
             onSelect={onPromptOptionClick}
             onRedo={onPromptRedo}
             onRestart={onPromptRestart}
@@ -1096,7 +1281,10 @@ export default function AssessmentChatBox({
       ) : showResultsGate ? (
         resultsGate
       ) : showResultCard ? (
-        resultCard
+        <div className="space-y-4">
+          {resultCard}
+          {coachingPlanPanel}
+        </div>
       ) : (
         conversationLog
       )}

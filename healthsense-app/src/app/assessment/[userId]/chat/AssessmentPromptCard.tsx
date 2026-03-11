@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { ProgressBar } from "@/components/ui";
+import LeadAssessmentBranding from "./LeadAssessmentBranding";
 
 export type AssessmentPromptOption = {
   value: string;
@@ -42,6 +43,7 @@ type Props = {
   prompt: AssessmentCurrentPrompt;
   busy?: boolean;
   selectedValue?: string | null;
+  showLeadBranding?: boolean;
   onSelect: (option: AssessmentPromptOption) => void;
   onRedo: () => void;
   onRestart: () => void;
@@ -89,6 +91,7 @@ export default function AssessmentPromptCard({
   prompt,
   busy = false,
   selectedValue = null,
+  showLeadBranding = false,
   onSelect,
   onRedo,
   onRestart,
@@ -99,6 +102,11 @@ export default function AssessmentPromptCard({
   return (
     <section className="w-full rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
       <div className="space-y-5">
+        {showLeadBranding ? (
+          <div className="border-b border-[#eadfce] pb-5">
+            <LeadAssessmentBranding />
+          </div>
+        ) : null}
         <div className="space-y-3">
           {prompt.sections.length ? (
             <div

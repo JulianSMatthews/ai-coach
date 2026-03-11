@@ -1142,6 +1142,16 @@ def _assessment_readiness_options() -> list[dict[str, str]]:
     return opts
 
 
+def _assessment_readiness_score(avg: float | int | None) -> int | None:
+    try:
+        value = float(avg)
+    except Exception:
+        return None
+    # Psych readiness answers are captured on a 1-5 scale; normalize them to 0-100.
+    pct = round(((value - 1.0) / 4.0) * 100.0)
+    return max(0, min(100, int(pct)))
+
+
 def _assessment_main_question_total(state_obj: dict) -> int:
     pillar_concepts = state_obj.get("pillar_concepts") if isinstance(state_obj.get("pillar_concepts"), dict) else {}
     total = 0
@@ -1209,7 +1219,7 @@ def _assessment_section_progress_payloads(state_obj: dict) -> list[dict[str, obj
     sections.append(
         {
             "key": "habit_readiness",
-            "label": "Habit readiness",
+            "label": "Habit Readiness",
             "index": len(PILLAR_ORDER) + 1,
             "value": int(max(0, min(readiness_display_value, readiness_total))),
             "answered": int(max(0, min(readiness_answered, readiness_total))),
@@ -1245,7 +1255,7 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
         return {
             "kind": "readiness_scale",
             "section_key": "habit_readiness",
-            "section_label": "Habit readiness",
+            "section_label": "Habit Readiness",
             "section_index": len(PILLAR_ORDER) + 1,
             "section_total": len(PILLAR_ORDER) + 1,
             "section_question_index": int(psych_idx + 1),
@@ -1436,6 +1446,7 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
                 vals = [value for value in section_averages.values() if isinstance(value, (int, float))]
                 avg = (sum(vals) / len(vals)) if vals else None
                 if avg is not None:
+                    readiness_score = _assessment_readiness_score(avg)
                     if avg < 2.6:
                         label = "Low"
                         note = "We’ll keep things light, add structure, and focus on simple wins this week."
@@ -1446,8 +1457,9 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
                         label = "High"
                         note = "You can handle more autonomy; we’ll keep nudges concise and goal-focused."
                     readiness_payload = {
-                        "score": round(float(avg), 1),
-                        "label": label,
+                        "title": "Habit Readiness",
+                        "score": readiness_score,
+                        "level": label,
                         "note": note,
                     }
 

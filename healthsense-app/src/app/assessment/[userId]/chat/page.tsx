@@ -1,10 +1,10 @@
-import Image from "next/image";
 import { cookies } from "next/headers";
 import { getUserStatus, type UserStatusResponse } from "@/lib/api";
 import { Card, PageShell, SectionHeader } from "@/components/ui";
 import TextScale from "@/components/TextScale";
 import AppNav from "@/components/AppNav";
 import AssessmentChatBox from "./AssessmentChatBox";
+import LeadAssessmentBranding from "./LeadAssessmentBranding";
 
 function isTruthyToken(value: string | string[] | undefined): boolean {
   const raw = Array.isArray(value) ? value[0] : value;
@@ -39,20 +39,12 @@ export default async function AssessmentChatPage(props: PageProps) {
   const leadToken = String(cookieStore.get("hs_lead_token")?.value || "").trim();
   const leadTokenParam = firstSearchValue(resolvedSearchParams.lt);
 
+  const leadHeaderTitle = <LeadAssessmentBranding />;
+
   if (leadFlow && leadGuest && !leadToken && !leadTokenParam) {
     return (
       <PageShell className="px-4 py-6 sm:px-6 sm:py-8" contentClassName="space-y-6">
-        <SectionHeader
-          title={
-            <span className="inline-grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 leading-none">
-              <Image src="/healthsense-mark.svg" alt="HealthSense" width={34} height={34} className="h-8 w-8 flex-none" />
-              <span className="min-w-0 leading-tight">
-                <span className="block">Find out your</span>
-                <span className="block">HealthSense Score</span>
-              </span>
-            </span>
-          }
-        />
+        <SectionHeader title={leadHeaderTitle} />
         <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
           <h2 className="text-xl">Assessment link expired</h2>
           <p className="mt-2 text-sm text-[#6b6257]">
@@ -91,23 +83,11 @@ export default async function AssessmentChatPage(props: PageProps) {
       : leadFlow
         ? ""
         : "Start your assessment with Gia here. Each question will guide you one step at a time.";
-  const headerTitle = leadFlow ? (
-    <span className="inline-grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 leading-none">
-      <Image src="/healthsense-mark.svg" alt="HealthSense" width={34} height={34} className="h-8 w-8 flex-none" />
-      <span className="min-w-0 leading-tight">
-        <span className="block">Find out your</span>
-        <span className="block">HealthSense Score</span>
-      </span>
-    </span>
-  ) : (
-    "My Coach Gia"
-  );
-
   if (statusLoadError && !leadFlow) {
     const shouldRelogin = statusLoadError.status === 401 || statusLoadError.status === 403;
     return (
       <PageShell className="px-4 py-6 sm:px-6 sm:py-8" contentClassName="space-y-6">
-        <SectionHeader title={headerTitle} />
+        <SectionHeader title="My Coach Gia" />
         <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
           <h2 className="text-xl">My Coach Gia is unavailable</h2>
           <p className="mt-2 text-sm text-[#6b6257]">
@@ -138,7 +118,7 @@ export default async function AssessmentChatPage(props: PageProps) {
     <PageShell className="px-4 py-6 sm:px-6 sm:py-8" contentClassName="space-y-6">
       <TextScale defaultScale={textScale} />
       {!leadFlow ? <AppNav userId={userId} promptBadge={promptBadge} /> : null}
-      <SectionHeader title={headerTitle} />
+      {!leadFlow ? <SectionHeader title="My Coach Gia" /> : null}
 
       <section className="space-y-4">
         {chatIntroText ? <p className="text-sm text-[#6b6257]">{chatIntroText}</p> : null}
@@ -147,6 +127,7 @@ export default async function AssessmentChatPage(props: PageProps) {
           assessmentCompleted={assessmentCompleted}
           isLeadGuest={leadGuest}
           leadToken={leadToken || leadTokenParam || undefined}
+          showLeadBranding={leadFlow}
         />
       </section>
     </PageShell>
