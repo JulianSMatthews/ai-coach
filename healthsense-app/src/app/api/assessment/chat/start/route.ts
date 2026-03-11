@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { buildLeadFirstPrompt, LEAD_Q1_FALLBACK } from "../leadPrompt";
 
 function getBaseUrl() {
   const base = process.env.API_BASE_URL;
@@ -39,9 +40,6 @@ function isLeadGuestUserId(value: unknown): boolean {
   return token === "lead" || token === "0" || token === "guest";
 }
 
-const LEAD_Q1_FALLBACK =
-  "Q1/15 · Nutrition: In the last 7 days, how many portions of fruit and vegetables did you *eat on average per day*? For reference: 1 portion = 1 apple or banana, 1 fist-sized serving of vegetables, or 1 handful of salad or berries.";
-
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
@@ -56,6 +54,7 @@ export async function POST(request: Request) {
         handled: false,
         has_active_session: false,
         identity_required: true,
+        current_prompt: buildLeadFirstPrompt(firstQuestion),
         messages: [
           {
             id: 0,

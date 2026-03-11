@@ -39,10 +39,10 @@ export default async function AssessmentChatPage(props: PageProps) {
   const chatIntroText = assessmentCompleted
     ? "Your assessment is complete. Continue coaching with Gia in this chat."
     : assessmentInProgress
-      ? "Your assessment is in progress. Continue with Gia here."
+      ? "Your assessment is in progress. Continue with Gia here using the guided question cards."
       : leadFlow
-        ? "You are in assessment mode with Gia. Answer each question to continue."
-        : "Start your assessment with Gia in this chat.";
+        ? "You are in assessment mode with Gia. Tap each answer to continue."
+        : "Start your assessment with Gia here. Each question will guide you one step at a time.";
 
   return (
     <PageShell>

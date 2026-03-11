@@ -403,6 +403,7 @@ try:
         send_menu_options,
         send_dashboard_link,
         assessment_delivery_context,
+        PILLAR_ORDER,
     )
     _dbg("[INFO] Correct assessor module imported successfully (module path: " +
          f"{start_combined_assessment.__module__})")
@@ -1084,8 +1085,236 @@ def _log_app_chat_inbound(user: User, body: str, *, meta_extra: dict[str, object
         print(f"⚠️ app chat inbound logging failed (non-fatal): {e!r}")
 
 
+_ASSESSMENT_NUMBER_WORDS = {
+    0: "Zero",
+    1: "One",
+    2: "Two",
+    3: "Three",
+    4: "Four",
+    5: "Five",
+    6: "Six",
+    7: "Seven",
+    8: "Eight",
+    9: "Nine",
+    10: "Ten",
+}
+
+_READINESS_OPTION_DETAILS = {
+    "1": "Strongly disagree",
+    "2": "Disagree",
+    "3": "Unsure",
+    "4": "Agree",
+    "5": "Strongly agree",
+}
+
+
+def _assessment_number_word(value: int) -> str:
+    return _ASSESSMENT_NUMBER_WORDS.get(int(value), str(value))
+
+
+def _assessment_scale_options(min_value: int, max_value: int, *, details: dict[str, str] | None = None) -> list[dict[str, str]]:
+    opts: list[dict[str, str]] = []
+    for value in range(int(min_value), int(max_value) + 1):
+        item = {
+            "value": str(value),
+            "label": _assessment_number_word(value),
+        }
+        detail_val = (details or {}).get(str(value))
+        if detail_val:
+            item["detail"] = detail_val
+        opts.append(item)
+    return opts
+
+
+def _assessment_main_question_total(state_obj: dict) -> int:
+    pillar_concepts = state_obj.get("pillar_concepts") if isinstance(state_obj.get("pillar_concepts"), dict) else {}
+    total = 0
+    for pillar_key in PILLAR_ORDER:
+        codes = pillar_concepts.get(pillar_key) or []
+        total += len(codes)
+    if total > 0:
+        return total
+    try:
+        return max(0, int(state_obj.get("total_questions") or 0))
+    except Exception:
+        return 0
+
+
+def _assessment_section_progress_payloads(state_obj: dict) -> list[dict[str, object]]:
+    pillar_concepts = state_obj.get("pillar_concepts") if isinstance(state_obj.get("pillar_concepts"), dict) else {}
+    concept_idx_map = state_obj.get("concept_idx") if isinstance(state_obj.get("concept_idx"), dict) else {}
+    phase = str(state_obj.get("phase") or "pillars").strip().lower()
+    active_pillar = str(state_obj.get("current") or (PILLAR_ORDER[0] if PILLAR_ORDER else "")).strip().lower()
+    psych_state = state_obj.get("psych") if isinstance(state_obj.get("psych"), dict) else {}
+    try:
+        psych_idx = max(0, int(psych_state.get("idx") or 0))
+    except Exception:
+        psych_idx = 0
+    psych_total = len(getattr(psych, "QUESTIONS", []) or [])
+
+    sections: list[dict[str, object]] = []
+    for pillar_idx, pillar_key in enumerate(PILLAR_ORDER, start=1):
+        codes = pillar_concepts.get(pillar_key) or []
+        total = len(codes)
+        try:
+            answered = max(0, min(int(concept_idx_map.get(pillar_key, 0) or 0), total))
+        except Exception:
+            answered = 0
+        is_active = phase == "pillars" and pillar_key == active_pillar and total > 0
+        display_value = answered
+        if is_active and answered < total:
+            display_value = answered + 1
+        status = "complete" if total > 0 and answered >= total else ("active" if is_active else "upcoming")
+        sections.append(
+            {
+                "key": pillar_key,
+                "label": pillar_key.replace("_", " ").title(),
+                "index": pillar_idx,
+                "value": int(display_value),
+                "answered": int(answered),
+                "total": int(total),
+                "status": status,
+            }
+        )
+
+    readiness_total = int(psych_total)
+    readiness_answered = 0
+    readiness_display_value = 0
+    if phase == "psych":
+        readiness_answered = max(0, min(psych_idx, readiness_total))
+        readiness_display_value = readiness_answered + 1 if readiness_answered < readiness_total else readiness_total
+        readiness_status = "active"
+    elif phase == "complete" and readiness_total > 0:
+        readiness_answered = readiness_total
+        readiness_display_value = readiness_total
+        readiness_status = "complete"
+    else:
+        readiness_status = "upcoming"
+    sections.append(
+        {
+            "key": "habit_readiness",
+            "label": "Habit readiness",
+            "index": len(PILLAR_ORDER) + 1,
+            "value": int(max(0, min(readiness_display_value, readiness_total))),
+            "answered": int(max(0, min(readiness_answered, readiness_total))),
+            "total": int(readiness_total),
+            "status": readiness_status,
+        }
+    )
+    return sections
+
+
+def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, object] | None:
+    if not isinstance(state_obj, dict):
+        return None
+    phase = str(state_obj.get("phase") or "pillars").strip().lower()
+    if phase not in {"pillars", "psych"}:
+        return None
+
+    section_progress = _assessment_section_progress_payloads(state_obj)
+    main_total = _assessment_main_question_total(state_obj)
+    readiness_total = len(getattr(psych, "QUESTIONS", []) or [])
+    overall_total = max(0, int(main_total) + int(readiness_total))
+
+    if phase == "psych":
+        psych_state = state_obj.get("psych") if isinstance(state_obj.get("psych"), dict) else {}
+        try:
+            psych_idx = max(0, int(psych_state.get("idx") or 0))
+        except Exception:
+            psych_idx = 0
+        questions = list(getattr(psych, "QUESTIONS", []) or [])
+        if psych_idx >= len(questions):
+            return None
+        question_key, question_text = questions[psych_idx]
+        return {
+            "kind": "readiness_scale",
+            "section_key": "habit_readiness",
+            "section_label": "Habit readiness",
+            "section_index": len(PILLAR_ORDER) + 1,
+            "section_total": len(PILLAR_ORDER) + 1,
+            "section_question_index": int(psych_idx + 1),
+            "section_question_total": int(len(questions)),
+            "question_position": int(main_total + psych_idx + 1),
+            "question_total": int(overall_total),
+            "question_key": str(question_key),
+            "question": str(question_text or "").strip(),
+            "measure_label": "agreement scale",
+            "hint": "One = Strongly disagree. Five = Strongly agree.",
+            "options": _assessment_scale_options(1, 5, details=_READINESS_OPTION_DETAILS),
+            "sections": section_progress,
+        }
+
+    pillar_concepts = state_obj.get("pillar_concepts") if isinstance(state_obj.get("pillar_concepts"), dict) else {}
+    concept_idx_map = state_obj.get("concept_idx") if isinstance(state_obj.get("concept_idx"), dict) else {}
+    active_pillar = str(state_obj.get("current") or "").strip().lower()
+    if not active_pillar:
+        return None
+    codes = pillar_concepts.get(active_pillar) or []
+    if not codes:
+        return None
+    try:
+        current_idx = max(0, int(concept_idx_map.get(active_pillar, 0) or 0))
+    except Exception:
+        current_idx = 0
+    if current_idx >= len(codes):
+        return None
+    concept_code = str(codes[current_idx] or "").strip()
+    if not concept_code:
+        return None
+
+    concept_row = session.execute(
+        select(Concept.id, Concept.name, Concept.description, Concept.zero_score, Concept.max_score)
+        .where(Concept.pillar_key == active_pillar, Concept.code == concept_code)
+        .limit(1)
+    ).first()
+    if not concept_row:
+        return None
+    concept_id, concept_name, concept_description, zero_score, max_score = concept_row
+    question_text = session.execute(
+        select(ConceptQuestion.text)
+        .where(ConceptQuestion.concept_id == int(concept_id), ConceptQuestion.is_primary == True)
+        .limit(1)
+    ).scalar_one_or_none()
+    q_text = str(question_text or "").strip()
+    if not q_text:
+        return None
+
+    try:
+        display_min = min(int(zero_score), int(max_score))
+        display_max = max(int(zero_score), int(max_score))
+    except Exception:
+        return None
+
+    answered_main = 0
+    for pillar_key in PILLAR_ORDER:
+        try:
+            answered_main += max(0, int(concept_idx_map.get(pillar_key, 0) or 0))
+        except Exception:
+            continue
+
+    return {
+        "kind": "concept_scale",
+        "section_key": active_pillar,
+        "section_label": active_pillar.replace("_", " ").title(),
+        "section_index": PILLAR_ORDER.index(active_pillar) + 1 if active_pillar in PILLAR_ORDER else 1,
+        "section_total": len(PILLAR_ORDER) + 1,
+        "section_question_index": int(current_idx + 1),
+        "section_question_total": int(len(codes)),
+        "question_position": int(answered_main + 1),
+        "question_total": int(overall_total if overall_total > 0 else main_total),
+        "concept_code": concept_code,
+        "concept_label": str(concept_name or concept_code.replace("_", " ").title()),
+        "question": q_text,
+        "measure_label": str(concept_description or "").strip() or None,
+        "hint": "Tap the number that best fits your last 7 days.",
+        "options": _assessment_scale_options(display_min, display_max),
+        "sections": section_progress,
+    }
+
+
 def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> dict:
     active_session_payload = None
+    current_prompt_payload = None
     pref_map: dict[str, str] = {}
     with SessionLocal() as s:
         active_session = (
@@ -1124,6 +1353,7 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
                 "question_seq": state_obj.get("question_seq"),
                 "total_questions": state_obj.get("total_questions"),
             }
+            current_prompt_payload = _assessment_current_prompt_payload(s, state_obj)
 
         rows = (
             s.query(MessageLog)
@@ -1267,6 +1497,7 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
     return {
         "active_session": active_session_payload,
         "has_active_session": active_session_payload is not None,
+        "current_prompt": current_prompt_payload,
         "messages": messages,
         "identity_required": str(pref_map.get("lead_identity_required") or "").strip() == "1",
         "lead_source": pref_map.get("lead_source") or None,
