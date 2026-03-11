@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AssessmentPromptCard, {
   type AssessmentCurrentPrompt,
   type AssessmentPromptOption,
@@ -68,6 +68,22 @@ function parseApiError(text: string, fallback: string) {
   } catch {
     return text;
   }
+}
+
+function renderFormattedText(text: string): ReactNode {
+  const raw = String(text || "");
+  if (!raw.includes("*")) return raw;
+  const parts = raw.split(/(\*[^*]+\*)/g).filter(Boolean);
+  return parts.map((part, index) => {
+    if (part.startsWith("*") && part.endsWith("*") && part.length > 2) {
+      return (
+        <strong key={`strong-${index}`} className="font-bold">
+          {part.slice(1, -1)}
+        </strong>
+      );
+    }
+    return <span key={`text-${index}`}>{part}</span>;
+  });
 }
 
 function normalizeMessages(raw: unknown): ChatMessage[] {
@@ -327,6 +343,7 @@ export default function AssessmentChatBox({
   const [hasActiveSession, setHasActiveSession] = useState(false);
   const [identityRequired, setIdentityRequired] = useState(false);
   const [currentPrompt, setCurrentPrompt] = useState<AssessmentCurrentPrompt | null>(null);
+  const [selectedPromptValue, setSelectedPromptValue] = useState<string | null>(null);
   const [showIdentityGate, setShowIdentityGate] = useState(false);
   const [claimFirstName, setClaimFirstName] = useState("");
   const [claimSurname, setClaimSurname] = useState("");
@@ -344,25 +361,14 @@ export default function AssessmentChatBox({
   const busy = loading || starting || sending || claiming;
   const chatReady = hasActiveSession || assessmentCompleted || messages.length > 0;
   const promptActive = Boolean(currentPrompt);
-  const stageLabel = assessmentCompleted
-    ? "Coaching active"
-    : currentPrompt?.section_label
-      ? `${currentPrompt.section_label} active`
-      : isLeadGuest || hasActiveSession
-        ? "Assessment active"
-        : "Assessment not started";
   const showAssessmentControls = !assessmentCompleted && !isLeadGuest && !promptActive && (!leadFlow || !chatReady);
 
-  const messageCountLabel = useMemo(() => {
-    const count = messages.length;
-    if (count === 1) return "1 message";
-    return `${count} messages`;
-  }, [messages.length]);
-
   const applyChatPayload = useCallback((data: ChatResponse) => {
+    const nextPrompt = normalizeCurrentPrompt(data.current_prompt);
     setMessages(normalizeMessages(data.messages));
     setHasActiveSession(Boolean(data.has_active_session));
-    setCurrentPrompt(normalizeCurrentPrompt(data.current_prompt));
+    setCurrentPrompt(nextPrompt);
+    setSelectedPromptValue(null);
     const required = Boolean(data.identity_required);
     setIdentityRequired(required);
     if (!required) {
@@ -562,6 +568,7 @@ export default function AssessmentChatBox({
       }
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
+      setSelectedPromptValue(null);
       if (options?.restoreDraftOnError) {
         setDraft(outbound);
       }
@@ -593,6 +600,7 @@ export default function AssessmentChatBox({
   function onPromptOptionClick(option: AssessmentPromptOption) {
     const textValue = String(option.value || "").trim();
     if (!textValue || busy) return;
+    setSelectedPromptValue(textValue);
     void sendMessage(textValue, {
       quickReply: {
         used: true,
@@ -707,13 +715,13 @@ export default function AssessmentChatBox({
                   className="flex justify-start"
                 >
                   {isUser ? (
-                    <div className="max-w-[95%] rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm whitespace-pre-wrap text-white">
-                      {mediaPayload.cleanedText ? <p>{mediaPayload.cleanedText}</p> : null}
-                      {ts ? <p className="mt-2 text-[10px] text-[#f5e5d8]">{ts}</p> : null}
+                    <div className="max-w-[95%] rounded-2xl bg-[#1e1b16] px-4 py-3 text-sm whitespace-pre-wrap text-white">
+                      {mediaPayload.cleanedText ? <p>{renderFormattedText(mediaPayload.cleanedText)}</p> : null}
+                      {ts ? <p className="mt-2 text-[10px] text-[#e6ddd1]">{ts}</p> : null}
                     </div>
                   ) : (
                     <div className="max-w-[95%] rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap text-[#3c332b]">
-                      {mediaPayload.cleanedText ? <p>{mediaPayload.cleanedText}</p> : null}
+                      {mediaPayload.cleanedText ? <p>{renderFormattedText(mediaPayload.cleanedText)}</p> : null}
                       {cta.href ? (
                         <button
                           type="button"
@@ -766,7 +774,7 @@ export default function AssessmentChatBox({
                                 title={option.value}
                                 className={
                                   selected
-                                    ? "rounded-full border border-[var(--accent)] bg-[var(--accent)] px-3 py-1 text-xs font-semibold text-white"
+                                    ? "rounded-full border border-[#1e1b16] bg-[#1e1b16] px-3 py-1 text-xs font-semibold text-white"
                                     : "rounded-full border border-[#e0d4c3] bg-[#fff8ef] px-3 py-1 text-xs font-semibold text-[#3c332b] transition hover:bg-[#ffeccc] disabled:cursor-not-allowed disabled:opacity-60"
                                 }
                               >
@@ -801,16 +809,6 @@ export default function AssessmentChatBox({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-        <span className="rounded-full border border-[#efe7db] bg-[#fffaf0] px-3 py-1">
-          {stageLabel}
-        </span>
-        {identityRequired ? (
-          <span className="rounded-full border border-[#f5d0a0] bg-[#fff3dc] px-3 py-1">Results locked</span>
-        ) : null}
-        <span className="rounded-full border border-[#efe7db] bg-white px-3 py-1">{messageCountLabel}</span>
-      </div>
-
       {showAssessmentControls ? (
         <div className="flex flex-wrap gap-2">
           <button
@@ -837,13 +835,14 @@ export default function AssessmentChatBox({
           <AssessmentPromptCard
             prompt={currentPrompt}
             busy={busy}
+            selectedValue={selectedPromptValue}
             onSelect={onPromptOptionClick}
             onRedo={onPromptRedo}
             onRestart={onPromptRestart}
           />
           <details className="rounded-2xl border border-[#efe7db] bg-white p-4">
             <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-              Conversation {messageCountLabel}
+              Conversation
             </summary>
             <div className="mt-4">{conversationLog}</div>
           </details>

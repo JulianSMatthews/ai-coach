@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { ProgressBar } from "@/components/ui";
 
 export type AssessmentPromptOption = {
@@ -40,6 +41,7 @@ export type AssessmentCurrentPrompt = {
 type Props = {
   prompt: AssessmentCurrentPrompt;
   busy?: boolean;
+  selectedValue?: string | null;
   onSelect: (option: AssessmentPromptOption) => void;
   onRedo: () => void;
   onRestart: () => void;
@@ -55,97 +57,90 @@ function helperText(prompt: AssessmentCurrentPrompt): string {
   return "Tap the number that best fits your last 7 days.";
 }
 
-export default function AssessmentPromptCard({ prompt, busy = false, onSelect, onRedo, onRestart }: Props) {
-  const overallTone = prompt.kind === "readiness_scale" ? "#d3541b" : "var(--accent)";
+function renderFormattedQuestion(text: string): ReactNode {
+  const raw = String(text || "");
+  if (!raw.includes("*")) return raw;
+  const parts = raw.split(/(\*[^*]+\*)/g).filter(Boolean);
+  return parts.map((part, idx) => {
+    if (part.startsWith("*") && part.endsWith("*") && part.length > 2) {
+      return <strong key={`strong-${idx}`} className="font-bold">{part.slice(1, -1)}</strong>;
+    }
+    return <span key={`text-${idx}`}>{part}</span>;
+  });
+}
+
+export default function AssessmentPromptCard({
+  prompt,
+  busy = false,
+  selectedValue = null,
+  onSelect,
+  onRedo,
+  onRestart,
+}: Props) {
+  const tone = prompt.kind === "readiness_scale" ? "#d3541b" : "var(--accent)";
 
   return (
-    <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] p-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:p-6">
+    <section className="w-full rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
       <div className="space-y-5">
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p className="text-xs uppercase tracking-[0.26em] text-[#6b6257]">Assessment chat</p>
-              <h2 className="mt-1 text-2xl text-[#1e1b16]">{prompt.section_label}</h2>
-            </div>
-            <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-right">
-              <p className="text-[11px] uppercase tracking-[0.24em] text-[#8c7f70]">Question</p>
-              <p className="mt-1 text-lg font-semibold text-[#1e1b16]">
-                {prompt.question_position}/{prompt.question_total}
-              </p>
+              <h2 className="text-2xl text-[#1e1b16]">{prompt.section_label}</h2>
+              {prompt.concept_label ? (
+                <p className="mt-1 text-sm font-semibold uppercase tracking-[0.16em] text-[#d3541b]">{prompt.concept_label}</p>
+              ) : null}
             </div>
           </div>
-          <ProgressBar value={prompt.question_position} max={prompt.question_total} tone={overallTone} />
+          <ProgressBar value={prompt.section_question_index} max={prompt.section_question_total} tone={tone} />
         </div>
 
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-          {prompt.sections.map((section) => {
-            const isActive = section.status === "active";
-            const tone = isActive ? overallTone : section.status === "complete" ? "#0ba360" : "#d8cdbc";
+        <div className="space-y-4">
+          <h3 className="text-xl leading-snug text-[#1e1b16] sm:text-[1.75rem]">{renderFormattedQuestion(prompt.question)}</h3>
+          <p className="text-sm text-[#6b6257]">{prompt.hint || helperText(prompt)}</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          {prompt.options.map((option) => {
+            const isSelected = selectedValue === option.value;
             return (
-              <div
-                key={section.key}
-                className={
-                  isActive
-                    ? "rounded-2xl border border-[#f5d0a0] bg-white px-4 py-3"
-                    : "rounded-2xl border border-[#efe7db] bg-white/80 px-4 py-3"
-                }
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-[11px] uppercase tracking-[0.2em] text-[#6b6257]">{section.label}</p>
-                  <p className="text-xs font-semibold text-[#3c332b]">
-                    {section.value}/{section.total}
-                  </p>
-                </div>
-                <ProgressBar value={section.value} max={Math.max(section.total, 1)} tone={tone} />
-              </div>
-            );
-          })}
-        </div>
-
-        <div className="rounded-[24px] border border-[#efe7db] bg-white px-5 py-6 sm:px-6 sm:py-8">
-          <div className="space-y-3">
-            <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
-              {prompt.section_label} {prompt.section_question_index}/{prompt.section_question_total}
-            </p>
-            {prompt.concept_label ? <p className="text-sm font-semibold uppercase tracking-[0.16em] text-[#d3541b]">{prompt.concept_label}</p> : null}
-            <h3 className="text-xl leading-snug text-[#1e1b16] sm:text-[1.75rem]">{prompt.question}</h3>
-            <p className="text-sm text-[#6b6257]">{prompt.hint || helperText(prompt)}</p>
-          </div>
-
-          <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {prompt.options.map((option) => (
               <button
                 key={`${prompt.section_key}-${option.value}`}
                 type="button"
                 onClick={() => onSelect(option)}
                 disabled={busy}
-                className="rounded-2xl border border-[#e7e1d6] bg-[#fffaf0] px-4 py-5 text-left transition hover:border-[var(--accent)] hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                className={
+                  isSelected
+                    ? "rounded-2xl border border-[#1e1b16] bg-[#1e1b16] px-4 py-5 text-left text-white transition disabled:cursor-not-allowed disabled:opacity-70"
+                    : "rounded-2xl border border-[#e7e1d6] bg-[#fffaf0] px-4 py-5 text-left transition hover:border-[var(--accent)] hover:bg-white disabled:cursor-not-allowed disabled:opacity-60"
+                }
               >
-                <span className="block text-lg font-semibold text-[#1e1b16]">{option.label}</span>
+                <span className={isSelected ? "block text-lg font-semibold text-white" : "block text-lg font-semibold text-[#1e1b16]"}>
+                  {option.label}
+                </span>
               </button>
-            ))}
-          </div>
+            );
+          })}
+        </div>
 
-          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-[#8c7f70]">{helperText(prompt)}</p>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={onRedo}
-                disabled={busy}
-                className="rounded-full border border-[#e0d4c3] bg-white px-4 py-2 text-xs uppercase tracking-[0.18em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Redo
-              </button>
-              <button
-                type="button"
-                onClick={onRestart}
-                disabled={busy}
-                className="rounded-full border border-[#e0d4c3] bg-[#fff3dc] px-4 py-2 text-xs uppercase tracking-[0.18em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                Restart
-              </button>
-            </div>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-[#8c7f70]">{helperText(prompt)}</p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={onRedo}
+              disabled={busy}
+              className="rounded-full border border-[#e0d4c3] bg-white px-4 py-2 text-xs uppercase tracking-[0.18em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Redo
+            </button>
+            <button
+              type="button"
+              onClick={onRestart}
+              disabled={busy}
+              className="rounded-full border border-[#e0d4c3] bg-[#fff3dc] px-4 py-2 text-xs uppercase tracking-[0.18em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Restart
+            </button>
           </div>
         </div>
       </div>

@@ -1,5 +1,6 @@
+import Image from "next/image";
 import { getUserStatus, type UserStatusResponse } from "@/lib/api";
-import { Card, PageShell, SectionHeader } from "@/components/ui";
+import { PageShell, SectionHeader } from "@/components/ui";
 import TextScale from "@/components/TextScale";
 import AppNav from "@/components/AppNav";
 import AssessmentChatBox from "./AssessmentChatBox";
@@ -22,15 +23,12 @@ export default async function AssessmentChatPage(props: PageProps) {
   const leadGuest = String(userId || "").trim().toLowerCase() === "lead";
   const status: UserStatusResponse = leadGuest ? {} : await getUserStatus(userId);
   const prefs = status.coaching_preferences || {};
-  const user = status.user || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
   const promptState = (status.prompt_state_override || "").toLowerCase();
   const promptBadge =
     promptState && promptState !== "live"
       ? `${promptState.charAt(0).toUpperCase()}${promptState.slice(1)} mode`
       : "";
-  const displayName = user.display_name || user.first_name || (leadGuest ? "Guest" : "User");
-  const displayFirstName = displayName.split(" ")[0];
   const assessmentCompleted =
     status.status === "completed" ||
     Boolean(status.onboarding?.assessment_completed_at) ||
@@ -45,35 +43,23 @@ export default async function AssessmentChatPage(props: PageProps) {
         : "Start your assessment with Gia here. Each question will guide you one step at a time.";
 
   return (
-    <PageShell>
+    <PageShell className="px-4 py-6 sm:px-6 sm:py-8" contentClassName="space-y-6">
       <TextScale defaultScale={textScale} />
       {!leadFlow ? <AppNav userId={userId} promptBadge={promptBadge} /> : null}
       <SectionHeader
         brandMark={
           leadFlow ? (
           <a href={`/assessment/${userId}/chat?lead=1`} className="inline-flex items-center gap-2" aria-label="HealthSense">
-            <img src="/healthsense-logo.svg" alt="HealthSense" className="h-8 w-auto" />
+            <Image src="/healthsense-logo.svg" alt="HealthSense" width={146} height={32} className="h-8 w-auto" />
           </a>
           ) : undefined
         }
-        eyebrow="Coach Chat"
-        title="My Coach Gia"
-        subtitle={
-          leadFlow
-            ? `${displayFirstName} · Let’s complete your assessment now`
-            : `${displayFirstName} · Chat with Gia directly in the app`
-        }
+        title={leadFlow ? "Find out your HealthSense Score" : "My Coach Gia"}
       />
 
-      <section className="grid gap-6">
-        <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
-          <p className="text-sm text-[#6b6257]">
-            {chatIntroText}
-          </p>
-          <div className="mt-5">
-            <AssessmentChatBox userId={userId} assessmentCompleted={assessmentCompleted} isLeadGuest={leadGuest} />
-          </div>
-        </Card>
+      <section className="space-y-4">
+        <p className="text-sm text-[#6b6257]">{chatIntroText}</p>
+        <AssessmentChatBox userId={userId} assessmentCompleted={assessmentCompleted} isLeadGuest={leadGuest} />
       </section>
     </PageShell>
   );

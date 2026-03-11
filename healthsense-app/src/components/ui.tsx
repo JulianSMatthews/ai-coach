@@ -1,11 +1,19 @@
 import React from "react";
 import SessionBootstrap from "./SessionBootstrap";
 
-export function PageShell({ children }: { children: React.ReactNode }) {
+export function PageShell({
+  children,
+  className = "",
+  contentClassName = "mx-auto max-w-6xl space-y-10",
+}: {
+  children: React.ReactNode;
+  className?: string;
+  contentClassName?: string;
+}) {
   return (
-    <main className="min-h-screen bg-white px-6 py-10 text-[#1e1b16]">
+    <main className={`min-h-screen bg-white px-6 py-10 text-[#1e1b16] ${className}`.trim()}>
       <SessionBootstrap />
-      <div className="mx-auto max-w-6xl space-y-10">{children}</div>
+      <div className={contentClassName}>{children}</div>
     </main>
   );
 }
