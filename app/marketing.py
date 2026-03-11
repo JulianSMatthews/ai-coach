@@ -38,6 +38,7 @@ def ensure_marketing_schema() -> None:
             bool_default = "false" if is_pg else "0"
             alterations = [
                 "ALTER TABLE marketing_leads ADD COLUMN IF NOT EXISTS user_id integer;",
+                "ALTER TABLE marketing_leads ADD COLUMN IF NOT EXISTS club_id integer;",
                 "ALTER TABLE marketing_leads ADD COLUMN IF NOT EXISTS source varchar(64);",
                 "ALTER TABLE marketing_leads ADD COLUMN IF NOT EXISTS campaign varchar(120);",
                 "ALTER TABLE marketing_leads ADD COLUMN IF NOT EXISTS utm_source varchar(180);",
@@ -60,6 +61,7 @@ def ensure_marketing_schema() -> None:
                 "ALTER TABLE marketing_leads ADD COLUMN IF NOT EXISTS client_ip varchar(64);",
                 "ALTER TABLE marketing_leads ADD COLUMN IF NOT EXISTS user_agent text;",
                 f"ALTER TABLE marketing_leads ADD COLUMN IF NOT EXISTS raw_meta {json_type};",
+                "ALTER TABLE marketing_leads ADD COLUMN IF NOT EXISTS landing_viewed_at timestamp;",
                 "ALTER TABLE marketing_leads ADD COLUMN IF NOT EXISTS assessment_started_at timestamp;",
                 "ALTER TABLE marketing_leads ADD COLUMN IF NOT EXISTS identity_claimed_at timestamp;",
                 "ALTER TABLE marketing_leads ADD COLUMN IF NOT EXISTS results_viewed_at timestamp;",
@@ -74,6 +76,7 @@ def ensure_marketing_schema() -> None:
 
             index_stmts = [
                 "CREATE INDEX IF NOT EXISTS ix_marketing_leads_user_id ON marketing_leads (user_id);",
+                "CREATE INDEX IF NOT EXISTS ix_marketing_leads_club_id ON marketing_leads (club_id);",
                 "CREATE INDEX IF NOT EXISTS ix_marketing_leads_created_at ON marketing_leads (created_at);",
                 "CREATE INDEX IF NOT EXISTS ix_marketing_leads_source ON marketing_leads (source);",
                 "CREATE INDEX IF NOT EXISTS ix_marketing_leads_campaign ON marketing_leads (campaign);",
@@ -86,5 +89,28 @@ def ensure_marketing_schema() -> None:
                 except Exception:
                     pass
 
-        _MARKETING_SCHEMA_READY = True
+            backfill_stmts = [
+                """
+                UPDATE marketing_leads
+                SET landing_viewed_at = created_at
+                WHERE landing_viewed_at IS NULL
+                  AND created_at IS NOT NULL;
+                """,
+                """
+                UPDATE marketing_leads
+                SET club_id = (
+                    SELECT users.club_id
+                    FROM users
+                    WHERE users.id = marketing_leads.user_id
+                )
+                WHERE club_id IS NULL
+                  AND user_id IS NOT NULL;
+                """,
+            ]
+            for stmt in backfill_stmts:
+                try:
+                    conn.execute(sa_text(stmt))
+                except Exception:
+                    pass
 
+        _MARKETING_SCHEMA_READY = True

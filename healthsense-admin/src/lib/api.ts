@@ -159,11 +159,14 @@ export type MarketingFunnelStep = {
 
 export type MarketingFunnelGroup = {
   key?: string;
+  landing_views?: number;
   leads?: number;
   assessment_started?: number;
   assessment_completed?: number;
   identity_claimed?: number;
   results_viewed?: number;
+  landing_to_lead_pct?: number | null;
+  lead_to_complete_pct?: number | null;
   start_to_complete_pct?: number | null;
   claim_rate_pct?: number | null;
   results_view_rate_pct?: number | null;
@@ -179,6 +182,7 @@ export type MarketingFunnelSummary = {
   };
   user?: { id?: number; display_name?: string; phone?: string } | null;
   totals?: {
+    landing_views?: number;
     leads?: number;
     assessment_started?: number;
     assessment_completed?: number;
@@ -187,6 +191,8 @@ export type MarketingFunnelSummary = {
   };
   funnel?: {
     steps?: MarketingFunnelStep[];
+    landing_to_lead_pct?: number | null;
+    lead_to_complete_pct?: number | null;
     start_to_complete_pct?: number | null;
     complete_to_claim_pct?: number | null;
     claim_to_results_view_pct?: number | null;
@@ -196,6 +202,7 @@ export type MarketingFunnelSummary = {
     by_campaign?: MarketingFunnelGroup[];
     daily?: Array<{
       day?: string;
+      landing_views?: number;
       leads?: number;
       assessment_started?: number;
       assessment_completed?: number;
@@ -212,6 +219,8 @@ export type MarketingFunnelSummary = {
     utm_source?: string | null;
     utm_medium?: string | null;
     utm_campaign?: string | null;
+    landing_path?: string | null;
+    landing_viewed_at?: string | null;
     created_at?: string | null;
     assessment_started_at?: string | null;
     assessment_completed?: boolean;

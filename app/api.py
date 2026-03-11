@@ -1814,6 +1814,8 @@ def _mint_lead_pending_token(
     client_ip: str | None,
     user_agent: str | None,
     lead_key_used: bool,
+    club_id: int | None,
+    marketing_lead_id: int | None,
     ttl_seconds: int,
 ) -> tuple[str, int]:
     now_ts = int(time.time())
@@ -1832,6 +1834,8 @@ def _mint_lead_pending_token(
         "client_ip": client_ip or None,
         "user_agent": user_agent or None,
         "lead_key_used": bool(lead_key_used),
+        "club_id": int(club_id) if isinstance(club_id, int) and club_id > 0 else None,
+        "marketing_lead_id": int(marketing_lead_id) if isinstance(marketing_lead_id, int) and marketing_lead_id > 0 else None,
     }
     raw = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
     body_token = _b64url_encode(raw)
@@ -2003,9 +2007,132 @@ def _collect_public_lead_tracking(
     }
 
 
+def _create_public_landing_lead_tracking(
+    *,
+    tracking: dict[str, object],
+    club_id: int | None,
+    now: datetime | None = None,
+) -> int | None:
+    created_at = now or datetime.utcnow()
+    source = _track_text(tracking.get("source"), max_len=64) or "instagram"
+    campaign = _track_text(tracking.get("campaign"), max_len=120)
+    utm_clean = _clean_tracking_map(tracking.get("utm_clean"), max_key_len=64, max_val_len=180)
+    fbclid = _track_text(tracking.get("fbclid"), max_len=255)
+    gclid = _track_text(tracking.get("gclid"), max_len=255)
+    msclkid = _track_text(tracking.get("msclkid"), max_len=255)
+    ttclid = _track_text(tracking.get("ttclid"), max_len=255)
+    meta_campaign_id = _track_text(tracking.get("meta_campaign_id"), max_len=96)
+    meta_adset_id = _track_text(tracking.get("meta_adset_id"), max_len=96)
+    meta_ad_id = _track_text(tracking.get("meta_ad_id"), max_len=96)
+    meta_creative_id = _track_text(tracking.get("meta_creative_id"), max_len=96)
+    placement = _track_text(tracking.get("placement"), max_len=120)
+    landing_path = _track_text(tracking.get("landing_path"), max_len=2000)
+    referrer_url = _track_text(tracking.get("referrer_url"), max_len=2000)
+    user_agent = _track_text(tracking.get("user_agent"), max_len=1200)
+    client_ip = _extract_client_ip(tracking.get("client_ip"))
+    raw_meta_payload = tracking.get("raw_meta_payload")
+    if not isinstance(raw_meta_payload, dict):
+        raw_meta_payload = None
+
+    try:
+        with SessionLocal() as s:
+            row = MarketingLead(
+                club_id=int(club_id) if isinstance(club_id, int) and club_id > 0 else None,
+                source=source,
+                campaign=campaign,
+                utm_source=utm_clean.get("utm_source"),
+                utm_medium=utm_clean.get("utm_medium"),
+                utm_campaign=utm_clean.get("utm_campaign"),
+                utm_term=utm_clean.get("utm_term"),
+                utm_content=utm_clean.get("utm_content"),
+                fbclid=fbclid,
+                gclid=gclid,
+                msclkid=msclkid,
+                ttclid=ttclid,
+                meta_campaign_id=meta_campaign_id,
+                meta_adset_id=meta_adset_id,
+                meta_ad_id=meta_ad_id,
+                meta_creative_id=meta_creative_id,
+                placement=placement,
+                lead_key_used=bool(tracking.get("lead_key_used")),
+                landing_path=landing_path,
+                referrer_url=referrer_url,
+                client_ip=client_ip,
+                user_agent=user_agent,
+                raw_meta=raw_meta_payload,
+                landing_viewed_at=created_at,
+                created_at=created_at,
+                updated_at=created_at,
+            )
+            s.add(row)
+            s.commit()
+            return int(getattr(row, "id", 0) or 0) or None
+    except Exception as e:
+        print(f"[marketing] failed to persist landing view: {e}")
+        return None
+
+
+def _hydrate_marketing_lead_row_from_tracking(
+    row: MarketingLead,
+    *,
+    tracking: dict[str, object],
+    user_id: int | None,
+    club_id: int | None,
+    created_at: datetime,
+) -> None:
+    utm_clean = _clean_tracking_map(tracking.get("utm_clean"), max_key_len=64, max_val_len=180)
+    field_values = {
+        "user_id": int(user_id) if isinstance(user_id, int) and user_id > 0 else None,
+        "club_id": int(club_id) if isinstance(club_id, int) and club_id > 0 else None,
+        "source": _track_text(tracking.get("source"), max_len=64) or "instagram",
+        "campaign": _track_text(tracking.get("campaign"), max_len=120),
+        "utm_source": utm_clean.get("utm_source"),
+        "utm_medium": utm_clean.get("utm_medium"),
+        "utm_campaign": utm_clean.get("utm_campaign"),
+        "utm_term": utm_clean.get("utm_term"),
+        "utm_content": utm_clean.get("utm_content"),
+        "fbclid": _track_text(tracking.get("fbclid"), max_len=255),
+        "gclid": _track_text(tracking.get("gclid"), max_len=255),
+        "msclkid": _track_text(tracking.get("msclkid"), max_len=255),
+        "ttclid": _track_text(tracking.get("ttclid"), max_len=255),
+        "meta_campaign_id": _track_text(tracking.get("meta_campaign_id"), max_len=96),
+        "meta_adset_id": _track_text(tracking.get("meta_adset_id"), max_len=96),
+        "meta_ad_id": _track_text(tracking.get("meta_ad_id"), max_len=96),
+        "meta_creative_id": _track_text(tracking.get("meta_creative_id"), max_len=96),
+        "placement": _track_text(tracking.get("placement"), max_len=120),
+        "lead_key_used": bool(tracking.get("lead_key_used")),
+        "landing_path": _track_text(tracking.get("landing_path"), max_len=2000),
+        "referrer_url": _track_text(tracking.get("referrer_url"), max_len=2000),
+        "client_ip": _extract_client_ip(tracking.get("client_ip")),
+        "user_agent": _track_text(tracking.get("user_agent"), max_len=1200),
+    }
+    raw_meta_payload = tracking.get("raw_meta_payload")
+    if isinstance(raw_meta_payload, dict):
+        field_values["raw_meta"] = raw_meta_payload
+
+    for attr, value in field_values.items():
+        current = getattr(row, attr, None)
+        if attr in {"user_id", "club_id"}:
+            if current in (None, 0) and value not in (None, 0):
+                setattr(row, attr, value)
+            continue
+        if attr == "lead_key_used":
+            if bool(value):
+                setattr(row, attr, True)
+            continue
+        if current in (None, "", False) and value not in (None, ""):
+            setattr(row, attr, value)
+
+    if getattr(row, "landing_viewed_at", None) is None:
+        row.landing_viewed_at = created_at
+    row.updated_at = datetime.utcnow()
+
+
 def _create_public_lead_user_and_tracking(
     *,
     tracking: dict[str, object],
+    marketing_lead_id: int | None = None,
+    club_id_override: int | None = None,
     now: datetime | None = None,
 ) -> dict[str, object]:
     created_at = now or datetime.utcnow()
@@ -2033,7 +2160,7 @@ def _create_public_lead_user_and_tracking(
     lead_key_used = bool(tracking.get("lead_key_used"))
 
     with SessionLocal() as s:
-        club_id = _resolve_default_club_id(s)
+        club_id = int(club_id_override) if isinstance(club_id_override, int) and club_id_override > 0 else _resolve_default_club_id(s)
         proxy_phone = _generate_lead_proxy_phone(s)
         lead_suffix = f"{secrets.randbelow(1_000_000):06d}"
         user = User(
@@ -2079,34 +2206,50 @@ def _create_public_lead_user_and_tracking(
 
     try:
         with SessionLocal() as s:
-            lead_row = MarketingLead(
-                user_id=user_id,
-                source=source or "instagram",
-                campaign=campaign,
-                utm_source=utm_clean.get("utm_source"),
-                utm_medium=utm_clean.get("utm_medium"),
-                utm_campaign=utm_clean.get("utm_campaign"),
-                utm_term=utm_clean.get("utm_term"),
-                utm_content=utm_clean.get("utm_content"),
-                fbclid=fbclid,
-                gclid=gclid,
-                msclkid=msclkid,
-                ttclid=ttclid,
-                meta_campaign_id=meta_campaign_id,
-                meta_adset_id=meta_adset_id,
-                meta_ad_id=meta_ad_id,
-                meta_creative_id=meta_creative_id,
-                placement=placement,
-                lead_key_used=bool(lead_key_used),
-                landing_path=landing_path,
-                referrer_url=referrer_url,
-                client_ip=client_ip,
-                user_agent=user_agent,
-                raw_meta=raw_meta_payload,
-                created_at=created_at,
-                updated_at=created_at,
-            )
-            s.add(lead_row)
+            lead_row = None
+            if isinstance(marketing_lead_id, int) and marketing_lead_id > 0:
+                lead_row = s.get(MarketingLead, int(marketing_lead_id))
+                if lead_row and getattr(lead_row, "user_id", None) not in (None, 0, int(user_id)):
+                    lead_row = None
+            if lead_row:
+                _hydrate_marketing_lead_row_from_tracking(
+                    lead_row,
+                    tracking=tracking,
+                    user_id=user_id,
+                    club_id=club_id,
+                    created_at=created_at,
+                )
+            else:
+                lead_row = MarketingLead(
+                    user_id=user_id,
+                    club_id=club_id,
+                    source=source or "instagram",
+                    campaign=campaign,
+                    utm_source=utm_clean.get("utm_source"),
+                    utm_medium=utm_clean.get("utm_medium"),
+                    utm_campaign=utm_clean.get("utm_campaign"),
+                    utm_term=utm_clean.get("utm_term"),
+                    utm_content=utm_clean.get("utm_content"),
+                    fbclid=fbclid,
+                    gclid=gclid,
+                    msclkid=msclkid,
+                    ttclid=ttclid,
+                    meta_campaign_id=meta_campaign_id,
+                    meta_adset_id=meta_adset_id,
+                    meta_ad_id=meta_ad_id,
+                    meta_creative_id=meta_creative_id,
+                    placement=placement,
+                    lead_key_used=bool(lead_key_used),
+                    landing_path=landing_path,
+                    referrer_url=referrer_url,
+                    client_ip=client_ip,
+                    user_agent=user_agent,
+                    raw_meta=raw_meta_payload,
+                    landing_viewed_at=created_at,
+                    created_at=created_at,
+                    updated_at=created_at,
+                )
+                s.add(lead_row)
             s.commit()
     except Exception as e:
         print(f"[marketing] failed to persist lead tracking for user_id={user_id}: {e}")
@@ -4446,6 +4589,18 @@ def api_public_assessment_lead_start(payload: dict | None, request: Request):
     ttl_seconds = max(60, min(24 * 60 * 60, int(_LEAD_START_TTL_MINUTES) * 60))
     defer_create = _is_truthy_token(body.get("defer_create") or request.query_params.get("defer_create"))
     if defer_create:
+        started_at = datetime.utcnow()
+        club_id = None
+        try:
+            with SessionLocal() as s:
+                club_id = _resolve_default_club_id(s)
+        except Exception as e:
+            print(f"[marketing] failed to resolve club for landing view: {e}")
+        marketing_lead_id = _create_public_landing_lead_tracking(
+            tracking=tracking,
+            club_id=club_id,
+            now=started_at,
+        )
         lead_token, exp_ts = _mint_lead_pending_token(
             source=str(tracking.get("source") or "instagram"),
             campaign=_track_text(tracking.get("campaign"), max_len=120),
@@ -4456,6 +4611,8 @@ def api_public_assessment_lead_start(payload: dict | None, request: Request):
             client_ip=_extract_client_ip(tracking.get("client_ip")),
             user_agent=_track_text(tracking.get("user_agent"), max_len=1200),
             lead_key_used=bool(tracking.get("lead_key_used")),
+            club_id=club_id,
+            marketing_lead_id=marketing_lead_id,
             ttl_seconds=ttl_seconds,
         )
         return {
@@ -4515,6 +4672,22 @@ def api_public_assessment_lead_first_reply(payload: dict | None, request: Reques
     if len(text_val) > 4000:
         raise HTTPException(status_code=400, detail="text is too long")
 
+    pending_club_id = pending.get("club_id")
+    try:
+        pending_club_id = int(pending_club_id) if pending_club_id is not None else None
+    except Exception:
+        pending_club_id = None
+    if not isinstance(pending_club_id, int) or pending_club_id <= 0:
+        pending_club_id = None
+
+    pending_marketing_lead_id = pending.get("marketing_lead_id")
+    try:
+        pending_marketing_lead_id = int(pending_marketing_lead_id) if pending_marketing_lead_id is not None else None
+    except Exception:
+        pending_marketing_lead_id = None
+    if not isinstance(pending_marketing_lead_id, int) or pending_marketing_lead_id <= 0:
+        pending_marketing_lead_id = None
+
     created = _create_public_lead_user_and_tracking(
         tracking={
             "source": _track_text(pending.get("source"), max_len=64) or "instagram",
@@ -4572,6 +4745,8 @@ def api_public_assessment_lead_first_reply(payload: dict | None, request: Reques
             },
             "lead_key_used": bool(pending.get("lead_key_used")),
         },
+        marketing_lead_id=pending_marketing_lead_id,
+        club_id_override=pending_club_id,
         now=datetime.utcnow(),
     )
 
@@ -11501,7 +11676,16 @@ def admin_marketing_funnel(
         if user_id is not None:
             lead_q = lead_q.filter(MarketingLead.user_id == int(user_id))
         elif club_scope_id is not None:
-            lead_q = lead_q.join(User, MarketingLead.user_id == User.id).filter(User.club_id == club_scope_id)
+            lead_q = (
+                lead_q
+                .outerjoin(User, MarketingLead.user_id == User.id)
+                .filter(
+                    or_(
+                        MarketingLead.club_id == club_scope_id,
+                        User.club_id == club_scope_id,
+                    )
+                )
+            )
         if source_filter:
             lead_q = lead_q.filter(func.lower(MarketingLead.source) == source_filter)
         if campaign_filter_lc:
@@ -11575,13 +11759,15 @@ def admin_marketing_funnel(
         return finished >= created
 
     def _row_counts(rows: list[MarketingLead]) -> dict[str, int]:
-        total = len(rows)
+        landing_views = len(rows)
+        leads = sum(1 for row in rows if getattr(row, "user_id", None) is not None)
         started = sum(1 for row in rows if getattr(row, "assessment_started_at", None) is not None)
         completed = sum(1 for row in rows if _is_completed(row))
         claimed = sum(1 for row in rows if getattr(row, "identity_claimed_at", None) is not None)
         viewed = sum(1 for row in rows if getattr(row, "results_viewed_at", None) is not None)
         return {
-            "leads": total,
+            "landing_views": landing_views,
+            "leads": leads,
             "assessment_started": started,
             "assessment_completed": completed,
             "identity_claimed": claimed,
@@ -11595,7 +11781,8 @@ def admin_marketing_funnel(
 
     def _conversion_steps(counts: dict[str, int]) -> list[dict[str, object]]:
         ordered = [
-            ("leads", "Leads started"),
+            ("landing_views", "Landing views"),
+            ("leads", "Leads captured"),
             ("assessment_started", "Assessment started"),
             ("assessment_completed", "Assessment completed"),
             ("identity_claimed", "Identity claimed"),
@@ -11603,7 +11790,7 @@ def admin_marketing_funnel(
         ]
         steps: list[dict[str, object]] = []
         previous: int | None = None
-        base = int(counts.get("leads") or 0)
+        base = int(counts.get("landing_views") or 0)
         for key, label in ordered:
             count = int(counts.get(key) or 0)
             conversion = _pct(count, previous or 0) if previous else None
@@ -11637,6 +11824,7 @@ def admin_marketing_funnel(
             day_key,
             {
                 "day": day_key,
+                "landing_views": 0,
                 "leads": 0,
                 "assessment_started": 0,
                 "assessment_completed": 0,
@@ -11644,7 +11832,9 @@ def admin_marketing_funnel(
                 "results_viewed": 0,
             },
         )
-        day["leads"] = int(day["leads"]) + 1
+        day["landing_views"] = int(day["landing_views"]) + 1
+        if getattr(row, "user_id", None) is not None:
+            day["leads"] = int(day["leads"]) + 1
         if getattr(row, "assessment_started_at", None) is not None:
             day["assessment_started"] = int(day["assessment_started"]) + 1
         if _is_completed(row):
@@ -11662,12 +11852,14 @@ def admin_marketing_funnel(
                 {
                     "key": key,
                     **counts,
+                    "landing_to_lead_pct": _pct(int(counts["leads"]), int(counts["landing_views"])),
+                    "lead_to_complete_pct": _pct(int(counts["assessment_completed"]), int(counts["leads"])),
                     "start_to_complete_pct": _pct(int(counts["assessment_completed"]), int(counts["leads"])),
                     "claim_rate_pct": _pct(int(counts["identity_claimed"]), int(counts["assessment_completed"])),
                     "results_view_rate_pct": _pct(int(counts["results_viewed"]), int(counts["identity_claimed"])),
                 }
             )
-        out.sort(key=lambda row: int(row.get("leads") or 0), reverse=True)
+        out.sort(key=lambda row: int(row.get("landing_views") or 0), reverse=True)
         return out
 
     recent_rows = []
@@ -11684,6 +11876,8 @@ def admin_marketing_funnel(
                 "utm_source": getattr(row, "utm_source", None),
                 "utm_medium": getattr(row, "utm_medium", None),
                 "utm_campaign": getattr(row, "utm_campaign", None),
+                "landing_path": getattr(row, "landing_path", None),
+                "landing_viewed_at": _to_iso(getattr(row, "landing_viewed_at", None)),
                 "created_at": _to_iso(getattr(row, "created_at", None)),
                 "assessment_started_at": _to_iso(getattr(row, "assessment_started_at", None)),
                 "assessment_completed": _is_completed(row),
@@ -11713,6 +11907,8 @@ def admin_marketing_funnel(
         "totals": totals,
         "funnel": {
             "steps": _conversion_steps(totals),
+            "landing_to_lead_pct": _pct(int(totals["leads"]), int(totals["landing_views"])),
+            "lead_to_complete_pct": _pct(int(totals["assessment_completed"]), int(totals["leads"])),
             "start_to_complete_pct": _pct(int(totals["assessment_completed"]), int(totals["leads"])),
             "complete_to_claim_pct": _pct(int(totals["identity_claimed"]), int(totals["assessment_completed"])),
             "claim_to_results_view_pct": _pct(int(totals["results_viewed"]), int(totals["identity_claimed"])),
@@ -11853,6 +12049,7 @@ def admin_marketing_backfill(
 
             row = MarketingLead(
                 user_id=user_id_int,
+                club_id=getattr(user, "club_id", None),
                 source=source,
                 campaign=campaign,
                 utm_source=utm_source,
@@ -11860,6 +12057,7 @@ def admin_marketing_backfill(
                 utm_campaign=utm_campaign,
                 utm_term=utm_term,
                 utm_content=utm_content,
+                landing_viewed_at=created_at,
                 identity_claimed_at=identity_claimed_at,
                 raw_meta={
                     "backfilled": True,

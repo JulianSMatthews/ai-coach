@@ -1041,6 +1041,7 @@ class MarketingLead(Base):
 
     id                  = Column(Integer, primary_key=True)
     user_id             = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    club_id             = Column(Integer, ForeignKey("clubs.id", ondelete="SET NULL"), nullable=True, index=True)
     source              = Column(String(64), nullable=False, server_default=text("'instagram'"), index=True)
     campaign            = Column(String(120), nullable=True, index=True)
     utm_source          = Column(String(180), nullable=True)
@@ -1063,6 +1064,7 @@ class MarketingLead(Base):
     client_ip           = Column(String(64), nullable=True)
     user_agent          = Column(Text, nullable=True)
     raw_meta            = Column(JSONType, nullable=True)
+    landing_viewed_at   = Column(DateTime, nullable=True)
     assessment_started_at = Column(DateTime, nullable=True)
     identity_claimed_at = Column(DateTime, nullable=True)
     results_viewed_at   = Column(DateTime, nullable=True)

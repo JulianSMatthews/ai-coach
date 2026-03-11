@@ -204,7 +204,10 @@ export default async function ReportingPage({
             <div className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] px-4 py-3">
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Key rates</p>
               <p className="mt-1 text-sm text-[#3c332b]">
-                Start → Complete: {marketing?.funnel?.start_to_complete_pct ?? "—"}%
+                Landing → Lead: {marketing?.funnel?.landing_to_lead_pct ?? "—"}%
+              </p>
+              <p className="text-sm text-[#3c332b]">
+                Lead → Complete: {marketing?.funnel?.lead_to_complete_pct ?? marketing?.funnel?.start_to_complete_pct ?? "—"}%
               </p>
               <p className="text-sm text-[#3c332b]">
                 Complete → Claimed: {marketing?.funnel?.complete_to_claim_pct ?? "—"}%
@@ -309,13 +312,13 @@ export default async function ReportingPage({
             </div>
           </div>
 
-          <div className="mt-4 grid gap-4 lg:grid-cols-5">
+          <div className="mt-4 grid gap-4 lg:grid-cols-3 xl:grid-cols-6">
             {(marketing?.funnel?.steps || []).map((step) => (
               <div key={step.key || step.label} className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{step.label || step.key}</p>
                 <p className="mt-2 text-2xl font-semibold">{step.count ?? 0}</p>
                 <p className="mt-1 text-xs text-[#8a8176]">
-                  {step.percent_of_start != null ? `${step.percent_of_start}% of leads` : "—"}
+                  {step.percent_of_start != null ? `${step.percent_of_start}% of landing views` : "—"}
                 </p>
                 <p className="mt-1 text-xs text-[#8a8176]">
                   {step.conversion_pct_from_prev != null
@@ -336,6 +339,7 @@ export default async function ReportingPage({
                   <thead className="bg-[#f7f4ee] text-xs uppercase tracking-[0.2em] text-[#6b6257]">
                     <tr>
                       <th className="px-4 py-3">Source</th>
+                      <th className="px-4 py-3">Landing views</th>
                       <th className="px-4 py-3">Leads</th>
                       <th className="px-4 py-3">Completed</th>
                       <th className="px-4 py-3">Claimed</th>
@@ -346,10 +350,14 @@ export default async function ReportingPage({
                     {(marketing?.breakdown?.by_source || []).map((row) => (
                       <tr key={row.key} className="border-t border-[#efe7db]">
                         <td className="px-4 py-3">{row.key || "unknown"}</td>
+                        <td className="px-4 py-3">
+                          {row.landing_views ?? 0}
+                          <span className="ml-2 text-xs text-[#8a8176]">({row.landing_to_lead_pct ?? "—"}%)</span>
+                        </td>
                         <td className="px-4 py-3">{row.leads ?? 0}</td>
                         <td className="px-4 py-3">
                           {row.assessment_completed ?? 0}
-                          <span className="ml-2 text-xs text-[#8a8176]">({row.start_to_complete_pct ?? "—"}%)</span>
+                          <span className="ml-2 text-xs text-[#8a8176]">({row.lead_to_complete_pct ?? row.start_to_complete_pct ?? "—"}%)</span>
                         </td>
                         <td className="px-4 py-3">
                           {row.identity_claimed ?? 0}
@@ -375,6 +383,7 @@ export default async function ReportingPage({
                   <thead className="bg-[#f7f4ee] text-xs uppercase tracking-[0.2em] text-[#6b6257]">
                     <tr>
                       <th className="px-4 py-3">Campaign</th>
+                      <th className="px-4 py-3">Landing views</th>
                       <th className="px-4 py-3">Leads</th>
                       <th className="px-4 py-3">Started</th>
                       <th className="px-4 py-3">Completed</th>
@@ -385,6 +394,7 @@ export default async function ReportingPage({
                     {(marketing?.breakdown?.by_campaign || []).map((row) => (
                       <tr key={row.key} className="border-t border-[#efe7db]">
                         <td className="px-4 py-3">{row.key || "(none)"}</td>
+                        <td className="px-4 py-3">{row.landing_views ?? 0}</td>
                         <td className="px-4 py-3">{row.leads ?? 0}</td>
                         <td className="px-4 py-3">{row.assessment_started ?? 0}</td>
                         <td className="px-4 py-3">{row.assessment_completed ?? 0}</td>
