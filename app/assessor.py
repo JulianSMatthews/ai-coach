@@ -1027,6 +1027,70 @@ PILLAR_PREFERENCE_KEYS = {
     "training": "training_focus",
 }
 
+REFLECTION_PILLAR_LABELS = {
+    "nutrition": "Nutrition",
+    "training": "Training",
+    "recovery": "Recovery",
+    "resilience": "Resilience",
+}
+
+REFLECTION_PILLAR_ALIASES = {
+    "nutrition": {"nutrition", "food", "eating"},
+    "training": {"training", "exercise", "movement", "fitness"},
+    "recovery": {"recovery", "sleep", "rest"},
+    "resilience": {"resilience", "mindset", "stress", "mental"},
+}
+
+REFLECTION_PROMPT_TEXT = "Which of these areas of your health feels most consistent for you?"
+REFLECTION_CONTINUE_VALUE = "continue_assessment"
+REFLECTION_EXPLANATION_MESSAGES = {
+    "nutrition": [
+        "Great — nutrition is a powerful foundation for health and energy.",
+        "But even with good nutrition habits, many people find their progress is limited by sleep, recovery, or stress.",
+        "In the next few questions we’ll look at how your habits across all four pillars compare.",
+        "This will reveal your HealthSense Score and highlight the area most likely to improve your health.",
+    ],
+    "training": [
+        "Great — regular movement is one of the strongest predictors of long-term health.",
+        "However, training works best when it’s supported by good recovery, nutrition, and resilience to stress.",
+        "In the next few questions we’ll analyse your habits across all four pillars to see how they work together.",
+        "You’ll then receive your HealthSense Score and personalised insights.",
+    ],
+    "recovery": [
+        "Great — recovery is one of the most overlooked pillars of health.",
+        "Quality sleep and recovery allow your body and mind to adapt, repair, and perform at their best.",
+        "Next we’ll look at how your habits across all four pillars interact to determine your overall health profile.",
+        "You’ll receive your HealthSense Score and insight into what may be holding you back.",
+    ],
+    "resilience": [
+        "Great — resilience and stress management play a huge role in long-term health.",
+        "Even strong nutrition and training habits can be disrupted when stress and recovery aren’t balanced.",
+        "In the next few questions we’ll analyse your habits across all four pillars.",
+        "You’ll receive your HealthSense Score and discover which area may have the greatest impact on your health.",
+    ],
+}
+
+
+def _reflection_choice_from_text(text: str | None) -> str | None:
+    token = str(text or "").strip().lower()
+    if not token:
+        return None
+    for pillar_key, aliases in REFLECTION_PILLAR_ALIASES.items():
+        if token in aliases:
+            return pillar_key
+    return None
+
+
+def _is_reflection_continue(text: str | None) -> bool:
+    token = str(text or "").strip().lower()
+    return token in {
+        "continue",
+        "continue assessment",
+        "continue_assessment",
+        "start assessment",
+        "start",
+    }
+
 
 def _get_user_preference_value(user_id: int, key: str) -> Optional[str]:
     if not user_id or not key:
@@ -1255,6 +1319,15 @@ def _send_first_concept_question_for_pillar(user: User, state: dict, pillar: str
     except Exception:
         pass
     return True
+
+
+def _begin_scored_pillar_flow(user: User, state: dict, turns: list[dict], db_session) -> bool:
+    pillar = "nutrition"
+    state["phase"] = "pillars"
+    state["current"] = pillar
+    if _maybe_prompt_preamble_question(user, state, pillar, turns):
+        return True
+    return _send_first_concept_question_for_pillar(user, state, pillar, turns, db_session)
 
 
 def _log_pillar_handoff_timing(payload: dict) -> None:
@@ -2004,7 +2077,7 @@ def start_combined_assessment(user: User, *, force_intro: bool = False):
         state = {
             "turns": [],
             "current": "nutrition",
-            "phase": "pillars",
+            "phase": "reflection",
             "results": {},
             "turn_idx": 0,
             "run_id": None,
@@ -2018,6 +2091,7 @@ def start_combined_assessment(user: User, *, force_intro: bool = False):
             "total_questions": 0,
             "psych": {"idx": 0, "answers": {}},
             "pending_assessment_summary": "",
+            "reflection": {"selected_pillar": None},
         }
         sess = AssessSession(user_id=user.id, domain="combined", is_active=True, turn_count=0, state=state)
         s.add(sess); s.commit(); s.refresh(sess)
@@ -2029,35 +2103,11 @@ def start_combined_assessment(user: User, *, force_intro: bool = False):
 
         # Start run
         _start_or_get_run(s, user, state)
-
-        # First concept + main question
-        pillar = "nutrition"
-        concepts_for_pillar = state["pillar_concepts"].get(pillar) or []
-        if not concepts_for_pillar:
-            _send_to_user(user, "Setup note: I don’t have Nutrition concepts. Please seed the DB and try again.")
-            _commit_state(s, sess, state)
-            return True
-
-        first_concept = concepts_for_pillar[0]
-        # init progress for first concept
-        state["concept_progress"]["nutrition"][first_concept] = {
-            "main_asked": True,
-            "clarifiers": 0,
-            "scored": False,
-            "summary_logged": False,
-        }
-        with SessionLocal() as s2:
-            q = _concept_primary_question(s2, pillar, first_concept) or "How many meals and snacks do you typically have on a usual day?"
-        display_q = _format_main_question_for_user(state, pillar, first_concept, q)
-        state["turns"].append({"role": "assistant", "pillar": pillar, "question": q, "concept": first_concept, "is_main": True})
         _commit_state(s, sess, state)
-        _send_to_user(user, display_q)
-        # Mark this concept as asked so user_concept_state.last_asked_at is set for the first concept
-        try:
-            _bump_concept_asked(user.id, state.get("run_id"), pillar, first_concept)
-        except Exception:
-            pass
-        _log_turn(s, state, pillar, first_concept, False, q, None, None, None, action="ask")
+        _send_to_user(
+            user,
+            "Before we get into the scored questions, I want to start with a quick reflection."
+        )
         _commit_state(s, sess, state)
         return True
 
@@ -2149,6 +2199,43 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
 
         if cmd in {"report", "pdf", "report please", "send report", "pdf report", "dashboard", "image report", "assessment"}:
             send_hsapp_assessment_link(user)
+            return True
+
+        phase_name = str(state.get("phase") or "").lower()
+        if phase_name == "reflection":
+            if cmd in {"redo", "redo last", "redo last question", "redo question"}:
+                _send_to_user(user, "Choose the area that feels most consistent for you right now.")
+                _commit_state(s, sess, state)
+                return True
+            selected_pillar = _reflection_choice_from_text(user_text)
+            if not selected_pillar:
+                _send_to_user(
+                    user,
+                    "Please choose one: Nutrition, Training, Recovery, or Resilience."
+                )
+                _commit_state(s, sess, state)
+                return True
+            reflection_state = state.setdefault("reflection", {})
+            reflection_state["selected_pillar"] = selected_pillar
+            turns.append({"role": "user", "pillar": None, "text": selected_pillar, "is_reflection": True})
+            state["phase"] = "reflection_confirm"
+            _commit_state(s, sess, state)
+            return True
+
+        if phase_name == "reflection_confirm":
+            if cmd in {"redo", "redo last", "redo last question", "redo question"}:
+                state["phase"] = "reflection"
+                _commit_state(s, sess, state)
+                return True
+            if not _is_reflection_continue(user_text):
+                _send_to_user(user, "Tap Continue Assessment to begin the scored questions.")
+                _commit_state(s, sess, state)
+                return True
+            turns.append({"role": "user", "pillar": None, "text": REFLECTION_CONTINUE_VALUE, "is_reflection_continue": True})
+            if not _begin_scored_pillar_flow(user, state, turns, s):
+                _commit_state(s, sess, state)
+                return True
+            _commit_state(s, sess, state)
             return True
 
         if str(state.get("phase") or "pillars").lower() == "psych":

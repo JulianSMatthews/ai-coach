@@ -21,7 +21,7 @@ export type AssessmentPromptSection = {
 };
 
 export type AssessmentCurrentPrompt = {
-  kind: "concept_scale" | "readiness_scale";
+  kind: "concept_scale" | "readiness_scale" | "pillar_reflection";
   section_key: string;
   section_label: string;
   section_index: number;
@@ -98,6 +98,9 @@ export default function AssessmentPromptCard({
 }: Props) {
   const tone = prompt.kind === "readiness_scale" ? "#d3541b" : "var(--accent)";
   const hint = promptHint(prompt);
+  const showSectionProgress = prompt.kind !== "pillar_reflection" && prompt.sections.length > 0;
+  const showQuestionProgress = prompt.kind !== "pillar_reflection" && prompt.section_question_total > 0;
+  const showPromptActions = prompt.kind !== "pillar_reflection";
 
   return (
     <section className="w-full rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
@@ -108,7 +111,7 @@ export default function AssessmentPromptCard({
           </div>
         ) : null}
         <div className="space-y-3">
-          {prompt.sections.length ? (
+          {showSectionProgress ? (
             <div
               className="grid gap-2"
               style={{ gridTemplateColumns: `repeat(${prompt.sections.length}, minmax(0, 1fr))` }}
@@ -135,15 +138,17 @@ export default function AssessmentPromptCard({
               ) : null}
             </div>
           </div>
-          <ProgressBar value={prompt.section_question_index} max={prompt.section_question_total} tone={tone} />
+          {showQuestionProgress ? (
+            <ProgressBar value={prompt.section_question_index} max={prompt.section_question_total} tone={tone} />
+          ) : null}
         </div>
 
         <div className="space-y-4">
           <h3 className="text-xl leading-snug text-[#1e1b16] sm:text-[1.75rem]">{renderFormattedQuestion(prompt.question)}</h3>
-          {hint ? <p className="text-sm text-[#6b6257]">{hint}</p> : null}
+          {hint ? <p className="text-sm whitespace-pre-line text-[#6b6257]">{hint}</p> : null}
         </div>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        <div className={prompt.options.length === 1 ? "grid grid-cols-1 gap-3" : "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"}>
           {prompt.options.map((option) => {
             const isSelected = selectedValue === option.value;
             return (
@@ -166,26 +171,28 @@ export default function AssessmentPromptCard({
           })}
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={onRedo}
-              disabled={busy}
-              className="rounded-full border border-[#e0d4c3] bg-white px-4 py-2 text-xs uppercase tracking-[0.18em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Redo
-            </button>
-            <button
-              type="button"
-              onClick={onRestart}
-              disabled={busy}
-              className="rounded-full border border-[#e0d4c3] bg-[#fff3dc] px-4 py-2 text-xs uppercase tracking-[0.18em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Restart
-            </button>
+        {showPromptActions ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={onRedo}
+                disabled={busy}
+                className="rounded-full border border-[#e0d4c3] bg-white px-4 py-2 text-xs uppercase tracking-[0.18em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Redo
+              </button>
+              <button
+                type="button"
+                onClick={onRestart}
+                disabled={busy}
+                className="rounded-full border border-[#e0d4c3] bg-[#fff3dc] px-4 py-2 text-xs uppercase tracking-[0.18em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                Restart
+              </button>
+            </div>
           </div>
-        </div>
+        ) : null}
       </div>
     </section>
   );

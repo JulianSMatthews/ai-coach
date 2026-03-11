@@ -55,6 +55,15 @@ type AssessmentResultSummary = {
     level?: string | null;
     note?: string | null;
   } | null;
+  reflection?: {
+    selected_pillar?: string | null;
+    selected_label?: string | null;
+    selected_score?: number | null;
+    top_pillar?: string | null;
+    top_label?: string | null;
+    top_score?: number | null;
+    matches_top?: boolean | null;
+  } | null;
 };
 
 type AssessmentChatBoxProps = {
@@ -208,7 +217,7 @@ function normalizeCurrentPrompt(raw: unknown): AssessmentCurrentPrompt | null {
   if (!raw || typeof raw !== "object") return null;
   const row = raw as Record<string, unknown>;
   const kind = typeof row.kind === "string" ? row.kind.trim() : "";
-  if (kind !== "concept_scale" && kind !== "readiness_scale") return null;
+  if (kind !== "concept_scale" && kind !== "readiness_scale" && kind !== "pillar_reflection") return null;
   const question = typeof row.question === "string" ? row.question.trim() : "";
   if (!question) return null;
   const options = Array.isArray(row.options)
@@ -285,6 +294,39 @@ function normalizeResultSummary(raw: unknown): AssessmentResultSummary | null {
             note:
               typeof (row.readiness as Record<string, unknown>).note === "string"
                 ? String((row.readiness as Record<string, unknown>).note)
+                : null,
+          }
+        : null,
+    reflection:
+      row.reflection && typeof row.reflection === "object"
+        ? {
+            selected_pillar:
+              typeof (row.reflection as Record<string, unknown>).selected_pillar === "string"
+                ? String((row.reflection as Record<string, unknown>).selected_pillar)
+                : null,
+            selected_label:
+              typeof (row.reflection as Record<string, unknown>).selected_label === "string"
+                ? String((row.reflection as Record<string, unknown>).selected_label)
+                : null,
+            selected_score:
+              Number.isFinite(Number((row.reflection as Record<string, unknown>).selected_score))
+                ? Number((row.reflection as Record<string, unknown>).selected_score)
+                : null,
+            top_pillar:
+              typeof (row.reflection as Record<string, unknown>).top_pillar === "string"
+                ? String((row.reflection as Record<string, unknown>).top_pillar)
+                : null,
+            top_label:
+              typeof (row.reflection as Record<string, unknown>).top_label === "string"
+                ? String((row.reflection as Record<string, unknown>).top_label)
+                : null,
+            top_score:
+              Number.isFinite(Number((row.reflection as Record<string, unknown>).top_score))
+                ? Number((row.reflection as Record<string, unknown>).top_score)
+                : null,
+            matches_top:
+              typeof (row.reflection as Record<string, unknown>).matches_top === "boolean"
+                ? Boolean((row.reflection as Record<string, unknown>).matches_top)
                 : null,
           }
         : null,
@@ -908,6 +950,17 @@ export default function AssessmentChatBox({
           </div>
         </div>
 
+        {resultSummary.reflection?.selected_label && resultSummary.reflection?.top_label ? (
+          <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Your reflection</p>
+            <p className="mt-2 text-sm text-[#3c332b]">
+              {resultSummary.reflection.matches_top
+                ? `You felt strongest in ${resultSummary.reflection.selected_label}, and your results backed that up. It came out highest at ${Math.round(Number(resultSummary.reflection.top_score || 0))}/100.`
+                : `You felt strongest in ${resultSummary.reflection.selected_label}, but your highest measured result was ${resultSummary.reflection.top_label} at ${Math.round(Number(resultSummary.reflection.top_score || 0))}/100.`}
+            </p>
+          </div>
+        ) : null}
+
         {resultSummary.pillars.length || Number.isFinite(Number(resultSummary.readiness?.score)) ? (
           <div className="grid gap-3">
             {resultSummary.pillars.map((pillar) => {
@@ -949,7 +1002,7 @@ export default function AssessmentChatBox({
               ? "Loading coaching plan…"
               : showCoachingPlan
                 ? "Hide coaching plan"
-                : "View coaching plan to help you improve your wellbeing"}
+                : "View coaching plan to help improve your wellbeing"}
           </button>
         </div>
       </div>
@@ -963,7 +1016,7 @@ export default function AssessmentChatBox({
           <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Objectives and key results</p>
           <h2 className="text-2xl text-[#1e1b16]">Your coaching plan</h2>
           <p className="text-sm text-[#6b6257]">
-            These OKRs and KRs are designed to help you improve your wellbeing.
+            These OKRs and KRs are designed to help improve your wellbeing.
           </p>
         </div>
 
@@ -1082,7 +1135,6 @@ export default function AssessmentChatBox({
               disabled={claiming}
             />
           </div>
-          <p className="text-xs text-[#8c7f70]">You need to provide a mobile number or an email address. Both are optional if you supply the other.</p>
         </div>
       </section>
 

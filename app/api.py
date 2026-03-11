@@ -404,6 +404,10 @@ try:
         send_dashboard_link,
         assessment_delivery_context,
         PILLAR_ORDER,
+        REFLECTION_PILLAR_LABELS,
+        REFLECTION_CONTINUE_VALUE,
+        REFLECTION_EXPLANATION_MESSAGES,
+        REFLECTION_PROMPT_TEXT,
     )
     _dbg("[INFO] Correct assessor module imported successfully (module path: " +
          f"{start_combined_assessment.__module__})")
@@ -1234,13 +1238,71 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
     if not isinstance(state_obj, dict):
         return None
     phase = str(state_obj.get("phase") or "pillars").strip().lower()
-    if phase not in {"pillars", "psych"}:
+    if phase not in {"reflection", "reflection_confirm", "pillars", "psych"}:
         return None
 
-    section_progress = _assessment_section_progress_payloads(state_obj)
+    section_progress = _assessment_section_progress_payloads(state_obj) if phase in {"pillars", "psych"} else []
     main_total = _assessment_main_question_total(state_obj)
     readiness_total = len(getattr(psych, "QUESTIONS", []) or [])
     overall_total = max(0, int(main_total) + int(readiness_total))
+
+    if phase == "reflection":
+        reflection_choice = None
+        reflection_state = state_obj.get("reflection")
+        if isinstance(reflection_state, dict):
+            reflection_choice = str(reflection_state.get("selected_pillar") or "").strip().lower() or None
+        return {
+            "kind": "pillar_reflection",
+            "section_key": "reflection",
+            "section_label": "Quick Reflection",
+            "section_index": 0,
+            "section_total": len(PILLAR_ORDER) + 1,
+            "section_question_index": 0,
+            "section_question_total": 0,
+            "question_position": 0,
+            "question_total": int(overall_total),
+            "question": REFLECTION_PROMPT_TEXT,
+            "measure_label": "Choose the area that feels strongest before we score the assessment.",
+            "hint": "We’ll compare your instinct with your measured results at the end.",
+            "options": [
+                {
+                    "value": pillar_key,
+                    "label": pillar_label,
+                }
+                for pillar_key, pillar_label in REFLECTION_PILLAR_LABELS.items()
+            ],
+            "selected_value": reflection_choice,
+            "sections": section_progress,
+        }
+
+    if phase == "reflection_confirm":
+        reflection_state = state_obj.get("reflection") if isinstance(state_obj.get("reflection"), dict) else {}
+        selected_pillar = str(reflection_state.get("selected_pillar") or "").strip().lower()
+        title = REFLECTION_PILLAR_LABELS.get(selected_pillar, "Assessment")
+        copy_lines = REFLECTION_EXPLANATION_MESSAGES.get(selected_pillar) or []
+        question_text = copy_lines[0] if copy_lines else "Great — you’ve chosen the area that feels most consistent for you."
+        hint_text = "\n\n".join(copy_lines[1:]) if len(copy_lines) > 1 else "In the next few questions we’ll assess all four pillars."
+        return {
+            "kind": "pillar_reflection",
+            "section_key": "reflection_confirm",
+            "section_label": title,
+            "section_index": 0,
+            "section_total": len(PILLAR_ORDER) + 1,
+            "section_question_index": 0,
+            "section_question_total": 0,
+            "question_position": 0,
+            "question_total": int(overall_total),
+            "question": question_text,
+            "measure_label": None,
+            "hint": hint_text,
+            "options": [
+                {
+                    "value": REFLECTION_CONTINUE_VALUE,
+                    "label": "Continue Assessment",
+                }
+            ],
+            "sections": section_progress,
+        }
 
     if phase == "psych":
         psych_state = state_obj.get("psych") if isinstance(state_obj.get("psych"), dict) else {}
@@ -1463,6 +1525,42 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
                         "note": note,
                     }
 
+            reflection_payload = None
+            if isinstance(state_obj, dict):
+                reflection_state = state_obj.get("reflection") if isinstance(state_obj.get("reflection"), dict) else {}
+                selected_pillar = str(reflection_state.get("selected_pillar") or "").strip().lower()
+                state_run_id = None
+                try:
+                    state_run_id = int(state_obj.get("run_id") or 0)
+                except Exception:
+                    state_run_id = None
+                if (
+                    selected_pillar
+                    and selected_pillar in REFLECTION_PILLAR_LABELS
+                    and pillar_payload
+                    and state_run_id == int(latest_finished_run.id)
+                ):
+                    selected_row = next(
+                        (item for item in pillar_payload if str(item.get("pillar_key") or "").strip().lower() == selected_pillar),
+                        None,
+                    )
+                    top_row = max(pillar_payload, key=lambda item: int(item.get("score") or 0))
+                    selected_score = int(selected_row.get("score") or 0) if selected_row else None
+                    top_score = int(top_row.get("score") or 0)
+                    matches_top = bool(
+                        selected_row
+                        and str(top_row.get("pillar_key") or "").strip().lower() == selected_pillar
+                    )
+                    reflection_payload = {
+                        "selected_pillar": selected_pillar,
+                        "selected_label": REFLECTION_PILLAR_LABELS.get(selected_pillar, selected_pillar.title()),
+                        "selected_score": selected_score,
+                        "top_pillar": str(top_row.get("pillar_key") or "").strip().lower(),
+                        "top_label": str(top_row.get("label") or "").strip() or top_row.get("pillar_key"),
+                        "top_score": top_score,
+                        "matches_top": matches_top,
+                    }
+
             result_summary_payload = {
                 "run_id": int(latest_finished_run.id),
                 "finished_at": (
@@ -1473,6 +1571,7 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
                 "combined": int(combined_overall or 0),
                 "pillars": pillar_payload,
                 "readiness": readiness_payload,
+                "reflection": reflection_payload,
             }
 
         rows = (
