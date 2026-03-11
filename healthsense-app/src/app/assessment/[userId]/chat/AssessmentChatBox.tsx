@@ -59,6 +59,7 @@ type AssessmentChatBoxProps = {
   userId: string;
   assessmentCompleted?: boolean;
   isLeadGuest?: boolean;
+  leadToken?: string;
 };
 
 type AssessmentCta = {
@@ -400,24 +401,34 @@ function parsePositiveUserId(value: unknown): number | null {
   return token;
 }
 
+function looksLikeEmail(value: string): boolean {
+  const token = String(value || "").trim().toLowerCase();
+  if (!token) return false;
+  if (!token.includes("@")) return false;
+  const domain = token.split("@")[1] || "";
+  return domain.includes(".");
+}
+
 export default function AssessmentChatBox({
   userId,
   assessmentCompleted = false,
   isLeadGuest = false,
+  leadToken,
 }: AssessmentChatBoxProps) {
   const searchParams = useSearchParams();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [status, setStatus] = useState<string | null>(null);
   const [hasActiveSession, setHasActiveSession] = useState(false);
-  const [, setIdentityRequired] = useState(false);
+  const [identityRequired, setIdentityRequired] = useState(false);
   const [currentPrompt, setCurrentPrompt] = useState<AssessmentCurrentPrompt | null>(null);
   const [resultSummary, setResultSummary] = useState<AssessmentResultSummary | null>(null);
   const [selectedPromptValue, setSelectedPromptValue] = useState<string | null>(null);
-  const [showIdentityGate, setShowIdentityGate] = useState(false);
   const [claimFirstName, setClaimFirstName] = useState("");
   const [claimSurname, setClaimSurname] = useState("");
   const [claimPhone, setClaimPhone] = useState("");
+  const [claimEmail, setClaimEmail] = useState("");
+  const [claimConsentChoice, setClaimConsentChoice] = useState<"" | "yes" | "no">("");
   const [claiming, setClaiming] = useState(false);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
@@ -427,10 +438,15 @@ export default function AssessmentChatBox({
 
   const autoStart = useMemo(() => isTruthyToken(searchParams?.get("autostart")), [searchParams]);
   const leadFlow = useMemo(() => isTruthyToken(searchParams?.get("lead")), [searchParams]);
+  const leadTokenQuery = useMemo(() => {
+    const token = String(leadToken || "").trim();
+    return token ? `&lt=${encodeURIComponent(token)}` : "";
+  }, [leadToken]);
   const busy = loading || starting || sending || claiming;
   const chatReady = hasActiveSession || assessmentCompleted || messages.length > 0;
   const promptActive = Boolean(currentPrompt);
-  const showResultCard = Boolean(resultSummary) && !promptActive;
+  const showResultsGate = Boolean(resultSummary) && !promptActive && identityRequired;
+  const showResultCard = Boolean(resultSummary) && !promptActive && !identityRequired;
   const showAssessmentControls = !assessmentCompleted && !isLeadGuest && !promptActive && (!leadFlow || !chatReady);
 
   const applyChatPayload = useCallback((data: ChatResponse) => {
@@ -442,11 +458,7 @@ export default function AssessmentChatBox({
     setCurrentPrompt(nextPrompt);
     setResultSummary(normalizeResultSummary(data.result_summary));
     setSelectedPromptValue(null);
-    const required = Boolean(data.identity_required);
-    setIdentityRequired(required);
-    if (!required) {
-      setShowIdentityGate(false);
-    }
+    setIdentityRequired(Boolean(data.identity_required));
   }, []);
 
   const startAssessment = useCallback(async (forceIntro = false) => {
@@ -456,7 +468,7 @@ export default function AssessmentChatBox({
       const res = await fetch("/api/assessment/chat/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, force_intro: forceIntro }),
+        body: JSON.stringify({ userId, force_intro: forceIntro, lead_token: leadToken || undefined }),
       });
       const text = await res.text().catch(() => "");
       if (!res.ok) {
@@ -472,7 +484,7 @@ export default function AssessmentChatBox({
     } finally {
       setStarting(false);
     }
-  }, [userId, assessmentCompleted, applyChatPayload]);
+  }, [userId, assessmentCompleted, applyChatPayload, leadToken]);
 
   const scrollToLatest = useCallback((behavior: ScrollBehavior = "smooth") => {
     const target = logRef.current;
@@ -509,7 +521,7 @@ export default function AssessmentChatBox({
       setLoading(true);
       setStatus(null);
       try {
-        const res = await fetch(`/api/assessment/chat/state?userId=${encodeURIComponent(userId)}`, {
+        const res = await fetch(`/api/assessment/chat/state?userId=${encodeURIComponent(userId)}${leadTokenQuery}`, {
           method: "GET",
           cache: "no-store",
         });
@@ -548,13 +560,13 @@ export default function AssessmentChatBox({
     return () => {
       cancelled = true;
     };
-  }, [userId, autoStart, leadFlow, assessmentCompleted, startAssessment, applyChatPayload, isLeadGuest]);
+  }, [userId, autoStart, leadFlow, assessmentCompleted, startAssessment, applyChatPayload, isLeadGuest, leadTokenQuery]);
 
   useEffect(() => {
     let cancelled = false;
     const poll = async () => {
       try {
-        const res = await fetch(`/api/assessment/chat/state?userId=${encodeURIComponent(userId)}`, {
+        const res = await fetch(`/api/assessment/chat/state?userId=${encodeURIComponent(userId)}${leadTokenQuery}`, {
           method: "GET",
           cache: "no-store",
         });
@@ -583,7 +595,7 @@ export default function AssessmentChatBox({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [userId, applyChatPayload]);
+  }, [userId, applyChatPayload, leadTokenQuery]);
 
   async function sendMessage(
     textValue: string,
@@ -607,6 +619,7 @@ export default function AssessmentChatBox({
         body: JSON.stringify({
           userId,
           text: outbound,
+          lead_token: leadToken || undefined,
           quick_reply: options?.quickReply
             ? {
                 used: Boolean(options.quickReply.used),
@@ -706,8 +719,22 @@ export default function AssessmentChatBox({
     const firstName = claimFirstName.trim();
     const surname = claimSurname.trim();
     const phone = claimPhone.trim();
-    if (!firstName || !surname || !phone) {
-      setStatus("First name, surname, and mobile number are required.");
+    const email = claimEmail.trim().toLowerCase();
+    const consent = claimConsentChoice === "yes";
+    if (!firstName || !surname) {
+      setStatus("First name and surname are required.");
+      return;
+    }
+    if (!phone && !email) {
+      setStatus("Add either a mobile number or an email address to continue.");
+      return;
+    }
+    if (email && !looksLikeEmail(email)) {
+      setStatus("That email doesn’t look right. Please check it.");
+      return;
+    }
+    if (!consent) {
+      setStatus("Consent is required before we can reveal your results.");
       return;
     }
 
@@ -722,17 +749,19 @@ export default function AssessmentChatBox({
           first_name: firstName,
           surname,
           phone,
+          email,
+          lead_token: leadToken || undefined,
+          consent: true,
         }),
       });
       const text = await res.text().catch(() => "");
       if (!res.ok) {
         throw new Error(parseApiError(text, "Failed to save your details."));
       }
-      setIdentityRequired(false);
-      setShowIdentityGate(false);
-      if (typeof window !== "undefined") {
-        window.location.href = `/assessment/${encodeURIComponent(userId)}`;
+      if (text) {
+        JSON.parse(text);
       }
+      setIdentityRequired(false);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : String(error));
     } finally {
@@ -790,6 +819,121 @@ export default function AssessmentChatBox({
         ) : null}
       </div>
     </section>
+  ) : null;
+
+  const resultsGate = resultSummary ? (
+    <form onSubmit={onClaimIdentity} className="space-y-4" autoComplete="on">
+      <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Card 1 of 2</p>
+            <h2 className="text-2xl text-[#1e1b16]">Tell us who you are</h2>
+            <p className="text-sm text-[#6b6257]">
+              Before we reveal your HealthSense Score, add your first name, surname, and either a mobile number or email address.
+            </p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <input
+              className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+              type="text"
+              placeholder="First name"
+              autoComplete="given-name"
+              value={claimFirstName}
+              onChange={(event) => setClaimFirstName(event.target.value)}
+              disabled={claiming}
+              required
+            />
+            <input
+              className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+              type="text"
+              placeholder="Surname"
+              autoComplete="family-name"
+              value={claimSurname}
+              onChange={(event) => setClaimSurname(event.target.value)}
+              disabled={claiming}
+              required
+            />
+            <input
+              className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+              type="tel"
+              placeholder="Mobile number"
+              autoComplete="tel"
+              value={claimPhone}
+              onChange={(event) => setClaimPhone(event.target.value)}
+              disabled={claiming}
+            />
+            <input
+              className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+              type="email"
+              placeholder="Email address"
+              autoComplete="email"
+              value={claimEmail}
+              onChange={(event) => setClaimEmail(event.target.value)}
+              disabled={claiming}
+            />
+          </div>
+          <p className="text-xs text-[#8c7f70]">You need to provide a mobile number or an email address. Both are optional if you supply the other.</p>
+        </div>
+      </section>
+
+      <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Card 2 of 2</p>
+            <h2 className="text-2xl text-[#1e1b16]">Confirm your consent</h2>
+          </div>
+
+          <div className="space-y-3 text-sm text-[#6b6257]">
+            <p>Before we get started, I just need to confirm your consent.</p>
+            <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4 text-[#3c332b]">
+              <p className="font-semibold">Your data</p>
+              <p className="mt-2">Your answers are stored securely and only used to personalise your wellbeing programme.</p>
+              <p className="mt-2">We never share your information with third parties, and you can stop at any time.</p>
+              <p className="mt-2">Replying is optional, and you can request deletion of your data whenever you want.</p>
+            </div>
+            <p>If you’re happy to continue, select Yes to give consent. If not, select No to opt out.</p>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex items-start gap-3 rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm text-[#3c332b]">
+              <input
+                type="radio"
+                name="assessment-consent"
+                value="yes"
+                checked={claimConsentChoice === "yes"}
+                onChange={() => setClaimConsentChoice("yes")}
+                disabled={claiming}
+                className="mt-1"
+              />
+              <span>I consent to my data being used to personalise my wellbeing programme.</span>
+            </label>
+            <label className="flex items-start gap-3 rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm text-[#3c332b]">
+              <input
+                type="radio"
+                name="assessment-consent"
+                value="no"
+                checked={claimConsentChoice === "no"}
+                onChange={() => setClaimConsentChoice("no")}
+                disabled={claiming}
+                className="mt-1"
+              />
+              <span>I do not consent.</span>
+            </label>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="submit"
+              className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={claiming}
+            >
+              {claiming ? "Saving…" : "Save and view results"}
+            </button>
+          </div>
+        </div>
+      </section>
+    </form>
   ) : null;
 
   const conversationLog = (
@@ -949,68 +1093,15 @@ export default function AssessmentChatBox({
             <div className="mt-4">{conversationLog}</div>
           </details>
         </div>
+      ) : showResultsGate ? (
+        resultsGate
       ) : showResultCard ? (
         resultCard
       ) : (
         conversationLog
       )}
 
-      {showIdentityGate ? (
-        <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
-          <h3 className="text-sm uppercase tracking-[0.2em] text-[#6b6257]">Unlock your results</h3>
-          <p className="mt-2 text-sm text-[#6b6257]">
-            Add your name and mobile number to view your assessment report.
-          </p>
-          <form onSubmit={onClaimIdentity} className="mt-3 grid gap-3 sm:grid-cols-2" autoComplete="on">
-            <input
-              className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-              type="text"
-              placeholder="First name"
-              value={claimFirstName}
-              onChange={(event) => setClaimFirstName(event.target.value)}
-              disabled={claiming}
-              required
-            />
-            <input
-              className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-              type="text"
-              placeholder="Surname"
-              value={claimSurname}
-              onChange={(event) => setClaimSurname(event.target.value)}
-              disabled={claiming}
-              required
-            />
-            <input
-              className="sm:col-span-2 rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-              type="tel"
-              placeholder="Mobile number (e.g. +447700900123)"
-              value={claimPhone}
-              onChange={(event) => setClaimPhone(event.target.value)}
-              disabled={claiming}
-              required
-            />
-            <div className="sm:col-span-2 flex flex-wrap gap-2">
-              <button
-                type="submit"
-                className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={claiming}
-              >
-                {claiming ? "Saving…" : "Save and view results"}
-              </button>
-              <button
-                type="button"
-                className="rounded-full border border-[#efe7db] bg-white px-4 py-2 text-xs uppercase tracking-[0.18em] text-[#3c332b]"
-                onClick={() => setShowIdentityGate(false)}
-                disabled={claiming}
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        </div>
-      ) : null}
-
-      {!currentPrompt && !showResultCard ? (
+      {!currentPrompt && !showResultCard && !showResultsGate ? (
         <form onSubmit={onSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="flex-1">
             <label htmlFor="assessment-chat-input" className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">

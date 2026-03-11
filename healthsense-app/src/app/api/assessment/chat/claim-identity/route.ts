@@ -30,10 +30,10 @@ function isLeadGuestUserId(value: unknown): boolean {
   return token === "lead" || token === "0" || token === "guest";
 }
 
-function resolveAssessmentUserId(rawUserId: unknown, cookieHeader: string): string | null {
+function resolveAssessmentUserId(rawUserId: unknown, cookieHeader: string, explicitLeadToken?: string | null): string | null {
   const requestedUserId = String(rawUserId ?? "").trim();
   const sessionUserId = String(getCookieValue(cookieHeader, "hs_user_id") || "").trim();
-  const leadToken = getCookieValue(cookieHeader, "hs_lead_token");
+  const leadToken = explicitLeadToken || getCookieValue(cookieHeader, "hs_lead_token");
   if (requestedUserId && isLeadGuestUserId(requestedUserId)) {
     if (leadToken) return requestedUserId;
     return null;
@@ -46,7 +46,12 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const cookieHeader = request.headers.get("cookie") || "";
-    const userId = resolveAssessmentUserId(body.userId ?? getCookieValue(cookieHeader, "hs_user_id"), cookieHeader);
+    const explicitLeadToken = String(body.lead_token || "").trim();
+    const userId = resolveAssessmentUserId(
+      body.userId ?? getCookieValue(cookieHeader, "hs_user_id"),
+      cookieHeader,
+      explicitLeadToken || null,
+    );
     if (!userId) {
       return NextResponse.json({ error: "userId is required" }, { status: 400 });
     }
@@ -55,6 +60,8 @@ export async function POST(request: Request) {
       first_name: body.first_name ?? "",
       surname: body.surname ?? "",
       phone: body.phone ?? "",
+      email: body.email ?? "",
+      consent: body.consent ?? false,
     };
 
     const session = getCookieValue(cookieHeader, "hs_session");

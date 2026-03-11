@@ -40,10 +40,10 @@ function isLeadGuestUserId(value: unknown): boolean {
   return token === "lead" || token === "0" || token === "guest";
 }
 
-function resolveAssessmentUserId(rawUserId: unknown, cookieHeader: string): string | null {
+function resolveAssessmentUserId(rawUserId: unknown, cookieHeader: string, explicitLeadToken?: string | null): string | null {
   const requestedUserId = String(rawUserId ?? "").trim();
   const sessionUserId = String(getCookieValue(cookieHeader, "hs_user_id") || "").trim();
-  const leadToken = getCookieValue(cookieHeader, "hs_lead_token");
+  const leadToken = explicitLeadToken || getCookieValue(cookieHeader, "hs_lead_token");
   if (requestedUserId && isLeadGuestUserId(requestedUserId)) {
     if (leadToken) return requestedUserId;
     return null;
@@ -56,9 +56,10 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const cookieHeader = request.headers.get("cookie") || "";
+    const explicitLeadToken = String(body.lead_token || "").trim();
     const requestedUserId = body.userId ?? getCookieValue(cookieHeader, "hs_user_id");
-    const userId = resolveAssessmentUserId(requestedUserId, cookieHeader);
-    const leadToken = getCookieValue(cookieHeader, "hs_lead_token");
+    const userId = resolveAssessmentUserId(requestedUserId, cookieHeader, explicitLeadToken || null);
+    const leadToken = explicitLeadToken || getCookieValue(cookieHeader, "hs_lead_token");
     const leadMode = (isLeadGuestUserId(requestedUserId) || (!userId && Boolean(leadToken))) && !(userId && !isLeadGuestUserId(userId));
     if (leadMode) {
       if (!leadToken) {

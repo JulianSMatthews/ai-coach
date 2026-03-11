@@ -5663,36 +5663,69 @@ def api_user_assessment_chat_claim_identity(
             return ""
         return " ".join(part.capitalize() for part in raw.split())
 
+    def _normalize_email(value: object) -> str:
+        raw = _strip_invisible(str(value or "")).strip().lower()
+        if not raw:
+            return ""
+        return raw
+
     first_name = _titlecase_name(body.get("first_name"))
     surname = _titlecase_name(body.get("surname"))
     phone_raw = _strip_invisible(str(body.get("phone") or "")).strip()
+    email_val = _normalize_email(body.get("email"))
+    consent_raw = body.get("consent")
+    if isinstance(consent_raw, str):
+        consent_given = consent_raw.strip().lower() in {"1", "true", "yes", "on"}
+    else:
+        consent_given = bool(consent_raw)
     if not first_name or not surname:
         raise HTTPException(status_code=400, detail="first_name and surname are required")
-    if not phone_raw:
-        raise HTTPException(status_code=400, detail="phone is required")
     if len(first_name) > 120 or len(surname) > 120:
         raise HTTPException(status_code=400, detail="name is too long")
-    phone_norm = _norm_phone(phone_raw)
-    digits = "".join(ch for ch in phone_norm if ch.isdigit())
-    if not phone_norm.startswith("+") or len(digits) < 8:
-        raise HTTPException(status_code=400, detail="phone must be a valid international number")
+    if not phone_raw and not email_val:
+        raise HTTPException(status_code=400, detail="phone or email is required")
+    if not consent_given:
+        raise HTTPException(status_code=400, detail="consent is required")
+
+    phone_norm = ""
+    if phone_raw:
+        phone_norm = _norm_phone(phone_raw)
+        digits = "".join(ch for ch in phone_norm if ch.isdigit())
+        if not phone_norm.startswith("+") or len(digits) < 8:
+            raise HTTPException(status_code=400, detail="phone must be a valid international number")
+    if email_val and ("@" not in email_val or "." not in email_val.split("@")[-1]):
+        raise HTTPException(status_code=400, detail="invalid email")
 
     with SessionLocal() as s:
         db_user = s.execute(select(User).where(User.id == int(user_id))).scalar_one_or_none()
         if not db_user:
             raise HTTPException(status_code=404, detail="user not found")
-        existing = s.execute(
-            select(User).where(
-                User.phone == phone_norm,
-                User.id != int(user_id),
-            )
-        ).scalar_one_or_none()
-        if existing:
-            raise HTTPException(status_code=409, detail="phone already in use")
+        if phone_norm:
+            existing = s.execute(
+                select(User).where(
+                    User.phone == phone_norm,
+                    User.id != int(user_id),
+                )
+            ).scalar_one_or_none()
+            if existing:
+                raise HTTPException(status_code=409, detail="phone already in use")
 
         db_user.first_name = first_name
         db_user.surname = surname
-        db_user.phone = phone_norm
+        if phone_norm:
+            db_user.phone = phone_norm
+        if email_val:
+            db_user.email = email_val
+        db_user.consent_given = True
+        try:
+            db_user.consent_at = datetime.utcnow()
+        except Exception:
+            pass
+        if hasattr(db_user, "consent_yes_at"):
+            try:
+                db_user.consent_yes_at = datetime.utcnow()
+            except Exception:
+                pass
         try:
             db_user.updated_on = datetime.utcnow()
         except Exception:
@@ -5700,6 +5733,7 @@ def api_user_assessment_chat_claim_identity(
         _set_pref_value(s, int(user_id), "lead_identity_required", "0")
         _set_pref_value(s, int(user_id), "lead_claimed_at", _utc_now_iso())
         _set_pref_value(s, int(user_id), "lead_claim_source", "assessment_chat")
+        _set_pref_value(s, int(user_id), "lead_results_consented_at", _utc_now_iso())
         now_utc = datetime.utcnow()
         lead_row = (
             s.query(MarketingLead)
@@ -5722,7 +5756,9 @@ def api_user_assessment_chat_claim_identity(
             "first_name": first_name,
             "surname": surname,
             "display_name": f"{first_name} {surname}",
-            "phone": phone_norm,
+            "phone": phone_norm or getattr(db_user, "phone", None),
+            "email": email_val or getattr(db_user, "email", None),
+            "consent_given": True,
         },
         "identity_required": False,
     }

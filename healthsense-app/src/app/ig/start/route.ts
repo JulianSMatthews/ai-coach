@@ -164,6 +164,7 @@ export async function GET(request: Request) {
         return NextResponse.redirect(fail);
       }
       const redirectUrl = new URL(nextPath, origin);
+      redirectUrl.searchParams.set("lt", leadToken);
       if (toBool(reqUrl.searchParams.get("debug"))) {
         redirectUrl.searchParams.set("lead_debug", "1");
       }

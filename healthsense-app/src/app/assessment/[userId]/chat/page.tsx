@@ -24,6 +24,10 @@ type PageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
+function firstSearchValue(value: string | string[] | undefined): string {
+  return String(Array.isArray(value) ? value[0] : value || "").trim();
+}
+
 export default async function AssessmentChatPage(props: PageProps) {
   const { userId } = await props.params;
   const resolvedSearchParams = (await props.searchParams) || {};
@@ -33,8 +37,9 @@ export default async function AssessmentChatPage(props: PageProps) {
   const leadGuest = String(userId || "").trim().toLowerCase() === "lead";
   const cookieStore = await cookies();
   const leadToken = String(cookieStore.get("hs_lead_token")?.value || "").trim();
+  const leadTokenParam = firstSearchValue(resolvedSearchParams.lt);
 
-  if (leadFlow && leadGuest && !leadToken) {
+  if (leadFlow && leadGuest && !leadToken && !leadTokenParam) {
     return (
       <PageShell className="px-4 py-6 sm:px-6 sm:py-8" contentClassName="space-y-6">
         <SectionHeader
@@ -137,7 +142,12 @@ export default async function AssessmentChatPage(props: PageProps) {
 
       <section className="space-y-4">
         {chatIntroText ? <p className="text-sm text-[#6b6257]">{chatIntroText}</p> : null}
-        <AssessmentChatBox userId={userId} assessmentCompleted={assessmentCompleted} isLeadGuest={leadGuest} />
+        <AssessmentChatBox
+          userId={userId}
+          assessmentCompleted={assessmentCompleted}
+          isLeadGuest={leadGuest}
+          leadToken={leadToken || leadTokenParam || undefined}
+        />
       </section>
     </PageShell>
   );
