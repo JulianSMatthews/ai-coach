@@ -18,6 +18,7 @@ import json
 from sqlalchemy import select, text as sa_text
 from sqlalchemy.orm import Session
 
+from .concepts import CONCEPT_MEASURE_LABELS, ensure_concept_measure_labels
 from .db import SessionLocal
 from .models import (
     User,
@@ -1235,18 +1236,20 @@ def upsert_concepts(session: Session) -> int:
                 select(Concept).where(Concept.pillar_key == pillar_key, Concept.code == code)
             ).scalar_one_or_none()
             bounds = (CONCEPT_SCORE_BOUNDS.get(pillar_key, {}) or {}).get(code)
+            measure_label = CONCEPT_MEASURE_LABELS.get(code)
             if not row:
                 session.add(Concept(
                     pillar_key=pillar_key,
                     code=code,
                     name=name,
-                    description=None,
+                    description=measure_label,
                     created_at=datetime.utcnow(),
                     zero_score=(bounds or {}).get("zero_score"),
                     max_score=(bounds or {}).get("max_score"),
                 ))
                 created += 1
             else:
+                row.description = measure_label
                 if bounds:
                     row.zero_score = bounds.get("zero_score")
                     row.max_score  = bounds.get("max_score")
@@ -1638,6 +1641,7 @@ def run_seed() -> None:
     Full seed entrypoint. Safely seeds in the right order and won't crash
     if a helper is missing (it will just skip that step).
     """
+    ensure_concept_measure_labels()
     with SessionLocal() as s:
         try:
             # 1) Clubs first (so users.club_id NOT NULL can be satisfied)

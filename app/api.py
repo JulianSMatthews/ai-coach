@@ -134,6 +134,7 @@ from .usage import (
     log_usage_event,
 )
 from .usage_rates import fetch_provider_rates
+from .concepts import ensure_concept_measure_labels
 from .marketing import ensure_marketing_schema
 from .okr import ensure_cycle
 from .reporting import (
@@ -590,6 +591,10 @@ def on_startup():
                 ensure_marketing_schema()
             except Exception as e:
                 print(f"⚠️  Could not ensure marketing schema: {e!r}")
+            try:
+                ensure_concept_measure_labels()
+            except Exception as e:
+                print(f"⚠️  Could not ensure concept descriptions: {e!r}")
             # Ensure job queue table exists (non-destructive)
             try:
                 ensure_job_table()
