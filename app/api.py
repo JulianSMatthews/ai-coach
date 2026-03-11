@@ -1298,7 +1298,7 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
             "options": [
                 {
                     "value": REFLECTION_CONTINUE_VALUE,
-                    "label": "Continue Assessment",
+                    "label": "Continue",
                 }
             ],
             "sections": section_progress,
@@ -5815,6 +5815,8 @@ def api_user_assessment_chat_claim_identity(
                 lead_row.updated_at = now_utc
             except Exception:
                 pass
+        response_phone = phone_norm or str(getattr(db_user, "phone", "") or "").strip() or None
+        response_email = email_val or str(getattr(db_user, "email", "") or "").strip() or None
         s.commit()
 
     return {
@@ -5824,8 +5826,8 @@ def api_user_assessment_chat_claim_identity(
             "first_name": first_name,
             "surname": surname,
             "display_name": f"{first_name} {surname}",
-            "phone": phone_norm or getattr(db_user, "phone", None),
-            "email": email_val or getattr(db_user, "email", None),
+            "phone": response_phone,
+            "email": response_email,
             "consent_given": True,
         },
         "identity_required": False,
