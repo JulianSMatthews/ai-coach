@@ -944,9 +944,9 @@ export default function AssessmentChatBox({
             </div>
           ) : null}
           <div className="space-y-2">
-            <h2 className="text-2xl text-[#1e1b16]">Tell us who you are</h2>
+            <h2 className="text-2xl text-[#1e1b16]">Your details</h2>
             <p className="text-sm text-[#6b6257]">
-              Before we reveal your HealthSense Score, please add your first name, surname, and either a mobile number or email address.
+              Please add your first name, surname, and either a mobile number or email address.
             </p>
           </div>
 
