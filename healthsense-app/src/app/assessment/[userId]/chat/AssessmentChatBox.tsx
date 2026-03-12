@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { type ReactNode, FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { getPillarPalette } from "@/lib/pillars";
 import { ProgressBar, ScoreRing } from "@/components/ui";
 import AssessmentPromptCard, {
@@ -74,27 +74,6 @@ type AssessmentChatBoxProps = {
   showLeadBranding?: boolean;
 };
 
-type AssessmentCta = {
-  cleanedText: string;
-  href: string | null;
-};
-
-type QuickReplyPayload = {
-  cleanedText: string;
-  quickReplies: string[];
-};
-
-type QuickReplyOption = {
-  label: string;
-  value: string;
-};
-
-type MediaPayload = {
-  cleanedText: string;
-  mediaUrl: string | null;
-  isPodcast: boolean;
-};
-
 type AssessmentCoachingPlanItem = {
   pillarKey: string;
   pillarName: string;
@@ -124,22 +103,6 @@ function parseApiError(text: string, fallback: string) {
     }
     return text;
   }
-}
-
-function renderFormattedText(text: string): ReactNode {
-  const raw = String(text || "");
-  if (!raw.includes("*")) return raw;
-  const parts = raw.split(/(\*[^*]+\*)/g).filter(Boolean);
-  return parts.map((part, index) => {
-    if (part.startsWith("*") && part.endsWith("*") && part.length > 2) {
-      return (
-        <strong key={`strong-${index}`} className="font-bold">
-          {part.slice(1, -1)}
-        </strong>
-      );
-    }
-    return <span key={`text-${index}`}>{part}</span>;
-  });
 }
 
 function normalizeMessages(raw: unknown): ChatMessage[] {
@@ -213,6 +176,57 @@ function normalizePromptSection(raw: unknown): AssessmentPromptSection | null {
   };
 }
 
+function normalizePromptResultPreview(
+  raw: unknown,
+): AssessmentCurrentPrompt["result_preview"] {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const pillars = Array.isArray(row.pillars)
+    ? row.pillars.flatMap((entry) => {
+        if (!entry || typeof entry !== "object") return [];
+        const pillarRow = entry as Record<string, unknown>;
+        const pillarKey = typeof pillarRow.pillar_key === "string" ? pillarRow.pillar_key.trim() : "";
+        const label = typeof pillarRow.label === "string" ? pillarRow.label.trim() : "";
+        if (!pillarKey || !label) return [];
+        return [
+          {
+            pillar_key: pillarKey,
+            label,
+            score: Number.isFinite(Number(pillarRow.score)) ? Number(pillarRow.score) : null,
+            complete: typeof pillarRow.complete === "boolean" ? pillarRow.complete : null,
+          },
+        ];
+      })
+    : [];
+
+  return {
+    combined: Number.isFinite(Number(row.combined)) ? Number(row.combined) : null,
+    pillars,
+    readiness:
+      row.readiness && typeof row.readiness === "object"
+        ? {
+            label:
+              typeof (row.readiness as Record<string, unknown>).label === "string"
+                ? String((row.readiness as Record<string, unknown>).label)
+                : "Habit Readiness",
+            score: Number.isFinite(Number((row.readiness as Record<string, unknown>).score))
+              ? Number((row.readiness as Record<string, unknown>).score)
+              : null,
+            complete:
+              typeof (row.readiness as Record<string, unknown>).complete === "boolean"
+                ? Boolean((row.readiness as Record<string, unknown>).complete)
+                : null,
+          }
+        : null,
+    latest_pillar_key:
+      typeof row.latest_pillar_key === "string" ? String(row.latest_pillar_key) : null,
+    latest_pillar_label:
+      typeof row.latest_pillar_label === "string" ? String(row.latest_pillar_label) : null,
+    latest_pillar_score:
+      Number.isFinite(Number(row.latest_pillar_score)) ? Number(row.latest_pillar_score) : null,
+  };
+}
+
 function normalizeCurrentPrompt(raw: unknown): AssessmentCurrentPrompt | null {
   if (!raw || typeof raw !== "object") return null;
   const row = raw as Record<string, unknown>;
@@ -242,22 +256,7 @@ function normalizeCurrentPrompt(raw: unknown): AssessmentCurrentPrompt | null {
     question,
     measure_label: typeof row.measure_label === "string" ? row.measure_label : null,
     hint: typeof row.hint === "string" ? row.hint : null,
-    result_preview:
-      row.result_preview && typeof row.result_preview === "object"
-        ? {
-            pillar_key:
-              typeof (row.result_preview as Record<string, unknown>).pillar_key === "string"
-                ? String((row.result_preview as Record<string, unknown>).pillar_key)
-                : "",
-            label:
-              typeof (row.result_preview as Record<string, unknown>).label === "string"
-                ? String((row.result_preview as Record<string, unknown>).label)
-                : "",
-            score: Number.isFinite(Number((row.result_preview as Record<string, unknown>).score))
-              ? Number((row.result_preview as Record<string, unknown>).score)
-              : 0,
-          }
-        : null,
+    result_preview: normalizePromptResultPreview(row.result_preview),
     options,
     sections,
   };
@@ -383,134 +382,6 @@ function normalizeCoachingPlan(raw: unknown): AssessmentCoachingPlan {
   return { okrs };
 }
 
-function resolveAssessmentHref(rawUrl: string, userId: string): string {
-  const fallback = `/assessment/${encodeURIComponent(userId)}`;
-  const candidate = String(rawUrl || "").trim();
-  if (!candidate) return fallback;
-  if (candidate.startsWith("/assessment/")) return candidate;
-  try {
-    const parsed = new URL(candidate);
-    if (parsed.pathname.startsWith("/assessment/")) {
-      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
-    }
-  } catch {
-    return fallback;
-  }
-  return fallback;
-}
-
-function extractAssessmentCta(text: string, userId: string): AssessmentCta {
-  const raw = String(text || "");
-  const marker = /View your assessment in the HealthSense app:\s*(https?:\/\/\S+|\/assessment\/\S+)/i;
-  const match = raw.match(marker);
-  if (!match) {
-    return { cleanedText: raw, href: null };
-  }
-  const href = resolveAssessmentHref(match[1] || "", userId);
-  const cleanedText = raw
-    .replace(marker, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-  return { cleanedText, href };
-}
-
-function extractQuickReplies(text: string, quickRepliesFromMeta?: string[]): QuickReplyPayload {
-  const raw = String(text || "");
-  const metaReplies = Array.isArray(quickRepliesFromMeta)
-    ? quickRepliesFromMeta
-        .map((item) => String(item || "").trim())
-        .filter((item) => Boolean(item))
-        .slice(0, 6)
-    : [];
-  const marker = /\n{0,2}Quick replies:\s*([^\n]+)\s*$/i;
-  const match = raw.match(marker);
-  const footerReplies =
-    match && !metaReplies.length
-      ? String(match[1] || "")
-          .split(/·|\||,/g)
-          .map((item) => item.trim())
-          .filter((item) => Boolean(item))
-          .slice(0, 6)
-      : [];
-  const deduped = [...metaReplies, ...footerReplies].filter(
-    (item, index, all) => all.indexOf(item) === index,
-  );
-  const cleanedText = raw
-    .replace(marker, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-  return {
-    cleanedText,
-    quickReplies: deduped.slice(0, 6),
-  };
-}
-
-function normalizeMediaUrl(raw: string | null | undefined): string | null {
-  const candidate = String(raw || "").trim();
-  if (!candidate) return null;
-  if (!/^https?:\/\//i.test(candidate)) return null;
-  return candidate;
-}
-
-function isPodcastUrl(url: string | null): boolean {
-  const val = String(url || "").toLowerCase();
-  if (!val) return false;
-  return [".mp3", ".m4a", ".wav", ".aac", ".ogg", "podcast", "/audio", "audio/"].some((token) =>
-    val.includes(token),
-  );
-}
-
-function extractMediaPayload(text: string, mediaUrlFromMeta?: string | null): MediaPayload {
-  const raw = String(text || "");
-  let mediaUrl = normalizeMediaUrl(mediaUrlFromMeta);
-
-  if (!mediaUrl) {
-    const matches = raw.match(/https?:\/\/\S+/gi) || [];
-    const likelyPodcast = [...matches].reverse().find((candidate) => isPodcastUrl(candidate));
-    mediaUrl = normalizeMediaUrl(likelyPodcast || null);
-  }
-
-  if (!mediaUrl) {
-    return {
-      cleanedText: raw,
-      mediaUrl: null,
-      isPodcast: false,
-    };
-  }
-
-  const cleanedText = raw
-    .replace(mediaUrl, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-
-  return {
-    cleanedText,
-    mediaUrl,
-    isPodcast: isPodcastUrl(mediaUrl),
-  };
-}
-
-function quickReplyOptions(quickReplies: string[]): QuickReplyOption[] {
-  return quickReplies
-    .map((raw) => {
-      const value = String(raw || "").trim();
-      if (!value) return null;
-      if (value.includes("||")) {
-        const [titleRaw, payloadRaw] = value.split("||", 2);
-        const title = String(titleRaw || "").trim();
-        const payload = String(payloadRaw || "").trim();
-        return {
-          label: title || payload || value,
-          value: payload || title || value,
-        };
-      }
-      return {
-        label: value,
-        value,
-      };
-    })
-    .filter((item): item is QuickReplyOption => Boolean(item));
-}
 
 function isTruthyToken(value: string | null | undefined): boolean {
   const token = String(value || "").trim().toLowerCase();
@@ -560,8 +431,6 @@ export default function AssessmentChatBox({
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
-  const [showScrollToLatest, setShowScrollToLatest] = useState(false);
-  const logRef = useRef<HTMLDivElement | null>(null);
 
   const autoStart = useMemo(() => isTruthyToken(searchParams?.get("autostart")), [searchParams]);
   const leadFlow = useMemo(() => isTruthyToken(searchParams?.get("lead")), [searchParams]);
@@ -575,8 +444,6 @@ export default function AssessmentChatBox({
   const showResultsGate = Boolean(resultSummary) && !promptActive && identityRequired;
   const showResultCard = Boolean(resultSummary) && !promptActive && !identityRequired;
   const showAssessmentControls = !assessmentCompleted && !isLeadGuest && !promptActive && (!leadFlow || !chatReady);
-  const showLeadBrandingInConversation = showLeadBranding && !promptActive && !showResultCard && !showResultsGate;
-  const showPromptConversation = currentPrompt?.section_key !== "lead_intro";
 
   const applyChatPayload = useCallback((data: ChatResponse) => {
     const nextPrompt = normalizeCurrentPrompt(data.current_prompt);
@@ -614,35 +481,6 @@ export default function AssessmentChatBox({
       setStarting(false);
     }
   }, [userId, assessmentCompleted, applyChatPayload, leadToken]);
-
-  const scrollToLatest = useCallback((behavior: ScrollBehavior = "smooth") => {
-    const target = logRef.current;
-    if (!target) return;
-    target.scrollTo({ top: target.scrollHeight, behavior });
-  }, []);
-
-  const updateScrollCtaState = useCallback(() => {
-    const target = logRef.current;
-    if (!target) return;
-    const remaining = target.scrollHeight - target.scrollTop - target.clientHeight;
-    setShowScrollToLatest((current) => {
-      const next = remaining > 96;
-      return current === next ? current : next;
-    });
-  }, []);
-
-  useEffect(() => {
-    const target = logRef.current;
-    if (!target) return;
-    const onScroll = () => {
-      updateScrollCtaState();
-    };
-    target.addEventListener("scroll", onScroll, { passive: true });
-    updateScrollCtaState();
-    return () => {
-      target.removeEventListener("scroll", onScroll);
-    };
-  }, [messages.length, updateScrollCtaState]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1175,135 +1013,13 @@ export default function AssessmentChatBox({
               className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
               disabled={claiming}
             >
-              {claiming ? "Saving…" : "Consent to save data and view results"}
+              {claiming ? "Saving…" : "Confirm consent for results and personal coaching plan"}
             </button>
           </div>
         </div>
       </section>
     </form>
   ) : null;
-
-  const conversationLog = (
-    <div className="relative">
-      <div
-        ref={logRef}
-        className="max-h-[56vh] min-h-[320px] overflow-y-auto rounded-2xl border border-[#efe7db] bg-white p-4"
-      >
-        {showLeadBrandingInConversation ? (
-          <div className="mb-4 border-b border-[#efe7db] pb-4">
-            <LeadAssessmentBranding />
-          </div>
-        ) : null}
-        {messages.length === 0 ? (
-          <p className="text-sm text-[#6b6257]">
-            {leadFlow
-              ? "Connecting you to Gia and preparing your assessment…"
-              : assessmentCompleted
-                ? "Gia is ready. Send your message to continue coaching."
-                : hasActiveSession
-                  ? "Your assessment is in progress. Continue by sending your next answer."
-                  : "Start your assessment to begin chatting in-app."}
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {messages.map((message, index) => {
-              const isUser = (message.direction || "").toLowerCase() === "inbound";
-              const cta = extractAssessmentCta(String(message.text || ""), userId);
-              const quickReplyPayload = extractQuickReplies(cta.cleanedText, message.quick_replies);
-              const mediaPayload = extractMediaPayload(quickReplyPayload.cleanedText, message.media_url);
-              const options = quickReplyOptions(quickReplyPayload.quickReplies);
-              const selectedQuickReply = String(message.selected_quick_reply || "").trim();
-              const ts = message.created_at
-                ? new Date(message.created_at).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })
-                : "";
-              return (
-                <div
-                  key={`${message.id || "msg"}-${index}`}
-                  className="flex justify-start"
-                >
-                  {isUser ? (
-                    <div className="max-w-[95%] rounded-2xl bg-[#1e1b16] px-4 py-3 text-sm whitespace-pre-wrap text-white">
-                      {mediaPayload.cleanedText ? <p>{renderFormattedText(mediaPayload.cleanedText)}</p> : null}
-                      {ts ? <p className="mt-2 text-[10px] text-[#e6ddd1]">{ts}</p> : null}
-                    </div>
-                  ) : (
-                    <div className="max-w-[95%] rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap text-[#3c332b]">
-                      {mediaPayload.cleanedText ? <p>{renderFormattedText(mediaPayload.cleanedText)}</p> : null}
-                      {mediaPayload.mediaUrl && mediaPayload.isPodcast ? (
-                        <div className="mt-3 space-y-2">
-                          <audio
-                            controls
-                            preload="none"
-                            src={mediaPayload.mediaUrl}
-                            className="w-full"
-                          >
-                            Your browser does not support audio playback.
-                          </audio>
-                          <a
-                            href={mediaPayload.mediaUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex rounded-full border border-[#e0d4c3] bg-[#fff8ef] px-3 py-1 text-xs font-semibold text-[#3c332b]"
-                          >
-                            Open podcast in new tab
-                          </a>
-                        </div>
-                      ) : null}
-                      {mediaPayload.mediaUrl && !mediaPayload.isPodcast ? (
-                        <a
-                          href={mediaPayload.mediaUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-3 inline-flex rounded-full border border-[var(--accent)] bg-[var(--accent)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-white"
-                        >
-                          Open media
-                        </a>
-                      ) : null}
-                      {options.length > 0 ? (
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {options.map((option, replyIndex) => {
-                            const selected = Boolean(selectedQuickReply) && selectedQuickReply === option.value;
-                            return (
-                              <button
-                                key={`quick-reply-${message.id || index}-${replyIndex}`}
-                                type="button"
-                                onClick={() => onQuickReplyClick(option.value, option.label)}
-                                disabled={busy || selected}
-                                title={option.value}
-                                className={
-                                  selected
-                                    ? "rounded-full border border-[var(--accent)] bg-white px-3 py-1 text-xs font-semibold text-[var(--accent)]"
-                                    : "rounded-full border border-[var(--accent)] bg-[var(--accent)] px-3 py-1 text-xs font-semibold text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-                                }
-                              >
-                                {option.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ) : null}
-                      {ts ? <p className="mt-2 text-[10px] text-[#8c7f70]">{ts}</p> : null}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-      {showScrollToLatest ? (
-        <button
-          type="button"
-          onClick={() => scrollToLatest("smooth")}
-          className="absolute bottom-3 right-3 inline-flex h-10 w-10 items-center justify-center rounded-full border border-[#e0d4c3] bg-white text-lg text-[#3c332b] shadow-sm transition hover:bg-[#fff3dc]"
-          aria-label="Jump to latest message"
-          title="Latest message"
-        >
-          ↓
-        </button>
-      ) : null}
-    </div>
-  );
 
   return (
     <div className="space-y-4">
@@ -1339,14 +1055,6 @@ export default function AssessmentChatBox({
             onRedo={onPromptRedo}
             onRestart={onPromptRestart}
           />
-          {showPromptConversation ? (
-            <details className="rounded-2xl border border-[#efe7db] bg-white p-4">
-              <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                Conversation
-              </summary>
-              <div className="mt-4">{conversationLog}</div>
-            </details>
-          ) : null}
         </div>
       ) : showResultsGate ? (
         resultsGate
@@ -1355,9 +1063,7 @@ export default function AssessmentChatBox({
           {resultCard}
           {coachingPlanPanel}
         </div>
-      ) : (
-        conversationLog
-      )}
+      ) : null}
 
       {!currentPrompt && !showResultCard && !showResultsGate ? (
         <form onSubmit={onSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
