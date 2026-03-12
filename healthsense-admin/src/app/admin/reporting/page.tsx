@@ -102,6 +102,7 @@ async function fetchUsageSettingsAction() {
 }
 
 type ReportingSearchParams = {
+  tab?: string;
   period?: string;
   start?: string;
   end?: string;
@@ -120,9 +121,35 @@ type ReportingSearchParams = {
   launch_site_source_name?: string;
 };
 
+type ReportingTab = "launch" | "marketing" | "cost";
+
 function getTrimmedParam(value: string | undefined, fallback = ""): string {
   const trimmed = typeof value === "string" ? value.trim() : "";
   return trimmed || fallback;
+}
+
+function resolveReportingTab(raw: string | undefined): ReportingTab {
+  if (raw === "launch" || raw === "marketing" || raw === "cost") return raw;
+  return "marketing";
+}
+
+function buildReportingTabHref(params: ReportingSearchParams, tab: ReportingTab): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (typeof value !== "string") continue;
+    const trimmed = value.trim();
+    if (!trimmed || key === "tab") continue;
+    query.set(key, trimmed);
+  }
+  query.set("tab", tab);
+  return `/admin/reporting?${query.toString()}`;
+}
+
+function tabLinkClass(active: boolean): string {
+  if (active) {
+    return "rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white";
+  }
+  return "rounded-full border border-[#efe7db] bg-[#fdfaf4] px-4 py-2 text-xs uppercase tracking-[0.2em] text-[#3c332b]";
 }
 
 function buildLaunchUrl(
@@ -165,6 +192,9 @@ export default async function ReportingPage({
 }) {
   const resolvedSearchParams = (await searchParams) || {};
   const apiBase = process.env.API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || "";
+  const activeTab = resolveReportingTab(
+    typeof resolvedSearchParams?.tab === "string" ? resolvedSearchParams.tab : undefined,
+  );
   const period = typeof resolvedSearchParams?.period === "string" ? resolvedSearchParams.period : "7";
   const start = typeof resolvedSearchParams?.start === "string" ? resolvedSearchParams.start : undefined;
   const end = typeof resolvedSearchParams?.end === "string" ? resolvedSearchParams.end : undefined;
@@ -302,33 +332,198 @@ export default async function ReportingPage({
     siteSourceName: siteSourceNameToken,
     isTest: true,
   });
+  const launchTabHref = buildReportingTabHref(resolvedSearchParams, "launch");
+  const marketingTabHref = buildReportingTabHref(resolvedSearchParams, "marketing");
+  const costTabHref = buildReportingTabHref(resolvedSearchParams, "cost");
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto w-full max-w-5xl space-y-6">
         <AdminNav
           title="Reporting"
-          subtitle="Two sections: Marketing and Cost Analysis."
+          subtitle="Three sections: Landing URL, Marketing, and Cost Analysis."
         />
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
-          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Sections</p>
+          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Tabs</p>
           <div className="mt-3 flex flex-wrap gap-3">
             <a
-              href="#reporting-marketing"
-              className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white"
+              href={launchTabHref}
+              className={tabLinkClass(activeTab === "launch")}
+            >
+              Landing URL
+            </a>
+            <a
+              href={marketingTabHref}
+              className={tabLinkClass(activeTab === "marketing")}
             >
               Marketing
             </a>
             <a
-              href="#reporting-cost-analysis"
-              className="rounded-full border border-[#efe7db] bg-[#fdfaf4] px-4 py-2 text-xs uppercase tracking-[0.2em] text-[#3c332b]"
+              href={costTabHref}
+              className={tabLinkClass(activeTab === "cost")}
             >
               Cost Analysis
             </a>
           </div>
         </section>
 
+        {activeTab === "launch" ? (
+          <section id="reporting-launch" className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
+            <div className="flex flex-wrap items-end justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Landing URL</p>
+                <p className="mt-2 text-sm text-[#6b6257]">
+                  Generate a live or test landing URL with the parameters you want to send.
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Launch URL builder</p>
+              <form method="get" className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <input type="hidden" name="tab" value="launch" />
+                <input type="hidden" name="period" value={period} />
+                <input type="hidden" name="start" value={start || ""} />
+                <input type="hidden" name="end" value={end || ""} />
+                <input type="hidden" name="user_id" value={userIdRaw} />
+                <input type="hidden" name="source" value={sourceRaw} />
+                <input type="hidden" name="campaign" value={campaignRaw} />
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Source</label>
+                  <input
+                    type="text"
+                    name="launch_source"
+                    defaultValue={sourceToken}
+                    className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Campaign</label>
+                  <input
+                    type="text"
+                    name="launch_campaign"
+                    defaultValue={campaignToken}
+                    className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">UTM source</label>
+                  <input
+                    type="text"
+                    name="launch_utm_source"
+                    defaultValue={utmSourceToken}
+                    className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">UTM medium</label>
+                  <input
+                    type="text"
+                    name="launch_utm_medium"
+                    defaultValue={utmMediumToken}
+                    className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">UTM campaign</label>
+                  <input
+                    type="text"
+                    name="launch_utm_campaign"
+                    defaultValue={utmCampaignToken}
+                    className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Campaign ID</label>
+                  <input
+                    type="text"
+                    name="launch_campaign_id"
+                    defaultValue={campaignIdToken}
+                    className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Adset ID</label>
+                  <input
+                    type="text"
+                    name="launch_adset_id"
+                    defaultValue={adsetIdToken}
+                    className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Ad ID</label>
+                  <input
+                    type="text"
+                    name="launch_ad_id"
+                    defaultValue={adIdToken}
+                    className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Placement</label>
+                  <input
+                    type="text"
+                    name="launch_placement"
+                    defaultValue={placementToken}
+                    className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Site source name</label>
+                  <input
+                    type="text"
+                    name="launch_site_source_name"
+                    defaultValue={siteSourceNameToken}
+                    className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="md:col-span-2 xl:col-span-3">
+                  <button
+                    type="submit"
+                    className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white"
+                  >
+                    Generate launch URLs
+                  </button>
+                </div>
+              </form>
+              <p className="mt-3 text-sm text-[#6b6257]">
+                Shared key: {leadStartKey ? "included automatically" : "not set on healthsense-admin"}
+              </p>
+              <div className="mt-3">
+                <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[#6b6257]">Live URL</p>
+                <CopyValueField value={metaLaunchUrl} />
+              </div>
+              <div className="mt-3">
+                <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[#6b6257]">Test URL</p>
+                <CopyValueField value={testLaunchUrl} buttonLabel="Copy test URL" />
+              </div>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <a
+                  href={previewLaunchUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-full border border-[#efe7db] bg-white px-4 py-2 text-xs uppercase tracking-[0.2em] text-[#3c332b]"
+                >
+                  Open live landing
+                </a>
+                <a
+                  href={testLaunchUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white"
+                >
+                  Open test landing
+                </a>
+              </div>
+              <p className="mt-3 text-sm text-[#6b6257]">
+                Test launches are marked as test traffic and excluded from this reporting funnel.
+              </p>
+            </div>
+          </section>
+        ) : null}
+
+        {activeTab === "marketing" ? (
         <section id="reporting-marketing" className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
@@ -354,6 +549,17 @@ export default async function ReportingPage({
             </div>
           </div>
           <form method="get" className="mt-4 flex flex-wrap items-end gap-3">
+            <input type="hidden" name="tab" value="marketing" />
+            <input type="hidden" name="launch_source" value={launchSourceRaw} />
+            <input type="hidden" name="launch_campaign" value={launchCampaignRaw} />
+            <input type="hidden" name="launch_utm_source" value={launchUtmSourceRaw} />
+            <input type="hidden" name="launch_utm_medium" value={launchUtmMediumRaw} />
+            <input type="hidden" name="launch_utm_campaign" value={launchUtmCampaignRaw} />
+            <input type="hidden" name="launch_campaign_id" value={launchCampaignIdRaw} />
+            <input type="hidden" name="launch_adset_id" value={launchAdsetIdRaw} />
+            <input type="hidden" name="launch_ad_id" value={launchAdIdRaw} />
+            <input type="hidden" name="launch_placement" value={launchPlacementRaw} />
+            <input type="hidden" name="launch_site_source_name" value={launchSiteSourceNameRaw} />
             <div>
               <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Period</label>
               <select
@@ -438,151 +644,6 @@ export default async function ReportingPage({
           <p className="mt-2 text-sm text-[#6b6257]">
             Filters: source {sourceRaw || "all"} · campaign {campaignRaw || "all"}
           </p>
-          <div className="mt-4 rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
-            <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Meta URL</p>
-            <p className="mt-1 text-sm text-[#6b6257]">
-              Generate a live or test landing URL with the parameters you want to send.
-            </p>
-            <form method="get" className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-              <input type="hidden" name="period" value={period} />
-              <input type="hidden" name="start" value={start || ""} />
-              <input type="hidden" name="end" value={end || ""} />
-              <input type="hidden" name="user_id" value={userIdRaw} />
-              <input type="hidden" name="source" value={sourceRaw} />
-              <input type="hidden" name="campaign" value={campaignRaw} />
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Source</label>
-                <input
-                  type="text"
-                  name="launch_source"
-                  defaultValue={sourceToken}
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Campaign</label>
-                <input
-                  type="text"
-                  name="launch_campaign"
-                  defaultValue={campaignToken}
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">UTM source</label>
-                <input
-                  type="text"
-                  name="launch_utm_source"
-                  defaultValue={utmSourceToken}
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">UTM medium</label>
-                <input
-                  type="text"
-                  name="launch_utm_medium"
-                  defaultValue={utmMediumToken}
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">UTM campaign</label>
-                <input
-                  type="text"
-                  name="launch_utm_campaign"
-                  defaultValue={utmCampaignToken}
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Campaign ID</label>
-                <input
-                  type="text"
-                  name="launch_campaign_id"
-                  defaultValue={campaignIdToken}
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Adset ID</label>
-                <input
-                  type="text"
-                  name="launch_adset_id"
-                  defaultValue={adsetIdToken}
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Ad ID</label>
-                <input
-                  type="text"
-                  name="launch_ad_id"
-                  defaultValue={adIdToken}
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Placement</label>
-                <input
-                  type="text"
-                  name="launch_placement"
-                  defaultValue={placementToken}
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Site source name</label>
-                <input
-                  type="text"
-                  name="launch_site_source_name"
-                  defaultValue={siteSourceNameToken}
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                />
-              </div>
-              <div className="md:col-span-2 xl:col-span-3">
-                <button
-                  type="submit"
-                  className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white"
-                >
-                  Generate launch URLs
-                </button>
-              </div>
-            </form>
-            <p className="mt-3 text-sm text-[#6b6257]">
-              Shared key: {leadStartKey ? "included automatically" : "not set on healthsense-admin"}
-            </p>
-            <div className="mt-3">
-              <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[#6b6257]">Live URL</p>
-              <CopyValueField value={metaLaunchUrl} />
-            </div>
-            <div className="mt-3">
-              <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[#6b6257]">Test URL</p>
-              <CopyValueField value={testLaunchUrl} buttonLabel="Copy test URL" />
-            </div>
-            <div className="mt-4 flex flex-wrap gap-3">
-              <a
-                href={previewLaunchUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-full border border-[#efe7db] bg-white px-4 py-2 text-xs uppercase tracking-[0.2em] text-[#3c332b]"
-              >
-                Open live landing
-              </a>
-              <a
-                href={testLaunchUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white"
-              >
-                Open test landing
-              </a>
-            </div>
-            <p className="mt-3 text-sm text-[#6b6257]">
-              Test launches are marked as test traffic and excluded from this reporting funnel.
-            </p>
-          </div>
-
           <div className="mt-4 grid gap-4 lg:grid-cols-3 xl:grid-cols-6">
             {(marketing?.funnel?.steps || []).map((step) => (
               <div key={step.key || step.label} className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
@@ -678,7 +739,10 @@ export default async function ReportingPage({
             </details>
           </div>
         </section>
+        ) : null}
 
+        {activeTab === "cost" ? (
+        <>
         <section id="reporting-cost-analysis" className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
@@ -693,6 +757,19 @@ export default async function ReportingPage({
               ) : null}
             </div>
             <form method="get" className="flex flex-wrap items-end gap-3">
+              <input type="hidden" name="tab" value="cost" />
+              <input type="hidden" name="source" value={sourceRaw} />
+              <input type="hidden" name="campaign" value={campaignRaw} />
+              <input type="hidden" name="launch_source" value={launchSourceRaw} />
+              <input type="hidden" name="launch_campaign" value={launchCampaignRaw} />
+              <input type="hidden" name="launch_utm_source" value={launchUtmSourceRaw} />
+              <input type="hidden" name="launch_utm_medium" value={launchUtmMediumRaw} />
+              <input type="hidden" name="launch_utm_campaign" value={launchUtmCampaignRaw} />
+              <input type="hidden" name="launch_campaign_id" value={launchCampaignIdRaw} />
+              <input type="hidden" name="launch_adset_id" value={launchAdsetIdRaw} />
+              <input type="hidden" name="launch_ad_id" value={launchAdIdRaw} />
+              <input type="hidden" name="launch_placement" value={launchPlacementRaw} />
+              <input type="hidden" name="launch_site_source_name" value={launchSiteSourceNameRaw} />
               <div>
                 <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Period</label>
                 <select
@@ -1004,6 +1081,8 @@ export default async function ReportingPage({
             </div>
           </form>
         </section>
+        </>
+        ) : null}
       </div>
     </main>
   );
