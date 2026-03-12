@@ -1237,10 +1237,10 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
     if not isinstance(state_obj, dict):
         return None
     phase = str(state_obj.get("phase") or "pillars").strip().lower()
-    if phase not in {"reflection", "pillars", "psych"}:
+    if phase not in {"reflection", "pillars", "pillar_result", "psych"}:
         return None
 
-    section_progress = _assessment_section_progress_payloads(state_obj) if phase in {"pillars", "psych"} else []
+    section_progress = _assessment_section_progress_payloads(state_obj) if phase in {"pillars", "pillar_result", "psych"} else []
     main_total = _assessment_main_question_total(state_obj)
     readiness_total = len(getattr(psych, "QUESTIONS", []) or [])
     overall_total = max(0, int(main_total) + int(readiness_total))
@@ -1265,6 +1265,53 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
                     "label": "Continue",
                 }
             ],
+            "sections": section_progress,
+        }
+
+    if phase == "pillar_result":
+        pillar_result = state_obj.get("pillar_result") if isinstance(state_obj.get("pillar_result"), dict) else {}
+        pillar_key = str(pillar_result.get("pillar_key") or "").strip().lower()
+        if not pillar_key:
+            return None
+        try:
+            section_index = PILLAR_ORDER.index(pillar_key) + 1 if pillar_key in PILLAR_ORDER else 1
+        except Exception:
+            section_index = 1
+        try:
+            pillar_score = int(round(float(pillar_result.get("score") or 0)))
+        except Exception:
+            pillar_score = 0
+        answered_main = 0
+        concept_idx_map = state_obj.get("concept_idx") if isinstance(state_obj.get("concept_idx"), dict) else {}
+        for pillar_name in PILLAR_ORDER:
+            try:
+                answered_main += max(0, int(concept_idx_map.get(pillar_name, 0) or 0))
+            except Exception:
+                continue
+        return {
+            "kind": "pillar_result",
+            "section_key": f"pillar_result_{pillar_key}",
+            "section_label": "",
+            "section_index": int(section_index),
+            "section_total": len(PILLAR_ORDER) + 1,
+            "section_question_index": 0,
+            "section_question_total": 0,
+            "question_position": int(answered_main),
+            "question_total": int(overall_total),
+            "question": f"Your {pillar_key.replace('_', ' ').title()} score",
+            "measure_label": None,
+            "hint": None,
+            "options": [
+                {
+                    "value": REFLECTION_CONTINUE_VALUE,
+                    "label": "Continue",
+                }
+            ],
+            "result_preview": {
+                "pillar_key": pillar_key,
+                "label": pillar_key.replace("_", " ").title(),
+                "score": int(max(0, min(pillar_score, 100))),
+            },
             "sections": section_progress,
         }
 

@@ -22,7 +22,7 @@ export type AssessmentPromptSection = {
 };
 
 export type AssessmentCurrentPrompt = {
-  kind: "concept_scale" | "readiness_scale" | "pillar_reflection";
+  kind: "concept_scale" | "readiness_scale" | "pillar_reflection" | "pillar_result";
   section_key: string;
   section_label: string;
   section_index: number;
@@ -36,6 +36,11 @@ export type AssessmentCurrentPrompt = {
   question: string;
   measure_label?: string | null;
   hint?: string | null;
+  result_preview?: {
+    pillar_key: string;
+    label: string;
+    score: number;
+  } | null;
   options: AssessmentPromptOption[];
   sections: AssessmentPromptSection[];
 };
@@ -110,22 +115,46 @@ export default function AssessmentPromptCard({
 }: Props) {
   const tone = prompt.kind === "readiness_scale" ? "#d3541b" : "var(--accent)";
   const hint = promptHint(prompt);
-  const showSectionProgress = prompt.kind !== "pillar_reflection" && prompt.sections.length > 0;
-  const showQuestionProgress = prompt.kind !== "pillar_reflection" && prompt.section_question_total > 0;
-  const showPromptActions = prompt.kind !== "pillar_reflection";
+  const isIntroPrompt = prompt.kind === "pillar_reflection";
+  const isPillarResultPrompt = prompt.kind === "pillar_result";
+  const showSectionProgress = !isIntroPrompt && !isPillarResultPrompt && prompt.sections.length > 0;
+  const showQuestionProgress = !isIntroPrompt && !isPillarResultPrompt && prompt.section_question_total > 0;
+  const showPromptActions = !isIntroPrompt && !isPillarResultPrompt;
   const showPromptHeader =
     showSectionProgress ||
     showQuestionProgress ||
     Boolean(String(prompt.section_label || "").trim()) ||
     Boolean(String(prompt.concept_label || "").trim());
   const showLeadIntroPreview = prompt.section_key === "lead_intro";
+  const showPillarResultPreview =
+    isPillarResultPrompt &&
+    Boolean(prompt.result_preview?.pillar_key) &&
+    Boolean(prompt.result_preview?.label) &&
+    Number.isFinite(Number(prompt.result_preview?.score));
+  const pillarResultPalette = showPillarResultPreview
+    ? getPillarPalette(String(prompt.result_preview?.pillar_key || ""))
+    : null;
+  const pillarResultScore = showPillarResultPreview
+    ? Math.max(0, Math.min(100, Math.round(Number(prompt.result_preview?.score || 0))))
+    : 0;
 
   return (
     <section className="w-full rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
       <div className="space-y-5">
         {showLeadBranding ? (
           <div className="border-b border-[#eadfce] pb-5">
-            <LeadAssessmentBranding />
+            <LeadAssessmentBranding
+              className={
+                showLeadIntroPreview
+                  ? "text-[1.75rem] font-medium leading-[1.05] sm:text-[2.35rem]"
+                  : ""
+              }
+              logoClassName={
+                showLeadIntroPreview
+                  ? "h-10 w-10 flex-none sm:h-12 sm:w-12"
+                  : "h-8 w-8 flex-none sm:h-9 sm:w-9"
+              }
+            />
           </div>
         ) : null}
         {showPromptHeader ? (
@@ -167,17 +196,18 @@ export default function AssessmentPromptCard({
           </div>
         ) : null}
 
-        <div className="space-y-4">
-          <h3 className="text-xl leading-snug text-[#1e1b16] sm:text-[1.75rem]">{renderFormattedQuestion(prompt.question)}</h3>
-          {hint ? <p className="text-sm whitespace-pre-line text-[#6b6257]">{hint}</p> : null}
-        </div>
+        {!showPillarResultPreview && !showLeadIntroPreview ? (
+          <div className="space-y-4">
+            <h3 className="text-xl leading-snug text-[#1e1b16] sm:text-[1.75rem]">{renderFormattedQuestion(prompt.question)}</h3>
+            {hint ? <p className="text-sm whitespace-pre-line text-[#6b6257]">{hint}</p> : null}
+          </div>
+        ) : null}
 
         {showLeadIntroPreview ? (
           <div className="rounded-[28px] border border-[#e7e1d6] bg-white px-4 py-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.35)] sm:px-6 sm:py-6">
             <div className="space-y-5">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="space-y-2">
-                  <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Assessment complete</p>
                   <h4 className="text-2xl text-[#1e1b16]">Your HealthSense Score</h4>
                 </div>
                 <div className="flex items-center gap-4 rounded-3xl border border-[#efe7db] bg-[#fffaf3] px-5 py-4">
@@ -211,6 +241,40 @@ export default function AssessmentPromptCard({
                   </div>
                   <ProgressBar value={LEAD_INTRO_PREVIEW.readiness.score} max={100} tone="#c54817" />
                 </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {showPillarResultPreview && pillarResultPalette ? (
+          <div className="rounded-[28px] border border-[#e7e1d6] bg-white px-4 py-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.35)] sm:px-6 sm:py-6">
+            <div className="space-y-5">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
+                    {prompt.result_preview?.label} complete
+                  </p>
+                  <h4 className="text-2xl text-[#1e1b16]">
+                    Your {prompt.result_preview?.label} score
+                  </h4>
+                </div>
+                <div className="flex items-center gap-4 rounded-3xl border border-[#efe7db] bg-[#fffaf3] px-5 py-4">
+                  <ScoreRing value={pillarResultScore} tone={pillarResultPalette.accent} />
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Score</p>
+                    <p className="text-3xl font-semibold text-[#1e1b16]">{pillarResultScore}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold text-[#1e1b16]">{prompt.result_preview?.label}</p>
+                  <p className="text-sm font-semibold" style={{ color: pillarResultPalette.accent }}>
+                    {pillarResultScore}
+                  </p>
+                </div>
+                <ProgressBar value={pillarResultScore} max={100} tone={pillarResultPalette.accent} />
               </div>
             </div>
           </div>

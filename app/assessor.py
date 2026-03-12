@@ -1041,7 +1041,7 @@ REFLECTION_PILLAR_ALIASES = {
     "resilience": {"resilience", "mindset", "stress", "mental"},
 }
 
-LEAD_INTRO_PROMPT_TEXT = "Get your HealthSense Score"
+LEAD_INTRO_PROMPT_TEXT = "Get your HealthSense Score and Personal Plan"
 REFLECTION_CONTINUE_VALUE = "continue_assessment"
 REFLECTION_EXPLANATION_MESSAGES = {
     "nutrition": [
@@ -1328,6 +1328,63 @@ def _begin_scored_pillar_flow(user: User, state: dict, turns: list[dict], db_ses
     if _maybe_prompt_preamble_question(user, state, pillar, turns):
         return True
     return _send_first_concept_question_for_pillar(user, state, pillar, turns, db_session)
+
+
+def _is_app_assessment_delivery() -> bool:
+    delivery_ctx = _get_assessment_delivery_context()
+    return str(delivery_ctx.get("channel") or "").strip().lower() == "app"
+
+
+def _enter_app_pillar_result_phase(
+    state: dict,
+    *,
+    pillar: str,
+    overall: int,
+    next_pillar: str | None,
+    next_phase: str,
+) -> None:
+    state["phase"] = "pillar_result"
+    state["pillar_result"] = {
+        "pillar_key": str(pillar or "").strip().lower(),
+        "score": int(overall),
+        "next_pillar": str(next_pillar or "").strip().lower() or None,
+        "next_phase": str(next_phase or "").strip().lower() or "pillars",
+    }
+
+
+def _continue_from_app_pillar_result(user: User, state: dict, turns: list[dict], s, sess) -> bool:
+    pillar_result = state.get("pillar_result") if isinstance(state.get("pillar_result"), dict) else {}
+    next_phase = str(pillar_result.get("next_phase") or "").strip().lower() or "pillars"
+    next_pillar = str(pillar_result.get("next_pillar") or "").strip().lower() or None
+    turns.append({"role": "user", "pillar": None, "text": REFLECTION_CONTINUE_VALUE, "is_pillar_result_continue": True})
+    state["pillar_result"] = None
+
+    if next_phase == "psych":
+        state["phase"] = "psych"
+        state["psych"] = {"idx": 0, "answers": {}}
+        _commit_state(s, sess, state)
+        _send_to_user(
+            user,
+            "I’m going to ask 6 quick questions about your habits and approach to change. "
+            "This helps tailor your plan and coaching style.",
+        )
+        _psych_ask_question(user, 0)
+        return True
+
+    if next_pillar:
+        state["phase"] = "pillars"
+        state["current"] = next_pillar
+        if _maybe_prompt_preamble_question(user, state, next_pillar, turns):
+            _commit_state(s, sess, state)
+            return True
+        if not _send_first_concept_question_for_pillar(user, state, next_pillar, turns, s):
+            _commit_state(s, sess, state)
+            return True
+        _commit_state(s, sess, state)
+        return True
+
+    _commit_state(s, sess, state)
+    return True
 
 
 def _log_pillar_handoff_timing(payload: dict) -> None:
@@ -2216,6 +2273,13 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 return True
             _commit_state(s, sess, state)
             return True
+
+        if phase_name == "pillar_result":
+            if not _is_reflection_continue(user_text):
+                _send_to_user(user, "Tap Continue to move on.")
+                _commit_state(s, sess, state)
+                return True
+            return _continue_from_app_pillar_result(user, state, turns, s, sess)
 
         if str(state.get("phase") or "pillars").lower() == "psych":
             return _continue_psych_phase(s, sess, state, user, user_text)
@@ -3252,6 +3316,22 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             nxt = _next_pillar(pillar)
             state["results"][pillar] = {"level": out.level, "confidence": out.confidence,
                                         "rationale": out.rationale, "scores": filled_scores, "overall": overall}
+
+            if _is_app_assessment_delivery():
+                handoff_timing["next_pillar"] = nxt
+                handoff_timing["next_prompt_mode"] = "pillar_result_card"
+                next_phase = "pillars" if nxt else "psych"
+                _enter_app_pillar_result_phase(
+                    state,
+                    pillar=pillar,
+                    overall=int(overall),
+                    next_pillar=nxt,
+                    next_phase=next_phase,
+                )
+                handoff_timing["ms_total"] = int((time.perf_counter() - handoff_started_at) * 1000)
+                _log_pillar_handoff_timing(handoff_timing)
+                _commit_state(s, sess, state)
+                return True
 
             if nxt:
                 state["current"] = nxt
