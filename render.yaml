@@ -111,6 +111,8 @@ services:
         sync: false
       - key: ADMIN_USER_ID
         sync: false
+      - key: PUBLIC_LEAD_START_KEY
+        sync: false
       - key: NEXT_PUBLIC_HSAPP_BASE_URL
         sync: false
 

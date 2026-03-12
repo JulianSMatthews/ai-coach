@@ -1059,6 +1059,7 @@ class MarketingLead(Base):
     meta_creative_id    = Column(String(96), nullable=True)
     placement           = Column(String(120), nullable=True)
     lead_key_used       = Column(Boolean, nullable=False, server_default=text("false"))
+    is_test             = Column(Boolean, nullable=False, server_default=text("false"), index=True)
     landing_path        = Column(Text, nullable=True)
     referrer_url        = Column(Text, nullable=True)
     client_ip           = Column(String(64), nullable=True)

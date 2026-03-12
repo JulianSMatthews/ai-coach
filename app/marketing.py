@@ -56,6 +56,7 @@ def ensure_marketing_schema() -> None:
                 "ALTER TABLE marketing_leads ADD COLUMN IF NOT EXISTS meta_creative_id varchar(96);",
                 "ALTER TABLE marketing_leads ADD COLUMN IF NOT EXISTS placement varchar(120);",
                 f"ALTER TABLE marketing_leads ADD COLUMN IF NOT EXISTS lead_key_used boolean DEFAULT {bool_default};",
+                f"ALTER TABLE marketing_leads ADD COLUMN IF NOT EXISTS is_test boolean DEFAULT {bool_default};",
                 "ALTER TABLE marketing_leads ADD COLUMN IF NOT EXISTS landing_path text;",
                 "ALTER TABLE marketing_leads ADD COLUMN IF NOT EXISTS referrer_url text;",
                 "ALTER TABLE marketing_leads ADD COLUMN IF NOT EXISTS client_ip varchar(64);",
@@ -80,6 +81,7 @@ def ensure_marketing_schema() -> None:
                 "CREATE INDEX IF NOT EXISTS ix_marketing_leads_created_at ON marketing_leads (created_at);",
                 "CREATE INDEX IF NOT EXISTS ix_marketing_leads_source ON marketing_leads (source);",
                 "CREATE INDEX IF NOT EXISTS ix_marketing_leads_campaign ON marketing_leads (campaign);",
+                "CREATE INDEX IF NOT EXISTS ix_marketing_leads_is_test ON marketing_leads (is_test);",
                 "CREATE INDEX IF NOT EXISTS ix_marketing_leads_source_campaign_created ON marketing_leads (source, campaign, created_at);",
                 "CREATE INDEX IF NOT EXISTS ix_marketing_leads_meta_campaign ON marketing_leads (meta_campaign_id);",
             ]

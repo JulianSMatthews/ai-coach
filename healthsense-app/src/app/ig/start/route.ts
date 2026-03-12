@@ -113,6 +113,7 @@ export async function GET(request: Request) {
     const payload = {
       lead_key: leadKey || undefined,
       defer_create: true,
+      is_test: toBool(reqUrl.searchParams.get("test")) || toBool(reqUrl.searchParams.get("is_test")),
       source,
       campaign: campaign || undefined,
       utm,

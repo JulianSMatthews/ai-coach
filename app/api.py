@@ -2268,6 +2268,7 @@ def _mint_lead_pending_token(
     client_ip: str | None,
     user_agent: str | None,
     lead_key_used: bool,
+    is_test: bool,
     club_id: int | None,
     marketing_lead_id: int | None,
     ttl_seconds: int,
@@ -2288,6 +2289,7 @@ def _mint_lead_pending_token(
         "client_ip": client_ip or None,
         "user_agent": user_agent or None,
         "lead_key_used": bool(lead_key_used),
+        "is_test": bool(is_test),
         "club_id": int(club_id) if isinstance(club_id, int) and club_id > 0 else None,
         "marketing_lead_id": int(marketing_lead_id) if isinstance(marketing_lead_id, int) and marketing_lead_id > 0 else None,
     }
@@ -2421,6 +2423,9 @@ def _collect_public_lead_tracking(
         raw_meta_payload["utm"] = utm_clean
     if meta_clean:
         raw_meta_payload["meta"] = meta_clean
+    is_test = _is_truthy_token(body.get("is_test") or request.query_params.get("test") or request.query_params.get("is_test"))
+    if is_test:
+        raw_meta_payload["test"] = True
     return {
         "source": source or "instagram",
         "campaign": campaign,
@@ -2441,6 +2446,7 @@ def _collect_public_lead_tracking(
         "client_ip": client_ip,
         "raw_meta_payload": raw_meta_payload or None,
         "lead_key_used": bool(_track_text(lead_key, max_len=256)),
+        "is_test": bool(is_test),
     }
 
 
@@ -2472,6 +2478,7 @@ def _create_public_landing_lead_tracking(
     raw_meta_payload = tracking.get("raw_meta_payload")
     if not isinstance(raw_meta_payload, dict):
         raw_meta_payload = None
+    is_test = bool(tracking.get("is_test"))
 
     try:
         with SessionLocal() as s:
@@ -2494,6 +2501,7 @@ def _create_public_landing_lead_tracking(
                 meta_creative_id=meta_creative_id,
                 placement=placement,
                 lead_key_used=bool(tracking.get("lead_key_used")),
+                is_test=is_test,
                 landing_path=landing_path,
                 referrer_url=referrer_url,
                 client_ip=client_ip,
@@ -2540,6 +2548,7 @@ def _hydrate_marketing_lead_row_from_tracking(
         "meta_creative_id": _track_text(tracking.get("meta_creative_id"), max_len=96),
         "placement": _track_text(tracking.get("placement"), max_len=120),
         "lead_key_used": bool(tracking.get("lead_key_used")),
+        "is_test": bool(tracking.get("is_test")),
         "landing_path": _track_text(tracking.get("landing_path"), max_len=2000),
         "referrer_url": _track_text(tracking.get("referrer_url"), max_len=2000),
         "client_ip": _extract_client_ip(tracking.get("client_ip")),
@@ -2556,6 +2565,10 @@ def _hydrate_marketing_lead_row_from_tracking(
                 setattr(row, attr, value)
             continue
         if attr == "lead_key_used":
+            if bool(value):
+                setattr(row, attr, True)
+            continue
+        if attr == "is_test":
             if bool(value):
                 setattr(row, attr, True)
             continue
@@ -2597,6 +2610,7 @@ def _create_public_lead_user_and_tracking(
     if not isinstance(raw_meta_payload, dict):
         raw_meta_payload = None
     lead_key_used = bool(tracking.get("lead_key_used"))
+    is_test = bool(tracking.get("is_test"))
 
     with SessionLocal() as s:
         club_id = int(club_id_override) if isinstance(club_id_override, int) and club_id_override > 0 else _resolve_default_club_id(s)
@@ -2690,6 +2704,7 @@ def _create_public_lead_user_and_tracking(
                     meta_creative_id=meta_creative_id,
                     placement=placement,
                     lead_key_used=bool(lead_key_used),
+                    is_test=is_test,
                     landing_path=landing_path,
                     referrer_url=referrer_url,
                     client_ip=client_ip,
@@ -5061,6 +5076,7 @@ def api_public_assessment_lead_start(payload: dict | None, request: Request):
             client_ip=_extract_client_ip(tracking.get("client_ip")),
             user_agent=_track_text(tracking.get("user_agent"), max_len=1200),
             lead_key_used=bool(tracking.get("lead_key_used")),
+            is_test=bool(tracking.get("is_test")),
             club_id=club_id,
             marketing_lead_id=marketing_lead_id,
             ttl_seconds=ttl_seconds,
@@ -5194,6 +5210,7 @@ def api_public_assessment_lead_first_reply(payload: dict | None, request: Reques
                 "meta": _clean_tracking_map(pending.get("meta"), max_key_len=64, max_val_len=255),
             },
             "lead_key_used": bool(pending.get("lead_key_used")),
+            "is_test": bool(pending.get("is_test")),
         },
         marketing_lead_id=pending_marketing_lead_id,
         club_id_override=pending_club_id,
@@ -12125,6 +12142,7 @@ def admin_marketing_funnel(
     campaign: str | None = None,
     admin_user: User = Depends(_require_admin),
 ):
+    ensure_marketing_schema()
     target_user = None
     if user_id:
         with SessionLocal() as s:
@@ -12159,6 +12177,7 @@ def admin_marketing_funnel(
             .filter(
                 MarketingLead.created_at >= start_utc,
                 MarketingLead.created_at < end_utc,
+                or_(MarketingLead.is_test.is_(False), MarketingLead.is_test.is_(None)),
             )
         )
         if user_id is not None:

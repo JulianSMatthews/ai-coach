@@ -15,6 +15,50 @@ import { revalidatePath } from "next/cache";
 
 export const dynamic = "force-dynamic";
 
+function normalizeHsAppBase(raw: string | null | undefined): string | null {
+  const nodeEnv = (process.env.NODE_ENV || "").toLowerCase();
+  const isDev = nodeEnv === "development";
+  const isHosted =
+    (process.env.ENV || "").toLowerCase() === "production" ||
+    (process.env.RENDER || "").toLowerCase() === "true" ||
+    Boolean((process.env.RENDER_EXTERNAL_URL || "").trim());
+  const allowLocalInDev =
+    isDev &&
+    !isHosted &&
+    (process.env.HSAPP_ALLOW_LOCALHOST_URLS || "").trim() === "1";
+  const input = String(raw || "").trim();
+  if (!input) return null;
+  try {
+    const parsed = new URL(input.startsWith("http://") || input.startsWith("https://") ? input : `https://${input}`);
+    const host = parsed.hostname.toLowerCase();
+    const isLocalHost =
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "0.0.0.0" ||
+      host.endsWith(".local");
+    if (isLocalHost && (!allowLocalInDev || isHosted)) return null;
+    if (!isDev && parsed.protocol !== "https:") return null;
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
+function resolveHsAppBase(): string {
+  const rawCandidates = [
+    process.env.NEXT_PUBLIC_HSAPP_BASE_URL,
+    process.env.HSAPP_PUBLIC_URL,
+    process.env.NEXT_PUBLIC_APP_BASE_URL,
+    process.env.HSAPP_PUBLIC_DEFAULT_URL,
+    process.env.HSAPP_NGROK_DOMAIN,
+  ];
+  for (const raw of rawCandidates) {
+    const normalized = normalizeHsAppBase(raw);
+    if (normalized) return normalized;
+  }
+  return "https://app.healthsense.coach";
+}
+
 async function saveUsageSettingsAction(formData: FormData) {
   "use server";
   const toNumber = (value: FormDataEntryValue | null) => {
@@ -148,16 +192,7 @@ export default async function ReportingPage({
   const llmMiniOutput = modelRates["gpt-5-mini"]?.output ?? "";
   const llm51Input = modelRates["gpt-5.1"]?.input ?? "";
   const llm51Output = modelRates["gpt-5.1"]?.output ?? "";
-  const appBaseRaw = (
-    process.env.NEXT_PUBLIC_HSAPP_BASE_URL ||
-    process.env.HSAPP_PUBLIC_URL ||
-    process.env.NEXT_PUBLIC_APP_BASE_URL ||
-    process.env.APP_BASE_URL ||
-    "https://app.healthsense.coach"
-  ).trim();
-  const appBase =
-    (appBaseRaw.startsWith("http://") || appBaseRaw.startsWith("https://") ? appBaseRaw : `https://${appBaseRaw}`)
-      .replace(/\/+$/, "");
+  const appBase = resolveHsAppBase();
   const leadStartKey = (process.env.PUBLIC_LEAD_START_KEY || "").trim();
   const campaignToken = (campaignRaw || "assessment_launch").trim();
   const metaLaunchUrl =
@@ -166,6 +201,16 @@ export default async function ReportingPage({
     `source=instagram&campaign=${encodeURIComponent(campaignToken)}` +
     `&utm_source=instagram&utm_medium=paid_social&utm_campaign=${encodeURIComponent(campaignToken)}` +
     "&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}&placement={{placement}}&site_source_name={{site_source_name}}";
+  const previewLaunchUrl =
+    `${appBase}/ig/start?` +
+    (leadStartKey ? `k=${encodeURIComponent(leadStartKey)}&` : "") +
+    `source=instagram&campaign=${encodeURIComponent(campaignToken)}` +
+    `&utm_source=instagram&utm_medium=paid_social&utm_campaign=${encodeURIComponent(campaignToken)}`;
+  const testLaunchUrl =
+    `${appBase}/ig/start?` +
+    (leadStartKey ? `k=${encodeURIComponent(leadStartKey)}&` : "") +
+    `test=1&source=instagram&campaign=${encodeURIComponent(campaignToken)}` +
+    `&utm_source=instagram&utm_medium=test&utm_campaign=${encodeURIComponent(campaignToken)}`;
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -310,6 +355,27 @@ export default async function ReportingPage({
             <div className="mt-3">
               <CopyValueField value={metaLaunchUrl} />
             </div>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <a
+                href={previewLaunchUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-full border border-[#efe7db] bg-white px-4 py-2 text-xs uppercase tracking-[0.2em] text-[#3c332b]"
+              >
+                Open live landing
+              </a>
+              <a
+                href={testLaunchUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white"
+              >
+                Open test landing
+              </a>
+            </div>
+            <p className="mt-3 text-sm text-[#6b6257]">
+              Test launches are marked as test traffic and excluded from this reporting funnel.
+            </p>
           </div>
 
           <div className="mt-4 grid gap-4 lg:grid-cols-3 xl:grid-cols-6">
