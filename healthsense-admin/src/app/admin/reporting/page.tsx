@@ -108,7 +108,55 @@ type ReportingSearchParams = {
   user_id?: string;
   source?: string;
   campaign?: string;
+  launch_source?: string;
+  launch_campaign?: string;
+  launch_utm_source?: string;
+  launch_utm_medium?: string;
+  launch_utm_campaign?: string;
+  launch_campaign_id?: string;
+  launch_adset_id?: string;
+  launch_ad_id?: string;
+  launch_placement?: string;
+  launch_site_source_name?: string;
 };
+
+function getTrimmedParam(value: string | undefined, fallback = ""): string {
+  const trimmed = typeof value === "string" ? value.trim() : "";
+  return trimmed || fallback;
+}
+
+function buildLaunchUrl(
+  appBase: string,
+  leadStartKey: string,
+  params: {
+    source: string;
+    campaign: string;
+    utmSource: string;
+    utmMedium: string;
+    utmCampaign: string;
+    campaignId: string;
+    adsetId: string;
+    adId: string;
+    placement: string;
+    siteSourceName: string;
+    isTest?: boolean;
+  },
+): string {
+  const query = new URLSearchParams();
+  if (leadStartKey) query.set("k", leadStartKey);
+  if (params.isTest) query.set("test", "1");
+  query.set("source", params.source);
+  query.set("campaign", params.campaign);
+  query.set("utm_source", params.utmSource);
+  query.set("utm_medium", params.utmMedium);
+  query.set("utm_campaign", params.utmCampaign);
+  if (params.campaignId) query.set("campaign_id", params.campaignId);
+  if (params.adsetId) query.set("adset_id", params.adsetId);
+  if (params.adId) query.set("ad_id", params.adId);
+  if (params.placement) query.set("placement", params.placement);
+  if (params.siteSourceName) query.set("site_source_name", params.siteSourceName);
+  return `${appBase}/ig/start?${query.toString()}`;
+}
 
 export default async function ReportingPage({
   searchParams,
@@ -123,6 +171,30 @@ export default async function ReportingPage({
   const userIdRaw = typeof resolvedSearchParams?.user_id === "string" ? resolvedSearchParams.user_id : "";
   const sourceRaw = typeof resolvedSearchParams?.source === "string" ? resolvedSearchParams.source : "";
   const campaignRaw = typeof resolvedSearchParams?.campaign === "string" ? resolvedSearchParams.campaign : "";
+  const launchSourceRaw =
+    typeof resolvedSearchParams?.launch_source === "string" ? resolvedSearchParams.launch_source : "";
+  const launchCampaignRaw =
+    typeof resolvedSearchParams?.launch_campaign === "string" ? resolvedSearchParams.launch_campaign : "";
+  const launchUtmSourceRaw =
+    typeof resolvedSearchParams?.launch_utm_source === "string" ? resolvedSearchParams.launch_utm_source : "";
+  const launchUtmMediumRaw =
+    typeof resolvedSearchParams?.launch_utm_medium === "string" ? resolvedSearchParams.launch_utm_medium : "";
+  const launchUtmCampaignRaw =
+    typeof resolvedSearchParams?.launch_utm_campaign === "string" ? resolvedSearchParams.launch_utm_campaign : "";
+  const launchCampaignIdRaw =
+    typeof resolvedSearchParams?.launch_campaign_id === "string"
+      ? resolvedSearchParams.launch_campaign_id
+      : "";
+  const launchAdsetIdRaw =
+    typeof resolvedSearchParams?.launch_adset_id === "string" ? resolvedSearchParams.launch_adset_id : "";
+  const launchAdIdRaw =
+    typeof resolvedSearchParams?.launch_ad_id === "string" ? resolvedSearchParams.launch_ad_id : "";
+  const launchPlacementRaw =
+    typeof resolvedSearchParams?.launch_placement === "string" ? resolvedSearchParams.launch_placement : "";
+  const launchSiteSourceNameRaw =
+    typeof resolvedSearchParams?.launch_site_source_name === "string"
+      ? resolvedSearchParams.launch_site_source_name
+      : "";
   const userId = userIdRaw ? Number(userIdRaw) : undefined;
   const days = period === "custom" ? undefined : Number(period || 7);
 
@@ -194,23 +266,42 @@ export default async function ReportingPage({
   const llm51Output = modelRates["gpt-5.1"]?.output ?? "";
   const appBase = resolveHsAppBase();
   const leadStartKey = (process.env.PUBLIC_LEAD_START_KEY || "").trim();
-  const campaignToken = (campaignRaw || "assessment_launch").trim();
-  const metaLaunchUrl =
-    `${appBase}/ig/start?` +
-    (leadStartKey ? `k=${encodeURIComponent(leadStartKey)}&` : "") +
-    `source=instagram&campaign=${encodeURIComponent(campaignToken)}` +
-    `&utm_source=instagram&utm_medium=paid_social&utm_campaign=${encodeURIComponent(campaignToken)}` +
-    "&campaign_id={{campaign.id}}&adset_id={{adset.id}}&ad_id={{ad.id}}&placement={{placement}}&site_source_name={{site_source_name}}";
-  const previewLaunchUrl =
-    `${appBase}/ig/start?` +
-    (leadStartKey ? `k=${encodeURIComponent(leadStartKey)}&` : "") +
-    `source=instagram&campaign=${encodeURIComponent(campaignToken)}` +
-    `&utm_source=instagram&utm_medium=paid_social&utm_campaign=${encodeURIComponent(campaignToken)}`;
-  const testLaunchUrl =
-    `${appBase}/ig/start?` +
-    (leadStartKey ? `k=${encodeURIComponent(leadStartKey)}&` : "") +
-    `test=1&source=instagram&campaign=${encodeURIComponent(campaignToken)}` +
-    `&utm_source=instagram&utm_medium=test&utm_campaign=${encodeURIComponent(campaignToken)}`;
+  const sourceToken = getTrimmedParam(launchSourceRaw || sourceRaw, "instagram");
+  const campaignToken = getTrimmedParam(launchCampaignRaw || campaignRaw, "assessment_launch");
+  const utmSourceToken = getTrimmedParam(launchUtmSourceRaw, sourceToken);
+  const utmMediumToken = getTrimmedParam(launchUtmMediumRaw, "paid_social");
+  const utmCampaignToken = getTrimmedParam(launchUtmCampaignRaw, campaignToken);
+  const campaignIdToken = getTrimmedParam(launchCampaignIdRaw);
+  const adsetIdToken = getTrimmedParam(launchAdsetIdRaw);
+  const adIdToken = getTrimmedParam(launchAdIdRaw);
+  const placementToken = getTrimmedParam(launchPlacementRaw);
+  const siteSourceNameToken = getTrimmedParam(launchSiteSourceNameRaw);
+  const metaLaunchUrl = buildLaunchUrl(appBase, leadStartKey, {
+    source: sourceToken,
+    campaign: campaignToken,
+    utmSource: utmSourceToken,
+    utmMedium: utmMediumToken,
+    utmCampaign: utmCampaignToken,
+    campaignId: campaignIdToken,
+    adsetId: adsetIdToken,
+    adId: adIdToken,
+    placement: placementToken,
+    siteSourceName: siteSourceNameToken,
+  });
+  const previewLaunchUrl = metaLaunchUrl;
+  const testLaunchUrl = buildLaunchUrl(appBase, leadStartKey, {
+    source: sourceToken,
+    campaign: campaignToken,
+    utmSource: utmSourceToken,
+    utmMedium: "test",
+    utmCampaign: utmCampaignToken,
+    campaignId: campaignIdToken,
+    adsetId: adsetIdToken,
+    adId: adIdToken,
+    placement: placementToken,
+    siteSourceName: siteSourceNameToken,
+    isTest: true,
+  });
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -350,10 +441,124 @@ export default async function ReportingPage({
           <div className="mt-4 rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
             <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Meta URL</p>
             <p className="mt-1 text-sm text-[#6b6257]">
-              Use this as the destination URL in Meta ads.
+              Generate a live or test landing URL with the parameters you want to send.
+            </p>
+            <form method="get" className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              <input type="hidden" name="period" value={period} />
+              <input type="hidden" name="start" value={start || ""} />
+              <input type="hidden" name="end" value={end || ""} />
+              <input type="hidden" name="user_id" value={userIdRaw} />
+              <input type="hidden" name="source" value={sourceRaw} />
+              <input type="hidden" name="campaign" value={campaignRaw} />
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Source</label>
+                <input
+                  type="text"
+                  name="launch_source"
+                  defaultValue={sourceToken}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Campaign</label>
+                <input
+                  type="text"
+                  name="launch_campaign"
+                  defaultValue={campaignToken}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">UTM source</label>
+                <input
+                  type="text"
+                  name="launch_utm_source"
+                  defaultValue={utmSourceToken}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">UTM medium</label>
+                <input
+                  type="text"
+                  name="launch_utm_medium"
+                  defaultValue={utmMediumToken}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">UTM campaign</label>
+                <input
+                  type="text"
+                  name="launch_utm_campaign"
+                  defaultValue={utmCampaignToken}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Campaign ID</label>
+                <input
+                  type="text"
+                  name="launch_campaign_id"
+                  defaultValue={campaignIdToken}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Adset ID</label>
+                <input
+                  type="text"
+                  name="launch_adset_id"
+                  defaultValue={adsetIdToken}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Ad ID</label>
+                <input
+                  type="text"
+                  name="launch_ad_id"
+                  defaultValue={adIdToken}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Placement</label>
+                <input
+                  type="text"
+                  name="launch_placement"
+                  defaultValue={placementToken}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Site source name</label>
+                <input
+                  type="text"
+                  name="launch_site_source_name"
+                  defaultValue={siteSourceNameToken}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="md:col-span-2 xl:col-span-3">
+                <button
+                  type="submit"
+                  className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white"
+                >
+                  Generate launch URLs
+                </button>
+              </div>
+            </form>
+            <p className="mt-3 text-sm text-[#6b6257]">
+              Shared key: {leadStartKey ? "included automatically" : "not set on healthsense-admin"}
             </p>
             <div className="mt-3">
+              <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[#6b6257]">Live URL</p>
               <CopyValueField value={metaLaunchUrl} />
+            </div>
+            <div className="mt-3">
+              <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[#6b6257]">Test URL</p>
+              <CopyValueField value={testLaunchUrl} buttonLabel="Copy test URL" />
             </div>
             <div className="mt-4 flex flex-wrap gap-3">
               <a
