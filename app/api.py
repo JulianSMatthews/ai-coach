@@ -8077,13 +8077,16 @@ def admin_assessment_health(
         stale_mins = 30
     stale_mins = max(5, min(stale_mins, 240))
 
-    start_utc, end_utc, _window_meta = _resolve_admin_time_window(
+    start_utc, end_utc, window_meta = _resolve_admin_time_window(
         days=days,
         hours=hours,
         default_days=7,
         max_days=30,
     )
     now_utc = end_utc
+    window_days = int(window_meta.get("days") or 0)
+    window_hours = int(window_meta.get("hours") or 0)
+    streak_window_days = window_days if window_days > 0 else max(1, (window_hours + 23) // 24)
     club_scope_id = getattr(admin_user, "club_id", None)
 
     thresholds = {
@@ -9036,7 +9039,7 @@ def admin_assessment_health(
                     continue
                 last_inbound_map[uid_i] = last_ts
 
-            streak_lookback_days = max(14, min(90, days_val + 30))
+            streak_lookback_days = max(14, min(90, streak_window_days + 30))
             streak_start_utc = now_utc - timedelta(days=streak_lookback_days)
             streak_rows = (
                 s.query(MessageLog.user_id, MessageLog.created_at)
@@ -9768,7 +9771,8 @@ def admin_assessment_health(
     return {
         "as_of_utc": now_utc.replace(microsecond=0).isoformat() + "Z",
         "window": {
-            "days": days_val,
+            "days": window_meta.get("days"),
+            "hours": window_meta.get("hours"),
             "start_utc": start_utc.replace(microsecond=0).isoformat() + "Z",
             "end_utc": end_utc.replace(microsecond=0).isoformat() + "Z",
             "stale_minutes": stale_mins,
