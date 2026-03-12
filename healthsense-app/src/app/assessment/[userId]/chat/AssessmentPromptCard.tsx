@@ -37,9 +37,21 @@ export type AssessmentCurrentPrompt = {
   measure_label?: string | null;
   hint?: string | null;
   result_preview?: {
-    pillar_key: string;
-    label: string;
-    score: number;
+    combined?: number | null;
+    pillars: Array<{
+      pillar_key: string;
+      label: string;
+      score?: number | null;
+      complete?: boolean | null;
+    }>;
+    readiness?: {
+      label: string;
+      score?: number | null;
+      complete?: boolean | null;
+    } | null;
+    latest_pillar_key?: string | null;
+    latest_pillar_label?: string | null;
+    latest_pillar_score?: number | null;
   } | null;
   options: AssessmentPromptOption[];
   sections: AssessmentPromptSection[];
@@ -81,6 +93,12 @@ function promptHint(prompt: AssessmentCurrentPrompt): string | null {
   return helperText();
 }
 
+function normalizePreviewScore(value: number | null | undefined): number | null {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.max(0, Math.min(100, Math.round(parsed)));
+}
+
 function renderFormattedQuestion(text: string): ReactNode {
   const raw = String(text || "");
   if (!raw.includes("*")) return raw;
@@ -93,15 +111,15 @@ function renderFormattedQuestion(text: string): ReactNode {
   });
 }
 
-const LEAD_INTRO_PREVIEW = {
-  combined: 74,
+const LEAD_INTRO_PREVIEW: NonNullable<AssessmentCurrentPrompt["result_preview"]> = {
+  combined: 66,
   pillars: [
-    { key: "nutrition", label: "Nutrition", score: 78 },
-    { key: "training", label: "Training", score: 72 },
-    { key: "recovery", label: "Recovery", score: 69 },
-    { key: "resilience", label: "Resilience", score: 75 },
+    { pillar_key: "nutrition", label: "Nutrition", score: 48, complete: true },
+    { pillar_key: "training", label: "Training", score: 72, complete: true },
+    { pillar_key: "recovery", label: "Recovery", score: 69, complete: true },
+    { pillar_key: "resilience", label: "Resilience", score: 75, complete: true },
   ],
-  readiness: { label: "Habit Readiness", score: 71 },
+  readiness: null,
 };
 
 export default function AssessmentPromptCard({
@@ -126,17 +144,9 @@ export default function AssessmentPromptCard({
     Boolean(String(prompt.section_label || "").trim()) ||
     Boolean(String(prompt.concept_label || "").trim());
   const showLeadIntroPreview = prompt.section_key === "lead_intro";
-  const showPillarResultPreview =
-    isPillarResultPrompt &&
-    Boolean(prompt.result_preview?.pillar_key) &&
-    Boolean(prompt.result_preview?.label) &&
-    Number.isFinite(Number(prompt.result_preview?.score));
-  const pillarResultPalette = showPillarResultPreview
-    ? getPillarPalette(String(prompt.result_preview?.pillar_key || ""))
-    : null;
-  const pillarResultScore = showPillarResultPreview
-    ? Math.max(0, Math.min(100, Math.round(Number(prompt.result_preview?.score || 0))))
-    : 0;
+  const promptPreview = showLeadIntroPreview ? LEAD_INTRO_PREVIEW : prompt.result_preview;
+  const showScorePreview = Boolean(promptPreview?.pillars?.length);
+  const combinedPreviewScore = normalizePreviewScore(promptPreview?.combined);
 
   return (
     <section className="w-full rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
@@ -196,7 +206,7 @@ export default function AssessmentPromptCard({
           </div>
         ) : null}
 
-        {!showPillarResultPreview && !showLeadIntroPreview ? (
+        {!showScorePreview ? (
           <div className="space-y-4">
             <h3 className="text-xl leading-snug text-[#1e1b16] sm:text-[1.75rem]">{renderFormattedQuestion(prompt.question)}</h3>
             {hint ? <p className="text-sm whitespace-pre-line text-[#6b6257]">{hint}</p> : null}
@@ -204,78 +214,81 @@ export default function AssessmentPromptCard({
         ) : null}
 
         {showLeadIntroPreview ? (
+          <p className="text-sm leading-relaxed text-[#6b6257]">
+            HealthSense measures four pillars of health to find the one limiting your progress.
+          </p>
+        ) : null}
+
+        {showScorePreview && promptPreview ? (
           <div className="rounded-[28px] border border-[#e7e1d6] bg-white px-4 py-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.35)] sm:px-6 sm:py-6">
             <div className="space-y-5">
               <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="space-y-2">
-                  <h4 className="text-2xl text-[#1e1b16]">Your HealthSense Score</h4>
+                  <h4 className="text-2xl text-[#1e1b16]">
+                    {showLeadIntroPreview ? "Example HealthSense Score" : "Your HealthSense Score"}
+                  </h4>
                 </div>
                 <div className="flex items-center gap-4 rounded-3xl border border-[#efe7db] bg-[#fffaf3] px-5 py-4">
-                  <ScoreRing value={LEAD_INTRO_PREVIEW.combined} tone="var(--accent)" />
+                  <ScoreRing value={combinedPreviewScore ?? 0} tone="var(--accent)" />
                   <div>
                     <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Overall</p>
-                    <p className="text-3xl font-semibold text-[#1e1b16]">{LEAD_INTRO_PREVIEW.combined}</p>
+                    <p className="text-3xl font-semibold text-[#1e1b16]">
+                      {combinedPreviewScore ?? "--"}
+                    </p>
                   </div>
                 </div>
               </div>
 
               <div className="grid gap-3">
-                {LEAD_INTRO_PREVIEW.pillars.map((pillar) => {
-                  const palette = getPillarPalette(pillar.key);
+                {promptPreview.pillars.map((pillar) => {
+                  const palette = getPillarPalette(pillar.pillar_key);
+                  const pillarScore = normalizePreviewScore(pillar.score);
+                  const isComplete = pillar.complete !== false && pillarScore !== null;
                   return (
-                    <div key={pillar.key} className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                    <div key={pillar.pillar_key} className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
                       <div className="flex items-center justify-between gap-3">
                         <p className="text-sm font-semibold text-[#1e1b16]">{pillar.label}</p>
-                        <p className="text-sm font-semibold" style={{ color: palette.accent }}>
-                          {pillar.score}
-                        </p>
+                        {isComplete ? (
+                          <p className="text-sm font-semibold" style={{ color: palette.accent }}>
+                            {pillarScore}
+                          </p>
+                        ) : (
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8c7f70]">
+                            Pending
+                          </p>
+                        )}
                       </div>
-                      <ProgressBar value={pillar.score} max={100} tone={palette.accent} />
+                      <ProgressBar value={pillarScore ?? 0} max={100} tone={isComplete ? palette.accent : "#d8d0c2"} />
                     </div>
                   );
                 })}
-                <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-[#1e1b16]">{LEAD_INTRO_PREVIEW.readiness.label}</p>
-                    <p className="text-sm font-semibold text-[#c54817]">{LEAD_INTRO_PREVIEW.readiness.score}</p>
+                {promptPreview.readiness ? (
+                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-sm font-semibold text-[#1e1b16]">{promptPreview.readiness.label}</p>
+                      {normalizePreviewScore(promptPreview.readiness.score) !== null && promptPreview.readiness.complete !== false ? (
+                        <p className="text-sm font-semibold text-[#c54817]">
+                          {normalizePreviewScore(promptPreview.readiness.score)}
+                        </p>
+                      ) : (
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8c7f70]">
+                          Pending
+                        </p>
+                      )}
+                    </div>
+                    <ProgressBar
+                      value={normalizePreviewScore(promptPreview.readiness.score) ?? 0}
+                      max={100}
+                      tone={promptPreview.readiness.complete !== false && normalizePreviewScore(promptPreview.readiness.score) !== null ? "#c54817" : "#d8d0c2"}
+                    />
                   </div>
-                  <ProgressBar value={LEAD_INTRO_PREVIEW.readiness.score} max={100} tone="#c54817" />
-                </div>
+                ) : null}
               </div>
-            </div>
-          </div>
-        ) : null}
-
-        {showPillarResultPreview && pillarResultPalette ? (
-          <div className="rounded-[28px] border border-[#e7e1d6] bg-white px-4 py-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.35)] sm:px-6 sm:py-6">
-            <div className="space-y-5">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                <div className="space-y-2">
-                  <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
-                    {prompt.result_preview?.label} complete
-                  </p>
-                  <h4 className="text-2xl text-[#1e1b16]">
-                    Your {prompt.result_preview?.label} score
-                  </h4>
-                </div>
-                <div className="flex items-center gap-4 rounded-3xl border border-[#efe7db] bg-[#fffaf3] px-5 py-4">
-                  <ScoreRing value={pillarResultScore} tone={pillarResultPalette.accent} />
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Score</p>
-                    <p className="text-3xl font-semibold text-[#1e1b16]">{pillarResultScore}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-[#1e1b16]">{prompt.result_preview?.label}</p>
-                  <p className="text-sm font-semibold" style={{ color: pillarResultPalette.accent }}>
-                    {pillarResultScore}
-                  </p>
-                </div>
-                <ProgressBar value={pillarResultScore} max={100} tone={pillarResultPalette.accent} />
-              </div>
+              {showLeadIntroPreview ? (
+                <p className="text-sm font-semibold text-[#1e1b16]">
+                  Limiting Pillar: <strong>Nutrition</strong>
+                </p>
+              ) : null}
             </div>
           </div>
         ) : null}
