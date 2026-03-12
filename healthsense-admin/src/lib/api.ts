@@ -177,6 +177,7 @@ export type MarketingFunnelSummary = {
   window?: { start_utc?: string; end_utc?: string };
   filters?: {
     days?: number;
+    hours?: number;
     source?: string | null;
     campaign?: string | null;
   };
@@ -1239,6 +1240,7 @@ export async function getAdminUsageWeekly(): Promise<UsageWeeklySummary> {
 
 export async function getAdminUsageSummary(params: {
   days?: number;
+  hours?: number;
   start?: string;
   end?: string;
   user_id?: number;
@@ -1247,6 +1249,7 @@ export async function getAdminUsageSummary(params: {
   return apiAdmin<UsageSummary>("/admin/usage/summary", {
     query: {
       days: params.days,
+      hours: params.hours,
       start: params.start,
       end: params.end,
       user_id: params.user_id,
@@ -1257,6 +1260,7 @@ export async function getAdminUsageSummary(params: {
 
 export async function getAdminAppEngagement(params: {
   days?: number;
+  hours?: number;
   start?: string;
   end?: string;
   user_id?: number;
@@ -1264,6 +1268,7 @@ export async function getAdminAppEngagement(params: {
   return apiAdmin<AppEngagementSummary>("/admin/usage/app-engagement", {
     query: {
       days: params.days,
+      hours: params.hours,
       start: params.start,
       end: params.end,
       user_id: params.user_id,
@@ -1273,6 +1278,7 @@ export async function getAdminAppEngagement(params: {
 
 export async function getAdminMarketingFunnel(params: {
   days?: number;
+  hours?: number;
   start?: string;
   end?: string;
   user_id?: number;
@@ -1282,6 +1288,7 @@ export async function getAdminMarketingFunnel(params: {
   return apiAdmin<MarketingFunnelSummary>("/admin/marketing/funnel", {
     query: {
       days: params.days,
+      hours: params.hours,
       start: params.start,
       end: params.end,
       user_id: params.user_id,
@@ -1293,6 +1300,7 @@ export async function getAdminMarketingFunnel(params: {
 
 export async function getAdminPromptCosts(params: {
   days?: number;
+  hours?: number;
   start?: string;
   end?: string;
   user_id?: number;
@@ -1301,6 +1309,7 @@ export async function getAdminPromptCosts(params: {
   return apiAdmin<PromptCostReport>("/admin/usage/prompt-costs", {
     query: {
       days: params.days,
+      hours: params.hours,
       start: params.start,
       end: params.end,
       user_id: params.user_id,
@@ -1453,12 +1462,14 @@ export async function getWorkerStatus() {
 
 export async function getAdminAssessmentHealth(params: {
   days?: number;
+  hours?: number;
   stale_minutes?: number;
   infra_fetch?: boolean;
 } = {}) {
   return apiAdmin<AssessmentHealthPayload>("/admin/assessment/health", {
     query: {
       days: params.days,
+      hours: params.hours,
       stale_minutes: params.stale_minutes,
       infra_fetch: params.infra_fetch ? 1 : undefined,
     },

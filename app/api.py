@@ -4710,6 +4710,50 @@ def _parse_uk_date(value: str, end_of_day: bool = False) -> datetime | None:
     except Exception:
         return None
 
+def _resolve_admin_time_window(
+    *,
+    days: int | None = None,
+    hours: int | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    default_days: int = 7,
+    max_days: int = 365,
+) -> tuple[datetime, datetime, dict[str, int | None]]:
+    end_utc = _parse_uk_date(end, end_of_day=True) if end else None
+    if not end_utc:
+        end_utc = datetime.now(ZoneInfo("UTC")).replace(tzinfo=None)
+
+    start_utc = _parse_uk_date(start, end_of_day=False) if start else None
+    resolved_days: int | None = None
+    resolved_hours: int | None = None
+
+    if not start_utc:
+        if hours is not None:
+            try:
+                hours_val = int(hours)
+            except Exception:
+                hours_val = 24
+            max_hours = max(1, max_days * 24)
+            hours_val = max(1, min(hours_val, max_hours))
+            resolved_hours = hours_val
+            start_utc = end_utc - timedelta(hours=hours_val)
+        else:
+            try:
+                days_val = int(days or default_days)
+            except Exception:
+                days_val = default_days
+            days_val = max(1, min(days_val, max_days))
+            resolved_days = days_val
+            start_utc = end_utc - timedelta(days=days_val)
+
+    if end_utc <= start_utc:
+        if resolved_hours is not None:
+            end_utc = start_utc + timedelta(hours=max(1, resolved_hours))
+        else:
+            end_utc = start_utc + timedelta(days=1)
+
+    return start_utc, end_utc, {"days": resolved_days, "hours": resolved_hours}
+
 def _parse_block_list(val: object | None) -> list[str]:
     if val is None:
         return []
@@ -8019,6 +8063,7 @@ def _render_infra_placeholder(now_utc: datetime) -> dict[str, object]:
 @admin.get("/assessment/health")
 def admin_assessment_health(
     days: int | None = None,
+    hours: int | None = None,
     stale_minutes: int | None = None,
     infra_fetch: bool | None = None,
     admin_user: User = Depends(_require_admin),
@@ -8027,19 +8072,18 @@ def admin_assessment_health(
     Aggregated operational health metrics for assessment flow monitoring.
     """
     try:
-        days_val = int(days or 7)
-    except Exception:
-        days_val = 7
-    days_val = max(1, min(days_val, 30))
-    try:
         stale_mins = int(stale_minutes or 30)
     except Exception:
         stale_mins = 30
     stale_mins = max(5, min(stale_mins, 240))
 
-    now_utc = datetime.utcnow()
-    start_utc = now_utc - timedelta(days=days_val)
-    end_utc = now_utc
+    start_utc, end_utc, _window_meta = _resolve_admin_time_window(
+        days=days,
+        hours=hours,
+        default_days=7,
+        max_days=30,
+    )
+    now_utc = end_utc
     club_scope_id = getattr(admin_user, "club_id", None)
 
     thresholds = {
@@ -11669,6 +11713,7 @@ def _build_prompt_cost_rows(
 @admin.get("/usage/summary")
 def admin_usage_summary(
     days: int | None = None,
+    hours: int | None = None,
     start: str | None = None,
     end: str | None = None,
     user_id: int | None = None,
@@ -11683,19 +11728,14 @@ def admin_usage_summary(
             raise HTTPException(status_code=404, detail="user not found")
         _ensure_club_scope(admin_user, target_user)
 
-    end_utc = _parse_uk_date(end, end_of_day=True) if end else None
-    if not end_utc:
-        end_utc = datetime.now(ZoneInfo("UTC")).replace(tzinfo=None)
-    start_utc = _parse_uk_date(start, end_of_day=False) if start else None
-    if not start_utc:
-        try:
-            days_val = int(days or 7)
-        except Exception:
-            days_val = 7
-        days_val = max(1, min(days_val, 365))
-        start_utc = end_utc - timedelta(days=days_val)
-    if end_utc <= start_utc:
-        end_utc = start_utc + timedelta(days=1)
+    start_utc, end_utc, _window_meta = _resolve_admin_time_window(
+        days=days,
+        hours=hours,
+        start=start,
+        end=end,
+        default_days=7,
+        max_days=365,
+    )
 
     def _llm_summary_for_user() -> dict:
         rates = get_usage_settings()
@@ -11768,6 +11808,7 @@ def admin_usage_summary(
 @admin.get("/usage/app-engagement")
 def admin_usage_app_engagement(
     days: int | None = None,
+    hours: int | None = None,
     start: str | None = None,
     end: str | None = None,
     user_id: int | None = None,
@@ -11781,19 +11822,14 @@ def admin_usage_app_engagement(
             raise HTTPException(status_code=404, detail="user not found")
         _ensure_club_scope(admin_user, target_user)
 
-    end_utc = _parse_uk_date(end, end_of_day=True) if end else None
-    if not end_utc:
-        end_utc = datetime.now(ZoneInfo("UTC")).replace(tzinfo=None)
-    start_utc = _parse_uk_date(start, end_of_day=False) if start else None
-    if not start_utc:
-        try:
-            days_val = int(days or 7)
-        except Exception:
-            days_val = 7
-        days_val = max(1, min(days_val, 365))
-        start_utc = end_utc - timedelta(days=days_val)
-    if end_utc <= start_utc:
-        end_utc = start_utc + timedelta(days=1)
+    start_utc, end_utc, _window_meta = _resolve_admin_time_window(
+        days=days,
+        hours=hours,
+        start=start,
+        end=end,
+        default_days=7,
+        max_days=365,
+    )
 
     club_scope_id = getattr(admin_user, "club_id", None)
     with SessionLocal() as s:
@@ -12177,6 +12213,7 @@ def admin_usage_app_engagement(
 @admin.get("/marketing/funnel")
 def admin_marketing_funnel(
     days: int | None = None,
+    hours: int | None = None,
     start: str | None = None,
     end: str | None = None,
     user_id: int | None = None,
@@ -12193,19 +12230,14 @@ def admin_marketing_funnel(
             raise HTTPException(status_code=404, detail="user not found")
         _ensure_club_scope(admin_user, target_user)
 
-    end_utc = _parse_uk_date(end, end_of_day=True) if end else None
-    if not end_utc:
-        end_utc = datetime.now(ZoneInfo("UTC")).replace(tzinfo=None)
-    start_utc = _parse_uk_date(start, end_of_day=False) if start else None
-    if not start_utc:
-        try:
-            days_val = int(days or 30)
-        except Exception:
-            days_val = 30
-        days_val = max(1, min(days_val, 365))
-        start_utc = end_utc - timedelta(days=days_val)
-    if end_utc <= start_utc:
-        end_utc = start_utc + timedelta(days=1)
+    start_utc, end_utc, window_meta = _resolve_admin_time_window(
+        days=days,
+        hours=hours,
+        start=start,
+        end=end,
+        default_days=30,
+        max_days=365,
+    )
 
     source_filter = _track_text(source, max_len=64)
     source_filter = source_filter.lower() if source_filter else None
@@ -12450,7 +12482,8 @@ def admin_marketing_funnel(
         "as_of_uk": datetime.now(UK_TZ).isoformat(),
         "window": {"start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat()},
         "filters": {
-            "days": int(days or 30),
+            "days": window_meta.get("days"),
+            "hours": window_meta.get("hours"),
             "source": source_filter,
             "campaign": campaign_filter,
         },
@@ -12643,6 +12676,7 @@ def admin_marketing_backfill(
 @admin.get("/usage/prompt-costs")
 def admin_usage_prompt_costs(
     days: int | None = None,
+    hours: int | None = None,
     start: str | None = None,
     end: str | None = None,
     user_id: int | None = None,
@@ -12657,19 +12691,14 @@ def admin_usage_prompt_costs(
             raise HTTPException(status_code=404, detail="user not found")
         _ensure_club_scope(admin_user, target_user)
 
-    end_utc = _parse_uk_date(end, end_of_day=True) if end else None
-    if not end_utc:
-        end_utc = datetime.now(ZoneInfo("UTC")).replace(tzinfo=None)
-    start_utc = _parse_uk_date(start, end_of_day=False) if start else None
-    if not start_utc:
-        try:
-            days_val = int(days or 7)
-        except Exception:
-            days_val = 7
-        days_val = max(1, min(days_val, 365))
-        start_utc = end_utc - timedelta(days=days_val)
-    if end_utc <= start_utc:
-        end_utc = start_utc + timedelta(days=1)
+    start_utc, end_utc, _window_meta = _resolve_admin_time_window(
+        days=days,
+        hours=hours,
+        start=start,
+        end=end,
+        default_days=7,
+        max_days=365,
+    )
 
     try:
         limit_val = int(limit or 50)
@@ -16115,6 +16144,7 @@ def admin_reports_recent(
 @admin.get("/reports/sections")
 def admin_reports_sections(
     days: int | None = None,
+    hours: int | None = None,
     start: str | None = None,
     end: str | None = None,
     user_id: int | None = None,
@@ -16129,6 +16159,12 @@ def admin_reports_sections(
     - Marketing
     - Cost Analysis
     """
+    resolved_hours = None
+    if hours is not None:
+        try:
+            resolved_hours = max(1, min(int(hours), 24 * 365))
+        except Exception:
+            resolved_hours = None
     try:
         resolved_days = int(days or 30)
     except Exception:
@@ -16143,6 +16179,7 @@ def admin_reports_sections(
 
     marketing = admin_marketing_funnel(
         days=resolved_days,
+        hours=resolved_hours,
         start=start,
         end=end,
         user_id=user_id,
@@ -16152,6 +16189,7 @@ def admin_reports_sections(
     )
     usage_summary = admin_usage_summary(
         days=resolved_days,
+        hours=resolved_hours,
         start=start,
         end=end,
         user_id=user_id,
@@ -16160,6 +16198,7 @@ def admin_reports_sections(
     )
     prompt_costs = admin_usage_prompt_costs(
         days=resolved_days,
+        hours=resolved_hours,
         start=start,
         end=end,
         user_id=user_id,

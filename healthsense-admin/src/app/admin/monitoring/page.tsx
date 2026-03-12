@@ -15,10 +15,28 @@ const DEFAULT_LLM_P95_CRITICAL_MS = 15000;
 
 type MonitoringSearchParams = {
   days?: string | string[];
+  hours?: string | string[];
+  window?: string | string[];
   stale_minutes?: string | string[];
   tab?: string | string[];
   infra_fetch?: string | string[];
 };
+
+type MonitoringWindow = {
+  value: string;
+  days?: number;
+  hours?: number;
+};
+
+const MONITORING_WINDOW_OPTIONS = [
+  { value: "3h", label: "Last 3 hours" },
+  { value: "6h", label: "Last 6 hours" },
+  { value: "12h", label: "Last 12 hours" },
+  { value: "24h", label: "Last 24 hours" },
+  { value: "7d", label: "Last 7 days" },
+  { value: "14d", label: "Last 14 days" },
+  { value: "30d", label: "Last 30 days" },
+] as const;
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   if (Array.isArray(value)) return value[0];
@@ -31,6 +49,37 @@ function clampInt(value: string | string[] | undefined, fallback: number, min: n
   const parsed = Number(raw);
   if (!Number.isFinite(parsed)) return fallback;
   return Math.max(min, Math.min(max, Math.trunc(parsed)));
+}
+
+function resolveMonitoringWindow(
+  rawWindow: string | string[] | undefined,
+  rawDays: string | string[] | undefined,
+  rawHours: string | string[] | undefined,
+): MonitoringWindow {
+  const token = String(firstParam(rawWindow) || "").trim().toLowerCase();
+  const parseToken = (value: string): MonitoringWindow | null => {
+    const hourMatch = value.match(/^(\d+)h$/);
+    if (hourMatch) {
+      const hours = Math.max(1, Math.min(24 * 30, Number(hourMatch[1] || 24)));
+      return { value: `${hours}h`, hours };
+    }
+    const dayMatch = value.match(/^(\d+)d$/);
+    if (dayMatch) {
+      const days = Math.max(1, Math.min(30, Number(dayMatch[1] || 7)));
+      return days === 1 ? { value: "24h", hours: 24 } : { value: `${days}d`, days };
+    }
+    return null;
+  };
+  const parsedToken = token ? parseToken(token) : null;
+  if (parsedToken) return parsedToken;
+
+  const fallbackHours = clampInt(rawHours, 0, 0, 24 * 30);
+  if (fallbackHours > 0) {
+    return { value: `${fallbackHours}h`, hours: fallbackHours };
+  }
+
+  const fallbackDays = clampInt(rawDays, 7, 1, 30);
+  return fallbackDays === 1 ? { value: "24h", hours: 24 } : { value: `${fallbackDays}d`, days: fallbackDays };
 }
 
 function stateBadgeClass(state?: string | null): string {
@@ -99,25 +148,35 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
     searchParams && typeof (searchParams as unknown as { then?: unknown }).then === "function"
       ? await (searchParams as unknown as Promise<MonitoringSearchParams>)
       : searchParams;
-  const days = clampInt(resolvedSearchParams?.days, 7, 1, 30);
+  const windowSelection = resolveMonitoringWindow(
+    resolvedSearchParams?.window,
+    resolvedSearchParams?.days,
+    resolvedSearchParams?.hours,
+  );
   const staleMinutes = clampInt(resolvedSearchParams?.stale_minutes, 30, 5, 240);
   const tabRaw = (firstParam(resolvedSearchParams?.tab) || "assessment").toLowerCase();
   const activeTab: "assessment" | "coaching" | "app" | "infra" =
     tabRaw === "coaching" ? "coaching" : tabRaw === "app" ? "app" : tabRaw === "infra" ? "infra" : "assessment";
   const infraFetchRaw = (firstParam(resolvedSearchParams?.infra_fetch) || "").toLowerCase();
   const infraFetch = infraFetchRaw === "1" || infraFetchRaw === "true" || infraFetchRaw === "yes";
-  const assessmentTabHref = `/admin/monitoring?days=${days}&stale_minutes=${staleMinutes}&tab=assessment`;
-  const coachingTabHref = `/admin/monitoring?days=${days}&stale_minutes=${staleMinutes}&tab=coaching`;
-  const appTabHref = `/admin/monitoring?days=${days}&stale_minutes=${staleMinutes}&tab=app`;
-  const infraTabHref = `/admin/monitoring?days=${days}&stale_minutes=${staleMinutes}&tab=infra`;
+  const windowValue = encodeURIComponent(windowSelection.value);
+  const assessmentTabHref = `/admin/monitoring?window=${windowValue}&stale_minutes=${staleMinutes}&tab=assessment`;
+  const coachingTabHref = `/admin/monitoring?window=${windowValue}&stale_minutes=${staleMinutes}&tab=coaching`;
+  const appTabHref = `/admin/monitoring?window=${windowValue}&stale_minutes=${staleMinutes}&tab=app`;
+  const infraTabHref = `/admin/monitoring?window=${windowValue}&stale_minutes=${staleMinutes}&tab=infra`;
   const infraFetchHref = `${infraTabHref}&infra_fetch=1`;
 
   let health: Awaited<ReturnType<typeof getAdminAssessmentHealth>> | null = null;
   let appEngagement: Awaited<ReturnType<typeof getAdminAppEngagement>> | null = null;
   let loadError: string | null = null;
   const [healthRes, appRes] = await Promise.allSettled([
-    getAdminAssessmentHealth({ days, stale_minutes: staleMinutes, infra_fetch: activeTab === "infra" && infraFetch }),
-    getAdminAppEngagement({ days }),
+    getAdminAssessmentHealth({
+      days: windowSelection.days,
+      hours: windowSelection.hours,
+      stale_minutes: staleMinutes,
+      infra_fetch: activeTab === "infra" && infraFetch,
+    }),
+    getAdminAppEngagement({ days: windowSelection.days, hours: windowSelection.hours }),
   ]);
   if (healthRes.status === "fulfilled") {
     health = healthRes.value;
@@ -454,16 +513,17 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
             <form method="get" className="flex flex-wrap items-end gap-3">
               <input type="hidden" name="tab" value={activeTab} />
               <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Days</label>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Window</label>
                 <select
-                  name="days"
-                  defaultValue={String(days)}
+                  name="window"
+                  defaultValue={windowSelection.value}
                   className="mt-2 rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
                 >
-                  <option value="1">Last 24h</option>
-                  <option value="7">Last 7 days</option>
-                  <option value="14">Last 14 days</option>
-                  <option value="30">Last 30 days</option>
+                  {MONITORING_WINDOW_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>

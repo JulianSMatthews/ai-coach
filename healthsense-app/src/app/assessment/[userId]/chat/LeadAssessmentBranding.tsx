@@ -1,11 +1,13 @@
 type LeadAssessmentBrandingProps = {
   className?: string;
   logoClassName?: string;
+  titleLines?: string[];
 };
 
 export default function LeadAssessmentBranding({
   className = "",
   logoClassName = "h-8 w-8 flex-none sm:h-9 sm:w-9",
+  titleLines = ["Find out your", "HealthSense Score"],
 }: LeadAssessmentBrandingProps) {
   return (
     <span
@@ -31,8 +33,11 @@ export default function LeadAssessmentBranding({
         />
       </svg>
       <span className="min-w-0 leading-tight">
-        <span className="block">Find out your</span>
-        <span className="block">HealthSense Score</span>
+        {titleLines.map((line) => (
+          <span key={line} className="block">
+            {line}
+          </span>
+        ))}
       </span>
     </span>
   );

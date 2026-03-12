@@ -122,6 +122,24 @@ type ReportingSearchParams = {
 };
 
 type ReportingTab = "launch" | "marketing" | "cost";
+type ReportingWindow = {
+  period: string;
+  days?: number;
+  hours?: number;
+  custom: boolean;
+};
+
+const REPORTING_PERIOD_OPTIONS = [
+  { value: "3h", label: "Last 3 hours" },
+  { value: "6h", label: "Last 6 hours" },
+  { value: "12h", label: "Last 12 hours" },
+  { value: "24h", label: "Last 24 hours" },
+  { value: "7", label: "Last 7 days" },
+  { value: "14", label: "Last 14 days" },
+  { value: "30", label: "Last 30 days" },
+  { value: "90", label: "Last 90 days" },
+  { value: "custom", label: "Custom" },
+] as const;
 
 function getTrimmedParam(value: string | undefined, fallback = ""): string {
   const trimmed = typeof value === "string" ? value.trim() : "";
@@ -131,6 +149,22 @@ function getTrimmedParam(value: string | undefined, fallback = ""): string {
 function resolveReportingTab(raw: string | undefined): ReportingTab {
   if (raw === "launch" || raw === "marketing" || raw === "cost") return raw;
   return "marketing";
+}
+
+function resolveReportingWindow(raw: string | undefined): ReportingWindow {
+  const token = String(raw || "7").trim().toLowerCase();
+  if (token === "custom") return { period: "custom", custom: true };
+  const hourMatch = token.match(/^(\d+)h$/);
+  if (hourMatch) {
+    const hours = Math.max(1, Math.min(24 * 365, Number(hourMatch[1] || 24)));
+    return { period: `${hours}h`, hours, custom: false };
+  }
+  const parsedDays = Number(token.replace(/d$/, ""));
+  if (Number.isFinite(parsedDays) && parsedDays > 0) {
+    const days = Math.max(1, Math.min(365, Math.trunc(parsedDays)));
+    return { period: String(days), days, custom: false };
+  }
+  return { period: "7", days: 7, custom: false };
 }
 
 function buildReportingTabHref(params: ReportingSearchParams, tab: ReportingTab): string {
@@ -195,7 +229,10 @@ export default async function ReportingPage({
   const activeTab = resolveReportingTab(
     typeof resolvedSearchParams?.tab === "string" ? resolvedSearchParams.tab : undefined,
   );
-  const period = typeof resolvedSearchParams?.period === "string" ? resolvedSearchParams.period : "7";
+  const windowSelection = resolveReportingWindow(
+    typeof resolvedSearchParams?.period === "string" ? resolvedSearchParams.period : "7",
+  );
+  const period = windowSelection.period;
   const start = typeof resolvedSearchParams?.start === "string" ? resolvedSearchParams.start : undefined;
   const end = typeof resolvedSearchParams?.end === "string" ? resolvedSearchParams.end : undefined;
   const userIdRaw = typeof resolvedSearchParams?.user_id === "string" ? resolvedSearchParams.user_id : "";
@@ -226,28 +263,30 @@ export default async function ReportingPage({
       ? resolvedSearchParams.launch_site_source_name
       : "";
   const userId = userIdRaw ? Number(userIdRaw) : undefined;
-  const days = period === "custom" ? undefined : Number(period || 7);
 
   const [settings, usage, marketing, promptCosts, users] = await Promise.all([
     getUsageSettings(),
     getAdminUsageSummary({
-      days: Number.isFinite(days) ? days : 7,
-      start: period === "custom" ? start : undefined,
-      end: period === "custom" ? end : undefined,
+      days: windowSelection.days,
+      hours: windowSelection.hours,
+      start: windowSelection.custom ? start : undefined,
+      end: windowSelection.custom ? end : undefined,
       user_id: Number.isFinite(userId) ? userId : undefined,
     }),
     getAdminMarketingFunnel({
-      days: Number.isFinite(days) ? days : 7,
-      start: period === "custom" ? start : undefined,
-      end: period === "custom" ? end : undefined,
+      days: windowSelection.days,
+      hours: windowSelection.hours,
+      start: windowSelection.custom ? start : undefined,
+      end: windowSelection.custom ? end : undefined,
       user_id: Number.isFinite(userId) ? userId : undefined,
       source: sourceRaw || undefined,
       campaign: campaignRaw || undefined,
     }),
     getAdminPromptCosts({
-      days: Number.isFinite(days) ? days : 7,
-      start: period === "custom" ? start : undefined,
-      end: period === "custom" ? end : undefined,
+      days: windowSelection.days,
+      hours: windowSelection.hours,
+      start: windowSelection.custom ? start : undefined,
+      end: windowSelection.custom ? end : undefined,
       user_id: Number.isFinite(userId) ? userId : undefined,
       limit: 50,
     }),
@@ -567,11 +606,11 @@ export default async function ReportingPage({
                 defaultValue={period}
                 className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
               >
-                <option value="7">Last 7 days</option>
-                <option value="14">Last 14 days</option>
-                <option value="30">Last 30 days</option>
-                <option value="90">Last 90 days</option>
-                <option value="custom">Custom</option>
+                {REPORTING_PERIOD_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
               </select>
             </div>
             <div>
@@ -777,11 +816,11 @@ export default async function ReportingPage({
                   defaultValue={period}
                   className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
                 >
-                  <option value="7">Last 7 days</option>
-                  <option value="14">Last 14 days</option>
-                  <option value="30">Last 30 days</option>
-                  <option value="90">Last 90 days</option>
-                  <option value="custom">Custom</option>
+                  {REPORTING_PERIOD_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div>

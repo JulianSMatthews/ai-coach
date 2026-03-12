@@ -164,6 +164,11 @@ export default function AssessmentPromptCard({
                   ? "h-10 w-10 flex-none sm:h-12 sm:w-12"
                   : "h-8 w-8 flex-none sm:h-9 sm:w-9"
               }
+              titleLines={
+                showLeadIntroPreview
+                  ? ["HealthSense measures four pillars of health to find the one limiting your progress."]
+                  : undefined
+              }
             />
           </div>
         ) : null}
@@ -211,12 +216,6 @@ export default function AssessmentPromptCard({
             <h3 className="text-xl leading-snug text-[#1e1b16] sm:text-[1.75rem]">{renderFormattedQuestion(prompt.question)}</h3>
             {hint ? <p className="text-sm whitespace-pre-line text-[#6b6257]">{hint}</p> : null}
           </div>
-        ) : null}
-
-        {showLeadIntroPreview ? (
-          <p className="text-sm leading-relaxed text-[#6b6257]">
-            HealthSense measures four pillars of health to find the one limiting your progress.
-          </p>
         ) : null}
 
         {showScorePreview && promptPreview ? (
