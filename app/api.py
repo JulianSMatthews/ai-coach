@@ -1262,7 +1262,7 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
             "options": [
                 {
                     "value": REFLECTION_CONTINUE_VALUE,
-                    "label": "Continue",
+                    "label": "Continue, it will take 3 minutes to complete",
                 }
             ],
             "sections": section_progress,
@@ -1288,6 +1288,30 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
                 answered_main += max(0, int(concept_idx_map.get(pillar_name, 0) or 0))
             except Exception:
                 continue
+        results_map = state_obj.get("results") if isinstance(state_obj.get("results"), dict) else {}
+        preview_pillars: list[dict[str, object]] = []
+        preview_scores: list[int] = []
+        for preview_key in PILLAR_ORDER:
+            preview_label = preview_key.replace("_", " ").title()
+            preview_row = results_map.get(preview_key) if isinstance(results_map.get(preview_key), dict) else {}
+            raw_score = preview_row.get("overall") if isinstance(preview_row, dict) else None
+            preview_score: int | None = None
+            if raw_score is not None:
+                try:
+                    preview_score = int(max(0, min(100, round(float(raw_score)))))
+                except Exception:
+                    preview_score = None
+            if preview_score is not None:
+                preview_scores.append(preview_score)
+            preview_pillars.append(
+                {
+                    "pillar_key": preview_key,
+                    "label": preview_label,
+                    "score": preview_score,
+                    "complete": preview_score is not None,
+                }
+            )
+        preview_combined = round(sum(preview_scores) / len(preview_scores)) if preview_scores else None
         return {
             "kind": "pillar_result",
             "section_key": f"pillar_result_{pillar_key}",
@@ -1308,9 +1332,16 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
                 }
             ],
             "result_preview": {
-                "pillar_key": pillar_key,
-                "label": pillar_key.replace("_", " ").title(),
-                "score": int(max(0, min(pillar_score, 100))),
+                "combined": preview_combined,
+                "pillars": preview_pillars,
+                "readiness": {
+                    "label": "Habit Readiness",
+                    "score": None,
+                    "complete": False,
+                },
+                "latest_pillar_key": pillar_key,
+                "latest_pillar_label": pillar_key.replace("_", " ").title(),
+                "latest_pillar_score": int(max(0, min(pillar_score, 100))),
             },
             "sections": section_progress,
         }

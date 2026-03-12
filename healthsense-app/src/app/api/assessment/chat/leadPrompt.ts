@@ -15,7 +15,7 @@ export function buildLeadFirstPrompt(_questionText?: string) {
     measure_label: null,
     hint: null,
     options: [
-      { value: "continue_assessment", label: "Continue" },
+      { value: "continue_assessment", label: "Continue, it will take 3 minutes to complete" },
     ],
     sections: [],
   };
