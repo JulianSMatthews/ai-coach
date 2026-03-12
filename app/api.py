@@ -1254,7 +1254,7 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
         return {
             "kind": "pillar_reflection",
             "section_key": "reflection",
-            "section_label": "Quick Reflection",
+            "section_label": "Assessment",
             "section_index": 0,
             "section_total": len(PILLAR_ORDER) + 1,
             "section_question_index": 0,
@@ -1263,7 +1263,7 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
             "question_total": int(overall_total),
             "question": REFLECTION_PROMPT_TEXT,
             "measure_label": "Choose the area that feels strongest before we score the assessment.",
-            "hint": "We’ll compare your instinct with your measured results at the end.",
+            "hint": None,
             "options": [
                 {
                     "value": pillar_key,

@@ -5,7 +5,7 @@ export function buildLeadFirstPrompt(_questionText?: string) {
   return {
     kind: "pillar_reflection",
     section_key: "reflection",
-    section_label: "Quick Reflection",
+    section_label: "Assessment",
     section_index: 0,
     section_total: 5,
     section_question_index: 0,
@@ -14,7 +14,7 @@ export function buildLeadFirstPrompt(_questionText?: string) {
     question_total: 21,
     question: LEAD_Q1_FALLBACK,
     measure_label: null,
-    hint: "We’ll compare your instinct with your measured results at the end.",
+    hint: null,
     options: [
       { value: "nutrition", label: "Nutrition" },
       { value: "training", label: "Training" },

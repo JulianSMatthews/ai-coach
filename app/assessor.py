@@ -2106,7 +2106,7 @@ def start_combined_assessment(user: User, *, force_intro: bool = False):
         _commit_state(s, sess, state)
         _send_to_user(
             user,
-            "Before we get into the scored questions, I want to start with a quick reflection."
+            "Before we get into the scored questions, I want to start with one question."
         )
         _commit_state(s, sess, state)
         return True
