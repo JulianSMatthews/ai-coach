@@ -217,7 +217,7 @@ function normalizeCurrentPrompt(raw: unknown): AssessmentCurrentPrompt | null {
   if (!raw || typeof raw !== "object") return null;
   const row = raw as Record<string, unknown>;
   const kind = typeof row.kind === "string" ? row.kind.trim() : "";
-  if (kind !== "concept_scale" && kind !== "readiness_scale" && kind !== "pillar_reflection") return null;
+  if (kind !== "concept_scale" && kind !== "readiness_scale" && kind !== "pillar_reflection" && kind !== "pillar_result") return null;
   const question = typeof row.question === "string" ? row.question.trim() : "";
   if (!question) return null;
   const options = Array.isArray(row.options)
@@ -242,6 +242,22 @@ function normalizeCurrentPrompt(raw: unknown): AssessmentCurrentPrompt | null {
     question,
     measure_label: typeof row.measure_label === "string" ? row.measure_label : null,
     hint: typeof row.hint === "string" ? row.hint : null,
+    result_preview:
+      row.result_preview && typeof row.result_preview === "object"
+        ? {
+            pillar_key:
+              typeof (row.result_preview as Record<string, unknown>).pillar_key === "string"
+                ? String((row.result_preview as Record<string, unknown>).pillar_key)
+                : "",
+            label:
+              typeof (row.result_preview as Record<string, unknown>).label === "string"
+                ? String((row.result_preview as Record<string, unknown>).label)
+                : "",
+            score: Number.isFinite(Number((row.result_preview as Record<string, unknown>).score))
+              ? Number((row.result_preview as Record<string, unknown>).score)
+              : 0,
+          }
+        : null,
     options,
     sections,
   };
@@ -560,6 +576,7 @@ export default function AssessmentChatBox({
   const showResultCard = Boolean(resultSummary) && !promptActive && !identityRequired;
   const showAssessmentControls = !assessmentCompleted && !isLeadGuest && !promptActive && (!leadFlow || !chatReady);
   const showLeadBrandingInConversation = showLeadBranding && !promptActive && !showResultCard && !showResultsGate;
+  const showPromptConversation = currentPrompt?.section_key !== "lead_intro";
 
   const applyChatPayload = useCallback((data: ChatResponse) => {
     const nextPrompt = normalizeCurrentPrompt(data.current_prompt);
@@ -1322,12 +1339,14 @@ export default function AssessmentChatBox({
             onRedo={onPromptRedo}
             onRestart={onPromptRestart}
           />
-          <details className="rounded-2xl border border-[#efe7db] bg-white p-4">
-            <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-              Conversation
-            </summary>
-            <div className="mt-4">{conversationLog}</div>
-          </details>
+          {showPromptConversation ? (
+            <details className="rounded-2xl border border-[#efe7db] bg-white p-4">
+              <summary className="cursor-pointer text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                Conversation
+              </summary>
+              <div className="mt-4">{conversationLog}</div>
+            </details>
+          ) : null}
         </div>
       ) : showResultsGate ? (
         resultsGate
