@@ -1041,7 +1041,7 @@ REFLECTION_PILLAR_ALIASES = {
     "resilience": {"resilience", "mindset", "stress", "mental"},
 }
 
-REFLECTION_PROMPT_TEXT = "Which of these areas of your health feels most consistent for you?"
+LEAD_INTRO_PROMPT_TEXT = "Get your HealthSense Score"
 REFLECTION_CONTINUE_VALUE = "continue_assessment"
 REFLECTION_EXPLANATION_MESSAGES = {
     "nutrition": [
@@ -2091,7 +2091,6 @@ def start_combined_assessment(user: User, *, force_intro: bool = False):
             "total_questions": 0,
             "psych": {"idx": 0, "answers": {}},
             "pending_assessment_summary": "",
-            "reflection": {"selected_pillar": None},
         }
         sess = AssessSession(user_id=user.id, domain="combined", is_active=True, turn_count=0, state=state)
         s.add(sess); s.commit(); s.refresh(sess)
@@ -2106,7 +2105,7 @@ def start_combined_assessment(user: User, *, force_intro: bool = False):
         _commit_state(s, sess, state)
         _send_to_user(
             user,
-            "Before we get into the scored questions, I want to start with one question."
+            LEAD_INTRO_PROMPT_TEXT
         )
         _commit_state(s, sess, state)
         return True
@@ -2204,34 +2203,14 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         phase_name = str(state.get("phase") or "").lower()
         if phase_name == "reflection":
             if cmd in {"redo", "redo last", "redo last question", "redo question"}:
-                _send_to_user(user, "Choose the area that feels most consistent for you right now.")
-                _commit_state(s, sess, state)
-                return True
-            selected_pillar = _reflection_choice_from_text(user_text)
-            if not selected_pillar:
-                _send_to_user(
-                    user,
-                    "Please choose one: Nutrition, Training, Recovery, or Resilience."
-                )
-                _commit_state(s, sess, state)
-                return True
-            reflection_state = state.setdefault("reflection", {})
-            reflection_state["selected_pillar"] = selected_pillar
-            turns.append({"role": "user", "pillar": None, "text": selected_pillar, "is_reflection": True})
-            state["phase"] = "reflection_confirm"
-            _commit_state(s, sess, state)
-            return True
-
-        if phase_name == "reflection_confirm":
-            if cmd in {"redo", "redo last", "redo last question", "redo question"}:
-                state["phase"] = "reflection"
+                _send_to_user(user, LEAD_INTRO_PROMPT_TEXT)
                 _commit_state(s, sess, state)
                 return True
             if not _is_reflection_continue(user_text):
-                _send_to_user(user, "Tap Continue Assessment to begin the scored questions.")
+                _send_to_user(user, "Tap Continue to begin the assessment.")
                 _commit_state(s, sess, state)
                 return True
-            turns.append({"role": "user", "pillar": None, "text": REFLECTION_CONTINUE_VALUE, "is_reflection_continue": True})
+            turns.append({"role": "user", "pillar": None, "text": REFLECTION_CONTINUE_VALUE, "is_intro_continue": True})
             if not _begin_scored_pillar_flow(user, state, turns, s):
                 _commit_state(s, sess, state)
                 return True

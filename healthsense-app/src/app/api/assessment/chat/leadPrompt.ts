@@ -1,11 +1,10 @@
-export const LEAD_Q1_FALLBACK =
-  "Which of these areas of your health feels most consistent for you?";
+export const LEAD_Q1_FALLBACK = "Get your HealthSense Score";
 
 export function buildLeadFirstPrompt(_questionText?: string) {
   return {
     kind: "pillar_reflection",
-    section_key: "reflection",
-    section_label: "Assessment",
+    section_key: "lead_intro",
+    section_label: "",
     section_index: 0,
     section_total: 5,
     section_question_index: 0,
@@ -16,10 +15,7 @@ export function buildLeadFirstPrompt(_questionText?: string) {
     measure_label: null,
     hint: null,
     options: [
-      { value: "nutrition", label: "Nutrition" },
-      { value: "training", label: "Training" },
-      { value: "recovery", label: "Recovery" },
-      { value: "resilience", label: "Resilience" },
+      { value: "continue_assessment", label: "Continue" },
     ],
     sections: [],
   };

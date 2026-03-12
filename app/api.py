@@ -403,11 +403,10 @@ try:
         send_menu_options,
         send_dashboard_link,
         assessment_delivery_context,
+        LEAD_INTRO_PROMPT_TEXT,
         PILLAR_ORDER,
         REFLECTION_PILLAR_LABELS,
         REFLECTION_CONTINUE_VALUE,
-        REFLECTION_EXPLANATION_MESSAGES,
-        REFLECTION_PROMPT_TEXT,
     )
     _dbg("[INFO] Correct assessor module imported successfully (module path: " +
          f"{start_combined_assessment.__module__})")
@@ -1238,7 +1237,7 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
     if not isinstance(state_obj, dict):
         return None
     phase = str(state_obj.get("phase") or "pillars").strip().lower()
-    if phase not in {"reflection", "reflection_confirm", "pillars", "psych"}:
+    if phase not in {"reflection", "pillars", "psych"}:
         return None
 
     section_progress = _assessment_section_progress_payloads(state_obj) if phase in {"pillars", "psych"} else []
@@ -1247,54 +1246,19 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
     overall_total = max(0, int(main_total) + int(readiness_total))
 
     if phase == "reflection":
-        reflection_choice = None
-        reflection_state = state_obj.get("reflection")
-        if isinstance(reflection_state, dict):
-            reflection_choice = str(reflection_state.get("selected_pillar") or "").strip().lower() or None
         return {
             "kind": "pillar_reflection",
-            "section_key": "reflection",
-            "section_label": "Assessment",
+            "section_key": "lead_intro",
+            "section_label": "",
             "section_index": 0,
             "section_total": len(PILLAR_ORDER) + 1,
             "section_question_index": 0,
             "section_question_total": 0,
             "question_position": 0,
             "question_total": int(overall_total),
-            "question": REFLECTION_PROMPT_TEXT,
-            "measure_label": "Choose the area that feels strongest before we score the assessment.",
-            "hint": None,
-            "options": [
-                {
-                    "value": pillar_key,
-                    "label": pillar_label,
-                }
-                for pillar_key, pillar_label in REFLECTION_PILLAR_LABELS.items()
-            ],
-            "selected_value": reflection_choice,
-            "sections": section_progress,
-        }
-
-    if phase == "reflection_confirm":
-        reflection_state = state_obj.get("reflection") if isinstance(state_obj.get("reflection"), dict) else {}
-        selected_pillar = str(reflection_state.get("selected_pillar") or "").strip().lower()
-        title = REFLECTION_PILLAR_LABELS.get(selected_pillar, "Assessment")
-        copy_lines = REFLECTION_EXPLANATION_MESSAGES.get(selected_pillar) or []
-        question_text = copy_lines[0] if copy_lines else "Great — you’ve chosen the area that feels most consistent for you."
-        hint_text = "\n\n".join(copy_lines[1:]) if len(copy_lines) > 1 else "In the next few questions we’ll assess all four pillars."
-        return {
-            "kind": "pillar_reflection",
-            "section_key": "reflection_confirm",
-            "section_label": title,
-            "section_index": 0,
-            "section_total": len(PILLAR_ORDER) + 1,
-            "section_question_index": 0,
-            "section_question_total": 0,
-            "question_position": 0,
-            "question_total": int(overall_total),
-            "question": question_text,
+            "question": LEAD_INTRO_PROMPT_TEXT,
             "measure_label": None,
-            "hint": hint_text,
+            "hint": None,
             "options": [
                 {
                     "value": REFLECTION_CONTINUE_VALUE,
@@ -2222,7 +2186,7 @@ _SESSION_TTL_DAYS_REMEMBER = int(os.getenv("SESSION_TTL_DAYS_REMEMBER", "30"))
 _LEAD_START_TTL_MINUTES = int(os.getenv("LEAD_START_TTL_MINUTES", "180"))
 _LEAD_PENDING_TOKEN_VERSION = 1
 _LEAD_PENDING_RUNTIME_SECRET = secrets.token_urlsafe(48)
-_LEAD_Q1_FALLBACK = REFLECTION_PROMPT_TEXT
+_LEAD_Q1_FALLBACK = LEAD_INTRO_PROMPT_TEXT
 
 
 def _is_truthy_token(value: object) -> bool:

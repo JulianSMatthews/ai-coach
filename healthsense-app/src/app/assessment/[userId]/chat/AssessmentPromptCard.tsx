@@ -1,7 +1,8 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { ProgressBar } from "@/components/ui";
+import { getPillarPalette } from "@/lib/pillars";
+import { ProgressBar, ScoreRing } from "@/components/ui";
 import LeadAssessmentBranding from "./LeadAssessmentBranding";
 
 export type AssessmentPromptOption = {
@@ -87,6 +88,17 @@ function renderFormattedQuestion(text: string): ReactNode {
   });
 }
 
+const LEAD_INTRO_PREVIEW = {
+  combined: 74,
+  pillars: [
+    { key: "nutrition", label: "Nutrition", score: 78 },
+    { key: "training", label: "Training", score: 72 },
+    { key: "recovery", label: "Recovery", score: 69 },
+    { key: "resilience", label: "Resilience", score: 75 },
+  ],
+  readiness: { label: "Habit Readiness", score: 71 },
+};
+
 export default function AssessmentPromptCard({
   prompt,
   busy = false,
@@ -101,6 +113,12 @@ export default function AssessmentPromptCard({
   const showSectionProgress = prompt.kind !== "pillar_reflection" && prompt.sections.length > 0;
   const showQuestionProgress = prompt.kind !== "pillar_reflection" && prompt.section_question_total > 0;
   const showPromptActions = prompt.kind !== "pillar_reflection";
+  const showPromptHeader =
+    showSectionProgress ||
+    showQuestionProgress ||
+    Boolean(String(prompt.section_label || "").trim()) ||
+    Boolean(String(prompt.concept_label || "").trim());
+  const showLeadIntroPreview = prompt.section_key === "lead_intro";
 
   return (
     <section className="w-full rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
@@ -110,43 +128,93 @@ export default function AssessmentPromptCard({
             <LeadAssessmentBranding />
           </div>
         ) : null}
-        <div className="space-y-3">
-          {showSectionProgress ? (
-            <div
-              className="grid gap-2"
-              style={{ gridTemplateColumns: `repeat(${prompt.sections.length}, minmax(0, 1fr))` }}
-              aria-label="Overall assessment progress"
-            >
-              {prompt.sections.map((section) => (
-                <div key={section.key} className="h-2 overflow-hidden rounded-full bg-[#eadfce]">
-                  <div
-                    className="h-full rounded-full"
-                    style={{
-                      width: `${sectionPct(section)}%`,
-                      background: tone,
-                    }}
-                  />
+        {showPromptHeader ? (
+          <div className="space-y-3">
+            {showSectionProgress ? (
+              <div
+                className="grid gap-2"
+                style={{ gridTemplateColumns: `repeat(${prompt.sections.length}, minmax(0, 1fr))` }}
+                aria-label="Overall assessment progress"
+              >
+                {prompt.sections.map((section) => (
+                  <div key={section.key} className="h-2 overflow-hidden rounded-full bg-[#eadfce]">
+                    <div
+                      className="h-full rounded-full"
+                      style={{
+                        width: `${sectionPct(section)}%`,
+                        background: tone,
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {String(prompt.section_label || "").trim() || String(prompt.concept_label || "").trim() ? (
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  {String(prompt.section_label || "").trim() ? (
+                    <h2 className="text-2xl text-[#1e1b16]">{prompt.section_label}</h2>
+                  ) : null}
+                  {prompt.concept_label ? (
+                    <p className="mt-1 text-sm font-semibold uppercase tracking-[0.16em] text-[#d3541b]">{prompt.concept_label}</p>
+                  ) : null}
                 </div>
-              ))}
-            </div>
-          ) : null}
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <h2 className="text-2xl text-[#1e1b16]">{prompt.section_label}</h2>
-              {prompt.concept_label ? (
-                <p className="mt-1 text-sm font-semibold uppercase tracking-[0.16em] text-[#d3541b]">{prompt.concept_label}</p>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
+            {showQuestionProgress ? (
+              <ProgressBar value={prompt.section_question_index} max={prompt.section_question_total} tone={tone} />
+            ) : null}
           </div>
-          {showQuestionProgress ? (
-            <ProgressBar value={prompt.section_question_index} max={prompt.section_question_total} tone={tone} />
-          ) : null}
-        </div>
+        ) : null}
 
         <div className="space-y-4">
           <h3 className="text-xl leading-snug text-[#1e1b16] sm:text-[1.75rem]">{renderFormattedQuestion(prompt.question)}</h3>
           {hint ? <p className="text-sm whitespace-pre-line text-[#6b6257]">{hint}</p> : null}
         </div>
+
+        {showLeadIntroPreview ? (
+          <div className="rounded-[28px] border border-[#e7e1d6] bg-white px-4 py-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.35)] sm:px-6 sm:py-6">
+            <div className="space-y-5">
+              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Assessment complete</p>
+                  <h4 className="text-2xl text-[#1e1b16]">Your HealthSense Score</h4>
+                </div>
+                <div className="flex items-center gap-4 rounded-3xl border border-[#efe7db] bg-[#fffaf3] px-5 py-4">
+                  <ScoreRing value={LEAD_INTRO_PREVIEW.combined} tone="var(--accent)" />
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Overall</p>
+                    <p className="text-3xl font-semibold text-[#1e1b16]">{LEAD_INTRO_PREVIEW.combined}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid gap-3">
+                {LEAD_INTRO_PREVIEW.pillars.map((pillar) => {
+                  const palette = getPillarPalette(pillar.key);
+                  return (
+                    <div key={pillar.key} className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-[#1e1b16]">{pillar.label}</p>
+                        <p className="text-sm font-semibold" style={{ color: palette.accent }}>
+                          {pillar.score}
+                        </p>
+                      </div>
+                      <ProgressBar value={pillar.score} max={100} tone={palette.accent} />
+                    </div>
+                  );
+                })}
+                <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-[#1e1b16]">{LEAD_INTRO_PREVIEW.readiness.label}</p>
+                    <p className="text-sm font-semibold text-[#c54817]">{LEAD_INTRO_PREVIEW.readiness.score}</p>
+                  </div>
+                  <ProgressBar value={LEAD_INTRO_PREVIEW.readiness.score} max={100} tone="#c54817" />
+                </div>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         <div className={prompt.options.length === 1 ? "grid grid-cols-1 gap-3" : "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"}>
           {prompt.options.map((option) => {
