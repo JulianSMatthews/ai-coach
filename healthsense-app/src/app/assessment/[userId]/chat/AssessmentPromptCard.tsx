@@ -122,6 +122,15 @@ const LEAD_INTRO_PREVIEW: NonNullable<AssessmentCurrentPrompt["result_preview"]>
   readiness: null,
 };
 
+const INTRO_AVATAR_ENABLED = ["1", "true", "yes", "on"].includes(
+  String(process.env.NEXT_PUBLIC_ASSESSMENT_INTRO_AVATAR_ENABLED || "").trim().toLowerCase(),
+);
+const INTRO_AVATAR_URL = String(process.env.NEXT_PUBLIC_ASSESSMENT_INTRO_AVATAR_URL || "").trim();
+const INTRO_AVATAR_POSTER = String(process.env.NEXT_PUBLIC_ASSESSMENT_INTRO_AVATAR_POSTER || "").trim();
+const INTRO_AVATAR_TITLE = String(
+  process.env.NEXT_PUBLIC_ASSESSMENT_INTRO_AVATAR_TITLE || "Assessment introduction",
+).trim();
+
 export default function AssessmentPromptCard({
   prompt,
   busy = false,
@@ -147,6 +156,7 @@ export default function AssessmentPromptCard({
   const promptPreview = showLeadIntroPreview ? LEAD_INTRO_PREVIEW : prompt.result_preview;
   const showScorePreview = Boolean(promptPreview?.pillars?.length);
   const combinedPreviewScore = normalizePreviewScore(promptPreview?.combined);
+  const showIntroAvatar = showLeadIntroPreview && INTRO_AVATAR_ENABLED && Boolean(INTRO_AVATAR_URL);
 
   return (
     <section className="w-full rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
@@ -215,6 +225,31 @@ export default function AssessmentPromptCard({
           <div className="space-y-4">
             <h3 className="text-xl leading-snug text-[#1e1b16] sm:text-[1.75rem]">{renderFormattedQuestion(prompt.question)}</h3>
             {hint ? <p className="text-sm whitespace-pre-line text-[#6b6257]">{hint}</p> : null}
+          </div>
+        ) : null}
+
+        {showIntroAvatar ? (
+          <div className="rounded-[28px] border border-[#e7e1d6] bg-white px-4 py-4 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.25)] sm:px-5 sm:py-5">
+            <div className="space-y-3">
+              <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">{INTRO_AVATAR_TITLE}</p>
+              <video
+                controls
+                playsInline
+                preload="metadata"
+                poster={INTRO_AVATAR_POSTER || undefined}
+                className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
+              >
+                <source src={INTRO_AVATAR_URL} />
+              </video>
+              <a
+                href={INTRO_AVATAR_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex text-[11px] uppercase tracking-[0.2em] text-[var(--accent)]"
+              >
+                Open video
+              </a>
+            </div>
           </div>
         ) : null}
 
