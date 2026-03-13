@@ -120,7 +120,14 @@ from .nudges import (
 )
 from .checkins import record_checkin
 from . import prompts as prompts_module
-from .prompts import build_prompt, assessment_scores_prompt, okr_narrative_prompt, coaching_approach_prompt, assessor_system_prompt
+from .prompts import (
+    build_prompt,
+    assessment_scores_prompt,
+    assessment_completion_summary_prompt,
+    okr_narrative_prompt,
+    coaching_approach_prompt,
+    assessor_system_prompt,
+)
 from .llm import embed_text
 from .podcast import generate_podcast_audio_for_voice
 from .usage import (
@@ -15267,6 +15274,49 @@ def _build_prompt_test_payload(
                 for p in (pillars or [])
             ]
             assembly = assessment_scores_prompt(display_full_name(user), combined, scores_payload)
+            return _assembly_to_payload(assembly, _maybe_run_llm(assembly))
+        if tp_lower in {"assessment_completion_summary", "assessment_audio_summary"}:
+            run = None
+            with SessionLocal() as s:
+                run = (
+                    s.execute(
+                        select(AssessmentRun)
+                        .where(AssessmentRun.user_id == user_id_int, AssessmentRun.finished_at.isnot(None))
+                        .order_by(desc(AssessmentRun.id))
+                    )
+                    .scalars()
+                    .first()
+                )
+                if not run:
+                    run = (
+                        s.execute(
+                            select(AssessmentRun).where(AssessmentRun.user_id == user_id_int).order_by(desc(AssessmentRun.id))
+                        )
+                        .scalars()
+                        .first()
+                    )
+            if not run:
+                raise HTTPException(status_code=404, detail="assessment run not found")
+            data = build_assessment_dashboard_data(run.id, include_llm=False)
+            combined = int((((data.get("scores") or {}).get("combined")) or 0))
+            scores_payload = [
+                {
+                    "pillar": str(item.get("pillar_key") or ""),
+                    "label": str(item.get("label") or ""),
+                    "score": int(item.get("score") or 0),
+                }
+                for item in (data.get("pillars") or [])
+                if isinstance(item, dict)
+            ]
+            readiness = data.get("readiness") if isinstance(data.get("readiness"), dict) else {}
+            okrs = data.get("okrs") if isinstance(data.get("okrs"), list) else []
+            assembly = assessment_completion_summary_prompt(
+                display_full_name(user),
+                combined,
+                scores_payload,
+                okrs,
+                readiness_payload=readiness,
+            )
             return _assembly_to_payload(assembly, _maybe_run_llm(assembly))
         if tp_lower in {"assessment_okr", "okr_narrative"}:
             run = None

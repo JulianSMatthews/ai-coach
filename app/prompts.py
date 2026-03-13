@@ -17,6 +17,7 @@ Index (helper → purpose → used by):
 - current_krs_context + helpers: fetch current focused KRs and derive payloads (list, primary, okrs_by_pillar) for all prompts
 - coaching_approach_prompt: habit-readiness approach → reporting.py (_coaching_approach_text)
 - assessment_scores_prompt: assessment score narrative → reporting.py (_score_narrative_from_llm)
+- assessment_completion_summary_prompt: short end-of-assessment spoken summary → pending audio/avatar flow
 - okr_narrative_prompt: OKR narrative → reporting.py (_okr_narrative_from_llm)
 - assessment_narrative_prompt: assessment narrative → assessor.py
 - assessor_system_prompt: assessor system message → assessor.py
@@ -2652,6 +2653,73 @@ def assessment_scores_prompt(
     return assembly
 
 
+def assessment_completion_summary_prompt(
+    user_name: str,
+    combined: int,
+    scores_payload: list[dict],
+    okr_payload: list[dict],
+    readiness_payload: dict[str, Any] | None = None,
+    locale: str = "UK",
+) -> PromptAssembly:
+    """Short spoken end-of-assessment summary for audio/avatar generation."""
+    readiness_payload = readiness_payload or {}
+    limiting_pillar = None
+    scored_rows = [
+        row for row in (scores_payload or [])
+        if isinstance(row, dict) and row.get("score") is not None and str(row.get("pillar") or "").strip()
+    ]
+    if scored_rows:
+        limiting_pillar = min(
+            scored_rows,
+            key=lambda row: (float(row.get("score") or 0.0), str(row.get("pillar") or "").lower()),
+        )
+    data_payload = {
+        "combined": combined,
+        "scores": scores_payload,
+        "limiting_pillar": {
+            "pillar": limiting_pillar.get("pillar"),
+            "score": limiting_pillar.get("score"),
+        }
+        if limiting_pillar
+        else None,
+        "readiness": readiness_payload,
+        "okrs": okr_payload,
+    }
+    default_task = (
+        "You are a supportive wellbeing coach creating a 30 to 60 second spoken summary for the end of an assessment. "
+        "Write 85 to 120 words in natural British English. Address the user directly. "
+        "Include: a warm opener using their first name, their overall HealthSense result, "
+        "the single pillar most likely limiting progress, one positive strength, "
+        "the main coaching focus from their plan, one simple next action for this week, and a short encouraging close. "
+        "Do not use bullets, headings, markdown, jargon, or medical claims. Return plain text only."
+    )
+    settings = _load_prompt_settings()
+    template = (
+        _load_prompt_template("assessment_completion_summary")
+        or _load_prompt_template("assessment_audio_summary")
+    )
+    sys_block = settings.get("system_block") or common_prompt_header("Coach", user_name, locale)
+    loc_block = settings.get("locale_block") or locale_block(locale)
+    parts = [
+        ("system", sys_block),
+        ("locale", loc_block),
+        ("context", "Context: end-of-assessment spoken summary for audio/avatar"),
+        ("scores", f"HealthSense Scores: {json.dumps(data_payload, ensure_ascii=False)}"),
+        ("habit", f"Habit readiness: {json.dumps(readiness_payload, ensure_ascii=False)}" if readiness_payload else ""),
+        ("okr", f"OKRs: {json.dumps(okr_payload, ensure_ascii=False)}"),
+        ("task", (template or {}).get("task_block") or default_task),
+    ]
+    parts, order_override = _apply_prompt_template(parts, template)
+    assembly = _prompt_assembly(
+        "assessment_completion_summary",
+        "assessment_completion_summary",
+        parts,
+        meta=_merge_template_meta({}, template),
+        block_order_override=order_override or settings.get("default_block_order"),
+    )
+    return assembly
+
+
 def okr_narrative_prompt(
     user_name: str,
     payload: list[dict],
@@ -2739,6 +2807,7 @@ __all__ = [
     "coaching_prompt",
     "coaching_approach_prompt",
     "assessment_scores_prompt",
+    "assessment_completion_summary_prompt",
     "okr_narrative_prompt",
     "assessor_system_prompt",
     "assessor_feedback_prompt",

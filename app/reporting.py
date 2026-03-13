@@ -48,6 +48,7 @@ from . import llm as shared_llm
 from .prompts import (
     coaching_approach_prompt,
     assessment_scores_prompt,
+    assessment_completion_summary_prompt,
     okr_narrative_prompt,
     log_llm_prompt,
     _ensure_llm_prompt_log_schema,
@@ -223,6 +224,21 @@ def _assemble_prompt_for_report(touchpoint: str, user_id: int, as_of_date: date 
             from .prompts import assessment_scores_prompt
             combined = int(round(sum((p.get("score") or 0) for p in scores_payload) / max(len(scores_payload), 1))) if scores_payload else 0
             return assessment_scores_prompt("User", combined, scores_payload)
+        if tp_lower in {"assessment_completion_summary", "assessment_audio_summary"}:
+            combined = int(round(sum((p.get("score") or 0) for p in scores_payload) / max(len(scores_payload), 1))) if scores_payload else 0
+            okr_payload = okr_payload_list(user_id, week_no=None, max_krs=None)
+            readiness_payload = {
+                "section_averages": psych_payload.get("section_averages", {}) if psych_payload else {},
+                "flags": psych_payload.get("flags", {}) if psych_payload else {},
+                "parameters": psych_payload.get("parameters", {}) if psych_payload else {},
+            }
+            return assessment_completion_summary_prompt(
+                "User",
+                combined,
+                scores_payload,
+                okr_payload,
+                readiness_payload=readiness_payload,
+            )
         if tp_lower == "assessment_approach":
             from .prompts import coaching_approach_prompt
             return coaching_approach_prompt(
