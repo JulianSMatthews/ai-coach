@@ -1276,7 +1276,7 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
             "options": [
                 {
                     "value": REFLECTION_CONTINUE_VALUE,
-                    "label": "Continue, it will take 3 minutes to complete",
+                    "label": "Press here to continue",
                 }
             ],
             "sections": section_progress,

@@ -97,6 +97,7 @@ def _raise_for_avatar_http_error(response: requests.Response, operation: str) ->
         return
     except requests.HTTPError as exc:
         status_code = getattr(response, "status_code", None)
+        body_text = str(getattr(response, "text", "") or "").strip()
         if status_code == 404:
             base = _avatar_api_base()
             raise RuntimeError(
@@ -114,6 +115,10 @@ def _raise_for_avatar_http_error(response: requests.Response, operation: str) ->
             raise RuntimeError(
                 f"Azure avatar {operation} was rejected with {status_code}. "
                 "Check AZURE_AVATAR_KEY and AZURE_AVATAR_REGION, and make sure they belong to the same Azure resource."
+            ) from exc
+        if status_code == 400 and body_text:
+            raise RuntimeError(
+                f"Azure avatar {operation} returned 400. Response: {body_text}"
             ) from exc
         raise
 
@@ -176,12 +181,17 @@ def create_batch_avatar(
             "timeToLiveInHours": defaults["time_to_live_hours"],
         },
     }
+    url = f"{_avatar_api_base()}/avatar/batchsyntheses/{batch_id}?api-version=2024-08-01"
     response = requests.put(
-        f"{_avatar_api_base()}/avatar/batchsyntheses/{batch_id}?api-version=2024-08-01",
+        url,
         json=payload,
         headers=_azure_headers(include_content_type=True),
         timeout=60,
     )
+    if response.status_code == 400:
+        body_text = str(response.text or "").strip().lower()
+        if "job with this id already exists" in body_text:
+            return get_batch_avatar(batch_id)
     _raise_for_avatar_http_error(response, "create")
     data = response.json()
     if not isinstance(data, dict):
