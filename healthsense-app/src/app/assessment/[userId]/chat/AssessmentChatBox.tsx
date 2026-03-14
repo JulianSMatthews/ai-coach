@@ -88,6 +88,14 @@ type AssessmentCoachingPlan = {
   okrs: AssessmentCoachingPlanItem[];
 };
 
+type AssessmentCompletionSummaryMedia = {
+  text: string | null;
+  audioUrl: string | null;
+  avatarUrl: string | null;
+  avatarStatus: string | null;
+  avatarError: string | null;
+};
+
 function parseApiError(text: string, fallback: string) {
   if (!text) return fallback;
   try {
@@ -384,6 +392,34 @@ function normalizeCoachingPlan(raw: unknown): AssessmentCoachingPlan {
   return { okrs };
 }
 
+function normalizeCompletionSummaryMedia(raw: unknown): AssessmentCompletionSummaryMedia {
+  if (!raw || typeof raw !== "object") {
+    return {
+      text: null,
+      audioUrl: null,
+      avatarUrl: null,
+      avatarStatus: null,
+      avatarError: null,
+    };
+  }
+  const row = raw as Record<string, unknown>;
+  return {
+    text: typeof row.completion_summary_text === "string" ? row.completion_summary_text : null,
+    audioUrl:
+      typeof row.completion_summary_audio_url === "string" ? row.completion_summary_audio_url : null,
+    avatarUrl:
+      typeof row.completion_summary_avatar_url === "string" ? row.completion_summary_avatar_url : null,
+    avatarStatus:
+      typeof row.completion_summary_avatar_status === "string"
+        ? row.completion_summary_avatar_status
+        : null,
+    avatarError:
+      typeof row.completion_summary_avatar_error === "string"
+        ? row.completion_summary_avatar_error
+        : null,
+  };
+}
+
 
 function isTruthyToken(value: string | null | undefined): boolean {
   const token = String(value || "").trim().toLowerCase();
@@ -431,6 +467,11 @@ export default function AssessmentChatBox({
   const [coachingPlanLoading, setCoachingPlanLoading] = useState(false);
   const [coachingPlanError, setCoachingPlanError] = useState<string | null>(null);
   const [loadedCoachingPlanRunId, setLoadedCoachingPlanRunId] = useState<number | null>(null);
+  const [completionSummaryMedia, setCompletionSummaryMedia] =
+    useState<AssessmentCompletionSummaryMedia | null>(null);
+  const [completionSummaryLoading, setCompletionSummaryLoading] = useState(false);
+  const [completionSummaryError, setCompletionSummaryError] = useState<string | null>(null);
+  const [loadedCompletionSummaryRunId, setLoadedCompletionSummaryRunId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
@@ -447,6 +488,14 @@ export default function AssessmentChatBox({
   const showResultsGate = Boolean(resultSummary) && !promptActive && identityRequired;
   const showResultCard = Boolean(resultSummary) && !promptActive && !identityRequired;
   const showAssessmentControls = !assessmentCompleted && !isLeadGuest && !promptActive && (!leadFlow || !chatReady);
+  const completionSummaryRunId = parsePositiveUserId(resultSummary?.run_id);
+  const completionSummaryStatus = String(completionSummaryMedia?.avatarStatus || "").trim().toLowerCase();
+  const completionSummaryPending =
+    loadedCompletionSummaryRunId === completionSummaryRunId &&
+    Boolean(completionSummaryStatus) &&
+    completionSummaryStatus !== "succeeded" &&
+    completionSummaryStatus !== "failed";
+  const completionSummaryFailed = completionSummaryStatus === "failed";
 
   const applyChatPayload = useCallback((data: ChatResponse) => {
     const nextPrompt = normalizeCurrentPrompt(data.current_prompt);
@@ -573,7 +622,88 @@ export default function AssessmentChatBox({
     setCoachingPlanError(null);
     setCoachingPlanLoading(false);
     setLoadedCoachingPlanRunId(null);
+    setCompletionSummaryMedia(null);
+    setCompletionSummaryError(null);
+    setCompletionSummaryLoading(false);
+    setLoadedCompletionSummaryRunId(null);
   }, [resultSummary?.run_id]);
+
+  const fetchAssessmentReportPayload = useCallback(
+    async (runId: number | null, fallbackMessage: string) => {
+      const params = new URLSearchParams({ userId });
+      if (runId) {
+        params.set("runId", String(runId));
+      }
+      const res = await fetch(`/api/assessment/report?${params.toString()}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        throw new Error(parseApiError(text, fallbackMessage));
+      }
+      return text ? (JSON.parse(text) as Record<string, unknown>) : {};
+    },
+    [userId],
+  );
+
+  const loadCompletionSummary = useCallback(
+    async (runId: number, silent = false) => {
+      if (!silent) {
+        setCompletionSummaryLoading(true);
+      }
+      try {
+        const payload = await fetchAssessmentReportPayload(runId, "Failed to load your assessment summary.");
+        const narratives = normalizeCompletionSummaryMedia(payload.narratives);
+        setCompletionSummaryMedia(narratives);
+        setCompletionSummaryError(null);
+        setLoadedCompletionSummaryRunId(runId);
+        if (loadedCoachingPlanRunId !== runId) {
+          setCoachingPlan(normalizeCoachingPlan(payload));
+          setLoadedCoachingPlanRunId(runId);
+        }
+      } catch (error) {
+        if (!silent) {
+          setCompletionSummaryError(
+            error instanceof Error ? error.message : String(error),
+          );
+        }
+      } finally {
+        if (!silent) {
+          setCompletionSummaryLoading(false);
+        }
+      }
+    },
+    [fetchAssessmentReportPayload, loadedCoachingPlanRunId],
+  );
+
+  useEffect(() => {
+    if (!showResultCard || !completionSummaryRunId) return;
+    if (
+      loadedCompletionSummaryRunId === completionSummaryRunId &&
+      completionSummaryMedia
+    ) {
+      return;
+    }
+    void loadCompletionSummary(completionSummaryRunId);
+  }, [
+    showResultCard,
+    completionSummaryRunId,
+    loadedCompletionSummaryRunId,
+    completionSummaryMedia,
+    loadCompletionSummary,
+  ]);
+
+  useEffect(() => {
+    if (!showResultCard || !completionSummaryRunId || !completionSummaryPending) return;
+    const interval = window.setInterval(() => {
+      if (document.visibilityState && document.visibilityState !== "visible") return;
+      void loadCompletionSummary(completionSummaryRunId, true);
+    }, 8000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [showResultCard, completionSummaryRunId, completionSummaryPending, loadCompletionSummary]);
 
   async function sendMessage(
     textValue: string,
@@ -759,19 +889,7 @@ export default function AssessmentChatBox({
 
     setCoachingPlanLoading(true);
     try {
-      const params = new URLSearchParams({ userId });
-      if (runId) {
-        params.set("runId", String(runId));
-      }
-      const res = await fetch(`/api/assessment/report?${params.toString()}`, {
-        method: "GET",
-        cache: "no-store",
-      });
-      const text = await res.text().catch(() => "");
-      if (!res.ok) {
-        throw new Error(parseApiError(text, "Failed to load coaching plan."));
-      }
-      const payload = text ? JSON.parse(text) : {};
+      const payload = await fetchAssessmentReportPayload(runId, "Failed to load coaching plan.");
       setCoachingPlan(normalizeCoachingPlan(payload));
       setLoadedCoachingPlanRunId(runId);
     } catch (error) {
@@ -846,6 +964,64 @@ export default function AssessmentChatBox({
                 <ProgressBar value={Math.round(Number(resultSummary.readiness?.score || 0))} max={100} tone="#c54817" />
               </div>
             ) : null}
+          </div>
+        ) : null}
+
+        {(completionSummaryMedia?.text ||
+          completionSummaryMedia?.audioUrl ||
+          completionSummaryMedia?.avatarUrl ||
+          completionSummaryLoading ||
+          completionSummaryError) ? (
+          <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
+            <div className="space-y-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Assessment summary</p>
+                <h3 className="mt-2 text-xl text-[#1e1b16]">Your personal summary</h3>
+              </div>
+
+              {completionSummaryMedia?.avatarUrl ? (
+                <video
+                  className="w-full rounded-2xl border border-[#efe7db] bg-[#f6efe5]"
+                  controls
+                  preload="metadata"
+                >
+                  <source src={completionSummaryMedia.avatarUrl} type="video/mp4" />
+                </video>
+              ) : null}
+
+              {!completionSummaryMedia?.avatarUrl && completionSummaryMedia?.audioUrl ? (
+                <div>
+                  <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">Listen</p>
+                  <audio className="mt-2 w-full" controls preload="metadata">
+                    <source src={completionSummaryMedia.audioUrl} type="audio/mpeg" />
+                  </audio>
+                </div>
+              ) : null}
+
+              {completionSummaryPending || completionSummaryLoading ? (
+                <p className="text-sm text-[#6b6257]">
+                  {completionSummaryMedia?.audioUrl
+                    ? "We’re preparing your summary video. You can listen to the audio version while it finishes."
+                    : "We’re preparing your personal summary video."}
+                </p>
+              ) : null}
+
+              {completionSummaryFailed && !completionSummaryMedia?.avatarUrl ? (
+                <p className="text-sm text-[#6b6257]">
+                  {completionSummaryMedia?.audioUrl
+                    ? "We couldn’t generate the video right now, but your audio summary is ready."
+                    : completionSummaryMedia?.avatarError || "We couldn’t generate the video right now."}
+                </p>
+              ) : null}
+
+              {completionSummaryError ? (
+                <p className="text-sm text-[#6b6257]">{completionSummaryError}</p>
+              ) : null}
+
+              {!completionSummaryMedia?.avatarUrl && completionSummaryMedia?.text ? (
+                <p className="text-sm leading-6 text-[#3c332b]">{completionSummaryMedia.text}</p>
+              ) : null}
+            </div>
           </div>
         ) : null}
 

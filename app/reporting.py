@@ -6,6 +6,7 @@ import time
 from datetime import datetime, date, timedelta, timezone
 import html
 import json
+import re
 from collections import defaultdict
 try:
     from zoneinfo import ZoneInfo  # Python 3.9+
@@ -832,6 +833,367 @@ def _okr_narrative_from_llm(user: User, payload: list[dict]) -> str:
     except Exception:
         return ""
     return _llm_text_to_html(text)
+
+
+def _summary_name_for_user(user: User) -> str:
+    first_name = (getattr(user, "first_name", None) or "").strip()
+    if first_name:
+        return first_name
+    display_name = _display_full_name(user).strip()
+    return display_name.split(" ")[0] if display_name else "there"
+
+
+def _assessment_completion_summary_fallback_text(
+    user: User,
+    combined: int,
+    scores_payload: list[dict],
+    okr_payload: list[dict],
+    readiness_payload: dict[str, Any] | None = None,
+) -> str:
+    safe_name = _summary_name_for_user(user)
+    sorted_scores = sorted(
+        [
+            {
+                "label": str(item.get("label") or item.get("pillar") or item.get("pillar_name") or "this pillar").strip(),
+                "score": int(item.get("score") or 0),
+            }
+            for item in (scores_payload or [])
+            if str(item.get("label") or item.get("pillar") or item.get("pillar_name") or "").strip()
+        ],
+        key=lambda item: item.get("score", 0),
+    )
+    limiting = sorted_scores[0] if sorted_scores else None
+    strongest = sorted_scores[-1] if sorted_scores else None
+    readiness_note = ""
+    readiness_label = str((readiness_payload or {}).get("label") or "").strip()
+    readiness_score = (readiness_payload or {}).get("score")
+    if readiness_label:
+        readiness_note = f"Your habit readiness is {readiness_label.lower()}."
+    elif readiness_score is not None:
+        try:
+            readiness_note = f"Your habit readiness score is {int(round(float(readiness_score)))} out of 100."
+        except Exception:
+            readiness_note = ""
+    coaching_focus = ""
+    if isinstance(okr_payload, list):
+        for item in okr_payload:
+            if not isinstance(item, dict):
+                continue
+            objective = str(item.get("objective") or "").strip()
+            if objective:
+                coaching_focus = objective
+                break
+    sentences = [
+        f"Hello {safe_name}.",
+        f"Your HealthSense Score is {combined} out of 100.",
+    ]
+    if strongest and limiting:
+        sentences.append(
+            f"Your strongest pillar right now is {strongest['label']}, and the main pillar limiting your progress is {limiting['label']}."
+        )
+    elif limiting:
+        sentences.append(f"The main pillar limiting your progress right now is {limiting['label']}.")
+    if readiness_note:
+        sentences.append(readiness_note)
+    if coaching_focus:
+        sentences.append(f"Your coaching plan will focus on {coaching_focus}.")
+    else:
+        sentences.append("Your coaching plan will focus on the smallest change most likely to improve your wellbeing this week.")
+    sentences.append("Start with one simple action this week and build from there.")
+    return " ".join(part for part in sentences if part).strip()
+
+
+def _assessment_completion_summary_text(
+    user: User,
+    combined: int,
+    scores_payload: list[dict],
+    okr_payload: list[dict],
+    readiness_payload: dict[str, Any] | None = None,
+    *,
+    allow_llm: bool = True,
+) -> str:
+    name = _summary_name_for_user(user)
+    normalized_scores_payload = [
+        {
+            **item,
+            "pillar": str(
+                item.get("pillar")
+                or item.get("pillar_key")
+                or item.get("label")
+                or item.get("pillar_name")
+                or ""
+            ).strip(),
+        }
+        for item in (scores_payload or [])
+        if isinstance(item, dict)
+    ]
+    assembly = assessment_completion_summary_prompt(
+        name,
+        combined,
+        normalized_scores_payload,
+        okr_payload,
+        readiness_payload=readiness_payload or {},
+    )
+    debug_log(
+        "assessment_completion_summary template",
+        {
+            "template_state": (assembly.meta or {}).get("template_state"),
+            "template_version": (assembly.meta or {}).get("template_version"),
+        },
+        tag="assessment",
+    )
+    text = ""
+    if allow_llm:
+        try:
+            template_model = str(
+                (assembly.meta or {}).get("template_model_override")
+                or (assembly.meta or {}).get("model_override")
+                or ""
+            ).strip() or None
+            resolved_model = shared_llm.resolve_model_name_for_touchpoint(
+                touchpoint="assessment_completion_summary",
+                model_override=template_model,
+            )
+            client = shared_llm.get_llm_client(
+                touchpoint="assessment_completion_summary",
+                model_override=template_model,
+            )
+            t0 = time.perf_counter()
+            _report_log(f"[report_llm] assessment_completion_summary start user_id={getattr(user,'id',None)}")
+            resp = client.invoke(assembly.text)
+            duration_ms = int((time.perf_counter() - t0) * 1000)
+            candidate = (getattr(resp, "content", None) or "").strip()
+            if candidate:
+                text = candidate
+            _report_log(
+                f"[report_llm] assessment_completion_summary done user_id={getattr(user,'id',None)} ms={duration_ms}"
+            )
+            try:
+                log_llm_prompt(
+                    user_id=getattr(user, "id", None),
+                    touchpoint="assessment_completion_summary",
+                    prompt_text=assembly.text,
+                    model=getattr(resp, "model", None) or resolved_model,
+                    response_preview=text[:200] if text else None,
+                    context_meta={
+                        "combined": combined,
+                        "scores": normalized_scores_payload,
+                        "okrs": okr_payload,
+                        "readiness": readiness_payload or {},
+                    },
+                    prompt_variant="assessment_completion_summary",
+                    task_label="assessment_completion_summary",
+                    prompt_blocks={**assembly.blocks, **(assembly.meta or {})},
+                    block_order=assembly.block_order,
+                    duration_ms=duration_ms,
+                )
+            except Exception:
+                pass
+        except Exception as exc:
+            _report_log(
+                f"[report_llm] assessment_completion_summary failed user_id={getattr(user,'id',None)} err={exc!r}"
+            )
+            text = ""
+    if not text:
+        text = _assessment_completion_summary_fallback_text(
+            user,
+            combined,
+            normalized_scores_payload,
+            okr_payload,
+            readiness_payload=readiness_payload,
+        )
+    return " ".join(str(text).split()).strip()
+
+
+def _upsert_assessment_narrative_meta(run_id: int, updates: dict[str, Any]) -> dict[str, Any]:
+    with SessionLocal() as s:
+        row = (
+            s.query(AssessmentNarrative)
+            .filter(AssessmentNarrative.run_id == run_id)
+            .first()
+        )
+        if not row:
+            row = AssessmentNarrative(run_id=run_id)
+            s.add(row)
+        current_meta = dict((getattr(row, "meta", None) or {}))
+        next_meta = {**current_meta, **updates}
+        if next_meta != current_meta:
+            row.meta = next_meta
+            s.commit()
+            s.refresh(row)
+        return dict((getattr(row, "meta", None) or {}))
+
+
+def _ensure_completion_summary_media(
+    *,
+    user: User,
+    run: AssessmentRun,
+    combined: int,
+    scores_payload: list[dict],
+    okr_payload: list[dict],
+    readiness_payload: dict[str, Any] | None,
+    current_meta: dict[str, Any] | None,
+) -> dict[str, Any]:
+    meta = dict(current_meta or {})
+    summary_text = str(meta.get("completion_summary_text") or "").strip()
+    audio_url = str(meta.get("completion_summary_audio_url") or "").strip() or None
+    avatar_url = str(meta.get("completion_summary_avatar_url") or "").strip() or None
+    avatar_status = str(meta.get("completion_summary_avatar_status") or "").strip() or None
+    avatar_job_id = str(meta.get("completion_summary_avatar_job_id") or "").strip() or None
+    avatar_error = str(meta.get("completion_summary_avatar_error") or "").strip() or None
+    avatar_summary_url = str(meta.get("completion_summary_avatar_summary_url") or "").strip() or None
+    updates: dict[str, Any] = {}
+
+    if not summary_text:
+        summary_text = _assessment_completion_summary_text(
+            user,
+            combined,
+            scores_payload,
+            okr_payload,
+            readiness_payload=readiness_payload,
+            allow_llm=True,
+        )
+        if summary_text:
+            updates["completion_summary_text"] = summary_text
+
+    if summary_text and not audio_url:
+        try:
+            from .podcast import generate_podcast_audio
+
+            audio_url = generate_podcast_audio(
+                summary_text,
+                int(getattr(user, "id", 0) or 0),
+                filename=f"assessment_{getattr(run, 'id', 0)}_completion_summary.mp3",
+                usage_tag="assessment",
+            )
+        except Exception as exc:
+            _report_log(
+                f"[report_build] completion_summary_audio_failed run_id={getattr(run,'id',None)} err={exc!r}"
+            )
+            audio_url = None
+        if audio_url:
+            updates["completion_summary_audio_url"] = audio_url
+
+    try:
+        from .avatar import (
+            azure_avatar_defaults,
+            azure_avatar_enabled,
+            create_batch_avatar,
+            download_batch_avatar_output,
+            get_batch_avatar,
+        )
+    except Exception:
+        azure_avatar_enabled = lambda: False  # type: ignore[assignment]
+        azure_avatar_defaults = lambda: {}  # type: ignore[assignment]
+        create_batch_avatar = None  # type: ignore[assignment]
+        download_batch_avatar_output = None  # type: ignore[assignment]
+        get_batch_avatar = None  # type: ignore[assignment]
+
+    if summary_text and azure_avatar_enabled():
+        defaults = azure_avatar_defaults() if callable(azure_avatar_defaults) else {}
+        character = str(meta.get("completion_summary_avatar_character") or defaults.get("character") or "lisa").strip() or "lisa"
+        style = str(meta.get("completion_summary_avatar_style") or defaults.get("style") or "graceful-sitting").strip() or "graceful-sitting"
+        voice = str(meta.get("completion_summary_avatar_voice") or defaults.get("voice") or "en-GB-SoniaNeural").strip() or "en-GB-SoniaNeural"
+
+        def _store_avatar_success(status_payload: dict[str, Any]) -> None:
+            nonlocal avatar_url, avatar_status, avatar_summary_url, avatar_error
+            outputs = status_payload.get("outputs") if isinstance(status_payload.get("outputs"), dict) else {}
+            result_url = str((outputs or {}).get("result") or "").strip()
+            avatar_summary_url = str((outputs or {}).get("summary") or "").strip() or None
+            if not result_url or not callable(download_batch_avatar_output):
+                avatar_status = "Failed"
+                avatar_error = "Azure avatar completed without a result video URL."
+                updates["completion_summary_avatar_status"] = avatar_status
+                updates["completion_summary_avatar_error"] = avatar_error
+                updates["completion_summary_avatar_summary_url"] = avatar_summary_url
+                return
+            try:
+                from .api import _write_global_report_bytes  # type: ignore
+
+                video_bytes = download_batch_avatar_output(result_url)
+                safe_job = re.sub(r"[^A-Za-z0-9_-]+", "-", str(avatar_job_id or "summary")).strip("-_") or "summary"
+                file_name = f"assessment-summary-avatar-{getattr(run, 'id', 0)}-{safe_job[:48]}.mp4"
+                avatar_url = _write_global_report_bytes(f"content/assessment/{file_name}", video_bytes)
+                avatar_status = "Succeeded"
+                avatar_error = None
+                updates["completion_summary_avatar_url"] = avatar_url
+                updates["completion_summary_avatar_status"] = avatar_status
+                updates["completion_summary_avatar_error"] = None
+                updates["completion_summary_avatar_summary_url"] = avatar_summary_url
+            except Exception as exc:
+                avatar_status = "Failed"
+                avatar_error = str(exc)
+                updates["completion_summary_avatar_status"] = avatar_status
+                updates["completion_summary_avatar_error"] = avatar_error
+                updates["completion_summary_avatar_summary_url"] = avatar_summary_url
+
+        if avatar_job_id and not avatar_url and (avatar_status or "").lower() not in {"succeeded", "failed"} and callable(get_batch_avatar):
+            try:
+                status_payload = get_batch_avatar(avatar_job_id)
+                status = str(status_payload.get("status") or "").strip() or "Running"
+                outputs = status_payload.get("outputs") if isinstance(status_payload.get("outputs"), dict) else {}
+                avatar_summary_url = str((outputs or {}).get("summary") or "").strip() or avatar_summary_url
+                updates["completion_summary_avatar_status"] = status
+                updates["completion_summary_avatar_summary_url"] = avatar_summary_url
+                if status == "Succeeded":
+                    _store_avatar_success(status_payload)
+                elif status == "Failed":
+                    props = status_payload.get("properties") if isinstance(status_payload.get("properties"), dict) else {}
+                    avatar_error = str((props or {}).get("error") or status_payload.get("error") or "Azure avatar generation failed.").strip()
+                    updates["completion_summary_avatar_error"] = avatar_error
+            except Exception as exc:
+                avatar_status = "Failed"
+                avatar_error = str(exc)
+                updates["completion_summary_avatar_status"] = avatar_status
+                updates["completion_summary_avatar_error"] = avatar_error
+        elif not avatar_job_id and not avatar_url and (avatar_status or "").lower() != "failed" and callable(create_batch_avatar):
+            try:
+                create_payload = create_batch_avatar(
+                    script=summary_text,
+                    title=f"Assessment summary for {_display_full_name(user)}",
+                    character=character,
+                    style=style,
+                    voice=voice,
+                    job_id=f"assessment-summary-{getattr(run, 'id', 0)}",
+                )
+                avatar_job_id = str(create_payload.get("id") or "").strip() or None
+                avatar_status = str(create_payload.get("status") or "NotStarted").strip() or "NotStarted"
+                outputs = create_payload.get("outputs") if isinstance(create_payload.get("outputs"), dict) else {}
+                avatar_summary_url = str((outputs or {}).get("summary") or "").strip() or None
+                updates["completion_summary_avatar_job_id"] = avatar_job_id
+                updates["completion_summary_avatar_status"] = avatar_status
+                updates["completion_summary_avatar_error"] = None
+                updates["completion_summary_avatar_summary_url"] = avatar_summary_url
+                updates["completion_summary_avatar_character"] = character
+                updates["completion_summary_avatar_style"] = style
+                updates["completion_summary_avatar_voice"] = voice
+                if avatar_status == "Succeeded":
+                    _store_avatar_success(create_payload)
+            except Exception as exc:
+                avatar_status = "Failed"
+                avatar_error = str(exc)
+                updates["completion_summary_avatar_status"] = avatar_status
+                updates["completion_summary_avatar_error"] = avatar_error
+
+    if updates:
+        meta = _upsert_assessment_narrative_meta(int(getattr(run, "id", 0) or 0), updates)
+        summary_text = str(meta.get("completion_summary_text") or summary_text or "").strip()
+        audio_url = str(meta.get("completion_summary_audio_url") or audio_url or "").strip() or None
+        avatar_url = str(meta.get("completion_summary_avatar_url") or avatar_url or "").strip() or None
+        avatar_status = str(meta.get("completion_summary_avatar_status") or avatar_status or "").strip() or None
+        avatar_job_id = str(meta.get("completion_summary_avatar_job_id") or avatar_job_id or "").strip() or None
+        avatar_error = str(meta.get("completion_summary_avatar_error") or avatar_error or "").strip() or None
+        avatar_summary_url = str(meta.get("completion_summary_avatar_summary_url") or avatar_summary_url or "").strip() or None
+
+    return {
+        "text": summary_text or None,
+        "audio_url": audio_url,
+        "avatar_url": avatar_url,
+        "avatar_status": avatar_status,
+        "avatar_job_id": avatar_job_id,
+        "avatar_error": avatar_error,
+        "avatar_summary_url": avatar_summary_url,
+    }
 
 
 def _scores_narrative_fallback(combined: int, payload: list[dict]) -> str:
@@ -3008,6 +3370,7 @@ def build_assessment_dashboard_data(
     include_llm: bool = True,
     generate_core_narratives: bool = True,
     generate_habit_narrative: bool = True,
+    generate_completion_summary_media: bool = False,
 ) -> Dict[str, Any]:
     t0 = time.perf_counter()
     _report_log(f"[report_build] start run_id={run_id} include_llm={include_llm}")
@@ -3196,6 +3559,11 @@ def build_assessment_dashboard_data(
     score_audio_url = None
     okr_audio_url = None
     coaching_audio_url = None
+    completion_summary_text = None
+    completion_summary_audio_url = None
+    completion_summary_avatar_url = None
+    completion_summary_avatar_status = None
+    completion_summary_avatar_error = None
     narratives_cached_flag = None
     if run_finished and has_pillar_scores:
         cache_source = ""
@@ -3450,6 +3818,22 @@ def build_assessment_dashboard_data(
                 _report_log(f"[report_build] narrative_audio_save_failed run_id={run_id} err={e!r}")
         narratives_cached_flag = bool(cached_ok)
 
+    if run_finished and has_pillar_scores and generate_completion_summary_media:
+        completion_assets = _ensure_completion_summary_media(
+            user=user,
+            run=run,
+            combined=combined,
+            scores_payload=pillar_payload,
+            okr_payload=okr_payload,
+            readiness_payload=readiness or {},
+            current_meta=narrative_meta,
+        )
+        completion_summary_text = completion_assets.get("text")
+        completion_summary_audio_url = completion_assets.get("audio_url")
+        completion_summary_avatar_url = completion_assets.get("avatar_url")
+        completion_summary_avatar_status = completion_assets.get("avatar_status")
+        completion_summary_avatar_error = completion_assets.get("avatar_error")
+
     score_rows = [
         {"label": "Combined", "value": combined, "bucket": _score_bucket(combined)},
         {"label": "Nutrition", "value": int(getattr(pr_map.get("nutrition"), "overall", None) or 0) if pr_map.get("nutrition") else None},
@@ -3497,11 +3881,23 @@ def build_assessment_dashboard_data(
             "score_audio_url": score_audio_url,
             "okr_audio_url": okr_audio_url,
             "coaching_audio_url": coaching_audio_url,
+            "completion_summary_text": completion_summary_text,
+            "completion_summary_audio_url": completion_summary_audio_url,
+            "completion_summary_avatar_url": completion_summary_avatar_url,
+            "completion_summary_avatar_status": completion_summary_avatar_status,
+            "completion_summary_avatar_error": completion_summary_avatar_error,
         },
         "meta": {
             "reported_at": datetime.utcnow().strftime("%d %b %Y %H:%M UTC"),
             "narratives_cached": narratives_cached_flag,
             "habit_narrative_pending": habit_narrative_pending,
+            "completion_summary_pending": bool(
+                generate_completion_summary_media
+                and run_finished
+                and has_pillar_scores
+                and completion_summary_avatar_status
+                and str(completion_summary_avatar_status).lower() not in {"succeeded", "failed"}
+            ),
             "narratives_source": None
             if narratives_cached_flag is None
             else ("cached" if cached_ok else ("llm" if include_llm else "pending_worker")),

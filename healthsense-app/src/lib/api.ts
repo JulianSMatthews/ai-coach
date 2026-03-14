@@ -34,6 +34,11 @@ export type AssessmentResponse = {
     score_audio_url?: string;
     okr_audio_url?: string;
     coaching_audio_url?: string;
+    completion_summary_text?: string;
+    completion_summary_audio_url?: string;
+    completion_summary_avatar_url?: string;
+    completion_summary_avatar_status?: string;
+    completion_summary_avatar_error?: string;
   };
   readiness?: { score?: number; label?: string; note?: string } | null;
   readiness_breakdown?: Array<{ key?: string; label?: string; value?: number }>;
@@ -43,6 +48,7 @@ export type AssessmentResponse = {
     narratives_cached?: boolean;
     narratives_source?: string;
     habit_narrative_pending?: boolean;
+    completion_summary_pending?: boolean;
   };
   reports?: {
     assessment_html?: string;

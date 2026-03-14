@@ -4831,9 +4831,12 @@ APP_ENGAGEMENT_PROVIDER = "healthsense-app"
 APP_ENGAGEMENT_PRODUCT = "app"
 APP_ENGAGEMENT_TAG = "app_engagement"
 INTRO_SOURCE_TYPE = "app_intro"
+ASSESSMENT_INTRO_SOURCE_TYPE = "assessment_intro"
 INTRO_PILLAR_KEY = "intro"
 INTRO_CONCEPT_CODE = "welcome"
+ASSESSMENT_INTRO_CONCEPT_CODE = "assessment"
 INTRO_TITLE_DEFAULT = "Welcome to HealthSense"
+ASSESSMENT_INTRO_TITLE_DEFAULT = "Assessment intro"
 INTRO_AVATAR_TITLE_DEFAULT = "Assessment introduction"
 INTRO_WELCOME_TEMPLATE_DEFAULT = (
     "{first_name}, Welcome to HealthSense please listen to our introductory podcast "
@@ -5025,6 +5028,21 @@ def _latest_intro_content_row(session, *, active_only: bool = True) -> ContentLi
     return q.first()
 
 
+def _latest_assessment_intro_content_row(session, *, active_only: bool = True) -> ContentLibraryItem | None:
+    q = (
+        session.query(ContentLibraryItem)
+        .filter(ContentLibraryItem.source_type == ASSESSMENT_INTRO_SOURCE_TYPE)
+        .order_by(desc(ContentLibraryItem.updated_at), desc(ContentLibraryItem.id))
+    )
+    if active_only:
+        q = q.filter(ContentLibraryItem.status == "published")
+    row = q.first()
+    if row:
+        return row
+    # Backward-compatible fallback while assessment intro config is being split out
+    return _latest_intro_content_row(session, active_only=active_only)
+
+
 def _intro_message_template_from_row(row: ContentLibraryItem | None) -> str:
     if not row:
         return INTRO_WELCOME_TEMPLATE_DEFAULT
@@ -5149,6 +5167,7 @@ def _build_intro_payload(session, user: User, onboarding_state: dict | None = No
     onboarding = onboarding_state or _get_onboarding_state(session, int(user.id))
     enabled = _intro_flow_enabled()
     row = _latest_intro_content_row(session, active_only=True) if enabled else None
+    assessment_row = _latest_assessment_intro_content_row(session, active_only=True) if enabled else None
     first_login_at = str(onboarding.get("first_app_login_at") or "").strip() or None
     coaching_enabled = _coaching_enabled_for_user(session, int(user.id))
     coaching_enabled_at_raw = str(onboarding.get("coaching_auto_enabled_at") or "").strip() or None
@@ -5172,7 +5191,7 @@ def _build_intro_payload(session, user: User, onboarding_state: dict | None = No
         "body": body,
         "podcast_url": _normalize_reports_url(getattr(row, "podcast_url", None)),
         "podcast_voice": getattr(row, "podcast_voice", None),
-        "assessment_intro_avatar": _intro_assessment_avatar_payload_from_row(row),
+        "assessment_intro_avatar": _intro_assessment_avatar_payload_from_row(assessment_row),
         "welcome_message_template": message_template,
         "coaching_enabled": coaching_enabled,
         "coaching_recently_enabled": coaching_recently_enabled,
@@ -6095,7 +6114,11 @@ def api_user_assessment(
                 if not latest:
                     raise HTTPException(status_code=404, detail="assessment run not found")
                 rid = latest.id
-    data = build_assessment_dashboard_data(int(rid), include_llm=False)
+    data = build_assessment_dashboard_data(
+        int(rid),
+        include_llm=False,
+        generate_completion_summary_media=True,
+    )
     narratives = data.get("narratives") or {}
     if isinstance(narratives, dict):
         narratives = {
@@ -6103,6 +6126,8 @@ def api_user_assessment(
             "score_audio_url": _normalize_reports_url(narratives.get("score_audio_url")),
             "okr_audio_url": _normalize_reports_url(narratives.get("okr_audio_url")),
             "coaching_audio_url": _normalize_reports_url(narratives.get("coaching_audio_url")),
+            "completion_summary_audio_url": _normalize_reports_url(narratives.get("completion_summary_audio_url")),
+            "completion_summary_avatar_url": _normalize_reports_url(narratives.get("completion_summary_avatar_url")),
         }
         data["narratives"] = narratives
     data["reports"] = {
@@ -6167,7 +6192,11 @@ def api_public_user_assessment(user_id: int, run_id: int | None = None, fast: bo
                 if not latest:
                     raise HTTPException(status_code=404, detail="assessment run not found")
                 rid = latest.id
-    data = build_assessment_dashboard_data(int(rid), include_llm=False)
+    data = build_assessment_dashboard_data(
+        int(rid),
+        include_llm=False,
+        generate_completion_summary_media=True,
+    )
     narratives = data.get("narratives") or {}
     if isinstance(narratives, dict):
         narratives = {
@@ -6175,6 +6204,8 @@ def api_public_user_assessment(user_id: int, run_id: int | None = None, fast: bo
             "score_audio_url": _normalize_reports_url(narratives.get("score_audio_url")),
             "okr_audio_url": _normalize_reports_url(narratives.get("okr_audio_url")),
             "coaching_audio_url": _normalize_reports_url(narratives.get("coaching_audio_url")),
+            "completion_summary_audio_url": _normalize_reports_url(narratives.get("completion_summary_audio_url")),
+            "completion_summary_avatar_url": _normalize_reports_url(narratives.get("completion_summary_avatar_url")),
         }
         data["narratives"] = narratives
     data["reports"] = {
@@ -16038,8 +16069,23 @@ def admin_library_intro_detail(
             "body": _intro_body_from_row(row),
             "podcast_url": _normalize_reports_url(getattr(row, "podcast_url", None)),
             "podcast_voice": getattr(row, "podcast_voice", None),
-            "assessment_intro_avatar": _intro_assessment_avatar_payload_from_row(row),
             "source_type": INTRO_SOURCE_TYPE,
+            "updated_at": getattr(row, "updated_at", None),
+        }
+
+
+@admin.get("/library/assessment-intro")
+def admin_library_assessment_intro_detail(
+    admin_user: User = Depends(_require_admin),
+):
+    with SessionLocal() as s:
+        row = _latest_assessment_intro_content_row(s, active_only=False)
+        return {
+            "content_id": int(row.id) if row else None,
+            "active": bool(row and str(getattr(row, "status", "") or "").strip().lower() == "published"),
+            "title": str(getattr(row, "title", "") or "").strip() or ASSESSMENT_INTRO_TITLE_DEFAULT,
+            "assessment_intro_avatar": _intro_assessment_avatar_payload_from_row(row),
+            "source_type": ASSESSMENT_INTRO_SOURCE_TYPE,
             "updated_at": getattr(row, "updated_at", None),
         }
 
@@ -16053,6 +16099,47 @@ def _get_or_create_intro_library_row(session, admin_user: User) -> ContentLibrar
         concept_code=INTRO_CONCEPT_CODE,
         source_type=INTRO_SOURCE_TYPE,
         created_by=getattr(admin_user, "id", None),
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def _get_or_create_assessment_intro_library_row(session, admin_user: User) -> ContentLibraryItem:
+    row = (
+        session.query(ContentLibraryItem)
+        .filter(ContentLibraryItem.source_type == ASSESSMENT_INTRO_SOURCE_TYPE)
+        .order_by(desc(ContentLibraryItem.updated_at), desc(ContentLibraryItem.id))
+        .first()
+    )
+    if row:
+        return row
+    fallback = _latest_intro_content_row(session, active_only=False)
+    avatar = _intro_assessment_avatar_payload_from_row(fallback)
+    row = ContentLibraryItem(
+        pillar_key=INTRO_PILLAR_KEY,
+        concept_code=ASSESSMENT_INTRO_CONCEPT_CODE,
+        source_type=ASSESSMENT_INTRO_SOURCE_TYPE,
+        created_by=getattr(admin_user, "id", None),
+        title=ASSESSMENT_INTRO_TITLE_DEFAULT,
+        body=str(avatar.get("script") or INTRO_ASSESSMENT_AVATAR_SCRIPT_DEFAULT),
+        status="published",
+    )
+    row.tags = _set_intro_assessment_avatar_tags(
+        {},
+        url=str(avatar.get("url") or "").strip() or None,
+        title=str(avatar.get("title") or "").strip() or INTRO_AVATAR_TITLE_DEFAULT,
+        script=str(avatar.get("script") or "").strip() or INTRO_ASSESSMENT_AVATAR_SCRIPT_DEFAULT,
+        poster_url=str(avatar.get("poster_url") or "").strip() or None,
+        character=str(avatar.get("character") or "").strip() or str(azure_avatar_defaults().get("character") or "lisa"),
+        style=str(avatar.get("style") or "").strip() or str(azure_avatar_defaults().get("style") or "graceful-sitting"),
+        voice=str(avatar.get("voice") or "").strip() or str(azure_avatar_defaults().get("voice") or "en-GB-SoniaNeural"),
+        status=str(avatar.get("status") or "").strip() or None,
+        job_id=str(avatar.get("job_id") or "").strip() or None,
+        error=str(avatar.get("error") or "").strip() or None,
+        generated_at=str(avatar.get("generated_at") or "").strip() or None,
+        source=str(avatar.get("source") or "").strip() or None,
+        summary_url=str(avatar.get("summary_url") or "").strip() or None,
     )
     session.add(row)
     session.flush()
@@ -16205,7 +16292,57 @@ def admin_library_intro_update(
     podcast_url = str(payload.get("podcast_url") or "").strip() or None
     podcast_url = _promote_intro_podcast_url(podcast_url)
     podcast_voice = str(payload.get("podcast_voice") or "").strip() or None
+
+    with SessionLocal() as s:
+        row = _latest_intro_content_row(s, active_only=False)
+        if not row:
+            row = ContentLibraryItem(
+                pillar_key=INTRO_PILLAR_KEY,
+                concept_code=INTRO_CONCEPT_CODE,
+                source_type=INTRO_SOURCE_TYPE,
+                created_by=getattr(admin_user, "id", None),
+            )
+            s.add(row)
+        tags = row.tags if isinstance(getattr(row, "tags", None), dict) else {}
+        tags = dict(tags or {})
+        tags["welcome_message_template"] = welcome_template
+        row.pillar_key = INTRO_PILLAR_KEY
+        row.concept_code = INTRO_CONCEPT_CODE
+        row.source_type = INTRO_SOURCE_TYPE
+        row.title = title
+        row.body = body
+        row.podcast_url = podcast_url
+        row.podcast_voice = podcast_voice
+        row.status = "published" if active else "draft"
+        row.tags = tags
+        if active and row.published_at is None:
+            row.published_at = datetime.utcnow()
+        s.commit()
+        s.refresh(row)
+        return {
+            "ok": True,
+            "content_id": row.id,
+            "active": bool(row.status == "published"),
+            "updated_at": row.updated_at,
+        }
+
+
+@admin.post("/library/assessment-intro")
+def admin_library_assessment_intro_update(
+    payload: dict,
+    admin_user: User = Depends(_require_admin),
+):
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=400, detail="payload must be a JSON object")
+    active_raw = payload.get("active")
+    if isinstance(active_raw, bool):
+        active = active_raw
+    elif active_raw is None:
+        active = True
+    else:
+        active = _is_truthy_env(str(active_raw))
     avatar_defaults = azure_avatar_defaults()
+    row_title = str(payload.get("title") or "").strip() or ASSESSMENT_INTRO_TITLE_DEFAULT
     assessment_intro_avatar_url = str(payload.get("assessment_intro_avatar_url") or "").strip() or None
     assessment_intro_avatar_title = (
         str(payload.get("assessment_intro_avatar_title") or "").strip() or INTRO_AVATAR_TITLE_DEFAULT
@@ -16231,20 +16368,16 @@ def admin_library_intro_update(
     )
 
     with SessionLocal() as s:
-        row = _latest_intro_content_row(s, active_only=False)
-        if not row:
-            row = ContentLibraryItem(
-                pillar_key=INTRO_PILLAR_KEY,
-                concept_code=INTRO_CONCEPT_CODE,
-                source_type=INTRO_SOURCE_TYPE,
-                created_by=getattr(admin_user, "id", None),
-            )
-            s.add(row)
-        tags = row.tags if isinstance(getattr(row, "tags", None), dict) else {}
-        tags = dict(tags or {})
-        tags["welcome_message_template"] = welcome_template
+        row = _get_or_create_assessment_intro_library_row(s, admin_user)
         existing_avatar = _intro_assessment_avatar_payload_from_row(row)
-        tags = _set_intro_assessment_avatar_tags(
+        tags = row.tags if isinstance(getattr(row, "tags", None), dict) else {}
+        row.pillar_key = INTRO_PILLAR_KEY
+        row.concept_code = ASSESSMENT_INTRO_CONCEPT_CODE
+        row.source_type = ASSESSMENT_INTRO_SOURCE_TYPE
+        row.title = row_title
+        row.body = assessment_intro_avatar_script
+        row.status = "published" if active else "draft"
+        row.tags = _set_intro_assessment_avatar_tags(
             tags,
             url=assessment_intro_avatar_url,
             title=assessment_intro_avatar_title,
@@ -16260,17 +16393,9 @@ def admin_library_intro_update(
             source=str(existing_avatar.get("source") or "").strip() or None,
             summary_url=str(existing_avatar.get("summary_url") or "").strip() or None,
         )
-        row.pillar_key = INTRO_PILLAR_KEY
-        row.concept_code = INTRO_CONCEPT_CODE
-        row.source_type = INTRO_SOURCE_TYPE
-        row.title = title
-        row.body = body
-        row.podcast_url = podcast_url
-        row.podcast_voice = podcast_voice
-        row.status = "published" if active else "draft"
-        row.tags = tags
         if active and row.published_at is None:
             row.published_at = datetime.utcnow()
+        s.add(row)
         s.commit()
         s.refresh(row)
         return {
@@ -16281,7 +16406,7 @@ def admin_library_intro_update(
         }
 
 
-@admin.post("/library/intro/avatar/generate")
+@admin.post("/library/assessment-intro/avatar/generate")
 def admin_library_intro_avatar_generate(
     payload: dict | None = None,
     admin_user: User = Depends(_require_admin),
@@ -16302,7 +16427,7 @@ def admin_library_intro_avatar_generate(
     if not script:
         raise HTTPException(status_code=400, detail="Assessment intro avatar script is required.")
     with SessionLocal() as s:
-        row = _get_or_create_intro_library_row(s, admin_user)
+        row = _get_or_create_assessment_intro_library_row(s, admin_user)
         tags = row.tags if isinstance(getattr(row, "tags", None), dict) else {}
         tags = _set_intro_assessment_avatar_tags(
             tags,
@@ -16390,14 +16515,14 @@ def admin_library_intro_avatar_generate(
         }
 
 
-@admin.post("/library/intro/avatar/refresh")
+@admin.post("/library/assessment-intro/avatar/refresh")
 def admin_library_intro_avatar_refresh(
     admin_user: User = Depends(_require_admin),
 ):
     with SessionLocal() as s:
-        row = _latest_intro_content_row(s, active_only=False)
+        row = _latest_assessment_intro_content_row(s, active_only=False)
         if not row:
-            raise HTTPException(status_code=404, detail="Intro content is not configured.")
+            raise HTTPException(status_code=404, detail="Assessment intro content is not configured.")
         avatar = _intro_assessment_avatar_payload_from_row(row)
         refreshed = _poll_intro_avatar_status(s, row=row, avatar_payload=avatar)
         return {"ok": str(refreshed.get("status") or "").strip().lower() == "succeeded", "assessment_intro_avatar": refreshed}
