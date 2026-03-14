@@ -81,6 +81,27 @@ def _azure_headers(*, include_content_type: bool = False) -> dict[str, str]:
     return headers
 
 
+def _raise_for_avatar_http_error(response: requests.Response, operation: str) -> None:
+    try:
+        response.raise_for_status()
+        return
+    except requests.HTTPError as exc:
+        status_code = getattr(response, "status_code", None)
+        if status_code == 404:
+            base = _speech_api_base()
+            raise RuntimeError(
+                f"Azure avatar {operation} returned 404 from {base}/avatar/... "
+                "This usually means the current Azure Speech resource isn't avatar-enabled for this API, "
+                "the key and region don't belong to the same Speech resource, or the resource tier isn't Standard S0."
+            ) from exc
+        if status_code in {401, 403}:
+            raise RuntimeError(
+                f"Azure avatar {operation} was rejected with {status_code}. "
+                "Check AZURE_SPEECH_KEY and AZURE_SPEECH_REGION, and make sure they belong to the same Speech resource."
+            ) from exc
+        raise
+
+
 def _sanitize_job_id(value: str) -> str:
     compact = re.sub(r"[^A-Za-z0-9_-]+", "-", str(value or "").strip()).strip("-_")
     compact = compact[:48]
@@ -145,7 +166,7 @@ def create_batch_avatar(
         headers=_azure_headers(include_content_type=True),
         timeout=60,
     )
-    response.raise_for_status()
+    _raise_for_avatar_http_error(response, "create")
     data = response.json()
     if not isinstance(data, dict):
         raise RuntimeError("Azure avatar create returned invalid response")
@@ -158,7 +179,7 @@ def get_batch_avatar(job_id: str) -> dict[str, Any]:
         headers=_azure_headers(),
         timeout=60,
     )
-    response.raise_for_status()
+    _raise_for_avatar_http_error(response, "status lookup")
     data = response.json()
     if not isinstance(data, dict):
         raise RuntimeError("Azure avatar status returned invalid response")
@@ -184,7 +205,7 @@ def wait_for_batch_avatar(job_id: str, *, timeout_seconds: int | None = None, po
 
 def download_batch_avatar_output(output_url: str) -> bytes:
     response = requests.get(output_url, headers=_azure_headers(), timeout=120)
-    response.raise_for_status()
+    _raise_for_avatar_http_error(response, "result download")
     return bytes(response.content or b"")
 
 
