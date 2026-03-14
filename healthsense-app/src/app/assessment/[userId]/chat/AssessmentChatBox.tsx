@@ -1007,11 +1007,16 @@ export default function AssessmentChatBox({
               ) : null}
 
               {completionSummaryFailed && !completionSummaryMedia?.avatarUrl ? (
-                <p className="text-sm text-[#6b6257]">
-                  {completionSummaryMedia?.audioUrl
-                    ? "We couldn’t generate the video right now, but your audio summary is ready."
-                    : completionSummaryMedia?.avatarError || "We couldn’t generate the video right now."}
-                </p>
+                <div className="space-y-1">
+                  <p className="text-sm text-[#6b6257]">
+                    {completionSummaryMedia?.audioUrl
+                      ? "We couldn’t generate the video right now, but your audio summary is ready."
+                      : "We couldn’t generate the video right now."}
+                  </p>
+                  {completionSummaryMedia?.avatarError ? (
+                    <p className="text-sm text-[#8a3e1a]">{completionSummaryMedia.avatarError}</p>
+                  ) : null}
+                </div>
               ) : null}
 
               {completionSummaryError ? (
