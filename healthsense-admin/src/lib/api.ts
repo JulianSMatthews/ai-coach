@@ -1065,6 +1065,21 @@ export type IntroLibrarySettings = {
   body?: string | null;
   podcast_url?: string | null;
   podcast_voice?: string | null;
+  assessment_intro_avatar?: {
+    url?: string | null;
+    title?: string | null;
+    script?: string | null;
+    poster_url?: string | null;
+    character?: string | null;
+    style?: string | null;
+    voice?: string | null;
+    status?: string | null;
+    job_id?: string | null;
+    error?: string | null;
+    generated_at?: string | null;
+    source?: string | null;
+    summary_url?: string | null;
+  } | null;
   source_type?: string | null;
   updated_at?: string | null;
 };
@@ -1998,11 +2013,39 @@ export async function updateLibraryIntroSettings(payload: {
   body?: string;
   podcast_url?: string;
   podcast_voice?: string;
+  assessment_intro_avatar_url?: string;
+  assessment_intro_avatar_title?: string;
+  assessment_intro_avatar_script?: string;
+  assessment_intro_avatar_poster_url?: string;
+  assessment_intro_avatar_character?: string;
+  assessment_intro_avatar_style?: string;
+  assessment_intro_avatar_voice?: string;
 }): Promise<Record<string, unknown>> {
   return apiAdmin<Record<string, unknown>>("/admin/library/intro", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+  });
+}
+
+export async function generateLibraryIntroAvatar(payload: {
+  assessment_intro_avatar_title?: string;
+  assessment_intro_avatar_script?: string;
+  assessment_intro_avatar_poster_url?: string;
+  assessment_intro_avatar_character?: string;
+  assessment_intro_avatar_style?: string;
+  assessment_intro_avatar_voice?: string;
+}): Promise<Record<string, unknown>> {
+  return apiAdmin<Record<string, unknown>>("/admin/library/intro/avatar/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function refreshLibraryIntroAvatar(): Promise<Record<string, unknown>> {
+  return apiAdmin<Record<string, unknown>>("/admin/library/intro/avatar/refresh", {
+    method: "POST",
   });
 }
 

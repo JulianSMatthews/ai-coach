@@ -6,6 +6,7 @@ import { getPillarPalette } from "@/lib/pillars";
 import { ProgressBar, ScoreRing } from "@/components/ui";
 import AssessmentPromptCard, {
   type AssessmentCurrentPrompt,
+  type AssessmentIntroAvatar,
   type AssessmentPromptOption,
   type AssessmentPromptSection,
 } from "./AssessmentPromptCard";
@@ -72,6 +73,7 @@ type AssessmentChatBoxProps = {
   isLeadGuest?: boolean;
   leadToken?: string;
   showLeadBranding?: boolean;
+  introAvatar?: AssessmentIntroAvatar | null;
 };
 
 type AssessmentCoachingPlanItem = {
@@ -408,6 +410,7 @@ export default function AssessmentChatBox({
   isLeadGuest = false,
   leadToken,
   showLeadBranding = false,
+  introAvatar = null,
 }: AssessmentChatBoxProps) {
   const searchParams = useSearchParams();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -1051,6 +1054,7 @@ export default function AssessmentChatBox({
             busy={busy}
             selectedValue={selectedPromptValue}
             showLeadBranding={showLeadBranding}
+            introAvatar={introAvatar}
             onSelect={onPromptOptionClick}
             onRedo={onPromptRedo}
             onRestart={onPromptRestart}

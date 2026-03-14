@@ -130,6 +130,13 @@ from .prompts import (
 )
 from .llm import embed_text
 from .podcast import generate_podcast_audio_for_voice
+from .avatar import (
+    azure_avatar_defaults,
+    azure_avatar_enabled,
+    generate_batch_avatar_video,
+    get_batch_avatar,
+    download_batch_avatar_output,
+)
 from .usage import (
     get_tts_usage_summary,
     get_llm_usage_summary,
@@ -4827,6 +4834,7 @@ INTRO_SOURCE_TYPE = "app_intro"
 INTRO_PILLAR_KEY = "intro"
 INTRO_CONCEPT_CODE = "welcome"
 INTRO_TITLE_DEFAULT = "Welcome to HealthSense"
+INTRO_AVATAR_TITLE_DEFAULT = "Assessment introduction"
 INTRO_WELCOME_TEMPLATE_DEFAULT = (
     "{first_name}, Welcome to HealthSense please listen to our introductory podcast "
     "to get started on your journey."
@@ -4835,6 +4843,26 @@ INTRO_BODY_DEFAULT = (
     "Welcome to HealthSense. Start by listening to the introduction, then review this guide "
     "to understand how your weekly coaching flow works."
 )
+INTRO_ASSESSMENT_AVATAR_SCRIPT_DEFAULT = (
+    "Welcome to HealthSense.\n\n"
+    "This assessment measures four pillars of health: Nutrition, Training, Recovery, and Resilience.\n\n"
+    "In around three minutes, you'll receive your HealthSense Score and a personal coaching plan "
+    "designed to help you improve your wellbeing.\n\n"
+    "When you're ready, press continue to begin."
+)
+INTRO_ASSESSMENT_AVATAR_URL_TAG = "assessment_intro_avatar_url"
+INTRO_ASSESSMENT_AVATAR_TITLE_TAG = "assessment_intro_avatar_title"
+INTRO_ASSESSMENT_AVATAR_SCRIPT_TAG = "assessment_intro_avatar_script"
+INTRO_ASSESSMENT_AVATAR_POSTER_TAG = "assessment_intro_avatar_poster_url"
+INTRO_ASSESSMENT_AVATAR_CHARACTER_TAG = "assessment_intro_avatar_character"
+INTRO_ASSESSMENT_AVATAR_STYLE_TAG = "assessment_intro_avatar_style"
+INTRO_ASSESSMENT_AVATAR_VOICE_TAG = "assessment_intro_avatar_voice"
+INTRO_ASSESSMENT_AVATAR_STATUS_TAG = "assessment_intro_avatar_status"
+INTRO_ASSESSMENT_AVATAR_JOB_ID_TAG = "assessment_intro_avatar_job_id"
+INTRO_ASSESSMENT_AVATAR_ERROR_TAG = "assessment_intro_avatar_error"
+INTRO_ASSESSMENT_AVATAR_GENERATED_AT_TAG = "assessment_intro_avatar_generated_at"
+INTRO_ASSESSMENT_AVATAR_SOURCE_TAG = "assessment_intro_avatar_source"
+INTRO_ASSESSMENT_AVATAR_SUMMARY_URL_TAG = "assessment_intro_avatar_summary_url"
 ONBOARDING_PREF_KEYS = {
     "first_login": "first_app_login_at",
     "assessment_reviewed": "assessment_reviewed_at",
@@ -5013,6 +5041,73 @@ def _intro_body_from_row(row: ContentLibraryItem | None) -> str:
     return INTRO_BODY_DEFAULT
 
 
+def _intro_assessment_avatar_payload_from_row(row: ContentLibraryItem | None) -> dict[str, str | None]:
+    tags = row.tags if row and isinstance(getattr(row, "tags", None), dict) else {}
+    defaults = azure_avatar_defaults()
+    raw_url = str((tags or {}).get(INTRO_ASSESSMENT_AVATAR_URL_TAG) or "").strip()
+    raw_title = str((tags or {}).get(INTRO_ASSESSMENT_AVATAR_TITLE_TAG) or "").strip()
+    raw_script = str((tags or {}).get(INTRO_ASSESSMENT_AVATAR_SCRIPT_TAG) or "").strip()
+    raw_poster = str((tags or {}).get(INTRO_ASSESSMENT_AVATAR_POSTER_TAG) or "").strip()
+    raw_character = str((tags or {}).get(INTRO_ASSESSMENT_AVATAR_CHARACTER_TAG) or "").strip()
+    raw_style = str((tags or {}).get(INTRO_ASSESSMENT_AVATAR_STYLE_TAG) or "").strip()
+    raw_voice = str((tags or {}).get(INTRO_ASSESSMENT_AVATAR_VOICE_TAG) or "").strip()
+    raw_status = str((tags or {}).get(INTRO_ASSESSMENT_AVATAR_STATUS_TAG) or "").strip()
+    raw_job_id = str((tags or {}).get(INTRO_ASSESSMENT_AVATAR_JOB_ID_TAG) or "").strip()
+    raw_error = str((tags or {}).get(INTRO_ASSESSMENT_AVATAR_ERROR_TAG) or "").strip()
+    raw_generated_at = str((tags or {}).get(INTRO_ASSESSMENT_AVATAR_GENERATED_AT_TAG) or "").strip()
+    raw_source = str((tags or {}).get(INTRO_ASSESSMENT_AVATAR_SOURCE_TAG) or "").strip()
+    raw_summary_url = str((tags or {}).get(INTRO_ASSESSMENT_AVATAR_SUMMARY_URL_TAG) or "").strip()
+    return {
+        "url": _normalize_reports_url(raw_url) if raw_url else None,
+        "title": raw_title or INTRO_AVATAR_TITLE_DEFAULT,
+        "script": raw_script or INTRO_ASSESSMENT_AVATAR_SCRIPT_DEFAULT,
+        "poster_url": _normalize_reports_url(raw_poster) if raw_poster else None,
+        "character": raw_character or str(defaults.get("character") or "lisa"),
+        "style": raw_style or str(defaults.get("style") or "graceful-sitting"),
+        "voice": raw_voice or str(defaults.get("voice") or "en-GB-SoniaNeural"),
+        "status": raw_status or None,
+        "job_id": raw_job_id or None,
+        "error": raw_error or None,
+        "generated_at": raw_generated_at or None,
+        "source": raw_source or None,
+        "summary_url": raw_summary_url or None,
+    }
+
+
+def _set_intro_assessment_avatar_tags(
+    tags: dict,
+    *,
+    url: str | None,
+    title: str,
+    script: str,
+    poster_url: str | None,
+    character: str,
+    style: str,
+    voice: str,
+    status: str | None,
+    job_id: str | None,
+    error: str | None,
+    generated_at: str | None,
+    source: str | None,
+    summary_url: str | None,
+) -> dict:
+    tags = dict(tags or {})
+    tags[INTRO_ASSESSMENT_AVATAR_URL_TAG] = url
+    tags[INTRO_ASSESSMENT_AVATAR_TITLE_TAG] = title
+    tags[INTRO_ASSESSMENT_AVATAR_SCRIPT_TAG] = script
+    tags[INTRO_ASSESSMENT_AVATAR_POSTER_TAG] = poster_url
+    tags[INTRO_ASSESSMENT_AVATAR_CHARACTER_TAG] = character
+    tags[INTRO_ASSESSMENT_AVATAR_STYLE_TAG] = style
+    tags[INTRO_ASSESSMENT_AVATAR_VOICE_TAG] = voice
+    tags[INTRO_ASSESSMENT_AVATAR_STATUS_TAG] = status
+    tags[INTRO_ASSESSMENT_AVATAR_JOB_ID_TAG] = job_id
+    tags[INTRO_ASSESSMENT_AVATAR_ERROR_TAG] = error
+    tags[INTRO_ASSESSMENT_AVATAR_GENERATED_AT_TAG] = generated_at
+    tags[INTRO_ASSESSMENT_AVATAR_SOURCE_TAG] = source
+    tags[INTRO_ASSESSMENT_AVATAR_SUMMARY_URL_TAG] = summary_url
+    return tags
+
+
 def _render_intro_message(template: str, user: User | None) -> str:
     first_name = ""
     if user:
@@ -5077,6 +5172,7 @@ def _build_intro_payload(session, user: User, onboarding_state: dict | None = No
         "body": body,
         "podcast_url": _normalize_reports_url(getattr(row, "podcast_url", None)),
         "podcast_voice": getattr(row, "podcast_voice", None),
+        "assessment_intro_avatar": _intro_assessment_avatar_payload_from_row(row),
         "welcome_message_template": message_template,
         "coaching_enabled": coaching_enabled,
         "coaching_recently_enabled": coaching_recently_enabled,
@@ -12849,6 +12945,7 @@ def admin_prompt_templates_list(
     admin_user: User = Depends(_require_admin),
 ):
     admin_routes._ensure_prompt_template_table()  # type: ignore[attr-defined]
+    prompts_module.ensure_builtin_prompt_templates(["assessment_completion_summary"])
     try:
         limit = int(limit)
     except Exception:
@@ -15429,6 +15526,8 @@ def admin_prompt_test(payload: dict, admin_user: User = Depends(_require_admin))
     user_id = payload.get("user_id")
     if not touchpoint or not user_id:
         raise HTTPException(status_code=400, detail="touchpoint and user_id required")
+    if touchpoint in {"assessment_completion_summary", "assessment_audio_summary"}:
+        prompts_module.ensure_builtin_prompt_templates(["assessment_completion_summary"])
     try:
         user_id_int = int(user_id)
     except Exception:
@@ -15939,9 +16038,151 @@ def admin_library_intro_detail(
             "body": _intro_body_from_row(row),
             "podcast_url": _normalize_reports_url(getattr(row, "podcast_url", None)),
             "podcast_voice": getattr(row, "podcast_voice", None),
+            "assessment_intro_avatar": _intro_assessment_avatar_payload_from_row(row),
             "source_type": INTRO_SOURCE_TYPE,
             "updated_at": getattr(row, "updated_at", None),
         }
+
+
+def _get_or_create_intro_library_row(session, admin_user: User) -> ContentLibraryItem:
+    row = _latest_intro_content_row(session, active_only=False)
+    if row:
+        return row
+    row = ContentLibraryItem(
+        pillar_key=INTRO_PILLAR_KEY,
+        concept_code=INTRO_CONCEPT_CODE,
+        source_type=INTRO_SOURCE_TYPE,
+        created_by=getattr(admin_user, "id", None),
+    )
+    session.add(row)
+    session.flush()
+    return row
+
+
+def _save_intro_avatar_generation_result(
+    session,
+    *,
+    row: ContentLibraryItem,
+    title: str,
+    script: str,
+    poster_url: str | None,
+    character: str,
+    style: str,
+    voice: str,
+    status: str,
+    job_id: str | None,
+    error: str | None,
+    summary_url: str | None,
+    video_bytes: bytes | None = None,
+) -> dict[str, object]:
+    asset_url = None
+    generated_at = _utc_now_iso() if status == "Succeeded" else None
+    if status == "Succeeded" and video_bytes:
+        filename = f"intro-avatar-{(job_id or secrets.token_hex(6)).strip()[:48]}.mp4"
+        asset_url = _write_global_report_bytes(f"content/intro/{filename}", video_bytes)
+    tags = row.tags if isinstance(getattr(row, "tags", None), dict) else {}
+    tags = _set_intro_assessment_avatar_tags(
+        tags,
+        url=asset_url,
+        title=title,
+        script=script,
+        poster_url=poster_url,
+        character=character,
+        style=style,
+        voice=voice,
+        status=status.lower(),
+        job_id=job_id,
+        error=error,
+        generated_at=generated_at,
+        source="azure_batch",
+        summary_url=summary_url,
+    )
+    row.tags = tags
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return _intro_assessment_avatar_payload_from_row(row)
+
+
+def _poll_intro_avatar_status(
+    session,
+    *,
+    row: ContentLibraryItem,
+    avatar_payload: dict[str, object],
+) -> dict[str, object]:
+    job_id = str(avatar_payload.get("job_id") or "").strip()
+    if not job_id:
+        raise HTTPException(status_code=400, detail="No avatar job is pending for this intro item.")
+    status_payload = get_batch_avatar(job_id)
+    status = str(status_payload.get("status") or "").strip()
+    outputs = status_payload.get("outputs") if isinstance(status_payload.get("outputs"), dict) else {}
+    summary_url = str((outputs or {}).get("summary") or "").strip() or None
+    error_detail = None
+    if status == "Succeeded":
+        result_url = str((outputs or {}).get("result") or "").strip()
+        if not result_url:
+            error_detail = "Azure avatar completed without a result video URL."
+            return _save_intro_avatar_generation_result(
+                session,
+                row=row,
+                title=str(avatar_payload.get("title") or "").strip() or INTRO_AVATAR_TITLE_DEFAULT,
+                script=str(avatar_payload.get("script") or "").strip() or INTRO_ASSESSMENT_AVATAR_SCRIPT_DEFAULT,
+                poster_url=str(avatar_payload.get("poster_url") or "").strip() or None,
+                character=str(avatar_payload.get("character") or "").strip() or str(azure_avatar_defaults().get("character") or "lisa"),
+                style=str(avatar_payload.get("style") or "").strip() or str(azure_avatar_defaults().get("style") or "graceful-sitting"),
+                voice=str(avatar_payload.get("voice") or "").strip() or str(azure_avatar_defaults().get("voice") or "en-GB-SoniaNeural"),
+                status="Failed",
+                job_id=job_id,
+                error=error_detail,
+                summary_url=summary_url,
+            )
+        video_bytes = download_batch_avatar_output(result_url)
+        return _save_intro_avatar_generation_result(
+            session,
+            row=row,
+            title=str(avatar_payload.get("title") or "").strip() or INTRO_AVATAR_TITLE_DEFAULT,
+            script=str(avatar_payload.get("script") or "").strip() or INTRO_ASSESSMENT_AVATAR_SCRIPT_DEFAULT,
+            poster_url=str(avatar_payload.get("poster_url") or "").strip() or None,
+            character=str(avatar_payload.get("character") or "").strip() or str(azure_avatar_defaults().get("character") or "lisa"),
+            style=str(avatar_payload.get("style") or "").strip() or str(azure_avatar_defaults().get("style") or "graceful-sitting"),
+            voice=str(avatar_payload.get("voice") or "").strip() or str(azure_avatar_defaults().get("voice") or "en-GB-SoniaNeural"),
+            status=status,
+            job_id=job_id,
+            error=None,
+            summary_url=summary_url,
+            video_bytes=video_bytes,
+        )
+    if status == "Failed":
+        props = status_payload.get("properties") if isinstance(status_payload.get("properties"), dict) else {}
+        error_detail = str((props or {}).get("error") or status_payload.get("error") or "Azure avatar generation failed.").strip()
+        return _save_intro_avatar_generation_result(
+            session,
+            row=row,
+            title=str(avatar_payload.get("title") or "").strip() or INTRO_AVATAR_TITLE_DEFAULT,
+            script=str(avatar_payload.get("script") or "").strip() or INTRO_ASSESSMENT_AVATAR_SCRIPT_DEFAULT,
+            poster_url=str(avatar_payload.get("poster_url") or "").strip() or None,
+            character=str(avatar_payload.get("character") or "").strip() or str(azure_avatar_defaults().get("character") or "lisa"),
+            style=str(avatar_payload.get("style") or "").strip() or str(azure_avatar_defaults().get("style") or "graceful-sitting"),
+            voice=str(avatar_payload.get("voice") or "").strip() or str(azure_avatar_defaults().get("voice") or "en-GB-SoniaNeural"),
+            status=status,
+            job_id=job_id,
+            error=error_detail,
+            summary_url=summary_url,
+        )
+    return _save_intro_avatar_generation_result(
+        session,
+        row=row,
+        title=str(avatar_payload.get("title") or "").strip() or INTRO_AVATAR_TITLE_DEFAULT,
+        script=str(avatar_payload.get("script") or "").strip() or INTRO_ASSESSMENT_AVATAR_SCRIPT_DEFAULT,
+        poster_url=str(avatar_payload.get("poster_url") or "").strip() or None,
+        character=str(avatar_payload.get("character") or "").strip() or str(azure_avatar_defaults().get("character") or "lisa"),
+        style=str(avatar_payload.get("style") or "").strip() or str(azure_avatar_defaults().get("style") or "graceful-sitting"),
+        voice=str(avatar_payload.get("voice") or "").strip() or str(azure_avatar_defaults().get("voice") or "en-GB-SoniaNeural"),
+        status=status or "Running",
+        job_id=job_id,
+        error=None,
+        summary_url=summary_url,
+    )
 
 
 @admin.post("/library/intro")
@@ -15964,6 +16205,30 @@ def admin_library_intro_update(
     podcast_url = str(payload.get("podcast_url") or "").strip() or None
     podcast_url = _promote_intro_podcast_url(podcast_url)
     podcast_voice = str(payload.get("podcast_voice") or "").strip() or None
+    avatar_defaults = azure_avatar_defaults()
+    assessment_intro_avatar_url = str(payload.get("assessment_intro_avatar_url") or "").strip() or None
+    assessment_intro_avatar_title = (
+        str(payload.get("assessment_intro_avatar_title") or "").strip() or INTRO_AVATAR_TITLE_DEFAULT
+    )
+    assessment_intro_avatar_script = (
+        str(payload.get("assessment_intro_avatar_script") or "").strip()
+        or INTRO_ASSESSMENT_AVATAR_SCRIPT_DEFAULT
+    )
+    assessment_intro_avatar_poster_url = (
+        str(payload.get("assessment_intro_avatar_poster_url") or "").strip() or None
+    )
+    assessment_intro_avatar_character = (
+        str(payload.get("assessment_intro_avatar_character") or "").strip()
+        or str(avatar_defaults.get("character") or "lisa")
+    )
+    assessment_intro_avatar_style = (
+        str(payload.get("assessment_intro_avatar_style") or "").strip()
+        or str(avatar_defaults.get("style") or "graceful-sitting")
+    )
+    assessment_intro_avatar_voice = (
+        str(payload.get("assessment_intro_avatar_voice") or "").strip()
+        or str(avatar_defaults.get("voice") or "en-GB-SoniaNeural")
+    )
 
     with SessionLocal() as s:
         row = _latest_intro_content_row(s, active_only=False)
@@ -15978,6 +16243,23 @@ def admin_library_intro_update(
         tags = row.tags if isinstance(getattr(row, "tags", None), dict) else {}
         tags = dict(tags or {})
         tags["welcome_message_template"] = welcome_template
+        existing_avatar = _intro_assessment_avatar_payload_from_row(row)
+        tags = _set_intro_assessment_avatar_tags(
+            tags,
+            url=assessment_intro_avatar_url,
+            title=assessment_intro_avatar_title,
+            script=assessment_intro_avatar_script,
+            poster_url=assessment_intro_avatar_poster_url,
+            character=assessment_intro_avatar_character,
+            style=assessment_intro_avatar_style,
+            voice=assessment_intro_avatar_voice,
+            status=str(existing_avatar.get("status") or "").strip() or None,
+            job_id=str(existing_avatar.get("job_id") or "").strip() or None,
+            error=str(existing_avatar.get("error") or "").strip() or None,
+            generated_at=str(existing_avatar.get("generated_at") or "").strip() or None,
+            source=str(existing_avatar.get("source") or "").strip() or None,
+            summary_url=str(existing_avatar.get("summary_url") or "").strip() or None,
+        )
         row.pillar_key = INTRO_PILLAR_KEY
         row.concept_code = INTRO_CONCEPT_CODE
         row.source_type = INTRO_SOURCE_TYPE
@@ -15997,6 +16279,128 @@ def admin_library_intro_update(
             "active": bool(row.status == "published"),
             "updated_at": row.updated_at,
         }
+
+
+@admin.post("/library/intro/avatar/generate")
+def admin_library_intro_avatar_generate(
+    payload: dict | None = None,
+    admin_user: User = Depends(_require_admin),
+):
+    if not azure_avatar_enabled():
+        raise HTTPException(status_code=503, detail="Azure avatar generation is not enabled.")
+    payload = payload if isinstance(payload, dict) else {}
+    defaults = azure_avatar_defaults()
+    title = str(payload.get("assessment_intro_avatar_title") or "").strip() or INTRO_AVATAR_TITLE_DEFAULT
+    script = (
+        str(payload.get("assessment_intro_avatar_script") or "").strip()
+        or INTRO_ASSESSMENT_AVATAR_SCRIPT_DEFAULT
+    )
+    poster_url = str(payload.get("assessment_intro_avatar_poster_url") or "").strip() or None
+    character = str(payload.get("assessment_intro_avatar_character") or "").strip() or str(defaults.get("character") or "lisa")
+    style = str(payload.get("assessment_intro_avatar_style") or "").strip() or str(defaults.get("style") or "graceful-sitting")
+    voice = str(payload.get("assessment_intro_avatar_voice") or "").strip() or str(defaults.get("voice") or "en-GB-SoniaNeural")
+    if not script:
+        raise HTTPException(status_code=400, detail="Assessment intro avatar script is required.")
+    with SessionLocal() as s:
+        row = _get_or_create_intro_library_row(s, admin_user)
+        tags = row.tags if isinstance(getattr(row, "tags", None), dict) else {}
+        tags = _set_intro_assessment_avatar_tags(
+            tags,
+            url=None,
+            title=title,
+            script=script,
+            poster_url=poster_url,
+            character=character,
+            style=style,
+            voice=voice,
+            status="running",
+            job_id=None,
+            error=None,
+            generated_at=None,
+            source="azure_batch",
+            summary_url=None,
+        )
+        row.tags = tags
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        try:
+            result = generate_batch_avatar_video(
+                script=script,
+                title=title,
+                character=character,
+                style=style,
+                voice=voice,
+            )
+        except Exception as e:
+            avatar = _save_intro_avatar_generation_result(
+                s,
+                row=row,
+                title=title,
+                script=script,
+                poster_url=poster_url,
+                character=character,
+                style=style,
+                voice=voice,
+                status="Failed",
+                job_id=None,
+                error=str(e),
+                summary_url=None,
+            )
+            return {"ok": False, "assessment_intro_avatar": avatar, "error": str(e)}
+        status = str(result.get("status") or "").strip()
+        if status == "Succeeded" and result.get("video_bytes"):
+            avatar = _save_intro_avatar_generation_result(
+                s,
+                row=row,
+                title=title,
+                script=script,
+                poster_url=poster_url,
+                character=character,
+                style=style,
+                voice=voice,
+                status=status,
+                job_id=str(result.get("job_id") or "").strip() or None,
+                error=None,
+                summary_url=str(result.get("summary_url") or "").strip() or None,
+                video_bytes=result.get("video_bytes") if isinstance(result.get("video_bytes"), (bytes, bytearray)) else None,
+            )
+            return {"ok": True, "assessment_intro_avatar": avatar}
+        pending_error = None
+        if status == "Failed":
+            pending_error = str(result.get("response") or "")[:500]
+        avatar = _save_intro_avatar_generation_result(
+            s,
+            row=row,
+            title=title,
+            script=script,
+            poster_url=poster_url,
+            character=character,
+            style=style,
+            voice=voice,
+            status=status or "Running",
+            job_id=str(result.get("job_id") or "").strip() or None,
+            error=pending_error,
+            summary_url=str(result.get("summary_url") or "").strip() or None,
+        )
+        return {
+            "ok": status != "Failed",
+            "assessment_intro_avatar": avatar,
+            "pending": bool(result.get("timed_out")) or status not in {"Succeeded", "Failed"},
+        }
+
+
+@admin.post("/library/intro/avatar/refresh")
+def admin_library_intro_avatar_refresh(
+    admin_user: User = Depends(_require_admin),
+):
+    with SessionLocal() as s:
+        row = _latest_intro_content_row(s, active_only=False)
+        if not row:
+            raise HTTPException(status_code=404, detail="Intro content is not configured.")
+        avatar = _intro_assessment_avatar_payload_from_row(row)
+        refreshed = _poll_intro_avatar_status(s, row=row, avatar_payload=avatar)
+        return {"ok": str(refreshed.get("status") or "").strip().lower() == "succeeded", "assessment_intro_avatar": refreshed}
 
 
 @admin.get("/library/content/{content_id}")

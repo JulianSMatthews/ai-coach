@@ -153,6 +153,12 @@ export type UserStatusResponse = {
     body?: string | null;
     podcast_url?: string | null;
     podcast_voice?: string | null;
+    assessment_intro_avatar?: {
+      url?: string | null;
+      title?: string | null;
+      script?: string | null;
+      poster_url?: string | null;
+    } | null;
     welcome_message_template?: string | null;
     onboarding?: {
       assessment_completed_at?: string | null;

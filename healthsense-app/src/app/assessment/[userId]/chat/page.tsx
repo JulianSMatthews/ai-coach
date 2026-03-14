@@ -5,6 +5,7 @@ import TextScale from "@/components/TextScale";
 import AppNav from "@/components/AppNav";
 import AssessmentChatBox from "./AssessmentChatBox";
 import LeadAssessmentBranding from "./LeadAssessmentBranding";
+import type { AssessmentIntroAvatar } from "./AssessmentPromptCard";
 
 function isTruthyToken(value: string | string[] | undefined): boolean {
   const raw = Array.isArray(value) ? value[0] : value;
@@ -17,6 +18,76 @@ function parseApiErrorMessage(error: unknown): { status?: number; message: strin
   const match = raw.match(/^API\s+(\d+)\s+/i);
   const status = match ? Number.parseInt(match[1], 10) : undefined;
   return { status, message: raw };
+}
+
+function getApiBaseUrl(): string {
+  const base = String(process.env.API_BASE_URL || "").trim();
+  if (!base) {
+    throw new Error("API_BASE_URL is not set");
+  }
+  return base.replace(/\/+$/, "");
+}
+
+function getAdminHeaders(): Record<string, string> {
+  const token = String(process.env.ADMIN_API_TOKEN || "").trim();
+  const adminUserId = String(process.env.ADMIN_USER_ID || "").trim();
+  if (!token || !adminUserId) {
+    throw new Error("ADMIN_API_TOKEN or ADMIN_USER_ID is not set");
+  }
+  return {
+    "X-Admin-Token": token,
+    "X-Admin-User-Id": adminUserId,
+  };
+}
+
+async function getAssessmentIntroAvatar(): Promise<AssessmentIntroAvatar | null> {
+  const avatarEnabled = isTruthyToken(process.env.NEXT_PUBLIC_ASSESSMENT_INTRO_AVATAR_ENABLED);
+  const fallbackUrl = String(process.env.NEXT_PUBLIC_ASSESSMENT_INTRO_AVATAR_URL || "").trim();
+  const fallbackPosterUrl = String(process.env.NEXT_PUBLIC_ASSESSMENT_INTRO_AVATAR_POSTER || "").trim();
+  const fallbackTitle = String(
+    process.env.NEXT_PUBLIC_ASSESSMENT_INTRO_AVATAR_TITLE || "Assessment introduction",
+  ).trim();
+  if (!avatarEnabled) {
+    return null;
+  }
+  const fallbackAvatar: AssessmentIntroAvatar | null = fallbackUrl
+    ? {
+        url: fallbackUrl,
+        title: fallbackTitle,
+        posterUrl: fallbackPosterUrl || null,
+      }
+    : null;
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/admin/library/intro`, {
+      method: "GET",
+      headers: getAdminHeaders(),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      return fallbackAvatar;
+    }
+    const payload = (await res.json().catch(() => ({}))) as {
+      assessment_intro_avatar?: {
+        url?: string | null;
+        title?: string | null;
+        script?: string | null;
+        poster_url?: string | null;
+      } | null;
+    };
+    const avatar = payload.assessment_intro_avatar || null;
+    const url = String(avatar?.url || "").trim() || fallbackUrl;
+    if (!url) {
+      return fallbackAvatar;
+    }
+    return {
+      url,
+      title: String(avatar?.title || "").trim() || fallbackTitle,
+      posterUrl: String(avatar?.poster_url || "").trim() || fallbackPosterUrl || null,
+      script: String(avatar?.script || "").trim() || null,
+    };
+  } catch {
+    return fallbackAvatar;
+  }
 }
 
 type PageProps = {
@@ -38,6 +109,7 @@ export default async function AssessmentChatPage(props: PageProps) {
   const cookieStore = await cookies();
   const leadToken = String(cookieStore.get("hs_lead_token")?.value || "").trim();
   const leadTokenParam = firstSearchValue(resolvedSearchParams.lt);
+  const assessmentIntroAvatar = leadFlow ? await getAssessmentIntroAvatar() : null;
 
   const leadHeaderTitle = <LeadAssessmentBranding />;
 
@@ -128,6 +200,7 @@ export default async function AssessmentChatPage(props: PageProps) {
           isLeadGuest={leadGuest}
           leadToken={leadToken || leadTokenParam || undefined}
           showLeadBranding={leadFlow}
+          introAvatar={assessmentIntroAvatar}
         />
       </section>
     </PageShell>

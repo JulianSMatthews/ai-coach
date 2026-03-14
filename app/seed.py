@@ -1130,6 +1130,31 @@ End with one short sentence explaining that their Habit Readiness Profile helps 
 The explanation should feel insightful but concise.""",
     },
     {
+        "touchpoint": 'assessment_completion_summary',
+        "okr_scope": 'all',
+        "programme_scope": 'none',
+        "response_format": '',
+        "is_active": True,
+        "block_order": ['system', 'locale', 'context', 'scores', 'habit', 'okr', 'task'],
+        "include_blocks": ['system', 'locale', 'context', 'scores', 'habit', 'okr', 'task'],
+        "task_block": """You are a supportive wellbeing coach creating a 30 to 60 second spoken summary for the end of an assessment.
+
+Write 85 to 120 words in natural British English and address the user directly.
+
+Include:
+- a warm opener using their first name
+- their overall HealthSense result
+- the single pillar most likely limiting progress
+- one positive strength
+- the main coaching focus from their plan
+- one simple next action for this week
+- a short encouraging close
+
+Do not use bullets, headings, markdown, jargon, percentages for every pillar, or medical claims.
+
+Return plain text only.""",
+    },
+    {
         "touchpoint": 'assessor_system',
         "okr_scope": '',
         "programme_scope": '',

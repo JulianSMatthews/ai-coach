@@ -51,6 +51,27 @@ from .usage import log_usage_event, estimate_tokens, estimate_llm_cost
 
 PROMPT_STATE_ALIASES = {"production": "live", "stage": "beta"}
 PROMPT_STATE_ORDER = ["live", "beta", "develop"]
+BUILTIN_PROMPT_TEMPLATE_DEFAULTS: Dict[str, Dict[str, Any]] = {
+    "assessment_completion_summary": {
+        "touchpoint": "assessment_completion_summary",
+        "okr_scope": "all",
+        "programme_scope": "none",
+        "response_format": "",
+        "model_override": None,
+        "is_active": True,
+        "block_order": ["system", "locale", "context", "scores", "habit", "okr", "task"],
+        "include_blocks": ["system", "locale", "context", "scores", "habit", "okr", "task"],
+        "task_block": (
+            "You are a supportive wellbeing coach creating a 30 to 60 second spoken summary for the end of an assessment. "
+            "Write 85 to 120 words in natural British English. Address the user directly. "
+            "Include: a warm opener using their first name, their overall HealthSense result, "
+            "the single pillar most likely limiting progress, one positive strength, "
+            "the main coaching focus from their plan, one simple next action for this week, and a short encouraging close. "
+            "Do not use bullets, headings, markdown, jargon, or medical claims. Return plain text only."
+        ),
+        "note": "Runtime builtin template for assessment completion audio/avatar summary.",
+    }
+}
 
 def _prompt_log_debug_enabled() -> bool:
     return debug_enabled()
@@ -525,6 +546,92 @@ def _load_prompt_template_with_state(touchpoint: str, state: str) -> Optional[Di
             }
     except Exception:
         return _load_prompt_template(touchpoint)
+
+
+def ensure_builtin_prompt_templates(touchpoints: List[str] | None = None) -> int:
+    requested = {
+        str(item or "").strip()
+        for item in (touchpoints or list(BUILTIN_PROMPT_TEMPLATE_DEFAULTS.keys()))
+        if str(item or "").strip()
+    }
+    requested = {item for item in requested if item in BUILTIN_PROMPT_TEMPLATE_DEFAULTS}
+    if not requested:
+        return 0
+    try:
+        PromptTemplate.__table__.create(bind=engine, checkfirst=True)
+        try:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS programme_scope varchar(32);"))
+                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS response_format varchar(32);"))
+                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS model_override varchar(120);"))
+                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS state varchar(32) DEFAULT 'develop';"))
+                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS version integer DEFAULT 1;"))
+                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS note text;"))
+                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS parent_id integer;"))
+                try:
+                    conn.execute(text("ALTER TABLE prompt_templates DROP CONSTRAINT IF EXISTS prompt_templates_touchpoint_key;"))
+                except Exception:
+                    pass
+                try:
+                    conn.execute(text("DROP INDEX IF EXISTS prompt_templates_touchpoint_key;"))
+                except Exception:
+                    pass
+                try:
+                    conn.execute(text("DROP INDEX IF EXISTS uq_prompt_templates_touchpoint;"))
+                except Exception:
+                    pass
+                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_prompt_templates_touchpoint_state_version ON prompt_templates(touchpoint, state, version);"))
+                conn.execute(text("UPDATE prompt_templates SET state='beta' WHERE state='stage';"))
+                conn.execute(text("UPDATE prompt_templates SET state='live' WHERE state='production';"))
+                conn.execute(text("UPDATE prompt_templates SET version=1 WHERE version IS NULL;"))
+                conn.commit()
+        except Exception:
+            pass
+        created = 0
+        with SessionLocal() as s:
+            for touchpoint in sorted(requested):
+                spec = dict(BUILTIN_PROMPT_TEMPLATE_DEFAULTS[touchpoint])
+                for state in ["develop", "beta", "live"]:
+                    row = (
+                        s.query(PromptTemplate)
+                        .filter(
+                            PromptTemplate.touchpoint == touchpoint,
+                            PromptTemplate.state.in_(
+                                [
+                                    state,
+                                    "stage" if state == "beta" else state,
+                                    "production" if state == "live" else state,
+                                ]
+                            ),
+                            PromptTemplate.version == 1,
+                        )
+                        .order_by(PromptTemplate.id.desc())
+                        .first()
+                    )
+                    if row:
+                        continue
+                    row = PromptTemplate(
+                        touchpoint=touchpoint,
+                        state=state,
+                        version=1,
+                        okr_scope=spec.get("okr_scope"),
+                        programme_scope=spec.get("programme_scope"),
+                        response_format=spec.get("response_format"),
+                        model_override=spec.get("model_override"),
+                        block_order=spec.get("block_order"),
+                        include_blocks=spec.get("include_blocks"),
+                        task_block=spec.get("task_block"),
+                        note=spec.get("note"),
+                        is_active=bool(spec.get("is_active", True)),
+                    )
+                    s.add(row)
+                    created += 1
+            if created:
+                s.commit()
+        return created
+    except Exception as e:
+        print(f"[prompts] WARN: failed to ensure builtin prompt templates: {e}")
+        return 0
 
 
 def _load_prompt_settings() -> Dict[str, Any]:
@@ -2808,6 +2915,7 @@ __all__ = [
     "coaching_approach_prompt",
     "assessment_scores_prompt",
     "assessment_completion_summary_prompt",
+    "ensure_builtin_prompt_templates",
     "okr_narrative_prompt",
     "assessor_system_prompt",
     "assessor_feedback_prompt",

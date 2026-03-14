@@ -57,11 +57,19 @@ export type AssessmentCurrentPrompt = {
   sections: AssessmentPromptSection[];
 };
 
+export type AssessmentIntroAvatar = {
+  url?: string | null;
+  title?: string | null;
+  script?: string | null;
+  posterUrl?: string | null;
+};
+
 type Props = {
   prompt: AssessmentCurrentPrompt;
   busy?: boolean;
   selectedValue?: string | null;
   showLeadBranding?: boolean;
+  introAvatar?: AssessmentIntroAvatar | null;
   onSelect: (option: AssessmentPromptOption) => void;
   onRedo: () => void;
   onRestart: () => void;
@@ -136,6 +144,7 @@ export default function AssessmentPromptCard({
   busy = false,
   selectedValue = null,
   showLeadBranding = false,
+  introAvatar = null,
   onSelect,
   onRedo,
   onRestart,
@@ -156,7 +165,10 @@ export default function AssessmentPromptCard({
   const promptPreview = showLeadIntroPreview ? LEAD_INTRO_PREVIEW : prompt.result_preview;
   const showScorePreview = Boolean(promptPreview?.pillars?.length);
   const combinedPreviewScore = normalizePreviewScore(promptPreview?.combined);
-  const showIntroAvatar = showLeadIntroPreview && INTRO_AVATAR_ENABLED && Boolean(INTRO_AVATAR_URL);
+  const introAvatarUrl = String(introAvatar?.url || INTRO_AVATAR_URL || "").trim();
+  const introAvatarTitle = String(introAvatar?.title || INTRO_AVATAR_TITLE || "").trim();
+  const introAvatarPoster = String(introAvatar?.posterUrl || INTRO_AVATAR_POSTER || "").trim();
+  const showIntroAvatar = showLeadIntroPreview && INTRO_AVATAR_ENABLED && Boolean(introAvatarUrl);
 
   return (
     <section className="w-full rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
@@ -231,18 +243,18 @@ export default function AssessmentPromptCard({
         {showIntroAvatar ? (
           <div className="rounded-[28px] border border-[#e7e1d6] bg-white px-4 py-4 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.25)] sm:px-5 sm:py-5">
             <div className="space-y-3">
-              <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">{INTRO_AVATAR_TITLE}</p>
+              <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">{introAvatarTitle}</p>
               <video
                 controls
                 playsInline
                 preload="metadata"
-                poster={INTRO_AVATAR_POSTER || undefined}
+                poster={introAvatarPoster || undefined}
                 className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
               >
-                <source src={INTRO_AVATAR_URL} />
+                <source src={introAvatarUrl} />
               </video>
               <a
-                href={INTRO_AVATAR_URL}
+                href={introAvatarUrl}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex text-[11px] uppercase tracking-[0.2em] text-[var(--accent)]"

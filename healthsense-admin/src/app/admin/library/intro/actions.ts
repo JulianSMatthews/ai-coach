@@ -1,7 +1,12 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createContentGeneration, updateLibraryIntroSettings } from "@/lib/api";
+import {
+  createContentGeneration,
+  generateLibraryIntroAvatar,
+  refreshLibraryIntroAvatar,
+  updateLibraryIntroSettings,
+} from "@/lib/api";
 
 export type IntroGenerationState = {
   ok: boolean;
@@ -12,6 +17,12 @@ export type IntroGenerationState = {
 export type IntroSaveState = {
   ok: boolean;
   error?: string | null;
+};
+
+export type IntroAvatarState = {
+  ok: boolean;
+  error?: string | null;
+  result?: Record<string, unknown>;
 };
 
 export async function generateIntroDraftAction(
@@ -62,6 +73,13 @@ export async function saveIntroSettingsAction(
   const body = String(formData.get("body") || "").trim();
   const podcast_url = String(formData.get("podcast_url") || "").trim();
   const podcast_voice = String(formData.get("podcast_voice") || "").trim();
+  const assessment_intro_avatar_url = String(formData.get("assessment_intro_avatar_url") || "").trim();
+  const assessment_intro_avatar_title = String(formData.get("assessment_intro_avatar_title") || "").trim();
+  const assessment_intro_avatar_script = String(formData.get("assessment_intro_avatar_script") || "").trim();
+  const assessment_intro_avatar_poster_url = String(formData.get("assessment_intro_avatar_poster_url") || "").trim();
+  const assessment_intro_avatar_character = String(formData.get("assessment_intro_avatar_character") || "").trim();
+  const assessment_intro_avatar_style = String(formData.get("assessment_intro_avatar_style") || "").trim();
+  const assessment_intro_avatar_voice = String(formData.get("assessment_intro_avatar_voice") || "").trim();
   try {
     await updateLibraryIntroSettings({
       active,
@@ -70,10 +88,58 @@ export async function saveIntroSettingsAction(
       body: body || undefined,
       podcast_url: podcast_url || undefined,
       podcast_voice: podcast_voice || undefined,
+      assessment_intro_avatar_url: assessment_intro_avatar_url || undefined,
+      assessment_intro_avatar_title: assessment_intro_avatar_title || undefined,
+      assessment_intro_avatar_script: assessment_intro_avatar_script || undefined,
+      assessment_intro_avatar_poster_url: assessment_intro_avatar_poster_url || undefined,
+      assessment_intro_avatar_character: assessment_intro_avatar_character || undefined,
+      assessment_intro_avatar_style: assessment_intro_avatar_style || undefined,
+      assessment_intro_avatar_voice: assessment_intro_avatar_voice || undefined,
     });
     revalidatePath("/admin/library");
     revalidatePath("/admin/library/intro");
     return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function generateIntroAvatarAction(
+  _: IntroAvatarState,
+  formData: FormData,
+): Promise<IntroAvatarState> {
+  const assessment_intro_avatar_title = String(formData.get("assessment_intro_avatar_title") || "").trim();
+  const assessment_intro_avatar_script = String(formData.get("assessment_intro_avatar_script") || "").trim();
+  const assessment_intro_avatar_poster_url = String(formData.get("assessment_intro_avatar_poster_url") || "").trim();
+  const assessment_intro_avatar_character = String(formData.get("assessment_intro_avatar_character") || "").trim();
+  const assessment_intro_avatar_style = String(formData.get("assessment_intro_avatar_style") || "").trim();
+  const assessment_intro_avatar_voice = String(formData.get("assessment_intro_avatar_voice") || "").trim();
+  try {
+    const result = await generateLibraryIntroAvatar({
+      assessment_intro_avatar_title: assessment_intro_avatar_title || undefined,
+      assessment_intro_avatar_script: assessment_intro_avatar_script || undefined,
+      assessment_intro_avatar_poster_url: assessment_intro_avatar_poster_url || undefined,
+      assessment_intro_avatar_character: assessment_intro_avatar_character || undefined,
+      assessment_intro_avatar_style: assessment_intro_avatar_style || undefined,
+      assessment_intro_avatar_voice: assessment_intro_avatar_voice || undefined,
+    });
+    revalidatePath("/admin/library");
+    revalidatePath("/admin/library/intro");
+    return { ok: Boolean(result.ok), error: result.error ? String(result.error) : null, result };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function refreshIntroAvatarAction(
+  _: IntroAvatarState,
+  _formData: FormData,
+): Promise<IntroAvatarState> {
+  try {
+    const result = await refreshLibraryIntroAvatar();
+    revalidatePath("/admin/library");
+    revalidatePath("/admin/library/intro");
+    return { ok: Boolean(result.ok), error: result.error ? String(result.error) : null, result };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
