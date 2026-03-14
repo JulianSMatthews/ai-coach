@@ -1045,6 +1045,19 @@ def _is_avatar_rate_limited(error: str | None) -> bool:
     return "429" in normalized or "rate-limit" in normalized or "rate limited" in normalized
 
 
+def _summary_text_starts_with_name(text: str | None, name: str | None) -> bool:
+    summary_text = str(text or "").strip()
+    summary_name = str(name or "").strip()
+    if not summary_text or not summary_name:
+        return True
+    snippet = summary_text[:80].strip()
+    pattern = re.compile(
+        rf"^(?:hello|hi)\s+{re.escape(summary_name)}\b|^{re.escape(summary_name)}\b",
+        re.IGNORECASE,
+    )
+    return bool(pattern.search(snippet))
+
+
 def _ensure_completion_summary_media(
     *,
     user: User,
@@ -1065,8 +1078,39 @@ def _ensure_completion_summary_media(
     avatar_summary_url = str(meta.get("completion_summary_avatar_summary_url") or "").strip() or None
     avatar_requested_at = _parse_meta_datetime(meta.get("completion_summary_avatar_requested_at"))
     avatar_retry_after = _parse_meta_datetime(meta.get("completion_summary_avatar_retry_after"))
+    cached_summary_name = str(meta.get("completion_summary_name") or "").strip()
     now_utc = datetime.utcnow()
+    current_summary_name = _summary_name_for_user(user)
     updates: dict[str, Any] = {}
+
+    summary_name_mismatch = bool(summary_text) and bool(current_summary_name) and (
+        (cached_summary_name and cached_summary_name.casefold() != current_summary_name.casefold())
+        or (not cached_summary_name and not _summary_text_starts_with_name(summary_text, current_summary_name))
+    )
+    if summary_name_mismatch:
+        summary_text = ""
+        audio_url = None
+        avatar_url = None
+        avatar_status = None
+        avatar_job_id = None
+        avatar_error = None
+        avatar_summary_url = None
+        avatar_requested_at = None
+        avatar_retry_after = None
+        updates.update(
+            {
+                "completion_summary_name": current_summary_name or None,
+                "completion_summary_text": None,
+                "completion_summary_audio_url": None,
+                "completion_summary_avatar_url": None,
+                "completion_summary_avatar_status": None,
+                "completion_summary_avatar_job_id": None,
+                "completion_summary_avatar_error": None,
+                "completion_summary_avatar_summary_url": None,
+                "completion_summary_avatar_requested_at": None,
+                "completion_summary_avatar_retry_after": None,
+            }
+        )
 
     if not summary_text:
         summary_text = _assessment_completion_summary_text(
@@ -1079,6 +1123,7 @@ def _ensure_completion_summary_media(
         )
         if summary_text:
             updates["completion_summary_text"] = summary_text
+            updates["completion_summary_name"] = current_summary_name or None
 
     if summary_text and not audio_url:
         try:
