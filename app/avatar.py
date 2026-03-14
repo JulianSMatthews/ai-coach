@@ -55,27 +55,37 @@ def _safe_int(value: str | None, default: int) -> int:
     return parsed if parsed > 0 else default
 
 
-def _speech_resource_key() -> str:
-    key = str(os.getenv("AZURE_SPEECH_KEY") or os.getenv("AZURE_TTS_KEY") or "").strip()
+def _avatar_resource_key() -> str:
+    key = str(
+        os.getenv("AZURE_AVATAR_KEY")
+        or os.getenv("AZURE_SPEECH_KEY")
+        or os.getenv("AZURE_TTS_KEY")
+        or ""
+    ).strip()
     if not key:
-        raise RuntimeError("AZURE_SPEECH_KEY is not set")
+        raise RuntimeError("AZURE_AVATAR_KEY or AZURE_SPEECH_KEY is not set")
     return key
 
 
-def _speech_api_base() -> str:
+def _avatar_api_base() -> str:
     endpoint = str(os.getenv("AZURE_AVATAR_ENDPOINT") or os.getenv("AZURE_SPEECH_ENDPOINT") or "").strip()
     if endpoint:
         parsed = urlparse(endpoint)
         if parsed.scheme and parsed.netloc:
             return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
-    region = str(os.getenv("AZURE_SPEECH_REGION") or os.getenv("AZURE_TTS_REGION") or "").strip()
+    region = str(
+        os.getenv("AZURE_AVATAR_REGION")
+        or os.getenv("AZURE_SPEECH_REGION")
+        or os.getenv("AZURE_TTS_REGION")
+        or ""
+    ).strip()
     if not region:
-        raise RuntimeError("AZURE_SPEECH_REGION is not set")
+        raise RuntimeError("AZURE_AVATAR_REGION or AZURE_SPEECH_REGION is not set")
     return f"https://{region}.api.cognitive.microsoft.com"
 
 
 def _azure_headers(*, include_content_type: bool = False) -> dict[str, str]:
-    headers = {"Ocp-Apim-Subscription-Key": _speech_resource_key()}
+    headers = {"Ocp-Apim-Subscription-Key": _avatar_resource_key()}
     if include_content_type:
         headers["Content-Type"] = "application/json"
     return headers
@@ -88,16 +98,16 @@ def _raise_for_avatar_http_error(response: requests.Response, operation: str) ->
     except requests.HTTPError as exc:
         status_code = getattr(response, "status_code", None)
         if status_code == 404:
-            base = _speech_api_base()
+            base = _avatar_api_base()
             raise RuntimeError(
                 f"Azure avatar {operation} returned 404 from {base}/avatar/... "
-                "This usually means the current Azure Speech resource isn't avatar-enabled for this API, "
-                "the key and region don't belong to the same Speech resource, or the resource tier isn't Standard S0."
+                "This usually means the current Azure avatar resource isn't avatar-enabled for this API, "
+                "the key and region don't belong to the same resource, or the resource region doesn't support avatar."
             ) from exc
         if status_code in {401, 403}:
             raise RuntimeError(
                 f"Azure avatar {operation} was rejected with {status_code}. "
-                "Check AZURE_SPEECH_KEY and AZURE_SPEECH_REGION, and make sure they belong to the same Speech resource."
+                "Check AZURE_AVATAR_KEY and AZURE_AVATAR_REGION, and make sure they belong to the same Azure resource."
             ) from exc
         raise
 
@@ -161,7 +171,7 @@ def create_batch_avatar(
         },
     }
     response = requests.put(
-        f"{_speech_api_base()}/avatar/batchsyntheses/{batch_id}?api-version=2024-08-01",
+        f"{_avatar_api_base()}/avatar/batchsyntheses/{batch_id}?api-version=2024-08-01",
         json=payload,
         headers=_azure_headers(include_content_type=True),
         timeout=60,
@@ -175,7 +185,7 @@ def create_batch_avatar(
 
 def get_batch_avatar(job_id: str) -> dict[str, Any]:
     response = requests.get(
-        f"{_speech_api_base()}/avatar/batchsyntheses/{job_id}?api-version=2024-08-01",
+        f"{_avatar_api_base()}/avatar/batchsyntheses/{job_id}?api-version=2024-08-01",
         headers=_azure_headers(),
         timeout=60,
     )
