@@ -104,6 +104,12 @@ def _raise_for_avatar_http_error(response: requests.Response, operation: str) ->
                 "This usually means the current Azure avatar resource isn't avatar-enabled for this API, "
                 "the key and region don't belong to the same resource, or the resource region doesn't support avatar."
             ) from exc
+        if status_code == 429:
+            retry_after = str(response.headers.get("Retry-After") or "").strip()
+            retry_hint = f" Retry after {retry_after} seconds." if retry_after else ""
+            raise RuntimeError(
+                f"Azure avatar {operation} was rate-limited with 429.{retry_hint}"
+            ) from exc
         if status_code in {401, 403}:
             raise RuntimeError(
                 f"Azure avatar {operation} was rejected with {status_code}. "

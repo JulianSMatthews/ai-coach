@@ -196,9 +196,11 @@ export default function AssessmentPromptCard({
         {showIntroAvatar ? (
           <div className="rounded-[28px] border border-[#e7e1d6] bg-white px-4 py-4 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.25)] sm:px-5 sm:py-5">
             <video
+              autoPlay
               controls
+              muted
               playsInline
-              preload="metadata"
+              preload="auto"
               poster={introAvatarPoster || undefined}
               className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
             >

@@ -1024,6 +1024,27 @@ def _upsert_assessment_narrative_meta(run_id: int, updates: dict[str, Any]) -> d
         return dict((getattr(row, "meta", None) or {}))
 
 
+def _parse_meta_datetime(value: Any) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if parsed.tzinfo is not None:
+        try:
+            parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+        except Exception:
+            parsed = parsed.replace(tzinfo=None)
+    return parsed
+
+
+def _is_avatar_rate_limited(error: str | None) -> bool:
+    normalized = str(error or "").strip().lower()
+    return "429" in normalized or "rate-limit" in normalized or "rate limited" in normalized
+
+
 def _ensure_completion_summary_media(
     *,
     user: User,
@@ -1042,6 +1063,9 @@ def _ensure_completion_summary_media(
     avatar_job_id = str(meta.get("completion_summary_avatar_job_id") or "").strip() or None
     avatar_error = str(meta.get("completion_summary_avatar_error") or "").strip() or None
     avatar_summary_url = str(meta.get("completion_summary_avatar_summary_url") or "").strip() or None
+    avatar_requested_at = _parse_meta_datetime(meta.get("completion_summary_avatar_requested_at"))
+    avatar_retry_after = _parse_meta_datetime(meta.get("completion_summary_avatar_retry_after"))
+    now_utc = datetime.utcnow()
     updates: dict[str, Any] = {}
 
     if not summary_text:
@@ -1094,6 +1118,10 @@ def _ensure_completion_summary_media(
         character = str(meta.get("completion_summary_avatar_character") or defaults.get("character") or "lisa").strip() or "lisa"
         style = str(meta.get("completion_summary_avatar_style") or defaults.get("style") or "graceful-sitting").strip() or "graceful-sitting"
         voice = str(meta.get("completion_summary_avatar_voice") or defaults.get("voice") or "en-GB-SoniaNeural").strip() or "en-GB-SoniaNeural"
+        recent_submit = bool(
+            avatar_requested_at and (now_utc - avatar_requested_at) < timedelta(minutes=2)
+        )
+        retry_blocked = bool(avatar_retry_after and avatar_retry_after > now_utc)
 
         def _store_avatar_success(status_payload: dict[str, Any]) -> None:
             nonlocal avatar_url, avatar_status, avatar_summary_url, avatar_error
@@ -1120,6 +1148,7 @@ def _ensure_completion_summary_media(
                 updates["completion_summary_avatar_status"] = avatar_status
                 updates["completion_summary_avatar_error"] = None
                 updates["completion_summary_avatar_summary_url"] = avatar_summary_url
+                updates["completion_summary_avatar_retry_after"] = None
             except Exception as exc:
                 avatar_status = "Failed"
                 avatar_error = str(exc)
@@ -1135,6 +1164,7 @@ def _ensure_completion_summary_media(
                 avatar_summary_url = str((outputs or {}).get("summary") or "").strip() or avatar_summary_url
                 updates["completion_summary_avatar_status"] = status
                 updates["completion_summary_avatar_summary_url"] = avatar_summary_url
+                updates["completion_summary_avatar_retry_after"] = None
                 if status == "Succeeded":
                     _store_avatar_success(status_payload)
                 elif status == "Failed":
@@ -1142,38 +1172,80 @@ def _ensure_completion_summary_media(
                     avatar_error = str((props or {}).get("error") or status_payload.get("error") or "Azure avatar generation failed.").strip()
                     updates["completion_summary_avatar_error"] = avatar_error
             except Exception as exc:
-                avatar_status = "Failed"
-                avatar_error = str(exc)
-                updates["completion_summary_avatar_status"] = avatar_status
-                updates["completion_summary_avatar_error"] = avatar_error
-        elif not avatar_job_id and not avatar_url and (avatar_status or "").lower() != "failed" and callable(create_batch_avatar):
-            try:
-                create_payload = create_batch_avatar(
-                    script=summary_text,
-                    title=f"Assessment summary for {_display_full_name(user)}",
-                    character=character,
-                    style=style,
-                    voice=voice,
-                    job_id=f"assessment-summary-{getattr(run, 'id', 0)}",
+                if _is_avatar_rate_limited(str(exc)):
+                    avatar_status = avatar_status or "Running"
+                    avatar_error = str(exc)
+                    updates["completion_summary_avatar_status"] = avatar_status
+                    updates["completion_summary_avatar_error"] = avatar_error
+                    updates["completion_summary_avatar_retry_after"] = (
+                        now_utc + timedelta(minutes=1)
+                    ).replace(microsecond=0).isoformat()
+                else:
+                    avatar_status = "Failed"
+                    avatar_error = str(exc)
+                    updates["completion_summary_avatar_status"] = avatar_status
+                    updates["completion_summary_avatar_error"] = avatar_error
+        elif not avatar_job_id and not avatar_url and callable(create_batch_avatar):
+            current_status = (avatar_status or "").lower()
+            failed_but_retryable = current_status == "failed" and _is_avatar_rate_limited(avatar_error)
+            if current_status == "failed" and not failed_but_retryable:
+                pass
+            elif retry_blocked or (current_status == "submitting" and recent_submit):
+                if retry_blocked:
+                    updates["completion_summary_avatar_status"] = "RateLimited"
+            else:
+                requested_at_iso = now_utc.replace(microsecond=0).isoformat()
+                meta = _upsert_assessment_narrative_meta(
+                    int(getattr(run, "id", 0) or 0),
+                    {
+                        "completion_summary_avatar_status": "Submitting",
+                        "completion_summary_avatar_error": None,
+                        "completion_summary_avatar_requested_at": requested_at_iso,
+                        "completion_summary_avatar_retry_after": None,
+                        "completion_summary_avatar_character": character,
+                        "completion_summary_avatar_style": style,
+                        "completion_summary_avatar_voice": voice,
+                    },
                 )
-                avatar_job_id = str(create_payload.get("id") or "").strip() or None
-                avatar_status = str(create_payload.get("status") or "NotStarted").strip() or "NotStarted"
-                outputs = create_payload.get("outputs") if isinstance(create_payload.get("outputs"), dict) else {}
-                avatar_summary_url = str((outputs or {}).get("summary") or "").strip() or None
-                updates["completion_summary_avatar_job_id"] = avatar_job_id
-                updates["completion_summary_avatar_status"] = avatar_status
-                updates["completion_summary_avatar_error"] = None
-                updates["completion_summary_avatar_summary_url"] = avatar_summary_url
-                updates["completion_summary_avatar_character"] = character
-                updates["completion_summary_avatar_style"] = style
-                updates["completion_summary_avatar_voice"] = voice
-                if avatar_status == "Succeeded":
-                    _store_avatar_success(create_payload)
-            except Exception as exc:
-                avatar_status = "Failed"
-                avatar_error = str(exc)
-                updates["completion_summary_avatar_status"] = avatar_status
-                updates["completion_summary_avatar_error"] = avatar_error
+                avatar_status = "Submitting"
+                avatar_requested_at = _parse_meta_datetime(meta.get("completion_summary_avatar_requested_at"))
+                try:
+                    create_payload = create_batch_avatar(
+                        script=summary_text,
+                        title=f"Assessment summary for {_display_full_name(user)}",
+                        character=character,
+                        style=style,
+                        voice=voice,
+                        job_id=f"assessment-summary-{getattr(run, 'id', 0)}",
+                    )
+                    avatar_job_id = str(create_payload.get("id") or "").strip() or None
+                    avatar_status = str(create_payload.get("status") or "NotStarted").strip() or "NotStarted"
+                    outputs = create_payload.get("outputs") if isinstance(create_payload.get("outputs"), dict) else {}
+                    avatar_summary_url = str((outputs or {}).get("summary") or "").strip() or None
+                    updates["completion_summary_avatar_job_id"] = avatar_job_id
+                    updates["completion_summary_avatar_status"] = avatar_status
+                    updates["completion_summary_avatar_error"] = None
+                    updates["completion_summary_avatar_summary_url"] = avatar_summary_url
+                    updates["completion_summary_avatar_retry_after"] = None
+                    updates["completion_summary_avatar_requested_at"] = requested_at_iso
+                    updates["completion_summary_avatar_character"] = character
+                    updates["completion_summary_avatar_style"] = style
+                    updates["completion_summary_avatar_voice"] = voice
+                    if avatar_status == "Succeeded":
+                        _store_avatar_success(create_payload)
+                except Exception as exc:
+                    avatar_error = str(exc)
+                    if _is_avatar_rate_limited(avatar_error):
+                        avatar_status = "RateLimited"
+                        updates["completion_summary_avatar_status"] = avatar_status
+                        updates["completion_summary_avatar_error"] = avatar_error
+                        updates["completion_summary_avatar_retry_after"] = (
+                            now_utc + timedelta(minutes=1)
+                        ).replace(microsecond=0).isoformat()
+                    else:
+                        avatar_status = "Failed"
+                        updates["completion_summary_avatar_status"] = avatar_status
+                        updates["completion_summary_avatar_error"] = avatar_error
 
     if updates:
         meta = _upsert_assessment_narrative_meta(int(getattr(run, "id", 0) or 0), updates)
