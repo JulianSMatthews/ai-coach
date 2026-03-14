@@ -40,14 +40,14 @@ function getAdminHeaders(): Record<string, string> {
   };
 }
 
-async function getAssessmentIntroAvatar(): Promise<AssessmentIntroAvatar | null> {
+async function getAssessmentIntroAvatar(forceEnabled = false): Promise<AssessmentIntroAvatar | null> {
   const avatarEnabled = isTruthyToken(process.env.NEXT_PUBLIC_ASSESSMENT_INTRO_AVATAR_ENABLED);
   const fallbackUrl = String(process.env.NEXT_PUBLIC_ASSESSMENT_INTRO_AVATAR_URL || "").trim();
   const fallbackPosterUrl = String(process.env.NEXT_PUBLIC_ASSESSMENT_INTRO_AVATAR_POSTER || "").trim();
   const fallbackTitle = String(
     process.env.NEXT_PUBLIC_ASSESSMENT_INTRO_AVATAR_TITLE || "Assessment introduction",
   ).trim();
-  if (!avatarEnabled) {
+  if (!forceEnabled && !avatarEnabled) {
     return null;
   }
   const fallbackAvatar: AssessmentIntroAvatar | null = fallbackUrl
@@ -58,7 +58,7 @@ async function getAssessmentIntroAvatar(): Promise<AssessmentIntroAvatar | null>
       }
     : null;
   try {
-    const res = await fetch(`${getApiBaseUrl()}/admin/library/intro`, {
+    const res = await fetch(`${getApiBaseUrl()}/admin/library/assessment-intro`, {
       method: "GET",
       headers: getAdminHeaders(),
       cache: "no-store",
@@ -67,6 +67,7 @@ async function getAssessmentIntroAvatar(): Promise<AssessmentIntroAvatar | null>
       return fallbackAvatar;
     }
     const payload = (await res.json().catch(() => ({}))) as {
+      active?: boolean;
       assessment_intro_avatar?: {
         url?: string | null;
         title?: string | null;
@@ -74,6 +75,9 @@ async function getAssessmentIntroAvatar(): Promise<AssessmentIntroAvatar | null>
         poster_url?: string | null;
       } | null;
     };
+    if (!payload.active) {
+      return fallbackAvatar;
+    }
     const avatar = payload.assessment_intro_avatar || null;
     const url = String(avatar?.url || "").trim() || fallbackUrl;
     if (!url) {
@@ -99,6 +103,14 @@ function firstSearchValue(value: string | string[] | undefined): string {
   return String(Array.isArray(value) ? value[0] : value || "").trim();
 }
 
+function resolveIntroAvatarOverride(value: string | string[] | undefined): boolean | null {
+  const token = firstSearchValue(value).toLowerCase();
+  if (!token) return null;
+  if (token === "0" || token === "false" || token === "no" || token === "off") return false;
+  if (token === "1" || token === "true" || token === "yes" || token === "on") return true;
+  return null;
+}
+
 export default async function AssessmentChatPage(props: PageProps) {
   const { userId } = await props.params;
   const resolvedSearchParams = (await props.searchParams) || {};
@@ -109,7 +121,14 @@ export default async function AssessmentChatPage(props: PageProps) {
   const cookieStore = await cookies();
   const leadToken = String(cookieStore.get("hs_lead_token")?.value || "").trim();
   const leadTokenParam = firstSearchValue(resolvedSearchParams.lt);
-  const assessmentIntroAvatar = leadFlow ? await getAssessmentIntroAvatar() : null;
+  const introAvatarOverride = resolveIntroAvatarOverride(resolvedSearchParams.intro_avatar);
+  const defaultIntroAvatarEnabled = isTruthyToken(process.env.NEXT_PUBLIC_ASSESSMENT_INTRO_AVATAR_ENABLED);
+  const shouldLoadAssessmentIntroAvatar =
+    leadFlow &&
+    (introAvatarOverride === true || (introAvatarOverride !== false && defaultIntroAvatarEnabled));
+  const assessmentIntroAvatar = shouldLoadAssessmentIntroAvatar
+    ? await getAssessmentIntroAvatar(introAvatarOverride === true)
+    : null;
 
   const leadHeaderTitle = <LeadAssessmentBranding />;
 
@@ -201,6 +220,7 @@ export default async function AssessmentChatPage(props: PageProps) {
           leadToken={leadToken || leadTokenParam || undefined}
           showLeadBranding={leadFlow}
           introAvatar={assessmentIntroAvatar}
+          introAvatarEnabledOverride={introAvatarOverride}
         />
       </section>
     </PageShell>

@@ -74,6 +74,7 @@ type AssessmentChatBoxProps = {
   leadToken?: string;
   showLeadBranding?: boolean;
   introAvatar?: AssessmentIntroAvatar | null;
+  introAvatarEnabledOverride?: boolean | null;
 };
 
 type AssessmentCoachingPlanItem = {
@@ -447,6 +448,7 @@ export default function AssessmentChatBox({
   leadToken,
   showLeadBranding = false,
   introAvatar = null,
+  introAvatarEnabledOverride = null,
 }: AssessmentChatBoxProps) {
   const searchParams = useSearchParams();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -1236,6 +1238,7 @@ export default function AssessmentChatBox({
             selectedValue={selectedPromptValue}
             showLeadBranding={showLeadBranding}
             introAvatar={introAvatar}
+            introAvatarEnabledOverride={introAvatarEnabledOverride}
             onSelect={onPromptOptionClick}
             onRedo={onPromptRedo}
             onRestart={onPromptRestart}

@@ -27,6 +27,14 @@ function firstToken(value: string | null | undefined, maxLen = 64): string | und
   return token.slice(0, maxLen);
 }
 
+function normalizeIntroAvatarParam(value: string | null | undefined): "1" | "0" | undefined {
+  const raw = String(value || "").trim().toLowerCase();
+  if (!raw) return undefined;
+  if (raw === "0" || raw === "false" || raw === "no" || raw === "off") return "0";
+  if (raw === "1" || raw === "true" || raw === "yes" || raw === "on") return "1";
+  return undefined;
+}
+
 function buildLandingPath(url: URL): string {
   const params = new URLSearchParams(url.searchParams);
   params.delete("k");
@@ -152,6 +160,7 @@ export async function GET(request: Request) {
     const leadToken = String(data.lead_token || "").trim();
     const firstQuestion = cleanValue(String(data.first_question || ""), 1200);
     const nextPathRaw = String(data.next_path || "").trim();
+    const introAvatarParam = normalizeIntroAvatarParam(reqUrl.searchParams.get("intro_avatar"));
     const ttlSecondsRaw = Number(data.session_ttl_seconds || 0);
     const ttlSeconds = Number.isFinite(ttlSecondsRaw) && ttlSecondsRaw > 0 ? Math.floor(ttlSecondsRaw) : 60 * 60 * 3;
     if (deferred) {
@@ -166,6 +175,9 @@ export async function GET(request: Request) {
       }
       const redirectUrl = new URL(nextPath, origin);
       redirectUrl.searchParams.set("lt", leadToken);
+      if (introAvatarParam) {
+        redirectUrl.searchParams.set("intro_avatar", introAvatarParam);
+      }
       if (toBool(reqUrl.searchParams.get("debug"))) {
         redirectUrl.searchParams.set("lead_debug", "1");
       }
@@ -209,6 +221,9 @@ export async function GET(request: Request) {
     }
 
     const redirectUrl = new URL(nextPath, origin);
+    if (introAvatarParam) {
+      redirectUrl.searchParams.set("intro_avatar", introAvatarParam);
+    }
     if (toBool(reqUrl.searchParams.get("debug"))) {
       redirectUrl.searchParams.set("lead_debug", "1");
     }

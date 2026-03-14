@@ -119,6 +119,7 @@ type ReportingSearchParams = {
   launch_ad_id?: string;
   launch_placement?: string;
   launch_site_source_name?: string;
+  launch_intro_avatar?: string;
 };
 
 type ReportingTab = "launch" | "marketing" | "cost";
@@ -200,6 +201,7 @@ function buildLaunchUrl(
     adId: string;
     placement: string;
     siteSourceName: string;
+    introAvatar?: string;
     isTest?: boolean;
   },
 ): string {
@@ -216,6 +218,9 @@ function buildLaunchUrl(
   if (params.adId) query.set("ad_id", params.adId);
   if (params.placement) query.set("placement", params.placement);
   if (params.siteSourceName) query.set("site_source_name", params.siteSourceName);
+  if (params.introAvatar === "1" || params.introAvatar === "0") {
+    query.set("intro_avatar", params.introAvatar);
+  }
   return `${appBase}/ig/start?${query.toString()}`;
 }
 
@@ -261,6 +266,10 @@ export default async function ReportingPage({
   const launchSiteSourceNameRaw =
     typeof resolvedSearchParams?.launch_site_source_name === "string"
       ? resolvedSearchParams.launch_site_source_name
+      : "";
+  const launchIntroAvatarRaw =
+    typeof resolvedSearchParams?.launch_intro_avatar === "string"
+      ? resolvedSearchParams.launch_intro_avatar
       : "";
   const userId = userIdRaw ? Number(userIdRaw) : undefined;
 
@@ -345,6 +354,7 @@ export default async function ReportingPage({
   const adIdToken = getTrimmedParam(launchAdIdRaw);
   const placementToken = getTrimmedParam(launchPlacementRaw);
   const siteSourceNameToken = getTrimmedParam(launchSiteSourceNameRaw);
+  const introAvatarToken = getTrimmedParam(launchIntroAvatarRaw, "1") === "0" ? "0" : "1";
   const metaLaunchUrl = buildLaunchUrl(appBase, leadStartKey, {
     source: sourceToken,
     campaign: campaignToken,
@@ -356,6 +366,7 @@ export default async function ReportingPage({
     adId: adIdToken,
     placement: placementToken,
     siteSourceName: siteSourceNameToken,
+    introAvatar: introAvatarToken,
   });
   const previewLaunchUrl = metaLaunchUrl;
   const testLaunchUrl = buildLaunchUrl(appBase, leadStartKey, {
@@ -369,6 +380,35 @@ export default async function ReportingPage({
     adId: adIdToken,
     placement: placementToken,
     siteSourceName: siteSourceNameToken,
+    introAvatar: introAvatarToken,
+    isTest: true,
+  });
+  const avatarTestLaunchUrl = buildLaunchUrl(appBase, leadStartKey, {
+    source: sourceToken,
+    campaign: campaignToken,
+    utmSource: utmSourceToken,
+    utmMedium: "test",
+    utmCampaign: utmCampaignToken,
+    campaignId: campaignIdToken,
+    adsetId: adsetIdToken,
+    adId: adIdToken,
+    placement: placementToken,
+    siteSourceName: siteSourceNameToken,
+    introAvatar: "1",
+    isTest: true,
+  });
+  const noAvatarTestLaunchUrl = buildLaunchUrl(appBase, leadStartKey, {
+    source: sourceToken,
+    campaign: campaignToken,
+    utmSource: utmSourceToken,
+    utmMedium: "test",
+    utmCampaign: utmCampaignToken,
+    campaignId: campaignIdToken,
+    adsetId: adsetIdToken,
+    adId: adIdToken,
+    placement: placementToken,
+    siteSourceName: siteSourceNameToken,
+    introAvatar: "0",
     isTest: true,
   });
   const launchTabHref = buildReportingTabHref(resolvedSearchParams, "launch");
@@ -517,6 +557,17 @@ export default async function ReportingPage({
                     className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
                   />
                 </div>
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Landing intro avatar</label>
+                  <select
+                    name="launch_intro_avatar"
+                    defaultValue={introAvatarToken}
+                    className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                  >
+                    <option value="1">On</option>
+                    <option value="0">Off</option>
+                  </select>
+                </div>
                 <div className="md:col-span-2 xl:col-span-3">
                   <button
                     type="submit"
@@ -528,6 +579,9 @@ export default async function ReportingPage({
               </form>
               <p className="mt-3 text-sm text-[#6b6257]">
                 Shared key: {leadStartKey ? "included automatically" : "not set on healthsense-admin"}
+              </p>
+              <p className="mt-1 text-sm text-[#6b6257]">
+                Landing intro avatar: {introAvatarToken === "1" ? "on" : "off"}
               </p>
               <div className="mt-3">
                 <p className="mb-2 text-xs uppercase tracking-[0.2em] text-[#6b6257]">Live URL</p>
@@ -553,6 +607,22 @@ export default async function ReportingPage({
                   className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white"
                 >
                   Open test landing
+                </a>
+                <a
+                  href={avatarTestLaunchUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-full border border-[#efe7db] bg-white px-4 py-2 text-xs uppercase tracking-[0.2em] text-[#3c332b]"
+                >
+                  Open test landing with avatar
+                </a>
+                <a
+                  href={noAvatarTestLaunchUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-full border border-[#efe7db] bg-white px-4 py-2 text-xs uppercase tracking-[0.2em] text-[#3c332b]"
+                >
+                  Open test landing without avatar
                 </a>
               </div>
               <p className="mt-3 text-sm text-[#6b6257]">
@@ -599,6 +669,7 @@ export default async function ReportingPage({
             <input type="hidden" name="launch_ad_id" value={launchAdIdRaw} />
             <input type="hidden" name="launch_placement" value={launchPlacementRaw} />
             <input type="hidden" name="launch_site_source_name" value={launchSiteSourceNameRaw} />
+            <input type="hidden" name="launch_intro_avatar" value={introAvatarToken} />
             <div>
               <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Period</label>
               <select
@@ -809,6 +880,7 @@ export default async function ReportingPage({
               <input type="hidden" name="launch_ad_id" value={launchAdIdRaw} />
               <input type="hidden" name="launch_placement" value={launchPlacementRaw} />
               <input type="hidden" name="launch_site_source_name" value={launchSiteSourceNameRaw} />
+              <input type="hidden" name="launch_intro_avatar" value={introAvatarToken} />
               <div>
                 <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Period</label>
                 <select
