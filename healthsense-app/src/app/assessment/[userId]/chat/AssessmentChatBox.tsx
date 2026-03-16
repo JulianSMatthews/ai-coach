@@ -551,6 +551,17 @@ export default function AssessmentChatBox({
     completionSummaryStatus !== "succeeded" &&
     completionSummaryStatus !== "failed";
   const completionSummaryFailed = completionSummaryStatus === "failed";
+  const summaryIntroMessage =
+    "Preparing a personalised video on your results by Gia your healthsense coach";
+  const showCompletionSummaryPanel =
+    Boolean(completionSummaryRunId) ||
+    Boolean(
+      completionSummaryMedia?.text ||
+        completionSummaryMedia?.audioUrl ||
+        completionSummaryMedia?.avatarUrl ||
+        completionSummaryLoading ||
+        completionSummaryError,
+    );
 
   const applyChatPayload = useCallback((data: ChatResponse) => {
     const nextPrompt = normalizeCurrentPrompt(data.current_prompt);
@@ -960,18 +971,14 @@ export default function AssessmentChatBox({
   const resultCard = resultSummary ? (
     <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
       <div className="space-y-6">
-        {(completionSummaryMedia?.text ||
-          completionSummaryMedia?.audioUrl ||
-          completionSummaryMedia?.avatarUrl ||
-          completionSummaryLoading ||
-          completionSummaryError) ? (
+        {showCompletionSummaryPanel ? (
           <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
             <div className="space-y-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Your personal summary</p>
               </div>
 
-              {completionSummaryUsesRealtime && completionSummaryRunId ? (
+              {completionSummaryUsesRealtime && completionSummaryRunId && completionSummaryMedia?.text ? (
                 <RealtimeSummaryAvatar
                   userId={userId}
                   runId={completionSummaryRunId}
@@ -980,7 +987,7 @@ export default function AssessmentChatBox({
                   maxSessionSeconds={completionSummaryMedia?.realtimeMaxSessionSeconds ?? null}
                   maxReplays={completionSummaryMedia?.realtimeMaxReplays ?? null}
                   autoStart
-                  introMessage="Preparing a personalised video on your results by Gia your healthsense coach"
+                  introMessage={summaryIntroMessage}
                   onPhaseChange={setRealtimeSummaryPhase}
                 />
               ) : completionSummaryMedia?.avatarUrl ? (
@@ -1004,10 +1011,17 @@ export default function AssessmentChatBox({
                 </div>
               ) : null}
 
+              {completionSummaryRunId &&
+              !completionSummaryError &&
+              (!completionSummaryMedia?.text || completionSummaryBootstrapPending) &&
+              !(completionSummaryUsesRealtime && completionSummaryMedia?.text) ? (
+                <p className="text-sm text-[#6b6257]">{summaryIntroMessage}</p>
+              ) : null}
+
               {!completionSummaryUsesRealtime && (completionSummaryPending || completionSummaryLoading) ? (
                 <p className="text-sm text-[#6b6257]">
                   {completionSummaryLoading && !completionSummaryMedia?.text
-                    ? "Preparing a personalised video on your results by Gia your healthsense coach"
+                    ? summaryIntroMessage
                     : completionSummaryMedia?.audioUrl
                       ? "We’re preparing your summary video. You can listen to the audio version while it finishes."
                       : "We’re preparing your personal summary video."}
