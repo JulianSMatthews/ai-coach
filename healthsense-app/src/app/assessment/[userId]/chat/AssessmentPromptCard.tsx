@@ -216,6 +216,7 @@ export default function AssessmentPromptCard({
   const introAvatarEnabled =
     typeof introAvatarEnabledOverride === "boolean" ? introAvatarEnabledOverride : INTRO_AVATAR_ENABLED;
   const showIntroAvatar = showLeadIntroPreview && introAvatarEnabled && Boolean(introAvatarUrl);
+  const singleOptionPrompt = prompt.options.length === 1;
 
   return (
     <section className="w-full rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
@@ -308,26 +309,27 @@ export default function AssessmentPromptCard({
         {showScorePreview && promptPreview ? (
           <div className="rounded-[28px] border border-[#e7e1d6] bg-white px-4 py-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.35)] sm:px-6 sm:py-6">
             <div className="space-y-5">
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="space-y-4">
                 <div className="space-y-2">
                   <h4 className="text-2xl text-[#1e1b16]">
                     {showLeadIntroPreview ? "Example HealthSense Score" : "Your HealthSense Score"}
                   </h4>
                 </div>
-                <div className="flex flex-col gap-4 rounded-3xl border border-[#efe7db] bg-[#fffaf3] px-5 py-4 sm:flex-row sm:items-center">
-                  <div className="flex items-center gap-4">
-                    <ScoreRing value={combinedPreviewScore ?? 0} tone="var(--accent)" />
+                <div className="rounded-3xl border border-[#efe7db] bg-[#fffaf3] px-5 py-4">
+                  <div className="flex items-end justify-between gap-4">
                     <div>
-                      <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Overall</p>
-                      <p className="text-3xl font-semibold text-[#1e1b16]">
+                      <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Overall HealthSense Score</p>
+                      <p className="mt-2 text-4xl font-semibold text-[#1e1b16]">
                         {combinedPreviewScore ?? "--"}
                       </p>
                     </div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8c7f70]">out of 100</p>
                   </div>
+                  <ProgressBar value={combinedPreviewScore ?? 0} max={100} tone="var(--accent)" />
                 </div>
               </div>
 
-              <div className="grid gap-3">
+              <div className="grid grid-cols-2 gap-3 sm:gap-4">
                 {sortedPreviewPillars.map((pillar) => {
                   const palette = getPillarPalette(pillar.pillar_key);
                   const pillarScore = normalizePreviewScore(pillar.score);
@@ -343,24 +345,24 @@ export default function AssessmentPromptCard({
                     previewExtremes.weakest?.label === pillar.label &&
                     pillarScore === previewExtremes.weakest.score;
                   return (
-                    <div key={pillar.pillar_key} className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-semibold text-[#1e1b16]">
+                    <div key={pillar.pillar_key} className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
+                      <div className="flex flex-col items-center text-center">
+                        <ScoreRing value={pillarScore ?? 0} tone={isComplete ? palette.accent : "#d8d0c2"} />
+                        <p className="mt-3 text-sm font-semibold text-[#1e1b16]">
                           {pillar.label}
                           {isStrongest ? <strong> (strongest)</strong> : null}
                           {isWeakest ? <strong> (weakest)</strong> : null}
                         </p>
                         {isComplete ? (
-                          <p className="text-sm font-semibold" style={{ color: palette.accent }}>
-                            {pillarScore}
+                          <p className="mt-1 text-sm font-semibold" style={{ color: palette.accent }}>
+                            {pillarScore}/100
                           </p>
                         ) : (
-                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8c7f70]">
+                          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-[#8c7f70]">
                             Pending
                           </p>
                         )}
                       </div>
-                      <ProgressBar value={pillarScore ?? 0} max={100} tone={isComplete ? palette.accent : "#d8d0c2"} />
                     </div>
                   );
                 })}
@@ -369,7 +371,7 @@ export default function AssessmentPromptCard({
           </div>
         ) : null}
 
-        <div className={prompt.options.length === 1 ? "grid grid-cols-1 gap-3" : "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"}>
+        <div className={singleOptionPrompt ? "grid grid-cols-1 gap-3" : "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"}>
           {prompt.options.map((option) => {
             const isSelected = selectedValue === option.value;
             return (
@@ -380,11 +382,17 @@ export default function AssessmentPromptCard({
                 disabled={busy}
                 className={
                   isSelected
-                    ? "rounded-2xl border border-[var(--accent)] bg-white px-4 py-5 text-left text-[var(--accent)] transition disabled:cursor-not-allowed disabled:opacity-70"
-                    : "rounded-2xl border border-[var(--accent)] bg-[var(--accent)] px-4 py-5 text-left text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                    ? `rounded-2xl border border-[var(--accent)] bg-white px-4 py-5 text-[var(--accent)] transition disabled:cursor-not-allowed disabled:opacity-70 ${singleOptionPrompt ? "text-center" : "text-left"}`
+                    : `rounded-2xl border border-[var(--accent)] bg-[var(--accent)] px-4 py-5 text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 ${singleOptionPrompt ? "text-center" : "text-left"}`
                 }
               >
-                <span className={isSelected ? "block text-lg font-semibold text-[var(--accent)]" : "block text-lg font-semibold text-white"}>
+                <span
+                  className={
+                    isSelected
+                      ? `block text-lg font-semibold text-[var(--accent)] ${singleOptionPrompt ? "text-center" : ""}`
+                      : `block text-lg font-semibold text-white ${singleOptionPrompt ? "text-center" : ""}`
+                  }
+                >
                   {option.label}
                 </span>
               </button>

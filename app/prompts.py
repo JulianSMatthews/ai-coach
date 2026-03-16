@@ -63,11 +63,12 @@ BUILTIN_PROMPT_TEMPLATE_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "include_blocks": ["system", "locale", "context", "scores", "habit", "okr", "task"],
         "task_block": (
             "You are a supportive wellbeing coach creating a 30 to 60 second spoken summary for the end of an assessment. "
-            "Write 85 to 120 words in natural British English. Address the user directly. "
-            "Include: a warm opener using their first name, their overall HealthSense result, "
-            "the single pillar most likely limiting progress, one positive strength, "
-            "the main coaching focus from their plan, one simple next action for this week, and a short encouraging close. "
-            "Do not use bullets, headings, markdown, jargon, or medical claims. Return plain text only."
+            "Write 85 to 110 words in natural British English. Address the user directly. "
+            "Keep this exact spoken order: a short opener, overall HealthSense score, the single pillar most likely limiting progress, "
+            "one clear strength, the main coaching focus, one simple action for this week, and a short encouraging close. "
+            "Use the user's first name at most once, only if it sounds natural. "
+            "Use short spoken sentences. Avoid jargon, medical claims, bullet points, headings, markdown, and repeated ideas. "
+            "Prefer direct phrasing like 'This week, let's focus on...' rather than 'your plan to...'. Return plain text only."
         ),
         "note": "Runtime builtin template for assessment completion audio/avatar summary.",
     }
@@ -2794,11 +2795,12 @@ def assessment_completion_summary_prompt(
     }
     default_task = (
         "You are a supportive wellbeing coach creating a 30 to 60 second spoken summary for the end of an assessment. "
-        "Write 85 to 120 words in natural British English. Address the user directly. "
-        "Include: a warm opener using their first name, their overall HealthSense result, "
-        "the single pillar most likely limiting progress, one positive strength, "
-        "the main coaching focus from their plan, one simple next action for this week, and a short encouraging close. "
-        "Do not use bullets, headings, markdown, jargon, or medical claims. Return plain text only."
+        "Write 85 to 110 words in natural British English. Address the user directly. "
+        "Keep this exact spoken order: a short opener, overall HealthSense score, the single pillar most likely limiting progress, "
+        "one clear strength, the main coaching focus, one simple action for this week, and a short encouraging close. "
+        "Use the user's first name at most once, only if it sounds natural. "
+        "Use short spoken sentences. Avoid jargon, medical claims, bullet points, headings, markdown, and repeated ideas. "
+        "Prefer direct phrasing like 'This week, let's focus on...' rather than 'your plan to...'. Return plain text only."
     )
     settings = _load_prompt_settings()
     template = (
@@ -2810,7 +2812,12 @@ def assessment_completion_summary_prompt(
     parts = [
         ("system", sys_block),
         ("locale", loc_block),
-        ("context", "Context: end-of-assessment spoken summary for audio/avatar"),
+        (
+            "context",
+            "Context: end-of-assessment spoken summary for audio/avatar. "
+            "Keep the spoken flow tight and in order: opener, score, limiting pillar, strength, coaching focus, weekly action, close. "
+            "Keep the tone calm and supportive, and avoid repeating the same point in two different ways.",
+        ),
         ("scores", f"HealthSense Scores: {json.dumps(data_payload, ensure_ascii=False)}"),
         ("habit", f"Habit readiness: {json.dumps(readiness_payload, ensure_ascii=False)}" if readiness_payload else ""),
         ("okr", f"OKRs: {json.dumps(okr_payload, ensure_ascii=False)}"),

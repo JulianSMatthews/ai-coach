@@ -850,7 +850,6 @@ def _assessment_completion_summary_fallback_text(
     okr_payload: list[dict],
     readiness_payload: dict[str, Any] | None = None,
 ) -> str:
-    safe_name = _summary_name_for_user(user)
     sorted_scores = sorted(
         [
             {
@@ -884,22 +883,21 @@ def _assessment_completion_summary_fallback_text(
                 coaching_focus = objective
                 break
     sentences = [
-        f"Hello {safe_name}.",
-        f"Your HealthSense Score is {combined} out of 100.",
+        "Thanks for working through that.",
+        f"Your overall HealthSense score comes out at {combined}, which gives us a solid base to build from.",
     ]
-    if strongest and limiting:
-        sentences.append(
-            f"Your strongest pillar right now is {strongest['label']}, and the main pillar limiting your progress is {limiting['label']}."
-        )
-    elif limiting:
-        sentences.append(f"The main pillar limiting your progress right now is {limiting['label']}.")
+    if limiting:
+        sentences.append(f"The main area most likely holding you back right now is {limiting['label']}.")
+    if strongest:
+        sentences.append(f"A big strength is {strongest['label']}.")
     if readiness_note:
         sentences.append(readiness_note)
     if coaching_focus:
-        sentences.append(f"Your coaching plan will focus on {coaching_focus}.")
+        sentences.append(f"This week, let's focus on {coaching_focus}.")
     else:
-        sentences.append("Your coaching plan will focus on the smallest change most likely to improve your wellbeing this week.")
-    sentences.append("Start with one simple action this week and build from there.")
+        sentences.append("This week, let's focus on one simple change most likely to improve your wellbeing.")
+    sentences.append("Choose one simple action this week and keep it easy to follow through.")
+    sentences.append("You're moving in the right direction, and small steady steps here will add up.")
     return " ".join(part for part in sentences if part).strip()
 
 
@@ -1002,6 +1000,7 @@ def _assessment_completion_summary_text(
             okr_payload,
             readiness_payload=readiness_payload,
         )
+    text = _normalize_summary_personalization(text, name)
     return " ".join(str(text).split()).strip()
 
 
@@ -1055,17 +1054,125 @@ def _is_avatar_rate_limited(error: str | None) -> bool:
     return "429" in normalized or "rate-limit" in normalized or "rate limited" in normalized
 
 
+SUMMARY_AVATAR_CHARACTER_NAMES = {
+    "harry",
+    "jeff",
+    "lisa",
+    "lori",
+    "max",
+    "meg",
+    "adrian",
+    "amara",
+    "amira",
+    "anika",
+    "bianca",
+    "camila",
+    "carlos",
+    "clara",
+    "darius",
+    "diego",
+    "elise",
+    "farhan",
+    "faris",
+    "gabrielle",
+    "hyejin",
+    "imran",
+    "isabella",
+    "layla",
+    "liwei",
+    "ling",
+    "marcus",
+    "matteo",
+    "rahul",
+    "rana",
+    "ren",
+    "riya",
+    "sakura",
+    "simone",
+    "zayd",
+    "zoe",
+}
+
+
 def _summary_text_starts_with_name(text: str | None, name: str | None) -> bool:
     summary_text = str(text or "").strip()
     summary_name = str(name or "").strip()
-    if not summary_text or not summary_name:
+    if not summary_text or not summary_name or summary_name.casefold() == "there":
         return True
     snippet = summary_text[:80].strip()
-    pattern = re.compile(
-        rf"^(?:hello|hi)\s+{re.escape(summary_name)}\b|^{re.escape(summary_name)}\b",
-        re.IGNORECASE,
-    )
-    return bool(pattern.search(snippet))
+    direct_pattern = re.compile(r"^([A-Za-z][A-Za-z' -]{0,39})\s*,")
+    greeting_pattern = re.compile(r"^(hello|hi)\s+([A-Za-z][A-Za-z' -]{0,39})\b", re.IGNORECASE)
+
+    greeting_match = greeting_pattern.search(snippet)
+    if greeting_match:
+        return greeting_match.group(2).strip().casefold() == summary_name.casefold()
+
+    direct_match = direct_pattern.search(snippet)
+    if direct_match:
+        return direct_match.group(1).strip().casefold() == summary_name.casefold()
+
+    return True
+
+
+def _normalize_summary_direct_address_name(text: str | None, name: str | None) -> str:
+    summary_text = " ".join(str(text or "").split()).strip()
+    summary_name = str(name or "").strip()
+    if not summary_text:
+        return summary_text
+
+    expected_name = summary_name.casefold()
+
+    def _swap_name(match: re.Match[str]) -> str:
+        found = str(match.group("name") or "").strip()
+        found_fold = found.casefold()
+        if not found or found_fold == expected_name:
+            return match.group(0)
+        if found_fold not in SUMMARY_AVATAR_CHARACTER_NAMES:
+            return match.group(0)
+        prefix = str(match.group("prefix") or "")
+        suffix = str(match.group("suffix") or "")
+        if summary_name and expected_name != "there":
+            return f"{prefix}{summary_name}{suffix}"
+        return suffix if suffix in {".", "!", "?"} else ", "
+
+    patterns = [
+        re.compile(r"(?P<prefix>,\s*)(?P<name>[A-Z][A-Za-z' -]{0,39})(?P<suffix>,)"),
+        re.compile(r"(?P<prefix>,\s*)(?P<name>[A-Z][A-Za-z' -]{0,39})(?P<suffix>[.!?])"),
+    ]
+    for pattern in patterns:
+        summary_text = pattern.sub(_swap_name, summary_text)
+    summary_text = re.sub(r"\s{2,}", " ", summary_text).strip()
+    summary_text = re.sub(r"\s+([,.!?])", r"\1", summary_text)
+    return summary_text
+
+
+def _normalize_summary_opening_name(text: str | None, name: str | None) -> str:
+    summary_text = " ".join(str(text or "").split()).strip()
+    summary_name = str(name or "").strip()
+    if not summary_text or not summary_name or summary_name.casefold() == "there":
+        return summary_text
+
+    direct_pattern = re.compile(r"^([A-Za-z][A-Za-z' -]{0,39})\s*,\s*")
+    greeting_pattern = re.compile(r"^(hello|hi)\s+([A-Za-z][A-Za-z' -]{0,39})(\b[,!.]?\s*)", re.IGNORECASE)
+
+    direct_match = direct_pattern.match(summary_text)
+    if direct_match and direct_match.group(1).strip().casefold() != summary_name.casefold():
+        return f"{summary_name}, {summary_text[direct_match.end():].lstrip()}"
+
+    greeting_match = greeting_pattern.match(summary_text)
+    if greeting_match and greeting_match.group(2).strip().casefold() != summary_name.casefold():
+        greeting = greeting_match.group(1).capitalize()
+        suffix = greeting_match.group(3) or ". "
+        remainder = summary_text[greeting_match.end():].lstrip()
+        return f"{greeting} {summary_name}{suffix}{remainder}".strip()
+
+    return summary_text
+
+
+def _normalize_summary_personalization(text: str | None, name: str | None) -> str:
+    normalized = _normalize_summary_opening_name(text, name)
+    normalized = _normalize_summary_direct_address_name(normalized, name)
+    return " ".join(str(normalized or "").split()).strip()
 
 
 def _update_completion_summary_prompt_log(
@@ -1186,9 +1293,14 @@ def _ensure_completion_summary_media(
     current_summary_name = _summary_name_for_user(user)
     updates: dict[str, Any] = {}
 
-    summary_name_mismatch = bool(summary_text) and bool(current_summary_name) and (
-        (cached_summary_name and cached_summary_name.casefold() != current_summary_name.casefold())
-        or (not cached_summary_name and not _summary_text_starts_with_name(summary_text, current_summary_name))
+    normalized_cached_summary = _normalize_summary_personalization(summary_text, current_summary_name)
+    summary_name_mismatch = bool(summary_text) and (
+        summary_text != normalized_cached_summary
+        or (
+            bool(current_summary_name)
+            and not _summary_text_starts_with_name(summary_text, current_summary_name)
+        )
+        or (cached_summary_name and cached_summary_name.casefold() != current_summary_name.casefold())
     )
     if summary_name_mismatch:
         summary_text = ""

@@ -939,13 +939,17 @@ export default function AssessmentChatBox({
               </p>
             ) : null}
           </div>
-          <div className="flex items-center gap-4 rounded-3xl border border-[#efe7db] bg-white px-5 py-4">
-            <ScoreRing value={resultSummary.combined} tone="var(--accent)" />
+        </div>
+
+        <div className="rounded-3xl border border-[#efe7db] bg-white px-5 py-4">
+          <div className="flex items-end justify-between gap-4">
             <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Overall</p>
-              <p className="text-3xl font-semibold text-[#1e1b16]">{resultSummary.combined}</p>
+              <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Overall HealthSense Score</p>
+              <p className="mt-2 text-4xl font-semibold text-[#1e1b16]">{resultSummary.combined}</p>
             </div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8c7f70]">out of 100</p>
           </div>
+          <ProgressBar value={resultSummary.combined} max={100} tone="var(--accent)" />
         </div>
 
         {resultSummary.reflection?.selected_label && resultSummary.reflection?.top_label ? (
@@ -960,7 +964,7 @@ export default function AssessmentChatBox({
         ) : null}
 
         {resultSummary.pillars.length ? (
-          <div className="grid gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:gap-4">
             {sortedResultPillars.map((pillar) => {
               const palette = getPillarPalette(pillar.pillar_key);
               const isStrongest =
@@ -970,16 +974,18 @@ export default function AssessmentChatBox({
                 resultExtremes.weakest?.pillar_key === pillar.pillar_key &&
                 resultExtremes.weakest?.score === pillar.score;
               return (
-                <div key={pillar.pillar_key} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-[#1e1b16]">
+                <div key={pillar.pillar_key} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-5">
+                  <div className="flex flex-col items-center text-center">
+                    <ScoreRing value={pillar.score} tone={palette.accent} />
+                    <p className="mt-3 text-sm font-semibold text-[#1e1b16]">
                       {pillar.label}
                       {isStrongest ? <strong> (strongest)</strong> : null}
                       {isWeakest ? <strong> (weakest)</strong> : null}
                     </p>
-                    <p className="text-sm font-semibold" style={{ color: palette.accent }}>{pillar.score}</p>
+                    <p className="mt-1 text-sm font-semibold" style={{ color: palette.accent }}>
+                      {pillar.score}/100
+                    </p>
                   </div>
-                  <ProgressBar value={pillar.score} max={100} tone={palette.accent} />
                 </div>
               );
             })}
@@ -1056,12 +1062,12 @@ export default function AssessmentChatBox({
             disabled={coachingPlanLoading}
             className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {coachingPlanLoading
-              ? "Loading coaching plan…"
-              : showCoachingPlan
-                ? "Hide coaching plan"
-                : "View coaching plan to help improve your wellbeing"}
-          </button>
+              {coachingPlanLoading
+                ? "Loading coaching plan…"
+                : showCoachingPlan
+                  ? "Hide coaching plan"
+                  : "View your personal coaching plan"}
+            </button>
         </div>
       </div>
     </section>
