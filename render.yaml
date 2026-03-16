@@ -27,12 +27,18 @@ services:
         sync: false
       - key: USE_AZURE_AVATAR
         value: "0"
+      - key: USE_AZURE_AVATAR_REALTIME_SUMMARY
+        value: "1"
       - key: AZURE_AVATAR_KEY
         sync: false
       - key: AZURE_AVATAR_REGION
         sync: false
       - key: AZURE_AVATAR_ENDPOINT
         sync: false
+      - key: AZURE_AVATAR_REALTIME_SUMMARY_MAX_SESSION_SECONDS
+        value: "70"
+      - key: AZURE_AVATAR_REALTIME_SUMMARY_MAX_REPLAYS
+        value: "1"
       - key: AZURE_AVATAR_GBP_PER_MINUTE
         sync: false
       - key: AZURE_AVATAR_CHARS_PER_MIN

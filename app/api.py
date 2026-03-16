@@ -27,7 +27,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from datetime import datetime, timedelta, date
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
-from fastapi import FastAPI, APIRouter, Request, Response, Depends, Header, HTTPException, status
+from fastapi import FastAPI, APIRouter, Request, Response, Depends, Header, HTTPException, status, Body
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text, select, desc, func, or_, update
@@ -133,6 +133,9 @@ from .podcast import generate_podcast_audio_for_voice
 from .avatar import (
     azure_avatar_defaults,
     azure_avatar_enabled,
+    azure_summary_realtime_enabled,
+    azure_summary_realtime_settings,
+    build_realtime_avatar_session_bootstrap,
     generate_batch_avatar_video,
     get_batch_avatar,
     download_batch_avatar_output,
@@ -146,6 +149,7 @@ from .usage import (
     get_usage_settings,
     save_usage_settings,
     estimate_tokens,
+    estimate_avatar_cost_from_seconds,
     resolve_llm_rates,
     log_usage_event,
 )
@@ -6144,6 +6148,218 @@ def api_public_user_assessment(user_id: int, run_id: int | None = None, fast: bo
         tag="perf",
     )
     return data
+
+
+def _resolve_assessment_summary_run(user_id: int, run_id: int | None = None) -> tuple[User, int, dict[str, Any]]:
+    with SessionLocal() as s:
+        u = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not u:
+            raise HTTPException(status_code=404, detail="user not found")
+        identity_required = str(_pref_value(s, user_id, "lead_identity_required") or "").strip() == "1"
+        if identity_required:
+            raise HTTPException(status_code=403, detail="identity details are required before viewing assessment")
+        rid = run_id
+        if rid is None:
+            latest_finished = s.execute(
+                select(AssessmentRun)
+                .where(AssessmentRun.user_id == user_id, AssessmentRun.finished_at.isnot(None))
+                .order_by(desc(AssessmentRun.id))
+            ).scalars().first()
+            if latest_finished:
+                rid = latest_finished.id
+            else:
+                latest = s.execute(
+                    select(AssessmentRun).where(AssessmentRun.user_id == user_id).order_by(desc(AssessmentRun.id))
+                ).scalars().first()
+                if not latest:
+                    raise HTTPException(status_code=404, detail="assessment run not found")
+                rid = latest.id
+        narrative = (
+            s.execute(select(AssessmentNarrative).where(AssessmentNarrative.run_id == int(rid))).scalar_one_or_none()
+        )
+        meta = dict(getattr(narrative, "meta", None) or {})
+        return u, int(rid), meta
+
+
+def _build_assessment_summary_realtime_session_payload(user_id: int, run_id: int | None = None) -> dict[str, Any]:
+    if not azure_summary_realtime_enabled():
+        raise HTTPException(status_code=503, detail="Realtime summary avatar is not enabled.")
+    user, rid, meta = _resolve_assessment_summary_run(user_id, run_id)
+    data = build_assessment_dashboard_data(
+        int(rid),
+        include_llm=False,
+        generate_completion_summary_media=True,
+    )
+    narratives = data.get("narratives") if isinstance(data.get("narratives"), dict) else {}
+    summary_text = str((narratives or {}).get("completion_summary_text") or "").strip()
+    if not summary_text:
+        raise HTTPException(status_code=409, detail="Your summary is still being prepared. Please try again shortly.")
+    defaults = azure_avatar_defaults()
+    character = str(meta.get("completion_summary_avatar_character") or defaults.get("character") or "lisa").strip() or "lisa"
+    style = str(meta.get("completion_summary_avatar_style") or defaults.get("style") or "graceful-sitting").strip() or "graceful-sitting"
+    voice = str(meta.get("completion_summary_avatar_voice") or defaults.get("voice") or "en-GB-SoniaNeural").strip() or "en-GB-SoniaNeural"
+    try:
+        bootstrap = build_realtime_avatar_session_bootstrap(
+            script=summary_text,
+            character=character,
+            style=style,
+            voice=voice,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    return {
+        "ok": True,
+        "run_id": int(rid),
+        "session_id": f"summary-rt-{int(rid)}-{secrets.token_hex(6)}",
+        "summary_text": summary_text,
+        "audio_url": _normalize_reports_url((narratives or {}).get("completion_summary_audio_url")),
+        **bootstrap,
+    }
+
+
+def _record_assessment_summary_realtime_completion(
+    user_id: int,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    body = dict(payload or {})
+    run_id_raw = body.get("run_id")
+    try:
+        run_id = int(run_id_raw) if run_id_raw is not None else None
+    except Exception:
+        run_id = None
+    _user, rid, _meta = _resolve_assessment_summary_run(user_id, run_id)
+    session_id = str(body.get("session_id") or "").strip()
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+    try:
+        duration_ms = int(float(body.get("duration_ms") or 0))
+    except Exception:
+        duration_ms = 0
+    settings = azure_summary_realtime_settings()
+    max_duration_ms = max(1, int(settings.get("max_session_seconds") or 70)) * 1000
+    duration_ms = max(0, min(duration_ms, max_duration_ms))
+    status_value = str(body.get("status") or "completed").strip().lower() or "completed"
+    if status_value not in {"completed", "failed", "stopped", "timeout"}:
+        status_value = "completed"
+    error_value = str(body.get("error") or "").strip() or None
+    ended_at = datetime.utcnow().replace(microsecond=0)
+    started_at = ended_at - timedelta(milliseconds=duration_ms)
+    seconds_used = duration_ms / 1000.0
+    cost_estimate, rate_per_minute, rate_source = estimate_avatar_cost_from_seconds(seconds_used)
+
+    with SessionLocal() as s:
+        existing = (
+            s.execute(
+                select(UsageEvent).where(
+                    UsageEvent.product == "avatar",
+                    UsageEvent.request_id == session_id,
+                )
+            ).scalar_one_or_none()
+        )
+        if not existing:
+            log_usage_event(
+                user_id=user_id,
+                provider="azure",
+                product="avatar",
+                model="realtime_summary",
+                units=seconds_used,
+                unit_type="avatar_seconds",
+                cost_estimate=cost_estimate,
+                request_id=session_id,
+                duration_ms=duration_ms,
+                tag="assessment",
+                meta={
+                    "mode": "realtime_summary",
+                    "run_id": int(rid),
+                    "status": status_value,
+                    "error": error_value,
+                },
+                session=s,
+                commit=False,
+            )
+            s.commit()
+
+    from .reporting import _upsert_assessment_narrative_meta, _update_completion_summary_prompt_log  # type: ignore
+
+    meta_updates = {
+        "completion_summary_realtime_session_id": session_id,
+        "completion_summary_realtime_status": status_value.title(),
+        "completion_summary_realtime_error": error_value,
+        "completion_summary_realtime_started_at": started_at.isoformat(),
+        "completion_summary_realtime_finished_at": ended_at.isoformat(),
+        "completion_summary_realtime_duration_ms": duration_ms,
+        "completion_summary_realtime_cost_estimate_gbp": round(float(cost_estimate or 0.0), 4),
+        "completion_summary_realtime_rate_gbp_per_minute": float(rate_per_minute or 0.0),
+        "completion_summary_realtime_rate_source": rate_source,
+    }
+    _upsert_assessment_narrative_meta(int(rid), meta_updates)
+    _update_completion_summary_prompt_log(
+        run_id=int(rid),
+        user_id=int(user_id) or None,
+        updates=meta_updates,
+    )
+    return {
+        "ok": True,
+        "run_id": int(rid),
+        "session_id": session_id,
+        "duration_ms": duration_ms,
+        "cost_estimate_gbp": round(float(cost_estimate or 0.0), 4),
+        "status": status_value.title(),
+    }
+
+
+@api_v1.post("/users/{user_id}/assessment/summary-avatar/realtime-session")
+def api_user_assessment_summary_realtime_session(
+    user_id: int,
+    request: Request,
+    body: dict[str, Any] | None = Body(default=None),
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    body = body or {}
+    run_id = body.get("run_id")
+    try:
+        run_id_val = int(run_id) if run_id is not None else None
+    except Exception:
+        run_id_val = None
+    return _build_assessment_summary_realtime_session_payload(user_id, run_id_val)
+
+
+@api_v1.post("/public/users/{user_id}/assessment/summary-avatar/realtime-session")
+def api_public_user_assessment_summary_realtime_session(
+    user_id: int,
+    body: dict[str, Any] | None = Body(default=None),
+):
+    body = body or {}
+    run_id = body.get("run_id")
+    try:
+        run_id_val = int(run_id) if run_id is not None else None
+    except Exception:
+        run_id_val = None
+    return _build_assessment_summary_realtime_session_payload(user_id, run_id_val)
+
+
+@api_v1.post("/users/{user_id}/assessment/summary-avatar/realtime-complete")
+def api_user_assessment_summary_realtime_complete(
+    user_id: int,
+    request: Request,
+    body: dict[str, Any] | None = Body(default=None),
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    return _record_assessment_summary_realtime_completion(user_id, body or {})
+
+
+@api_v1.post("/public/users/{user_id}/assessment/summary-avatar/realtime-complete")
+def api_public_user_assessment_summary_realtime_complete(
+    user_id: int,
+    body: dict[str, Any] | None = Body(default=None),
+):
+    return _record_assessment_summary_realtime_completion(user_id, body or {})
 
 
 @api_v1.get("/users/{user_id}/progress")

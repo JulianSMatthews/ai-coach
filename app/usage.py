@@ -266,6 +266,13 @@ def estimate_avatar_cost_from_text(text: str | None) -> tuple[float, float, floa
     return cost_est, seconds_est, rate, chars_per_min, source
 
 
+def estimate_avatar_cost_from_seconds(seconds: float | int | None) -> tuple[float, float, str]:
+    seconds_val = max(0.0, float(seconds or 0.0))
+    rate, source = _avatar_rate_gbp_per_minute()
+    cost_est = (seconds_val / 60.0) * rate if seconds_val and rate else 0.0
+    return cost_est, rate, source
+
+
 def _llm_rate_gbp_per_1m_input_tokens() -> tuple[float, str]:
     rate_in, _, source, _ = resolve_llm_rates()
     return rate_in, source

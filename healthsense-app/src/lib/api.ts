@@ -39,6 +39,10 @@ export type AssessmentResponse = {
     completion_summary_avatar_url?: string;
     completion_summary_avatar_status?: string;
     completion_summary_avatar_error?: string;
+    completion_summary_avatar_mode?: string;
+    completion_summary_realtime_enabled?: boolean;
+    completion_summary_realtime_max_session_seconds?: number;
+    completion_summary_realtime_max_replays?: number;
   };
   readiness?: { score?: number; label?: string; note?: string } | null;
   readiness_breakdown?: Array<{ key?: string; label?: string; value?: number }>;

@@ -1033,12 +1033,19 @@ def _queue_completion_summary_media_job(
     updates: dict[str, Any] = {}
 
     try:
-        from .avatar import azure_avatar_enabled
+        from .avatar import azure_avatar_enabled, azure_summary_realtime_enabled
         avatar_enabled = bool(azure_avatar_enabled())
+        realtime_summary_enabled = bool(azure_summary_realtime_enabled())
     except Exception:
         avatar_enabled = False
+        realtime_summary_enabled = False
 
-    needs_avatar = avatar_enabled and not avatar_url and avatar_status not in {"succeeded", "failed"}
+    needs_avatar = (
+        avatar_enabled
+        and not realtime_summary_enabled
+        and not avatar_url
+        and avatar_status not in {"succeeded", "failed"}
+    )
     needs_work = not summary_text or not audio_url or needs_avatar
     if not needs_work:
         if meta.get("completion_summary_worker_status"):
@@ -1075,7 +1082,7 @@ def _queue_completion_summary_media_job(
         )
         if not str(meta.get("completion_summary_text_status") or "").strip():
             updates["completion_summary_text_status"] = "Queued"
-        if avatar_enabled and not avatar_url and avatar_status not in {"succeeded", "failed"}:
+        if avatar_enabled and not realtime_summary_enabled and not avatar_url and avatar_status not in {"succeeded", "failed"}:
             updates["completion_summary_avatar_status"] = meta.get("completion_summary_avatar_status") or "Queued"
         meta = _upsert_assessment_narrative_meta(int(getattr(run, "id", 0) or 0), updates)
         _update_completion_summary_prompt_log(
@@ -1583,6 +1590,8 @@ def _ensure_completion_summary_media(
         from .avatar import (
             azure_avatar_defaults,
             azure_avatar_enabled,
+            azure_summary_realtime_enabled,
+            azure_summary_realtime_settings,
             create_batch_avatar,
             download_batch_avatar_output,
             get_batch_avatar,
@@ -1590,11 +1599,15 @@ def _ensure_completion_summary_media(
     except Exception:
         azure_avatar_enabled = lambda: False  # type: ignore[assignment]
         azure_avatar_defaults = lambda: {}  # type: ignore[assignment]
+        azure_summary_realtime_enabled = lambda: False  # type: ignore[assignment]
+        azure_summary_realtime_settings = lambda: {}  # type: ignore[assignment]
         create_batch_avatar = None  # type: ignore[assignment]
         download_batch_avatar_output = None  # type: ignore[assignment]
         get_batch_avatar = None  # type: ignore[assignment]
+    realtime_summary_enabled = bool(azure_summary_realtime_enabled())
+    realtime_settings = azure_summary_realtime_settings() if callable(azure_summary_realtime_settings) else {}
 
-    if summary_text and azure_avatar_enabled():
+    if summary_text and azure_avatar_enabled() and not realtime_summary_enabled:
         defaults = azure_avatar_defaults() if callable(azure_avatar_defaults) else {}
         character = str(meta.get("completion_summary_avatar_character") or defaults.get("character") or "lisa").strip() or "lisa"
         style = str(meta.get("completion_summary_avatar_style") or defaults.get("style") or "graceful-sitting").strip() or "graceful-sitting"
@@ -1843,6 +1856,25 @@ def _ensure_completion_summary_media(
                             },
                         )
 
+    if summary_text and realtime_summary_enabled:
+        defaults = azure_avatar_defaults() if callable(azure_avatar_defaults) else {}
+        updates["completion_summary_avatar_status"] = None
+        updates["completion_summary_avatar_error"] = None
+        updates["completion_summary_avatar_job_id"] = None
+        updates["completion_summary_avatar_retry_after"] = None
+        updates["completion_summary_avatar_character"] = (
+            str(meta.get("completion_summary_avatar_character") or defaults.get("character") or "lisa").strip()
+            or "lisa"
+        )
+        updates["completion_summary_avatar_style"] = (
+            str(meta.get("completion_summary_avatar_style") or defaults.get("style") or "graceful-sitting").strip()
+            or "graceful-sitting"
+        )
+        updates["completion_summary_avatar_voice"] = (
+            str(meta.get("completion_summary_avatar_voice") or defaults.get("voice") or "en-GB-SoniaNeural").strip()
+            or "en-GB-SoniaNeural"
+        )
+
     if updates:
         meta = _upsert_assessment_narrative_meta(int(getattr(run, "id", 0) or 0), updates)
         summary_text = str(meta.get("completion_summary_text") or summary_text or "").strip()
@@ -1863,6 +1895,10 @@ def _ensure_completion_summary_media(
         "avatar_error": avatar_error,
         "avatar_summary_url": avatar_summary_url,
         "avatar_retry_after": avatar_retry_after.replace(microsecond=0).isoformat() if avatar_retry_after else None,
+        "avatar_mode": "realtime" if realtime_summary_enabled else "batch",
+        "realtime_enabled": realtime_summary_enabled,
+        "realtime_max_session_seconds": int(realtime_settings.get("max_session_seconds") or 0) or None,
+        "realtime_max_replays": int(realtime_settings.get("max_replays") or 0),
     }
 
 
@@ -4236,6 +4272,10 @@ def build_assessment_dashboard_data(
     completion_summary_avatar_status = None
     completion_summary_avatar_error = None
     completion_summary_avatar_retry_after = None
+    completion_summary_avatar_mode = None
+    completion_summary_realtime_enabled = False
+    completion_summary_realtime_max_session_seconds = None
+    completion_summary_realtime_max_replays = None
     narratives_cached_flag = None
     if run_finished and has_pillar_scores:
         cache_source = ""
@@ -4530,6 +4570,22 @@ def build_assessment_dashboard_data(
             completion_summary_avatar_status = completion_assets.get("avatar_status")
             completion_summary_avatar_error = completion_assets.get("avatar_error")
             completion_summary_avatar_retry_after = completion_assets.get("avatar_retry_after")
+            completion_summary_avatar_mode = completion_assets.get("avatar_mode")
+            completion_summary_realtime_enabled = bool(completion_assets.get("realtime_enabled"))
+            completion_summary_realtime_max_session_seconds = completion_assets.get("realtime_max_session_seconds")
+            completion_summary_realtime_max_replays = completion_assets.get("realtime_max_replays")
+        if completion_summary_text and not completion_summary_avatar_mode:
+            try:
+                from .avatar import azure_summary_realtime_enabled, azure_summary_realtime_settings
+
+                if azure_summary_realtime_enabled():
+                    realtime_settings = azure_summary_realtime_settings()
+                    completion_summary_avatar_mode = "realtime"
+                    completion_summary_realtime_enabled = True
+                    completion_summary_realtime_max_session_seconds = realtime_settings.get("max_session_seconds")
+                    completion_summary_realtime_max_replays = realtime_settings.get("max_replays")
+            except Exception:
+                pass
 
     score_rows = [
         {"label": "Combined", "value": combined, "bucket": _score_bucket(combined)},
@@ -4591,6 +4647,10 @@ def build_assessment_dashboard_data(
             "completion_summary_avatar_url": completion_summary_avatar_url,
             "completion_summary_avatar_status": completion_summary_avatar_status,
             "completion_summary_avatar_error": completion_summary_avatar_error,
+            "completion_summary_avatar_mode": completion_summary_avatar_mode,
+            "completion_summary_realtime_enabled": completion_summary_realtime_enabled,
+            "completion_summary_realtime_max_session_seconds": completion_summary_realtime_max_session_seconds,
+            "completion_summary_realtime_max_replays": completion_summary_realtime_max_replays,
         },
         "meta": {
             "reported_at": datetime.utcnow().strftime("%d %b %Y %H:%M UTC"),
@@ -4603,8 +4663,12 @@ def build_assessment_dashboard_data(
                 and (
                     (completion_summary_text and not completion_summary_audio_url)
                     or (
+                        completion_summary_avatar_mode != "realtime"
+                        and
+                        (
                         completion_summary_avatar_status
                         and str(completion_summary_avatar_status).lower() not in {"succeeded", "failed"}
+                        )
                     )
                     or worker_pending
                     or str((narrative_meta or {}).get("completion_summary_text_status") or "").strip().lower()
@@ -4938,6 +5002,7 @@ def generate_assessment_completion_summary_media(run_id: int) -> dict[str, Any]:
         "avatar_url": narratives.get("completion_summary_avatar_url"),
         "avatar_status": narratives.get("completion_summary_avatar_status"),
         "avatar_error": narratives.get("completion_summary_avatar_error"),
+        "avatar_mode": narratives.get("completion_summary_avatar_mode"),
         "avatar_retry_after": meta.get("completion_summary_avatar_retry_after"),
         "avatar_retry_after_seconds": meta.get("completion_summary_avatar_retry_after_seconds"),
         "pending": bool(meta.get("completion_summary_pending")),

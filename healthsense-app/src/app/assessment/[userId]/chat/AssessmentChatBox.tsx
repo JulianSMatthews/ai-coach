@@ -11,6 +11,7 @@ import AssessmentPromptCard, {
   type AssessmentPromptSection,
 } from "./AssessmentPromptCard";
 import LeadAssessmentBranding from "./LeadAssessmentBranding";
+import RealtimeSummaryAvatar from "./RealtimeSummaryAvatar";
 
 type ChatMessage = {
   id?: number;
@@ -95,6 +96,10 @@ type AssessmentCompletionSummaryMedia = {
   avatarUrl: string | null;
   avatarStatus: string | null;
   avatarError: string | null;
+  avatarMode: string | null;
+  realtimeEnabled: boolean;
+  realtimeMaxSessionSeconds: number | null;
+  realtimeMaxReplays: number | null;
 };
 
 function parseApiError(text: string, fallback: string) {
@@ -419,9 +424,19 @@ function normalizeCompletionSummaryMedia(raw: unknown): AssessmentCompletionSumm
       avatarUrl: null,
       avatarStatus: null,
       avatarError: null,
+      avatarMode: null,
+      realtimeEnabled: false,
+      realtimeMaxSessionSeconds: null,
+      realtimeMaxReplays: null,
     };
   }
-  const row = raw as Record<string, unknown>;
+  const payload = raw as Record<string, unknown>;
+  const row =
+    payload.narratives && typeof payload.narratives === "object"
+      ? (payload.narratives as Record<string, unknown>)
+      : payload;
+  const rawMaxSessionSeconds = Number(row.completion_summary_realtime_max_session_seconds);
+  const rawMaxReplays = Number(row.completion_summary_realtime_max_replays);
   return {
     text: typeof row.completion_summary_text === "string" ? row.completion_summary_text : null,
     audioUrl:
@@ -436,6 +451,11 @@ function normalizeCompletionSummaryMedia(raw: unknown): AssessmentCompletionSumm
       typeof row.completion_summary_avatar_error === "string"
         ? row.completion_summary_avatar_error
         : null,
+    avatarMode:
+      typeof row.completion_summary_avatar_mode === "string" ? row.completion_summary_avatar_mode : null,
+    realtimeEnabled: Boolean(row.completion_summary_realtime_enabled),
+    realtimeMaxSessionSeconds: Number.isFinite(rawMaxSessionSeconds) ? rawMaxSessionSeconds : null,
+    realtimeMaxReplays: Number.isFinite(rawMaxReplays) ? rawMaxReplays : null,
   };
 }
 
@@ -510,7 +530,11 @@ export default function AssessmentChatBox({
   const showAssessmentControls = !assessmentCompleted && !isLeadGuest && !promptActive && (!leadFlow || !chatReady);
   const completionSummaryRunId = parsePositiveUserId(resultSummary?.run_id);
   const completionSummaryStatus = String(completionSummaryMedia?.avatarStatus || "").trim().toLowerCase();
+  const completionSummaryUsesRealtime =
+    String(completionSummaryMedia?.avatarMode || "").trim().toLowerCase() === "realtime" ||
+    Boolean(completionSummaryMedia?.realtimeEnabled);
   const completionSummaryPending =
+    !completionSummaryUsesRealtime &&
     loadedCompletionSummaryRunId === completionSummaryRunId &&
     Boolean(completionSummaryStatus) &&
     completionSummaryStatus !== "succeeded" &&
@@ -674,7 +698,7 @@ export default function AssessmentChatBox({
       }
       try {
         const payload = await fetchAssessmentReportPayload(runId, "Failed to load your assessment summary.");
-        const narratives = normalizeCompletionSummaryMedia(payload.narratives);
+        const narratives = normalizeCompletionSummaryMedia(payload);
         setCompletionSummaryMedia(narratives);
         setCompletionSummaryError(null);
         setLoadedCompletionSummaryRunId(runId);
@@ -991,7 +1015,16 @@ export default function AssessmentChatBox({
                 <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Your personal summary</p>
               </div>
 
-              {completionSummaryMedia?.avatarUrl ? (
+              {completionSummaryUsesRealtime && completionSummaryRunId ? (
+                <RealtimeSummaryAvatar
+                  userId={userId}
+                  runId={completionSummaryRunId}
+                  text={completionSummaryMedia?.text || null}
+                  audioUrl={completionSummaryMedia?.audioUrl || null}
+                  maxSessionSeconds={completionSummaryMedia?.realtimeMaxSessionSeconds ?? null}
+                  maxReplays={completionSummaryMedia?.realtimeMaxReplays ?? null}
+                />
+              ) : completionSummaryMedia?.avatarUrl ? (
                 <video
                   className="w-full rounded-2xl border border-[#efe7db] bg-[#f6efe5]"
                   controls
@@ -1001,7 +1034,9 @@ export default function AssessmentChatBox({
                 </video>
               ) : null}
 
-              {!completionSummaryMedia?.avatarUrl && completionSummaryMedia?.audioUrl ? (
+              {!completionSummaryUsesRealtime &&
+              !completionSummaryMedia?.avatarUrl &&
+              completionSummaryMedia?.audioUrl ? (
                 <div>
                   <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">Listen</p>
                   <audio className="mt-2 w-full" controls preload="metadata">
@@ -1010,7 +1045,7 @@ export default function AssessmentChatBox({
                 </div>
               ) : null}
 
-              {completionSummaryPending || completionSummaryLoading ? (
+              {!completionSummaryUsesRealtime && (completionSummaryPending || completionSummaryLoading) ? (
                 <p className="text-sm text-[#6b6257]">
                   {completionSummaryMedia?.audioUrl
                     ? "We’re preparing your summary video. You can listen to the audio version while it finishes."
@@ -1035,7 +1070,9 @@ export default function AssessmentChatBox({
                 <p className="text-sm text-[#6b6257]">{completionSummaryError}</p>
               ) : null}
 
-              {!completionSummaryMedia?.avatarUrl && completionSummaryMedia?.text ? (
+              {!completionSummaryUsesRealtime &&
+              !completionSummaryMedia?.avatarUrl &&
+              completionSummaryMedia?.text ? (
                 <p className="text-sm leading-6 text-[#3c332b]">{completionSummaryMedia.text}</p>
               ) : null}
             </div>
@@ -1134,11 +1171,6 @@ export default function AssessmentChatBox({
     <form onSubmit={onClaimIdentity} className="space-y-4" autoComplete="on">
       <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
         <div className="space-y-4">
-          {showLeadBranding ? (
-            <div className="border-b border-[#eadfce] pb-5">
-              <LeadAssessmentBranding />
-            </div>
-          ) : null}
           <div className="space-y-2">
             <h2 className="text-2xl text-[#1e1b16]">Your details</h2>
             <p className="text-sm text-[#6b6257]">

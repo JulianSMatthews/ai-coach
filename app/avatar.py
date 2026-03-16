@@ -22,6 +22,26 @@ def azure_avatar_enabled() -> bool:
     return _is_truthy_env(configured)
 
 
+def azure_summary_realtime_settings() -> dict[str, Any]:
+    configured = os.getenv("USE_AZURE_AVATAR_REALTIME_SUMMARY")
+    enabled = azure_avatar_enabled() if configured is None else _is_truthy_env(configured)
+    return {
+        "enabled": enabled,
+        "max_session_seconds": max(
+            15,
+            min(_safe_int(os.getenv("AZURE_AVATAR_REALTIME_SUMMARY_MAX_SESSION_SECONDS"), 70), 300),
+        ),
+        "max_replays": max(
+            0,
+            min(_safe_int(os.getenv("AZURE_AVATAR_REALTIME_SUMMARY_MAX_REPLAYS"), 1), 3),
+        ),
+    }
+
+
+def azure_summary_realtime_enabled() -> bool:
+    return bool(azure_summary_realtime_settings().get("enabled"))
+
+
 def azure_avatar_defaults() -> dict[str, Any]:
     return {
         "character": str(os.getenv("AZURE_AVATAR_CHARACTER") or "lisa").strip() or "lisa",
@@ -67,12 +87,7 @@ def _avatar_resource_key() -> str:
     return key
 
 
-def _avatar_api_base() -> str:
-    endpoint = str(os.getenv("AZURE_AVATAR_ENDPOINT") or os.getenv("AZURE_SPEECH_ENDPOINT") or "").strip()
-    if endpoint:
-        parsed = urlparse(endpoint)
-        if parsed.scheme and parsed.netloc:
-            return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+def _avatar_region() -> str:
     region = str(
         os.getenv("AZURE_AVATAR_REGION")
         or os.getenv("AZURE_SPEECH_REGION")
@@ -81,7 +96,16 @@ def _avatar_api_base() -> str:
     ).strip()
     if not region:
         raise RuntimeError("AZURE_AVATAR_REGION or AZURE_SPEECH_REGION is not set")
-    return f"https://{region}.api.cognitive.microsoft.com"
+    return region
+
+
+def _avatar_api_base() -> str:
+    endpoint = str(os.getenv("AZURE_AVATAR_ENDPOINT") or os.getenv("AZURE_SPEECH_ENDPOINT") or "").strip()
+    if endpoint:
+        parsed = urlparse(endpoint)
+        if parsed.scheme and parsed.netloc:
+            return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+    return f"https://{_avatar_region()}.api.cognitive.microsoft.com"
 
 
 def _azure_headers(*, include_content_type: bool = False) -> dict[str, str]:
@@ -150,6 +174,81 @@ def build_avatar_ssml(script: str, voice: str, locale: str = "en-GB") -> str:
         f"<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='{escape(locale)}'>"
         f"<voice name='{escape(voice)}'><prosody rate='0.96'>{content}</prosody></voice></speak>"
     )
+
+
+def issue_avatar_speech_token() -> tuple[str, int]:
+    response = requests.post(
+        f"{_avatar_api_base()}/sts/v1.0/issueToken",
+        headers={
+            "Ocp-Apim-Subscription-Key": _avatar_resource_key(),
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+        timeout=30,
+    )
+    _raise_for_avatar_http_error(response, "speech token")
+    token = str(response.text or "").strip()
+    if not token:
+        raise RuntimeError("Azure avatar speech token response was empty.")
+    return token, 540
+
+
+def get_avatar_relay_token() -> dict[str, Any]:
+    response = requests.get(
+        f"https://{_avatar_region()}.tts.speech.microsoft.com/cognitiveservices/avatar/relay/token/v1",
+        headers=_azure_headers(),
+        timeout=30,
+    )
+    _raise_for_avatar_http_error(response, "relay token")
+    data = response.json()
+    if not isinstance(data, dict):
+        raise RuntimeError("Azure avatar relay token returned invalid response")
+    raw_urls = data.get("Urls") or data.get("urls") or []
+    urls = [str(item).strip() for item in raw_urls if str(item).strip()]
+    username = str(data.get("Username") or data.get("username") or "").strip()
+    password = str(data.get("Password") or data.get("password") or "").strip()
+    ttl = _safe_int(str(data.get("Ttl") or data.get("ttl") or "").strip(), 600)
+    if not urls or not username or not password:
+        raise RuntimeError("Azure avatar relay token response was missing ICE server details.")
+    return {
+        "urls": urls,
+        "username": username,
+        "password": password,
+        "ttl": ttl,
+    }
+
+
+def build_realtime_avatar_session_bootstrap(
+    *,
+    script: str,
+    character: str | None = None,
+    style: str | None = None,
+    voice: str | None = None,
+) -> dict[str, Any]:
+    defaults = azure_avatar_defaults()
+    realtime = azure_summary_realtime_settings()
+    resolved_character = str(character or defaults["character"]).strip() or str(defaults["character"])
+    resolved_style = str(style or defaults["style"]).strip() or str(defaults["style"])
+    resolved_voice = str(voice or defaults["voice"]).strip() or str(defaults["voice"])
+    ssml = build_avatar_ssml(script, resolved_voice, str(defaults["locale"]))
+    speech_token, expires_in_seconds = issue_avatar_speech_token()
+    relay = get_avatar_relay_token()
+    return {
+        "speech_token": speech_token,
+        "speech_region": _avatar_region(),
+        "speech_token_expires_in_seconds": expires_in_seconds,
+        "relay": relay,
+        "ssml": ssml,
+        "avatar": {
+            "character": resolved_character,
+            "style": resolved_style,
+            "voice": resolved_voice,
+            "background_color": str(defaults["background_color"]),
+        },
+        "session": {
+            "max_session_seconds": int(realtime["max_session_seconds"]),
+            "max_replays": int(realtime["max_replays"]),
+        },
+    }
 
 
 def create_batch_avatar(
@@ -274,10 +373,15 @@ def generate_batch_avatar_video(
 __all__ = [
     "azure_avatar_defaults",
     "azure_avatar_enabled",
+    "azure_summary_realtime_enabled",
+    "azure_summary_realtime_settings",
     "build_avatar_ssml",
+    "build_realtime_avatar_session_bootstrap",
     "create_batch_avatar",
     "download_batch_avatar_output",
     "generate_batch_avatar_video",
+    "get_avatar_relay_token",
     "get_batch_avatar",
+    "issue_avatar_speech_token",
     "wait_for_batch_avatar",
 ]
