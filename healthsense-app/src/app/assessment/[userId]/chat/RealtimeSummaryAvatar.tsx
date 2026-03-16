@@ -135,6 +135,18 @@ export default function RealtimeSummaryAvatar({
     }
   }, []);
 
+  const syncVideoElement = useCallback(() => {
+    const videoEl = videoRef.current;
+    const stream = mediaStreamRef.current;
+    if (!videoEl || !stream) {
+      return;
+    }
+    if (videoEl.srcObject !== stream) {
+      videoEl.srcObject = stream;
+    }
+    void videoEl.play().catch(() => undefined);
+  }, []);
+
   const finalizeSession = useCallback(
     async (finalStatus: "completed" | "failed" | "stopped" | "timeout", finalError?: string | null) => {
       if (finalizingRef.current) return;
@@ -254,9 +266,7 @@ export default function RealtimeSummaryAvatar({
         if (!stream.getTracks().some((track) => track.id === event.track.id)) {
           stream.addTrack(event.track);
         }
-        if (videoRef.current && videoRef.current.srcObject !== stream) {
-          videoRef.current.srcObject = stream;
-        }
+        syncVideoElement();
       };
 
       peerConnectionRef.current = peerConnection;
@@ -275,10 +285,7 @@ export default function RealtimeSummaryAvatar({
       setPlaying(true);
       setPhase("playing");
       setStatusText("Playing your summary video…");
-      if (videoRef.current && mediaStreamRef.current) {
-        videoRef.current.srcObject = mediaStreamRef.current;
-        void videoRef.current.play().catch(() => undefined);
-      }
+      syncVideoElement();
 
       timeoutRef.current = window.setTimeout(() => {
         void finalizeSession("timeout", "The summary video session timed out.");
@@ -295,7 +302,7 @@ export default function RealtimeSummaryAvatar({
       setStatusText(null);
       await finalizeSession("failed", message);
     }
-  }, [canStart, finalizeSession, introMessage, maxSessionSeconds, runId, text, userId]);
+  }, [canStart, finalizeSession, introMessage, maxSessionSeconds, runId, syncVideoElement, text, userId]);
 
   useEffect(() => {
     if (!autoStart || autoStartedRef.current || !text || !canStart) return;
@@ -316,6 +323,11 @@ export default function RealtimeSummaryAvatar({
 
   const showVideoSurface = playing || playsUsed > 0;
   const showSummaryActions = phase !== "preparing" && (Boolean(audioUrl) || Boolean(text));
+
+  useEffect(() => {
+    if (!showVideoSurface) return;
+    syncVideoElement();
+  }, [showVideoSurface, syncVideoElement]);
 
   return (
     <div className="space-y-4">

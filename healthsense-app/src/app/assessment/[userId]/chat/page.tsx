@@ -168,7 +168,7 @@ export default async function AssessmentChatPage(props: PageProps) {
     Boolean(status.latest_run?.finished_at);
   const assessmentInProgress = status.status === "in_progress";
   const chatIntroText = assessmentCompleted
-    ? "Your assessment is complete. Continue coaching with Gia in this chat."
+    ? ""
     : assessmentInProgress
       ? ""
       : leadFlow

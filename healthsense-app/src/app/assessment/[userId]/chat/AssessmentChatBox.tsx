@@ -996,8 +996,13 @@ export default function AssessmentChatBox({
               ) : completionSummaryMedia?.avatarUrl ? (
                 <video
                   className="w-full rounded-2xl border border-[#efe7db] bg-[#f6efe5]"
+                  autoPlay
                   controls
+                  playsInline
                   preload="metadata"
+                  onLoadedMetadata={(event) => {
+                    void event.currentTarget.play().catch(() => undefined);
+                  }}
                 >
                   <source src={completionSummaryMedia.avatarUrl} type="video/mp4" />
                 </video>
