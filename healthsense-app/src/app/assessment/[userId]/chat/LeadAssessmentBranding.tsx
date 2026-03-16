@@ -9,9 +9,10 @@ export default function LeadAssessmentBranding({
   logoClassName = "h-8 w-8 flex-none sm:h-9 sm:w-9",
   titleLines = ["Find out your", "HealthSense Score"],
 }: LeadAssessmentBrandingProps) {
+  const showTitle = titleLines.length > 0;
   return (
     <span
-      className={`inline-grid grid-cols-[auto_minmax(0,1fr)] items-center gap-3 leading-none ${className}`.trim()}
+      className={`${showTitle ? "inline-grid grid-cols-[auto_minmax(0,1fr)] gap-3" : "inline-flex"} items-center leading-none ${className}`.trim()}
     >
       <svg
         viewBox="140.52 92.96 230.96 326.06"
@@ -32,13 +33,15 @@ export default function LeadAssessmentBranding({
           fill="#c54817"
         />
       </svg>
-      <span className="min-w-0 leading-tight">
-        {titleLines.map((line) => (
-          <span key={line} className="block">
-            {line}
-          </span>
-        ))}
-      </span>
+      {showTitle ? (
+        <span className="min-w-0 leading-tight">
+          {titleLines.map((line) => (
+            <span key={line} className="block">
+              {line}
+            </span>
+          ))}
+        </span>
+      ) : null}
     </span>
   );
 }

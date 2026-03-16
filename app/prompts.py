@@ -2816,7 +2816,8 @@ def assessment_completion_summary_prompt(
             "context",
             "Context: end-of-assessment spoken summary for audio/avatar. "
             "Keep the spoken flow tight and in order: opener, score, limiting pillar, strength, coaching focus, weekly action, close. "
-            "Keep the tone calm and supportive, and avoid repeating the same point in two different ways.",
+            "Keep the tone calm and supportive, and avoid repeating the same point in two different ways. "
+            "This is an assessment completion summary, not a check-in.",
         ),
         ("scores", f"HealthSense Scores: {json.dumps(data_payload, ensure_ascii=False)}"),
         ("habit", f"Habit readiness: {json.dumps(readiness_payload, ensure_ascii=False)}" if readiness_payload else ""),

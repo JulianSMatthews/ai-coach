@@ -924,32 +924,23 @@ export default function AssessmentChatBox({
   const resultCard = resultSummary ? (
     <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
       <div className="space-y-6">
-        {showLeadBranding ? (
-          <div className="border-b border-[#eadfce] pb-5">
-            <LeadAssessmentBranding />
-          </div>
-        ) : null}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="space-y-2">
-            <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Assessment complete</p>
-            <h2 className="text-2xl text-[#1e1b16]">Your HealthSense Score</h2>
-            {resultSummary.finished_at ? (
-              <p className="text-sm text-[#6b6257]">
-                Completed {new Date(resultSummary.finished_at).toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" })}
-              </p>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="rounded-3xl border border-[#efe7db] bg-white px-5 py-4">
-          <div className="flex items-end justify-between gap-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Overall HealthSense Score</p>
-              <p className="mt-2 text-4xl font-semibold text-[#1e1b16]">{resultSummary.combined}</p>
+        <div className="rounded-3xl border border-[#efe7db] bg-white px-5 py-5">
+          <div className="flex items-center gap-4">
+            <LeadAssessmentBranding
+              titleLines={[]}
+              logoClassName="h-11 w-11 flex-none sm:h-12 sm:w-12"
+            />
+            <div className="min-w-0 flex-1 space-y-2">
+              <div className="flex items-end justify-between gap-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">HealthSense Score</p>
+                  <p className="mt-1 text-4xl font-semibold text-[#1e1b16]">{resultSummary.combined}</p>
+                </div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8c7f70]">out of 100</p>
+              </div>
+              <ProgressBar value={resultSummary.combined} max={100} tone="var(--accent)" />
             </div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8c7f70]">out of 100</p>
           </div>
-          <ProgressBar value={resultSummary.combined} max={100} tone="var(--accent)" />
         </div>
 
         {resultSummary.reflection?.selected_label && resultSummary.reflection?.top_label ? (

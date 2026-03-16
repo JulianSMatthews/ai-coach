@@ -1054,46 +1054,6 @@ def _is_avatar_rate_limited(error: str | None) -> bool:
     return "429" in normalized or "rate-limit" in normalized or "rate limited" in normalized
 
 
-SUMMARY_AVATAR_CHARACTER_NAMES = {
-    "harry",
-    "jeff",
-    "lisa",
-    "lori",
-    "max",
-    "meg",
-    "adrian",
-    "amara",
-    "amira",
-    "anika",
-    "bianca",
-    "camila",
-    "carlos",
-    "clara",
-    "darius",
-    "diego",
-    "elise",
-    "farhan",
-    "faris",
-    "gabrielle",
-    "hyejin",
-    "imran",
-    "isabella",
-    "layla",
-    "liwei",
-    "ling",
-    "marcus",
-    "matteo",
-    "rahul",
-    "rana",
-    "ren",
-    "riya",
-    "sakura",
-    "simone",
-    "zayd",
-    "zoe",
-}
-
-
 def _summary_text_starts_with_name(text: str | None, name: str | None) -> bool:
     summary_text = str(text or "").strip()
     summary_name = str(name or "").strip()
@@ -1126,8 +1086,6 @@ def _normalize_summary_direct_address_name(text: str | None, name: str | None) -
         found = str(match.group("name") or "").strip()
         found_fold = found.casefold()
         if not found or found_fold == expected_name:
-            return match.group(0)
-        if found_fold not in SUMMARY_AVATAR_CHARACTER_NAMES:
             return match.group(0)
         prefix = str(match.group("prefix") or "")
         suffix = str(match.group("suffix") or "")
