@@ -740,6 +740,81 @@ def get_avatar_usage_summary(
     }
 
 
+def get_avatar_usage_rows(
+    *,
+    start_utc: datetime,
+    end_utc: datetime,
+    tag: str | None = None,
+    user_id: int | None = None,
+    limit: int = 50,
+) -> tuple[list[dict], dict]:
+    ensure_usage_schema()
+    limit_val = max(1, min(int(limit or 50), 200))
+    default_rate, default_source = _avatar_rate_gbp_per_minute()
+    with SessionLocal() as s:
+        q = (
+            s.query(UsageEvent)
+            .filter(
+                UsageEvent.created_at >= start_utc,
+                UsageEvent.created_at < end_utc,
+                UsageEvent.product == "avatar",
+                UsageEvent.unit_type == "avatar_seconds",
+            )
+            .order_by(UsageEvent.created_at.desc(), UsageEvent.id.desc())
+        )
+        if tag:
+            q = q.filter(UsageEvent.tag == tag)
+        if user_id:
+            q = q.filter(UsageEvent.user_id == user_id)
+        rows = q.limit(limit_val).all()
+
+    out: list[dict] = []
+    total_cost = 0.0
+    total_seconds = 0.0
+    for row in rows:
+        meta = _meta_to_dict(getattr(row, "meta", None))
+        seconds_est = float(getattr(row, "units", 0.0) or 0.0)
+        minutes_est = seconds_est / 60.0 if seconds_est else 0.0
+        cost_est = float(getattr(row, "cost_estimate", 0.0) or 0.0)
+        rate = _to_float(meta.get("rate_gbp_per_minute"))
+        if rate is None:
+            rate = default_rate
+        rate_source = str(meta.get("rate_source") or default_source or "").strip() or None
+        working = None
+        if rate is not None:
+            working = f"({minutes_est:.2f} min * £{float(rate):.4f}/min) = £{(minutes_est * float(rate)):.4f}"
+        out.append(
+            {
+                "event_id": int(getattr(row, "id", 0) or 0),
+                "created_at": getattr(row, "created_at", None).isoformat() if getattr(row, "created_at", None) else None,
+                "user_id": getattr(row, "user_id", None),
+                "model": getattr(row, "model", None),
+                "request_id": getattr(row, "request_id", None),
+                "run_id": meta.get("run_id"),
+                "character": meta.get("character"),
+                "style": meta.get("style"),
+                "voice": meta.get("voice"),
+                "text_chars": meta.get("text_chars"),
+                "seconds_est": round(seconds_est, 2),
+                "minutes_est": round(minutes_est, 2),
+                "duration_ms": getattr(row, "duration_ms", None),
+                "rate_gbp_per_minute": float(rate) if rate is not None else None,
+                "rate_source": rate_source,
+                "cost_est_gbp": round(cost_est, 6),
+                "working": working,
+            }
+        )
+        total_cost += cost_est
+        total_seconds += seconds_est
+
+    return out, {
+        "events": len(out),
+        "seconds_est": round(total_seconds, 2),
+        "minutes_est": round(total_seconds / 60.0, 2) if total_seconds else 0.0,
+        "cost_est_gbp": round(total_cost, 6),
+    }
+
+
 def get_usage_settings() -> dict:
     row = _load_usage_settings()
     meta = _meta_to_dict(getattr(row, "meta", None)) if row else {}

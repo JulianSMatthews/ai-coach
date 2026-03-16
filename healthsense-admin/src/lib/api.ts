@@ -273,6 +273,35 @@ export type PromptCostReport = {
   limit?: number;
 };
 
+export type AvatarCostRow = {
+  event_id: number;
+  created_at?: string | null;
+  user_id?: number | null;
+  model?: string | null;
+  request_id?: string | null;
+  run_id?: number | null;
+  character?: string | null;
+  style?: string | null;
+  voice?: string | null;
+  text_chars?: number | null;
+  seconds_est?: number;
+  minutes_est?: number;
+  duration_ms?: number | null;
+  rate_gbp_per_minute?: number | null;
+  rate_source?: string | null;
+  cost_est_gbp?: number;
+  working?: string | null;
+};
+
+export type AvatarCostReport = {
+  as_of_uk?: string;
+  window?: { start_utc?: string; end_utc?: string };
+  user?: { id?: number; display_name?: string; phone?: string } | null;
+  rows?: AvatarCostRow[];
+  total_cost_gbp?: number;
+  limit?: number;
+};
+
 export type UsageSettings = {
   tts_gbp_per_1m_chars?: number | null;
   tts_chars_per_min?: number | null;
@@ -1345,6 +1374,26 @@ export async function getAdminPromptCosts(params: {
   limit?: number;
 } = {}): Promise<PromptCostReport> {
   return apiAdmin<PromptCostReport>("/admin/usage/prompt-costs", {
+    query: {
+      days: params.days,
+      hours: params.hours,
+      start: params.start,
+      end: params.end,
+      user_id: params.user_id,
+      limit: params.limit,
+    },
+  });
+}
+
+export async function getAdminAvatarCosts(params: {
+  days?: number;
+  hours?: number;
+  start?: string;
+  end?: string;
+  user_id?: number;
+  limit?: number;
+} = {}): Promise<AvatarCostReport> {
+  return apiAdmin<AvatarCostReport>("/admin/usage/avatar-costs", {
     query: {
       days: params.days,
       hours: params.hours,

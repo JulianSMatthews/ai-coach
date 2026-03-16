@@ -2,6 +2,7 @@ import AdminNav from "@/components/AdminNav";
 import FetchRatesButton from "@/components/FetchRatesButton";
 import CopyValueField from "@/components/CopyValueField";
 import {
+  getAdminAvatarCosts,
   fetchUsageSettings,
   getAdminMarketingFunnel,
   getAdminPromptCosts,
@@ -275,7 +276,7 @@ export default async function ReportingPage({
       : "";
   const userId = userIdRaw ? Number(userIdRaw) : undefined;
 
-  const [settings, usage, marketing, promptCosts, users] = await Promise.all([
+  const [settings, usage, marketing, promptCosts, avatarCosts, users] = await Promise.all([
     getUsageSettings(),
     getAdminUsageSummary({
       days: windowSelection.days,
@@ -294,6 +295,14 @@ export default async function ReportingPage({
       campaign: campaignRaw || undefined,
     }),
     getAdminPromptCosts({
+      days: windowSelection.days,
+      hours: windowSelection.hours,
+      start: windowSelection.custom ? start : undefined,
+      end: windowSelection.custom ? end : undefined,
+      user_id: Number.isFinite(userId) ? userId : undefined,
+      limit: 50,
+    }),
+    getAdminAvatarCosts({
       days: windowSelection.days,
       hours: windowSelection.hours,
       start: windowSelection.custom ? start : undefined,
@@ -1077,6 +1086,81 @@ export default async function ReportingPage({
                           <td className="px-4 py-3 align-top">
                             <div>In: £{row.rate_in ?? "—"}</div>
                             <div>Out: £{row.rate_out ?? "—"}</div>
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            £{row.cost_est_gbp ?? "—"}
+                          </td>
+                          <td className="px-4 py-3 align-top text-xs text-[#6b6257]">
+                            {row.working || "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </div>
+          )}
+        </section>
+
+        <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
+          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Cost analysis · Avatar transaction breakdown</p>
+          <p className="mt-2 text-sm text-[#6b6257]">
+            Review individual avatar usage events for the selected user and period.
+          </p>
+          {!avatarCosts?.rows?.length ? (
+            <p className="mt-4 text-sm text-[#8a8176]">No avatar cost events found in this window.</p>
+          ) : (
+            <div className="mt-4 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#efe7db] bg-[#fdfaf4] px-4 py-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Total avatar cost (est)</p>
+                  <p className="mt-1 text-lg font-semibold">£{avatarCosts.total_cost_gbp ?? "—"}</p>
+                </div>
+                <p className="text-xs text-[#8a8176]">
+                  Showing latest {avatarCosts.limit ?? 50} avatar events
+                  {Number.isFinite(userId) ? "" : " (all users)"}.
+                </p>
+              </div>
+              <details className="rounded-2xl border border-[#efe7db] bg-white">
+                <summary className="cursor-pointer px-4 py-3 text-sm font-medium text-[#3c332b]">
+                  Show avatar transactions ({avatarCosts.rows.length})
+                </summary>
+                <div className="overflow-x-auto border-t border-[#efe7db]">
+                  <table className="min-w-full text-left text-sm">
+                    <thead className="bg-[#f7f4ee] text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                      <tr>
+                        <th className="px-4 py-3">Avatar</th>
+                        <th className="px-4 py-3">Est. seconds</th>
+                        <th className="px-4 py-3">Duration</th>
+                        <th className="px-4 py-3">Rate</th>
+                        <th className="px-4 py-3">Cost (est)</th>
+                        <th className="px-4 py-3">Working</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {avatarCosts.rows.map((row) => (
+                        <tr key={row.event_id} className="border-t border-[#efe7db]">
+                          <td className="px-4 py-3 align-top">
+                            <div className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                              {row.character || "avatar"} · {row.style || "style"} · {row.voice || "voice"}
+                              {row.user_id ? ` · user ${row.user_id}` : ""}
+                            </div>
+                            <div className="mt-2 text-sm text-[#1e1b16]">
+                              {row.model || "Azure avatar"}
+                            </div>
+                            <div className="mt-2 text-xs text-[#8a8176]">
+                              {row.request_id ? `job ${row.request_id}` : "job —"}
+                              {row.run_id ? ` · run ${row.run_id}` : ""}
+                              {row.created_at ? ` · ${row.created_at}` : ""}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 align-top">{row.seconds_est ?? "—"}</td>
+                          <td className="px-4 py-3 align-top">
+                            {row.duration_ms != null ? `${row.duration_ms} ms` : "—"}
+                          </td>
+                          <td className="px-4 py-3 align-top">
+                            £{row.rate_gbp_per_minute ?? "—"} / min
                           </td>
                           <td className="px-4 py-3 align-top">
                             £{row.cost_est_gbp ?? "—"}

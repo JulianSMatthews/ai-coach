@@ -59,7 +59,7 @@ from .prompts import (
     PromptAssembly,
 )
 from .debug_utils import debug_log
-from .job_queue import ensure_prompt_settings_schema
+from .job_queue import ensure_prompt_settings_schema, enqueue_job, should_use_worker
 from .programme_timeline import programme_block_map, programme_blocks as build_programme_blocks
 from .reports_paths import resolve_reports_dir
 from .virtual_clock import get_effective_today, get_virtual_date
@@ -1002,6 +1002,130 @@ def _assessment_completion_summary_text(
         )
     text = _normalize_summary_personalization(text, name)
     return " ".join(str(text).split()).strip()
+
+
+def _in_worker_process() -> bool:
+    return (os.getenv("PROMPT_WORKER_PROCESS") or "").strip().lower() in {"1", "true", "yes"}
+
+
+def _completion_summary_worker_active(meta: dict[str, Any] | None) -> bool:
+    meta_obj = dict(meta or {})
+    worker_status = str(meta_obj.get("completion_summary_worker_status") or "").strip().lower()
+    queued_at = _parse_meta_datetime(meta_obj.get("completion_summary_worker_queued_at"))
+    if worker_status not in {"queued", "running"}:
+        return False
+    if not queued_at:
+        return True
+    return (datetime.utcnow() - queued_at) < timedelta(minutes=10)
+
+
+def _queue_completion_summary_media_job(
+    *,
+    user: User,
+    run: AssessmentRun,
+    current_meta: dict[str, Any] | None,
+) -> dict[str, Any]:
+    meta = dict(current_meta or {})
+    summary_text = str(meta.get("completion_summary_text") or "").strip()
+    audio_url = str(meta.get("completion_summary_audio_url") or "").strip()
+    avatar_url = str(meta.get("completion_summary_avatar_url") or "").strip()
+    avatar_status = str(meta.get("completion_summary_avatar_status") or "").strip().lower()
+    updates: dict[str, Any] = {}
+
+    try:
+        from .avatar import azure_avatar_enabled
+        avatar_enabled = bool(azure_avatar_enabled())
+    except Exception:
+        avatar_enabled = False
+
+    needs_avatar = avatar_enabled and not avatar_url and avatar_status not in {"succeeded", "failed"}
+    needs_work = not summary_text or not audio_url or needs_avatar
+    if not needs_work:
+        if meta.get("completion_summary_worker_status"):
+            updates["completion_summary_worker_status"] = None
+            updates["completion_summary_worker_job_id"] = None
+            updates["completion_summary_worker_queued_at"] = None
+            updates["completion_summary_worker_error"] = None
+            meta = _upsert_assessment_narrative_meta(int(getattr(run, "id", 0) or 0), updates)
+        return meta
+
+    if _completion_summary_worker_active(meta):
+        return meta
+
+    now_iso = datetime.utcnow().replace(microsecond=0).isoformat()
+    try:
+        job_id = enqueue_job(
+            "assessment_completion_summary_media",
+            {
+                "run_id": int(getattr(run, "id", 0) or 0),
+                "user_id": int(getattr(user, "id", 0) or 0),
+                "trigger": "results_view",
+                "poll_attempt": 0,
+            },
+            user_id=int(getattr(user, "id", 0) or 0) or None,
+        )
+        updates.update(
+            {
+                "completion_summary_worker_job_id": int(job_id),
+                "completion_summary_worker_status": "Queued",
+                "completion_summary_worker_queued_at": now_iso,
+                "completion_summary_worker_error": None,
+            }
+        )
+        if not str(meta.get("completion_summary_text_status") or "").strip():
+            updates["completion_summary_text_status"] = "Queued"
+        if avatar_enabled and not avatar_url and avatar_status not in {"succeeded", "failed"}:
+            updates["completion_summary_avatar_status"] = meta.get("completion_summary_avatar_status") or "Queued"
+        meta = _upsert_assessment_narrative_meta(int(getattr(run, "id", 0) or 0), updates)
+        _update_completion_summary_prompt_log(
+            run_id=int(getattr(run, "id", 0) or 0),
+            user_id=int(getattr(user, "id", 0) or 0) or None,
+            updates={
+                "completion_summary_worker_job_id": int(job_id),
+                "completion_summary_worker_status": "Queued",
+                "completion_summary_worker_queued_at": now_iso,
+            },
+        )
+    except Exception as exc:
+        updates.update(
+            {
+                "completion_summary_worker_status": "Failed",
+                "completion_summary_worker_error": str(exc),
+                "completion_summary_worker_queued_at": now_iso,
+            }
+        )
+        meta = _upsert_assessment_narrative_meta(int(getattr(run, "id", 0) or 0), updates)
+        _update_completion_summary_prompt_log(
+            run_id=int(getattr(run, "id", 0) or 0),
+            user_id=int(getattr(user, "id", 0) or 0) or None,
+            updates={
+                "completion_summary_worker_status": "Failed",
+                "completion_summary_worker_error": str(exc),
+            },
+        )
+    return meta
+
+
+def set_completion_summary_worker_state(
+    run_id: int,
+    *,
+    job_id: int | None = None,
+    status: str | None = None,
+    error: str | None = None,
+    queued_at: str | None = None,
+) -> dict[str, Any]:
+    updates: dict[str, Any] = {}
+    if job_id is not None:
+        updates["completion_summary_worker_job_id"] = int(job_id)
+    if status is not None:
+        updates["completion_summary_worker_status"] = status
+    if error is not None or status == "Succeeded":
+        updates["completion_summary_worker_error"] = error
+    if queued_at is not None:
+        updates["completion_summary_worker_queued_at"] = queued_at
+    if not updates:
+        return {}
+    return _upsert_assessment_narrative_meta(int(run_id), updates)
 
 
 def _upsert_assessment_narrative_meta(run_id: int, updates: dict[str, Any]) -> dict[str, Any]:
@@ -3900,6 +4024,7 @@ def build_assessment_dashboard_data(
     generate_core_narratives: bool = True,
     generate_habit_narrative: bool = True,
     generate_completion_summary_media: bool = False,
+    queue_completion_summary_media_if_worker: bool = True,
 ) -> Dict[str, Any]:
     t0 = time.perf_counter()
     _report_log(f"[report_build] start run_id={run_id} include_llm={include_llm}")
@@ -4348,20 +4473,41 @@ def build_assessment_dashboard_data(
         narratives_cached_flag = bool(cached_ok)
 
     if run_finished and has_pillar_scores and generate_completion_summary_media:
-        completion_assets = _ensure_completion_summary_media(
-            user=user,
-            run=run,
-            combined=combined,
-            scores_payload=pillar_payload,
-            okr_payload=okr_payload,
-            readiness_payload=readiness or {},
-            current_meta=narrative_meta,
-        )
-        completion_summary_text = completion_assets.get("text")
-        completion_summary_audio_url = completion_assets.get("audio_url")
-        completion_summary_avatar_url = completion_assets.get("avatar_url")
-        completion_summary_avatar_status = completion_assets.get("avatar_status")
-        completion_summary_avatar_error = completion_assets.get("avatar_error")
+        if queue_completion_summary_media_if_worker and should_use_worker() and not _in_worker_process():
+            queued_meta = _queue_completion_summary_media_job(
+                user=user,
+                run=run,
+                current_meta=narrative_meta,
+            )
+            narrative_meta = queued_meta
+            completion_summary_text = str(queued_meta.get("completion_summary_text") or "").strip() or None
+            completion_summary_audio_url = str(queued_meta.get("completion_summary_audio_url") or "").strip() or None
+            completion_summary_avatar_url = str(queued_meta.get("completion_summary_avatar_url") or "").strip() or None
+            completion_summary_avatar_status = (
+                str(queued_meta.get("completion_summary_avatar_status") or "").strip()
+                or str(queued_meta.get("completion_summary_worker_status") or "").strip()
+                or None
+            )
+            completion_summary_avatar_error = (
+                str(queued_meta.get("completion_summary_avatar_error") or "").strip()
+                or str(queued_meta.get("completion_summary_worker_error") or "").strip()
+                or None
+            )
+        else:
+            completion_assets = _ensure_completion_summary_media(
+                user=user,
+                run=run,
+                combined=combined,
+                scores_payload=pillar_payload,
+                okr_payload=okr_payload,
+                readiness_payload=readiness or {},
+                current_meta=narrative_meta,
+            )
+            completion_summary_text = completion_assets.get("text")
+            completion_summary_audio_url = completion_assets.get("audio_url")
+            completion_summary_avatar_url = completion_assets.get("avatar_url")
+            completion_summary_avatar_status = completion_assets.get("avatar_status")
+            completion_summary_avatar_error = completion_assets.get("avatar_error")
 
     score_rows = [
         {"label": "Combined", "value": combined, "bucket": _score_bucket(combined)},
@@ -4424,8 +4570,17 @@ def build_assessment_dashboard_data(
                 generate_completion_summary_media
                 and run_finished
                 and has_pillar_scores
-                and completion_summary_avatar_status
-                and str(completion_summary_avatar_status).lower() not in {"succeeded", "failed"}
+                and (
+                    (completion_summary_text and not completion_summary_audio_url)
+                    or (
+                        completion_summary_avatar_status
+                        and str(completion_summary_avatar_status).lower() not in {"succeeded", "failed"}
+                    )
+                    or str((narrative_meta or {}).get("completion_summary_worker_status") or "").strip().lower()
+                    in {"queued", "running"}
+                    or str((narrative_meta or {}).get("completion_summary_text_status") or "").strip().lower()
+                    in {"queued", "generating"}
+                )
             ),
             "narratives_source": None
             if narratives_cached_flag is None
@@ -4720,6 +4875,27 @@ def generate_assessment_narratives(run_id: int) -> dict:
         "core": core,
         "habit": habit,
         "duration_ms": int((core.get("duration_ms") or 0) + (habit.get("duration_ms") or 0)),
+    }
+
+
+def generate_assessment_completion_summary_media(run_id: int) -> dict[str, Any]:
+    data = build_assessment_dashboard_data(
+        int(run_id),
+        include_llm=False,
+        generate_completion_summary_media=True,
+        queue_completion_summary_media_if_worker=False,
+    )
+    narratives = data.get("narratives") or {}
+    meta = data.get("meta") or {}
+    return {
+        "ok": True,
+        "run_id": int(run_id),
+        "text": narratives.get("completion_summary_text"),
+        "audio_url": narratives.get("completion_summary_audio_url"),
+        "avatar_url": narratives.get("completion_summary_avatar_url"),
+        "avatar_status": narratives.get("completion_summary_avatar_status"),
+        "avatar_error": narratives.get("completion_summary_avatar_error"),
+        "pending": bool(meta.get("completion_summary_pending")),
     }
 
 def generate_detailed_report_pdf_by_user(user_id: int) -> str:

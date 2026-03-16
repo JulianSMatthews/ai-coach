@@ -138,6 +138,7 @@ from .avatar import (
     download_batch_avatar_output,
 )
 from .usage import (
+    get_avatar_usage_rows,
     get_avatar_usage_summary,
     get_tts_usage_summary,
     get_llm_usage_summary,
@@ -12786,6 +12787,57 @@ def admin_usage_prompt_costs(
         else None,
         "rows": rows_out,
         "total_cost_gbp": total_cost,
+        "limit": limit_val,
+    }
+
+
+@admin.get("/usage/avatar-costs")
+def admin_usage_avatar_costs(
+    days: int | None = None,
+    hours: int | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    user_id: int | None = None,
+    limit: int | None = None,
+    admin_user: User = Depends(_require_admin),
+):
+    target_user = None
+    if user_id:
+        with SessionLocal() as s:
+            target_user = s.get(User, user_id)
+        if not target_user:
+            raise HTTPException(status_code=404, detail="user not found")
+        _ensure_club_scope(admin_user, target_user)
+
+    start_utc, end_utc, _window_meta = _resolve_admin_time_window(
+        days=days,
+        hours=hours,
+        start=start,
+        end=end,
+        default_days=7,
+        max_days=365,
+    )
+
+    try:
+        limit_val = int(limit or 50)
+    except Exception:
+        limit_val = 50
+    limit_val = max(1, min(limit_val, 200))
+
+    rows_out, totals = get_avatar_usage_rows(
+        start_utc=start_utc,
+        end_utc=end_utc,
+        user_id=user_id,
+        limit=limit_val,
+    )
+    return {
+        "as_of_uk": datetime.now(UK_TZ).isoformat(),
+        "window": {"start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat()},
+        "user": {"id": target_user.id, "display_name": target_user.display_name, "phone": target_user.phone}
+        if target_user
+        else None,
+        "rows": rows_out,
+        "total_cost_gbp": round(float(totals.get("cost_est_gbp") or 0.0), 6),
         "limit": limit_val,
     }
 
