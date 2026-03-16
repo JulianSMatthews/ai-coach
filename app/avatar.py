@@ -176,6 +176,20 @@ def build_avatar_ssml(script: str, voice: str, locale: str = "en-GB") -> str:
     )
 
 
+def normalize_realtime_avatar_choice(character: str | None, style: str | None) -> tuple[str, str]:
+    resolved_character = str(character or "").strip().lower() or "lisa"
+    resolved_style = str(style or "").strip().lower() or "casual-sitting"
+    unsupported_lisa_styles = {
+        "graceful-sitting",
+        "graceful-standing",
+        "technical-sitting",
+        "technical-standing",
+    }
+    if resolved_character == "lisa" and resolved_style in unsupported_lisa_styles:
+        return resolved_character, "casual-sitting"
+    return resolved_character, resolved_style
+
+
 def issue_avatar_speech_token() -> tuple[str, int]:
     response = requests.post(
         f"{_avatar_api_base()}/sts/v1.0/issueToken",
@@ -226,8 +240,10 @@ def build_realtime_avatar_session_bootstrap(
 ) -> dict[str, Any]:
     defaults = azure_avatar_defaults()
     realtime = azure_summary_realtime_settings()
-    resolved_character = str(character or defaults["character"]).strip() or str(defaults["character"])
-    resolved_style = str(style or defaults["style"]).strip() or str(defaults["style"])
+    resolved_character, resolved_style = normalize_realtime_avatar_choice(
+        character or defaults["character"],
+        style or defaults["style"],
+    )
     resolved_voice = str(voice or defaults["voice"]).strip() or str(defaults["voice"])
     ssml = build_avatar_ssml(script, resolved_voice, str(defaults["locale"]))
     speech_token, expires_in_seconds = issue_avatar_speech_token()
