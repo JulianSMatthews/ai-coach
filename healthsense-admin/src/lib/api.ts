@@ -1065,21 +1065,31 @@ export type IntroLibrarySettings = {
   body?: string | null;
   podcast_url?: string | null;
   podcast_voice?: string | null;
-  assessment_intro_avatar?: {
-    url?: string | null;
-    title?: string | null;
-    script?: string | null;
-    poster_url?: string | null;
-    character?: string | null;
-    style?: string | null;
-    voice?: string | null;
-    status?: string | null;
-    job_id?: string | null;
-    error?: string | null;
-    generated_at?: string | null;
-    source?: string | null;
-    summary_url?: string | null;
-  } | null;
+  source_type?: string | null;
+  updated_at?: string | null;
+};
+
+export type AssessmentIntroAvatarSettings = {
+  url?: string | null;
+  title?: string | null;
+  script?: string | null;
+  poster_url?: string | null;
+  character?: string | null;
+  style?: string | null;
+  voice?: string | null;
+  status?: string | null;
+  job_id?: string | null;
+  error?: string | null;
+  generated_at?: string | null;
+  source?: string | null;
+  summary_url?: string | null;
+};
+
+export type AssessmentIntroLibrarySettings = {
+  content_id?: number | null;
+  active?: boolean;
+  title?: string | null;
+  assessment_intro_avatar?: AssessmentIntroAvatarSettings | null;
   source_type?: string | null;
   updated_at?: string | null;
 };
@@ -2006,6 +2016,10 @@ export async function getLibraryIntroSettings(): Promise<IntroLibrarySettings> {
   return apiAdmin<IntroLibrarySettings>("/admin/library/intro");
 }
 
+export async function getLibraryAssessmentIntroSettings(): Promise<AssessmentIntroLibrarySettings> {
+  return apiAdmin<AssessmentIntroLibrarySettings>("/admin/library/assessment-intro");
+}
+
 export async function updateLibraryIntroSettings(payload: {
   active: boolean;
   title?: string;
@@ -2013,13 +2027,6 @@ export async function updateLibraryIntroSettings(payload: {
   body?: string;
   podcast_url?: string;
   podcast_voice?: string;
-  assessment_intro_avatar_url?: string;
-  assessment_intro_avatar_title?: string;
-  assessment_intro_avatar_script?: string;
-  assessment_intro_avatar_poster_url?: string;
-  assessment_intro_avatar_character?: string;
-  assessment_intro_avatar_style?: string;
-  assessment_intro_avatar_voice?: string;
 }): Promise<Record<string, unknown>> {
   return apiAdmin<Record<string, unknown>>("/admin/library/intro", {
     method: "POST",
@@ -2028,7 +2035,10 @@ export async function updateLibraryIntroSettings(payload: {
   });
 }
 
-export async function generateLibraryIntroAvatar(payload: {
+export async function updateLibraryAssessmentIntroSettings(payload: {
+  active: boolean;
+  title?: string;
+  assessment_intro_avatar_url?: string;
   assessment_intro_avatar_title?: string;
   assessment_intro_avatar_script?: string;
   assessment_intro_avatar_poster_url?: string;
@@ -2036,15 +2046,30 @@ export async function generateLibraryIntroAvatar(payload: {
   assessment_intro_avatar_style?: string;
   assessment_intro_avatar_voice?: string;
 }): Promise<Record<string, unknown>> {
-  return apiAdmin<Record<string, unknown>>("/admin/library/intro/avatar/generate", {
+  return apiAdmin<Record<string, unknown>>("/admin/library/assessment-intro", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
 }
 
-export async function refreshLibraryIntroAvatar(): Promise<Record<string, unknown>> {
-  return apiAdmin<Record<string, unknown>>("/admin/library/intro/avatar/refresh", {
+export async function generateLibraryAssessmentIntroAvatar(payload: {
+  assessment_intro_avatar_title?: string;
+  assessment_intro_avatar_script?: string;
+  assessment_intro_avatar_poster_url?: string;
+  assessment_intro_avatar_character?: string;
+  assessment_intro_avatar_style?: string;
+  assessment_intro_avatar_voice?: string;
+}): Promise<Record<string, unknown>> {
+  return apiAdmin<Record<string, unknown>>("/admin/library/assessment-intro/avatar/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function refreshLibraryAssessmentIntroAvatar(): Promise<Record<string, unknown>> {
+  return apiAdmin<Record<string, unknown>>("/admin/library/assessment-intro/avatar/refresh", {
     method: "POST",
   });
 }

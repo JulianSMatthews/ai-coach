@@ -1,24 +1,32 @@
 "use client";
 
 import { useActionState, useEffect, useMemo, useState } from "react";
-import type { ContentPromptTemplateSummary, IntroLibrarySettings } from "@/lib/api";
+import type {
+  AssessmentIntroLibrarySettings,
+  ContentPromptTemplateSummary,
+  IntroLibrarySettings,
+} from "@/lib/api";
 import {
   generateIntroAvatarAction,
   generateIntroDraftAction,
   refreshIntroAvatarAction,
+  saveAssessmentIntroSettingsAction,
   saveIntroSettingsAction,
+  type AssessmentIntroSaveState,
   type IntroAvatarState,
   type IntroGenerationState,
   type IntroSaveState,
 } from "./actions";
 
 type IntroSetupClientProps = {
-  intro: IntroLibrarySettings;
+  appIntro: IntroLibrarySettings;
+  assessmentIntro: AssessmentIntroLibrarySettings;
   templates: ContentPromptTemplateSummary[];
 };
 
 const emptyGenerationState: IntroGenerationState = { ok: false, error: null };
 const emptySaveState: IntroSaveState = { ok: false, error: null };
+const emptyAssessmentSaveState: AssessmentIntroSaveState = { ok: false, error: null };
 const emptyAvatarState: IntroAvatarState = { ok: false, error: null };
 
 const voiceOptions = [
@@ -50,9 +58,102 @@ const modelOptions = [
   "gpt-3.5-turbo",
 ];
 
-export default function IntroSetupClient({ intro, templates }: IntroSetupClientProps) {
-  const [generationState, generationAction, generating] = useActionState(generateIntroDraftAction, emptyGenerationState);
-  const [saveState, saveAction, saving] = useActionState(saveIntroSettingsAction, emptySaveState);
+const assessmentAvatarCharacterOptions = [
+  { value: "harry", label: "Harry" },
+  { value: "jeff", label: "Jeff" },
+  { value: "lisa", label: "Lisa" },
+  { value: "lori", label: "Lori" },
+  { value: "max", label: "Max" },
+  { value: "meg", label: "Meg" },
+];
+
+const assessmentAvatarStylesByCharacter: Record<string, Array<{ value: string; label: string }>> = {
+  harry: [
+    { value: "business", label: "Business" },
+    { value: "casual", label: "Casual" },
+    { value: "youthful", label: "Youthful" },
+  ],
+  jeff: [
+    { value: "business", label: "Business" },
+    { value: "formal", label: "Formal" },
+  ],
+  lisa: [
+    { value: "casual-sitting", label: "Casual sitting" },
+    { value: "graceful-sitting", label: "Graceful sitting" },
+    { value: "graceful-standing", label: "Graceful standing" },
+    { value: "technical-sitting", label: "Technical sitting" },
+    { value: "technical-standing", label: "Technical standing" },
+  ],
+  lori: [
+    { value: "casual", label: "Casual" },
+    { value: "graceful", label: "Graceful" },
+    { value: "formal", label: "Formal" },
+  ],
+  max: [
+    { value: "business", label: "Business" },
+    { value: "casual", label: "Casual" },
+    { value: "formal", label: "Formal" },
+  ],
+  meg: [
+    { value: "business", label: "Business" },
+    { value: "casual", label: "Casual" },
+    { value: "formal", label: "Formal" },
+  ],
+};
+
+const assessmentAvatarVoiceOptions = [
+  { value: "en-GB-LibbyNeural", label: "Libby · UK English" },
+  { value: "en-GB-SoniaNeural", label: "Sonia · UK English" },
+  { value: "en-GB-RyanNeural", label: "Ryan · UK English" },
+  { value: "en-GB-ThomasNeural", label: "Thomas · UK English" },
+  { value: "en-US-AvaNeural", label: "Ava · US English" },
+  { value: "en-US-AriaNeural", label: "Aria · US English" },
+  { value: "en-US-JennyNeural", label: "Jenny · US English" },
+  { value: "en-US-GuyNeural", label: "Guy · US English" },
+];
+
+function withCurrentOption(
+  options: Array<{ value: string; label: string }>,
+  currentValue: string,
+): Array<{ value: string; label: string }> {
+  const value = String(currentValue || "").trim();
+  if (!value) return options;
+  if (options.some((option) => option.value === value)) return options;
+  return [{ value, label: `${value} (Current)` }, ...options];
+}
+
+function SectionHeading({
+  label,
+  description,
+}: {
+  label: string;
+  description: string;
+}) {
+  return (
+    <div>
+      <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{label}</p>
+      <p className="mt-2 text-sm text-[#6b6257]">{description}</p>
+    </div>
+  );
+}
+
+export default function IntroSetupClient({
+  appIntro,
+  assessmentIntro,
+  templates,
+}: IntroSetupClientProps) {
+  const [generationState, generationAction, generating] = useActionState(
+    generateIntroDraftAction,
+    emptyGenerationState,
+  );
+  const [saveState, saveAction, saving] = useActionState(
+    saveIntroSettingsAction,
+    emptySaveState,
+  );
+  const [assessmentSaveState, assessmentSaveAction, savingAssessment] = useActionState(
+    saveAssessmentIntroSettingsAction,
+    emptyAssessmentSaveState,
+  );
   const [avatarGenerationState, avatarGenerationAction, generatingAvatar] = useActionState(
     generateIntroAvatarAction,
     emptyAvatarState,
@@ -62,50 +163,55 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
     emptyAvatarState,
   );
 
-  const [active, setActive] = useState(Boolean(intro.active));
-  const [title, setTitle] = useState(intro.title || "Welcome to HealthSense");
+  const [active, setActive] = useState(Boolean(appIntro.active));
+  const [title, setTitle] = useState(appIntro.title || "Welcome to HealthSense");
   const [welcomeTemplate, setWelcomeTemplate] = useState(
-    intro.welcome_message_template ||
+    appIntro.welcome_message_template ||
       "{first_name}, Welcome to HealthSense please listen to our introductory podcast to get started on your journey.",
   );
-  const [body, setBody] = useState(intro.body || "");
-  const [podcastUrl, setPodcastUrl] = useState(intro.podcast_url || "");
-  const [podcastVoice, setPodcastVoice] = useState(intro.podcast_voice || "");
+  const [body, setBody] = useState(appIntro.body || "");
+  const [podcastUrl, setPodcastUrl] = useState(appIntro.podcast_url || "");
+  const [podcastVoice, setPodcastVoice] = useState(appIntro.podcast_voice || "");
+
+  const [assessmentIntroActive, setAssessmentIntroActive] = useState(Boolean(assessmentIntro.active));
+  const [assessmentIntroTitle, setAssessmentIntroTitle] = useState(
+    assessmentIntro.title || "Assessment intro",
+  );
   const [assessmentIntroAvatarUrl, setAssessmentIntroAvatarUrl] = useState(
-    intro.assessment_intro_avatar?.url || "",
+    assessmentIntro.assessment_intro_avatar?.url || "",
   );
   const [assessmentIntroAvatarTitle, setAssessmentIntroAvatarTitle] = useState(
-    intro.assessment_intro_avatar?.title || "Assessment introduction",
+    assessmentIntro.assessment_intro_avatar?.title || "Assessment introduction",
   );
   const [assessmentIntroAvatarScript, setAssessmentIntroAvatarScript] = useState(
-    intro.assessment_intro_avatar?.script || "",
+    assessmentIntro.assessment_intro_avatar?.script || "",
   );
   const [assessmentIntroAvatarPosterUrl, setAssessmentIntroAvatarPosterUrl] = useState(
-    intro.assessment_intro_avatar?.poster_url || "",
+    assessmentIntro.assessment_intro_avatar?.poster_url || "",
   );
   const [assessmentIntroAvatarCharacter, setAssessmentIntroAvatarCharacter] = useState(
-    intro.assessment_intro_avatar?.character || "lisa",
+    assessmentIntro.assessment_intro_avatar?.character || "lisa",
   );
   const [assessmentIntroAvatarStyle, setAssessmentIntroAvatarStyle] = useState(
-    intro.assessment_intro_avatar?.style || "graceful-sitting",
+    assessmentIntro.assessment_intro_avatar?.style || "graceful-sitting",
   );
   const [assessmentIntroAvatarVoice, setAssessmentIntroAvatarVoice] = useState(
-    intro.assessment_intro_avatar?.voice || "en-GB-SoniaNeural",
+    assessmentIntro.assessment_intro_avatar?.voice || "en-GB-SoniaNeural",
   );
   const [assessmentIntroAvatarStatus, setAssessmentIntroAvatarStatus] = useState(
-    intro.assessment_intro_avatar?.status || "",
+    assessmentIntro.assessment_intro_avatar?.status || "",
   );
   const [assessmentIntroAvatarJobId, setAssessmentIntroAvatarJobId] = useState(
-    intro.assessment_intro_avatar?.job_id || "",
+    assessmentIntro.assessment_intro_avatar?.job_id || "",
   );
   const [assessmentIntroAvatarError, setAssessmentIntroAvatarError] = useState(
-    intro.assessment_intro_avatar?.error || "",
+    assessmentIntro.assessment_intro_avatar?.error || "",
   );
   const [assessmentIntroAvatarGeneratedAt, setAssessmentIntroAvatarGeneratedAt] = useState(
-    intro.assessment_intro_avatar?.generated_at || "",
+    assessmentIntro.assessment_intro_avatar?.generated_at || "",
   );
   const [assessmentIntroAvatarSummaryUrl, setAssessmentIntroAvatarSummaryUrl] = useState(
-    intro.assessment_intro_avatar?.summary_url || "",
+    assessmentIntro.assessment_intro_avatar?.summary_url || "",
   );
 
   const generatedResult = generationState.result || {};
@@ -120,6 +226,19 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
   const generatedText = String(generatedLlm.content || "").trim();
   const generatedPodcastUrl = String(generatedResult.podcast_url || "").trim();
   const generatedPodcastVoice = String(generatedResult.podcast_voice || "").trim();
+  const assessmentCharacterOptions = useMemo(
+    () => withCurrentOption(assessmentAvatarCharacterOptions, assessmentIntroAvatarCharacter),
+    [assessmentIntroAvatarCharacter],
+  );
+  const assessmentStyleOptions = useMemo(() => {
+    const key = String(assessmentIntroAvatarCharacter || "").trim().toLowerCase();
+    const options = assessmentAvatarStylesByCharacter[key] || [];
+    return withCurrentOption(options, assessmentIntroAvatarStyle);
+  }, [assessmentIntroAvatarCharacter, assessmentIntroAvatarStyle]);
+  const assessmentVoiceOptions = useMemo(
+    () => withCurrentOption(assessmentAvatarVoiceOptions, assessmentIntroAvatarVoice),
+    [assessmentIntroAvatarVoice],
+  );
 
   useEffect(() => {
     if (!generationState.ok) return;
@@ -136,12 +255,18 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
         : null;
     if (!avatar) return;
     setAssessmentIntroAvatarUrl(String(avatar.url || "").trim());
-    setAssessmentIntroAvatarTitle(String(avatar.title || "").trim() || "Assessment introduction");
+    setAssessmentIntroAvatarTitle(
+      String(avatar.title || "").trim() || "Assessment introduction",
+    );
     setAssessmentIntroAvatarScript(String(avatar.script || "").trim());
     setAssessmentIntroAvatarPosterUrl(String(avatar.poster_url || "").trim());
     setAssessmentIntroAvatarCharacter(String(avatar.character || "").trim() || "lisa");
-    setAssessmentIntroAvatarStyle(String(avatar.style || "").trim() || "graceful-sitting");
-    setAssessmentIntroAvatarVoice(String(avatar.voice || "").trim() || "en-GB-SoniaNeural");
+    setAssessmentIntroAvatarStyle(
+      String(avatar.style || "").trim() || "graceful-sitting",
+    );
+    setAssessmentIntroAvatarVoice(
+      String(avatar.voice || "").trim() || "en-GB-SoniaNeural",
+    );
     setAssessmentIntroAvatarStatus(String(avatar.status || "").trim());
     setAssessmentIntroAvatarJobId(String(avatar.job_id || "").trim());
     setAssessmentIntroAvatarError(String(avatar.error || "").trim());
@@ -149,16 +274,27 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
     setAssessmentIntroAvatarSummaryUrl(String(avatar.summary_url || "").trim());
   }, [avatarGenerationState.result, avatarRefreshState.result]);
 
+  useEffect(() => {
+    const key = String(assessmentIntroAvatarCharacter || "").trim().toLowerCase();
+    const validStyles = assessmentAvatarStylesByCharacter[key] || [];
+    if (!validStyles.length) return;
+    const currentStyle = String(assessmentIntroAvatarStyle || "").trim();
+    if (validStyles.some((option) => option.value === currentStyle)) return;
+    setAssessmentIntroAvatarStyle(validStyles[0]?.value || "");
+  }, [assessmentIntroAvatarCharacter, assessmentIntroAvatarStyle]);
+
   return (
     <div className="space-y-6">
       <section className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
-        <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Generate intro draft</p>
-        <p className="mt-2 text-sm text-[#6b6257]">
-          Uses the same template generation flow as library content, including optional podcast audio.
-        </p>
+        <SectionHeading
+          label="Generate app intro draft"
+          description="Uses the library content generation flow to draft the onboarding intro copy and optional podcast audio."
+        />
         <form action={generationAction} className="mt-4 grid gap-4 md:grid-cols-2">
           <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Content template</label>
+            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+              Content template
+            </label>
             <select
               name="template_id"
               className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
@@ -186,8 +322,13 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
             </select>
           </div>
           <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">LLM model (optional)</label>
-            <select name="model_override" className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm">
+            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+              LLM model (optional)
+            </label>
+            <select
+              name="model_override"
+              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+            >
               {modelOptions.map((model) => (
                 <option key={model || "default"} value={model}>
                   {model || "Default"}
@@ -204,7 +345,9 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
             Generate podcast audio
           </label>
           <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Podcast voice</label>
+            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+              Podcast voice
+            </label>
             <select
               name="podcast_voice"
               defaultValue={podcastVoice}
@@ -225,17 +368,29 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
             {generating ? "Generating…" : "Generate draft"}
           </button>
         </form>
-        {generationState.error ? <p className="mt-3 text-sm text-red-600">{generationState.error}</p> : null}
+        {generationState.error ? (
+          <p className="mt-3 text-sm text-red-600">{generationState.error}</p>
+        ) : null}
         {generatedText ? (
-          <p className="mt-3 text-xs text-[#6b6257]">Generated text loaded into the read content field below.</p>
+          <p className="mt-3 text-xs text-[#6b6257]">
+            Generated text loaded into the app intro read content field below.
+          </p>
         ) : null}
       </section>
 
       <section className="rounded-2xl border border-[#efe7db] bg-white p-4">
-        <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Intro settings</p>
+        <SectionHeading
+          label="HealthSense app intro"
+          description="Controls the onboarding intro inside the HealthSense app, including welcome copy and podcast audio."
+        />
         <form action={saveAction} className="mt-4 space-y-4">
           <label className="flex items-center gap-2 text-sm text-[#3c332b]">
-            <input type="checkbox" name="active" checked={active} onChange={(e) => setActive(e.target.checked)} />
+            <input
+              type="checkbox"
+              name="active"
+              checked={active}
+              onChange={(e) => setActive(e.target.checked)}
+            />
             Intro flow active
           </label>
           <div>
@@ -248,17 +403,23 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
             />
           </div>
           <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Welcome message template</label>
+            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+              Welcome message template
+            </label>
             <input
               name="welcome_message_template"
               value={welcomeTemplate}
               onChange={(e) => setWelcomeTemplate(e.target.value)}
               className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
             />
-            <p className="mt-1 text-xs text-[#8a8176]">Supports {"{first_name}"} and {"{display_name}"}.</p>
+            <p className="mt-1 text-xs text-[#8a8176]">
+              Supports {"{first_name}"} and {"{display_name}"}.
+            </p>
           </div>
           <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Read content</label>
+            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+              Read content
+            </label>
             <textarea
               name="body"
               rows={8}
@@ -269,7 +430,9 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
           </div>
           <div className="grid gap-3 md:grid-cols-2">
             <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Podcast URL</label>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                Podcast URL
+              </label>
               <input
                 name="podcast_url"
                 value={podcastUrl}
@@ -278,7 +441,9 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
               />
             </div>
             <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Podcast voice</label>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                Podcast voice
+              </label>
               <select
                 name="podcast_voice"
                 value={podcastVoice}
@@ -293,16 +458,79 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
               </select>
             </div>
           </div>
+          {podcastUrl ? (
+            <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] p-3">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                Podcast preview
+              </p>
+              <audio
+                key={podcastUrl}
+                controls
+                preload="none"
+                className="mt-2 w-full"
+                src={podcastUrl}
+              />
+              <a
+                href={podcastUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-2 inline-flex text-[11px] uppercase tracking-[0.2em] text-[var(--accent)]"
+              >
+                Open audio
+              </a>
+            </div>
+          ) : null}
+          <button
+            type="submit"
+            disabled={saving}
+            className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {saving ? "Saving…" : "Save app intro"}
+          </button>
+          {saveState.error ? <p className="text-sm text-red-600">{saveState.error}</p> : null}
+          {saveState.ok ? <p className="text-sm text-[var(--accent)]">Saved.</p> : null}
+        </form>
+      </section>
+
+      <section className="rounded-2xl border border-[#efe7db] bg-white p-4">
+        <SectionHeading
+          label="Assessment intro"
+          description="Controls the lead assessment landing intro separately from the in-app onboarding intro."
+        />
+        <form action={assessmentSaveAction} className="mt-4 space-y-4">
+          <label className="flex items-center gap-2 text-sm text-[#3c332b]">
+            <input
+              type="checkbox"
+              name="assessment_intro_active"
+              checked={assessmentIntroActive}
+              onChange={(e) => setAssessmentIntroActive(e.target.checked)}
+            />
+            Assessment intro active
+          </label>
+          <div>
+            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Title</label>
+            <input
+              name="assessment_intro_title"
+              value={assessmentIntroTitle}
+              onChange={(e) => setAssessmentIntroTitle(e.target.value)}
+              className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+            />
+          </div>
           <div className="space-y-4 rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
             <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Assessment intro avatar</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                Assessment intro avatar
+              </p>
               <p className="mt-1 text-sm text-[#6b6257]">
-                Managed video for the lead assessment landing page. The frontend on/off switch still controls whether it renders.
+                Managed video for the lead assessment landing page. The frontend on/off
+                switch still controls whether it renders.
               </p>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Video URL</label>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                  Video URL
+                </label>
                 <input
                   name="assessment_intro_avatar_url"
                   value={assessmentIntroAvatarUrl}
@@ -311,7 +539,9 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
                 />
               </div>
               <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Label</label>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                  Label
+                </label>
                 <input
                   name="assessment_intro_avatar_title"
                   value={assessmentIntroAvatarTitle}
@@ -320,7 +550,9 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
                 />
               </div>
               <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Poster URL</label>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                  Poster URL
+                </label>
                 <input
                   name="assessment_intro_avatar_poster_url"
                   value={assessmentIntroAvatarPosterUrl}
@@ -329,35 +561,61 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
                 />
               </div>
               <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Character</label>
-                <input
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                  Character
+                </label>
+                <select
                   name="assessment_intro_avatar_character"
                   value={assessmentIntroAvatarCharacter}
                   onChange={(e) => setAssessmentIntroAvatarCharacter(e.target.value)}
                   className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
-                />
+                >
+                  {assessmentCharacterOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Style</label>
-                <input
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                  Style
+                </label>
+                <select
                   name="assessment_intro_avatar_style"
                   value={assessmentIntroAvatarStyle}
                   onChange={(e) => setAssessmentIntroAvatarStyle(e.target.value)}
                   className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
-                />
+                >
+                  {assessmentStyleOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Voice</label>
-                <input
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                  Voice
+                </label>
+                <select
                   name="assessment_intro_avatar_voice"
                   value={assessmentIntroAvatarVoice}
                   onChange={(e) => setAssessmentIntroAvatarVoice(e.target.value)}
                   className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
-                />
+                >
+                  {assessmentVoiceOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Avatar script</label>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                Avatar script
+              </label>
               <textarea
                 name="assessment_intro_avatar_script"
                 rows={8}
@@ -366,14 +624,21 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
                 className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
               />
               <p className="mt-1 text-xs text-[#8a8176]">
-                Store the transcript used to create the intro video so it can be edited without changing code.
+                Store the transcript used to create the assessment intro video so it can
+                be edited without changing code.
               </p>
             </div>
             <div className="rounded-xl border border-[#efe7db] bg-white p-3 text-sm text-[#6b6257]">
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Azure avatar status</p>
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                Azure avatar status
+              </p>
               <p className="mt-2">Status: {assessmentIntroAvatarStatus || "not generated"}</p>
-              {assessmentIntroAvatarJobId ? <p className="mt-1 break-all">Job ID: {assessmentIntroAvatarJobId}</p> : null}
-              {assessmentIntroAvatarGeneratedAt ? <p className="mt-1">Generated: {assessmentIntroAvatarGeneratedAt}</p> : null}
+              {assessmentIntroAvatarJobId ? (
+                <p className="mt-1 break-all">Job ID: {assessmentIntroAvatarJobId}</p>
+              ) : null}
+              {assessmentIntroAvatarGeneratedAt ? (
+                <p className="mt-1">Generated: {assessmentIntroAvatarGeneratedAt}</p>
+              ) : null}
               {assessmentIntroAvatarSummaryUrl ? (
                 <a
                   href={assessmentIntroAvatarSummaryUrl}
@@ -384,7 +649,9 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
                   Open Azure summary
                 </a>
               ) : null}
-              {assessmentIntroAvatarError ? <p className="mt-2 text-red-600">{assessmentIntroAvatarError}</p> : null}
+              {assessmentIntroAvatarError ? (
+                <p className="mt-2 text-red-600">{assessmentIntroAvatarError}</p>
+              ) : null}
             </div>
             <div className="flex flex-wrap gap-2">
               <button
@@ -404,11 +671,17 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
                 {refreshingAvatar ? "Refreshing…" : "Refresh avatar status"}
               </button>
             </div>
-            {avatarGenerationState.error ? <p className="text-sm text-red-600">{avatarGenerationState.error}</p> : null}
-            {avatarRefreshState.error ? <p className="text-sm text-red-600">{avatarRefreshState.error}</p> : null}
+            {avatarGenerationState.error ? (
+              <p className="text-sm text-red-600">{avatarGenerationState.error}</p>
+            ) : null}
+            {avatarRefreshState.error ? (
+              <p className="text-sm text-red-600">{avatarRefreshState.error}</p>
+            ) : null}
             {assessmentIntroAvatarUrl ? (
               <div className="rounded-xl border border-[#efe7db] bg-white p-3">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Video preview</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                  Video preview
+                </p>
                 <video
                   key={assessmentIntroAvatarUrl}
                   controls
@@ -430,29 +703,19 @@ export default function IntroSetupClient({ intro, templates }: IntroSetupClientP
               </div>
             ) : null}
           </div>
-          {podcastUrl ? (
-            <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] p-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Podcast preview</p>
-              <audio key={podcastUrl} controls preload="none" className="mt-2 w-full" src={podcastUrl} />
-              <a
-                href={podcastUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-2 inline-flex text-[11px] uppercase tracking-[0.2em] text-[var(--accent)]"
-              >
-                Open audio
-              </a>
-            </div>
-          ) : null}
           <button
             type="submit"
-            disabled={saving}
+            disabled={savingAssessment}
             className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {saving ? "Saving…" : "Save intro settings"}
+            {savingAssessment ? "Saving…" : "Save assessment intro"}
           </button>
-          {saveState.error ? <p className="text-sm text-red-600">{saveState.error}</p> : null}
-          {saveState.ok ? <p className="text-sm text-[var(--accent)]">Saved.</p> : null}
+          {assessmentSaveState.error ? (
+            <p className="text-sm text-red-600">{assessmentSaveState.error}</p>
+          ) : null}
+          {assessmentSaveState.ok ? (
+            <p className="text-sm text-[var(--accent)]">Saved.</p>
+          ) : null}
         </form>
       </section>
     </div>
