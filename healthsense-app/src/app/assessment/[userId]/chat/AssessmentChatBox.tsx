@@ -512,6 +512,9 @@ export default function AssessmentChatBox({
   const [completionSummaryLoading, setCompletionSummaryLoading] = useState(false);
   const [completionSummaryError, setCompletionSummaryError] = useState<string | null>(null);
   const [loadedCompletionSummaryRunId, setLoadedCompletionSummaryRunId] = useState<number | null>(null);
+  const [realtimeSummaryPhase, setRealtimeSummaryPhase] = useState<
+    "idle" | "preparing" | "playing" | "completed" | "failed" | "stopped" | "timeout"
+  >("idle");
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
@@ -533,6 +536,14 @@ export default function AssessmentChatBox({
   const completionSummaryUsesRealtime =
     String(completionSummaryMedia?.avatarMode || "").trim().toLowerCase() === "realtime" ||
     Boolean(completionSummaryMedia?.realtimeEnabled);
+  const completionSummaryBootstrapPending =
+    Boolean(showResultCard && completionSummaryRunId) &&
+    !completionSummaryError &&
+    (completionSummaryLoading || loadedCompletionSummaryRunId !== completionSummaryRunId);
+  const realtimeSummaryResultsUnlocked =
+    !completionSummaryBootstrapPending &&
+    (!completionSummaryUsesRealtime ||
+      ["playing", "completed", "failed", "stopped", "timeout"].includes(realtimeSummaryPhase));
   const completionSummaryPending =
     !completionSummaryUsesRealtime &&
     loadedCompletionSummaryRunId === completionSummaryRunId &&
@@ -670,6 +681,7 @@ export default function AssessmentChatBox({
     setCompletionSummaryError(null);
     setCompletionSummaryLoading(false);
     setLoadedCompletionSummaryRunId(null);
+    setRealtimeSummaryPhase("idle");
   }, [resultSummary?.run_id]);
 
   const fetchAssessmentReportPayload = useCallback(
@@ -948,62 +960,6 @@ export default function AssessmentChatBox({
   const resultCard = resultSummary ? (
     <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
       <div className="space-y-6">
-        <div className="rounded-3xl border border-[#efe7db] bg-white px-5 py-5">
-          <div className="flex items-center gap-4">
-            <LeadAssessmentBranding
-              titleLines={[]}
-              logoClassName="h-11 w-11 flex-none sm:h-12 sm:w-12"
-            />
-            <div className="min-w-0 flex-1 space-y-2">
-              <div className="flex items-end justify-between gap-4">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">HealthSense Score</p>
-                  <p className="mt-1 text-4xl font-semibold text-[#1e1b16]">{resultSummary.combined}</p>
-                </div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8c7f70]">out of 100</p>
-              </div>
-              <ProgressBar value={resultSummary.combined} max={100} tone="var(--accent)" />
-            </div>
-          </div>
-        </div>
-
-        {resultSummary.reflection?.selected_label && resultSummary.reflection?.top_label ? (
-          <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
-            <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Your reflection</p>
-            <p className="mt-2 text-sm text-[#3c332b]">
-              {resultSummary.reflection.matches_top
-                ? `You felt strongest in ${resultSummary.reflection.selected_label}, and your results backed that up. It came out highest at ${Math.round(Number(resultSummary.reflection.top_score || 0))}/100.`
-                : `You felt strongest in ${resultSummary.reflection.selected_label}, but your highest measured result was ${resultSummary.reflection.top_label} at ${Math.round(Number(resultSummary.reflection.top_score || 0))}/100.`}
-            </p>
-          </div>
-        ) : null}
-
-        {resultSummary.pillars.length ? (
-          <div className="grid grid-cols-2 gap-3 sm:gap-4">
-            {sortedResultPillars.map((pillar) => {
-              const palette = getPillarPalette(pillar.pillar_key);
-              const isStrongest =
-                resultExtremes.strongest?.pillar_key === pillar.pillar_key &&
-                resultExtremes.strongest?.score === pillar.score;
-              const isWeakest =
-                resultExtremes.weakest?.pillar_key === pillar.pillar_key &&
-                resultExtremes.weakest?.score === pillar.score;
-              return (
-                <div key={pillar.pillar_key} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-5">
-                  <div className="flex flex-col items-center text-center">
-                    <ScoreRing value={pillar.score} tone={palette.accent} />
-                    <p className="mt-3 text-sm font-semibold text-[#1e1b16]">
-                      {pillar.label}
-                      {isStrongest ? <strong> (strongest)</strong> : null}
-                      {isWeakest ? <strong> (weakest)</strong> : null}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : null}
-
         {(completionSummaryMedia?.text ||
           completionSummaryMedia?.audioUrl ||
           completionSummaryMedia?.avatarUrl ||
@@ -1023,6 +979,9 @@ export default function AssessmentChatBox({
                   audioUrl={completionSummaryMedia?.audioUrl || null}
                   maxSessionSeconds={completionSummaryMedia?.realtimeMaxSessionSeconds ?? null}
                   maxReplays={completionSummaryMedia?.realtimeMaxReplays ?? null}
+                  autoStart
+                  introMessage="Preparing a personalised video on your results by Gia your healthsense coach"
+                  onPhaseChange={setRealtimeSummaryPhase}
                 />
               ) : completionSummaryMedia?.avatarUrl ? (
                 <video
@@ -1047,9 +1006,11 @@ export default function AssessmentChatBox({
 
               {!completionSummaryUsesRealtime && (completionSummaryPending || completionSummaryLoading) ? (
                 <p className="text-sm text-[#6b6257]">
-                  {completionSummaryMedia?.audioUrl
-                    ? "We’re preparing your summary video. You can listen to the audio version while it finishes."
-                    : "We’re preparing your personal summary video."}
+                  {completionSummaryLoading && !completionSummaryMedia?.text
+                    ? "Preparing a personalised video on your results by Gia your healthsense coach"
+                    : completionSummaryMedia?.audioUrl
+                      ? "We’re preparing your summary video. You can listen to the audio version while it finishes."
+                      : "We’re preparing your personal summary video."}
                 </p>
               ) : null}
 
@@ -1079,20 +1040,80 @@ export default function AssessmentChatBox({
           </div>
         ) : null}
 
-        <div className="border-t border-[#eadfce] pt-4">
-          <button
-            type="button"
-            onClick={() => void onCoachingPlanClick()}
-            disabled={coachingPlanLoading}
-            className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-          >
-              {coachingPlanLoading
-                ? "Loading coaching plan…"
-                : showCoachingPlan
-                  ? "Hide coaching plan"
-                  : "View your personal coaching plan"}
-            </button>
-        </div>
+        {realtimeSummaryResultsUnlocked ? (
+          <>
+            <div className="rounded-3xl border border-[#efe7db] bg-white px-5 py-5">
+              <div className="flex items-center gap-4">
+                <LeadAssessmentBranding
+                  titleLines={[]}
+                  logoClassName="h-11 w-11 flex-none sm:h-12 sm:w-12"
+                />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="flex items-end justify-between gap-4">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">HealthSense Score</p>
+                      <p className="mt-1 text-4xl font-semibold text-[#1e1b16]">{resultSummary.combined}</p>
+                    </div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8c7f70]">out of 100</p>
+                  </div>
+                  <ProgressBar value={resultSummary.combined} max={100} tone="var(--accent)" />
+                </div>
+              </div>
+            </div>
+
+            {resultSummary.reflection?.selected_label && resultSummary.reflection?.top_label ? (
+              <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
+                <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Your reflection</p>
+                <p className="mt-2 text-sm text-[#3c332b]">
+                  {resultSummary.reflection.matches_top
+                    ? `You felt strongest in ${resultSummary.reflection.selected_label}, and your results backed that up. It came out highest at ${Math.round(Number(resultSummary.reflection.top_score || 0))}/100.`
+                    : `You felt strongest in ${resultSummary.reflection.selected_label}, but your highest measured result was ${resultSummary.reflection.top_label} at ${Math.round(Number(resultSummary.reflection.top_score || 0))}/100.`}
+                </p>
+              </div>
+            ) : null}
+
+            {resultSummary.pillars.length ? (
+              <div className="grid grid-cols-2 gap-3 sm:gap-4">
+                {sortedResultPillars.map((pillar) => {
+                  const palette = getPillarPalette(pillar.pillar_key);
+                  const isStrongest =
+                    resultExtremes.strongest?.pillar_key === pillar.pillar_key &&
+                    resultExtremes.strongest?.score === pillar.score;
+                  const isWeakest =
+                    resultExtremes.weakest?.pillar_key === pillar.pillar_key &&
+                    resultExtremes.weakest?.score === pillar.score;
+                  return (
+                    <div key={pillar.pillar_key} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-5">
+                      <div className="flex flex-col items-center text-center">
+                        <ScoreRing value={pillar.score} tone={palette.accent} />
+                        <p className="mt-3 text-sm font-semibold text-[#1e1b16]">
+                          {pillar.label}
+                          {isStrongest ? <strong> (strongest)</strong> : null}
+                          {isWeakest ? <strong> (weakest)</strong> : null}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
+
+            <div className="border-t border-[#eadfce] pt-4">
+              <button
+                type="button"
+                onClick={() => void onCoachingPlanClick()}
+                disabled={coachingPlanLoading}
+                className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {coachingPlanLoading
+                  ? "Loading coaching plan…"
+                  : showCoachingPlan
+                    ? "Hide coaching plan"
+                    : "View your personal coaching plan"}
+              </button>
+            </div>
+          </>
+        ) : null}
       </div>
     </section>
   ) : null;

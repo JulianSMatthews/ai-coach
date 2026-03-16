@@ -32,6 +32,9 @@ type RealtimeSummaryAvatarProps = {
   audioUrl: string | null;
   maxSessionSeconds?: number | null;
   maxReplays?: number | null;
+  autoStart?: boolean;
+  introMessage?: string | null;
+  onPhaseChange?: (phase: "idle" | "preparing" | "playing" | "completed" | "failed" | "stopped" | "timeout") => void;
 };
 
 function parseApiError(text: string, fallback: string) {
@@ -52,6 +55,9 @@ export default function RealtimeSummaryAvatar({
   audioUrl,
   maxSessionSeconds,
   maxReplays,
+  autoStart = false,
+  introMessage = null,
+  onPhaseChange,
 }: RealtimeSummaryAvatarProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
@@ -61,15 +67,23 @@ export default function RealtimeSummaryAvatar({
   const sessionIdRef = useRef<string | null>(null);
   const startedAtRef = useRef<number | null>(null);
   const finalizingRef = useRef(false);
+  const autoStartedRef = useRef(false);
 
   const [starting, setStarting] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [playsUsed, setPlaysUsed] = useState(0);
+  const [phase, setPhase] = useState<"idle" | "preparing" | "playing" | "completed" | "failed" | "stopped" | "timeout">(
+    "idle",
+  );
 
   const replayLimit = Math.max(0, Number(maxReplays ?? 1));
   const canStart = Boolean(text) && !starting && !playing && playsUsed <= replayLimit;
+
+  useEffect(() => {
+    onPhaseChange?.(phase);
+  }, [onPhaseChange, phase]);
 
   const cleanupMedia = useCallback(async () => {
     if (timeoutRef.current) {
@@ -130,6 +144,7 @@ export default function RealtimeSummaryAvatar({
       startedAtRef.current = null;
       setPlaying(false);
       setStarting(false);
+      setPhase(finalStatus);
       if (finalError) {
         setError(finalError);
       }
@@ -172,7 +187,8 @@ export default function RealtimeSummaryAvatar({
 
     setStarting(true);
     setError(null);
-    setStatusText("Connecting your summary video…");
+    setPhase("preparing");
+    setStatusText(introMessage || "Preparing a personalised video on your results by Gia your healthsense coach");
 
     try {
       const response = await fetch("/api/assessment/summary-avatar/realtime-session", {
@@ -256,6 +272,7 @@ export default function RealtimeSummaryAvatar({
       setPlaysUsed((current) => current + 1);
       setStarting(false);
       setPlaying(true);
+      setPhase("playing");
       setStatusText("Playing your summary video…");
       if (videoRef.current && mediaStreamRef.current) {
         videoRef.current.srcObject = mediaStreamRef.current;
@@ -277,7 +294,23 @@ export default function RealtimeSummaryAvatar({
       setStatusText(null);
       await finalizeSession("failed", message);
     }
-  }, [canStart, cleanupMedia, finalizeSession, maxSessionSeconds, runId, text, userId]);
+  }, [canStart, finalizeSession, introMessage, maxSessionSeconds, runId, text, userId]);
+
+  useEffect(() => {
+    if (!autoStart || autoStartedRef.current || !text || !canStart) return;
+    autoStartedRef.current = true;
+    void startRealtimeAvatar();
+  }, [autoStart, canStart, startRealtimeAvatar, text]);
+
+  useEffect(() => {
+    autoStartedRef.current = false;
+    setPhase("idle");
+    setStatusText(null);
+    setError(null);
+    setPlaying(false);
+    setStarting(false);
+    setPlaysUsed(0);
+  }, [runId]);
 
   return (
     <div className="space-y-4">
@@ -309,7 +342,7 @@ export default function RealtimeSummaryAvatar({
       {statusText ? <p className="text-sm text-[#6b6257]">{statusText}</p> : null}
       {error ? <p className="text-sm text-[#8a3e1a]">{error}</p> : null}
 
-      {audioUrl ? (
+      {phase !== "preparing" && audioUrl ? (
         <div>
           <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">Listen instead</p>
           <audio className="mt-2 w-full" controls preload="metadata">
@@ -318,7 +351,7 @@ export default function RealtimeSummaryAvatar({
         </div>
       ) : null}
 
-      {text ? <p className="text-sm leading-6 text-[#3c332b]">{text}</p> : null}
+      {phase !== "preparing" && text ? <p className="text-sm leading-6 text-[#3c332b]">{text}</p> : null}
     </div>
   );
 }
