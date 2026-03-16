@@ -242,21 +242,6 @@ export default function AssessmentPromptCard({
             />
           </div>
         ) : null}
-        {showIntroAvatar ? (
-          <div className="rounded-[28px] border border-[#e7e1d6] bg-white px-4 py-4 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.25)] sm:px-5 sm:py-5">
-            <video
-              autoPlay
-              controls
-              muted
-              playsInline
-              preload="auto"
-              poster={introAvatarPoster || undefined}
-              className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
-            >
-              <source src={introAvatarUrl} />
-            </video>
-          </div>
-        ) : null}
         {showPromptHeader ? (
           <div className="space-y-3">
             {showSectionProgress ? (
@@ -309,12 +294,20 @@ export default function AssessmentPromptCard({
         {showScorePreview && promptPreview ? (
           <div className="rounded-[28px] border border-[#e7e1d6] bg-white px-4 py-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.35)] sm:px-6 sm:py-6">
             <div className="space-y-5">
+              {showIntroAvatar ? (
+                <video
+                  autoPlay
+                  controls
+                  muted
+                  playsInline
+                  preload="auto"
+                  poster={introAvatarPoster || undefined}
+                  className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
+                >
+                  <source src={introAvatarUrl} />
+                </video>
+              ) : null}
               <div className="space-y-4">
-                <div className="space-y-2">
-                  <h4 className="text-2xl text-[#1e1b16]">
-                    {showLeadIntroPreview ? "Example HealthSense Score" : "Your HealthSense Score"}
-                  </h4>
-                </div>
                 <div className="rounded-3xl border border-[#efe7db] bg-[#fffaf3] px-5 py-5">
                   <div className="flex items-center gap-4">
                     <LeadAssessmentBranding
@@ -322,15 +315,12 @@ export default function AssessmentPromptCard({
                       logoClassName="h-11 w-11 flex-none sm:h-12 sm:w-12"
                     />
                     <div className="min-w-0 flex-1 space-y-2">
-                      <div className="flex items-end justify-between gap-4">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">HealthSense Score</p>
-                          <p className="mt-1 text-4xl font-semibold text-[#1e1b16]">
-                            {combinedPreviewScore ?? "--"}
-                          </p>
-                        </div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8c7f70]">out of 100</p>
-                      </div>
+                      <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
+                        {showLeadIntroPreview ? "Example score" : "HealthSense Score"}
+                      </p>
+                      <p className="text-4xl font-semibold text-[#1e1b16]">
+                        {combinedPreviewScore ?? "--"}
+                      </p>
                       <ProgressBar value={combinedPreviewScore ?? 0} max={100} tone="var(--accent)" />
                     </div>
                   </div>
