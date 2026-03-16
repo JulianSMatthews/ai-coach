@@ -272,6 +272,9 @@ export default function AssessmentPromptCard({
                   {prompt.concept_label ? (
                     <p className="mt-1 text-sm font-semibold uppercase tracking-[0.16em] text-[#d3541b]">{prompt.concept_label}</p>
                   ) : null}
+                  {prompt.measure_label ? (
+                    <p className="mt-2 max-w-2xl text-sm text-[#6b6257]">{prompt.measure_label}</p>
+                  ) : null}
                 </div>
               </div>
             ) : null}
@@ -297,14 +300,30 @@ export default function AssessmentPromptCard({
                     {showLeadIntroPreview ? "Example HealthSense Score" : "Your HealthSense Score"}
                   </h4>
                 </div>
-                <div className="flex items-center gap-4 rounded-3xl border border-[#efe7db] bg-[#fffaf3] px-5 py-4">
-                  <ScoreRing value={combinedPreviewScore ?? 0} tone="var(--accent)" />
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Overall</p>
-                    <p className="text-3xl font-semibold text-[#1e1b16]">
-                      {combinedPreviewScore ?? "--"}
-                    </p>
+                <div className="flex flex-col gap-4 rounded-3xl border border-[#efe7db] bg-[#fffaf3] px-5 py-4 sm:flex-row sm:items-center">
+                  <div className="flex items-center gap-4">
+                    <ScoreRing value={combinedPreviewScore ?? 0} tone="var(--accent)" />
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Overall</p>
+                      <p className="text-3xl font-semibold text-[#1e1b16]">
+                        {combinedPreviewScore ?? "--"}
+                      </p>
+                    </div>
                   </div>
+                  {showPreviewExtremes ? (
+                    <div className="border-t border-[#eadfce] pt-4 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
+                      <div className="space-y-1 text-sm text-[#1e1b16]">
+                        <p>
+                          <span className="font-semibold text-[#6b6257]">Strongest Pillar:</span>{" "}
+                          <strong>{previewExtremes.strongest?.label}</strong>
+                        </p>
+                        <p>
+                          <span className="font-semibold text-[#6b6257]">Weakest Pillar:</span>{" "}
+                          <strong>{previewExtremes.weakest?.label}</strong>
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               </div>
 
@@ -332,16 +351,6 @@ export default function AssessmentPromptCard({
                   );
                 })}
               </div>
-              {showPreviewExtremes ? (
-                <div className="space-y-1 text-sm font-semibold text-[#1e1b16]">
-                  <p>
-                    Strongest Pillar: <strong>{previewExtremes.strongest?.label}</strong>
-                  </p>
-                  <p>
-                    Weakest Pillar: <strong>{previewExtremes.weakest?.label}</strong>
-                  </p>
-                </div>
-              ) : null}
             </div>
           </div>
         ) : null}

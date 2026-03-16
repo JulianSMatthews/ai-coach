@@ -915,6 +915,7 @@ export default function AssessmentChatBox({
     }
   }
 
+  const resultExtremes = resultSummary ? resultPillarExtremes(resultSummary.pillars) : { strongest: null, weakest: null };
   const resultCard = resultSummary ? (
     <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
       <div className="space-y-6">
@@ -933,12 +934,28 @@ export default function AssessmentChatBox({
               </p>
             ) : null}
           </div>
-          <div className="flex items-center gap-4 rounded-3xl border border-[#efe7db] bg-white px-5 py-4">
-            <ScoreRing value={resultSummary.combined} tone="var(--accent)" />
-            <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Overall</p>
-              <p className="text-3xl font-semibold text-[#1e1b16]">{resultSummary.combined}</p>
+          <div className="flex flex-col gap-4 rounded-3xl border border-[#efe7db] bg-white px-5 py-4 sm:flex-row sm:items-center">
+            <div className="flex items-center gap-4">
+              <ScoreRing value={resultSummary.combined} tone="var(--accent)" />
+              <div>
+                <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Overall</p>
+                <p className="text-3xl font-semibold text-[#1e1b16]">{resultSummary.combined}</p>
+              </div>
             </div>
+            {resultExtremes.strongest && resultExtremes.weakest ? (
+              <div className="border-t border-[#eadfce] pt-4 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
+                <div className="space-y-1 text-sm text-[#1e1b16]">
+                  <p>
+                    <span className="font-semibold text-[#6b6257]">Strongest Pillar:</span>{" "}
+                    <strong>{resultExtremes.strongest.label}</strong>
+                  </p>
+                  <p>
+                    <span className="font-semibold text-[#6b6257]">Weakest Pillar:</span>{" "}
+                    <strong>{resultExtremes.weakest.label}</strong>
+                  </p>
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -969,23 +986,6 @@ export default function AssessmentChatBox({
             })}
           </div>
         ) : null}
-
-        {(() => {
-          const extremes = resultPillarExtremes(resultSummary.pillars);
-          if (!extremes.strongest || !extremes.weakest) return null;
-          return (
-            <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
-              <div className="space-y-1 text-sm font-semibold text-[#1e1b16]">
-                <p>
-                  Strongest Pillar: <strong>{extremes.strongest.label}</strong>
-                </p>
-                <p>
-                  Weakest Pillar: <strong>{extremes.weakest.label}</strong>
-                </p>
-              </div>
-            </div>
-          );
-        })()}
 
         {(completionSummaryMedia?.text ||
           completionSummaryMedia?.audioUrl ||
