@@ -287,6 +287,77 @@ def fetch_azure_tts_rate(region: str) -> dict[str, Any]:
     return {"ok": True, **best}
 
 
+def fetch_azure_avatar_rate(region: str) -> dict[str, Any]:
+    """
+    Fetch Azure Speech standard avatar batch price per minute (USD) via Retail Prices API.
+    This matches the batch avatar mode used in HealthSense.
+    """
+    region = (region or "").strip().lower()
+    if not region:
+        return {"ok": False, "error": "missing_region"}
+    debug = _pricing_debug()
+    url = (
+        "https://prices.azure.com/api/retail/prices?"
+        f"$filter=armRegionName%20eq%20'{region}'%20and%20contains(productName,'Speech')"
+    )
+    best = None
+    next_url = url
+    page = 0
+    while next_url:
+        data = None
+        try:
+            resp = requests.get(next_url, timeout=20)
+            if not resp.ok:
+                break
+            data = resp.json()
+        except Exception:
+            break
+        items = data.get("Items") or []
+        page += 1
+        if debug:
+            print(f"[azure-avatar] page={page} url={next_url}")
+            print(f"[azure-avatar] items={len(items)}")
+        for item in items:
+            product_name = str(item.get("productName") or "")
+            meter_name = str(item.get("meterName") or "")
+            unit = str(item.get("unitOfMeasure") or "")
+            name = f"{product_name} {meter_name}".lower()
+            if "avatar" not in name:
+                continue
+            if "batch" not in name:
+                continue
+            if "1 minute" not in unit.lower():
+                continue
+            price = item.get("retailPrice")
+            if price is None:
+                continue
+            score = 0
+            if "standard avatar batch speech" in name:
+                score += 5
+            if "standard" in name:
+                score += 2
+            if "custom" in name:
+                score -= 3
+            if "hd" in name:
+                score -= 1
+            candidate = {
+                "price": float(price),
+                "currency": item.get("currencyCode") or "USD",
+                "name": name,
+                "product_name": product_name,
+                "meter_name": meter_name,
+                "unit": unit,
+                "score": score,
+                "source": next_url,
+            }
+            if not best or candidate["score"] > best["score"]:
+                best = candidate
+        next_url = data.get("NextPageLink")
+    if not best:
+        return {"ok": False, "error": "azure_avatar_rate_not_found"}
+    return {"ok": True, **best}
+
+
 def fetch_twilio_whatsapp_base_fee() -> dict[str, Any]:
     """
     Best-effort fetch of Twilio's base WhatsApp fee from the public pricing page.
@@ -390,11 +461,6 @@ def fetch_provider_rates(model_names: list[str] | None = None) -> dict[str, Any]
             results["warnings"].append("openai_tts_rate_unavailable")
 
     # Avatar
-    avatar_rate_raw = (
-        os.getenv("USAGE_AVATAR_GBP_PER_MINUTE")
-        or os.getenv("AZURE_AVATAR_GBP_PER_MINUTE")
-        or ""
-    ).strip()
     avatar_chars_raw = (
         os.getenv("USAGE_AVATAR_CHARS_PER_MIN")
         or os.getenv("AZURE_AVATAR_CHARS_PER_MIN")
@@ -402,13 +468,20 @@ def fetch_provider_rates(model_names: list[str] | None = None) -> dict[str, Any]
         or "900"
     ).strip()
     avatar_rate = None
+    avatar_detail = None
     avatar_chars = None
-    try:
-        if avatar_rate_raw:
-            avatar_rate = float(avatar_rate_raw)
-    except Exception:
-        avatar_rate = None
-        results["warnings"].append("avatar_rate_invalid")
+    avatar_region = (
+        os.getenv("AZURE_AVATAR_REGION")
+        or os.getenv("AZURE_SPEECH_REGION")
+        or os.getenv("AZURE_TTS_REGION")
+        or ""
+    ).strip()
+    azure_avatar = fetch_azure_avatar_rate(avatar_region)
+    if azure_avatar.get("ok"):
+        avatar_rate = _convert_usd_to_gbp(float(azure_avatar["price"]))
+        avatar_detail = azure_avatar
+    else:
+        results["warnings"].append("avatar_rate_unavailable")
     try:
         if avatar_chars_raw:
             avatar_chars = float(avatar_chars_raw)
@@ -421,14 +494,8 @@ def fetch_provider_rates(model_names: list[str] | None = None) -> dict[str, Any]
             results["avatar_chars_per_min"] = avatar_chars
         results["sources"]["avatar"] = {
             "provider": "azure",
-            "detail": {
-                "source": "configured_env",
-                "rate_env": "USAGE_AVATAR_GBP_PER_MINUTE/AZURE_AVATAR_GBP_PER_MINUTE",
-                "chars_env": "USAGE_AVATAR_CHARS_PER_MIN/AZURE_AVATAR_CHARS_PER_MIN",
-            },
+            "detail": avatar_detail or {},
         }
-    else:
-        results["warnings"].append("avatar_rate_unavailable")
 
     # LLM (restricted to core models only for now)
     baseline_models = ["gpt-5-mini", "gpt-5.1"]
