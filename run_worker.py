@@ -15,7 +15,7 @@ from app.job_queue import (
     ensure_job_table,
     mark_done,
     mark_error,
-    enqueue_job,
+    enqueue_job_once,
     queue_requeue_delay_seconds,
 )
 from app import scheduler, assessor, monday, kickoff, thursday, friday
@@ -111,7 +111,7 @@ def _process_assessment_completion_summary_media(payload: dict) -> dict:
     if result.get("pending"):
         poll_attempt = max(0, int(payload.get("poll_attempt") or 0)) + 1
         delay_seconds = queue_requeue_delay_seconds(poll_attempt)
-        next_job_id = enqueue_job(
+        next_job_id, _created = enqueue_job_once(
             "assessment_completion_summary_media",
             {
                 "run_id": int(run_id),
@@ -121,6 +121,8 @@ def _process_assessment_completion_summary_media(payload: dict) -> dict:
             },
             user_id=int(user_id) if user_id is not None else None,
             available_at=datetime.utcnow() + timedelta(seconds=delay_seconds),
+            payload_match={"run_id": int(run_id)},
+            exclude_job_id=int(current_job_id) if current_job_id is not None else None,
         )
         set_completion_summary_worker_state(
             int(run_id),
@@ -133,11 +135,13 @@ def _process_assessment_completion_summary_media(payload: dict) -> dict:
         result["poll_attempt"] = int(poll_attempt)
         result["delay_seconds"] = int(delay_seconds)
         return result
+    final_avatar_status = str(result.get("avatar_status") or "").strip().lower()
+    final_error = str(result.get("avatar_error") or "").strip() or None
     set_completion_summary_worker_state(
         int(run_id),
         job_id=int(current_job_id) if current_job_id is not None else None,
-        status="Succeeded",
-        error=None,
+        status="Failed" if final_avatar_status == "failed" else "Succeeded",
+        error=final_error if final_avatar_status == "failed" else None,
         queued_at=now_iso,
     )
     return result

@@ -156,6 +156,77 @@ def enqueue_job(
             raise
 
 
+def _payload_matches(job_payload: Any, payload_match: dict[str, Any] | None) -> bool:
+    if not payload_match:
+        return True
+    if not isinstance(job_payload, dict):
+        return False
+    for key, expected in payload_match.items():
+        if job_payload.get(key) != expected:
+            return False
+    return True
+
+
+def find_active_job_id(
+    kind: str,
+    *,
+    payload_match: dict[str, Any] | None = None,
+    exclude_job_id: int | None = None,
+    running_stale_minutes: int = 10,
+) -> int | None:
+    now = datetime.utcnow()
+    running_stale_at = now - timedelta(minutes=max(1, int(running_stale_minutes)))
+    with SessionLocal() as s:
+        try:
+            q = (
+                s.query(BackgroundJob)
+                .filter(
+                    BackgroundJob.kind == kind,
+                    BackgroundJob.status.in_(["pending", "retry", "running"]),
+                )
+                .order_by(BackgroundJob.created_at.asc(), BackgroundJob.id.asc())
+            )
+            if exclude_job_id is not None:
+                q = q.filter(BackgroundJob.id != int(exclude_job_id))
+            rows = q.all()
+        except (ProgrammingError, OperationalError) as e:
+            if "does not exist" in str(e).lower():
+                try:
+                    s.rollback()
+                except Exception:
+                    pass
+                ensure_job_table()
+                return None
+            raise
+        for job in rows:
+            if job.status == "running" and job.locked_at and job.locked_at < running_stale_at:
+                continue
+            if _payload_matches(getattr(job, "payload", None), payload_match):
+                return int(job.id)
+    return None
+
+
+def enqueue_job_once(
+    kind: str,
+    payload: dict[str, Any],
+    *,
+    user_id: int | None = None,
+    available_at: datetime | None = None,
+    payload_match: dict[str, Any] | None = None,
+    exclude_job_id: int | None = None,
+    running_stale_minutes: int = 10,
+) -> tuple[int, bool]:
+    existing_id = find_active_job_id(
+        kind,
+        payload_match=payload_match,
+        exclude_job_id=exclude_job_id,
+        running_stale_minutes=running_stale_minutes,
+    )
+    if existing_id is not None:
+        return existing_id, False
+    return enqueue_job(kind, payload, user_id=user_id, available_at=available_at), True
+
+
 def claim_job(
     *,
     worker_id: str | None = None,

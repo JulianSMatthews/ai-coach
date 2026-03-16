@@ -59,7 +59,7 @@ from .prompts import (
     PromptAssembly,
 )
 from .debug_utils import debug_log
-from .job_queue import ensure_prompt_settings_schema, enqueue_job, should_use_worker
+from .job_queue import ensure_prompt_settings_schema, enqueue_job_once, should_use_worker
 from .programme_timeline import programme_block_map, programme_blocks as build_programme_blocks
 from .reports_paths import resolve_reports_dir
 from .virtual_clock import get_effective_today, get_virtual_date
@@ -1054,7 +1054,7 @@ def _queue_completion_summary_media_job(
 
     now_iso = datetime.utcnow().replace(microsecond=0).isoformat()
     try:
-        job_id = enqueue_job(
+        job_id, _created = enqueue_job_once(
             "assessment_completion_summary_media",
             {
                 "run_id": int(getattr(run, "id", 0) or 0),
@@ -1063,6 +1063,7 @@ def _queue_completion_summary_media_job(
                 "poll_attempt": 0,
             },
             user_id=int(getattr(user, "id", 0) or 0) or None,
+            payload_match={"run_id": int(getattr(run, "id", 0) or 0)},
         )
         updates.update(
             {
@@ -4527,6 +4528,14 @@ def build_assessment_dashboard_data(
         and not str(coaching_text or "").strip()
     )
 
+    worker_pending = bool(
+        queue_completion_summary_media_if_worker
+        and should_use_worker()
+        and not _in_worker_process()
+        and str((narrative_meta or {}).get("completion_summary_worker_status") or "").strip().lower()
+        in {"queued", "running"}
+    )
+
     return {
         "user": {
             "id": getattr(user, "id", None),
@@ -4576,8 +4585,7 @@ def build_assessment_dashboard_data(
                         completion_summary_avatar_status
                         and str(completion_summary_avatar_status).lower() not in {"succeeded", "failed"}
                     )
-                    or str((narrative_meta or {}).get("completion_summary_worker_status") or "").strip().lower()
-                    in {"queued", "running"}
+                    or worker_pending
                     or str((narrative_meta or {}).get("completion_summary_text_status") or "").strip().lower()
                     in {"queued", "generating"}
                 )
