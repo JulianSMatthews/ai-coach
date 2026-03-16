@@ -309,21 +309,47 @@ export default function AssessmentPromptCard({
               ) : null}
               <div className="space-y-4">
                 <div className="rounded-3xl border border-[#efe7db] bg-[#fffaf3] px-5 py-5">
-                  <div className="flex items-center gap-4">
-                    <LeadAssessmentBranding
-                      titleLines={[]}
-                      logoClassName="h-11 w-11 flex-none sm:h-12 sm:w-12"
-                    />
-                    <div className="min-w-0 flex-1 space-y-2">
-                      <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
-                        {showLeadIntroPreview ? "Example HealthSense Score" : "HealthSense Score"}
-                      </p>
-                      <p className="text-4xl font-semibold text-[#1e1b16]">
-                        {combinedPreviewScore ?? "--"}
-                      </p>
+                  {showLeadIntroPreview ? (
+                    <div>
+                      <div className="grid gap-4 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-end">
+                        <LeadAssessmentBranding
+                          titleLines={[]}
+                          logoClassName="h-14 w-14 flex-none sm:h-16 sm:w-16"
+                        />
+                        <div className="min-w-0">
+                          <p className="text-xs uppercase tracking-[0.26em] text-[#6b6257]">
+                            <span className="block">Example</span>
+                            <span className="mt-1 block">HealthSense</span>
+                            <span className="mt-1 block">Score</span>
+                          </p>
+                          <p className="mt-3 text-5xl font-semibold leading-none text-[#1e1b16]">
+                            {combinedPreviewScore ?? "--"}
+                          </p>
+                        </div>
+                        <div className="self-end text-left sm:text-right">
+                          <p className="text-xs uppercase tracking-[0.26em] text-[#8c7f70]">
+                            <span className="block">Out of</span>
+                            <span className="mt-1 block text-2xl font-semibold tracking-[0.2em]">100</span>
+                          </p>
+                        </div>
+                      </div>
                       <ProgressBar value={combinedPreviewScore ?? 0} max={100} tone="var(--accent)" />
                     </div>
-                  </div>
+                  ) : (
+                    <div className="flex items-center gap-4">
+                      <LeadAssessmentBranding
+                        titleLines={[]}
+                        logoClassName="h-11 w-11 flex-none sm:h-12 sm:w-12"
+                      />
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">HealthSense Score</p>
+                        <p className="text-4xl font-semibold text-[#1e1b16]">
+                          {combinedPreviewScore ?? "--"}
+                        </p>
+                        <ProgressBar value={combinedPreviewScore ?? 0} max={100} tone="var(--accent)" />
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -343,7 +369,7 @@ export default function AssessmentPromptCard({
                     previewExtremes.weakest?.label === pillar.label &&
                     pillarScore === previewExtremes.weakest.score;
                   return (
-                    <div key={pillar.pillar_key} className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
+                    <div key={pillar.pillar_key} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-5">
                       <div className="flex flex-col items-center text-center">
                         <ScoreRing value={pillarScore ?? 0} tone={isComplete ? palette.accent : "#d8d0c2"} />
                         <p className="mt-3 text-sm font-semibold text-[#1e1b16]">

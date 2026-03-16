@@ -988,8 +988,7 @@ export default function AssessmentChatBox({
           <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
             <div className="space-y-4">
               <div>
-                <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Assessment summary</p>
-                <h3 className="mt-2 text-xl text-[#1e1b16]">Your personal summary</h3>
+                <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Your personal summary</p>
               </div>
 
               {completionSummaryMedia?.avatarUrl ? (
