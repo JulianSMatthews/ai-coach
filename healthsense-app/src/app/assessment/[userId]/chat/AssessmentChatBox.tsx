@@ -512,6 +512,7 @@ export default function AssessmentChatBox({
   const [completionSummaryLoading, setCompletionSummaryLoading] = useState(false);
   const [completionSummaryError, setCompletionSummaryError] = useState<string | null>(null);
   const [loadedCompletionSummaryRunId, setLoadedCompletionSummaryRunId] = useState<number | null>(null);
+  const [summaryDetailMode, setSummaryDetailMode] = useState<"read" | "listen" | null>(null);
   const [realtimeSummaryPhase, setRealtimeSummaryPhase] = useState<
     "idle" | "preparing" | "playing" | "completed" | "failed" | "stopped" | "timeout"
   >("idle");
@@ -540,10 +541,6 @@ export default function AssessmentChatBox({
     Boolean(showResultCard && completionSummaryRunId) &&
     !completionSummaryError &&
     (completionSummaryLoading || loadedCompletionSummaryRunId !== completionSummaryRunId);
-  const realtimeSummaryResultsUnlocked =
-    !completionSummaryBootstrapPending &&
-    (!completionSummaryUsesRealtime ||
-      ["playing", "completed", "failed", "stopped", "timeout"].includes(realtimeSummaryPhase));
   const completionSummaryPending =
     !completionSummaryUsesRealtime &&
     loadedCompletionSummaryRunId === completionSummaryRunId &&
@@ -552,7 +549,7 @@ export default function AssessmentChatBox({
     completionSummaryStatus !== "failed";
   const completionSummaryFailed = completionSummaryStatus === "failed";
   const summaryIntroMessage =
-    "Preparing a personalised video on your results by Gia your healthsense coach";
+    "Gia is preparing your personalised results video. This can take a moment. Your full results will appear here once it is ready.";
   const showCompletionSummaryPanel =
     Boolean(completionSummaryRunId) ||
     Boolean(
@@ -568,6 +565,17 @@ export default function AssessmentChatBox({
     (completionSummaryBootstrapPending ||
       realtimeSummaryPhase === "idle" ||
       realtimeSummaryPhase === "preparing");
+  const summaryExperienceBlocked =
+    Boolean(showResultCard && completionSummaryRunId) &&
+    !completionSummaryError &&
+    (completionSummaryBootstrapPending ||
+      completionSummaryPending ||
+      (completionSummaryUsesRealtime &&
+        (realtimeSummaryPhase === "idle" || realtimeSummaryPhase === "preparing")));
+  const summaryResultsUnlocked =
+    !summaryExperienceBlocked &&
+    (!completionSummaryUsesRealtime ||
+      ["playing", "completed", "failed", "stopped", "timeout"].includes(realtimeSummaryPhase));
 
   const applyChatPayload = useCallback((data: ChatResponse) => {
     const nextPrompt = normalizeCurrentPrompt(data.current_prompt);
@@ -699,6 +707,7 @@ export default function AssessmentChatBox({
     setCompletionSummaryLoading(false);
     setLoadedCompletionSummaryRunId(null);
     setRealtimeSummaryPhase("idle");
+    setSummaryDetailMode(null);
   }, [resultSummary?.run_id]);
 
   const fetchAssessmentReportPayload = useCallback(
@@ -850,18 +859,6 @@ export default function AssessmentChatBox({
     if (!textValue || sending) return;
     setDraft("");
     await sendMessage(textValue, { restoreDraftOnError: true });
-  }
-
-  function onQuickReplyClick(reply: string, label?: string) {
-    const textValue = String(reply || "").trim();
-    if (!textValue || busy) return;
-    void sendMessage(textValue, {
-      quickReply: {
-        used: true,
-        hideInChat: true,
-        label,
-      },
-    });
   }
 
   function onPromptOptionClick(option: AssessmentPromptOption) {
@@ -1022,13 +1019,7 @@ export default function AssessmentChatBox({
               ) : null}
 
               {!completionSummaryUsesRealtime && (completionSummaryPending || completionSummaryLoading) ? (
-                <p className="text-sm text-[#6b6257]">
-                  {completionSummaryLoading && !completionSummaryMedia?.text
-                    ? summaryIntroMessage
-                    : completionSummaryMedia?.audioUrl
-                      ? "We’re preparing your summary video. You can listen to the audio version while it finishes."
-                      : "We’re preparing your personal summary video."}
-                </p>
+                <p className="text-sm text-[#6b6257]">{summaryIntroMessage}</p>
               ) : null}
 
               {completionSummaryFailed && !completionSummaryMedia?.avatarUrl ? (
@@ -1049,15 +1040,49 @@ export default function AssessmentChatBox({
               ) : null}
 
               {!completionSummaryUsesRealtime &&
-              !completionSummaryMedia?.avatarUrl &&
-              completionSummaryMedia?.text ? (
-                <p className="text-sm leading-6 text-[#3c332b]">{completionSummaryMedia.text}</p>
+              !completionSummaryPending &&
+              !completionSummaryLoading &&
+              (completionSummaryMedia?.text || completionSummaryMedia?.audioUrl) ? (
+                <div className="space-y-3">
+                  <div className="flex flex-wrap gap-2">
+                    {completionSummaryMedia?.text ? (
+                      <button
+                        type="button"
+                        onClick={() => setSummaryDetailMode((current) => (current === "read" ? null : "read"))}
+                        className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+                      >
+                        {summaryDetailMode === "read" ? "Hide read" : "Read"}
+                      </button>
+                    ) : null}
+                    {completionSummaryMedia?.audioUrl ? (
+                      <button
+                        type="button"
+                        onClick={() => setSummaryDetailMode((current) => (current === "listen" ? null : "listen"))}
+                        className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+                      >
+                        {summaryDetailMode === "listen" ? "Hide listen" : "Listen"}
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {summaryDetailMode === "listen" && completionSummaryMedia?.audioUrl ? (
+                    <audio className="w-full" controls preload="metadata">
+                      <source src={completionSummaryMedia.audioUrl} type="audio/mpeg" />
+                    </audio>
+                  ) : null}
+
+                  {summaryDetailMode === "read" && completionSummaryMedia?.text ? (
+                    <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                      <p className="text-sm leading-6 text-[#3c332b]">{completionSummaryMedia.text}</p>
+                    </div>
+                  ) : null}
+                </div>
               ) : null}
             </div>
           </div>
         ) : null}
 
-        {realtimeSummaryResultsUnlocked ? (
+        {summaryResultsUnlocked ? (
           <>
             <div className="rounded-3xl border border-[#efe7db] bg-white px-5 py-5">
               <div className="flex items-center gap-4">

@@ -1297,6 +1297,11 @@ def _bump_concept_asked(user_id: int, run_id: int, pillar_key: str | None, conce
 
 
 def _maybe_prompt_preamble_question(user: User, state: dict, pillar: str, turns: list[dict]) -> bool:
+    # The app assessment UI only supports structured prompt cards here, so
+    # free-text pillar preambles can consume the first concept answer and
+    # make the user see that concept question twice.
+    if _is_app_assessment_delivery():
+        return False
     question = PILLAR_PREAMBLE_QUESTIONS.get(pillar)
     if not question:
         return False
@@ -2436,6 +2441,47 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             return True
 
         awaiting_pillar = state.get("awaiting_preamble")
+        if awaiting_pillar and _is_app_assessment_delivery():
+            pref_map = state.setdefault("pillar_preamble", {})
+            pillar_state = pref_map.setdefault(awaiting_pillar, {})
+            pillar_state["asked"] = True
+            pillar_state["answered"] = True
+            pillar_state["answer"] = ""
+            state["awaiting_preamble"] = None
+            repair_pillar = str(state.get("current") or awaiting_pillar or "").strip().lower()
+            concept_idx_map = state.setdefault("concept_idx", {
+                "nutrition": 0, "training": 0, "resilience": 0, "recovery": 0
+            })
+            pillar_concepts = (state.get("pillar_concepts") or {}).get(repair_pillar) or []
+            try:
+                current_idx = max(0, int(concept_idx_map.get(repair_pillar, 0) or 0))
+            except Exception:
+                current_idx = 0
+            repair_concept = pillar_concepts[current_idx] if current_idx < len(pillar_concepts) else None
+            has_main_turn = any(
+                t.get("role") == "assistant"
+                and t.get("pillar") == repair_pillar
+                and t.get("is_main")
+                and t.get("concept") == repair_concept
+                for t in turns
+            )
+            if repair_concept and not has_main_turn:
+                repair_question = _concept_primary_question(s, repair_pillar, repair_concept)
+                if repair_question:
+                    turns.append({
+                        "role": "assistant",
+                        "pillar": repair_pillar,
+                        "question": repair_question,
+                        "concept": repair_concept,
+                        "is_main": True,
+                    })
+                    concept_progress = state.setdefault("concept_progress", {
+                        "nutrition": {}, "training": {}, "resilience": {}, "recovery": {}
+                    })
+                    concept_progress.setdefault(repair_pillar, {}).setdefault(repair_concept, {
+                        "main_asked": True, "clarifiers": 0, "scored": False, "summary_logged": False
+                    })
+            awaiting_pillar = None
         if awaiting_pillar:
             reply = (user_text or "").strip()
             if not reply:

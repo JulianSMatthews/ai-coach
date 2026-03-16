@@ -74,6 +74,7 @@ export default function RealtimeSummaryAvatar({
   const [statusText, setStatusText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [playsUsed, setPlaysUsed] = useState(0);
+  const [detailMode, setDetailMode] = useState<"read" | "listen" | null>(null);
   const [phase, setPhase] = useState<"idle" | "preparing" | "playing" | "completed" | "failed" | "stopped" | "timeout">(
     "idle",
   );
@@ -310,14 +311,20 @@ export default function RealtimeSummaryAvatar({
     setPlaying(false);
     setStarting(false);
     setPlaysUsed(0);
+    setDetailMode(null);
   }, [runId]);
+
+  const showVideoSurface = playing || playsUsed > 0;
+  const showSummaryActions = phase !== "preparing" && (Boolean(audioUrl) || Boolean(text));
 
   return (
     <div className="space-y-4">
       <div className="space-y-3">
-        <div className="overflow-hidden rounded-2xl border border-[#efe7db] bg-[#f6efe5]">
-          <video ref={videoRef} className="w-full" playsInline controls={playing} />
-        </div>
+        {showVideoSurface ? (
+          <div className="overflow-hidden rounded-2xl border border-[#efe7db] bg-[#f6efe5]">
+            <video ref={videoRef} className="w-full" playsInline controls={playing} />
+          </div>
+        ) : null}
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -342,16 +349,42 @@ export default function RealtimeSummaryAvatar({
       {statusText ? <p className="text-sm text-[#6b6257]">{statusText}</p> : null}
       {error ? <p className="text-sm text-[#8a3e1a]">{error}</p> : null}
 
-      {phase !== "preparing" && audioUrl ? (
-        <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">Listen instead</p>
-          <audio className="mt-2 w-full" controls preload="metadata">
-            <source src={audioUrl} type="audio/mpeg" />
-          </audio>
+      {showSummaryActions ? (
+        <div className="space-y-3">
+          <div className="flex flex-wrap gap-2">
+            {text ? (
+              <button
+                type="button"
+                onClick={() => setDetailMode((current) => (current === "read" ? null : "read"))}
+                className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+              >
+                {detailMode === "read" ? "Hide read" : "Read"}
+              </button>
+            ) : null}
+            {audioUrl ? (
+              <button
+                type="button"
+                onClick={() => setDetailMode((current) => (current === "listen" ? null : "listen"))}
+                className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+              >
+                {detailMode === "listen" ? "Hide listen" : "Listen"}
+              </button>
+            ) : null}
+          </div>
+
+          {detailMode === "listen" && audioUrl ? (
+            <audio className="w-full" controls preload="metadata">
+              <source src={audioUrl} type="audio/mpeg" />
+            </audio>
+          ) : null}
+
+          {detailMode === "read" && text ? (
+            <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+              <p className="text-sm leading-6 text-[#3c332b]">{text}</p>
+            </div>
+          ) : null}
         </div>
       ) : null}
-
-      {phase !== "preparing" && text ? <p className="text-sm leading-6 text-[#3c332b]">{text}</p> : null}
     </div>
   );
 }
