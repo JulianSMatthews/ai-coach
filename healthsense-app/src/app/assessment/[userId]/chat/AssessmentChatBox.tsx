@@ -562,6 +562,12 @@ export default function AssessmentChatBox({
         completionSummaryLoading ||
         completionSummaryError,
     );
+  const showRealtimeSummaryIntroMessage =
+    Boolean(completionSummaryUsesRealtime && completionSummaryRunId) &&
+    !completionSummaryError &&
+    (completionSummaryBootstrapPending ||
+      realtimeSummaryPhase === "idle" ||
+      realtimeSummaryPhase === "preparing");
 
   const applyChatPayload = useCallback((data: ChatResponse) => {
     const nextPrompt = normalizeCurrentPrompt(data.current_prompt);
@@ -987,7 +993,7 @@ export default function AssessmentChatBox({
                   maxSessionSeconds={completionSummaryMedia?.realtimeMaxSessionSeconds ?? null}
                   maxReplays={completionSummaryMedia?.realtimeMaxReplays ?? null}
                   autoStart
-                  introMessage={summaryIntroMessage}
+                  introMessage={null}
                   onPhaseChange={setRealtimeSummaryPhase}
                 />
               ) : completionSummaryMedia?.avatarUrl ? (
@@ -1011,10 +1017,7 @@ export default function AssessmentChatBox({
                 </div>
               ) : null}
 
-              {completionSummaryRunId &&
-              !completionSummaryError &&
-              (!completionSummaryMedia?.text || completionSummaryBootstrapPending) &&
-              !(completionSummaryUsesRealtime && completionSummaryMedia?.text) ? (
+              {showRealtimeSummaryIntroMessage ? (
                 <p className="text-sm text-[#6b6257]">{summaryIntroMessage}</p>
               ) : null}
 

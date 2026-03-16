@@ -188,7 +188,7 @@ export default function RealtimeSummaryAvatar({
     setStarting(true);
     setError(null);
     setPhase("preparing");
-    setStatusText(introMessage || "Preparing a personalised video on your results by Gia your healthsense coach");
+      setStatusText(introMessage ? introMessage : null);
 
     try {
       const response = await fetch("/api/assessment/summary-avatar/realtime-session", {
