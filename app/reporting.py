@@ -1171,6 +1171,84 @@ def _update_completion_summary_prompt_log(
             s.commit()
 
 
+def _log_completion_summary_avatar_usage_once(
+    *,
+    run_id: int,
+    user_id: int | None,
+    avatar_job_id: str | None,
+    summary_text: str,
+    character: str,
+    style: str,
+    voice: str,
+    duration_ms: int | None,
+) -> dict[str, Any]:
+    from .usage import estimate_avatar_cost_from_text, log_usage_event
+
+    cost_estimate, media_seconds_est, rate_per_minute, chars_per_minute, rate_source = (
+        estimate_avatar_cost_from_text(summary_text)
+    )
+    now_iso = datetime.utcnow().replace(microsecond=0).isoformat()
+    meta_updates = {
+        "completion_summary_avatar_estimated_media_seconds": round(media_seconds_est, 2),
+        "completion_summary_avatar_cost_estimate_gbp": round(cost_estimate, 4),
+        "completion_summary_avatar_rate_gbp_per_minute": float(rate_per_minute),
+        "completion_summary_avatar_chars_per_minute": float(chars_per_minute),
+        "completion_summary_avatar_rate_source": rate_source,
+        "completion_summary_avatar_usage_logged_at": now_iso,
+    }
+    model_name = "/".join(
+        [part for part in [character, style, voice] if str(part or "").strip()]
+    )[:120] or None
+
+    with SessionLocal() as s:
+        query = s.query(AssessmentNarrative).filter(AssessmentNarrative.run_id == int(run_id))
+        try:
+            row = query.with_for_update().first()
+        except Exception:
+            row = query.first()
+        if not row:
+            row = AssessmentNarrative(run_id=int(run_id))
+            s.add(row)
+            s.flush()
+        current_meta = dict((getattr(row, "meta", None) or {}))
+        if current_meta.get("completion_summary_avatar_usage_logged_at"):
+            return current_meta
+        row.meta = {**current_meta, **meta_updates}
+        log_usage_event(
+            user_id=user_id,
+            provider="azure",
+            product="avatar",
+            model=model_name,
+            units=float(media_seconds_est),
+            unit_type="avatar_seconds",
+            cost_estimate=float(cost_estimate),
+            request_id=avatar_job_id,
+            duration_ms=duration_ms,
+            tag="assessment",
+            meta={
+                "run_id": int(run_id),
+                "job_id": avatar_job_id,
+                "character": character,
+                "style": style,
+                "voice": voice,
+                "text_chars": len(str(summary_text or "")),
+                "estimated_media_seconds": round(media_seconds_est, 2),
+                "rate_gbp_per_minute": float(rate_per_minute),
+                "rate_source": rate_source,
+            },
+            session=s,
+            commit=False,
+        )
+        s.commit()
+
+    _update_completion_summary_prompt_log(
+        run_id=int(run_id),
+        user_id=user_id,
+        updates=meta_updates,
+    )
+    return meta_updates
+
+
 def _claim_completion_summary_text_generation(run_id: int, summary_name: str | None) -> tuple[bool, dict[str, Any]]:
     now_utc = datetime.utcnow()
     now_iso = now_utc.replace(microsecond=0).isoformat()
@@ -1284,6 +1362,12 @@ def _ensure_completion_summary_media(
                 "completion_summary_avatar_retry_after": None,
                 "completion_summary_avatar_generated_at": None,
                 "completion_summary_avatar_duration_ms": None,
+                "completion_summary_avatar_estimated_media_seconds": None,
+                "completion_summary_avatar_cost_estimate_gbp": None,
+                "completion_summary_avatar_rate_gbp_per_minute": None,
+                "completion_summary_avatar_chars_per_minute": None,
+                "completion_summary_avatar_rate_source": None,
+                "completion_summary_avatar_usage_logged_at": None,
                 "completion_summary_text_status": None,
                 "completion_summary_text_requested_at": None,
                 "completion_summary_text_generated_at": None,
@@ -1415,6 +1499,34 @@ def _ensure_completion_summary_media(
                 updates["completion_summary_avatar_retry_after"] = None
                 updates["completion_summary_avatar_generated_at"] = completed_at.replace(microsecond=0).isoformat()
                 updates["completion_summary_avatar_duration_ms"] = avatar_duration_ms
+                usage_meta = _log_completion_summary_avatar_usage_once(
+                    run_id=int(getattr(run, "id", 0) or 0),
+                    user_id=int(getattr(user, "id", 0) or 0) or None,
+                    avatar_job_id=avatar_job_id,
+                    summary_text=summary_text,
+                    character=character,
+                    style=style,
+                    voice=voice,
+                    duration_ms=avatar_duration_ms,
+                )
+                updates["completion_summary_avatar_estimated_media_seconds"] = usage_meta.get(
+                    "completion_summary_avatar_estimated_media_seconds"
+                )
+                updates["completion_summary_avatar_cost_estimate_gbp"] = usage_meta.get(
+                    "completion_summary_avatar_cost_estimate_gbp"
+                )
+                updates["completion_summary_avatar_rate_gbp_per_minute"] = usage_meta.get(
+                    "completion_summary_avatar_rate_gbp_per_minute"
+                )
+                updates["completion_summary_avatar_chars_per_minute"] = usage_meta.get(
+                    "completion_summary_avatar_chars_per_minute"
+                )
+                updates["completion_summary_avatar_rate_source"] = usage_meta.get(
+                    "completion_summary_avatar_rate_source"
+                )
+                updates["completion_summary_avatar_usage_logged_at"] = usage_meta.get(
+                    "completion_summary_avatar_usage_logged_at"
+                )
                 _update_completion_summary_prompt_log(
                     run_id=int(getattr(run, "id", 0) or 0),
                     user_id=int(getattr(user, "id", 0) or 0) or None,
@@ -1422,6 +1534,15 @@ def _ensure_completion_summary_media(
                         "completion_summary_avatar_status": avatar_status,
                         "completion_summary_avatar_generated_at": completed_at.replace(microsecond=0).isoformat(),
                         "completion_summary_avatar_duration_ms": avatar_duration_ms,
+                        "completion_summary_avatar_cost_estimate_gbp": usage_meta.get(
+                            "completion_summary_avatar_cost_estimate_gbp"
+                        ),
+                        "completion_summary_avatar_estimated_media_seconds": usage_meta.get(
+                            "completion_summary_avatar_estimated_media_seconds"
+                        ),
+                        "completion_summary_avatar_rate_source": usage_meta.get(
+                            "completion_summary_avatar_rate_source"
+                        ),
                     },
                 )
             except Exception as exc:
@@ -1503,6 +1624,12 @@ def _ensure_completion_summary_media(
                         "completion_summary_avatar_retry_after": None,
                         "completion_summary_avatar_generated_at": None,
                         "completion_summary_avatar_duration_ms": None,
+                        "completion_summary_avatar_estimated_media_seconds": None,
+                        "completion_summary_avatar_cost_estimate_gbp": None,
+                        "completion_summary_avatar_rate_gbp_per_minute": None,
+                        "completion_summary_avatar_chars_per_minute": None,
+                        "completion_summary_avatar_rate_source": None,
+                        "completion_summary_avatar_usage_logged_at": None,
                         "completion_summary_avatar_character": character,
                         "completion_summary_avatar_style": style,
                         "completion_summary_avatar_voice": voice,

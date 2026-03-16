@@ -33,6 +33,10 @@ services:
         sync: false
       - key: AZURE_AVATAR_ENDPOINT
         sync: false
+      - key: AZURE_AVATAR_GBP_PER_MINUTE
+        sync: false
+      - key: AZURE_AVATAR_CHARS_PER_MIN
+        sync: false
       - key: ASS_MODEL
         value: "gpt-5.1"
       - key: LLM_MODEL

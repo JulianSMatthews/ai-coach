@@ -214,6 +214,58 @@ def _tts_chars_per_min() -> float:
     return 900.0
 
 
+def _avatar_rate_gbp_per_minute() -> tuple[float, str]:
+    row = _load_usage_settings()
+    if row:
+        meta = _meta_to_dict(getattr(row, "meta", None))
+        rate = _to_float(meta.get("avatar_gbp_per_minute"))
+        if rate is not None:
+            return float(rate), "db_meta"
+    raw = (
+        os.getenv("USAGE_AVATAR_GBP_PER_MINUTE")
+        or os.getenv("AZURE_AVATAR_GBP_PER_MINUTE")
+        or ""
+    ).strip()
+    if raw:
+        try:
+            return float(raw), "env"
+        except Exception:
+            return 0.0, "default"
+    return 0.0, "default"
+
+
+def _avatar_chars_per_min() -> float:
+    row = _load_usage_settings()
+    if row:
+        meta = _meta_to_dict(getattr(row, "meta", None))
+        chars_per_min = _to_float(meta.get("avatar_chars_per_min"))
+        if chars_per_min is not None and chars_per_min > 0:
+            return float(chars_per_min)
+    raw = (
+        os.getenv("USAGE_AVATAR_CHARS_PER_MIN")
+        or os.getenv("AZURE_AVATAR_CHARS_PER_MIN")
+        or ""
+    ).strip()
+    if raw:
+        try:
+            parsed = float(raw)
+            if parsed > 0:
+                return parsed
+        except Exception:
+            pass
+    return _tts_chars_per_min()
+
+
+def estimate_avatar_cost_from_text(text: str | None) -> tuple[float, float, float, float, str]:
+    chars = float(len(str(text or "")))
+    chars_per_min = _avatar_chars_per_min()
+    minutes_est = chars / chars_per_min if chars_per_min else 0.0
+    seconds_est = minutes_est * 60.0
+    rate, source = _avatar_rate_gbp_per_minute()
+    cost_est = minutes_est * rate if minutes_est and rate else 0.0
+    return cost_est, seconds_est, rate, chars_per_min, source
+
+
 def _llm_rate_gbp_per_1m_input_tokens() -> tuple[float, str]:
     rate_in, _, source, _ = resolve_llm_rates()
     return rate_in, source
