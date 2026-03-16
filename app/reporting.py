@@ -1024,6 +1024,16 @@ def _upsert_assessment_narrative_meta(run_id: int, updates: dict[str, Any]) -> d
         return dict((getattr(row, "meta", None) or {}))
 
 
+def _assessment_narrative_meta(run_id: int) -> dict[str, Any]:
+    with SessionLocal() as s:
+        row = (
+            s.query(AssessmentNarrative)
+            .filter(AssessmentNarrative.run_id == run_id)
+            .first()
+        )
+        return dict((getattr(row, "meta", None) or {})) if row else {}
+
+
 def _parse_meta_datetime(value: Any) -> datetime | None:
     raw = str(value or "").strip()
     if not raw:
@@ -1058,6 +1068,97 @@ def _summary_text_starts_with_name(text: str | None, name: str | None) -> bool:
     return bool(pattern.search(snippet))
 
 
+def _update_completion_summary_prompt_log(
+    *,
+    run_id: int,
+    user_id: int | None,
+    updates: dict[str, Any],
+) -> None:
+    if not updates:
+        return
+    with SessionLocal() as s:
+        query = (
+            s.query(LLMPromptLog)
+            .filter(LLMPromptLog.touchpoint == "assessment_completion_summary")
+            .order_by(LLMPromptLog.created_at.desc(), LLMPromptLog.id.desc())
+        )
+        if user_id:
+            query = query.filter(LLMPromptLog.user_id == int(user_id))
+        rows = query.limit(25).all()
+        target = None
+        for row in rows:
+            ctx = getattr(row, "context_meta", None)
+            if not isinstance(ctx, dict):
+                continue
+            try:
+                ctx_run_id = int(ctx.get("run_id")) if ctx.get("run_id") is not None else None
+            except Exception:
+                ctx_run_id = None
+            if ctx_run_id == int(run_id):
+                target = row
+                break
+        if not target:
+            return
+        current_meta = dict((getattr(target, "context_meta", None) or {}))
+        next_meta = {**current_meta, **updates}
+        if next_meta != current_meta:
+            target.context_meta = next_meta
+            s.commit()
+
+
+def _claim_completion_summary_text_generation(run_id: int, summary_name: str | None) -> tuple[bool, dict[str, Any]]:
+    now_utc = datetime.utcnow()
+    now_iso = now_utc.replace(microsecond=0).isoformat()
+    with SessionLocal() as s:
+        query = s.query(AssessmentNarrative).filter(AssessmentNarrative.run_id == run_id)
+        try:
+            row = query.with_for_update().first()
+        except Exception:
+            row = query.first()
+        if not row:
+            row = AssessmentNarrative(run_id=run_id)
+            s.add(row)
+            s.flush()
+        current_meta = dict((getattr(row, "meta", None) or {}))
+        current_text = str(current_meta.get("completion_summary_text") or "").strip()
+        current_status = str(current_meta.get("completion_summary_text_status") or "").strip().lower()
+        requested_at = _parse_meta_datetime(current_meta.get("completion_summary_text_requested_at"))
+        if current_text:
+            return False, current_meta
+        if current_status == "generating" and requested_at and (now_utc - requested_at) < timedelta(minutes=2):
+            return False, current_meta
+        next_meta = {
+            **current_meta,
+            "completion_summary_name": str(summary_name or "").strip() or None,
+            "completion_summary_text_status": "Generating",
+            "completion_summary_text_requested_at": now_iso,
+            "completion_summary_text_generated_at": None,
+            "completion_summary_text_error": None,
+        }
+        row.meta = next_meta
+        s.commit()
+        s.refresh(row)
+        return True, dict((getattr(row, "meta", None) or {}))
+
+
+def _wait_for_completion_summary_text(
+    run_id: int,
+    *,
+    timeout_seconds: float = 8.0,
+    poll_seconds: float = 0.5,
+) -> dict[str, Any]:
+    deadline = time.time() + max(0.5, timeout_seconds)
+    latest_meta: dict[str, Any] = {}
+    while time.time() < deadline:
+        latest_meta = _assessment_narrative_meta(run_id)
+        summary_text = str(latest_meta.get("completion_summary_text") or "").strip()
+        summary_status = str(latest_meta.get("completion_summary_text_status") or "").strip().lower()
+        if summary_text or summary_status not in {"generating", "submitting"}:
+            return latest_meta
+        time.sleep(max(0.1, poll_seconds))
+    return latest_meta
+
+
 def _ensure_completion_summary_media(
     *,
     user: User,
@@ -1070,6 +1171,8 @@ def _ensure_completion_summary_media(
 ) -> dict[str, Any]:
     meta = dict(current_meta or {})
     summary_text = str(meta.get("completion_summary_text") or "").strip()
+    summary_text_status = str(meta.get("completion_summary_text_status") or "").strip() or None
+    summary_text_requested_at = _parse_meta_datetime(meta.get("completion_summary_text_requested_at"))
     audio_url = str(meta.get("completion_summary_audio_url") or "").strip() or None
     avatar_url = str(meta.get("completion_summary_avatar_url") or "").strip() or None
     avatar_status = str(meta.get("completion_summary_avatar_status") or "").strip() or None
@@ -1109,21 +1212,61 @@ def _ensure_completion_summary_media(
                 "completion_summary_avatar_summary_url": None,
                 "completion_summary_avatar_requested_at": None,
                 "completion_summary_avatar_retry_after": None,
+                "completion_summary_avatar_generated_at": None,
+                "completion_summary_avatar_duration_ms": None,
+                "completion_summary_text_status": None,
+                "completion_summary_text_requested_at": None,
+                "completion_summary_text_generated_at": None,
+                "completion_summary_text_error": None,
             }
         )
 
     if not summary_text:
-        summary_text = _assessment_completion_summary_text(
-            user,
-            combined,
-            scores_payload,
-            okr_payload,
-            readiness_payload=readiness_payload,
-            allow_llm=True,
+        active_text_generation = bool(
+            str(summary_text_status or "").strip().lower() == "generating"
+            and summary_text_requested_at
+            and (now_utc - summary_text_requested_at) < timedelta(minutes=2)
         )
-        if summary_text:
-            updates["completion_summary_text"] = summary_text
-            updates["completion_summary_name"] = current_summary_name or None
+        if active_text_generation:
+            waited_meta = _wait_for_completion_summary_text(int(getattr(run, "id", 0) or 0))
+            summary_text = str(waited_meta.get("completion_summary_text") or "").strip()
+            summary_text_status = str(waited_meta.get("completion_summary_text_status") or "").strip() or summary_text_status
+            if summary_text:
+                meta = {**meta, **waited_meta}
+        if not summary_text:
+            claimed, claimed_meta = _claim_completion_summary_text_generation(
+                int(getattr(run, "id", 0) or 0),
+                current_summary_name or None,
+            )
+            if claimed:
+                summary_text_status = "Generating"
+                summary_text_requested_at = _parse_meta_datetime(claimed_meta.get("completion_summary_text_requested_at"))
+                try:
+                    summary_text = _assessment_completion_summary_text(
+                        user,
+                        combined,
+                        scores_payload,
+                        okr_payload,
+                        readiness_payload=readiness_payload,
+                        allow_llm=True,
+                    )
+                except Exception as exc:
+                    summary_text = ""
+                    updates["completion_summary_text_status"] = "Failed"
+                    updates["completion_summary_text_error"] = str(exc)
+                if summary_text:
+                    updates["completion_summary_text"] = summary_text
+                    updates["completion_summary_name"] = current_summary_name or None
+                    updates["completion_summary_text_status"] = "Succeeded"
+                    updates["completion_summary_text_generated_at"] = datetime.utcnow().replace(microsecond=0).isoformat()
+                    updates["completion_summary_text_error"] = None
+            else:
+                summary_text = str(claimed_meta.get("completion_summary_text") or "").strip()
+                summary_text_status = str(claimed_meta.get("completion_summary_text_status") or "").strip() or summary_text_status
+                if not summary_text and str(summary_text_status or "").strip().lower() == "generating":
+                    waited_meta = _wait_for_completion_summary_text(int(getattr(run, "id", 0) or 0))
+                    summary_text = str(waited_meta.get("completion_summary_text") or "").strip()
+                    summary_text_status = str(waited_meta.get("completion_summary_text_status") or "").strip() or summary_text_status
 
     if summary_text and not audio_url:
         try:
@@ -1189,11 +1332,28 @@ def _ensure_completion_summary_media(
                 avatar_url = _write_global_report_bytes(f"content/assessment/{file_name}", video_bytes)
                 avatar_status = "Succeeded"
                 avatar_error = None
+                completed_at = _parse_meta_datetime(status_payload.get("lastActionDateTime")) or datetime.utcnow()
+                avatar_duration_ms = (
+                    int(max(0.0, (completed_at - avatar_requested_at).total_seconds() * 1000))
+                    if avatar_requested_at
+                    else None
+                )
                 updates["completion_summary_avatar_url"] = avatar_url
                 updates["completion_summary_avatar_status"] = avatar_status
                 updates["completion_summary_avatar_error"] = None
                 updates["completion_summary_avatar_summary_url"] = avatar_summary_url
                 updates["completion_summary_avatar_retry_after"] = None
+                updates["completion_summary_avatar_generated_at"] = completed_at.replace(microsecond=0).isoformat()
+                updates["completion_summary_avatar_duration_ms"] = avatar_duration_ms
+                _update_completion_summary_prompt_log(
+                    run_id=int(getattr(run, "id", 0) or 0),
+                    user_id=int(getattr(user, "id", 0) or 0) or None,
+                    updates={
+                        "completion_summary_avatar_status": avatar_status,
+                        "completion_summary_avatar_generated_at": completed_at.replace(microsecond=0).isoformat(),
+                        "completion_summary_avatar_duration_ms": avatar_duration_ms,
+                    },
+                )
             except Exception as exc:
                 avatar_status = "Failed"
                 avatar_error = str(exc)
@@ -1216,6 +1376,14 @@ def _ensure_completion_summary_media(
                     props = status_payload.get("properties") if isinstance(status_payload.get("properties"), dict) else {}
                     avatar_error = str((props or {}).get("error") or status_payload.get("error") or "Azure avatar generation failed.").strip()
                     updates["completion_summary_avatar_error"] = avatar_error
+                    _update_completion_summary_prompt_log(
+                        run_id=int(getattr(run, "id", 0) or 0),
+                        user_id=int(getattr(user, "id", 0) or 0) or None,
+                        updates={
+                            "completion_summary_avatar_status": status,
+                            "completion_summary_avatar_error": avatar_error,
+                        },
+                    )
             except Exception as exc:
                 if _is_avatar_rate_limited(str(exc)):
                     avatar_status = avatar_status or "Running"
@@ -1225,11 +1393,27 @@ def _ensure_completion_summary_media(
                     updates["completion_summary_avatar_retry_after"] = (
                         now_utc + timedelta(minutes=1)
                     ).replace(microsecond=0).isoformat()
+                    _update_completion_summary_prompt_log(
+                        run_id=int(getattr(run, "id", 0) or 0),
+                        user_id=int(getattr(user, "id", 0) or 0) or None,
+                        updates={
+                            "completion_summary_avatar_status": avatar_status,
+                            "completion_summary_avatar_error": avatar_error,
+                        },
+                    )
                 else:
                     avatar_status = "Failed"
                     avatar_error = str(exc)
                     updates["completion_summary_avatar_status"] = avatar_status
                     updates["completion_summary_avatar_error"] = avatar_error
+                    _update_completion_summary_prompt_log(
+                        run_id=int(getattr(run, "id", 0) or 0),
+                        user_id=int(getattr(user, "id", 0) or 0) or None,
+                        updates={
+                            "completion_summary_avatar_status": avatar_status,
+                            "completion_summary_avatar_error": avatar_error,
+                        },
+                    )
         elif not avatar_job_id and not avatar_url and callable(create_batch_avatar):
             current_status = (avatar_status or "").lower()
             failed_but_retryable = current_status == "failed" and _is_avatar_rate_limited(avatar_error)
@@ -1247,6 +1431,8 @@ def _ensure_completion_summary_media(
                         "completion_summary_avatar_error": None,
                         "completion_summary_avatar_requested_at": requested_at_iso,
                         "completion_summary_avatar_retry_after": None,
+                        "completion_summary_avatar_generated_at": None,
+                        "completion_summary_avatar_duration_ms": None,
                         "completion_summary_avatar_character": character,
                         "completion_summary_avatar_style": style,
                         "completion_summary_avatar_voice": voice,
@@ -1273,9 +1459,22 @@ def _ensure_completion_summary_media(
                     updates["completion_summary_avatar_summary_url"] = avatar_summary_url
                     updates["completion_summary_avatar_retry_after"] = None
                     updates["completion_summary_avatar_requested_at"] = requested_at_iso
+                    updates["completion_summary_avatar_generated_at"] = None
+                    updates["completion_summary_avatar_duration_ms"] = None
                     updates["completion_summary_avatar_character"] = character
                     updates["completion_summary_avatar_style"] = style
                     updates["completion_summary_avatar_voice"] = voice
+                    _update_completion_summary_prompt_log(
+                        run_id=int(getattr(run, "id", 0) or 0),
+                        user_id=int(getattr(user, "id", 0) or 0) or None,
+                        updates={
+                            "completion_summary_avatar_status": avatar_status,
+                            "completion_summary_avatar_requested_at": requested_at_iso,
+                            "completion_summary_avatar_character": character,
+                            "completion_summary_avatar_style": style,
+                            "completion_summary_avatar_voice": voice,
+                        },
+                    )
                     if avatar_status == "Succeeded":
                         _store_avatar_success(create_payload)
                 except Exception as exc:
@@ -1287,10 +1486,26 @@ def _ensure_completion_summary_media(
                         updates["completion_summary_avatar_retry_after"] = (
                             now_utc + timedelta(minutes=1)
                         ).replace(microsecond=0).isoformat()
+                        _update_completion_summary_prompt_log(
+                            run_id=int(getattr(run, "id", 0) or 0),
+                            user_id=int(getattr(user, "id", 0) or 0) or None,
+                            updates={
+                                "completion_summary_avatar_status": avatar_status,
+                                "completion_summary_avatar_error": avatar_error,
+                            },
+                        )
                     else:
                         avatar_status = "Failed"
                         updates["completion_summary_avatar_status"] = avatar_status
                         updates["completion_summary_avatar_error"] = avatar_error
+                        _update_completion_summary_prompt_log(
+                            run_id=int(getattr(run, "id", 0) or 0),
+                            user_id=int(getattr(user, "id", 0) or 0) or None,
+                            updates={
+                                "completion_summary_avatar_status": avatar_status,
+                                "completion_summary_avatar_error": avatar_error,
+                            },
+                        )
 
     if updates:
         meta = _upsert_assessment_narrative_meta(int(getattr(run, "id", 0) or 0), updates)
