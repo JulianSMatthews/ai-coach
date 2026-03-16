@@ -686,12 +686,69 @@ def get_whatsapp_usage_summary(
     }
 
 
+def get_avatar_usage_summary(
+    *,
+    start_utc: datetime,
+    end_utc: datetime,
+    tag: str | None = None,
+    user_id: int | None = None,
+) -> dict:
+    ensure_usage_schema()
+    with SessionLocal() as s:
+        q = s.query(
+            func.count(UsageEvent.id).label("events"),
+            func.sum(
+                case(
+                    (UsageEvent.unit_type == "avatar_seconds", UsageEvent.units),
+                    else_=0.0,
+                )
+            ).label("seconds_sum"),
+            func.sum(
+                case(
+                    (UsageEvent.unit_type == "avatar_seconds", UsageEvent.cost_estimate),
+                    else_=0.0,
+                )
+            ).label("cost_sum"),
+        ).filter(
+            UsageEvent.created_at >= start_utc,
+            UsageEvent.created_at < end_utc,
+            UsageEvent.product == "avatar",
+        )
+        if tag:
+            q = q.filter(UsageEvent.tag == tag)
+        if user_id:
+            q = q.filter(UsageEvent.user_id == user_id)
+        row = q.one_or_none()
+
+    events = int(row.events or 0) if row else 0
+    seconds_sum = float(row.seconds_sum or 0.0) if row else 0.0
+    minutes_est = seconds_sum / 60.0 if seconds_sum else 0.0
+    cost_sum = float(row.cost_sum or 0.0) if row else 0.0
+    rate, source = _avatar_rate_gbp_per_minute()
+    chars_per_min = _avatar_chars_per_min()
+    cost_est = minutes_est * rate if minutes_est and rate else 0.0
+    cost_final = cost_sum if cost_sum else cost_est
+    return {
+        "events": events,
+        "seconds_est": round(seconds_sum, 2),
+        "minutes_est": round(minutes_est, 2),
+        "cost_est_gbp": round(cost_final, 4),
+        "rate_gbp_per_minute": rate,
+        "rate_source": source,
+        "chars_per_min": chars_per_min,
+        "tag": tag,
+    }
+
+
 def get_usage_settings() -> dict:
     row = _load_usage_settings()
+    meta = _meta_to_dict(getattr(row, "meta", None)) if row else {}
     if not row:
         return {
             "tts_gbp_per_1m_chars": None,
             "tts_chars_per_min": None,
+            "avatar_gbp_per_minute": None,
+            "avatar_chars_per_min": None,
             "llm_gbp_per_1m_input_tokens": None,
             "llm_gbp_per_1m_output_tokens": None,
             "llm_model_rates": None,
@@ -704,6 +761,8 @@ def get_usage_settings() -> dict:
     return {
         "tts_gbp_per_1m_chars": row.tts_gbp_per_1m_chars,
         "tts_chars_per_min": row.tts_chars_per_min,
+        "avatar_gbp_per_minute": _to_float(meta.get("avatar_gbp_per_minute")),
+        "avatar_chars_per_min": _to_float(meta.get("avatar_chars_per_min")),
         "llm_gbp_per_1m_input_tokens": row.llm_gbp_per_1m_input_tokens,
         "llm_gbp_per_1m_output_tokens": row.llm_gbp_per_1m_output_tokens,
         "llm_model_rates": model_rates or None,
@@ -741,6 +800,9 @@ def save_usage_settings(payload: dict) -> dict:
                 and existing_meta.get("llm_model_rates") is not None
             ):
                 next_meta["llm_model_rates"] = existing_meta.get("llm_model_rates")
+            for preserved_key in ("avatar_gbp_per_minute", "avatar_chars_per_min"):
+                if preserved_key not in next_meta and preserved_key in existing_meta:
+                    next_meta[preserved_key] = existing_meta.get(preserved_key)
         else:
             next_meta = dict(existing_meta)
 
@@ -751,7 +813,16 @@ def save_usage_settings(payload: dict) -> dict:
             else:
                 next_meta.pop("llm_model_rates", None)
 
-        if incoming_meta is not None or "llm_model_rates" in payload:
+        for meta_key in ("avatar_gbp_per_minute", "avatar_chars_per_min"):
+            if meta_key not in payload:
+                continue
+            meta_value = _to_float(payload.get(meta_key))
+            if meta_value is None:
+                next_meta.pop(meta_key, None)
+            else:
+                next_meta[meta_key] = float(meta_value)
+
+        if incoming_meta is not None or "llm_model_rates" in payload or "avatar_gbp_per_minute" in payload or "avatar_chars_per_min" in payload:
             row.meta = next_meta or None
         s.add(row)
         s.commit()

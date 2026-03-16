@@ -62,6 +62,16 @@ export type UsageWeeklySummary = {
     rate_source?: string;
     tag?: string | null;
   };
+  avatar_total?: {
+    events?: number;
+    seconds_est?: number;
+    minutes_est?: number;
+    cost_est_gbp?: number;
+    rate_gbp_per_minute?: number;
+    rate_source?: string;
+    chars_per_min?: number;
+    tag?: string | null;
+  };
 };
 
 export type UsageSummary = {
@@ -71,6 +81,7 @@ export type UsageSummary = {
   total_tts?: UsageWeeklySummary["total_tts"];
   llm_total?: UsageWeeklySummary["llm_total"];
   whatsapp_total?: UsageWeeklySummary["whatsapp_total"];
+  avatar_total?: UsageWeeklySummary["avatar_total"];
   combined_cost_gbp?: number;
 };
 
@@ -265,6 +276,8 @@ export type PromptCostReport = {
 export type UsageSettings = {
   tts_gbp_per_1m_chars?: number | null;
   tts_chars_per_min?: number | null;
+  avatar_gbp_per_minute?: number | null;
+  avatar_chars_per_min?: number | null;
   llm_gbp_per_1m_input_tokens?: number | null;
   llm_gbp_per_1m_output_tokens?: number | null;
   llm_model_rates?: Record<string, { input?: number; output?: number }> | null;

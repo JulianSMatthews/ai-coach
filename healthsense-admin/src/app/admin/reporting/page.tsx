@@ -86,6 +86,8 @@ async function saveUsageSettingsAction(formData: FormData) {
   const payload: UsageSettings = {
     tts_gbp_per_1m_chars: toNumber(formData.get("tts_gbp_per_1m_chars")),
     tts_chars_per_min: toNumber(formData.get("tts_chars_per_min")),
+    avatar_gbp_per_minute: toNumber(formData.get("avatar_gbp_per_minute")),
+    avatar_chars_per_min: toNumber(formData.get("avatar_chars_per_min")),
     llm_model_rates: Object.keys(modelRates).length ? modelRates : null,
     wa_gbp_per_message: toNumber(formData.get("wa_gbp_per_message")),
     wa_gbp_per_media_message: toNumber(formData.get("wa_gbp_per_media_message")),
@@ -331,10 +333,20 @@ export default async function ReportingPage({
     sources?.whatsapp && typeof sources.whatsapp === "object"
       ? (sources.whatsapp as Record<string, unknown>)
       : null;
+  const avatarSource =
+    sources?.avatar && typeof sources.avatar === "object"
+      ? (sources.avatar as Record<string, unknown>)
+      : null;
   const ttsProvider = typeof ttsSource?.provider === "string" ? ttsSource.provider : null;
   const llmProvider = typeof llmSource?.provider === "string" ? llmSource.provider : null;
   const waProvider = typeof waSource?.provider === "string" ? waSource.provider : null;
-  const providerLine = [ttsProvider ? `TTS: ${ttsProvider}` : null, llmProvider ? `LLM: ${llmProvider}` : null, waProvider ? `WhatsApp: ${waProvider}` : null]
+  const avatarProvider = typeof avatarSource?.provider === "string" ? avatarSource.provider : null;
+  const providerLine = [
+    ttsProvider ? `TTS: ${ttsProvider}` : null,
+    avatarProvider ? `Avatar: ${avatarProvider}` : null,
+    llmProvider ? `LLM: ${llmProvider}` : null,
+    waProvider ? `WhatsApp: ${waProvider}` : null,
+  ]
     .filter(Boolean)
     .join(" · ");
   const modelRates = settings?.llm_model_rates || {};
@@ -943,7 +955,7 @@ export default async function ReportingPage({
               </button>
             </form>
           </div>
-          <div className="mt-4 grid gap-4 lg:grid-cols-4">
+          <div className="mt-4 grid gap-4 lg:grid-cols-5">
             {[
               {
                 title: "TTS",
@@ -966,6 +978,14 @@ export default async function ReportingPage({
                 rows: [
                   { label: "Messages", value: usage?.whatsapp_total?.messages ?? "—" },
                   { label: "Cost (est)", value: usage?.whatsapp_total?.cost_est_gbp != null ? `£${usage.whatsapp_total.cost_est_gbp}` : "—" },
+                ],
+              },
+              {
+                title: "Avatar",
+                rows: [
+                  { label: "Events", value: usage?.avatar_total?.events ?? "—" },
+                  { label: "Minutes (est)", value: usage?.avatar_total?.minutes_est ?? "—" },
+                  { label: "Cost (est)", value: usage?.avatar_total?.cost_est_gbp != null ? `£${usage.avatar_total.cost_est_gbp}` : "—" },
                 ],
               },
               {
@@ -1118,6 +1138,22 @@ export default async function ReportingPage({
               <input
                 name="tts_chars_per_min"
                 defaultValue={settings.tts_chars_per_min ?? ""}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Avatar £ / minute</label>
+              <input
+                name="avatar_gbp_per_minute"
+                defaultValue={settings.avatar_gbp_per_minute ?? ""}
+                className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+              />
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Avatar chars per min</label>
+              <input
+                name="avatar_chars_per_min"
+                defaultValue={settings.avatar_chars_per_min ?? ""}
                 className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
               />
             </div>

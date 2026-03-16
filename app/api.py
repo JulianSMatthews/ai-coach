@@ -138,6 +138,7 @@ from .avatar import (
     download_batch_avatar_output,
 )
 from .usage import (
+    get_avatar_usage_summary,
     get_tts_usage_summary,
     get_llm_usage_summary,
     get_whatsapp_usage_summary,
@@ -10192,6 +10193,11 @@ def admin_usage_weekly(admin_user: User = Depends(_require_admin)):
         end_utc=week_end_utc,
         tag=None,
     )
+    avatar_total = get_avatar_usage_summary(
+        start_utc=week_start_utc,
+        end_utc=week_end_utc,
+        tag=None,
+    )
     return {
         "as_of_uk": datetime.now(UK_TZ).isoformat(),
         "window": {"start_utc": week_start_utc.isoformat(), "end_utc": week_end_utc.isoformat()},
@@ -10200,6 +10206,7 @@ def admin_usage_weekly(admin_user: User = Depends(_require_admin)):
         "llm_weekly": llm_weekly,
         "llm_total": llm_total,
         "whatsapp_total": whatsapp_total,
+        "avatar_total": avatar_total,
     }
 
 
@@ -11829,10 +11836,17 @@ def admin_usage_summary(
         tag=tag,
         user_id=user_id,
     )
+    avatar_total = get_avatar_usage_summary(
+        start_utc=start_utc,
+        end_utc=end_utc,
+        tag=tag,
+        user_id=user_id,
+    )
     combined = (
         float(total_tts.get("cost_est_gbp") or 0.0)
         + float(llm_total.get("cost_est_gbp") or 0.0)
         + float(whatsapp_total.get("cost_est_gbp") or 0.0)
+        + float(avatar_total.get("cost_est_gbp") or 0.0)
     )
     return {
         "as_of_uk": datetime.now(UK_TZ).isoformat(),
@@ -11843,6 +11857,7 @@ def admin_usage_summary(
         "total_tts": total_tts,
         "llm_total": llm_total,
         "whatsapp_total": whatsapp_total,
+        "avatar_total": avatar_total,
         "combined_cost_gbp": round(combined, 4),
     }
 
@@ -12783,6 +12798,8 @@ def admin_usage_settings_fetch(admin_user: User = Depends(_require_admin)):
     keys = [
         "tts_gbp_per_1m_chars",
         "tts_chars_per_min",
+        "avatar_gbp_per_minute",
+        "avatar_chars_per_min",
         "llm_gbp_per_1m_input_tokens",
         "llm_gbp_per_1m_output_tokens",
         "llm_model_rates",
@@ -12816,6 +12833,8 @@ def admin_usage_settings_fetch(admin_user: User = Depends(_require_admin)):
     env_fallbacks = {
         "tts_gbp_per_1m_chars": _env_float("USAGE_TTS_GBP_PER_1M_CHARS"),
         "tts_chars_per_min": _env_float("USAGE_TTS_CHARS_PER_MIN"),
+        "avatar_gbp_per_minute": _env_float("USAGE_AVATAR_GBP_PER_MINUTE") or _env_float("AZURE_AVATAR_GBP_PER_MINUTE"),
+        "avatar_chars_per_min": _env_float("USAGE_AVATAR_CHARS_PER_MIN") or _env_float("AZURE_AVATAR_CHARS_PER_MIN"),
         "llm_gbp_per_1m_input_tokens": _env_float("USAGE_LLM_GBP_PER_1M_INPUT_TOKENS"),
         "llm_gbp_per_1m_output_tokens": _env_float("USAGE_LLM_GBP_PER_1M_OUTPUT_TOKENS"),
         "wa_gbp_per_message": _env_float("USAGE_WA_GBP_PER_MESSAGE"),
@@ -12833,6 +12852,8 @@ def admin_usage_settings_fetch(admin_user: User = Depends(_require_admin)):
     payload = {
         "tts_gbp_per_1m_chars": _pick("tts_gbp_per_1m_chars"),
         "tts_chars_per_min": _pick("tts_chars_per_min"),
+        "avatar_gbp_per_minute": _pick("avatar_gbp_per_minute"),
+        "avatar_chars_per_min": _pick("avatar_chars_per_min"),
         "llm_gbp_per_1m_input_tokens": _pick("llm_gbp_per_1m_input_tokens"),
         "llm_gbp_per_1m_output_tokens": _pick("llm_gbp_per_1m_output_tokens"),
         "wa_gbp_per_message": _pick("wa_gbp_per_message"),

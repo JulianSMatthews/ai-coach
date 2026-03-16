@@ -389,6 +389,47 @@ def fetch_provider_rates(model_names: list[str] | None = None) -> dict[str, Any]
         else:
             results["warnings"].append("openai_tts_rate_unavailable")
 
+    # Avatar
+    avatar_rate_raw = (
+        os.getenv("USAGE_AVATAR_GBP_PER_MINUTE")
+        or os.getenv("AZURE_AVATAR_GBP_PER_MINUTE")
+        or ""
+    ).strip()
+    avatar_chars_raw = (
+        os.getenv("USAGE_AVATAR_CHARS_PER_MIN")
+        or os.getenv("AZURE_AVATAR_CHARS_PER_MIN")
+        or os.getenv("USAGE_TTS_CHARS_PER_MIN")
+        or "900"
+    ).strip()
+    avatar_rate = None
+    avatar_chars = None
+    try:
+        if avatar_rate_raw:
+            avatar_rate = float(avatar_rate_raw)
+    except Exception:
+        avatar_rate = None
+        results["warnings"].append("avatar_rate_invalid")
+    try:
+        if avatar_chars_raw:
+            avatar_chars = float(avatar_chars_raw)
+    except Exception:
+        avatar_chars = None
+        results["warnings"].append("avatar_chars_per_min_invalid")
+    if avatar_rate is not None:
+        results["avatar_gbp_per_minute"] = avatar_rate
+        if avatar_chars is not None:
+            results["avatar_chars_per_min"] = avatar_chars
+        results["sources"]["avatar"] = {
+            "provider": "azure",
+            "detail": {
+                "source": "configured_env",
+                "rate_env": "USAGE_AVATAR_GBP_PER_MINUTE/AZURE_AVATAR_GBP_PER_MINUTE",
+                "chars_env": "USAGE_AVATAR_CHARS_PER_MIN/AZURE_AVATAR_CHARS_PER_MIN",
+            },
+        }
+    else:
+        results["warnings"].append("avatar_rate_unavailable")
+
     # LLM (restricted to core models only for now)
     baseline_models = ["gpt-5-mini", "gpt-5.1"]
     primary_model_env, model_source = _default_llm_model_from_env()
