@@ -284,7 +284,7 @@ export default function RealtimeSummaryAvatar({
       setStarting(false);
       setPlaying(true);
       setPhase("playing");
-      setStatusText("Playing your summary video…");
+      setStatusText(null);
       syncVideoElement();
 
       timeoutRef.current = window.setTimeout(() => {
@@ -295,7 +295,7 @@ export default function RealtimeSummaryAvatar({
       if (speakResult.reason !== SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
         throw new Error(speakResult.errorDetails || "Azure realtime avatar did not complete.");
       }
-      setStatusText("Summary video complete.");
+      setStatusText(null);
       await finalizeSession("completed");
     } catch (errorValue) {
       const message = errorValue instanceof Error ? errorValue.message : String(errorValue);
@@ -330,21 +330,21 @@ export default function RealtimeSummaryAvatar({
   }, [showVideoSurface, syncVideoElement]);
 
   return (
-    <div className="space-y-4">
-      <div className="space-y-3">
+    <div className="space-y-3">
+      <div className="space-y-2">
         {showVideoSurface ? (
           <div className="overflow-hidden rounded-2xl border border-[#efe7db] bg-[#f6efe5]">
             <video ref={videoRef} className="w-full" playsInline controls={playing} />
           </div>
         ) : null}
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => void startRealtimeAvatar()}
             disabled={!canStart}
             className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {starting ? "Starting video…" : playsUsed > 0 ? "Replay summary video" : "Play summary video"}
+            {starting ? "Starting video…" : playsUsed > 0 ? "Replay video" : "Play video"}
           </button>
           {playing ? (
             <button
@@ -355,6 +355,24 @@ export default function RealtimeSummaryAvatar({
               Stop video
             </button>
           ) : null}
+          {showSummaryActions && text ? (
+            <button
+              type="button"
+              onClick={() => setDetailMode((current) => (current === "read" ? null : "read"))}
+              className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+            >
+              {detailMode === "read" ? "Hide read" : "Read"}
+            </button>
+          ) : null}
+          {showSummaryActions && audioUrl ? (
+            <button
+              type="button"
+              onClick={() => setDetailMode((current) => (current === "listen" ? null : "listen"))}
+              className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+            >
+              {detailMode === "listen" ? "Hide listen" : "Listen"}
+            </button>
+          ) : null}
         </div>
       </div>
 
@@ -362,28 +380,7 @@ export default function RealtimeSummaryAvatar({
       {error ? <p className="text-sm text-[#8a3e1a]">{error}</p> : null}
 
       {showSummaryActions ? (
-        <div className="space-y-3">
-          <div className="flex flex-wrap gap-2">
-            {text ? (
-              <button
-                type="button"
-                onClick={() => setDetailMode((current) => (current === "read" ? null : "read"))}
-                className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
-              >
-                {detailMode === "read" ? "Hide read" : "Read"}
-              </button>
-            ) : null}
-            {audioUrl ? (
-              <button
-                type="button"
-                onClick={() => setDetailMode((current) => (current === "listen" ? null : "listen"))}
-                className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
-              >
-                {detailMode === "listen" ? "Hide listen" : "Listen"}
-              </button>
-            ) : null}
-          </div>
-
+        <div className="space-y-2">
           {detailMode === "listen" && audioUrl ? (
             <audio className="w-full" controls preload="metadata">
               <source src={audioUrl} type="audio/mpeg" />
@@ -391,7 +388,7 @@ export default function RealtimeSummaryAvatar({
           ) : null}
 
           {detailMode === "read" && text ? (
-            <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+            <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3">
               <p className="text-sm leading-6 text-[#3c332b]">{text}</p>
             </div>
           ) : null}
