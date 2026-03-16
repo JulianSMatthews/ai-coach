@@ -1188,12 +1188,6 @@ def _assessment_section_progress_payloads(state_obj: dict) -> list[dict[str, obj
     concept_idx_map = state_obj.get("concept_idx") if isinstance(state_obj.get("concept_idx"), dict) else {}
     phase = str(state_obj.get("phase") or "pillars").strip().lower()
     active_pillar = str(state_obj.get("current") or (PILLAR_ORDER[0] if PILLAR_ORDER else "")).strip().lower()
-    psych_state = state_obj.get("psych") if isinstance(state_obj.get("psych"), dict) else {}
-    try:
-        psych_idx = max(0, int(psych_state.get("idx") or 0))
-    except Exception:
-        psych_idx = 0
-    psych_total = len(getattr(psych, "QUESTIONS", []) or [])
 
     sections: list[dict[str, object]] = []
     for pillar_idx, pillar_key in enumerate(PILLAR_ORDER, start=1):
@@ -1219,31 +1213,6 @@ def _assessment_section_progress_payloads(state_obj: dict) -> list[dict[str, obj
                 "status": status,
             }
         )
-
-    readiness_total = int(psych_total)
-    readiness_answered = 0
-    readiness_display_value = 0
-    if phase == "psych":
-        readiness_answered = max(0, min(psych_idx, readiness_total))
-        readiness_display_value = readiness_answered + 1 if readiness_answered < readiness_total else readiness_total
-        readiness_status = "active"
-    elif phase == "complete" and readiness_total > 0:
-        readiness_answered = readiness_total
-        readiness_display_value = readiness_total
-        readiness_status = "complete"
-    else:
-        readiness_status = "upcoming"
-    sections.append(
-        {
-            "key": "habit_readiness",
-            "label": "Habit Readiness",
-            "index": len(PILLAR_ORDER) + 1,
-            "value": int(max(0, min(readiness_display_value, readiness_total))),
-            "answered": int(max(0, min(readiness_answered, readiness_total))),
-            "total": int(readiness_total),
-            "status": readiness_status,
-        }
-    )
     return sections
 
 
@@ -1251,13 +1220,12 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
     if not isinstance(state_obj, dict):
         return None
     phase = str(state_obj.get("phase") or "pillars").strip().lower()
-    if phase not in {"reflection", "pillars", "pillar_result", "psych"}:
+    if phase not in {"reflection", "pillars", "pillar_result"}:
         return None
 
-    section_progress = _assessment_section_progress_payloads(state_obj) if phase in {"pillars", "pillar_result", "psych"} else []
+    section_progress = _assessment_section_progress_payloads(state_obj) if phase in {"pillars", "pillar_result"} else []
     main_total = _assessment_main_question_total(state_obj)
-    readiness_total = len(getattr(psych, "QUESTIONS", []) or [])
-    overall_total = max(0, int(main_total) + int(readiness_total))
+    overall_total = max(0, int(main_total))
 
     if phase == "reflection":
         return {
@@ -1265,7 +1233,7 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
             "section_key": "lead_intro",
             "section_label": "",
             "section_index": 0,
-            "section_total": len(PILLAR_ORDER) + 1,
+            "section_total": len(PILLAR_ORDER),
             "section_question_index": 0,
             "section_question_total": 0,
             "question_position": 0,
@@ -1331,7 +1299,7 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
             "section_key": f"pillar_result_{pillar_key}",
             "section_label": "",
             "section_index": int(section_index),
-            "section_total": len(PILLAR_ORDER) + 1,
+            "section_total": len(PILLAR_ORDER),
             "section_question_index": 0,
             "section_question_total": 0,
             "question_position": int(answered_main),
@@ -1348,43 +1316,10 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
             "result_preview": {
                 "combined": preview_combined,
                 "pillars": preview_pillars,
-                "readiness": {
-                    "label": "Habit Readiness",
-                    "score": None,
-                    "complete": False,
-                },
                 "latest_pillar_key": pillar_key,
                 "latest_pillar_label": pillar_key.replace("_", " ").title(),
                 "latest_pillar_score": int(max(0, min(pillar_score, 100))),
             },
-            "sections": section_progress,
-        }
-
-    if phase == "psych":
-        psych_state = state_obj.get("psych") if isinstance(state_obj.get("psych"), dict) else {}
-        try:
-            psych_idx = max(0, int(psych_state.get("idx") or 0))
-        except Exception:
-            psych_idx = 0
-        questions = list(getattr(psych, "QUESTIONS", []) or [])
-        if psych_idx >= len(questions):
-            return None
-        question_key, question_text = questions[psych_idx]
-        return {
-            "kind": "readiness_scale",
-            "section_key": "habit_readiness",
-            "section_label": "Habit Readiness",
-            "section_index": len(PILLAR_ORDER) + 1,
-            "section_total": len(PILLAR_ORDER) + 1,
-            "section_question_index": int(psych_idx + 1),
-            "section_question_total": int(len(questions)),
-            "question_position": int(main_total + psych_idx + 1),
-            "question_total": int(overall_total),
-            "question_key": str(question_key),
-            "question": str(question_text or "").strip(),
-            "measure_label": "agreement scale",
-            "hint": None,
-            "options": _assessment_readiness_options(),
             "sections": section_progress,
         }
 
@@ -1443,7 +1378,7 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
         "section_key": active_pillar,
         "section_label": active_pillar.replace("_", " ").title(),
         "section_index": PILLAR_ORDER.index(active_pillar) + 1 if active_pillar in PILLAR_ORDER else 1,
-        "section_total": len(PILLAR_ORDER) + 1,
+        "section_total": len(PILLAR_ORDER),
         "section_question_index": int(current_idx + 1),
         "section_question_total": int(len(codes)),
         "question_position": int(answered_main + 1),
@@ -1489,6 +1424,27 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
                     state_obj = {}
             if not isinstance(state_obj, dict):
                 state_obj = {}
+            if str(state_obj.get("phase") or "").strip().lower() == "psych":
+                try:
+                    from .assessor import _finalize_combined_assessment_completion
+
+                    db_user = s.get(User, int(user_id))
+                    if db_user is not None:
+                        _finalize_combined_assessment_completion(
+                            s,
+                            active_session,
+                            state_obj,
+                            db_user,
+                            trigger="state_auto_finalize_without_readiness",
+                            enqueue_audit_job_name="assessment_narratives_seed_enqueue_state_finalize",
+                            psych_state={"idx": 0, "answers": {}},
+                        )
+                        active_session = None
+                except Exception:
+                    try:
+                        s.rollback()
+                    except Exception:
+                        pass
             active_session_payload = {
                 "id": int(active_session.id),
                 "domain": str(getattr(active_session, "domain", "") or ""),
@@ -1499,8 +1455,8 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
                 "run_id": state_obj.get("run_id"),
                 "question_seq": state_obj.get("question_seq"),
                 "total_questions": state_obj.get("total_questions"),
-            }
-            current_prompt_payload = _assessment_current_prompt_payload(s, state_obj)
+            } if active_session is not None else None
+            current_prompt_payload = _assessment_current_prompt_payload(s, state_obj) if active_session is not None else None
 
         latest_finished_run = (
             s.execute(
@@ -1550,39 +1506,6 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
                     sum(int(item.get("score") or 0) for item in pillar_payload) / max(1, len(pillar_payload))
                 )
 
-            readiness_payload = None
-            psych_profile = (
-                s.query(PsychProfile)
-                .filter(
-                    PsychProfile.user_id == int(user_id),
-                    PsychProfile.assessment_run_id == int(latest_finished_run.id),
-                    PsychProfile.completed_at.isnot(None),
-                )
-                .order_by(PsychProfile.completed_at.desc(), PsychProfile.id.desc())
-                .first()
-            )
-            if psych_profile is not None:
-                section_averages = getattr(psych_profile, "section_averages", None) or {}
-                vals = [value for value in section_averages.values() if isinstance(value, (int, float))]
-                avg = (sum(vals) / len(vals)) if vals else None
-                if avg is not None:
-                    readiness_score = _assessment_readiness_score(avg)
-                    if avg < 2.6:
-                        label = "Low"
-                        note = "We’ll keep things light, add structure, and focus on simple wins this week."
-                    elif avg < 3.6:
-                        label = "Moderate"
-                        note = "We’ll balance guidance with autonomy and check in on any sticking points."
-                    else:
-                        label = "High"
-                        note = "You can handle more autonomy; we’ll keep nudges concise and goal-focused."
-                    readiness_payload = {
-                        "title": "Habit Readiness",
-                        "score": readiness_score,
-                        "level": label,
-                        "note": note,
-                    }
-
             reflection_payload = None
             if isinstance(state_obj, dict):
                 reflection_state = state_obj.get("reflection") if isinstance(state_obj.get("reflection"), dict) else {}
@@ -1628,7 +1551,6 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
                 ),
                 "combined": int(combined_overall or 0),
                 "pillars": pillar_payload,
-                "readiness": readiness_payload,
                 "reflection": reflection_payload,
             }
 
@@ -8322,16 +8244,6 @@ def admin_assessment_health(
                     continue
                 pillar_map.setdefault(rid_i, set()).add(key)
 
-        psych_done_runs: set[int] = set()
-        if run_ids:
-            psych_rows = (
-                s.query(PsychProfile.assessment_run_id)
-                .filter(PsychProfile.assessment_run_id.in_(run_ids))
-                .filter(PsychProfile.completed_at.isnot(None))
-                .all()
-            )
-            psych_done_runs = {int(rid) for (rid,) in psych_rows if rid is not None}
-
         consent_map: dict[int, bool] = {}
         if user_ids:
             consent_rows = (
@@ -8365,11 +8277,6 @@ def admin_assessment_health(
             {"key": "training_done", "label": "Training completed", "description": "Training pillar result persisted."},
             {"key": "resilience_done", "label": "Resilience completed", "description": "Resilience pillar result persisted."},
             {"key": "recovery_done", "label": "Recovery completed", "description": "Recovery pillar result persisted."},
-            {
-                "key": "habit_readiness_done",
-                "label": "Habit readiness completed",
-                "description": "Habit-readiness profile captured after the pillar assessment.",
-            },
             {"key": "assessment_done", "label": "Assessment completed", "description": "Assessment run marked finished."},
         ]
 
@@ -8388,7 +8295,6 @@ def admin_assessment_health(
             training_done = "training" in pillars
             resilience_done = "resilience" in pillars
             recovery_done = "recovery" in pillars
-            habit_readiness_done = rid in psych_done_runs
             assessment_done = finished_at is not None
 
             reached = 0
@@ -8404,10 +8310,8 @@ def admin_assessment_health(
                 reached = 5
             if reached >= 5 and recovery_done:
                 reached = 6
-            if reached >= 6 and habit_readiness_done:
+            if reached >= 6 and assessment_done:
                 reached = 7
-            if reached >= 7 and assessment_done:
-                reached = 8
             reached_by_run[rid] = reached
 
         funnel_steps = []

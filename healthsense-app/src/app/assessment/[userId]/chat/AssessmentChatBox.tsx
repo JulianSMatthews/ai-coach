@@ -359,6 +359,20 @@ function normalizeResultSummary(raw: unknown): AssessmentResultSummary | null {
   };
 }
 
+function resultPillarExtremes(pillars: AssessmentResultPillar[]): {
+  strongest: AssessmentResultPillar | null;
+  weakest: AssessmentResultPillar | null;
+} {
+  if (!pillars.length) {
+    return { strongest: null, weakest: null };
+  }
+  const sorted = [...pillars].sort((a, b) => a.score - b.score);
+  return {
+    weakest: sorted[0] || null,
+    strongest: sorted[sorted.length - 1] || null,
+  };
+}
+
 function normalizeCoachingPlanItem(raw: unknown): AssessmentCoachingPlanItem | null {
   if (!raw || typeof raw !== "object") return null;
   const row = raw as Record<string, unknown>;
@@ -939,7 +953,7 @@ export default function AssessmentChatBox({
           </div>
         ) : null}
 
-        {resultSummary.pillars.length || Number.isFinite(Number(resultSummary.readiness?.score)) ? (
+        {resultSummary.pillars.length ? (
           <div className="grid gap-3">
             {resultSummary.pillars.map((pillar) => {
               const palette = getPillarPalette(pillar.pillar_key);
@@ -953,21 +967,25 @@ export default function AssessmentChatBox({
                 </div>
               );
             })}
-            {Number.isFinite(Number(resultSummary.readiness?.score)) ? (
-              <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
-                <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-semibold text-[#1e1b16]">
-                    {String(resultSummary.readiness?.title || "Habit Readiness")}
-                  </p>
-                  <p className="text-sm font-semibold text-[#c54817]">
-                    {Math.round(Number(resultSummary.readiness?.score || 0))}
-                  </p>
-                </div>
-                <ProgressBar value={Math.round(Number(resultSummary.readiness?.score || 0))} max={100} tone="#c54817" />
-              </div>
-            ) : null}
           </div>
         ) : null}
+
+        {(() => {
+          const extremes = resultPillarExtremes(resultSummary.pillars);
+          if (!extremes.strongest || !extremes.weakest) return null;
+          return (
+            <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
+              <div className="space-y-1 text-sm font-semibold text-[#1e1b16]">
+                <p>
+                  Strongest Pillar: <strong>{extremes.strongest.label}</strong>
+                </p>
+                <p>
+                  Weakest Pillar: <strong>{extremes.weakest.label}</strong>
+                </p>
+              </div>
+            </div>
+          );
+        })()}
 
         {(completionSummaryMedia?.text ||
           completionSummaryMedia?.audioUrl ||

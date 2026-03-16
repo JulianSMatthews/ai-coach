@@ -108,6 +108,31 @@ function normalizePreviewScore(value: number | null | undefined): number | null 
   return Math.max(0, Math.min(100, Math.round(parsed)));
 }
 
+function previewPillarExtremes(
+  pillars: Array<{ pillar_key: string; label: string; score?: number | null; complete?: boolean | null }>,
+): {
+  strongest: { label: string; score: number } | null;
+  weakest: { label: string; score: number } | null;
+} {
+  const completed = pillars
+    .map((pillar) => ({
+      label: String(pillar.label || "").trim(),
+      score: normalizePreviewScore(pillar.score),
+    }))
+    .filter(
+      (pillar): pillar is { label: string; score: number } =>
+        Boolean(pillar.label) && pillar.score !== null,
+    );
+  if (!completed.length) {
+    return { strongest: null, weakest: null };
+  }
+  const sorted = [...completed].sort((a, b) => a.score - b.score);
+  return {
+    weakest: sorted[0] || null,
+    strongest: sorted[sorted.length - 1] || null,
+  };
+}
+
 function renderFormattedQuestion(text: string): ReactNode {
   const raw = String(text || "");
   if (!raw.includes("*")) return raw;
@@ -163,6 +188,15 @@ export default function AssessmentPromptCard({
   const promptPreview = showLeadIntroPreview ? LEAD_INTRO_PREVIEW : prompt.result_preview;
   const showScorePreview = Boolean(promptPreview?.pillars?.length);
   const combinedPreviewScore = normalizePreviewScore(promptPreview?.combined);
+  const previewExtremes = promptPreview ? previewPillarExtremes(promptPreview.pillars) : { strongest: null, weakest: null };
+  const completedPreviewPillarCount = promptPreview
+    ? promptPreview.pillars.filter((pillar) => normalizePreviewScore(pillar.score) !== null).length
+    : 0;
+  const showPreviewExtremes = Boolean(
+    previewExtremes.strongest &&
+      previewExtremes.weakest &&
+      (showLeadIntroPreview || completedPreviewPillarCount >= 2),
+  );
   const introAvatarUrl = String(introAvatar?.url || INTRO_AVATAR_URL || "").trim();
   const introAvatarPoster = String(introAvatar?.posterUrl || INTRO_AVATAR_POSTER || "").trim();
   const introAvatarEnabled =
@@ -297,32 +331,16 @@ export default function AssessmentPromptCard({
                     </div>
                   );
                 })}
-                {promptPreview.readiness ? (
-                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-semibold text-[#1e1b16]">{promptPreview.readiness.label}</p>
-                      {normalizePreviewScore(promptPreview.readiness.score) !== null && promptPreview.readiness.complete !== false ? (
-                        <p className="text-sm font-semibold text-[#c54817]">
-                          {normalizePreviewScore(promptPreview.readiness.score)}
-                        </p>
-                      ) : (
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8c7f70]">
-                          Pending
-                        </p>
-                      )}
-                    </div>
-                    <ProgressBar
-                      value={normalizePreviewScore(promptPreview.readiness.score) ?? 0}
-                      max={100}
-                      tone={promptPreview.readiness.complete !== false && normalizePreviewScore(promptPreview.readiness.score) !== null ? "#c54817" : "#d8d0c2"}
-                    />
-                  </div>
-                ) : null}
               </div>
-              {showLeadIntroPreview ? (
-                <p className="text-sm font-semibold text-[#1e1b16]">
-                  Limiting Pillar: <strong>Nutrition</strong>
-                </p>
+              {showPreviewExtremes ? (
+                <div className="space-y-1 text-sm font-semibold text-[#1e1b16]">
+                  <p>
+                    Strongest Pillar: <strong>{previewExtremes.strongest?.label}</strong>
+                  </p>
+                  <p>
+                    Weakest Pillar: <strong>{previewExtremes.weakest?.label}</strong>
+                  </p>
+                </div>
               ) : null}
             </div>
           </div>

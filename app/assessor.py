@@ -264,6 +264,105 @@ def _latest_run_id_for_user(s, user_id: int) -> int | None:
         return None
 
 
+def _finalize_combined_assessment_completion(
+    s,
+    sess: AssessSession,
+    state: dict,
+    user: User,
+    *,
+    trigger: str,
+    enqueue_audit_job_name: str,
+    completion_message: str | None = None,
+    completion_note: str | None = None,
+    psych_state: dict | None = None,
+) -> bool:
+    completed_at = datetime.utcnow()
+    try:
+        (
+            s.query(User)
+            .filter(User.id == int(user.id), User.first_assessment_completed.is_(None))
+            .update({"first_assessment_completed": completed_at}, synchronize_session=False)
+        )
+    except Exception:
+        pass
+
+    combined = _combined_overall_from_state(state)
+    resolved_run_id = _mark_assessment_run_finished(
+        user_id=int(user.id),
+        run_id=state.get("run_id"),
+        combined=int(combined),
+    )
+    if resolved_run_id:
+        state["run_id"] = int(resolved_run_id)
+    else:
+        print(
+            f"[assessment] WARN: run completion not persisted "
+            f"user_id={user.id} run_id={state.get('run_id')}"
+        )
+
+    job_id = None
+    enqueue_error = None
+    if state.get("run_id"):
+        try:
+            job_id = enqueue_job(
+                "assessment_narratives_seed",
+                {
+                    "run_id": int(state["run_id"]),
+                    "user_id": int(user.id),
+                    "trigger": str(trigger or "").strip() or "assessment_complete",
+                },
+                user_id=int(user.id),
+            )
+        except Exception as e:
+            enqueue_error = repr(e)
+    else:
+        enqueue_error = "missing_run_id"
+
+    try:
+        s.add(
+            JobAudit(
+                job_name=str(enqueue_audit_job_name or "assessment_narratives_seed_enqueue_completion"),
+                status="ok" if not enqueue_error else "error",
+                payload={
+                    "run_id": int(state.get("run_id")) if state.get("run_id") else None,
+                    "user_id": int(user.id),
+                    "job_id": int(job_id) if job_id else None,
+                    "trigger": str(trigger or "").strip() or "assessment_complete",
+                },
+                error=enqueue_error,
+            )
+        )
+    except Exception:
+        pass
+
+    try:
+        _rv_finish_run(run_id=state.get("run_id"), results=state.get("results"))
+    except Exception:
+        pass
+
+    try:
+        schedule_day3_followup(user.id)
+        schedule_week2_followup(user.id)
+    except Exception:
+        pass
+
+    state["pending_assessment_summary"] = ""
+    state["phase"] = "complete"
+    state["pillar_result"] = None
+    state["psych"] = psych_state if isinstance(psych_state, dict) else {"idx": 0, "answers": {}}
+    try:
+        sess.is_active = False
+    except Exception:
+        pass
+    _commit_state(s, sess, state)
+
+    if completion_message:
+        _send_to_user(user, completion_message)
+    if completion_note:
+        _send_to_user(user, completion_note)
+    return True
+
+
 def _continue_psych_phase(s, sess: AssessSession, state: dict, user: User, user_text: str) -> bool:
     questions = list(getattr(psych, "QUESTIONS", []) or [])
     total = len(questions)
@@ -329,89 +428,19 @@ def _continue_psych_phase(s, sess: AssessSession, state: dict, user: User, user_
             completed_at=completed_at,
         )
         s.add(profile)
-        try:
-            (
-                s.query(User)
-                .filter(User.id == int(user.id), User.first_assessment_completed.is_(None))
-                .update({"first_assessment_completed": completed_at}, synchronize_session=False)
-            )
-        except Exception:
-            pass
-
-        job_id = None
-        enqueue_error = None
-        if run_id:
-            try:
-                # Generate all assessment narratives together only after psych completes.
-                job_id = enqueue_job(
-                    "assessment_narratives_seed",
-                    {"run_id": int(run_id), "user_id": int(user.id), "trigger": "psych_complete_main_path"},
-                    user_id=int(user.id),
-                )
-            except Exception as e:
-                enqueue_error = repr(e)
-        else:
-            enqueue_error = "missing_run_id"
-
-        try:
-            s.add(
-                JobAudit(
-                    job_name="assessment_narratives_seed_enqueue_psych_complete",
-                    status="ok" if not enqueue_error else "error",
-                    payload={
-                        "run_id": int(run_id) if run_id else None,
-                        "user_id": int(user.id),
-                        "job_id": int(job_id) if job_id else None,
-                        "trigger": "psych_complete_main_path",
-                    },
-                    error=enqueue_error,
-                )
-            )
-        except Exception:
-            pass
-
-        combined = _combined_overall_from_state(state)
-        resolved_run_id = _mark_assessment_run_finished(
-            user_id=int(user.id),
-            run_id=state.get("run_id"),
-            combined=int(combined),
-        )
-        if resolved_run_id:
-            state["run_id"] = int(resolved_run_id)
-        else:
-            print(
-                f"[assessment] WARN: run completion not persisted after psych "
-                f"user_id={user.id} run_id={state.get('run_id')}"
-            )
-
-        try:
-            _rv_finish_run(run_id=state.get("run_id"), results=state.get("results"))
-        except Exception:
-            pass
-
-        try:
-            schedule_day3_followup(user.id)
-            schedule_week2_followup(user.id)
-        except Exception:
-            pass
 
         pending_msg = str(state.get("pending_assessment_summary") or "").strip()
-        state["pending_assessment_summary"] = ""
-        state["phase"] = "complete"
-        state["psych"] = {"idx": total, "answers": answers}
-        try:
-            sess.is_active = False
-        except Exception:
-            pass
-        _commit_state(s, sess, state)
-
-        if pending_msg:
-            _send_to_user(user, pending_msg)
-        _send_to_user(
+        return _finalize_combined_assessment_completion(
+            s,
+            sess,
+            state,
             user,
-            "Thanks—saved your readiness profile. I’ll use this to set the right KR load and coaching style.",
+            trigger="psych_complete_main_path",
+            enqueue_audit_job_name="assessment_narratives_seed_enqueue_psych_complete",
+            completion_message=pending_msg or None,
+            completion_note="Thanks—saved your readiness profile. I’ll use this to set the right KR load and coaching style.",
+            psych_state={"idx": total, "answers": answers},
         )
-        return True
 
     state["psych"] = {"idx": idx, "answers": answers}
     _commit_state(s, sess, state)
@@ -1359,17 +1388,16 @@ def _continue_from_app_pillar_result(user: User, state: dict, turns: list[dict],
     turns.append({"role": "user", "pillar": None, "text": REFLECTION_CONTINUE_VALUE, "is_pillar_result_continue": True})
     state["pillar_result"] = None
 
-    if next_phase == "psych":
-        state["phase"] = "psych"
-        state["psych"] = {"idx": 0, "answers": {}}
-        _commit_state(s, sess, state)
-        _send_to_user(
+    if next_phase in {"complete", "psych"} and not next_pillar:
+        return _finalize_combined_assessment_completion(
+            s,
+            sess,
+            state,
             user,
-            "I’m going to ask 6 quick questions about your habits and approach to change. "
-            "This helps tailor your plan and coaching style.",
+            trigger="pillars_complete_app_path",
+            enqueue_audit_job_name="assessment_narratives_seed_enqueue_pillars_complete",
+            psych_state={"idx": 0, "answers": {}},
         )
-        _psych_ask_question(user, 0)
-        return True
 
     if next_pillar:
         state["phase"] = "pillars"
@@ -2282,7 +2310,17 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             return _continue_from_app_pillar_result(user, state, turns, s, sess)
 
         if str(state.get("phase") or "pillars").lower() == "psych":
-            return _continue_psych_phase(s, sess, state, user, user_text)
+            pending_msg = str(state.get("pending_assessment_summary") or "").strip()
+            return _finalize_combined_assessment_completion(
+                s,
+                sess,
+                state,
+                user,
+                trigger="legacy_psych_auto_finalize",
+                enqueue_audit_job_name="assessment_narratives_seed_enqueue_legacy_psych_finalize",
+                completion_message=None if _is_app_assessment_delivery() else (pending_msg or None),
+                psych_state={"idx": 0, "answers": {}},
+            )
 
         # Quick correction command — "redo last"
         # Re-asks the most recent main question so the next reply overwrites that concept's answer.
@@ -3320,7 +3358,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             if _is_app_assessment_delivery():
                 handoff_timing["next_pillar"] = nxt
                 handoff_timing["next_prompt_mode"] = "pillar_result_card"
-                next_phase = "pillars" if nxt else "psych"
+                next_phase = "pillars" if nxt else "complete"
                 _enter_app_pillar_result_phase(
                     state,
                     pillar=pillar,
@@ -3404,24 +3442,16 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                         f"View your assessment in the HealthSense app: {assessment_url}"
                     )
 
-                # Completion persistence happens after psych readiness finishes.
-                # This keeps funnel and completion semantics aligned.
-
-                # Narrative generation is intentionally deferred until psych completion.
-                # At psych completion we enqueue one combined job: assessment_narratives_seed.
-
-                # Continue in the same assessment session with psych readiness questions.
-                state["phase"] = "psych"
-                state["psych"] = {"idx": 0, "answers": {}}
-                state["pending_assessment_summary"] = final_msg
-                _commit_state(s, sess, state)
-                _send_to_user(
+                return _finalize_combined_assessment_completion(
+                    s,
+                    sess,
+                    state,
                     user,
-                    "I’m going to ask 6 quick questions about your habits and approach to change. "
-                    "This helps tailor your plan and coaching style.",
+                    trigger="pillars_complete_main_path",
+                    enqueue_audit_job_name="assessment_narratives_seed_enqueue_pillars_complete",
+                    completion_message=final_msg,
+                    psych_state={"idx": 0, "answers": {}},
                 )
-                _psych_ask_question(user, 0)
-                return True
 
         # Not finished pillar: ask next concept main question
         next_index = int(concept_idx_map[pillar])
