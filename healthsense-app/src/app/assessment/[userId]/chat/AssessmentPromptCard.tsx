@@ -228,7 +228,7 @@ export default function AssessmentPromptCard({
       }
     >
       <div className="space-y-5">
-        {showLeadBranding && !showIntroAvatar ? (
+        {showLeadBranding && !showIntroAvatar && !showPromptHeader && !showScorePreview ? (
           <div className="border-b border-[#eadfce] pb-5">
             <LeadAssessmentBranding
               className={
@@ -433,15 +433,17 @@ export default function AssessmentPromptCard({
 
         {showPromptActions ? (
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap gap-2">
+            <div>
               <button
                 type="button"
                 onClick={onRedo}
                 disabled={busy}
                 className="rounded-full border border-[#e0d4c3] bg-white px-4 py-2 text-xs uppercase tracking-[0.18em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Redo
+                Redo question
               </button>
+            </div>
+            <div>
               <button
                 type="button"
                 onClick={onRestart}
