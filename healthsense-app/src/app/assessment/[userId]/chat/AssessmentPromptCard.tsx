@@ -223,11 +223,11 @@ export default function AssessmentPromptCard({
     <section
       className={
         scorePreviewUsesOuterCard
-          ? "w-full rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.35)] sm:px-6 sm:py-6"
+          ? "w-full rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-3 py-4 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.35)] sm:px-5 sm:py-5"
           : "w-full rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8"
       }
     >
-      <div className="space-y-5">
+      <div className={scorePreviewUsesOuterCard ? "space-y-4" : "space-y-5"}>
         {showLeadBranding && !showIntroAvatar && !showPromptHeader && !showScorePreview ? (
           <div className="border-b border-[#eadfce] pb-5">
             <LeadAssessmentBranding
@@ -299,7 +299,7 @@ export default function AssessmentPromptCard({
         ) : null}
 
         {showScorePreview && promptPreview ? (
-          <div className="space-y-5">
+          <div className="space-y-4">
             {showIntroAvatar ? (
               <video
                 autoPlay
@@ -308,17 +308,17 @@ export default function AssessmentPromptCard({
                 playsInline
                 preload="auto"
                 poster={introAvatarPoster || undefined}
-                className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
+                className="w-full rounded-xl border border-[#efe7db] bg-[#f7f4ee]"
               >
                 <source src={introAvatarUrl} />
               </video>
             ) : null}
-            <div className="space-y-4">
-              <div className="rounded-3xl border border-[#efe7db] bg-white px-5 py-5">
-                <div className="flex items-center gap-4">
+            <div className="space-y-3">
+              <div className="rounded-3xl border border-[#efe7db] bg-white px-4 py-4 sm:px-5 sm:py-5">
+                <div className="flex items-center gap-3 sm:gap-4">
                   <LeadAssessmentBranding
                     titleLines={[]}
-                    logoClassName="h-11 w-11 flex-none sm:h-12 sm:w-12"
+                    logoClassName="h-10 w-10 flex-none sm:h-12 sm:w-12"
                   />
                   <div className="min-w-0 flex-1 space-y-2">
                     <div className="flex items-end justify-between gap-4">
@@ -338,7 +338,7 @@ export default function AssessmentPromptCard({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+            <div className="grid grid-cols-2 gap-2.5 sm:gap-4">
               {sortedPreviewPillars.map((pillar) => {
                 const palette = getPillarPalette(pillar.pillar_key);
                 const pillarScore = normalizePreviewScore(pillar.score);
@@ -354,7 +354,7 @@ export default function AssessmentPromptCard({
                   previewExtremes.weakest?.label === pillar.label &&
                   pillarScore === previewExtremes.weakest.score;
                 return (
-                  <div key={pillar.pillar_key} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-5">
+                  <div key={pillar.pillar_key} className="rounded-2xl border border-[#efe7db] bg-white px-3 py-4 sm:px-4 sm:py-5">
                     <div className="flex flex-col items-center text-center">
                       <ScoreRing value={pillarScore ?? 0} tone={isComplete ? palette.accent : "#d8d0c2"} />
                       <p className="mt-3 text-sm font-semibold text-[#1e1b16]">
