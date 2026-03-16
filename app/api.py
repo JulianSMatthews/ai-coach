@@ -18625,15 +18625,46 @@ def _public_report_url_global(filename: str) -> str:
     """Return absolute URL to a global report file located directly under /reports."""
     return f"{_REPORTS_BASE}/reports/{filename}"
 
-def _write_global_report_bytes(path_under_reports: str, raw_bytes: bytes) -> str:
-    """
-    Persist bytes to a global path under /reports and return its public URL.
-    """
+def _normalize_reports_rel_path(path_under_reports: str) -> str:
     rel_path = str(path_under_reports or "").strip().replace("\\", "/").lstrip("/")
     if not rel_path or rel_path.endswith("/"):
         raise ValueError("invalid reports path")
     if ".." in rel_path.split("/"):
         raise ValueError("invalid reports path")
+    return rel_path
+
+def _write_global_report_bytes(path_under_reports: str, raw_bytes: bytes) -> str:
+    """
+    Persist bytes to a global path under /reports and return its public URL.
+    """
+    rel_path = _normalize_reports_rel_path(path_under_reports)
+    upload_url = (os.getenv("REPORTS_UPLOAD_URL") or "").strip()
+    upload_token = (os.getenv("REPORTS_UPLOAD_TOKEN") or "").strip()
+    if upload_url and upload_token:
+        try:
+            payload = json.dumps(
+                {
+                    "path_under_reports": rel_path,
+                    "content_b64": base64.b64encode(raw_bytes).decode("ascii"),
+                }
+            ).encode("utf-8")
+            req = urllib.request.Request(
+                upload_url,
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Reports-Token": upload_token,
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                body = resp.read()
+            data = json.loads(body.decode("utf-8")) if body else {}
+            uploaded_url = str((data or {}).get("url") or "").strip()
+            if uploaded_url:
+                return uploaded_url
+        except Exception as e:
+            print(f"[reports] global upload error: {e}")
     root = _reports_root_global()
     out_path = os.path.join(root, *rel_path.split("/"))
     out_dir = os.path.dirname(out_path)
@@ -18711,17 +18742,8 @@ def api_reports_upload(payload: dict, request: Request):
         raise HTTPException(status_code=401, detail="invalid upload token")
     user_id = payload.get("user_id")
     filename = (payload.get("filename") or "").strip()
+    path_under_reports = (payload.get("path_under_reports") or "").strip()
     content_b64 = (payload.get("content_b64") or "").strip()
-    try:
-        user_id = int(user_id)
-    except Exception:
-        raise HTTPException(status_code=400, detail="user_id must be an integer")
-    if user_id <= 0:
-        raise HTTPException(status_code=400, detail="user_id must be positive")
-    if not filename:
-        raise HTTPException(status_code=400, detail="filename required")
-    if "/" in filename or "\\" in filename or ".." in filename or filename != os.path.basename(filename):
-        raise HTTPException(status_code=400, detail="invalid filename")
     if not content_b64:
         raise HTTPException(status_code=400, detail="content_b64 required")
     try:
@@ -18729,15 +18751,39 @@ def api_reports_upload(payload: dict, request: Request):
     except Exception:
         raise HTTPException(status_code=400, detail="invalid base64 content")
     reports_dir = resolve_reports_dir()
-    user_dir = os.path.join(reports_dir, str(user_id))
-    os.makedirs(user_dir, exist_ok=True)
-    out_path = os.path.join(user_dir, filename)
+    out_path = None
+    response_url = None
+    if path_under_reports:
+        try:
+            rel_path = _normalize_reports_rel_path(path_under_reports)
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
+        out_path = os.path.join(reports_dir, *rel_path.split("/"))
+        out_dir = os.path.dirname(out_path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        response_url = _public_report_url_global(rel_path)
+    else:
+        try:
+            user_id = int(user_id)
+        except Exception:
+            raise HTTPException(status_code=400, detail="user_id must be an integer")
+        if user_id <= 0:
+            raise HTTPException(status_code=400, detail="user_id must be positive")
+        if not filename:
+            raise HTTPException(status_code=400, detail="filename required")
+        if "/" in filename or "\\" in filename or ".." in filename or filename != os.path.basename(filename):
+            raise HTTPException(status_code=400, detail="invalid filename")
+        user_dir = os.path.join(reports_dir, str(user_id))
+        os.makedirs(user_dir, exist_ok=True)
+        out_path = os.path.join(user_dir, filename)
+        response_url = _public_report_url(user_id, filename)
     try:
         with open(out_path, "wb") as f:
             f.write(raw)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"write failed: {e}")
-    return {"ok": True, "url": _public_report_url(user_id, filename), "bytes": len(raw)}
+    return {"ok": True, "url": response_url, "bytes": len(raw)}
 
 
 # Mount API router after all api_v1 routes are declared.
