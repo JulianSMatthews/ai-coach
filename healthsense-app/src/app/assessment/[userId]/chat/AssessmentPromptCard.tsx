@@ -217,9 +217,16 @@ export default function AssessmentPromptCard({
     typeof introAvatarEnabledOverride === "boolean" ? introAvatarEnabledOverride : INTRO_AVATAR_ENABLED;
   const showIntroAvatar = showLeadIntroPreview && introAvatarEnabled && Boolean(introAvatarUrl);
   const singleOptionPrompt = prompt.options.length === 1;
+  const scorePreviewUsesOuterCard = showScorePreview;
 
   return (
-    <section className="w-full rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
+    <section
+      className={
+        scorePreviewUsesOuterCard
+          ? "w-full rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.35)] sm:px-6 sm:py-6"
+          : "w-full rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8"
+      }
+    >
       <div className="space-y-5">
         {showLeadBranding && !showIntroAvatar ? (
           <div className="border-b border-[#eadfce] pb-5">
@@ -292,112 +299,137 @@ export default function AssessmentPromptCard({
         ) : null}
 
         {showScorePreview && promptPreview ? (
-          <div className="rounded-[28px] border border-[#e7e1d6] bg-white px-4 py-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.35)] sm:px-6 sm:py-6">
-            <div className="space-y-5">
-              {showIntroAvatar ? (
-                <video
-                  autoPlay
-                  controls
-                  muted
-                  playsInline
-                  preload="auto"
-                  poster={introAvatarPoster || undefined}
-                  className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
-                >
-                  <source src={introAvatarUrl} />
-                </video>
-              ) : null}
-              <div className="space-y-4">
-                <div className="rounded-3xl border border-[#efe7db] bg-[#fffaf3] px-5 py-5">
-                  <div className="flex items-center gap-4">
-                    <LeadAssessmentBranding
-                      titleLines={[]}
-                      logoClassName="h-11 w-11 flex-none sm:h-12 sm:w-12"
-                    />
-                    <div className="min-w-0 flex-1 space-y-2">
-                      <div className="flex items-end justify-between gap-4">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
-                            {showLeadIntroPreview ? "Example HealthSense Score" : "HealthSense Score"}
-                          </p>
-                          <p className="mt-1 text-4xl font-semibold text-[#1e1b16]">
-                            {combinedPreviewScore ?? "--"}
-                          </p>
-                        </div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8c7f70]">out of 100</p>
+          <div className="space-y-5">
+            {showIntroAvatar ? (
+              <video
+                autoPlay
+                controls
+                muted
+                playsInline
+                preload="auto"
+                poster={introAvatarPoster || undefined}
+                className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
+              >
+                <source src={introAvatarUrl} />
+              </video>
+            ) : null}
+            <div className="space-y-4">
+              <div className="rounded-3xl border border-[#efe7db] bg-white px-5 py-5">
+                <div className="flex items-center gap-4">
+                  <LeadAssessmentBranding
+                    titleLines={[]}
+                    logoClassName="h-11 w-11 flex-none sm:h-12 sm:w-12"
+                  />
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="flex items-end justify-between gap-4">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
+                          {showLeadIntroPreview ? "Example HealthSense Score" : "HealthSense Score"}
+                        </p>
+                        <p className="mt-1 text-4xl font-semibold text-[#1e1b16]">
+                          {combinedPreviewScore ?? "--"}
+                        </p>
                       </div>
-                      <ProgressBar value={combinedPreviewScore ?? 0} max={100} tone="var(--accent)" />
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8c7f70]">out of 100</p>
                     </div>
+                    <ProgressBar value={combinedPreviewScore ?? 0} max={100} tone="var(--accent)" />
                   </div>
                 </div>
               </div>
+            </div>
 
-              <div className="grid grid-cols-2 gap-3 sm:gap-4">
-                {sortedPreviewPillars.map((pillar) => {
-                  const palette = getPillarPalette(pillar.pillar_key);
-                  const pillarScore = normalizePreviewScore(pillar.score);
-                  const isComplete = pillar.complete !== false && pillarScore !== null;
-                  const isStrongest =
-                    showPreviewExtremes &&
-                    isComplete &&
-                    previewExtremes.strongest?.label === pillar.label &&
-                    pillarScore === previewExtremes.strongest.score;
-                  const isWeakest =
-                    showPreviewExtremes &&
-                    isComplete &&
-                    previewExtremes.weakest?.label === pillar.label &&
-                    pillarScore === previewExtremes.weakest.score;
-                  return (
-                    <div key={pillar.pillar_key} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-5">
-                      <div className="flex flex-col items-center text-center">
-                        <ScoreRing value={pillarScore ?? 0} tone={isComplete ? palette.accent : "#d8d0c2"} />
-                        <p className="mt-3 text-sm font-semibold text-[#1e1b16]">
-                          {pillar.label}
-                          {isStrongest ? <strong> (strongest)</strong> : null}
-                          {isWeakest ? <strong> (weakest)</strong> : null}
+            <div className="grid grid-cols-2 gap-3 sm:gap-4">
+              {sortedPreviewPillars.map((pillar) => {
+                const palette = getPillarPalette(pillar.pillar_key);
+                const pillarScore = normalizePreviewScore(pillar.score);
+                const isComplete = pillar.complete !== false && pillarScore !== null;
+                const isStrongest =
+                  showPreviewExtremes &&
+                  isComplete &&
+                  previewExtremes.strongest?.label === pillar.label &&
+                  pillarScore === previewExtremes.strongest.score;
+                const isWeakest =
+                  showPreviewExtremes &&
+                  isComplete &&
+                  previewExtremes.weakest?.label === pillar.label &&
+                  pillarScore === previewExtremes.weakest.score;
+                return (
+                  <div key={pillar.pillar_key} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-5">
+                    <div className="flex flex-col items-center text-center">
+                      <ScoreRing value={pillarScore ?? 0} tone={isComplete ? palette.accent : "#d8d0c2"} />
+                      <p className="mt-3 text-sm font-semibold text-[#1e1b16]">
+                        {pillar.label}
+                        {isStrongest ? <strong> (strongest)</strong> : null}
+                        {isWeakest ? <strong> (weakest)</strong> : null}
+                      </p>
+                      {!isComplete ? (
+                        <p className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-[#8c7f70]">
+                          Pending
                         </p>
-                        {!isComplete ? (
-                          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-[#8c7f70]">
-                            Pending
-                          </p>
-                        ) : null}
-                      </div>
+                      ) : null}
                     </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {singleOptionPrompt ? (
+              <div className="grid grid-cols-1 gap-3">
+                {prompt.options.map((option) => {
+                  const isSelected = selectedValue === option.value;
+                  return (
+                    <button
+                      key={`${prompt.section_key}-${option.value}`}
+                      type="button"
+                      onClick={() => onSelect(option)}
+                      disabled={busy}
+                      className={
+                        isSelected
+                          ? "rounded-2xl border border-[var(--accent)] bg-white px-4 py-5 text-center text-[var(--accent)] transition disabled:cursor-not-allowed disabled:opacity-70"
+                          : "rounded-2xl border border-[var(--accent)] bg-[var(--accent)] px-4 py-5 text-center text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                      }
+                    >
+                      <span className={isSelected ? "block text-lg font-semibold text-[var(--accent)] text-center" : "block text-lg font-semibold text-white text-center"}>
+                        {option.label}
+                      </span>
+                    </button>
                   );
                 })}
               </div>
-            </div>
+            ) : null}
           </div>
         ) : null}
 
-        <div className={singleOptionPrompt ? "grid grid-cols-1 gap-3" : "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"}>
-          {prompt.options.map((option) => {
-            const isSelected = selectedValue === option.value;
-            return (
-              <button
-                key={`${prompt.section_key}-${option.value}`}
-                type="button"
-                onClick={() => onSelect(option)}
-                disabled={busy}
-                className={
-                  isSelected
-                    ? `rounded-2xl border border-[var(--accent)] bg-white px-4 py-5 text-[var(--accent)] transition disabled:cursor-not-allowed disabled:opacity-70 ${singleOptionPrompt ? "text-center" : "text-left"}`
-                    : `rounded-2xl border border-[var(--accent)] bg-[var(--accent)] px-4 py-5 text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 ${singleOptionPrompt ? "text-center" : "text-left"}`
-                }
-              >
-                <span
+        {!showScorePreview || !singleOptionPrompt ? (
+          <div className={singleOptionPrompt ? "grid grid-cols-1 gap-3" : "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"}>
+            {prompt.options.map((option) => {
+              const isSelected = selectedValue === option.value;
+              return (
+                <button
+                  key={`${prompt.section_key}-${option.value}`}
+                  type="button"
+                  onClick={() => onSelect(option)}
+                  disabled={busy}
                   className={
                     isSelected
-                      ? `block text-lg font-semibold text-[var(--accent)] ${singleOptionPrompt ? "text-center" : ""}`
-                      : `block text-lg font-semibold text-white ${singleOptionPrompt ? "text-center" : ""}`
+                      ? `rounded-2xl border border-[var(--accent)] bg-white px-4 py-5 text-[var(--accent)] transition disabled:cursor-not-allowed disabled:opacity-70 ${singleOptionPrompt ? "text-center" : "text-left"}`
+                      : `rounded-2xl border border-[var(--accent)] bg-[var(--accent)] px-4 py-5 text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 ${singleOptionPrompt ? "text-center" : "text-left"}`
                   }
                 >
-                  {option.label}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+                  <span
+                    className={
+                      isSelected
+                        ? `block text-lg font-semibold text-[var(--accent)] ${singleOptionPrompt ? "text-center" : ""}`
+                        : `block text-lg font-semibold text-white ${singleOptionPrompt ? "text-center" : ""}`
+                    }
+                  >
+                    {option.label}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
 
         {showPromptActions ? (
           <div className="flex flex-wrap items-center justify-between gap-3">
