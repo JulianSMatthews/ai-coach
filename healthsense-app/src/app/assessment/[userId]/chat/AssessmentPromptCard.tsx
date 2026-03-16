@@ -133,6 +133,19 @@ function previewPillarExtremes(
   };
 }
 
+function sortPreviewPillars(
+  pillars: Array<{ pillar_key: string; label: string; score?: number | null; complete?: boolean | null }>,
+): Array<{ pillar_key: string; label: string; score?: number | null; complete?: boolean | null }> {
+  return [...pillars].sort((a, b) => {
+    const aScore = normalizePreviewScore(a.score);
+    const bScore = normalizePreviewScore(b.score);
+    if (aScore === null && bScore === null) return 0;
+    if (aScore === null) return 1;
+    if (bScore === null) return -1;
+    return bScore - aScore;
+  });
+}
+
 function renderFormattedQuestion(text: string): ReactNode {
   const raw = String(text || "");
   if (!raw.includes("*")) return raw;
@@ -189,6 +202,7 @@ export default function AssessmentPromptCard({
   const showScorePreview = Boolean(promptPreview?.pillars?.length);
   const combinedPreviewScore = normalizePreviewScore(promptPreview?.combined);
   const previewExtremes = promptPreview ? previewPillarExtremes(promptPreview.pillars) : { strongest: null, weakest: null };
+  const sortedPreviewPillars = promptPreview ? sortPreviewPillars(promptPreview.pillars) : [];
   const completedPreviewPillarCount = promptPreview
     ? promptPreview.pillars.filter((pillar) => normalizePreviewScore(pillar.score) !== null).length
     : 0;
@@ -310,32 +324,32 @@ export default function AssessmentPromptCard({
                       </p>
                     </div>
                   </div>
-                  {showPreviewExtremes ? (
-                    <div className="border-t border-[#eadfce] pt-4 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
-                      <div className="space-y-1 text-sm text-[#1e1b16]">
-                        <p>
-                          <span className="font-semibold text-[#6b6257]">Strongest Pillar:</span>{" "}
-                          <strong>{previewExtremes.strongest?.label}</strong>
-                        </p>
-                        <p>
-                          <span className="font-semibold text-[#6b6257]">Weakest Pillar:</span>{" "}
-                          <strong>{previewExtremes.weakest?.label}</strong>
-                        </p>
-                      </div>
-                    </div>
-                  ) : null}
                 </div>
               </div>
 
               <div className="grid gap-3">
-                {promptPreview.pillars.map((pillar) => {
+                {sortedPreviewPillars.map((pillar) => {
                   const palette = getPillarPalette(pillar.pillar_key);
                   const pillarScore = normalizePreviewScore(pillar.score);
                   const isComplete = pillar.complete !== false && pillarScore !== null;
+                  const isStrongest =
+                    showPreviewExtremes &&
+                    isComplete &&
+                    previewExtremes.strongest?.label === pillar.label &&
+                    pillarScore === previewExtremes.strongest.score;
+                  const isWeakest =
+                    showPreviewExtremes &&
+                    isComplete &&
+                    previewExtremes.weakest?.label === pillar.label &&
+                    pillarScore === previewExtremes.weakest.score;
                   return (
                     <div key={pillar.pillar_key} className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
                       <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-semibold text-[#1e1b16]">{pillar.label}</p>
+                        <p className="text-sm font-semibold text-[#1e1b16]">
+                          {pillar.label}
+                          {isStrongest ? <strong> (strongest)</strong> : null}
+                          {isWeakest ? <strong> (weakest)</strong> : null}
+                        </p>
                         {isComplete ? (
                           <p className="text-sm font-semibold" style={{ color: palette.accent }}>
                             {pillarScore}

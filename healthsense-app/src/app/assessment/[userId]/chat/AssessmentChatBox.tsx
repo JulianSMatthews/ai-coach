@@ -373,6 +373,10 @@ function resultPillarExtremes(pillars: AssessmentResultPillar[]): {
   };
 }
 
+function sortResultPillars(pillars: AssessmentResultPillar[]): AssessmentResultPillar[] {
+  return [...pillars].sort((a, b) => b.score - a.score);
+}
+
 function normalizeCoachingPlanItem(raw: unknown): AssessmentCoachingPlanItem | null {
   if (!raw || typeof raw !== "object") return null;
   const row = raw as Record<string, unknown>;
@@ -916,6 +920,7 @@ export default function AssessmentChatBox({
   }
 
   const resultExtremes = resultSummary ? resultPillarExtremes(resultSummary.pillars) : { strongest: null, weakest: null };
+  const sortedResultPillars = resultSummary ? sortResultPillars(resultSummary.pillars) : [];
   const resultCard = resultSummary ? (
     <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
       <div className="space-y-6">
@@ -934,28 +939,12 @@ export default function AssessmentChatBox({
               </p>
             ) : null}
           </div>
-          <div className="flex flex-col gap-4 rounded-3xl border border-[#efe7db] bg-white px-5 py-4 sm:flex-row sm:items-center">
-            <div className="flex items-center gap-4">
-              <ScoreRing value={resultSummary.combined} tone="var(--accent)" />
-              <div>
-                <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Overall</p>
-                <p className="text-3xl font-semibold text-[#1e1b16]">{resultSummary.combined}</p>
-              </div>
+          <div className="flex items-center gap-4 rounded-3xl border border-[#efe7db] bg-white px-5 py-4">
+            <ScoreRing value={resultSummary.combined} tone="var(--accent)" />
+            <div>
+              <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Overall</p>
+              <p className="text-3xl font-semibold text-[#1e1b16]">{resultSummary.combined}</p>
             </div>
-            {resultExtremes.strongest && resultExtremes.weakest ? (
-              <div className="border-t border-[#eadfce] pt-4 sm:border-l sm:border-t-0 sm:pl-4 sm:pt-0">
-                <div className="space-y-1 text-sm text-[#1e1b16]">
-                  <p>
-                    <span className="font-semibold text-[#6b6257]">Strongest Pillar:</span>{" "}
-                    <strong>{resultExtremes.strongest.label}</strong>
-                  </p>
-                  <p>
-                    <span className="font-semibold text-[#6b6257]">Weakest Pillar:</span>{" "}
-                    <strong>{resultExtremes.weakest.label}</strong>
-                  </p>
-                </div>
-              </div>
-            ) : null}
           </div>
         </div>
 
@@ -972,12 +961,22 @@ export default function AssessmentChatBox({
 
         {resultSummary.pillars.length ? (
           <div className="grid gap-3">
-            {resultSummary.pillars.map((pillar) => {
+            {sortedResultPillars.map((pillar) => {
               const palette = getPillarPalette(pillar.pillar_key);
+              const isStrongest =
+                resultExtremes.strongest?.pillar_key === pillar.pillar_key &&
+                resultExtremes.strongest?.score === pillar.score;
+              const isWeakest =
+                resultExtremes.weakest?.pillar_key === pillar.pillar_key &&
+                resultExtremes.weakest?.score === pillar.score;
               return (
                 <div key={pillar.pillar_key} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-[#1e1b16]">{pillar.label}</p>
+                    <p className="text-sm font-semibold text-[#1e1b16]">
+                      {pillar.label}
+                      {isStrongest ? <strong> (strongest)</strong> : null}
+                      {isWeakest ? <strong> (weakest)</strong> : null}
+                    </p>
                     <p className="text-sm font-semibold" style={{ color: palette.accent }}>{pillar.score}</p>
                   </div>
                   <ProgressBar value={pillar.score} max={100} tone={palette.accent} />
