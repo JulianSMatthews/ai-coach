@@ -110,7 +110,14 @@ def _process_assessment_completion_summary_media(payload: dict) -> dict:
     result = generate_assessment_completion_summary_media(int(run_id))
     if result.get("pending"):
         poll_attempt = max(0, int(payload.get("poll_attempt") or 0)) + 1
+        retry_after_seconds = result.get("avatar_retry_after_seconds")
+        try:
+            retry_after_seconds = int(retry_after_seconds) if retry_after_seconds is not None else None
+        except Exception:
+            retry_after_seconds = None
         delay_seconds = queue_requeue_delay_seconds(poll_attempt)
+        if retry_after_seconds is not None and retry_after_seconds > delay_seconds:
+            delay_seconds = retry_after_seconds
         next_job_id, _created = enqueue_job_once(
             "assessment_completion_summary_media",
             {
@@ -118,6 +125,7 @@ def _process_assessment_completion_summary_media(payload: dict) -> dict:
                 "user_id": int(user_id) if user_id is not None else None,
                 "trigger": payload.get("trigger") or "worker_poll",
                 "poll_attempt": poll_attempt,
+                "retry_after_seconds": int(retry_after_seconds) if retry_after_seconds is not None else None,
             },
             user_id=int(user_id) if user_id is not None else None,
             available_at=datetime.utcnow() + timedelta(seconds=delay_seconds),

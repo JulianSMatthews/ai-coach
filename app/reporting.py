@@ -1179,6 +1179,20 @@ def _is_avatar_rate_limited(error: str | None) -> bool:
     return "429" in normalized or "rate-limit" in normalized or "rate limited" in normalized
 
 
+def _avatar_retry_after_seconds(error: str | None) -> int | None:
+    raw = str(error or "").strip()
+    if not raw:
+        return None
+    match = re.search(r"retry after\s+(\d+)\s+seconds?", raw, flags=re.IGNORECASE)
+    if not match:
+        return None
+    try:
+        seconds = int(match.group(1))
+    except Exception:
+        return None
+    return seconds if seconds > 0 else None
+
+
 def _summary_text_starts_with_name(text: str | None, name: str | None) -> bool:
     summary_text = str(text or "").strip()
     summary_name = str(name or "").strip()
@@ -1704,11 +1718,11 @@ def _ensure_completion_summary_media(
                 if _is_avatar_rate_limited(str(exc)):
                     avatar_status = avatar_status or "Running"
                     avatar_error = str(exc)
+                    retry_after_seconds = _avatar_retry_after_seconds(avatar_error) or 60
+                    avatar_retry_after = now_utc + timedelta(seconds=retry_after_seconds)
                     updates["completion_summary_avatar_status"] = avatar_status
                     updates["completion_summary_avatar_error"] = avatar_error
-                    updates["completion_summary_avatar_retry_after"] = (
-                        now_utc + timedelta(minutes=1)
-                    ).replace(microsecond=0).isoformat()
+                    updates["completion_summary_avatar_retry_after"] = avatar_retry_after.replace(microsecond=0).isoformat()
                     _update_completion_summary_prompt_log(
                         run_id=int(getattr(run, "id", 0) or 0),
                         user_id=int(getattr(user, "id", 0) or 0) or None,
@@ -1803,11 +1817,11 @@ def _ensure_completion_summary_media(
                     avatar_error = str(exc)
                     if _is_avatar_rate_limited(avatar_error):
                         avatar_status = "RateLimited"
+                        retry_after_seconds = _avatar_retry_after_seconds(avatar_error) or 60
+                        avatar_retry_after = now_utc + timedelta(seconds=retry_after_seconds)
                         updates["completion_summary_avatar_status"] = avatar_status
                         updates["completion_summary_avatar_error"] = avatar_error
-                        updates["completion_summary_avatar_retry_after"] = (
-                            now_utc + timedelta(minutes=1)
-                        ).replace(microsecond=0).isoformat()
+                        updates["completion_summary_avatar_retry_after"] = avatar_retry_after.replace(microsecond=0).isoformat()
                         _update_completion_summary_prompt_log(
                             run_id=int(getattr(run, "id", 0) or 0),
                             user_id=int(getattr(user, "id", 0) or 0) or None,
@@ -1838,6 +1852,7 @@ def _ensure_completion_summary_media(
         avatar_job_id = str(meta.get("completion_summary_avatar_job_id") or avatar_job_id or "").strip() or None
         avatar_error = str(meta.get("completion_summary_avatar_error") or avatar_error or "").strip() or None
         avatar_summary_url = str(meta.get("completion_summary_avatar_summary_url") or avatar_summary_url or "").strip() or None
+        avatar_retry_after = _parse_meta_datetime(meta.get("completion_summary_avatar_retry_after"))
 
     return {
         "text": summary_text or None,
@@ -1847,6 +1862,7 @@ def _ensure_completion_summary_media(
         "avatar_job_id": avatar_job_id,
         "avatar_error": avatar_error,
         "avatar_summary_url": avatar_summary_url,
+        "avatar_retry_after": avatar_retry_after.replace(microsecond=0).isoformat() if avatar_retry_after else None,
     }
 
 
@@ -4219,6 +4235,7 @@ def build_assessment_dashboard_data(
     completion_summary_avatar_url = None
     completion_summary_avatar_status = None
     completion_summary_avatar_error = None
+    completion_summary_avatar_retry_after = None
     narratives_cached_flag = None
     if run_finished and has_pillar_scores:
         cache_source = ""
@@ -4494,6 +4511,9 @@ def build_assessment_dashboard_data(
                 or str(queued_meta.get("completion_summary_worker_error") or "").strip()
                 or None
             )
+            completion_summary_avatar_retry_after = (
+                str(queued_meta.get("completion_summary_avatar_retry_after") or "").strip() or None
+            )
         else:
             completion_assets = _ensure_completion_summary_media(
                 user=user,
@@ -4509,6 +4529,7 @@ def build_assessment_dashboard_data(
             completion_summary_avatar_url = completion_assets.get("avatar_url")
             completion_summary_avatar_status = completion_assets.get("avatar_status")
             completion_summary_avatar_error = completion_assets.get("avatar_error")
+            completion_summary_avatar_retry_after = completion_assets.get("avatar_retry_after")
 
     score_rows = [
         {"label": "Combined", "value": combined, "bucket": _score_bucket(combined)},
@@ -4589,6 +4610,20 @@ def build_assessment_dashboard_data(
                     or str((narrative_meta or {}).get("completion_summary_text_status") or "").strip().lower()
                     in {"queued", "generating"}
                 )
+            ),
+            "completion_summary_avatar_retry_after": completion_summary_avatar_retry_after,
+            "completion_summary_avatar_retry_after_seconds": (
+                max(
+                    0,
+                    int(
+                        (
+                            (_parse_meta_datetime(completion_summary_avatar_retry_after) or datetime.utcnow())
+                            - datetime.utcnow()
+                        ).total_seconds()
+                    ),
+                )
+                if completion_summary_avatar_retry_after
+                else None
             ),
             "narratives_source": None
             if narratives_cached_flag is None
@@ -4903,6 +4938,8 @@ def generate_assessment_completion_summary_media(run_id: int) -> dict[str, Any]:
         "avatar_url": narratives.get("completion_summary_avatar_url"),
         "avatar_status": narratives.get("completion_summary_avatar_status"),
         "avatar_error": narratives.get("completion_summary_avatar_error"),
+        "avatar_retry_after": meta.get("completion_summary_avatar_retry_after"),
+        "avatar_retry_after_seconds": meta.get("completion_summary_avatar_retry_after_seconds"),
         "pending": bool(meta.get("completion_summary_pending")),
     }
 
