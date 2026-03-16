@@ -973,9 +973,6 @@ export default function AssessmentChatBox({
                       {isStrongest ? <strong> (strongest)</strong> : null}
                       {isWeakest ? <strong> (weakest)</strong> : null}
                     </p>
-                    <p className="mt-1 text-sm font-semibold" style={{ color: palette.accent }}>
-                      {pillar.score}/100
-                    </p>
                   </div>
                 </div>
               );

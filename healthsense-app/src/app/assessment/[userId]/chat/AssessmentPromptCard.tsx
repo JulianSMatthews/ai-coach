@@ -316,7 +316,7 @@ export default function AssessmentPromptCard({
                     />
                     <div className="min-w-0 flex-1 space-y-2">
                       <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
-                        {showLeadIntroPreview ? "Example score" : "HealthSense Score"}
+                        {showLeadIntroPreview ? "Example HealthSense Score" : "HealthSense Score"}
                       </p>
                       <p className="text-4xl font-semibold text-[#1e1b16]">
                         {combinedPreviewScore ?? "--"}
@@ -351,15 +351,11 @@ export default function AssessmentPromptCard({
                           {isStrongest ? <strong> (strongest)</strong> : null}
                           {isWeakest ? <strong> (weakest)</strong> : null}
                         </p>
-                        {isComplete ? (
-                          <p className="mt-1 text-sm font-semibold" style={{ color: palette.accent }}>
-                            {pillarScore}/100
-                          </p>
-                        ) : (
+                        {!isComplete ? (
                           <p className="mt-1 text-xs font-semibold uppercase tracking-[0.18em] text-[#8c7f70]">
                             Pending
                           </p>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                   );
