@@ -1184,7 +1184,7 @@ export default function AssessmentChatBox({
               ? "Interest recorded"
               : coachingInterestSubmitting
                 ? "Saving interest…"
-                : "I am interested in Healthsense"}
+                : "Click here to secure your space"}
           </button>
           {coachingInterestError ? (
             <p className="mt-2 text-sm text-[#8a3e1a]">{coachingInterestError}</p>
