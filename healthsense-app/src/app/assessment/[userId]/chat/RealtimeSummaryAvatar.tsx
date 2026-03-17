@@ -349,20 +349,10 @@ export default function RealtimeSummaryAvatar({
       <div className="space-y-2">
         {showVideoSurface ? (
           <div className="overflow-hidden rounded-2xl border border-[#efe7db] bg-[#f6efe5]">
-            <video ref={videoRef} className="w-full" playsInline controls={playing} />
+            <video ref={videoRef} className="w-full" playsInline />
           </div>
         ) : null}
         <div className="flex flex-wrap items-center gap-2">
-          {!alreadyPlayed ? (
-            <button
-              type="button"
-              onClick={() => void startRealtimeAvatar()}
-              disabled={!canStart}
-              className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {starting ? "Starting video…" : "Play video"}
-            </button>
-          ) : null}
           {playing ? (
             <button
               type="button"

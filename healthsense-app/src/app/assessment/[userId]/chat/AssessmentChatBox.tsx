@@ -994,7 +994,6 @@ export default function AssessmentChatBox({
                 <video
                   className="w-full rounded-2xl border border-[#efe7db] bg-[#f6efe5]"
                   autoPlay
-                  controls
                   playsInline
                   preload="metadata"
                   onPlay={markCompletionSummaryVideoSeen}
@@ -1174,7 +1173,6 @@ export default function AssessmentChatBox({
         </div>
       ) : null}
       <div className="space-y-4 px-4 py-5 sm:px-6 sm:py-6">
-        <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">How HealthSense works</p>
         <div>
           <button
             type="button"
@@ -1317,8 +1315,10 @@ export default function AssessmentChatBox({
         </div>
       ) : showResultsGate ? (
         resultsGate
+      ) : showResultCard && showCoachingPlan ? (
+        <div key="coaching-plan-card" className="space-y-4">{coachingPlanPanel}</div>
       ) : showResultCard ? (
-        <div className="space-y-4">{showCoachingPlan ? coachingPlanPanel : resultCard}</div>
+        <div key="assessment-results-card" className="space-y-4">{resultCard}</div>
       ) : null}
 
       {!currentPrompt && !showResultCard && !showResultsGate ? (
