@@ -467,6 +467,7 @@ export default function AssessmentChatBox({
   const [completionSummaryLoading, setCompletionSummaryLoading] = useState(false);
   const [completionSummaryError, setCompletionSummaryError] = useState<string | null>(null);
   const [loadedCompletionSummaryRunId, setLoadedCompletionSummaryRunId] = useState<number | null>(null);
+  const [completionSummaryVideoSeen, setCompletionSummaryVideoSeen] = useState(false);
   const [summaryDetailMode, setSummaryDetailMode] = useState<"read" | "listen" | null>(null);
   const [realtimeSummaryPhase, setRealtimeSummaryPhase] = useState<
     "idle" | "preparing" | "playing" | "completed" | "failed" | "stopped" | "timeout"
@@ -488,6 +489,10 @@ export default function AssessmentChatBox({
   const showResultCard = Boolean(resultSummary) && !promptActive && !identityRequired;
   const showAssessmentControls = !assessmentCompleted && !isLeadGuest && !promptActive && (!leadFlow || !chatReady);
   const completionSummaryRunId = parsePositiveUserId(resultSummary?.run_id);
+  const completionSummaryVideoStorageKey = useMemo(
+    () => (completionSummaryRunId ? `hs:assessment-summary-video:${userId}:${completionSummaryRunId}` : null),
+    [completionSummaryRunId, userId],
+  );
   const completionSummaryStatus = String(completionSummaryMedia?.avatarStatus || "").trim().toLowerCase();
   const completionSummaryUsesRealtime =
     String(completionSummaryMedia?.avatarMode || "").trim().toLowerCase() === "realtime" ||
@@ -505,12 +510,18 @@ export default function AssessmentChatBox({
   const completionSummaryFailed = completionSummaryStatus === "failed";
   const summaryIntroMessage =
     "Gia is preparing your personalised results video. This can take a moment. Your full results will appear here once it is ready.";
+  const showStoredSummaryVideo =
+    !completionSummaryUsesRealtime &&
+    Boolean(completionSummaryMedia?.avatarUrl) &&
+    !completionSummaryVideoSeen;
   const showCompletionSummaryPanel =
-    Boolean(completionSummaryRunId) ||
+    (completionSummaryUsesRealtime && Boolean(completionSummaryRunId)) ||
     Boolean(
+      showStoredSummaryVideo ||
       completionSummaryMedia?.text ||
         completionSummaryMedia?.audioUrl ||
-        completionSummaryMedia?.avatarUrl ||
+        completionSummaryPending ||
+        completionSummaryFailed ||
         completionSummaryLoading ||
         completionSummaryError,
     );
@@ -531,6 +542,17 @@ export default function AssessmentChatBox({
     !summaryExperienceBlocked &&
     (!completionSummaryUsesRealtime ||
       ["playing", "completed", "failed", "stopped", "timeout"].includes(realtimeSummaryPhase));
+
+  const markCompletionSummaryVideoSeen = useCallback(() => {
+    if (!completionSummaryVideoStorageKey || typeof window === "undefined") {
+      return;
+    }
+    try {
+      window.localStorage.setItem(completionSummaryVideoStorageKey, "1");
+    } catch {
+      // Ignore storage failures and keep the current render path active.
+    }
+  }, [completionSummaryVideoStorageKey]);
 
   const applyChatPayload = useCallback((data: ChatResponse) => {
     const nextPrompt = normalizeCurrentPrompt(data.current_prompt);
@@ -663,6 +685,18 @@ export default function AssessmentChatBox({
     setRealtimeSummaryPhase("idle");
     setSummaryDetailMode(null);
   }, [resultSummary?.run_id]);
+
+  useEffect(() => {
+    if (!completionSummaryVideoStorageKey || typeof window === "undefined") {
+      setCompletionSummaryVideoSeen(false);
+      return;
+    }
+    try {
+      setCompletionSummaryVideoSeen(window.localStorage.getItem(completionSummaryVideoStorageKey) === "1");
+    } catch {
+      setCompletionSummaryVideoSeen(false);
+    }
+  }, [completionSummaryVideoStorageKey]);
 
   const fetchAssessmentReportPayload = useCallback(
     async (runId: number | null, fallbackMessage: string) => {
@@ -956,13 +990,14 @@ export default function AssessmentChatBox({
                   introMessage={null}
                   onPhaseChange={setRealtimeSummaryPhase}
                 />
-              ) : completionSummaryMedia?.avatarUrl ? (
+              ) : showStoredSummaryVideo ? (
                 <video
                   className="w-full rounded-2xl border border-[#efe7db] bg-[#f6efe5]"
                   autoPlay
                   controls
                   playsInline
                   preload="metadata"
+                  onPlay={markCompletionSummaryVideoSeen}
                   onLoadedMetadata={(event) => {
                     void event.currentTarget.play().catch(() => undefined);
                   }}
@@ -1283,10 +1318,7 @@ export default function AssessmentChatBox({
       ) : showResultsGate ? (
         resultsGate
       ) : showResultCard ? (
-        <div className="space-y-4">
-          {resultCard}
-          {coachingPlanPanel}
-        </div>
+        <div className="space-y-4">{showCoachingPlan ? coachingPlanPanel : resultCard}</div>
       ) : null}
 
       {!currentPrompt && !showResultCard && !showResultsGate ? (

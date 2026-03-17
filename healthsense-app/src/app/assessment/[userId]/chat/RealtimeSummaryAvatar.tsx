@@ -54,7 +54,6 @@ export default function RealtimeSummaryAvatar({
   text,
   audioUrl,
   maxSessionSeconds,
-  maxReplays,
   autoStart = false,
   introMessage = null,
   onPhaseChange,
@@ -68,19 +67,19 @@ export default function RealtimeSummaryAvatar({
   const startedAtRef = useRef<number | null>(null);
   const finalizingRef = useRef(false);
   const autoStartedRef = useRef(false);
+  const playbackStorageKeyRef = useRef<string>(`hs:assessment-summary-video:${userId}:${runId}`);
 
   const [starting, setStarting] = useState(false);
   const [playing, setPlaying] = useState(false);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [playsUsed, setPlaysUsed] = useState(0);
+  const [alreadyPlayed, setAlreadyPlayed] = useState(false);
   const [detailMode, setDetailMode] = useState<"read" | "listen" | null>(null);
   const [phase, setPhase] = useState<"idle" | "preparing" | "playing" | "completed" | "failed" | "stopped" | "timeout">(
     "idle",
   );
 
-  const replayLimit = Math.max(0, Number(maxReplays ?? 1));
-  const canStart = Boolean(text) && !starting && !playing && playsUsed <= replayLimit;
+  const canStart = Boolean(text) && !starting && !playing && !alreadyPlayed;
 
   useEffect(() => {
     onPhaseChange?.(phase);
@@ -280,7 +279,14 @@ export default function RealtimeSummaryAvatar({
         throw new Error(startResult.errorDetails || "Azure realtime avatar connection failed.");
       }
 
-      setPlaysUsed((current) => current + 1);
+      if (typeof window !== "undefined") {
+        try {
+          window.localStorage.setItem(playbackStorageKeyRef.current, "1");
+        } catch {
+          // Ignore local storage failures and continue playback.
+        }
+      }
+      setAlreadyPlayed(true);
       setStarting(false);
       setPlaying(true);
       setPhase("playing");
@@ -311,17 +317,26 @@ export default function RealtimeSummaryAvatar({
   }, [autoStart, canStart, startRealtimeAvatar, text]);
 
   useEffect(() => {
+    playbackStorageKeyRef.current = `hs:assessment-summary-video:${userId}:${runId}`;
+    let played = false;
+    if (typeof window !== "undefined") {
+      try {
+        played = window.localStorage.getItem(playbackStorageKeyRef.current) === "1";
+      } catch {
+        played = false;
+      }
+    }
     autoStartedRef.current = false;
     setPhase("idle");
     setStatusText(null);
     setError(null);
     setPlaying(false);
     setStarting(false);
-    setPlaysUsed(0);
+    setAlreadyPlayed(played);
     setDetailMode(null);
-  }, [runId]);
+  }, [runId, userId]);
 
-  const showVideoSurface = playing || playsUsed > 0;
+  const showVideoSurface = playing;
   const showSummaryActions = phase !== "preparing" && (Boolean(audioUrl) || Boolean(text));
 
   useEffect(() => {
@@ -338,14 +353,16 @@ export default function RealtimeSummaryAvatar({
           </div>
         ) : null}
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void startRealtimeAvatar()}
-            disabled={!canStart}
-            className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {starting ? "Starting video…" : playsUsed > 0 ? "Replay video" : "Play video"}
-          </button>
+          {!alreadyPlayed ? (
+            <button
+              type="button"
+              onClick={() => void startRealtimeAvatar()}
+              disabled={!canStart}
+              className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {starting ? "Starting video…" : "Play video"}
+            </button>
+          ) : null}
           {playing ? (
             <button
               type="button"
