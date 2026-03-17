@@ -174,6 +174,21 @@ const LEAD_INTRO_TITLE_LINES = [
   "click continue below it will only take three minutes to complete",
 ];
 
+function LeadIntroMessage({ lines }: { lines: string[] }) {
+  return (
+    <div className="space-y-2 text-center sm:text-left">
+      {lines.map((line) => (
+        <p
+          key={line}
+          className="text-[1.45rem] font-medium leading-[1.1] text-[#1e1b16] sm:text-[2.1rem]"
+        >
+          {line}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 const INTRO_AVATAR_ENABLED = ["1", "true", "yes", "on"].includes(
   String(process.env.NEXT_PUBLIC_ASSESSMENT_INTRO_AVATAR_ENABLED || "").trim().toLowerCase(),
 );
@@ -237,11 +252,7 @@ export default function AssessmentPromptCard({
       <div className={scorePreviewUsesOuterCard ? "space-y-4" : "space-y-5"}>
         {showLeadIntroHeader ? (
           <div className="border-b border-[#eadfce] pb-5">
-            <LeadAssessmentBranding
-              className="text-[1.75rem] font-medium leading-[1.05] sm:text-[2.35rem]"
-              logoClassName="h-10 w-10 flex-none sm:h-12 sm:w-12"
-              titleLines={LEAD_INTRO_TITLE_LINES}
-            />
+            <LeadIntroMessage lines={LEAD_INTRO_TITLE_LINES} />
           </div>
         ) : null}
         {showLeadBranding && !showLeadIntroPreview && !showIntroAvatar && !showPromptHeader && !showScorePreview ? (

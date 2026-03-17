@@ -1124,28 +1124,28 @@ export default function AssessmentChatBox({
   ) : null;
 
   const coachingPlanPanel = showCoachingPlan ? (
-    <section className="rounded-[28px] border border-[#e7e1d6] bg-white px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
-      <div className="space-y-5">
-        <div className="space-y-3 rounded-2xl border border-[#efe7db] bg-[#fffaf3] p-4">
-          <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">How HealthSense works</p>
-          {String(coachProductAvatar?.url || "").trim() ? (
-            <video
-              controls
-              preload="metadata"
-              playsInline
-              poster={String(coachProductAvatar?.posterUrl || "").trim() || undefined}
-              className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
-            >
-              <source src={String(coachProductAvatar?.url || "").trim()} />
-            </video>
-          ) : null}
+    <section className="overflow-hidden rounded-[28px] border border-[#e7e1d6] bg-white shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]">
+      {String(coachProductAvatar?.url || "").trim() ? (
+        <div className="border-b border-[#efe7db] bg-[#f7f4ee] p-3 sm:p-4">
+          <video
+            controls
+            preload="metadata"
+            playsInline
+            poster={String(coachProductAvatar?.posterUrl || "").trim() || undefined}
+            className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
+          >
+            <source src={String(coachProductAvatar?.url || "").trim()} />
+          </video>
         </div>
+      ) : null}
+      <div className="space-y-4 px-4 py-5 sm:px-6 sm:py-6">
+        <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">How HealthSense works</p>
         <div>
           <button
             type="button"
             onClick={() => void onCoachingInterestClick()}
             disabled={coachingInterestSubmitting || coachingInterestLogged}
-            className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.18em] whitespace-normal text-white disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] whitespace-normal text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
             {coachingInterestLogged
               ? "Interest recorded"
