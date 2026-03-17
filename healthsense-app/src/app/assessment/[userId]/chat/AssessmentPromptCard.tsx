@@ -170,7 +170,7 @@ const LEAD_INTRO_PREVIEW: NonNullable<AssessmentCurrentPrompt["result_preview"]>
 };
 
 const LEAD_INTRO_TITLE_LINES = [
-  "Find out your pillar that is holding you back and your strongest,",
+  "Find out which pillar is holding you back and which is your strongest,",
   "click continue below it will only take three minutes to complete",
 ];
 
@@ -203,7 +203,6 @@ export default function AssessmentPromptCard({
     Boolean(String(prompt.section_label || "").trim()) ||
     Boolean(String(prompt.concept_label || "").trim());
   const showLeadIntroPreview = prompt.section_key === "lead_intro";
-  const showLeadIntroHeader = showLeadBranding && showLeadIntroPreview && !showPromptHeader;
   const promptPreview = showLeadIntroPreview ? LEAD_INTRO_PREVIEW : prompt.result_preview;
   const showScorePreview = Boolean(promptPreview?.pillars?.length);
   const combinedPreviewScore = normalizePreviewScore(promptPreview?.combined);
@@ -222,6 +221,8 @@ export default function AssessmentPromptCard({
   const introAvatarEnabled =
     typeof introAvatarEnabledOverride === "boolean" ? introAvatarEnabledOverride : INTRO_AVATAR_ENABLED;
   const showIntroAvatar = showLeadIntroPreview && introAvatarEnabled && Boolean(introAvatarUrl);
+  const showLeadIntroHeader =
+    showLeadBranding && showLeadIntroPreview && !showPromptHeader && !showIntroAvatar;
   const singleOptionPrompt = prompt.options.length === 1;
   const scorePreviewUsesOuterCard = showScorePreview;
 
