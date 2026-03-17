@@ -1001,7 +1001,7 @@ export default function AssessmentChatBox({
                     void event.currentTarget.play().catch(() => undefined);
                   }}
                 >
-                  <source src={completionSummaryMedia.avatarUrl} type="video/mp4" />
+                  <source src={String(completionSummaryMedia?.avatarUrl || "")} type="video/mp4" />
                 </video>
               ) : null}
 
