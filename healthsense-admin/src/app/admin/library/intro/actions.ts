@@ -112,6 +112,35 @@ export async function saveIntroSettingsAction(
   }
 }
 
+export async function saveCoachingSettingsAction(
+  _: IntroSaveState,
+  formData: FormData,
+): Promise<IntroSaveState> {
+  const coach_product_avatar_url = String(formData.get("coach_product_avatar_url") || "").trim();
+  const coach_product_avatar_title = String(formData.get("coach_product_avatar_title") || "").trim();
+  const coach_product_avatar_script = String(formData.get("coach_product_avatar_script") || "").trim();
+  const coach_product_avatar_poster_url = String(formData.get("coach_product_avatar_poster_url") || "").trim();
+  const coach_product_avatar_character = String(formData.get("coach_product_avatar_character") || "").trim();
+  const coach_product_avatar_style = String(formData.get("coach_product_avatar_style") || "").trim();
+  const coach_product_avatar_voice = String(formData.get("coach_product_avatar_voice") || "").trim();
+  try {
+    await updateLibraryIntroSettings({
+      coach_product_avatar_url: coach_product_avatar_url || undefined,
+      coach_product_avatar_title: coach_product_avatar_title || undefined,
+      coach_product_avatar_script: coach_product_avatar_script || undefined,
+      coach_product_avatar_poster_url: coach_product_avatar_poster_url || undefined,
+      coach_product_avatar_character: coach_product_avatar_character || undefined,
+      coach_product_avatar_style: coach_product_avatar_style || undefined,
+      coach_product_avatar_voice: coach_product_avatar_voice || undefined,
+    });
+    revalidatePath("/admin/library");
+    revalidatePath("/admin/library/intro");
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 export async function saveAssessmentIntroSettingsAction(
   _: AssessmentIntroSaveState,
   formData: FormData,

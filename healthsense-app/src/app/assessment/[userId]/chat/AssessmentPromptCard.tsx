@@ -169,6 +169,11 @@ const LEAD_INTRO_PREVIEW: NonNullable<AssessmentCurrentPrompt["result_preview"]>
   readiness: null,
 };
 
+const LEAD_INTRO_TITLE_LINES = [
+  "Find out your pillar that is holding you back and your strongest,",
+  "click continue below it will only take three minutes to complete",
+];
+
 const INTRO_AVATAR_ENABLED = ["1", "true", "yes", "on"].includes(
   String(process.env.NEXT_PUBLIC_ASSESSMENT_INTRO_AVATAR_ENABLED || "").trim().toLowerCase(),
 );
@@ -198,6 +203,7 @@ export default function AssessmentPromptCard({
     Boolean(String(prompt.section_label || "").trim()) ||
     Boolean(String(prompt.concept_label || "").trim());
   const showLeadIntroPreview = prompt.section_key === "lead_intro";
+  const showLeadIntroHeader = showLeadBranding && showLeadIntroPreview && !showPromptHeader;
   const promptPreview = showLeadIntroPreview ? LEAD_INTRO_PREVIEW : prompt.result_preview;
   const showScorePreview = Boolean(promptPreview?.pillars?.length);
   const combinedPreviewScore = normalizePreviewScore(promptPreview?.combined);
@@ -228,7 +234,16 @@ export default function AssessmentPromptCard({
       }
     >
       <div className={scorePreviewUsesOuterCard ? "space-y-4" : "space-y-5"}>
-        {showLeadBranding && !showIntroAvatar && !showPromptHeader && !showScorePreview ? (
+        {showLeadIntroHeader ? (
+          <div className="border-b border-[#eadfce] pb-5">
+            <LeadAssessmentBranding
+              className="text-[1.75rem] font-medium leading-[1.05] sm:text-[2.35rem]"
+              logoClassName="h-10 w-10 flex-none sm:h-12 sm:w-12"
+              titleLines={LEAD_INTRO_TITLE_LINES}
+            />
+          </div>
+        ) : null}
+        {showLeadBranding && !showLeadIntroPreview && !showIntroAvatar && !showPromptHeader && !showScorePreview ? (
           <div className="border-b border-[#eadfce] pb-5">
             <LeadAssessmentBranding
               className={
@@ -243,10 +258,7 @@ export default function AssessmentPromptCard({
               }
               titleLines={
                 showLeadIntroPreview
-                  ? [
-                      "Find out your pillar that is holding you back and your strongest,",
-                      "click continue below it will only take three minutes to complete",
-                    ]
+                  ? LEAD_INTRO_TITLE_LINES
                   : undefined
               }
             />

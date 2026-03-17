@@ -17116,44 +17116,81 @@ def admin_library_intro_update(
 ):
     if not isinstance(payload, dict):
         raise HTTPException(status_code=400, detail="payload must be a JSON object")
-    active_raw = payload.get("active")
-    if isinstance(active_raw, bool):
-        active = active_raw
-    elif active_raw is None:
-        active = True
-    else:
-        active = _is_truthy_env(str(active_raw))
-    title = str(payload.get("title") or "").strip() or INTRO_TITLE_DEFAULT
-    welcome_template = str(payload.get("welcome_message_template") or "").strip() or INTRO_WELCOME_TEMPLATE_DEFAULT
-    body = str(payload.get("body") or "").strip() or INTRO_BODY_DEFAULT
-    podcast_url = str(payload.get("podcast_url") or "").strip() or None
-    podcast_url = _promote_intro_podcast_url(podcast_url)
-    podcast_voice = str(payload.get("podcast_voice") or "").strip() or None
     avatar_defaults = azure_avatar_defaults()
-    coach_product_avatar_url = str(payload.get("coach_product_avatar_url") or "").strip() or None
-    coach_product_avatar_title = (
-        str(payload.get("coach_product_avatar_title") or "").strip() or INTRO_COACH_PRODUCT_AVATAR_TITLE_DEFAULT
-    )
-    coach_product_avatar_script = (
-        str(payload.get("coach_product_avatar_script") or "").strip() or INTRO_COACH_PRODUCT_AVATAR_SCRIPT_DEFAULT
-    )
-    coach_product_avatar_poster_url = str(payload.get("coach_product_avatar_poster_url") or "").strip() or None
-    coach_product_avatar_character = (
-        str(payload.get("coach_product_avatar_character") or "").strip()
-        or str(avatar_defaults.get("character") or "lisa")
-    )
-    coach_product_avatar_style = (
-        str(payload.get("coach_product_avatar_style") or "").strip()
-        or str(avatar_defaults.get("style") or "graceful-sitting")
-    )
-    coach_product_avatar_voice = (
-        str(payload.get("coach_product_avatar_voice") or "").strip()
-        or str(avatar_defaults.get("voice") or "en-GB-SoniaNeural")
-    )
 
     with SessionLocal() as s:
         row = _get_or_create_intro_library_row(s, admin_user)
         existing_avatar = _intro_coach_product_avatar_payload_from_row(row)
+        active_raw = payload.get("active") if "active" in payload else None
+        if isinstance(active_raw, bool):
+            active = active_raw
+        elif active_raw is None:
+            active = str(getattr(row, "status", "") or "").strip().lower() == "published"
+        else:
+            active = _is_truthy_env(str(active_raw))
+        title = (
+            str(payload.get("title") or "").strip() or INTRO_TITLE_DEFAULT
+            if "title" in payload
+            else str(getattr(row, "title", "") or "").strip() or INTRO_TITLE_DEFAULT
+        )
+        welcome_template = (
+            str(payload.get("welcome_message_template") or "").strip() or INTRO_WELCOME_TEMPLATE_DEFAULT
+            if "welcome_message_template" in payload
+            else _intro_message_template_from_row(row)
+        )
+        body = (
+            str(payload.get("body") or "").strip() or INTRO_BODY_DEFAULT
+            if "body" in payload
+            else _intro_body_from_row(row)
+        )
+        if "podcast_url" in payload:
+            podcast_url = str(payload.get("podcast_url") or "").strip() or None
+            podcast_url = _promote_intro_podcast_url(podcast_url)
+        else:
+            podcast_url = getattr(row, "podcast_url", None)
+        podcast_voice = (
+            str(payload.get("podcast_voice") or "").strip() or None
+            if "podcast_voice" in payload
+            else getattr(row, "podcast_voice", None)
+        )
+        coach_product_avatar_url = (
+            str(payload.get("coach_product_avatar_url") or "").strip() or None
+            if "coach_product_avatar_url" in payload
+            else str(existing_avatar.get("url") or "").strip() or None
+        )
+        coach_product_avatar_title = (
+            str(payload.get("coach_product_avatar_title") or "").strip() or INTRO_COACH_PRODUCT_AVATAR_TITLE_DEFAULT
+            if "coach_product_avatar_title" in payload
+            else str(existing_avatar.get("title") or "").strip() or INTRO_COACH_PRODUCT_AVATAR_TITLE_DEFAULT
+        )
+        coach_product_avatar_script = (
+            str(payload.get("coach_product_avatar_script") or "").strip() or INTRO_COACH_PRODUCT_AVATAR_SCRIPT_DEFAULT
+            if "coach_product_avatar_script" in payload
+            else str(existing_avatar.get("script") or "").strip() or INTRO_COACH_PRODUCT_AVATAR_SCRIPT_DEFAULT
+        )
+        coach_product_avatar_poster_url = (
+            str(payload.get("coach_product_avatar_poster_url") or "").strip() or None
+            if "coach_product_avatar_poster_url" in payload
+            else str(existing_avatar.get("poster_url") or "").strip() or None
+        )
+        coach_product_avatar_character = (
+            str(payload.get("coach_product_avatar_character") or "").strip()
+            or str(avatar_defaults.get("character") or "lisa")
+            if "coach_product_avatar_character" in payload
+            else str(existing_avatar.get("character") or "").strip() or str(avatar_defaults.get("character") or "lisa")
+        )
+        coach_product_avatar_style = (
+            str(payload.get("coach_product_avatar_style") or "").strip()
+            or str(avatar_defaults.get("style") or "graceful-sitting")
+            if "coach_product_avatar_style" in payload
+            else str(existing_avatar.get("style") or "").strip() or str(avatar_defaults.get("style") or "graceful-sitting")
+        )
+        coach_product_avatar_voice = (
+            str(payload.get("coach_product_avatar_voice") or "").strip()
+            or str(avatar_defaults.get("voice") or "en-GB-SoniaNeural")
+            if "coach_product_avatar_voice" in payload
+            else str(existing_avatar.get("voice") or "").strip() or str(avatar_defaults.get("voice") or "en-GB-SoniaNeural")
+        )
         tags = row.tags if isinstance(getattr(row, "tags", None), dict) else {}
         tags = dict(tags or {})
         tags["welcome_message_template"] = welcome_template

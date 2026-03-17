@@ -12,6 +12,7 @@ import {
   generateIntroAvatarAction,
   refreshAssessmentIntroAvatarAction,
   refreshIntroAvatarAction,
+  saveCoachingSettingsAction,
   saveAssessmentIntroSettingsAction,
   saveIntroSettingsAction,
   type AssessmentIntroSaveState,
@@ -25,6 +26,8 @@ type IntroSetupClientProps = {
   assessmentIntro: AssessmentIntroLibrarySettings;
   templates: ContentPromptTemplateSummary[];
 };
+
+type IntroSetupTab = "app" | "coaching" | "assessment";
 
 const emptyGenerationState: IntroGenerationState = { ok: false, error: null };
 const emptySaveState: IntroSaveState = { ok: false, error: null };
@@ -139,6 +142,31 @@ function SectionHeading({
   );
 }
 
+function TabButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={[
+        "rounded-full border px-4 py-2 text-xs uppercase tracking-[0.2em] transition",
+        active
+          ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+          : "border-[#e7e1d6] bg-white text-[#6b6257]",
+      ].join(" ")}
+    >
+      {label}
+    </button>
+  );
+}
+
 export default function IntroSetupClient({
   appIntro,
   assessmentIntro,
@@ -150,6 +178,10 @@ export default function IntroSetupClient({
   );
   const [saveState, saveAction, saving] = useActionState(
     saveIntroSettingsAction,
+    emptySaveState,
+  );
+  const [coachSaveState, coachSaveAction, savingCoach] = useActionState(
+    saveCoachingSettingsAction,
     emptySaveState,
   );
   const [assessmentSaveState, assessmentSaveAction, savingAssessment] = useActionState(
@@ -259,6 +291,7 @@ export default function IntroSetupClient({
   const [assessmentIntroAvatarSummaryUrl, setAssessmentIntroAvatarSummaryUrl] = useState(
     assessmentIntro.assessment_intro_avatar?.summary_url || "",
   );
+  const [activeTab, setActiveTab] = useState<IntroSetupTab>("app");
 
   const generatedPayload = useMemo(
     () => (((generationState.result?.result as Record<string, unknown> | undefined) || {}) as Record<string, unknown>),
@@ -369,210 +402,230 @@ export default function IntroSetupClient({
 
   return (
     <div className="space-y-6">
-      <section className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
-        <SectionHeading
-          label="Generate app intro draft"
-          description="Uses the library content generation flow to draft the onboarding intro copy and optional podcast audio."
-        />
-        <form action={generationAction} className="mt-4 grid gap-4 md:grid-cols-2">
-          <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-              Content template
-            </label>
-            <select
-              name="template_id"
-              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-              defaultValue={templates[0]?.id ?? ""}
-            >
-              <option value="">Select template</option>
-              {templates.map((tpl) => (
-                <option key={tpl.id} value={tpl.id}>
-                  {tpl.template_key}
-                  {tpl.label ? ` · ${tpl.label}` : ""}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Provider</label>
-            <select
-              name="provider"
-              defaultValue="openai"
-              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-            >
-              <option value="openai">OpenAI</option>
-              <option value="anthropic">Anthropic</option>
-              <option value="google">Google</option>
-            </select>
-          </div>
-          <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-              LLM model (optional)
-            </label>
-            <select
-              name="model_override"
-              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-            >
-              {modelOptions.map((model) => (
-                <option key={model || "default"} value={model}>
-                  {model || "Default"}
-                </option>
-              ))}
-            </select>
-          </div>
-          <label className="flex items-center gap-2 text-sm text-[#6b6257]">
-            <input type="checkbox" name="run_llm" defaultChecked />
-            Run LLM (generate text)
-          </label>
-          <label className="flex items-center gap-2 text-sm text-[#6b6257]">
-            <input type="checkbox" name="generate_podcast" defaultChecked />
-            Generate podcast audio
-          </label>
-          <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-              Podcast voice
-            </label>
-            <select
-              name="podcast_voice"
-              defaultValue={podcastVoice}
-              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-            >
-              {voiceOptions.map((voice) => (
-                <option key={voice.value || "default"} value={voice.value}>
-                  {voice.label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <button
-            type="submit"
-            disabled={generating}
-            className="w-fit rounded-full border border-[var(--accent)] bg-[var(--accent)] px-3 py-1.5 text-[10px] uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {generating ? "Generating…" : "Generate draft"}
-          </button>
-        </form>
-        {generationState.error ? (
-          <p className="mt-3 text-sm text-red-600">{generationState.error}</p>
-        ) : null}
-        {generatedText ? (
-          <p className="mt-3 text-xs text-[#6b6257]">
-            Generated text loaded into the app intro read content field below.
-          </p>
-        ) : null}
-      </section>
+      <div className="flex flex-wrap gap-2">
+        <TabButton active={activeTab === "app"} label="App Intro" onClick={() => setActiveTab("app")} />
+        <TabButton active={activeTab === "coaching"} label="Coaching" onClick={() => setActiveTab("coaching")} />
+        <TabButton active={activeTab === "assessment"} label="Assessment Intro" onClick={() => setActiveTab("assessment")} />
+      </div>
 
-      <section className="rounded-2xl border border-[#efe7db] bg-white p-4">
-        <SectionHeading
-          label="HealthSense app intro"
-          description="Controls the onboarding intro inside the HealthSense app, including welcome copy and podcast audio."
-        />
-        <form action={saveAction} className="mt-4 space-y-4">
-          <label className="flex items-center gap-2 text-sm text-[#3c332b]">
-            <input
-              type="checkbox"
-              name="active"
-              checked={active}
-              onChange={(e) => setActive(e.target.checked)}
+      {activeTab === "app" ? (
+        <>
+          <section className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
+            <SectionHeading
+              label="Generate app intro draft"
+              description="Uses the library content generation flow to draft the onboarding intro copy and optional podcast audio."
             />
-            Intro flow active
-          </label>
-          <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Title</label>
-            <input
-              name="title"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-              Welcome message template
-            </label>
-            <input
-              name="welcome_message_template"
-              value={welcomeTemplate}
-              onChange={(e) => setWelcomeTemplate(e.target.value)}
-              className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
-            />
-            <p className="mt-1 text-xs text-[#8a8176]">
-              Supports {"{first_name}"} and {"{display_name}"}.
-            </p>
-          </div>
-          <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-              Read content
-            </label>
-            <textarea
-              name="body"
-              rows={8}
-              value={body}
-              onChange={(e) => setBody(e.target.value)}
-              className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
-            />
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                Podcast URL
+            <form action={generationAction} className="mt-4 grid gap-4 md:grid-cols-2">
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                  Content template
+                </label>
+                <select
+                  name="template_id"
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                  defaultValue={templates[0]?.id ?? ""}
+                >
+                  <option value="">Select template</option>
+                  {templates.map((tpl) => (
+                    <option key={tpl.id} value={tpl.id}>
+                      {tpl.template_key}
+                      {tpl.label ? ` · ${tpl.label}` : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Provider</label>
+                <select
+                  name="provider"
+                  defaultValue="openai"
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                >
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                  <option value="google">Google</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                  LLM model (optional)
+                </label>
+                <select
+                  name="model_override"
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                >
+                  {modelOptions.map((model) => (
+                    <option key={model || "default"} value={model}>
+                      {model || "Default"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <label className="flex items-center gap-2 text-sm text-[#6b6257]">
+                <input type="checkbox" name="run_llm" defaultChecked />
+                Run LLM (generate text)
               </label>
-              <input
-                name="podcast_url"
-                value={podcastUrl}
-                onChange={(e) => setPodcastUrl(e.target.value)}
-                className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
-              />
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                Podcast voice
+              <label className="flex items-center gap-2 text-sm text-[#6b6257]">
+                <input type="checkbox" name="generate_podcast" defaultChecked />
+                Generate podcast audio
               </label>
-              <select
-                name="podcast_voice"
-                value={podcastVoice}
-                onChange={(e) => setPodcastVoice(e.target.value)}
-                className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                  Podcast voice
+                </label>
+                <select
+                  name="podcast_voice"
+                  defaultValue={podcastVoice}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                >
+                  {voiceOptions.map((voice) => (
+                    <option key={voice.value || "default"} value={voice.value}>
+                      {voice.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="submit"
+                disabled={generating}
+                className="w-fit rounded-full border border-[var(--accent)] bg-[var(--accent)] px-3 py-1.5 text-[10px] uppercase tracking-[0.12em] text-white disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {voiceOptions.map((voice) => (
-                  <option key={voice.value || "default"} value={voice.value}>
-                    {voice.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-          {podcastUrl ? (
-            <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] p-3">
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                Podcast preview
+                {generating ? "Generating…" : "Generate draft"}
+              </button>
+            </form>
+            {generationState.error ? (
+              <p className="mt-3 text-sm text-red-600">{generationState.error}</p>
+            ) : null}
+            {generatedText ? (
+              <p className="mt-3 text-xs text-[#6b6257]">
+                Generated text loaded into the app intro read content field below.
               </p>
-              <audio
-                key={podcastUrl}
-                controls
-                preload="none"
-                className="mt-2 w-full"
-                src={podcastUrl}
-              />
-              <a
-                href={podcastUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-2 inline-flex text-[11px] uppercase tracking-[0.2em] text-[var(--accent)]"
+            ) : null}
+          </section>
+
+          <section className="rounded-2xl border border-[#efe7db] bg-white p-4">
+            <SectionHeading
+              label="HealthSense app intro"
+              description="Controls the onboarding intro inside the HealthSense app, including welcome copy and podcast audio."
+            />
+            <form action={saveAction} className="mt-4 space-y-4">
+              <label className="flex items-center gap-2 text-sm text-[#3c332b]">
+                <input
+                  type="checkbox"
+                  name="active"
+                  checked={active}
+                  onChange={(e) => setActive(e.target.checked)}
+                />
+                Intro flow active
+              </label>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Title</label>
+                <input
+                  name="title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                  Welcome message template
+                </label>
+                <input
+                  name="welcome_message_template"
+                  value={welcomeTemplate}
+                  onChange={(e) => setWelcomeTemplate(e.target.value)}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                />
+                <p className="mt-1 text-xs text-[#8a8176]">
+                  Supports {"{first_name}"} and {"{display_name}"}.
+                </p>
+              </div>
+              <div>
+                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                  Read content
+                </label>
+                <textarea
+                  name="body"
+                  rows={8}
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                />
+              </div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                    Podcast URL
+                  </label>
+                  <input
+                    name="podcast_url"
+                    value={podcastUrl}
+                    onChange={(e) => setPodcastUrl(e.target.value)}
+                    className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                    Podcast voice
+                  </label>
+                  <select
+                    name="podcast_voice"
+                    value={podcastVoice}
+                    onChange={(e) => setPodcastVoice(e.target.value)}
+                    className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                  >
+                    {voiceOptions.map((voice) => (
+                      <option key={voice.value || "default"} value={voice.value}>
+                        {voice.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              {podcastUrl ? (
+                <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] p-3">
+                  <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                    Podcast preview
+                  </p>
+                  <audio
+                    key={podcastUrl}
+                    controls
+                    preload="none"
+                    className="mt-2 w-full"
+                    src={podcastUrl}
+                  />
+                  <a
+                    href={podcastUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 inline-flex text-[11px] uppercase tracking-[0.2em] text-[var(--accent)]"
+                  >
+                    Open audio
+                  </a>
+                </div>
+              ) : null}
+              <button
+                type="submit"
+                disabled={saving}
+                className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
               >
-                Open audio
-              </a>
-            </div>
-          ) : null}
-          <div className="space-y-4 rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                HealthSense coach avatar
-              </p>
-              <p className="mt-1 text-sm text-[#6b6257]">
-                Managed video shown when the user opens their personal coaching plan above the OKRs.
-              </p>
-            </div>
+                {saving ? "Saving…" : "Save app intro"}
+              </button>
+              {saveState.error ? <p className="text-sm text-red-600">{saveState.error}</p> : null}
+              {saveState.ok ? <p className="text-sm text-[var(--accent)]">Saved.</p> : null}
+            </form>
+          </section>
+        </>
+      ) : null}
+
+      {activeTab === "coaching" ? (
+        <section className="rounded-2xl border border-[#efe7db] bg-white p-4">
+          <SectionHeading
+            label="HealthSense coaching"
+            description="Controls the explainer shown when the user opens their personal coaching plan above the OKRs."
+          />
+          <form action={coachSaveAction} className="mt-4 space-y-4">
             <div className="grid gap-3 md:grid-cols-2">
               <div>
                 <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
@@ -670,11 +723,8 @@ export default function IntroSetupClient({
                 onChange={(e) => setCoachProductAvatarScript(e.target.value)}
                 className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
               />
-              <p className="mt-1 text-xs text-[#8a8176]">
-                This script is used for the avatar shown with the personal coaching plan and OKRs.
-              </p>
             </div>
-            <div className="rounded-xl border border-[#efe7db] bg-white p-3 text-sm text-[#6b6257]">
+            <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] p-3 text-sm text-[#6b6257]">
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
                 Azure avatar status
               </p>
@@ -703,7 +753,7 @@ export default function IntroSetupClient({
               <button
                 type="submit"
                 formAction={coachAvatarGenerationAction}
-                disabled={generatingCoachAvatar || refreshingCoachAvatar}
+                disabled={generatingCoachAvatar || refreshingCoachAvatar || savingCoach}
                 className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {generatingCoachAvatar ? "Generating avatar…" : "Generate avatar"}
@@ -711,12 +761,21 @@ export default function IntroSetupClient({
               <button
                 type="submit"
                 formAction={coachAvatarRefreshAction}
-                disabled={refreshingCoachAvatar || generatingCoachAvatar}
+                disabled={refreshingCoachAvatar || generatingCoachAvatar || savingCoach}
                 className="rounded-full border border-[#e7e1d6] bg-white px-5 py-2 text-xs uppercase tracking-[0.2em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {refreshingCoachAvatar ? "Refreshing…" : "Refresh avatar status"}
               </button>
+              <button
+                type="submit"
+                disabled={savingCoach || generatingCoachAvatar || refreshingCoachAvatar}
+                className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {savingCoach ? "Saving…" : "Save coaching"}
+              </button>
             </div>
+            {coachSaveState.error ? <p className="text-sm text-red-600">{coachSaveState.error}</p> : null}
+            {coachSaveState.ok ? <p className="text-sm text-[var(--accent)]">Saved.</p> : null}
             {coachAvatarGenerationState.error ? (
               <p className="text-sm text-red-600">{coachAvatarGenerationState.error}</p>
             ) : null}
@@ -748,25 +807,17 @@ export default function IntroSetupClient({
                 </a>
               </div>
             ) : null}
-          </div>
-          <button
-            type="submit"
-            disabled={saving}
-            className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {saving ? "Saving…" : "Save app intro"}
-          </button>
-          {saveState.error ? <p className="text-sm text-red-600">{saveState.error}</p> : null}
-          {saveState.ok ? <p className="text-sm text-[var(--accent)]">Saved.</p> : null}
-        </form>
-      </section>
+          </form>
+        </section>
+      ) : null}
 
-      <section className="rounded-2xl border border-[#efe7db] bg-white p-4">
-        <SectionHeading
-          label="Assessment intro"
-          description="Controls the lead assessment landing intro separately from the in-app onboarding intro."
-        />
-        <form action={assessmentSaveAction} className="mt-4 space-y-4">
+      {activeTab === "assessment" ? (
+        <section className="rounded-2xl border border-[#efe7db] bg-white p-4">
+          <SectionHeading
+            label="Assessment intro"
+            description="Controls the lead assessment landing intro separately from the in-app onboarding intro."
+          />
+          <form action={assessmentSaveAction} className="mt-4 space-y-4">
           <label className="flex items-center gap-2 text-sm text-[#3c332b]">
             <input
               type="checkbox"
@@ -985,8 +1036,9 @@ export default function IntroSetupClient({
           {assessmentSaveState.ok ? (
             <p className="text-sm text-[var(--accent)]">Saved.</p>
           ) : null}
-        </form>
-      </section>
+          </form>
+        </section>
+      ) : null}
     </div>
   );
 }

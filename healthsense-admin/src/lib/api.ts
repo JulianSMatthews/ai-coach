@@ -2084,7 +2084,7 @@ export async function getLibraryAssessmentIntroSettings(): Promise<AssessmentInt
 }
 
 export async function updateLibraryIntroSettings(payload: {
-  active: boolean;
+  active?: boolean;
   title?: string;
   welcome_message_template?: string;
   body?: string;
