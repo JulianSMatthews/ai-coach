@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import {
   createContentGeneration,
+  generateLibraryIntroAvatar,
   generateLibraryAssessmentIntroAvatar,
+  refreshLibraryIntroAvatar,
   refreshLibraryAssessmentIntroAvatar,
   updateLibraryAssessmentIntroSettings,
   updateLibraryIntroSettings,
@@ -79,6 +81,13 @@ export async function saveIntroSettingsAction(
   const body = String(formData.get("body") || "").trim();
   const podcast_url = String(formData.get("podcast_url") || "").trim();
   const podcast_voice = String(formData.get("podcast_voice") || "").trim();
+  const coach_product_avatar_url = String(formData.get("coach_product_avatar_url") || "").trim();
+  const coach_product_avatar_title = String(formData.get("coach_product_avatar_title") || "").trim();
+  const coach_product_avatar_script = String(formData.get("coach_product_avatar_script") || "").trim();
+  const coach_product_avatar_poster_url = String(formData.get("coach_product_avatar_poster_url") || "").trim();
+  const coach_product_avatar_character = String(formData.get("coach_product_avatar_character") || "").trim();
+  const coach_product_avatar_style = String(formData.get("coach_product_avatar_style") || "").trim();
+  const coach_product_avatar_voice = String(formData.get("coach_product_avatar_voice") || "").trim();
   try {
     await updateLibraryIntroSettings({
       active,
@@ -87,6 +96,13 @@ export async function saveIntroSettingsAction(
       body: body || undefined,
       podcast_url: podcast_url || undefined,
       podcast_voice: podcast_voice || undefined,
+      coach_product_avatar_url: coach_product_avatar_url || undefined,
+      coach_product_avatar_title: coach_product_avatar_title || undefined,
+      coach_product_avatar_script: coach_product_avatar_script || undefined,
+      coach_product_avatar_poster_url: coach_product_avatar_poster_url || undefined,
+      coach_product_avatar_character: coach_product_avatar_character || undefined,
+      coach_product_avatar_style: coach_product_avatar_style || undefined,
+      coach_product_avatar_voice: coach_product_avatar_voice || undefined,
     });
     revalidatePath("/admin/library");
     revalidatePath("/admin/library/intro");
@@ -133,6 +149,49 @@ export async function generateIntroAvatarAction(
   _: IntroAvatarState,
   formData: FormData,
 ): Promise<IntroAvatarState> {
+  const coach_product_avatar_title = String(formData.get("coach_product_avatar_title") || "").trim();
+  const coach_product_avatar_script = String(formData.get("coach_product_avatar_script") || "").trim();
+  const coach_product_avatar_poster_url = String(formData.get("coach_product_avatar_poster_url") || "").trim();
+  const coach_product_avatar_character = String(formData.get("coach_product_avatar_character") || "").trim();
+  const coach_product_avatar_style = String(formData.get("coach_product_avatar_style") || "").trim();
+  const coach_product_avatar_voice = String(formData.get("coach_product_avatar_voice") || "").trim();
+  try {
+    const result = await generateLibraryIntroAvatar({
+      coach_product_avatar_title: coach_product_avatar_title || undefined,
+      coach_product_avatar_script: coach_product_avatar_script || undefined,
+      coach_product_avatar_poster_url: coach_product_avatar_poster_url || undefined,
+      coach_product_avatar_character: coach_product_avatar_character || undefined,
+      coach_product_avatar_style: coach_product_avatar_style || undefined,
+      coach_product_avatar_voice: coach_product_avatar_voice || undefined,
+    });
+    revalidatePath("/admin/library");
+    revalidatePath("/admin/library/intro");
+    return { ok: Boolean(result.ok), error: result.error ? String(result.error) : null, result };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function refreshIntroAvatarAction(
+  _: IntroAvatarState,
+  _formData: FormData,
+): Promise<IntroAvatarState> {
+  void _;
+  void _formData;
+  try {
+    const result = await refreshLibraryIntroAvatar();
+    revalidatePath("/admin/library");
+    revalidatePath("/admin/library/intro");
+    return { ok: Boolean(result.ok), error: result.error ? String(result.error) : null, result };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function generateAssessmentIntroAvatarAction(
+  _: IntroAvatarState,
+  formData: FormData,
+): Promise<IntroAvatarState> {
   const assessment_intro_avatar_title = String(formData.get("assessment_intro_avatar_title") || "").trim();
   const assessment_intro_avatar_script = String(formData.get("assessment_intro_avatar_script") || "").trim();
   const assessment_intro_avatar_poster_url = String(formData.get("assessment_intro_avatar_poster_url") || "").trim();
@@ -156,10 +215,12 @@ export async function generateIntroAvatarAction(
   }
 }
 
-export async function refreshIntroAvatarAction(
+export async function refreshAssessmentIntroAvatarAction(
   _: IntroAvatarState,
   _formData: FormData,
 ): Promise<IntroAvatarState> {
+  void _;
+  void _formData;
   try {
     const result = await refreshLibraryAssessmentIntroAvatar();
     revalidatePath("/admin/library");

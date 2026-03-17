@@ -243,7 +243,10 @@ export default function AssessmentPromptCard({
               }
               titleLines={
                 showLeadIntroPreview
-                  ? ["HealthSense measures four pillars of health to find the one limiting your progress."]
+                  ? [
+                      "Find out your pillar that is holding you back and your strongest,",
+                      "click continue below it will only take three minutes to complete",
+                    ]
                   : undefined
               }
             />
@@ -293,7 +296,7 @@ export default function AssessmentPromptCard({
 
         {!showScorePreview ? (
           <div className="space-y-4">
-            <h3 className="text-xl leading-snug text-[#1e1b16] sm:text-[1.75rem]">{renderFormattedQuestion(prompt.question)}</h3>
+            <h3 className="text-[1rem] leading-[1.4] text-[#1e1b16] sm:text-[1.45rem] sm:leading-snug">{renderFormattedQuestion(prompt.question)}</h3>
             {hint ? <p className="text-sm whitespace-pre-line text-[#6b6257]">{hint}</p> : null}
           </div>
         ) : null}
@@ -385,11 +388,11 @@ export default function AssessmentPromptCard({
                       disabled={busy}
                       className={
                         isSelected
-                          ? "rounded-2xl border border-[var(--accent)] bg-white px-4 py-5 text-center text-[var(--accent)] transition disabled:cursor-not-allowed disabled:opacity-70"
-                          : "rounded-2xl border border-[var(--accent)] bg-[var(--accent)] px-4 py-5 text-center text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                          ? "rounded-2xl border border-[var(--accent)] bg-white px-3 py-3.5 text-center text-[var(--accent)] transition disabled:cursor-not-allowed disabled:opacity-70 sm:px-4 sm:py-5"
+                          : "rounded-2xl border border-[var(--accent)] bg-[var(--accent)] px-3 py-3.5 text-center text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:py-5"
                       }
                     >
-                      <span className={isSelected ? "block text-lg font-semibold text-[var(--accent)] text-center" : "block text-lg font-semibold text-white text-center"}>
+                      <span className={isSelected ? "block text-sm font-semibold text-[var(--accent)] text-center sm:text-lg" : "block text-sm font-semibold text-white text-center sm:text-lg"}>
                         {option.label}
                       </span>
                     </button>
@@ -412,15 +415,15 @@ export default function AssessmentPromptCard({
                   disabled={busy}
                   className={
                     isSelected
-                      ? `rounded-2xl border border-[var(--accent)] bg-white px-4 py-5 text-[var(--accent)] transition disabled:cursor-not-allowed disabled:opacity-70 ${singleOptionPrompt ? "text-center" : "text-left"}`
-                      : `rounded-2xl border border-[var(--accent)] bg-[var(--accent)] px-4 py-5 text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 ${singleOptionPrompt ? "text-center" : "text-left"}`
+                      ? `rounded-2xl border border-[var(--accent)] bg-white px-3 py-3.5 text-[var(--accent)] transition disabled:cursor-not-allowed disabled:opacity-70 sm:px-4 sm:py-5 ${singleOptionPrompt ? "text-center" : "text-left"}`
+                      : `rounded-2xl border border-[var(--accent)] bg-[var(--accent)] px-3 py-3.5 text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60 sm:px-4 sm:py-5 ${singleOptionPrompt ? "text-center" : "text-left"}`
                   }
                 >
                   <span
                     className={
                       isSelected
-                        ? `block text-lg font-semibold text-[var(--accent)] ${singleOptionPrompt ? "text-center" : ""}`
-                        : `block text-lg font-semibold text-white ${singleOptionPrompt ? "text-center" : ""}`
+                        ? `block text-sm font-semibold text-[var(--accent)] sm:text-lg ${singleOptionPrompt ? "text-center" : ""}`
+                        : `block text-sm font-semibold text-white sm:text-lg ${singleOptionPrompt ? "text-center" : ""}`
                     }
                   >
                     {option.label}

@@ -94,6 +94,43 @@ async function getAssessmentIntroAvatar(forceEnabled = false): Promise<Assessmen
   }
 }
 
+async function getCoachProductAvatar(): Promise<AssessmentIntroAvatar | null> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/admin/library/intro`, {
+      method: "GET",
+      headers: getAdminHeaders(),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      return null;
+    }
+    const payload = (await res.json().catch(() => ({}))) as {
+      coach_product_avatar?: {
+        url?: string | null;
+        title?: string | null;
+        script?: string | null;
+        poster_url?: string | null;
+      } | null;
+    };
+    const avatar = payload.coach_product_avatar || null;
+    const url = String(avatar?.url || "").trim();
+    const title = String(avatar?.title || "").trim();
+    const script = String(avatar?.script || "").trim();
+    const posterUrl = String(avatar?.poster_url || "").trim();
+    if (!url && !script && !title) {
+      return null;
+    }
+    return {
+      url: url || null,
+      title: title || "How HealthSense works",
+      script: script || null,
+      posterUrl: posterUrl || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 type PageProps = {
   params: Promise<{ userId: string }>;
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -129,6 +166,7 @@ export default async function AssessmentChatPage(props: PageProps) {
   const assessmentIntroAvatar = shouldLoadAssessmentIntroAvatar
     ? await getAssessmentIntroAvatar(introAvatarOverride === true)
     : null;
+  const coachProductAvatar = await getCoachProductAvatar();
 
   const leadHeaderTitle = <LeadAssessmentBranding />;
 
@@ -220,6 +258,7 @@ export default async function AssessmentChatPage(props: PageProps) {
           leadToken={leadToken || leadTokenParam || undefined}
           showLeadBranding={leadFlow}
           introAvatar={assessmentIntroAvatar}
+          coachProductAvatar={coachProductAvatar}
           introAvatarEnabledOverride={introAvatarOverride}
         />
       </section>

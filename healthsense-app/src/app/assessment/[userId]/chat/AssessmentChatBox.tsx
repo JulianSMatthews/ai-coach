@@ -75,6 +75,7 @@ type AssessmentChatBoxProps = {
   leadToken?: string;
   showLeadBranding?: boolean;
   introAvatar?: AssessmentIntroAvatar | null;
+  coachProductAvatar?: AssessmentIntroAvatar | null;
   introAvatarEnabledOverride?: boolean | null;
 };
 
@@ -486,6 +487,7 @@ export default function AssessmentChatBox({
   leadToken,
   showLeadBranding = false,
   introAvatar = null,
+  coachProductAvatar = null,
   introAvatarEnabledOverride = null,
 }: AssessmentChatBoxProps) {
   const searchParams = useSearchParams();
@@ -1150,13 +1152,13 @@ export default function AssessmentChatBox({
                 type="button"
                 onClick={() => void onCoachingPlanClick()}
                 disabled={coachingPlanLoading}
-                className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.18em] whitespace-normal text-white disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {coachingPlanLoading
                   ? "Loading coaching plan…"
                   : showCoachingPlan
                     ? "Hide coaching plan"
-                    : "View your personal coaching plan"}
+                    : "View your personal coaching plan and find out how HealthSense works"}
               </button>
             </div>
           </>
@@ -1168,6 +1170,32 @@ export default function AssessmentChatBox({
   const coachingPlanPanel = showCoachingPlan ? (
     <section className="rounded-[28px] border border-[#e7e1d6] bg-white px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
       <div className="space-y-5">
+        {String(coachProductAvatar?.url || "").trim() || String(coachProductAvatar?.script || "").trim() ? (
+          <div className="space-y-3 rounded-2xl border border-[#efe7db] bg-[#fffaf3] p-4">
+            <div>
+              <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">How HealthSense works</p>
+              <p className="mt-1 text-lg font-semibold text-[#1e1b16]">
+                {String(coachProductAvatar?.title || "How HealthSense works").trim()}
+              </p>
+            </div>
+            {String(coachProductAvatar?.url || "").trim() ? (
+              <video
+                controls
+                preload="metadata"
+                playsInline
+                poster={String(coachProductAvatar?.posterUrl || "").trim() || undefined}
+                className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
+              >
+                <source src={String(coachProductAvatar?.url || "").trim()} />
+              </video>
+            ) : null}
+            {String(coachProductAvatar?.script || "").trim() ? (
+              <p className="whitespace-pre-wrap text-sm leading-6 text-[#3c332b]">
+                {String(coachProductAvatar?.script || "").trim()}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         <div className="space-y-2">
           <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Objectives and key results</p>
           <h2 className="text-2xl text-[#1e1b16]">Your coaching plan</h2>

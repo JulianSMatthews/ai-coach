@@ -1107,6 +1107,7 @@ export type IntroLibrarySettings = {
   body?: string | null;
   podcast_url?: string | null;
   podcast_voice?: string | null;
+  coach_product_avatar?: AssessmentIntroAvatarSettings | null;
   source_type?: string | null;
   updated_at?: string | null;
 };
@@ -2089,6 +2090,13 @@ export async function updateLibraryIntroSettings(payload: {
   body?: string;
   podcast_url?: string;
   podcast_voice?: string;
+  coach_product_avatar_url?: string;
+  coach_product_avatar_title?: string;
+  coach_product_avatar_script?: string;
+  coach_product_avatar_poster_url?: string;
+  coach_product_avatar_character?: string;
+  coach_product_avatar_style?: string;
+  coach_product_avatar_voice?: string;
 }): Promise<Record<string, unknown>> {
   return apiAdmin<Record<string, unknown>>("/admin/library/intro", {
     method: "POST",
@@ -2127,6 +2135,27 @@ export async function generateLibraryAssessmentIntroAvatar(payload: {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
+  });
+}
+
+export async function generateLibraryIntroAvatar(payload: {
+  coach_product_avatar_title?: string;
+  coach_product_avatar_script?: string;
+  coach_product_avatar_poster_url?: string;
+  coach_product_avatar_character?: string;
+  coach_product_avatar_style?: string;
+  coach_product_avatar_voice?: string;
+}): Promise<Record<string, unknown>> {
+  return apiAdmin<Record<string, unknown>>("/admin/library/intro/avatar/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function refreshLibraryIntroAvatar(): Promise<Record<string, unknown>> {
+  return apiAdmin<Record<string, unknown>>("/admin/library/intro/avatar/refresh", {
+    method: "POST",
   });
 }
 
