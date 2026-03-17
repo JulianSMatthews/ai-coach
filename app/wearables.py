@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 
 import requests
 
+from .db import engine
 from .models import WearableConnection, WearableDailyMetric, WearableSyncRun
 
 
@@ -51,6 +52,21 @@ WEARABLE_METRIC_FIELDS = (
 
 _WEARABLE_STATE_VERSION = 1
 _WEARABLE_STATE_RUNTIME_SECRET = secrets.token_urlsafe(48)
+_WEARABLE_SCHEMA_READY = False
+
+
+def ensure_wearables_schema() -> None:
+    global _WEARABLE_SCHEMA_READY
+    if _WEARABLE_SCHEMA_READY:
+        return
+    try:
+        WearableConnection.__table__.create(bind=engine, checkfirst=True)
+        WearableSyncRun.__table__.create(bind=engine, checkfirst=True)
+        WearableDailyMetric.__table__.create(bind=engine, checkfirst=True)
+        _WEARABLE_SCHEMA_READY = True
+    except Exception:
+        _WEARABLE_SCHEMA_READY = False
+        raise
 
 
 @dataclass(frozen=True)
@@ -693,6 +709,7 @@ def create_sync_run(
 
 
 def process_sync_run(session, *, run_id: int, job_id: int | None = None) -> dict[str, Any]:
+    ensure_wearables_schema()
     run = session.get(WearableSyncRun, int(run_id))
     if not run:
         raise ValueError(f"wearable sync run not found: {run_id}")

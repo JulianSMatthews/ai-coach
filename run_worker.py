@@ -33,7 +33,7 @@ from app.reporting import (
 from app.db import SessionLocal, _table_exists, engine
 from app.models import User, AssessSession, PillarResult
 from app.okr import generate_and_update_okrs_for_pillar
-from app.wearables import process_sync_run as process_wearable_sync_run
+from app.wearables import ensure_wearables_schema, process_sync_run as process_wearable_sync_run
 
 os.environ.setdefault("PROMPT_WORKER_PROCESS", "1")
 
@@ -352,6 +352,10 @@ def main() -> None:
         _ensure_message_log_schema()
     except Exception as e:
         print(f"[worker] WARN: ensure message log schema failed: {e}")
+    try:
+        ensure_wearables_schema()
+    except Exception as e:
+        print(f"[worker] WARN: ensure wearable schema failed: {e}")
     ensure_job_table()
     worker_id = os.getenv("WORKER_ID") or socket.gethostname()
     poll_seconds = int(os.getenv("WORKER_POLL_SECONDS", "2") or "2")
