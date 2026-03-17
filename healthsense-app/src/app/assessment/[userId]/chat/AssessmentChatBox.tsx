@@ -1181,7 +1181,7 @@ export default function AssessmentChatBox({
             className="w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] whitespace-normal text-white disabled:cursor-not-allowed disabled:opacity-60"
           >
             {coachingInterestLogged
-              ? "Interest recorded"
+              ? "Your place has been secured."
               : coachingInterestSubmitting
                 ? "Saving interest…"
                 : "Click here to secure your space"}
