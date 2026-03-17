@@ -3,8 +3,10 @@
 import { revalidatePath } from "next/cache";
 import {
   createContentGeneration,
+  generateLibraryAppIntroAvatar,
   generateLibraryIntroAvatar,
   generateLibraryAssessmentIntroAvatar,
+  refreshLibraryAppIntroAvatar,
   refreshLibraryIntroAvatar,
   refreshLibraryAssessmentIntroAvatar,
   updateLibraryAssessmentIntroSettings,
@@ -20,11 +22,13 @@ export type IntroGenerationState = {
 export type IntroSaveState = {
   ok: boolean;
   error?: string | null;
+  result?: Record<string, unknown>;
 };
 
 export type AssessmentIntroSaveState = {
   ok: boolean;
   error?: string | null;
+  result?: Record<string, unknown>;
 };
 
 export type IntroAvatarState = {
@@ -81,32 +85,32 @@ export async function saveIntroSettingsAction(
   const body = String(formData.get("body") || "").trim();
   const podcast_url = String(formData.get("podcast_url") || "").trim();
   const podcast_voice = String(formData.get("podcast_voice") || "").trim();
-  const coach_product_avatar_url = String(formData.get("coach_product_avatar_url") || "").trim();
-  const coach_product_avatar_title = String(formData.get("coach_product_avatar_title") || "").trim();
-  const coach_product_avatar_script = String(formData.get("coach_product_avatar_script") || "").trim();
-  const coach_product_avatar_poster_url = String(formData.get("coach_product_avatar_poster_url") || "").trim();
-  const coach_product_avatar_character = String(formData.get("coach_product_avatar_character") || "").trim();
-  const coach_product_avatar_style = String(formData.get("coach_product_avatar_style") || "").trim();
-  const coach_product_avatar_voice = String(formData.get("coach_product_avatar_voice") || "").trim();
+  const app_intro_avatar_url = String(formData.get("app_intro_avatar_url") || "").trim();
+  const app_intro_avatar_title = String(formData.get("app_intro_avatar_title") || "").trim();
+  const app_intro_avatar_script = String(formData.get("app_intro_avatar_script") || "").trim();
+  const app_intro_avatar_poster_url = String(formData.get("app_intro_avatar_poster_url") || "").trim();
+  const app_intro_avatar_character = String(formData.get("app_intro_avatar_character") || "").trim();
+  const app_intro_avatar_style = String(formData.get("app_intro_avatar_style") || "").trim();
+  const app_intro_avatar_voice = String(formData.get("app_intro_avatar_voice") || "").trim();
   try {
-    await updateLibraryIntroSettings({
+    const result = await updateLibraryIntroSettings({
       active,
-      title: title || undefined,
-      welcome_message_template: welcome_message_template || undefined,
-      body: body || undefined,
-      podcast_url: podcast_url || undefined,
-      podcast_voice: podcast_voice || undefined,
-      coach_product_avatar_url: coach_product_avatar_url || undefined,
-      coach_product_avatar_title: coach_product_avatar_title || undefined,
-      coach_product_avatar_script: coach_product_avatar_script || undefined,
-      coach_product_avatar_poster_url: coach_product_avatar_poster_url || undefined,
-      coach_product_avatar_character: coach_product_avatar_character || undefined,
-      coach_product_avatar_style: coach_product_avatar_style || undefined,
-      coach_product_avatar_voice: coach_product_avatar_voice || undefined,
+      title,
+      welcome_message_template,
+      body,
+      podcast_url,
+      podcast_voice,
+      app_intro_avatar_url,
+      app_intro_avatar_title,
+      app_intro_avatar_script,
+      app_intro_avatar_poster_url,
+      app_intro_avatar_character,
+      app_intro_avatar_style,
+      app_intro_avatar_voice,
     });
     revalidatePath("/admin/library");
     revalidatePath("/admin/library/intro");
-    return { ok: true };
+    return { ok: true, result };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
@@ -124,18 +128,18 @@ export async function saveCoachingSettingsAction(
   const coach_product_avatar_style = String(formData.get("coach_product_avatar_style") || "").trim();
   const coach_product_avatar_voice = String(formData.get("coach_product_avatar_voice") || "").trim();
   try {
-    await updateLibraryIntroSettings({
-      coach_product_avatar_url: coach_product_avatar_url || undefined,
-      coach_product_avatar_title: coach_product_avatar_title || undefined,
-      coach_product_avatar_script: coach_product_avatar_script || undefined,
-      coach_product_avatar_poster_url: coach_product_avatar_poster_url || undefined,
-      coach_product_avatar_character: coach_product_avatar_character || undefined,
-      coach_product_avatar_style: coach_product_avatar_style || undefined,
-      coach_product_avatar_voice: coach_product_avatar_voice || undefined,
+    const result = await updateLibraryIntroSettings({
+      coach_product_avatar_url,
+      coach_product_avatar_title,
+      coach_product_avatar_script,
+      coach_product_avatar_poster_url,
+      coach_product_avatar_character,
+      coach_product_avatar_style,
+      coach_product_avatar_voice,
     });
     revalidatePath("/admin/library");
     revalidatePath("/admin/library/intro");
-    return { ok: true };
+    return { ok: true, result };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
@@ -155,20 +159,63 @@ export async function saveAssessmentIntroSettingsAction(
   const assessment_intro_avatar_style = String(formData.get("assessment_intro_avatar_style") || "").trim();
   const assessment_intro_avatar_voice = String(formData.get("assessment_intro_avatar_voice") || "").trim();
   try {
-    await updateLibraryAssessmentIntroSettings({
+    const result = await updateLibraryAssessmentIntroSettings({
       active,
-      title: title || undefined,
-      assessment_intro_avatar_url: assessment_intro_avatar_url || undefined,
-      assessment_intro_avatar_title: assessment_intro_avatar_title || undefined,
-      assessment_intro_avatar_script: assessment_intro_avatar_script || undefined,
-      assessment_intro_avatar_poster_url: assessment_intro_avatar_poster_url || undefined,
-      assessment_intro_avatar_character: assessment_intro_avatar_character || undefined,
-      assessment_intro_avatar_style: assessment_intro_avatar_style || undefined,
-      assessment_intro_avatar_voice: assessment_intro_avatar_voice || undefined,
+      title,
+      assessment_intro_avatar_url,
+      assessment_intro_avatar_title,
+      assessment_intro_avatar_script,
+      assessment_intro_avatar_poster_url,
+      assessment_intro_avatar_character,
+      assessment_intro_avatar_style,
+      assessment_intro_avatar_voice,
     });
     revalidatePath("/admin/library");
     revalidatePath("/admin/library/intro");
-    return { ok: true };
+    return { ok: true, result };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function generateAppIntroAvatarAction(
+  _: IntroAvatarState,
+  formData: FormData,
+): Promise<IntroAvatarState> {
+  const app_intro_avatar_title = String(formData.get("app_intro_avatar_title") || "").trim();
+  const app_intro_avatar_script = String(formData.get("app_intro_avatar_script") || "").trim();
+  const app_intro_avatar_poster_url = String(formData.get("app_intro_avatar_poster_url") || "").trim();
+  const app_intro_avatar_character = String(formData.get("app_intro_avatar_character") || "").trim();
+  const app_intro_avatar_style = String(formData.get("app_intro_avatar_style") || "").trim();
+  const app_intro_avatar_voice = String(formData.get("app_intro_avatar_voice") || "").trim();
+  try {
+    const result = await generateLibraryAppIntroAvatar({
+      app_intro_avatar_title,
+      app_intro_avatar_script,
+      app_intro_avatar_poster_url,
+      app_intro_avatar_character,
+      app_intro_avatar_style,
+      app_intro_avatar_voice,
+    });
+    revalidatePath("/admin/library");
+    revalidatePath("/admin/library/intro");
+    return { ok: Boolean(result.ok), error: result.error ? String(result.error) : null, result };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function refreshAppIntroAvatarAction(
+  _: IntroAvatarState,
+  _formData: FormData,
+): Promise<IntroAvatarState> {
+  void _;
+  void _formData;
+  try {
+    const result = await refreshLibraryAppIntroAvatar();
+    revalidatePath("/admin/library");
+    revalidatePath("/admin/library/intro");
+    return { ok: Boolean(result.ok), error: result.error ? String(result.error) : null, result };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }

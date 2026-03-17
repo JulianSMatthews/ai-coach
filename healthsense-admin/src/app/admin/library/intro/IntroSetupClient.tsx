@@ -7,9 +7,11 @@ import type {
   IntroLibrarySettings,
 } from "@/lib/api";
 import {
+  generateAppIntroAvatarAction,
   generateAssessmentIntroAvatarAction,
   generateIntroDraftAction,
   generateIntroAvatarAction,
+  refreshAppIntroAvatarAction,
   refreshAssessmentIntroAvatarAction,
   refreshIntroAvatarAction,
   saveCoachingSettingsAction,
@@ -180,6 +182,14 @@ export default function IntroSetupClient({
     saveIntroSettingsAction,
     emptySaveState,
   );
+  const [appAvatarGenerationState, appAvatarGenerationAction, generatingAppAvatar] = useActionState(
+    generateAppIntroAvatarAction,
+    emptyAvatarState,
+  );
+  const [appAvatarRefreshState, appAvatarRefreshAction, refreshingAppAvatar] = useActionState(
+    refreshAppIntroAvatarAction,
+    emptyAvatarState,
+  );
   const [coachSaveState, coachSaveAction, savingCoach] = useActionState(
     saveCoachingSettingsAction,
     emptySaveState,
@@ -214,6 +224,42 @@ export default function IntroSetupClient({
   const [body, setBody] = useState(appIntro.body || "");
   const [podcastUrl, setPodcastUrl] = useState(appIntro.podcast_url || "");
   const [podcastVoice, setPodcastVoice] = useState(appIntro.podcast_voice || "");
+  const [appIntroAvatarUrl, setAppIntroAvatarUrl] = useState(
+    appIntro.app_intro_avatar?.url || "",
+  );
+  const [appIntroAvatarTitle, setAppIntroAvatarTitle] = useState(
+    appIntro.app_intro_avatar?.title || "Welcome to HealthSense",
+  );
+  const [appIntroAvatarScript, setAppIntroAvatarScript] = useState(
+    appIntro.app_intro_avatar?.script || "",
+  );
+  const [appIntroAvatarPosterUrl, setAppIntroAvatarPosterUrl] = useState(
+    appIntro.app_intro_avatar?.poster_url || "",
+  );
+  const [appIntroAvatarCharacter, setAppIntroAvatarCharacter] = useState(
+    appIntro.app_intro_avatar?.character || "lisa",
+  );
+  const [appIntroAvatarStyle, setAppIntroAvatarStyle] = useState(
+    appIntro.app_intro_avatar?.style || "graceful-sitting",
+  );
+  const [appIntroAvatarVoice, setAppIntroAvatarVoice] = useState(
+    appIntro.app_intro_avatar?.voice || "en-GB-SoniaNeural",
+  );
+  const [appIntroAvatarStatus, setAppIntroAvatarStatus] = useState(
+    appIntro.app_intro_avatar?.status || "",
+  );
+  const [appIntroAvatarJobId, setAppIntroAvatarJobId] = useState(
+    appIntro.app_intro_avatar?.job_id || "",
+  );
+  const [appIntroAvatarError, setAppIntroAvatarError] = useState(
+    appIntro.app_intro_avatar?.error || "",
+  );
+  const [appIntroAvatarGeneratedAt, setAppIntroAvatarGeneratedAt] = useState(
+    appIntro.app_intro_avatar?.generated_at || "",
+  );
+  const [appIntroAvatarSummaryUrl, setAppIntroAvatarSummaryUrl] = useState(
+    appIntro.app_intro_avatar?.summary_url || "",
+  );
   const [coachProductAvatarUrl, setCoachProductAvatarUrl] = useState(
     appIntro.coach_product_avatar?.url || "",
   );
@@ -291,7 +337,7 @@ export default function IntroSetupClient({
   const [assessmentIntroAvatarSummaryUrl, setAssessmentIntroAvatarSummaryUrl] = useState(
     assessmentIntro.assessment_intro_avatar?.summary_url || "",
   );
-  const [activeTab, setActiveTab] = useState<IntroSetupTab>("app");
+  const [activeTab, setActiveTab] = useState<IntroSetupTab>("assessment");
 
   const generatedPayload = useMemo(
     () => (((generationState.result?.result as Record<string, unknown> | undefined) || {}) as Record<string, unknown>),
@@ -308,10 +354,19 @@ export default function IntroSetupClient({
     () => withCurrentOption(assessmentAvatarCharacterOptions, assessmentIntroAvatarCharacter),
     [assessmentIntroAvatarCharacter],
   );
+  const appCharacterOptions = useMemo(
+    () => withCurrentOption(assessmentAvatarCharacterOptions, appIntroAvatarCharacter),
+    [appIntroAvatarCharacter],
+  );
   const coachCharacterOptions = useMemo(
     () => withCurrentOption(assessmentAvatarCharacterOptions, coachProductAvatarCharacter),
     [coachProductAvatarCharacter],
   );
+  const appStyleOptions = useMemo(() => {
+    const key = String(appIntroAvatarCharacter || "").trim().toLowerCase();
+    const options = assessmentAvatarStylesByCharacter[key] || [];
+    return withCurrentOption(options, appIntroAvatarStyle);
+  }, [appIntroAvatarCharacter, appIntroAvatarStyle]);
   const assessmentStyleOptions = useMemo(() => {
     const key = String(assessmentIntroAvatarCharacter || "").trim().toLowerCase();
     const options = assessmentAvatarStylesByCharacter[key] || [];
@@ -326,6 +381,10 @@ export default function IntroSetupClient({
     () => withCurrentOption(assessmentAvatarVoiceOptions, assessmentIntroAvatarVoice),
     [assessmentIntroAvatarVoice],
   );
+  const appVoiceOptions = useMemo(
+    () => withCurrentOption(assessmentAvatarVoiceOptions, appIntroAvatarVoice),
+    [appIntroAvatarVoice],
+  );
   const coachVoiceOptions = useMemo(
     () => withCurrentOption(assessmentAvatarVoiceOptions, coachProductAvatarVoice),
     [coachProductAvatarVoice],
@@ -338,6 +397,192 @@ export default function IntroSetupClient({
     if (generatedPodcastUrl) setPodcastUrl(generatedPodcastUrl);
     if (generatedPodcastVoice) setPodcastVoice(generatedPodcastVoice);
   }, [generationState.ok, generatedText, generatedPodcastUrl, generatedPodcastVoice]);
+
+  useEffect(() => {
+    setActive(Boolean(appIntro.active));
+    setTitle(appIntro.title || "Welcome to HealthSense");
+    setWelcomeTemplate(
+      appIntro.welcome_message_template ||
+        "{first_name}, Welcome to HealthSense please listen to our introductory podcast to get started on your journey.",
+    );
+    setBody(appIntro.body || "");
+    setPodcastUrl(appIntro.podcast_url || "");
+    setPodcastVoice(appIntro.podcast_voice || "");
+    setAppIntroAvatarUrl(appIntro.app_intro_avatar?.url || "");
+    setAppIntroAvatarTitle(appIntro.app_intro_avatar?.title || "Welcome to HealthSense");
+    setAppIntroAvatarScript(appIntro.app_intro_avatar?.script || "");
+    setAppIntroAvatarPosterUrl(appIntro.app_intro_avatar?.poster_url || "");
+    setAppIntroAvatarCharacter(appIntro.app_intro_avatar?.character || "lisa");
+    setAppIntroAvatarStyle(appIntro.app_intro_avatar?.style || "graceful-sitting");
+    setAppIntroAvatarVoice(appIntro.app_intro_avatar?.voice || "en-GB-SoniaNeural");
+    setAppIntroAvatarStatus(appIntro.app_intro_avatar?.status || "");
+    setAppIntroAvatarJobId(appIntro.app_intro_avatar?.job_id || "");
+    setAppIntroAvatarError(appIntro.app_intro_avatar?.error || "");
+    setAppIntroAvatarGeneratedAt(appIntro.app_intro_avatar?.generated_at || "");
+    setAppIntroAvatarSummaryUrl(appIntro.app_intro_avatar?.summary_url || "");
+    setCoachProductAvatarUrl(appIntro.coach_product_avatar?.url || "");
+    setCoachProductAvatarTitle(appIntro.coach_product_avatar?.title || "How HealthSense works");
+    setCoachProductAvatarScript(appIntro.coach_product_avatar?.script || "");
+    setCoachProductAvatarPosterUrl(appIntro.coach_product_avatar?.poster_url || "");
+    setCoachProductAvatarCharacter(appIntro.coach_product_avatar?.character || "lisa");
+    setCoachProductAvatarStyle(appIntro.coach_product_avatar?.style || "graceful-sitting");
+    setCoachProductAvatarVoice(appIntro.coach_product_avatar?.voice || "en-GB-SoniaNeural");
+    setCoachProductAvatarStatus(appIntro.coach_product_avatar?.status || "");
+    setCoachProductAvatarJobId(appIntro.coach_product_avatar?.job_id || "");
+    setCoachProductAvatarError(appIntro.coach_product_avatar?.error || "");
+    setCoachProductAvatarGeneratedAt(appIntro.coach_product_avatar?.generated_at || "");
+    setCoachProductAvatarSummaryUrl(appIntro.coach_product_avatar?.summary_url || "");
+  }, [
+    appIntro.active,
+    appIntro.app_intro_avatar,
+    appIntro.body,
+    appIntro.coach_product_avatar,
+    appIntro.podcast_url,
+    appIntro.podcast_voice,
+    appIntro.title,
+    appIntro.updated_at,
+    appIntro.welcome_message_template,
+  ]);
+
+  useEffect(() => {
+    setAssessmentIntroActive(Boolean(assessmentIntro.active));
+    setAssessmentIntroTitle(assessmentIntro.title || "Assessment intro");
+    setAssessmentIntroAvatarUrl(assessmentIntro.assessment_intro_avatar?.url || "");
+    setAssessmentIntroAvatarTitle(
+      assessmentIntro.assessment_intro_avatar?.title || "Assessment introduction",
+    );
+    setAssessmentIntroAvatarScript(assessmentIntro.assessment_intro_avatar?.script || "");
+    setAssessmentIntroAvatarPosterUrl(assessmentIntro.assessment_intro_avatar?.poster_url || "");
+    setAssessmentIntroAvatarCharacter(assessmentIntro.assessment_intro_avatar?.character || "lisa");
+    setAssessmentIntroAvatarStyle(
+      assessmentIntro.assessment_intro_avatar?.style || "graceful-sitting",
+    );
+    setAssessmentIntroAvatarVoice(
+      assessmentIntro.assessment_intro_avatar?.voice || "en-GB-SoniaNeural",
+    );
+    setAssessmentIntroAvatarStatus(assessmentIntro.assessment_intro_avatar?.status || "");
+    setAssessmentIntroAvatarJobId(assessmentIntro.assessment_intro_avatar?.job_id || "");
+    setAssessmentIntroAvatarError(assessmentIntro.assessment_intro_avatar?.error || "");
+    setAssessmentIntroAvatarGeneratedAt(
+      assessmentIntro.assessment_intro_avatar?.generated_at || "",
+    );
+    setAssessmentIntroAvatarSummaryUrl(
+      assessmentIntro.assessment_intro_avatar?.summary_url || "",
+    );
+  }, [
+    assessmentIntro.active,
+    assessmentIntro.assessment_intro_avatar,
+    assessmentIntro.title,
+    assessmentIntro.updated_at,
+  ]);
+
+  useEffect(() => {
+    const result =
+      saveState.result && typeof saveState.result === "object"
+        ? (saveState.result as IntroLibrarySettings)
+        : null;
+    if (!result) return;
+    setActive(Boolean(result.active));
+    setTitle(result.title || "Welcome to HealthSense");
+    setWelcomeTemplate(
+      result.welcome_message_template ||
+        "{first_name}, Welcome to HealthSense please listen to our introductory podcast to get started on your journey.",
+    );
+    setBody(result.body || "");
+    setPodcastUrl(result.podcast_url || "");
+    setPodcastVoice(result.podcast_voice || "");
+    setAppIntroAvatarUrl(result.app_intro_avatar?.url || "");
+    setAppIntroAvatarTitle(result.app_intro_avatar?.title || "Welcome to HealthSense");
+    setAppIntroAvatarScript(result.app_intro_avatar?.script || "");
+    setAppIntroAvatarPosterUrl(result.app_intro_avatar?.poster_url || "");
+    setAppIntroAvatarCharacter(result.app_intro_avatar?.character || "lisa");
+    setAppIntroAvatarStyle(result.app_intro_avatar?.style || "graceful-sitting");
+    setAppIntroAvatarVoice(result.app_intro_avatar?.voice || "en-GB-SoniaNeural");
+    setAppIntroAvatarStatus(result.app_intro_avatar?.status || "");
+    setAppIntroAvatarJobId(result.app_intro_avatar?.job_id || "");
+    setAppIntroAvatarError(result.app_intro_avatar?.error || "");
+    setAppIntroAvatarGeneratedAt(result.app_intro_avatar?.generated_at || "");
+    setAppIntroAvatarSummaryUrl(result.app_intro_avatar?.summary_url || "");
+    setCoachProductAvatarUrl(result.coach_product_avatar?.url || "");
+    setCoachProductAvatarTitle(result.coach_product_avatar?.title || "How HealthSense works");
+    setCoachProductAvatarScript(result.coach_product_avatar?.script || "");
+    setCoachProductAvatarPosterUrl(result.coach_product_avatar?.poster_url || "");
+    setCoachProductAvatarCharacter(result.coach_product_avatar?.character || "lisa");
+    setCoachProductAvatarStyle(result.coach_product_avatar?.style || "graceful-sitting");
+    setCoachProductAvatarVoice(result.coach_product_avatar?.voice || "en-GB-SoniaNeural");
+    setCoachProductAvatarStatus(result.coach_product_avatar?.status || "");
+    setCoachProductAvatarJobId(result.coach_product_avatar?.job_id || "");
+    setCoachProductAvatarError(result.coach_product_avatar?.error || "");
+    setCoachProductAvatarGeneratedAt(result.coach_product_avatar?.generated_at || "");
+    setCoachProductAvatarSummaryUrl(result.coach_product_avatar?.summary_url || "");
+  }, [saveState.result]);
+
+  useEffect(() => {
+    const result =
+      coachSaveState.result && typeof coachSaveState.result === "object"
+        ? (coachSaveState.result as IntroLibrarySettings)
+        : null;
+    if (!result) return;
+    setCoachProductAvatarUrl(result.coach_product_avatar?.url || "");
+    setCoachProductAvatarTitle(result.coach_product_avatar?.title || "How HealthSense works");
+    setCoachProductAvatarScript(result.coach_product_avatar?.script || "");
+    setCoachProductAvatarPosterUrl(result.coach_product_avatar?.poster_url || "");
+    setCoachProductAvatarCharacter(result.coach_product_avatar?.character || "lisa");
+    setCoachProductAvatarStyle(result.coach_product_avatar?.style || "graceful-sitting");
+    setCoachProductAvatarVoice(result.coach_product_avatar?.voice || "en-GB-SoniaNeural");
+    setCoachProductAvatarStatus(result.coach_product_avatar?.status || "");
+    setCoachProductAvatarJobId(result.coach_product_avatar?.job_id || "");
+    setCoachProductAvatarError(result.coach_product_avatar?.error || "");
+    setCoachProductAvatarGeneratedAt(result.coach_product_avatar?.generated_at || "");
+    setCoachProductAvatarSummaryUrl(result.coach_product_avatar?.summary_url || "");
+  }, [coachSaveState.result]);
+
+  useEffect(() => {
+    const result =
+      assessmentSaveState.result && typeof assessmentSaveState.result === "object"
+        ? (assessmentSaveState.result as AssessmentIntroLibrarySettings)
+        : null;
+    if (!result) return;
+    setAssessmentIntroActive(Boolean(result.active));
+    setAssessmentIntroTitle(result.title || "Assessment intro");
+    setAssessmentIntroAvatarUrl(result.assessment_intro_avatar?.url || "");
+    setAssessmentIntroAvatarTitle(
+      result.assessment_intro_avatar?.title || "Assessment introduction",
+    );
+    setAssessmentIntroAvatarScript(result.assessment_intro_avatar?.script || "");
+    setAssessmentIntroAvatarPosterUrl(result.assessment_intro_avatar?.poster_url || "");
+    setAssessmentIntroAvatarCharacter(result.assessment_intro_avatar?.character || "lisa");
+    setAssessmentIntroAvatarStyle(result.assessment_intro_avatar?.style || "graceful-sitting");
+    setAssessmentIntroAvatarVoice(
+      result.assessment_intro_avatar?.voice || "en-GB-SoniaNeural",
+    );
+    setAssessmentIntroAvatarStatus(result.assessment_intro_avatar?.status || "");
+    setAssessmentIntroAvatarJobId(result.assessment_intro_avatar?.job_id || "");
+    setAssessmentIntroAvatarError(result.assessment_intro_avatar?.error || "");
+    setAssessmentIntroAvatarGeneratedAt(result.assessment_intro_avatar?.generated_at || "");
+    setAssessmentIntroAvatarSummaryUrl(result.assessment_intro_avatar?.summary_url || "");
+  }, [assessmentSaveState.result]);
+
+  useEffect(() => {
+    const result = appAvatarGenerationState.result || appAvatarRefreshState.result;
+    const avatar =
+      result && typeof result.app_intro_avatar === "object" && result.app_intro_avatar
+        ? (result.app_intro_avatar as Record<string, unknown>)
+        : null;
+    if (!avatar) return;
+    setAppIntroAvatarUrl(String(avatar.url || "").trim());
+    setAppIntroAvatarTitle(String(avatar.title || "").trim() || "Welcome to HealthSense");
+    setAppIntroAvatarScript(String(avatar.script || "").trim());
+    setAppIntroAvatarPosterUrl(String(avatar.poster_url || "").trim());
+    setAppIntroAvatarCharacter(String(avatar.character || "").trim() || "lisa");
+    setAppIntroAvatarStyle(String(avatar.style || "").trim() || "graceful-sitting");
+    setAppIntroAvatarVoice(String(avatar.voice || "").trim() || "en-GB-SoniaNeural");
+    setAppIntroAvatarStatus(String(avatar.status || "").trim());
+    setAppIntroAvatarJobId(String(avatar.job_id || "").trim());
+    setAppIntroAvatarError(String(avatar.error || "").trim());
+    setAppIntroAvatarGeneratedAt(String(avatar.generated_at || "").trim());
+    setAppIntroAvatarSummaryUrl(String(avatar.summary_url || "").trim());
+  }, [appAvatarGenerationState.result, appAvatarRefreshState.result]);
 
   useEffect(() => {
     const result = coachAvatarGenerationState.result || coachAvatarRefreshState.result;
@@ -382,6 +627,15 @@ export default function IntroSetupClient({
   }, [assessmentAvatarGenerationState.result, assessmentAvatarRefreshState.result]);
 
   useEffect(() => {
+    const key = String(appIntroAvatarCharacter || "").trim().toLowerCase();
+    const validStyles = assessmentAvatarStylesByCharacter[key] || [];
+    if (!validStyles.length) return;
+    const currentStyle = String(appIntroAvatarStyle || "").trim();
+    if (validStyles.some((option) => option.value === currentStyle)) return;
+    setAppIntroAvatarStyle(validStyles[0]?.value || "");
+  }, [appIntroAvatarCharacter, appIntroAvatarStyle]);
+
+  useEffect(() => {
     const key = String(coachProductAvatarCharacter || "").trim().toLowerCase();
     const validStyles = assessmentAvatarStylesByCharacter[key] || [];
     if (!validStyles.length) return;
@@ -403,9 +657,9 @@ export default function IntroSetupClient({
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap gap-2">
-        <TabButton active={activeTab === "app"} label="App Intro" onClick={() => setActiveTab("app")} />
-        <TabButton active={activeTab === "coaching"} label="Coaching" onClick={() => setActiveTab("coaching")} />
         <TabButton active={activeTab === "assessment"} label="Assessment Intro" onClick={() => setActiveTab("assessment")} />
+        <TabButton active={activeTab === "coaching"} label="Coaching" onClick={() => setActiveTab("coaching")} />
+        <TabButton active={activeTab === "app"} label="App Intro" onClick={() => setActiveTab("app")} />
       </div>
 
       {activeTab === "app" ? (
@@ -605,9 +859,191 @@ export default function IntroSetupClient({
                   </a>
                 </div>
               ) : null}
+              <div className="space-y-4 rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                    App intro avatar
+                  </p>
+                  <p className="mt-1 text-sm text-[#6b6257]">
+                    Managed video for the first in-app onboarding panel.
+                  </p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                      Video URL
+                    </label>
+                    <input
+                      name="app_intro_avatar_url"
+                      value={appIntroAvatarUrl}
+                      onChange={(e) => setAppIntroAvatarUrl(e.target.value)}
+                      className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                      Label
+                    </label>
+                    <input
+                      name="app_intro_avatar_title"
+                      value={appIntroAvatarTitle}
+                      onChange={(e) => setAppIntroAvatarTitle(e.target.value)}
+                      className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                      Poster URL
+                    </label>
+                    <input
+                      name="app_intro_avatar_poster_url"
+                      value={appIntroAvatarPosterUrl}
+                      onChange={(e) => setAppIntroAvatarPosterUrl(e.target.value)}
+                      className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                      Character
+                    </label>
+                    <select
+                      name="app_intro_avatar_character"
+                      value={appIntroAvatarCharacter}
+                      onChange={(e) => setAppIntroAvatarCharacter(e.target.value)}
+                      className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                    >
+                      {appCharacterOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                      Style
+                    </label>
+                    <select
+                      name="app_intro_avatar_style"
+                      value={appIntroAvatarStyle}
+                      onChange={(e) => setAppIntroAvatarStyle(e.target.value)}
+                      className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                    >
+                      {appStyleOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                      Voice
+                    </label>
+                    <select
+                      name="app_intro_avatar_voice"
+                      value={appIntroAvatarVoice}
+                      onChange={(e) => setAppIntroAvatarVoice(e.target.value)}
+                      className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                    >
+                      {appVoiceOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                    Avatar script
+                  </label>
+                  <textarea
+                    name="app_intro_avatar_script"
+                    rows={8}
+                    value={appIntroAvatarScript}
+                    onChange={(e) => setAppIntroAvatarScript(e.target.value)}
+                    className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                  />
+                </div>
+                <div className="rounded-xl border border-[#efe7db] bg-white p-3 text-sm text-[#6b6257]">
+                  <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                    Azure avatar status
+                  </p>
+                  <p className="mt-2">Status: {appIntroAvatarStatus || "not generated"}</p>
+                  {appIntroAvatarJobId ? (
+                    <p className="mt-1 break-all">Job ID: {appIntroAvatarJobId}</p>
+                  ) : null}
+                  {appIntroAvatarGeneratedAt ? (
+                    <p className="mt-1">Generated: {appIntroAvatarGeneratedAt}</p>
+                  ) : null}
+                  {appIntroAvatarSummaryUrl ? (
+                    <a
+                      href={appIntroAvatarSummaryUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-flex text-[11px] uppercase tracking-[0.2em] text-[var(--accent)]"
+                    >
+                      Open Azure summary
+                    </a>
+                  ) : null}
+                  {appIntroAvatarError ? (
+                    <p className="mt-2 text-red-600">{appIntroAvatarError}</p>
+                  ) : null}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="submit"
+                    formAction={appAvatarGenerationAction}
+                    disabled={generatingAppAvatar || refreshingAppAvatar || saving}
+                    className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {generatingAppAvatar ? "Generating avatar…" : "Generate avatar"}
+                  </button>
+                  <button
+                    type="submit"
+                    formAction={appAvatarRefreshAction}
+                    disabled={refreshingAppAvatar || generatingAppAvatar || saving}
+                    className="rounded-full border border-[#e7e1d6] bg-white px-5 py-2 text-xs uppercase tracking-[0.2em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {refreshingAppAvatar ? "Refreshing…" : "Refresh avatar status"}
+                  </button>
+                </div>
+                {appAvatarGenerationState.error ? (
+                  <p className="text-sm text-red-600">{appAvatarGenerationState.error}</p>
+                ) : null}
+                {appAvatarRefreshState.error ? (
+                  <p className="text-sm text-red-600">{appAvatarRefreshState.error}</p>
+                ) : null}
+                {appIntroAvatarUrl ? (
+                  <div className="rounded-xl border border-[#efe7db] bg-white p-3">
+                    <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                      Video preview
+                    </p>
+                    <video
+                      key={appIntroAvatarUrl}
+                      controls
+                      preload="metadata"
+                      playsInline
+                      poster={appIntroAvatarPosterUrl || undefined}
+                      className="mt-2 w-full rounded-2xl border border-[#efe7db]"
+                    >
+                      <source src={appIntroAvatarUrl} />
+                    </video>
+                    <a
+                      href={appIntroAvatarUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-flex text-[11px] uppercase tracking-[0.2em] text-[var(--accent)]"
+                    >
+                      Open video
+                    </a>
+                  </div>
+                ) : null}
+              </div>
               <button
                 type="submit"
-                disabled={saving}
+                disabled={saving || generatingAppAvatar || refreshingAppAvatar}
                 className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving ? "Saving…" : "Save app intro"}

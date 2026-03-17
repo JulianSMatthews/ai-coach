@@ -7,6 +7,11 @@ type IntroPayload = {
   content_id?: number | null;
   body?: string | null;
   podcast_url?: string | null;
+  app_intro_avatar?: {
+    url?: string | null;
+    title?: string | null;
+    poster_url?: string | null;
+  } | null;
 };
 
 type IntroInlinePanelProps = {
@@ -27,9 +32,13 @@ export default function IntroInlinePanel({ userId, intro, introCompleted }: Intr
   const enabled = Boolean(intro?.enabled);
   const completed = Boolean(introCompleted);
   const podcastUrl = String(intro?.podcast_url || "").trim().replace(/^['"]+|['"]+$/g, "");
+  const appIntroAvatarUrl = String(intro?.app_intro_avatar?.url || "").trim().replace(/^['"]+|['"]+$/g, "");
+  const appIntroAvatarTitle = String(intro?.app_intro_avatar?.title || "").trim();
+  const appIntroAvatarPosterUrl = String(intro?.app_intro_avatar?.poster_url || "").trim().replace(/^['"]+|['"]+$/g, "");
   const hasPodcast = Boolean(podcastUrl);
+  const hasAvatar = Boolean(appIntroAvatarUrl);
   const hasBody = Boolean((intro?.body || "").trim());
-  const show = enabled && !completed && (hasPodcast || hasBody);
+  const show = enabled && !completed && (hasAvatar || hasPodcast || hasBody);
   const audioSrc = useMemo(() => {
     if (!podcastUrl) return "";
     if (!audioRetryToken) return podcastUrl;
@@ -76,6 +85,23 @@ export default function IntroInlinePanel({ userId, intro, introCompleted }: Intr
 
   return (
     <div className="mt-3 rounded-xl border border-[#efe7db] bg-white p-3">
+      {hasAvatar ? (
+        <div className={hasPodcast ? "mb-3" : ""}>
+          <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+            {appIntroAvatarTitle || "Intro video"}
+          </p>
+          <video
+            key={appIntroAvatarUrl}
+            controls
+            preload="metadata"
+            playsInline
+            poster={appIntroAvatarPosterUrl || undefined}
+            className="mt-2 w-full rounded-2xl border border-[#efe7db]"
+          >
+            <source src={appIntroAvatarUrl} />
+          </video>
+        </div>
+      ) : null}
       {hasPodcast ? (
         <div>
           <div className="flex items-center justify-between gap-2">

@@ -163,6 +163,12 @@ export type UserStatusResponse = {
     body?: string | null;
     podcast_url?: string | null;
     podcast_voice?: string | null;
+    app_intro_avatar?: {
+      url?: string | null;
+      title?: string | null;
+      script?: string | null;
+      poster_url?: string | null;
+    } | null;
     assessment_intro_avatar?: {
       url?: string | null;
       title?: string | null;

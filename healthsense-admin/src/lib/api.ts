@@ -1107,6 +1107,7 @@ export type IntroLibrarySettings = {
   body?: string | null;
   podcast_url?: string | null;
   podcast_voice?: string | null;
+  app_intro_avatar?: AssessmentIntroAvatarSettings | null;
   coach_product_avatar?: AssessmentIntroAvatarSettings | null;
   source_type?: string | null;
   updated_at?: string | null;
@@ -2090,6 +2091,13 @@ export async function updateLibraryIntroSettings(payload: {
   body?: string;
   podcast_url?: string;
   podcast_voice?: string;
+  app_intro_avatar_url?: string;
+  app_intro_avatar_title?: string;
+  app_intro_avatar_script?: string;
+  app_intro_avatar_poster_url?: string;
+  app_intro_avatar_character?: string;
+  app_intro_avatar_style?: string;
+  app_intro_avatar_voice?: string;
   coach_product_avatar_url?: string;
   coach_product_avatar_title?: string;
   coach_product_avatar_script?: string;
@@ -2138,6 +2146,21 @@ export async function generateLibraryAssessmentIntroAvatar(payload: {
   });
 }
 
+export async function generateLibraryAppIntroAvatar(payload: {
+  app_intro_avatar_title?: string;
+  app_intro_avatar_script?: string;
+  app_intro_avatar_poster_url?: string;
+  app_intro_avatar_character?: string;
+  app_intro_avatar_style?: string;
+  app_intro_avatar_voice?: string;
+}): Promise<Record<string, unknown>> {
+  return apiAdmin<Record<string, unknown>>("/admin/library/intro/app-avatar/generate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function generateLibraryIntroAvatar(payload: {
   coach_product_avatar_title?: string;
   coach_product_avatar_script?: string;
@@ -2155,6 +2178,12 @@ export async function generateLibraryIntroAvatar(payload: {
 
 export async function refreshLibraryIntroAvatar(): Promise<Record<string, unknown>> {
   return apiAdmin<Record<string, unknown>>("/admin/library/intro/avatar/refresh", {
+    method: "POST",
+  });
+}
+
+export async function refreshLibraryAppIntroAvatar(): Promise<Record<string, unknown>> {
+  return apiAdmin<Record<string, unknown>>("/admin/library/intro/app-avatar/refresh", {
     method: "POST",
   });
 }
