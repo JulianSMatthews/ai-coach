@@ -28,7 +28,7 @@ from datetime import datetime, timedelta, date
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 from fastapi import FastAPI, APIRouter, Request, Response, Depends, Header, HTTPException, status, Body
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text, select, desc, func, or_, update
 from pathlib import Path 
@@ -102,6 +102,9 @@ from .models import (
     BillingInvoice,
     BillingTransaction,
     BillingWebhookEvent,
+    WearableConnection,
+    WearableSyncRun,
+    WearableDailyMetric,
 )  # ensure model registered for metadata
 from . import monday, wednesday, thursday, friday, saturday, weekflow, tuesday, sunday, kickoff, admin_routes, general_support, habit_selector
 from . import psych
@@ -175,6 +178,16 @@ from .reports_paths import resolve_reports_dir, resolve_reports_dir_with_source
 from .reports_retention import run_reports_retention_from_env
 from .job_queue import ensure_job_table, enqueue_job, should_use_worker, ensure_prompt_settings_schema
 from .virtual_clock import get_virtual_date, get_virtual_now_for_user, set_virtual_mode
+from .wearables import (
+    build_connect_url as build_wearable_connect_url,
+    exchange_code_for_tokens as exchange_wearable_code_for_tokens,
+    get_provider_definition as get_wearable_provider_definition,
+    list_provider_definitions,
+    create_sync_run as create_wearable_sync_run,
+    parse_wearable_oauth_state,
+    provider_configured as wearable_provider_configured,
+    provider_enabled as wearable_provider_enabled,
+)
 
 # Lazy import holder to avoid startup/reload ImportError if symbol is added later
 _gen_okr_summary_report = None
@@ -6902,6 +6915,411 @@ def api_user_preferences_update(
         s.commit()
 
     return {"ok": True}
+
+
+def _wearable_provider_note(definition, *, connection: WearableConnection | None) -> str | None:
+    if definition.key == "oura":
+        if not wearable_provider_enabled("oura"):
+            return "Disabled by environment configuration."
+        if not wearable_provider_configured("oura"):
+            return "Set OURA_CLIENT_ID and OURA_CLIENT_SECRET to enable Oura connect."
+    if definition.default_note:
+        return definition.default_note
+    if connection and str(getattr(connection, "last_sync_error", "") or "").strip():
+        return str(connection.last_sync_error).strip()
+    return None
+
+
+def _serialize_wearable_provider_state(
+    definition,
+    *,
+    connection: WearableConnection | None,
+    metric_days_count: int,
+    latest_metric_date: date | None,
+) -> dict[str, object]:
+    note = _wearable_provider_note(definition, connection=connection)
+    availability = definition.availability
+    if definition.key == "oura" and not wearable_provider_enabled("oura"):
+        availability = "disabled"
+    elif definition.key == "oura" and definition.connect_implemented and not wearable_provider_configured("oura"):
+        availability = "config_required"
+    status = str(getattr(connection, "status", "") or "").strip().lower() if connection else "disconnected"
+    connected = bool(connection and status == "connected")
+    return {
+        "provider": definition.key,
+        "label": definition.label,
+        "description": definition.description,
+        "availability": availability,
+        "supports_web_oauth": bool(definition.supports_web_oauth),
+        "partnership_required": bool(definition.partnership_required),
+        "requires_native_app": bool(definition.requires_native_app),
+        "connectable": bool(definition.connect_implemented and wearable_provider_enabled(definition.key) and wearable_provider_configured(definition.key)),
+        "sync_supported": bool(definition.sync_implemented),
+        "connected": connected,
+        "status": status,
+        "note": note,
+        "connection_id": int(connection.id) if connection else None,
+        "connected_at": getattr(connection, "connected_at", None) if connection else None,
+        "disconnected_at": getattr(connection, "disconnected_at", None) if connection else None,
+        "last_sync_at": getattr(connection, "last_sync_at", None) if connection else None,
+        "last_sync_status": getattr(connection, "last_sync_status", None) if connection else None,
+        "last_sync_error": getattr(connection, "last_sync_error", None) if connection else None,
+        "metric_days_count": int(metric_days_count or 0),
+        "latest_metric_date": latest_metric_date.isoformat() if latest_metric_date else None,
+    }
+
+
+def _wearable_redirect_url(
+    *,
+    user_id: int,
+    provider: str,
+    status_value: str,
+    message: str | None = None,
+    redirect_path: str | None = None,
+) -> str:
+    app_base, _debug = _resolve_admin_hsapp_base_url()
+    path = str(redirect_path or "").strip() or f"/preferences/{user_id}"
+    if not path.startswith("/"):
+        path = f"/preferences/{user_id}"
+    query = {
+        "wearable": str(provider or "").strip().lower(),
+        "wearable_status": str(status_value or "").strip().lower(),
+    }
+    if message:
+        query["wearable_message"] = str(message).strip()
+    joiner = "&" if "?" in path else "?"
+    return f"{app_base}{path}{joiner}{urlencode(query)}"
+
+
+@api_v1.get("/users/{user_id}/wearables")
+def api_user_wearables(
+    user_id: int,
+    request: Request,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    with SessionLocal() as s:
+        user = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="user not found")
+        connections = (
+            s.query(WearableConnection)
+            .filter(WearableConnection.user_id == user_id)
+            .all()
+        )
+        metric_rows = (
+            s.query(
+                WearableDailyMetric.provider,
+                func.count(WearableDailyMetric.id),
+                func.max(WearableDailyMetric.metric_date),
+            )
+            .filter(WearableDailyMetric.user_id == user_id)
+            .group_by(WearableDailyMetric.provider)
+            .all()
+        )
+    connection_map = {
+        str(getattr(row, "provider", "") or "").strip().lower(): row
+        for row in connections
+    }
+    metric_map = {
+        str(provider or "").strip().lower(): {
+            "metric_days_count": int(count or 0),
+            "latest_metric_date": latest_metric_date,
+        }
+        for provider, count, latest_metric_date in metric_rows
+    }
+    providers = []
+    for definition in list_provider_definitions():
+        meta = metric_map.get(definition.key) or {}
+        providers.append(
+            _serialize_wearable_provider_state(
+                definition,
+                connection=connection_map.get(definition.key),
+                metric_days_count=int(meta.get("metric_days_count") or 0),
+                latest_metric_date=meta.get("latest_metric_date"),
+            )
+        )
+    connected_count = sum(1 for item in providers if bool(item.get("connected")))
+    return {
+        "user_id": int(user_id),
+        "providers": providers,
+        "connected_count": int(connected_count),
+    }
+
+
+@api_v1.post("/users/{user_id}/wearables/{provider}/connect")
+def api_user_wearable_connect(
+    user_id: int,
+    provider: str,
+    request: Request,
+    payload: dict | None = Body(default=None),
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    if _is_readonly_admin_preview_request(
+        request,
+        x_admin_token=x_admin_token,
+        x_admin_user_id=x_admin_user_id,
+    ):
+        raise HTTPException(status_code=403, detail="Admin app preview is read-only")
+    try:
+        definition = get_wearable_provider_definition(provider)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    redirect_path = (
+        str((payload or {}).get("redirect_path") or "").strip()
+        if isinstance(payload, dict)
+        else ""
+    ) or f"/preferences/{user_id}"
+    try:
+        auth_url = build_wearable_connect_url(
+            definition.key,
+            user_id=int(user_id),
+            request_base_url=str(request.base_url).rstrip("/"),
+            redirect_path=redirect_path,
+        )
+    except ValueError as exc:
+        message = str(exc)
+        status_code = 501 if "not implemented" in message.lower() else 400
+        raise HTTPException(status_code=status_code, detail=message)
+    return {
+        "ok": True,
+        "provider": definition.key,
+        "auth_url": auth_url,
+    }
+
+
+@api_v1.get("/wearables/{provider}/callback")
+def api_wearable_callback(
+    provider: str,
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
+):
+    try:
+        definition = get_wearable_provider_definition(provider)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    parsed_state = parse_wearable_oauth_state(state)
+    if not parsed_state or str(parsed_state.get("p") or "").strip().lower() != definition.key:
+        raise HTTPException(status_code=400, detail="Invalid wearable OAuth state")
+    user_id = int(parsed_state.get("u") or 0)
+    redirect_path = str(parsed_state.get("redirect_path") or "").strip() or f"/preferences/{user_id}"
+    if error:
+        message = str(error_description or error).strip() or f"{definition.label} connect failed."
+        return RedirectResponse(
+            _wearable_redirect_url(
+                user_id=user_id,
+                provider=definition.key,
+                status_value="failed",
+                message=message,
+                redirect_path=redirect_path,
+            ),
+            status_code=302,
+        )
+    if not code:
+        return RedirectResponse(
+            _wearable_redirect_url(
+                user_id=user_id,
+                provider=definition.key,
+                status_value="failed",
+                message="Missing OAuth code.",
+                redirect_path=redirect_path,
+            ),
+            status_code=302,
+        )
+    try:
+        token_payload = exchange_wearable_code_for_tokens(
+            definition.key,
+            code=str(code).strip(),
+            request_base_url=str(request.base_url).rstrip("/"),
+        )
+    except Exception as exc:
+        return RedirectResponse(
+            _wearable_redirect_url(
+                user_id=user_id,
+                provider=definition.key,
+                status_value="failed",
+                message=str(exc),
+                redirect_path=redirect_path,
+            ),
+            status_code=302,
+        )
+
+    with SessionLocal() as s:
+        user = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="user not found")
+        connection = (
+            s.query(WearableConnection)
+            .filter(WearableConnection.user_id == user_id, WearableConnection.provider == definition.key)
+            .one_or_none()
+        )
+        if not connection:
+            connection = WearableConnection(user_id=user_id, provider=definition.key)
+            s.add(connection)
+            s.flush()
+        expires_in = token_payload.get("expires_in") if isinstance(token_payload, dict) else None
+        try:
+            expires_in_seconds = int(expires_in) if expires_in is not None else None
+        except Exception:
+            expires_in_seconds = None
+        connection.status = "connected"
+        connection.access_token = str((token_payload or {}).get("access_token") or "").strip() or None
+        connection.refresh_token = str((token_payload or {}).get("refresh_token") or "").strip() or None
+        connection.token_type = str((token_payload or {}).get("token_type") or "").strip() or None
+        connection.scope = str((token_payload or {}).get("scope") or "").strip() or None
+        connection.expires_at = (
+            datetime.utcnow() + timedelta(seconds=max(0, expires_in_seconds))
+            if expires_in_seconds is not None
+            else None
+        )
+        connection.connected_at = datetime.utcnow()
+        connection.disconnected_at = None
+        connection.last_sync_status = "queued"
+        connection.last_sync_error = None
+        meta = connection.meta if isinstance(connection.meta, dict) else {}
+        meta["oauth_provider"] = definition.key
+        meta["oauth_connected_at"] = datetime.utcnow().replace(microsecond=0).isoformat()
+        connection.meta = meta
+        run = create_wearable_sync_run(
+            s,
+            connection=connection,
+            trigger="oauth_callback",
+        )
+        s.commit()
+        s.refresh(connection)
+        job_id = enqueue_job(
+            "wearable_sync",
+            {
+                "run_id": int(run.id),
+                "connection_id": int(connection.id),
+                "provider": definition.key,
+                "user_id": int(user_id),
+                "trigger": "oauth_callback",
+            },
+            user_id=int(user_id),
+        )
+        run.job_id = int(job_id)
+        connection.last_sync_status = "queued"
+        s.commit()
+
+    return RedirectResponse(
+        _wearable_redirect_url(
+            user_id=user_id,
+            provider=definition.key,
+            status_value="connected",
+            message=f"{definition.label} connected. First sync queued.",
+            redirect_path=redirect_path,
+        ),
+        status_code=302,
+    )
+
+
+@api_v1.post("/users/{user_id}/wearables/{provider}/disconnect")
+def api_user_wearable_disconnect(
+    user_id: int,
+    provider: str,
+    request: Request,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    if _is_readonly_admin_preview_request(
+        request,
+        x_admin_token=x_admin_token,
+        x_admin_user_id=x_admin_user_id,
+    ):
+        raise HTTPException(status_code=403, detail="Admin app preview is read-only")
+    try:
+        definition = get_wearable_provider_definition(provider)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    with SessionLocal() as s:
+        connection = (
+            s.query(WearableConnection)
+            .filter(WearableConnection.user_id == user_id, WearableConnection.provider == definition.key)
+            .one_or_none()
+        )
+        if not connection:
+            return {"ok": True, "provider": definition.key, "status": "disconnected"}
+        connection.status = "disconnected"
+        connection.access_token = None
+        connection.refresh_token = None
+        connection.token_type = None
+        connection.scope = None
+        connection.expires_at = None
+        connection.disconnected_at = datetime.utcnow()
+        connection.last_sync_status = "disconnected"
+        connection.last_sync_error = None
+        s.commit()
+    return {"ok": True, "provider": definition.key, "status": "disconnected"}
+
+
+@api_v1.post("/users/{user_id}/wearables/{provider}/sync")
+def api_user_wearable_sync(
+    user_id: int,
+    provider: str,
+    request: Request,
+    payload: dict | None = Body(default=None),
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    if _is_readonly_admin_preview_request(
+        request,
+        x_admin_token=x_admin_token,
+        x_admin_user_id=x_admin_user_id,
+    ):
+        raise HTTPException(status_code=403, detail="Admin app preview is read-only")
+    try:
+        definition = get_wearable_provider_definition(provider)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    if not definition.sync_implemented:
+        raise HTTPException(status_code=400, detail=f"{definition.label} sync is not available yet.")
+    trigger = str((payload or {}).get("trigger") or "").strip() if isinstance(payload, dict) else ""
+    trigger = trigger or "manual"
+    with SessionLocal() as s:
+        connection = (
+            s.query(WearableConnection)
+            .filter(WearableConnection.user_id == user_id, WearableConnection.provider == definition.key)
+            .one_or_none()
+        )
+        if not connection or str(getattr(connection, "status", "") or "").strip().lower() != "connected":
+            raise HTTPException(status_code=400, detail=f"{definition.label} is not connected.")
+        run = create_wearable_sync_run(
+            s,
+            connection=connection,
+            trigger=trigger,
+        )
+        s.commit()
+        job_id = enqueue_job(
+            "wearable_sync",
+            {
+                "run_id": int(run.id),
+                "connection_id": int(connection.id),
+                "provider": definition.key,
+                "user_id": int(user_id),
+                "trigger": trigger,
+            },
+            user_id=int(user_id),
+        )
+        run.job_id = int(job_id)
+        connection.last_sync_status = "queued"
+        connection.last_sync_error = None
+        s.commit()
+    return {
+        "ok": True,
+        "provider": definition.key,
+        "queued": True,
+        "job_id": int(job_id),
+        "run_id": int(run.id),
+    }
 
 
 @api_v1.get("/users/{user_id}/library")
@@ -18904,6 +19322,9 @@ def admin_reset_user(user_id: int, admin_user: User = Depends(_require_admin)):
         _delete_rows("content_prompt_generations", s.query(ContentPromptGeneration).filter(ContentPromptGeneration.user_id == user_id))
         _delete_rows("auth_sessions", s.query(AuthSession).filter(AuthSession.user_id == user_id))
         _delete_rows("auth_otps", s.query(AuthOtp).filter(AuthOtp.user_id == user_id))
+        _delete_rows("wearable_daily_metrics", s.query(WearableDailyMetric).filter(WearableDailyMetric.user_id == user_id))
+        _delete_rows("wearable_sync_runs", s.query(WearableSyncRun).filter(WearableSyncRun.user_id == user_id))
+        _delete_rows("wearable_connections", s.query(WearableConnection).filter(WearableConnection.user_id == user_id))
         _delete_rows("user_preferences", s.query(UserPreference).filter(UserPreference.user_id == user_id))
 
         if user_phone:

@@ -269,8 +269,8 @@ export default function IntroSetupClient({
     [generatedPayload],
   );
   const generatedText = String(generatedLlm.content || "").trim();
-  const generatedPodcastUrl = String(generatedResult.podcast_url || "").trim();
-  const generatedPodcastVoice = String(generatedResult.podcast_voice || "").trim();
+  const generatedPodcastUrl = String(generatedPayload.podcast_url || "").trim();
+  const generatedPodcastVoice = String(generatedPayload.podcast_voice || "").trim();
   const assessmentCharacterOptions = useMemo(
     () => withCurrentOption(assessmentAvatarCharacterOptions, assessmentIntroAvatarCharacter),
     [assessmentIntroAvatarCharacter],

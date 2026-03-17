@@ -33,6 +33,7 @@ from app.reporting import (
 from app.db import SessionLocal, _table_exists, engine
 from app.models import User, AssessSession, PillarResult
 from app.okr import generate_and_update_okrs_for_pillar
+from app.wearables import process_sync_run as process_wearable_sync_run
 
 os.environ.setdefault("PROMPT_WORKER_PROCESS", "1")
 
@@ -282,6 +283,19 @@ def _process_friday_flow(payload: dict) -> None:
     friday.send_boost(user, week_no=payload.get("week_no"))
 
 
+def _process_wearable_sync(payload: dict) -> dict:
+    run_id = payload.get("run_id")
+    if not run_id:
+        raise ValueError("wearable_sync requires run_id")
+    current_job_id = payload.get("job_id")
+    with SessionLocal() as s:
+        return process_wearable_sync_run(
+            s,
+            run_id=int(run_id),
+            job_id=int(current_job_id) if current_job_id is not None else None,
+        )
+
+
 def process_job(kind: str, payload: dict) -> dict:
     if kind == "day_prompt":
         _process_day_prompt(payload)
@@ -318,6 +332,8 @@ def process_job(kind: str, payload: dict) -> dict:
     if kind == "friday_flow":
         _process_friday_flow(payload)
         return {"ok": True}
+    if kind == "wearable_sync":
+        return _process_wearable_sync(payload)
     raise ValueError(f"Unknown job kind: {kind}")
 
 

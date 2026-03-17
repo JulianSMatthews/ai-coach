@@ -508,6 +508,90 @@ class UserPreference(Base):
     )
 
 
+class WearableConnection(Base):
+    __tablename__ = "wearable_connections"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    provider = Column(String(32), nullable=False, index=True)
+    status = Column(String(32), nullable=False, server_default=text("'disconnected'"), index=True)
+    access_token = Column(Text, nullable=True)
+    refresh_token = Column(Text, nullable=True)
+    token_type = Column(String(32), nullable=True)
+    scope = Column(Text, nullable=True)
+    expires_at = Column(DateTime, nullable=True)
+    provider_user_id = Column(String(128), nullable=True, index=True)
+    external_user_ref = Column(String(128), nullable=True)
+    sync_cursor = Column(String(255), nullable=True)
+    last_sync_at = Column(DateTime, nullable=True)
+    last_sync_status = Column(String(32), nullable=True)
+    last_sync_error = Column(Text, nullable=True)
+    raw_profile = Column(JSONType, nullable=True)
+    meta = Column("metadata", JSONType, nullable=True)
+    connected_at = Column(DateTime, nullable=True)
+    disconnected_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "provider", name="uq_wearable_connections_user_provider"),
+        Index("ix_wearable_connections_user_status", "user_id", "status"),
+    )
+
+
+class WearableSyncRun(Base):
+    __tablename__ = "wearable_sync_runs"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    connection_id = Column(Integer, ForeignKey("wearable_connections.id", ondelete="SET NULL"), nullable=True, index=True)
+    provider = Column(String(32), nullable=False, index=True)
+    status = Column(String(32), nullable=False, server_default=text("'queued'"), index=True)
+    trigger = Column(String(32), nullable=True)
+    job_id = Column(Integer, ForeignKey("background_jobs.id", ondelete="SET NULL"), nullable=True, index=True)
+    records_synced = Column(Integer, nullable=False, server_default=text("0"))
+    started_at = Column(DateTime, nullable=True)
+    finished_at = Column(DateTime, nullable=True)
+    error = Column(Text, nullable=True)
+    request_payload = Column(JSONType, nullable=True)
+    result_payload = Column(JSONType, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_wearable_sync_runs_user_provider", "user_id", "provider"),
+        Index("ix_wearable_sync_runs_status_created", "status", "created_at"),
+    )
+
+
+class WearableDailyMetric(Base):
+    __tablename__ = "wearable_daily_metrics"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    connection_id = Column(Integer, ForeignKey("wearable_connections.id", ondelete="SET NULL"), nullable=True, index=True)
+    provider = Column(String(32), nullable=False, index=True)
+    metric_date = Column(Date, nullable=False, index=True)
+    sleep_seconds = Column(Integer, nullable=True)
+    sleep_score = Column(Integer, nullable=True)
+    readiness_score = Column(Integer, nullable=True)
+    hrv_ms = Column(Float, nullable=True)
+    resting_hr_bpm = Column(Float, nullable=True)
+    steps = Column(Integer, nullable=True)
+    active_minutes = Column(Integer, nullable=True)
+    calories = Column(Integer, nullable=True)
+    strain_score = Column(Float, nullable=True)
+    raw_payload = Column(JSONType, nullable=True)
+    synced_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "provider", "metric_date", name="uq_wearable_daily_metrics_user_provider_day"),
+        Index("ix_wearable_daily_metrics_user_day", "user_id", "metric_date"),
+    )
+
+
 class GlobalPromptSchedule(Base):
     __tablename__ = "global_prompt_schedule"
 

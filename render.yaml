@@ -67,6 +67,40 @@ services:
         sync: false
       - key: HSAPP_PUBLIC_URL
         sync: false
+      - key: WEARABLES_ENABLED
+        value: "1"
+      - key: WEARABLE_OAUTH_STATE_SECRET
+        sync: false
+      - key: WEARABLE_CALLBACK_BASE_URL
+        sync: false
+      - key: WEARABLE_OURA_ENABLED
+        value: "1"
+      - key: OURA_CLIENT_ID
+        sync: false
+      - key: OURA_CLIENT_SECRET
+        sync: false
+      - key: OURA_OAUTH_SCOPE
+        value: "daily personal email"
+      - key: WEARABLE_WHOOP_ENABLED
+        value: "0"
+      - key: WHOOP_CLIENT_ID
+        sync: false
+      - key: WHOOP_CLIENT_SECRET
+        sync: false
+      - key: WEARABLE_FITBIT_ENABLED
+        value: "0"
+      - key: FITBIT_CLIENT_ID
+        sync: false
+      - key: FITBIT_CLIENT_SECRET
+        sync: false
+      - key: WEARABLE_GARMIN_ENABLED
+        value: "0"
+      - key: GARMIN_CLIENT_ID
+        sync: false
+      - key: GARMIN_CLIENT_SECRET
+        sync: false
+      - key: WEARABLE_APPLE_HEALTH_ENABLED
+        value: "0"
       - key: COACH_NAME
         value: "Gia"
       - key: WEEKSTART_PODCAST_MAX_WORDS

@@ -193,6 +193,35 @@ export type UserStatusResponse = {
   };
 };
 
+export type WearableProviderState = {
+  provider?: string;
+  label?: string;
+  description?: string;
+  availability?: string;
+  supports_web_oauth?: boolean;
+  partnership_required?: boolean;
+  requires_native_app?: boolean;
+  connectable?: boolean;
+  sync_supported?: boolean;
+  connected?: boolean;
+  status?: string;
+  note?: string | null;
+  connection_id?: number | null;
+  connected_at?: string | null;
+  disconnected_at?: string | null;
+  last_sync_at?: string | null;
+  last_sync_status?: string | null;
+  last_sync_error?: string | null;
+  metric_days_count?: number;
+  latest_metric_date?: string | null;
+};
+
+export type WearablesResponse = {
+  user_id?: number;
+  connected_count?: number;
+  providers?: WearableProviderState[];
+};
+
 export type CoachingHistoryResponse = {
   user?: { id?: number; display_name?: string };
   items?: Array<{
@@ -365,6 +394,10 @@ export async function getProgress(userId: string | number, anchorDate?: string):
 
 export async function getUserStatus(userId: string | number): Promise<UserStatusResponse> {
   return apiGet<UserStatusResponse>(`/api/v1/users/${userId}/status`);
+}
+
+export async function getWearables(userId: string | number): Promise<WearablesResponse> {
+  return apiGet<WearablesResponse>(`/api/v1/users/${userId}/wearables`);
 }
 
 export async function getCoachingHistory(

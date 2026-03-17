@@ -1,16 +1,20 @@
-import { getUserStatus } from "@/lib/api";
+import { getUserStatus, getWearables } from "@/lib/api";
 import { Card, PageShell, SectionHeader } from "@/components/ui";
 import PreferencesForm from "./PreferencesForm";
+import WearablesPanel from "./WearablesPanel";
 import TextScale from "@/components/TextScale";
 import AppNav from "@/components/AppNav";
 
 type PageProps = {
   params: Promise<{ userId: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 export default async function PreferencesPage(props: PageProps) {
   const { userId } = await props.params;
+  const searchParams = props.searchParams ? await props.searchParams : {};
   const data = await getUserStatus(userId);
+  const wearables = await getWearables(userId);
   const user = data.user || {};
   const prefs = data.coaching_preferences || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
@@ -19,6 +23,10 @@ export default async function PreferencesPage(props: PageProps) {
     promptState && promptState !== "live"
       ? `${promptState.charAt(0).toUpperCase()}${promptState.slice(1)} mode`
       : "";
+  const firstValue = (value: string | string[] | undefined) =>
+    String(Array.isArray(value) ? value[0] : value || "").trim();
+  const wearableStatus = firstValue(searchParams?.wearable_status);
+  const wearableMessage = firstValue(searchParams?.wearable_message) || null;
   const displayName = user.display_name || user.first_name || "User";
   const displayFirstName = displayName.split(" ")[0];
 
@@ -48,6 +56,15 @@ export default async function PreferencesPage(props: PageProps) {
               initialMarketingOptIn={prefs.marketing_opt_in || ""}
             />
           </div>
+        </Card>
+
+        <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
+          <WearablesPanel
+            userId={String(userId)}
+            providers={wearables.providers || []}
+            initialMessage={wearableMessage}
+            initialStatus={wearableStatus}
+          />
         </Card>
       </section>
 
