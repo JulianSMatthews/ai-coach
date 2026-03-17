@@ -7506,6 +7506,7 @@ def api_user_engagement_event(
         "intro_presented",
         "intro_listened",
         "intro_read",
+        "coaching_interest",
     }
     if event_type not in valid_event_types:
         allowed = ", ".join(sorted(valid_event_types))
@@ -7560,6 +7561,27 @@ def api_user_engagement_event(
                     user_id,
                     ONBOARDING_PREF_KEYS["intro_read"],
                     now_iso,
+                    only_if_missing=True,
+                ) or changed
+            if changed:
+                s.commit()
+    elif event_type == "coaching_interest":
+        now_iso = _utc_now_iso()
+        with SessionLocal() as s:
+            changed = _set_pref_value(
+                s,
+                user_id,
+                "coaching_interest_at",
+                now_iso,
+                only_if_missing=True,
+            )
+            surface_value = str(event_meta.get("surface") or "").strip().lower()
+            if surface_value:
+                changed = _set_pref_value(
+                    s,
+                    user_id,
+                    "coaching_interest_surface",
+                    surface_value,
                     only_if_missing=True,
                 ) or changed
             if changed:

@@ -40,6 +40,7 @@ export async function POST(request: Request) {
       "intro_presented",
       "intro_listened",
       "intro_read",
+      "coaching_interest",
     ];
     if (!allowedEventTypes.includes(eventType)) {
       return NextResponse.json(

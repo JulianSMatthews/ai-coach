@@ -79,18 +79,6 @@ type AssessmentChatBoxProps = {
   introAvatarEnabledOverride?: boolean | null;
 };
 
-type AssessmentCoachingPlanItem = {
-  pillarKey: string;
-  pillarName: string;
-  score: number | null;
-  objective: string;
-  keyResults: string[];
-};
-
-type AssessmentCoachingPlan = {
-  okrs: AssessmentCoachingPlanItem[];
-};
-
 type AssessmentCompletionSummaryMedia = {
   text: string | null;
   audioUrl: string | null;
@@ -383,40 +371,6 @@ function sortResultPillars(pillars: AssessmentResultPillar[]): AssessmentResultP
   return [...pillars].sort((a, b) => b.score - a.score);
 }
 
-function normalizeCoachingPlanItem(raw: unknown): AssessmentCoachingPlanItem | null {
-  if (!raw || typeof raw !== "object") return null;
-  const row = raw as Record<string, unknown>;
-  const pillarKey = typeof row.pillar_key === "string" ? row.pillar_key.trim() : "";
-  const pillarName = typeof row.pillar_name === "string" ? row.pillar_name.trim() : "";
-  const objective = typeof row.objective === "string" ? row.objective.trim() : "";
-  const keyResults = Array.isArray(row.key_results)
-    ? row.key_results
-        .map((item) => (typeof item === "string" ? item.trim() : ""))
-        .filter((item) => Boolean(item))
-    : [];
-  const rawScore = Number(row.score);
-  const score = Number.isFinite(rawScore) ? rawScore : null;
-  if (!pillarKey && !pillarName && !objective && !keyResults.length) return null;
-  return {
-    pillarKey,
-    pillarName,
-    score,
-    objective,
-    keyResults,
-  };
-}
-
-function normalizeCoachingPlan(raw: unknown): AssessmentCoachingPlan {
-  if (!raw || typeof raw !== "object") {
-    return { okrs: [] };
-  }
-  const row = raw as Record<string, unknown>;
-  const okrs = Array.isArray(row.okrs)
-    ? row.okrs.map(normalizeCoachingPlanItem).filter((item): item is AssessmentCoachingPlanItem => Boolean(item))
-    : [];
-  return { okrs };
-}
-
 function normalizeCompletionSummaryMedia(raw: unknown): AssessmentCompletionSummaryMedia {
   if (!raw || typeof raw !== "object") {
     return {
@@ -505,10 +459,9 @@ export default function AssessmentChatBox({
   const [claimEmail, setClaimEmail] = useState("");
   const [claiming, setClaiming] = useState(false);
   const [showCoachingPlan, setShowCoachingPlan] = useState(false);
-  const [coachingPlan, setCoachingPlan] = useState<AssessmentCoachingPlan | null>(null);
-  const [coachingPlanLoading, setCoachingPlanLoading] = useState(false);
-  const [coachingPlanError, setCoachingPlanError] = useState<string | null>(null);
-  const [loadedCoachingPlanRunId, setLoadedCoachingPlanRunId] = useState<number | null>(null);
+  const [coachingInterestSubmitting, setCoachingInterestSubmitting] = useState(false);
+  const [coachingInterestLogged, setCoachingInterestLogged] = useState(false);
+  const [coachingInterestError, setCoachingInterestError] = useState<string | null>(null);
   const [completionSummaryMedia, setCompletionSummaryMedia] =
     useState<AssessmentCompletionSummaryMedia | null>(null);
   const [completionSummaryLoading, setCompletionSummaryLoading] = useState(false);
@@ -700,10 +653,9 @@ export default function AssessmentChatBox({
 
   useEffect(() => {
     setShowCoachingPlan(false);
-    setCoachingPlan(null);
-    setCoachingPlanError(null);
-    setCoachingPlanLoading(false);
-    setLoadedCoachingPlanRunId(null);
+    setCoachingInterestSubmitting(false);
+    setCoachingInterestLogged(false);
+    setCoachingInterestError(null);
     setCompletionSummaryMedia(null);
     setCompletionSummaryError(null);
     setCompletionSummaryLoading(false);
@@ -742,10 +694,6 @@ export default function AssessmentChatBox({
         setCompletionSummaryMedia(narratives);
         setCompletionSummaryError(null);
         setLoadedCompletionSummaryRunId(runId);
-        if (loadedCoachingPlanRunId !== runId) {
-          setCoachingPlan(normalizeCoachingPlan(payload));
-          setLoadedCoachingPlanRunId(runId);
-        }
       } catch (error) {
         if (!silent) {
           setCompletionSummaryError(
@@ -758,7 +706,7 @@ export default function AssessmentChatBox({
         }
       }
     },
-    [fetchAssessmentReportPayload, loadedCoachingPlanRunId],
+    [fetchAssessmentReportPayload],
   );
 
   useEffect(() => {
@@ -945,29 +893,42 @@ export default function AssessmentChatBox({
   }
 
   async function onCoachingPlanClick() {
-    if (coachingPlanLoading) return;
     if (showCoachingPlan) {
-      setShowCoachingPlan(false);
       return;
     }
-
     setShowCoachingPlan(true);
-    setCoachingPlanError(null);
+  }
 
-    const runId = Number.isFinite(Number(resultSummary?.run_id)) ? Number(resultSummary?.run_id) : null;
-    if (coachingPlan && loadedCoachingPlanRunId === runId) {
+  async function onCoachingInterestClick() {
+    if (coachingInterestSubmitting || coachingInterestLogged) {
       return;
     }
-
-    setCoachingPlanLoading(true);
+    setCoachingInterestSubmitting(true);
+    setCoachingInterestError(null);
     try {
-      const payload = await fetchAssessmentReportPayload(runId, "Failed to load coaching plan.");
-      setCoachingPlan(normalizeCoachingPlan(payload));
-      setLoadedCoachingPlanRunId(runId);
+      const res = await fetch("/api/engagement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          event_type: "coaching_interest",
+          surface: "assessment_results",
+          meta: {
+            surface: "assessment_results",
+            source: "personal_coaching_plan",
+            component: "how_healthsense_works",
+          },
+        }),
+      });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        throw new Error(parseApiError(text, "Failed to record your interest."));
+      }
+      setCoachingInterestLogged(true);
     } catch (error) {
-      setCoachingPlanError(error instanceof Error ? error.message : String(error));
+      setCoachingInterestError(error instanceof Error ? error.message : String(error));
     } finally {
-      setCoachingPlanLoading(false);
+      setCoachingInterestSubmitting(false);
     }
   }
 
@@ -1151,14 +1112,9 @@ export default function AssessmentChatBox({
               <button
                 type="button"
                 onClick={() => void onCoachingPlanClick()}
-                disabled={coachingPlanLoading}
                 className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.18em] whitespace-normal text-white disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {coachingPlanLoading
-                  ? "Loading coaching plan…"
-                  : showCoachingPlan
-                    ? "Hide coaching plan"
-                    : "View your personal coaching plan and find out how HealthSense works"}
+                View your personal coaching plan and find out how HealthSense works
               </button>
             </div>
           </>
@@ -1170,95 +1126,37 @@ export default function AssessmentChatBox({
   const coachingPlanPanel = showCoachingPlan ? (
     <section className="rounded-[28px] border border-[#e7e1d6] bg-white px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
       <div className="space-y-5">
-        {String(coachProductAvatar?.url || "").trim() || String(coachProductAvatar?.script || "").trim() ? (
-          <div className="space-y-3 rounded-2xl border border-[#efe7db] bg-[#fffaf3] p-4">
-            <div>
-              <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">How HealthSense works</p>
-              <p className="mt-1 text-lg font-semibold text-[#1e1b16]">
-                {String(coachProductAvatar?.title || "How HealthSense works").trim()}
-              </p>
-            </div>
-            {String(coachProductAvatar?.url || "").trim() ? (
-              <video
-                controls
-                preload="metadata"
-                playsInline
-                poster={String(coachProductAvatar?.posterUrl || "").trim() || undefined}
-                className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
-              >
-                <source src={String(coachProductAvatar?.url || "").trim()} />
-              </video>
-            ) : null}
-            {String(coachProductAvatar?.script || "").trim() ? (
-              <p className="whitespace-pre-wrap text-sm leading-6 text-[#3c332b]">
-                {String(coachProductAvatar?.script || "").trim()}
-              </p>
-            ) : null}
-          </div>
-        ) : null}
-        <div className="space-y-2">
-          <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Objectives and key results</p>
-          <h2 className="text-2xl text-[#1e1b16]">Your coaching plan</h2>
-          <p className="text-sm text-[#6b6257]">
-            These OKRs and KRs are designed to help improve your wellbeing.
-          </p>
+        <div className="space-y-3 rounded-2xl border border-[#efe7db] bg-[#fffaf3] p-4">
+          <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">How HealthSense works</p>
+          {String(coachProductAvatar?.url || "").trim() ? (
+            <video
+              controls
+              preload="metadata"
+              playsInline
+              poster={String(coachProductAvatar?.posterUrl || "").trim() || undefined}
+              className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
+            >
+              <source src={String(coachProductAvatar?.url || "").trim()} />
+            </video>
+          ) : null}
         </div>
-
-        {coachingPlanLoading ? (
-          <p className="text-sm text-[#6b6257]">Loading your coaching plan…</p>
-        ) : coachingPlanError ? (
-          <p className="text-sm text-[#6b6257]">{coachingPlanError}</p>
-        ) : coachingPlan?.okrs.length ? (
-          <div className="grid gap-3">
-            {coachingPlan.okrs.map((item) => {
-              const palette = getPillarPalette(item.pillarKey || item.pillarName);
-              const title = item.pillarName || palette.label || item.pillarKey.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
-              return (
-                <div
-                  key={`${item.pillarKey || title}-${item.objective || item.keyResults.join("|")}`}
-                  className="rounded-2xl border px-4 py-4"
-                  style={{
-                    borderColor: palette.border,
-                    background: palette.bg,
-                  }}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-[#1e1b16]">{title}</p>
-                    {Number.isFinite(Number(item.score)) ? (
-                      <p className="text-sm font-semibold" style={{ color: palette.accent }}>
-                        {Math.round(Number(item.score || 0))}
-                      </p>
-                    ) : null}
-                  </div>
-
-                  <div className="mt-4 space-y-2 text-sm text-[#3c332b]">
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">OKR</p>
-                      <p className="mt-1 whitespace-pre-wrap">{item.objective || "Objective coming soon."}</p>
-                    </div>
-
-                    <div>
-                      <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">KRs</p>
-                      {item.keyResults.length ? (
-                        <ul className="mt-2 list-disc space-y-1 pl-5">
-                          {item.keyResults.map((kr) => (
-                            <li key={`${title}-${kr}`} className="whitespace-pre-wrap">
-                              {kr}
-                            </li>
-                          ))}
-                        </ul>
-                      ) : (
-                        <p className="mt-1 text-[#6b6257]">No key results captured yet.</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-sm text-[#6b6257]">No coaching plan is available yet.</p>
-        )}
+        <div>
+          <button
+            type="button"
+            onClick={() => void onCoachingInterestClick()}
+            disabled={coachingInterestSubmitting || coachingInterestLogged}
+            className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.18em] whitespace-normal text-white disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {coachingInterestLogged
+              ? "Interest recorded"
+              : coachingInterestSubmitting
+                ? "Saving interest…"
+                : "I am interested in Healthsense"}
+          </button>
+          {coachingInterestError ? (
+            <p className="mt-2 text-sm text-[#8a3e1a]">{coachingInterestError}</p>
+          ) : null}
+        </div>
       </div>
     </section>
   ) : null;
