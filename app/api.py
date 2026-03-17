@@ -139,6 +139,7 @@ from .avatar import (
     azure_summary_realtime_enabled,
     azure_summary_realtime_settings,
     build_realtime_avatar_session_bootstrap,
+    create_batch_avatar,
     generate_batch_avatar_video,
     get_batch_avatar,
     download_batch_avatar_output,
@@ -179,10 +180,11 @@ from .reports_retention import run_reports_retention_from_env
 from .job_queue import ensure_job_table, enqueue_job, should_use_worker, ensure_prompt_settings_schema
 from .virtual_clock import get_virtual_date, get_virtual_now_for_user, set_virtual_mode
 from .wearables import (
-    build_connect_url as build_wearable_connect_url,
+    apply_token_payload as apply_wearable_token_payload,
     exchange_code_for_tokens as exchange_wearable_code_for_tokens,
     get_provider_definition as get_wearable_provider_definition,
     list_provider_definitions,
+    prepare_connect_request as prepare_wearable_connect_request,
     create_sync_run as create_wearable_sync_run,
     parse_wearable_oauth_state,
     provider_configured as wearable_provider_configured,
@@ -6918,15 +6920,18 @@ def api_user_preferences_update(
 
 
 def _wearable_provider_note(definition, *, connection: WearableConnection | None) -> str | None:
-    if definition.key == "oura":
-        if not wearable_provider_enabled("oura"):
-            return "Disabled by environment configuration."
-        if not wearable_provider_configured("oura"):
-            return "Set OURA_CLIENT_ID and OURA_CLIENT_SECRET to enable Oura connect."
-    if definition.default_note:
-        return definition.default_note
+    if not wearable_provider_enabled(definition.key):
+        return "Disabled by environment configuration."
+    if definition.key == "oura" and not wearable_provider_configured("oura"):
+        return "Set OURA_CLIENT_ID and OURA_CLIENT_SECRET to enable Oura connect."
+    if definition.key == "whoop" and not wearable_provider_configured("whoop"):
+        return "Set WHOOP_CLIENT_ID and WHOOP_CLIENT_SECRET to enable WHOOP connect."
+    if definition.key == "fitbit" and not wearable_provider_configured("fitbit"):
+        return "Set FITBIT_CLIENT_ID and FITBIT_CLIENT_SECRET to enable Fitbit connect."
     if connection and str(getattr(connection, "last_sync_error", "") or "").strip():
         return str(connection.last_sync_error).strip()
+    if definition.default_note:
+        return definition.default_note
     return None
 
 
@@ -6939,9 +6944,14 @@ def _serialize_wearable_provider_state(
 ) -> dict[str, object]:
     note = _wearable_provider_note(definition, connection=connection)
     availability = definition.availability
-    if definition.key == "oura" and not wearable_provider_enabled("oura"):
+    if not wearable_provider_enabled(definition.key):
         availability = "disabled"
-    elif definition.key == "oura" and definition.connect_implemented and not wearable_provider_configured("oura"):
+    elif (
+        definition.connect_implemented
+        and not definition.partnership_required
+        and not definition.requires_native_app
+        and not wearable_provider_configured(definition.key)
+    ):
         availability = "config_required"
     status = str(getattr(connection, "status", "") or "").strip().lower() if connection else "disconnected"
     connected = bool(connection and status == "connected")
@@ -7073,17 +7083,24 @@ def api_user_wearable_connect(
         if isinstance(payload, dict)
         else ""
     ) or f"/preferences/{user_id}"
-    try:
-        auth_url = build_wearable_connect_url(
-            definition.key,
-            user_id=int(user_id),
-            request_base_url=str(request.base_url).rstrip("/"),
-            redirect_path=redirect_path,
-        )
-    except ValueError as exc:
-        message = str(exc)
-        status_code = 501 if "not implemented" in message.lower() else 400
-        raise HTTPException(status_code=status_code, detail=message)
+    with SessionLocal() as s:
+        user = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="user not found")
+        try:
+            _connection, auth_url = prepare_wearable_connect_request(
+                s,
+                definition.key,
+                user_id=int(user_id),
+                request_base_url=str(request.base_url).rstrip("/"),
+                redirect_path=redirect_path,
+            )
+            s.commit()
+        except ValueError as exc:
+            s.rollback()
+            message = str(exc)
+            status_code = 501 if "not implemented" in message.lower() else 400
+            raise HTTPException(status_code=status_code, detail=message)
     return {
         "ok": True,
         "provider": definition.key,
@@ -7132,24 +7149,6 @@ def api_wearable_callback(
             ),
             status_code=302,
         )
-    try:
-        token_payload = exchange_wearable_code_for_tokens(
-            definition.key,
-            code=str(code).strip(),
-            request_base_url=str(request.base_url).rstrip("/"),
-        )
-    except Exception as exc:
-        return RedirectResponse(
-            _wearable_redirect_url(
-                user_id=user_id,
-                provider=definition.key,
-                status_value="failed",
-                message=str(exc),
-                redirect_path=redirect_path,
-            ),
-            status_code=302,
-        )
-
     with SessionLocal() as s:
         user = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
         if not user:
@@ -7163,21 +7162,30 @@ def api_wearable_callback(
             connection = WearableConnection(user_id=user_id, provider=definition.key)
             s.add(connection)
             s.flush()
-        expires_in = token_payload.get("expires_in") if isinstance(token_payload, dict) else None
         try:
-            expires_in_seconds = int(expires_in) if expires_in is not None else None
-        except Exception:
-            expires_in_seconds = None
+            token_payload = exchange_wearable_code_for_tokens(
+                definition.key,
+                code=str(code).strip(),
+                request_base_url=str(request.base_url).rstrip("/"),
+                connection=connection,
+            )
+        except Exception as exc:
+            s.rollback()
+            return RedirectResponse(
+                _wearable_redirect_url(
+                    user_id=user_id,
+                    provider=definition.key,
+                    status_value="failed",
+                    message=str(exc),
+                    redirect_path=redirect_path,
+                ),
+                status_code=302,
+            )
+        apply_wearable_token_payload(connection, token_payload)
         connection.status = "connected"
-        connection.access_token = str((token_payload or {}).get("access_token") or "").strip() or None
-        connection.refresh_token = str((token_payload or {}).get("refresh_token") or "").strip() or None
-        connection.token_type = str((token_payload or {}).get("token_type") or "").strip() or None
-        connection.scope = str((token_payload or {}).get("scope") or "").strip() or None
-        connection.expires_at = (
-            datetime.utcnow() + timedelta(seconds=max(0, expires_in_seconds))
-            if expires_in_seconds is not None
-            else None
-        )
+        provider_user_id = str((token_payload or {}).get("user_id") or "").strip()
+        if provider_user_id:
+            connection.provider_user_id = provider_user_id
         connection.connected_at = datetime.utcnow()
         connection.disconnected_at = None
         connection.last_sync_status = "queued"
@@ -7185,6 +7193,7 @@ def api_wearable_callback(
         meta = connection.meta if isinstance(connection.meta, dict) else {}
         meta["oauth_provider"] = definition.key
         meta["oauth_connected_at"] = datetime.utcnow().replace(microsecond=0).isoformat()
+        meta.pop("oauth_pending", None)
         connection.meta = meta
         run = create_wearable_sync_run(
             s,
@@ -7256,6 +7265,9 @@ def api_user_wearable_disconnect(
         connection.disconnected_at = datetime.utcnow()
         connection.last_sync_status = "disconnected"
         connection.last_sync_error = None
+        meta = connection.meta if isinstance(connection.meta, dict) else {}
+        meta.pop("oauth_pending", None)
+        connection.meta = meta
         s.commit()
     return {"ok": True, "provider": definition.key, "status": "disconnected"}
 

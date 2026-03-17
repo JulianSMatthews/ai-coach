@@ -82,17 +82,21 @@ services:
       - key: OURA_OAUTH_SCOPE
         value: "daily personal email"
       - key: WEARABLE_WHOOP_ENABLED
-        value: "0"
+        value: "1"
       - key: WHOOP_CLIENT_ID
         sync: false
       - key: WHOOP_CLIENT_SECRET
         sync: false
+      - key: WHOOP_OAUTH_SCOPE
+        value: "offline read:profile read:recovery read:cycles read:sleep"
       - key: WEARABLE_FITBIT_ENABLED
-        value: "0"
+        value: "1"
       - key: FITBIT_CLIENT_ID
         sync: false
       - key: FITBIT_CLIENT_SECRET
         sync: false
+      - key: FITBIT_OAUTH_SCOPE
+        value: "activity heartrate sleep profile offline_access"
       - key: WEARABLE_GARMIN_ENABLED
         value: "0"
       - key: GARMIN_CLIENT_ID
