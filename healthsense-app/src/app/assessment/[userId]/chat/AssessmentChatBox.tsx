@@ -468,6 +468,7 @@ export default function AssessmentChatBox({
   const [completionSummaryError, setCompletionSummaryError] = useState<string | null>(null);
   const [loadedCompletionSummaryRunId, setLoadedCompletionSummaryRunId] = useState<number | null>(null);
   const [completionSummaryVideoSeen, setCompletionSummaryVideoSeen] = useState(false);
+  const [summaryGenerationStep, setSummaryGenerationStep] = useState(0);
   const [summaryDetailMode, setSummaryDetailMode] = useState<"read" | "listen" | null>(null);
   const [realtimeSummaryPhase, setRealtimeSummaryPhase] = useState<
     "idle" | "preparing" | "playing" | "completed" | "failed" | "stopped" | "timeout"
@@ -525,12 +526,6 @@ export default function AssessmentChatBox({
         completionSummaryLoading ||
         completionSummaryError,
     );
-  const showRealtimeSummaryIntroMessage =
-    Boolean(completionSummaryUsesRealtime && completionSummaryRunId) &&
-    !completionSummaryError &&
-    (completionSummaryBootstrapPending ||
-      realtimeSummaryPhase === "idle" ||
-      realtimeSummaryPhase === "preparing");
   const summaryExperienceBlocked =
     Boolean(showResultCard && completionSummaryRunId) &&
     !completionSummaryError &&
@@ -683,6 +678,7 @@ export default function AssessmentChatBox({
     setCompletionSummaryLoading(false);
     setLoadedCompletionSummaryRunId(null);
     setRealtimeSummaryPhase("idle");
+    setSummaryGenerationStep(0);
     setSummaryDetailMode(null);
   }, [resultSummary?.run_id]);
 
@@ -770,6 +766,20 @@ export default function AssessmentChatBox({
       window.clearInterval(interval);
     };
   }, [showResultCard, completionSummaryRunId, completionSummaryPending, loadCompletionSummary]);
+
+  useEffect(() => {
+    if (!showResultCard || !summaryExperienceBlocked) {
+      setSummaryGenerationStep(0);
+      return;
+    }
+    setSummaryGenerationStep(0);
+    const interval = window.setInterval(() => {
+      setSummaryGenerationStep((current) => Math.min(current + 1, 3));
+    }, 2400);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [showResultCard, summaryExperienceBlocked, resultSummary?.run_id]);
 
   async function sendMessage(
     textValue: string,
@@ -968,6 +978,20 @@ export default function AssessmentChatBox({
 
   const resultExtremes = resultSummary ? resultPillarExtremes(resultSummary.pillars) : { strongest: null, weakest: null };
   const sortedResultPillars = resultSummary ? sortResultPillars(resultSummary.pillars) : [];
+  const summaryGenerationMessages = [
+    "Generating your personalised results video now.",
+    resultExtremes.strongest
+      ? `Your strongest pillar is ${resultExtremes.strongest.label} at ${resultExtremes.strongest.score}/100.`
+      : null,
+    resultExtremes.weakest
+      ? `The pillar holding you back most right now is ${resultExtremes.weakest.label} at ${resultExtremes.weakest.score}/100.`
+      : null,
+    "Pulling everything together into your personalised video and report.",
+  ].filter((message): message is string => Boolean(message));
+  const visibleSummaryGenerationMessages = summaryGenerationMessages.slice(
+    0,
+    Math.min(summaryGenerationStep + 1, summaryGenerationMessages.length),
+  );
   const resultCard = resultSummary ? (
     <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
       <div className="space-y-6">
@@ -1016,12 +1040,20 @@ export default function AssessmentChatBox({
                 </div>
               ) : null}
 
-              {showRealtimeSummaryIntroMessage ? (
-                <p className="text-sm text-[#6b6257]">{summaryIntroMessage}</p>
-              ) : null}
-
-              {!completionSummaryUsesRealtime && (completionSummaryPending || completionSummaryLoading) ? (
-                <p className="text-sm text-[#6b6257]">{summaryIntroMessage}</p>
+              {summaryExperienceBlocked ? (
+                <div className="space-y-2">
+                  {visibleSummaryGenerationMessages.map((message, index) => (
+                    <p
+                      key={`${index}-${message}`}
+                      className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3 text-sm text-[#6b6257]"
+                    >
+                      {message}
+                    </p>
+                  ))}
+                  {completionSummaryBootstrapPending || completionSummaryPending || completionSummaryLoading ? (
+                    <p className="text-sm text-[#8c7f70]">{summaryIntroMessage}</p>
+                  ) : null}
+                </div>
               ) : null}
 
               {completionSummaryFailed && !completionSummaryMedia?.avatarUrl ? (

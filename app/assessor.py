@@ -3402,20 +3402,28 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                                         "rationale": out.rationale, "scores": filled_scores, "overall": overall}
 
             if _is_app_assessment_delivery():
-                handoff_timing["next_pillar"] = nxt
-                handoff_timing["next_prompt_mode"] = "pillar_result_card"
-                next_phase = "pillars" if nxt else "complete"
-                _enter_app_pillar_result_phase(
-                    state,
-                    pillar=pillar,
-                    overall=int(overall),
-                    next_pillar=nxt,
-                    next_phase=next_phase,
+                needs_identity_gate = bool(
+                    (not nxt)
+                    and _lead_identity_required(int(getattr(user, "id", 0) or 0))
                 )
-                handoff_timing["ms_total"] = int((time.perf_counter() - handoff_started_at) * 1000)
-                _log_pillar_handoff_timing(handoff_timing)
-                _commit_state(s, sess, state)
-                return True
+                if needs_identity_gate:
+                    handoff_timing["next_pillar"] = None
+                    handoff_timing["next_prompt_mode"] = "finalize_without_last_pillar_card"
+                else:
+                    handoff_timing["next_pillar"] = nxt
+                    handoff_timing["next_prompt_mode"] = "pillar_result_card"
+                    next_phase = "pillars" if nxt else "complete"
+                    _enter_app_pillar_result_phase(
+                        state,
+                        pillar=pillar,
+                        overall=int(overall),
+                        next_pillar=nxt,
+                        next_phase=next_phase,
+                    )
+                    handoff_timing["ms_total"] = int((time.perf_counter() - handoff_started_at) * 1000)
+                    _log_pillar_handoff_timing(handoff_timing)
+                    _commit_state(s, sess, state)
+                    return True
 
             if nxt:
                 state["current"] = nxt
