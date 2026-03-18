@@ -1949,6 +1949,16 @@ def _handle_app_chat_non_assessment(user: User, body: str) -> bool:
     """
     lower_body = (body or "").strip().lower()
 
+    def _general_support_ready() -> bool:
+        completed_assessment = bool(getattr(user, "first_assessment_completed", None))
+        coaching_enabled = False
+        try:
+            with SessionLocal() as s:
+                coaching_enabled = _coaching_enabled_for_user(s, int(user.id))
+        except Exception:
+            coaching_enabled = False
+        return bool(completed_assessment or coaching_enabled)
+
     if _handle_pending_coaching_day_resume(user, body):
         return True
 
@@ -2101,22 +2111,27 @@ def _handle_app_chat_non_assessment(user: User, body: str) -> bool:
         )
     )
     if looks_like_marketing_cta:
-        completed_assessment = bool(getattr(user, "first_assessment_completed", None))
-        coaching_enabled = False
-        try:
-            with SessionLocal() as s:
-                coaching_enabled = _coaching_enabled_for_user(s, int(user.id))
-        except Exception:
-            coaching_enabled = False
-        if completed_assessment or coaching_enabled:
-            if normalized_body in {"hi", "hello", "start", "send", "hit start", "hit send", "tap start", "tap send"}:
-                send_menu_options(user)
+        if _general_support_ready():
+            try:
+                if not general_support.has_active_state(int(user.id)):
+                    general_support.activate(int(user.id), source="app_home", week_no=None, send_intro=False)
+                general_support.handle_message(user, body)
+            except Exception as e:
+                send_coaching_text(user=user, text=f"Support reply failed: {e}", source="app_chat")
             return True
         _start_assessment_async(user, force_intro=True)
         return True
 
     if general_support.has_active_state(user.id):
         general_support.handle_message(user, body)
+        return True
+
+    if _general_support_ready():
+        try:
+            general_support.activate(int(user.id), source="app_home", week_no=None, send_intro=False)
+            general_support.handle_message(user, body)
+        except Exception as e:
+            send_coaching_text(user=user, text=f"Support reply failed: {e}", source="app_chat")
         return True
 
     try:

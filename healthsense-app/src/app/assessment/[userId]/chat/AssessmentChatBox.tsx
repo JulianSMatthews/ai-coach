@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { getPillarPalette } from "@/lib/pillars";
@@ -490,6 +491,7 @@ export default function AssessmentChatBox({
   const showResultsGate = allowResultSummaryInChat && Boolean(resultSummary) && !promptActive && identityRequired;
   const showResultCard = allowResultSummaryInChat && Boolean(resultSummary) && !promptActive && !identityRequired;
   const showAssessmentControls = !assessmentCompleted && !isLeadGuest && !promptActive && (!leadFlow || !chatReady);
+  const showHomeChatPanel = assessmentCompleted && !leadFlow && !isLeadGuest && !showResultsGate && !showResultCard && !promptActive;
   const completionSummaryRunId = parsePositiveUserId(resultSummary?.run_id);
   const completionSummaryVideoStorageKey = useMemo(
     () => (completionSummaryRunId ? `hs:assessment-summary-video:${userId}:${completionSummaryRunId}` : null),
@@ -1309,6 +1311,88 @@ export default function AssessmentChatBox({
     </form>
   ) : null;
 
+  const homeChatPanel = showHomeChatPanel ? (
+    <section className="overflow-hidden rounded-[28px] border border-[#e7e1d6] bg-white shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]">
+      <div className="flex min-h-[46vh] flex-col sm:min-h-[30rem]">
+        <div className="flex-1 space-y-3 overflow-y-auto px-4 py-5 sm:px-5 sm:py-6">
+          {messages.length ? (
+            messages.map((message, index) => {
+              const direction = String(message.direction || "").trim().toLowerCase();
+              const isUserMessage = direction === "inbound";
+              const text = String(message.text || "").trim();
+              if (!text) return null;
+              return (
+                <div
+                  key={`${message.id || "msg"}-${index}`}
+                  className={`flex ${isUserMessage ? "justify-end" : "justify-start"}`}
+                >
+                  <div className={`flex max-w-[88%] items-end gap-2 ${isUserMessage ? "flex-row-reverse" : "flex-row"}`}>
+                    <div
+                      className={`rounded-[24px] px-4 py-3 text-sm leading-6 ${
+                        isUserMessage
+                          ? "bg-[var(--accent)] text-white"
+                          : "border border-[#efe7db] bg-[#fffaf3] text-[#3c332b]"
+                      }`}
+                    >
+                      <p className="whitespace-pre-wrap">{text}</p>
+                    </div>
+                    {!isUserMessage ? (
+                      <Image
+                        src="/healthsense-mark.svg"
+                        alt=""
+                        aria-hidden
+                        width={18}
+                        height={18}
+                        className="mb-1 h-[18px] w-[18px] flex-none opacity-90"
+                      />
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <div className="flex h-full min-h-[14rem] items-center justify-center rounded-[24px] border border-dashed border-[#e7e1d6] bg-[#fffaf3] px-6 text-center">
+              <p className="max-w-sm text-sm leading-6 text-[#6b6257]">
+                Ask Gia a question here and HealthSense will respond with coaching support.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <div className="border-t border-[#efe7db] px-4 py-4 sm:px-5">
+          <form onSubmit={onSubmit} className="relative">
+            <textarea
+              id="assessment-chat-input"
+              className="w-full rounded-[28px] border border-[#efe7db] bg-white px-4 py-4 pr-16 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
+              rows={3}
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              onKeyDown={onDraftKeyDown}
+              disabled={busy}
+            />
+            <button
+              type="submit"
+              aria-label={sending ? "Sending" : "Send message"}
+              className="absolute right-3 bottom-3 inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--accent)] bg-[var(--accent)] text-white shadow-[0_16px_30px_-18px_rgba(197,72,23,0.75)] disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={busy || !draft.trim()}
+            >
+              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
+                <path
+                  d="M12 19V7M6 13l6-6 6 6"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+          </form>
+          {status ? <p className="mt-3 text-sm text-[#6b6257]">{status}</p> : null}
+        </div>
+      </div>
+    </section>
+  ) : null;
+
   return (
     <div className="space-y-4">
       {showAssessmentControls ? (
@@ -1354,7 +1438,9 @@ export default function AssessmentChatBox({
         <div key="assessment-results-card" className="space-y-4">{resultCard}</div>
       ) : null}
 
-      {!currentPrompt && !showResultCard && !showResultsGate ? (
+      {homeChatPanel}
+
+      {!showHomeChatPanel && !currentPrompt && !showResultCard && !showResultsGate ? (
         <form onSubmit={onSubmit} className="relative">
           <textarea
             id="assessment-chat-input"
@@ -1373,7 +1459,7 @@ export default function AssessmentChatBox({
           >
             <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
               <path
-                d="M5 12h12M13 6l6 6-6 6"
+                d="M12 19V7M6 13l6-6 6 6"
                 stroke="currentColor"
                 strokeWidth="2"
                 strokeLinecap="round"
@@ -1384,7 +1470,7 @@ export default function AssessmentChatBox({
         </form>
       ) : null}
 
-      {status ? <p className="text-sm text-[#6b6257]">{status}</p> : null}
+      {!showHomeChatPanel && status ? <p className="text-sm text-[#6b6257]">{status}</p> : null}
     </div>
   );
 }

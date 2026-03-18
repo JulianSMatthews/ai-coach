@@ -1,4 +1,3 @@
-import Image from "next/image";
 import { cookies } from "next/headers";
 import {
   getPillarTrackerSummary,
@@ -258,12 +257,6 @@ export default async function AssessmentChatPage(props: PageProps) {
       <TextScale defaultScale={textScale} />
 
       <section className="space-y-3 sm:space-y-4">
-        {!leadFlow ? (
-          <div className="flex items-center gap-3 px-1">
-            <Image src="/healthsense-mark.svg" alt="" aria-hidden width={32} height={32} className="h-8 w-8 flex-none" />
-            <p className="text-base font-semibold text-[#1e1b16]">Coach Gia</p>
-          </div>
-        ) : null}
         {chatIntroText ? <p className="text-sm text-[#6b6257]">{chatIntroText}</p> : null}
         <AssessmentChatBox
           userId={userId}
