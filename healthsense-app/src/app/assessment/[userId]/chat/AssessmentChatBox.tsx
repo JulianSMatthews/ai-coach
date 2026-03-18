@@ -1360,32 +1360,16 @@ export default function AssessmentChatBox({
         </div>
 
         <div className="border-t border-[#efe7db] px-4 py-4 sm:px-5">
-          <form onSubmit={onSubmit} className="relative">
+          <form onSubmit={onSubmit}>
             <textarea
               id="assessment-chat-input"
-              className="w-full rounded-[28px] border border-[#efe7db] bg-white px-4 py-4 pr-16 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
+              className="w-full rounded-[28px] border border-[#efe7db] bg-white px-4 py-4 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
               rows={3}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={onDraftKeyDown}
               disabled={busy}
             />
-            <button
-              type="submit"
-              aria-label={sending ? "Sending" : "Send message"}
-              className="absolute right-3 bottom-3 inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--accent)] bg-[var(--accent)] text-white shadow-[0_16px_30px_-18px_rgba(197,72,23,0.75)] disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={busy || !draft.trim()}
-            >
-              <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
-                <path
-                  d="M12 19V7M6 13l6-6 6 6"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
           </form>
           {status ? <p className="mt-3 text-sm text-[#6b6257]">{status}</p> : null}
         </div>
@@ -1441,32 +1425,16 @@ export default function AssessmentChatBox({
       {homeChatPanel}
 
       {!showHomeChatPanel && !currentPrompt && !showResultCard && !showResultsGate ? (
-        <form onSubmit={onSubmit} className="relative">
+        <form onSubmit={onSubmit}>
           <textarea
             id="assessment-chat-input"
-            className="w-full rounded-[28px] border border-[#efe7db] bg-white px-4 py-3 pr-16 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
+            className="w-full rounded-[28px] border border-[#efe7db] bg-white px-4 py-3 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
             rows={3}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={onDraftKeyDown}
             disabled={busy}
           />
-          <button
-            type="submit"
-            aria-label={sending ? "Sending" : "Send message"}
-            className="absolute right-3 bottom-3 inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--accent)] bg-[var(--accent)] text-white shadow-[0_16px_30px_-18px_rgba(197,72,23,0.75)] disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={busy || !draft.trim()}
-          >
-            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
-              <path
-                d="M12 19V7M6 13l6-6 6 6"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </button>
         </form>
       ) : null}
 
