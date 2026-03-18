@@ -1,8 +1,8 @@
+import Image from "next/image";
 import { cookies } from "next/headers";
 import { getAssessment, getUserStatus, type AssessmentResponse, type UserStatusResponse } from "@/lib/api";
 import { Card, PageShell, SectionHeader } from "@/components/ui";
 import TextScale from "@/components/TextScale";
-import AppNav from "@/components/AppNav";
 import AssessmentChatBox from "./AssessmentChatBox";
 import LeadAssessmentBranding from "./LeadAssessmentBranding";
 import LatestAssessmentPanel from "./LatestAssessmentPanel";
@@ -153,7 +153,7 @@ export default async function AssessmentChatPage(props: PageProps) {
   const { userId } = await props.params;
   const resolvedSearchParams = (await props.searchParams) || {};
   const pageShellClassName = "px-3 py-4 sm:px-5 sm:py-6";
-  const pageContentClassName = "mx-auto max-w-3xl space-y-4 sm:space-y-5";
+  const pageContentClassName = "mx-auto max-w-4xl space-y-4 sm:space-y-5";
   const chatPath = `/assessment/${encodeURIComponent(userId)}/chat${isTruthyToken(resolvedSearchParams.lead) ? "?lead=1" : ""}`;
   const reloginHref = `/login?next=${encodeURIComponent(chatPath)}`;
   const leadFlow = isTruthyToken(resolvedSearchParams.lead);
@@ -198,11 +198,6 @@ export default async function AssessmentChatPage(props: PageProps) {
   }
   const prefs = status.coaching_preferences || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
-  const promptState = (status.prompt_state_override || "").toLowerCase();
-  const promptBadge =
-    promptState && promptState !== "live"
-      ? `${promptState.charAt(0).toUpperCase()}${promptState.slice(1)} mode`
-      : "";
   const assessmentCompleted =
     status.status === "completed" ||
     Boolean(status.onboarding?.assessment_completed_at) ||
@@ -227,7 +222,6 @@ export default async function AssessmentChatPage(props: PageProps) {
     const shouldRelogin = statusLoadError.status === 401 || statusLoadError.status === 403;
     return (
       <PageShell className={pageShellClassName} contentClassName={pageContentClassName}>
-        <SectionHeader title={<span className="text-2xl sm:text-3xl">My Coach Gia</span>} />
         <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
           <h2 className="text-xl">My Coach Gia is unavailable</h2>
           <p className="mt-2 text-sm text-[#6b6257]">
@@ -257,10 +251,14 @@ export default async function AssessmentChatPage(props: PageProps) {
   return (
     <PageShell className={pageShellClassName} contentClassName={pageContentClassName}>
       <TextScale defaultScale={textScale} />
-      {!leadFlow ? <AppNav userId={userId} promptBadge={promptBadge} /> : null}
-      {!leadFlow ? <SectionHeader title={<span className="text-2xl sm:text-3xl">My Coach Gia</span>} /> : null}
 
       <section className="space-y-3 sm:space-y-4">
+        {!leadFlow ? (
+          <div className="flex items-center gap-3 px-1">
+            <Image src="/healthsense-mark.svg" alt="" aria-hidden width={32} height={32} className="h-8 w-8 flex-none" />
+            <p className="text-base font-semibold text-[#1e1b16]">Coach Gia</p>
+          </div>
+        ) : null}
         {chatIntroText ? <p className="text-sm text-[#6b6257]">{chatIntroText}</p> : null}
         <AssessmentChatBox
           userId={userId}
