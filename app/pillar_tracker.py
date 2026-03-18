@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import json
+import math
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -9,9 +11,8 @@ from typing import Any
 from sqlalchemy import desc, select
 
 from .db import SessionLocal, engine
-from .models import AssessmentRun, DailyPillarTrackerEntry, PillarResult
-from .seed import CONCEPTS
-
+from .models import AssessmentRun, DailyPillarTrackerEntry, PillarResult, OKRObjective, OKRKeyResult
+from .okr import _GUIDE, _guess_concept_from_description, _normalize_concept_key
 _TRACKER_SCHEMA_READY = False
 _TRACKER_TIMEZONE = (os.getenv("PILLAR_TRACKER_TIMEZONE") or "Europe/London").strip() or "Europe/London"
 
@@ -33,6 +34,19 @@ class PillarTrackerConceptDefinition:
     score_mode: str
     score_floor: float = 0.0
     score_ceiling: float = 1.0
+
+
+@dataclass(frozen=True)
+class PillarTrackerResolvedTarget:
+    source: str
+    target_value: float | None
+    target_direction: str
+    target_unit: str | None
+    target_period: str | None
+    target_label: str | None
+    metric_label: str | None
+    success_value: float
+    success_direction: str
 
 
 PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
@@ -114,57 +128,47 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
         PillarTrackerConceptDefinition(
             concept_key="emotional_regulation",
             label="Calm & Control",
-            helper="today",
-            options=tuple(PillarTrackerOption(float(v), str(v)) for v in range(1, 6)),
-            target_value=4,
+            helper="Calm and in control for most of today?",
+            options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
+            target_value=1,
             target_direction="gte",
-            score_mode="likert",
-            score_floor=1,
-            score_ceiling=5,
+            score_mode="binary",
         ),
         PillarTrackerConceptDefinition(
             concept_key="positive_connection",
             label="Positive Connection",
-            helper="today",
-            options=tuple(PillarTrackerOption(float(v), str(v)) for v in range(1, 6)),
-            target_value=4,
+            helper="Did you take time for yourself or connect positively today?",
+            options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
+            target_value=1,
             target_direction="gte",
-            score_mode="likert",
-            score_floor=1,
-            score_ceiling=5,
+            score_mode="binary",
         ),
         PillarTrackerConceptDefinition(
             concept_key="stress_recovery",
             label="Stress Recovery",
-            helper="today",
-            options=tuple(PillarTrackerOption(float(v), str(v)) for v in range(1, 6)),
-            target_value=4,
+            helper="Did you use a reset or recovery strategy today?",
+            options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
+            target_value=1,
             target_direction="gte",
-            score_mode="likert",
-            score_floor=1,
-            score_ceiling=5,
+            score_mode="binary",
         ),
         PillarTrackerConceptDefinition(
             concept_key="optimism_perspective",
             label="Perspective",
-            helper="today",
-            options=tuple(PillarTrackerOption(float(v), str(v)) for v in range(1, 6)),
-            target_value=4,
+            helper="Did you stay positive and keep perspective today?",
+            options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
+            target_value=1,
             target_direction="gte",
-            score_mode="likert",
-            score_floor=1,
-            score_ceiling=5,
+            score_mode="binary",
         ),
         PillarTrackerConceptDefinition(
             concept_key="support_openness",
             label="Support",
-            helper="today",
-            options=tuple(PillarTrackerOption(float(v), str(v)) for v in range(1, 6)),
-            target_value=4,
+            helper="Did you open up or seek support today?",
+            options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
+            target_value=1,
             target_direction="gte",
-            score_mode="likert",
-            score_floor=1,
-            score_ceiling=5,
+            score_mode="binary",
         ),
     ),
     "recovery": (
@@ -180,13 +184,11 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
         PillarTrackerConceptDefinition(
             concept_key="sleep_quality",
             label="Rested",
-            helper="this morning",
-            options=tuple(PillarTrackerOption(float(v), str(v)) for v in range(1, 6)),
-            target_value=4,
+            helper="Did you wake up rested and refreshed this morning?",
+            options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
+            target_value=1,
             target_direction="gte",
-            score_mode="likert",
-            score_floor=1,
-            score_ceiling=5,
+            score_mode="binary",
         ),
         PillarTrackerConceptDefinition(
             concept_key="bedtime_consistency",
@@ -265,7 +267,30 @@ def _to_value_label(defn: PillarTrackerConceptDefinition, value: float | None) -
     for option in defn.options:
         if float(option.value) == float(value):
             return option.label
+    if defn.score_mode == "binary":
+        return "Yes" if float(value) >= 1 else "No"
     return str(value)
+
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except Exception:
+        return None
+
+
+def _normalize_option_value(defn: PillarTrackerConceptDefinition, value: Any) -> float | None:
+    normalized = _safe_float(value)
+    if normalized is None:
+        return None
+    allowed_values = {float(option.value) for option in defn.options}
+    if normalized in allowed_values:
+        return normalized
+    if defn.score_mode == "binary":
+        return 1.0 if normalized >= 1.0 else 0.0
+    return normalized
 
 
 def _score_value(defn: PillarTrackerConceptDefinition, value: float) -> int:
@@ -284,10 +309,264 @@ def _score_value(defn: PillarTrackerConceptDefinition, value: float) -> int:
     return int(round(max(0.0, min(1.0, pct)) * 100))
 
 
-def _target_met(defn: PillarTrackerConceptDefinition, value: float) -> bool:
-    if defn.target_direction == "lte":
-        return value <= defn.target_value
-    return value >= defn.target_value
+def _value_meets_threshold(direction: str, threshold: float, value: float) -> bool:
+    if direction == "lte":
+        return value <= threshold
+    return value >= threshold
+
+
+def _target_period_from_unit(unit: str | None) -> str | None:
+    token = str(unit or "").strip().lower()
+    if token.endswith("/week") or token.endswith("per week") or token.endswith("week"):
+        return "week"
+    if token.endswith("/day") or token.endswith("per day") or token.endswith("day"):
+        return "day"
+    return None
+
+
+def _format_target_number(value: float | None) -> str | None:
+    if value is None:
+        return None
+    rounded = round(float(value), 2)
+    if abs(rounded - round(rounded)) < 1e-9:
+        return str(int(round(rounded)))
+    return f"{rounded:.2f}".rstrip("0").rstrip(".")
+
+
+def _format_target_label(value: float | None, unit: str | None) -> str | None:
+    number = _format_target_number(value)
+    if not number:
+        return None
+    unit_text = str(unit or "").strip()
+    if unit_text:
+        return f"Target {number} {unit_text}"
+    return f"Target {number}"
+
+
+def _score_against_daily_target(
+    defn: PillarTrackerConceptDefinition,
+    value: float,
+    *,
+    target_value: float | None,
+    target_direction: str,
+) -> int:
+    target = _safe_float(target_value)
+    if target is None or target <= 0:
+        return _score_value(defn, value)
+    if target_direction == "lte":
+        if value <= target:
+            return 100
+        ceiling = max(target + 1.0, float(defn.score_ceiling or 0) or (target + 1.0))
+        span = max(1.0, ceiling - target)
+        pct = 1.0 - min(max(value - target, 0.0), span) / span
+        return int(round(max(0.0, min(1.0, pct)) * 100))
+    pct = max(0.0, min(1.0, value / target))
+    return int(round(pct * 100))
+
+
+def _kr_notes_dict(notes: str | None) -> dict[str, Any]:
+    if not notes:
+        return {}
+    try:
+        data = json.loads(notes)
+        if isinstance(data, dict):
+            return data
+    except Exception:
+        pass
+    return {}
+
+
+def _guide_meta(pillar_key: str, concept_key: str) -> dict[str, str]:
+    return ((_GUIDE.get(str(pillar_key or "").strip().lower(), {}) or {}).get(str(concept_key or "").strip().lower(), {}) or {})
+
+
+def _extract_kr_concept_key(pillar_key: str, kr: OKRKeyResult) -> str | None:
+    notes_dict = _kr_notes_dict(getattr(kr, "notes", None))
+    concept_key = notes_dict.get("concept_key")
+    if concept_key:
+        concept_key = str(concept_key).split(".")[-1]
+    if not concept_key:
+        concept_key = _guess_concept_from_description(pillar_key, getattr(kr, "description", "") or "")
+    normalized = _normalize_concept_key(concept_key) if concept_key else ""
+    return normalized or None
+
+
+def _kr_priority(kr: OKRKeyResult) -> tuple[int, int, int]:
+    status_token = str(getattr(kr, "status", "") or "").strip().lower()
+    target_present = 1 if _safe_float(getattr(kr, "target_num", None)) is not None else 0
+    active = 1 if status_token in {"", "active"} else 0
+    return (active, target_present, int(getattr(kr, "id", 0) or 0))
+
+
+def _default_resolved_target(pillar_key: str, defn: PillarTrackerConceptDefinition) -> PillarTrackerResolvedTarget:
+    guide = _guide_meta(pillar_key, defn.concept_key)
+    unit = guide.get("unit")
+    period = _target_period_from_unit(unit)
+    default_target = defn.target_value if period != "week" else None
+    return PillarTrackerResolvedTarget(
+        source="default",
+        target_value=default_target,
+        target_direction=defn.target_direction,
+        target_unit=unit,
+        target_period=period,
+        target_label=_format_target_label(default_target, unit),
+        metric_label=guide.get("label"),
+        success_value=defn.target_value,
+        success_direction=defn.target_direction,
+    )
+
+
+def _resolve_pillar_targets_for_user(
+    user_id: int,
+    pillar_key: str,
+    required_concepts: tuple[PillarTrackerConceptDefinition, ...],
+) -> dict[str, PillarTrackerResolvedTarget]:
+    key = str(pillar_key or "").strip().lower()
+    resolved = {
+        item.concept_key: _default_resolved_target(key, item)
+        for item in required_concepts
+    }
+    with SessionLocal() as s:
+        objective = (
+            s.execute(
+                select(OKRObjective)
+                .where(
+                    OKRObjective.owner_user_id == int(user_id),
+                    OKRObjective.pillar_key == key,
+                )
+                .order_by(desc(OKRObjective.created_at), desc(OKRObjective.id))
+            )
+            .scalars()
+            .first()
+        )
+        if objective is None:
+            return resolved
+        rows = (
+            s.execute(
+                select(OKRKeyResult)
+                .where(OKRKeyResult.objective_id == int(objective.id))
+                .order_by(desc(OKRKeyResult.updated_at), desc(OKRKeyResult.id))
+            )
+            .scalars()
+            .all()
+        )
+    best_by_concept: dict[str, OKRKeyResult] = {}
+    for row in rows:
+        concept_key = _extract_kr_concept_key(key, row)
+        if not concept_key or concept_key not in resolved:
+            continue
+        current = best_by_concept.get(concept_key)
+        if current is None or _kr_priority(row) > _kr_priority(current):
+            best_by_concept[concept_key] = row
+    for concept_key, kr in best_by_concept.items():
+        current = resolved[concept_key]
+        target_value = _safe_float(getattr(kr, "target_num", None))
+        unit = str(getattr(kr, "unit", "") or "").strip() or current.target_unit
+        resolved[concept_key] = PillarTrackerResolvedTarget(
+            source="okr" if target_value is not None else current.source,
+            target_value=target_value if target_value is not None else current.target_value,
+            target_direction=current.target_direction,
+            target_unit=unit,
+            target_period=_target_period_from_unit(unit) or current.target_period,
+            target_label=_format_target_label(target_value, unit) if target_value is not None else current.target_label,
+            metric_label=str(getattr(kr, "metric_label", "") or "").strip() or current.metric_label,
+            success_value=current.success_value,
+            success_direction=current.success_direction,
+        )
+    return resolved
+
+
+def _target_met_for_value(
+    defn: PillarTrackerConceptDefinition,
+    value: float,
+    resolved_target: PillarTrackerResolvedTarget,
+) -> bool:
+    if resolved_target.target_period == "day" and resolved_target.target_value is not None:
+        return _value_meets_threshold(resolved_target.target_direction, resolved_target.target_value, value)
+    return _value_meets_threshold(resolved_target.success_direction, resolved_target.success_value, value)
+
+
+def _score_for_value(
+    defn: PillarTrackerConceptDefinition,
+    value: float,
+    resolved_target: PillarTrackerResolvedTarget,
+) -> int:
+    if resolved_target.target_period == "day" and resolved_target.target_value is not None:
+        return _score_against_daily_target(
+            defn,
+            value,
+            target_value=resolved_target.target_value,
+            target_direction=resolved_target.target_direction,
+        )
+    return _score_value(defn, value)
+
+
+def _week_target_expected(target_value: float, day_number: int) -> int:
+    if target_value <= 0:
+        return 0
+    return max(0, int(math.ceil((float(target_value) * float(day_number)) / 7.0 - 1e-9)))
+
+
+def _build_concept_week_evaluations(
+    entries_by_day: dict[date, dict[str, DailyPillarTrackerEntry]],
+    required_concepts: tuple[PillarTrackerConceptDefinition, ...],
+    resolved_targets: dict[str, PillarTrackerResolvedTarget],
+    week_days: list[date],
+) -> dict[str, dict[date, dict[str, Any]]]:
+    evaluations: dict[str, dict[date, dict[str, Any]]] = {}
+    for concept_def in required_concepts:
+        concept_key = concept_def.concept_key
+        resolved_target = resolved_targets.get(concept_key) or _default_resolved_target("", concept_def)
+        concept_rows: dict[date, dict[str, Any]] = {}
+        success_count = 0
+        for index, day in enumerate(week_days, start=1):
+            row = (entries_by_day.get(day) or {}).get(concept_key)
+            if row is None or getattr(row, "value_num", None) is None:
+                concept_rows[day] = {
+                    "row": row,
+                    "value": None,
+                    "value_label": None,
+                    "score": None,
+                    "target_met": None,
+                    "target_reached": None,
+                }
+                continue
+            value = _normalize_option_value(concept_def, getattr(row, "value_num", 0))
+            if value is None:
+                concept_rows[day] = {
+                    "row": row,
+                    "value": None,
+                    "value_label": None,
+                    "score": None,
+                    "target_met": None,
+                    "target_reached": None,
+                }
+                continue
+            value_label = _to_value_label(concept_def, value) or str(getattr(row, "value_label", "") or "").strip() or None
+            target_reached = _value_meets_threshold(
+                resolved_target.success_direction,
+                resolved_target.success_value,
+                value,
+            )
+            if resolved_target.target_period == "week" and resolved_target.target_value is not None:
+                if target_reached:
+                    success_count += 1
+                expected = _week_target_expected(resolved_target.target_value, index)
+                score = 100 if expected <= 0 else int(round(max(0.0, min(1.0, success_count / expected)) * 100))
+                target_met = success_count >= expected if expected > 0 else True
+            else:
+                score = _score_for_value(concept_def, value, resolved_target)
+                target_met = _target_met_for_value(concept_def, value, resolved_target)
+            concept_rows[day] = {
+                "row": row,
+                "value": value,
+                "value_label": value_label,
+                "score": score,
+                "target_met": target_met,
+                "target_reached": target_reached,
+            }
+        evaluations[concept_key] = concept_rows
+    return evaluations
 
 
 def _latest_assessment_scores_for_user(user_id: int) -> dict[str, int]:
@@ -351,10 +630,24 @@ def _day_complete(day_rows: dict[str, DailyPillarTrackerEntry], required_concept
     return required_keys.issubset(set(day_rows.keys()))
 
 
-def _day_score(day_rows: dict[str, DailyPillarTrackerEntry], required_concepts: tuple[PillarTrackerConceptDefinition, ...]) -> int | None:
+def _day_score(
+    day_rows: dict[str, DailyPillarTrackerEntry],
+    required_concepts: tuple[PillarTrackerConceptDefinition, ...],
+    evaluations_by_concept: dict[str, dict[date, dict[str, Any]]],
+    day: date,
+) -> int | None:
     if not _day_complete(day_rows, required_concepts):
         return None
-    scores = [int(getattr(day_rows[item.concept_key], "score", 0) or 0) for item in required_concepts]
+    scores: list[int] = []
+    for item in required_concepts:
+        score = (
+            evaluations_by_concept.get(item.concept_key, {})
+            .get(day, {})
+            .get("score")
+        )
+        if score is None:
+            return None
+        scores.append(int(score))
     if not scores:
         return None
     return int(round(sum(scores) / max(1, len(scores))))
@@ -381,25 +674,28 @@ def _completion_streak_days(
     return streak
 
 
-def _concept_target_streak_days(
-    entries_by_day: dict[date, dict[str, DailyPillarTrackerEntry]],
-    concept_key: str,
-    anchor: date,
-) -> int:
+def _concept_target_streak_days(evaluations_for_concept: dict[date, dict[str, Any]], anchor: date) -> int:
     streak = 0
     for offset in range(0, 7):
         day = anchor - timedelta(days=offset)
         if day < start_of_week(anchor):
             break
-        row = (entries_by_day.get(day) or {}).get(concept_key)
-        if row is None or not bool(getattr(row, "target_met", False)):
+        if not bool((evaluations_for_concept.get(day) or {}).get("target_met")):
             break
         streak += 1
     return streak
 
 
-def _week_score(entries_by_day: dict[date, dict[str, DailyPillarTrackerEntry]], required_concepts: tuple[PillarTrackerConceptDefinition, ...]) -> int | None:
-    scores = [_day_score(rows, required_concepts) for rows in entries_by_day.values()]
+def _week_score(
+    entries_by_day: dict[date, dict[str, DailyPillarTrackerEntry]],
+    required_concepts: tuple[PillarTrackerConceptDefinition, ...],
+    evaluations_by_concept: dict[str, dict[date, dict[str, Any]]],
+    week_days: list[date],
+) -> int | None:
+    scores = [
+        _day_score(entries_by_day.get(day, {}), required_concepts, evaluations_by_concept, day)
+        for day in week_days
+    ]
     completed_scores = [score for score in scores if score is not None]
     if not completed_scores:
         return None
@@ -410,11 +706,13 @@ def _summary_pillar_payload(
     *,
     pillar_key: str,
     entries_by_day: dict[date, dict[str, DailyPillarTrackerEntry]],
+    required_concepts: tuple[PillarTrackerConceptDefinition, ...],
+    evaluations_by_concept: dict[str, dict[date, dict[str, Any]]],
+    week_days: list[date],
     anchor: date,
     baseline_score: int | None,
 ) -> dict[str, Any]:
-    required_concepts = tracker_concepts_for_pillar(pillar_key)
-    tracker_score = _week_score(entries_by_day, required_concepts)
+    tracker_score = _week_score(entries_by_day, required_concepts, evaluations_by_concept, week_days)
     completed_days = _completed_days(entries_by_day, required_concepts)
     return {
         "pillar_key": pillar_key,
@@ -432,18 +730,24 @@ def get_pillar_tracker_summary(user_id: int, anchor: date | None = None) -> dict
     ensure_pillar_tracker_schema()
     resolved_anchor = anchor or tracker_today()
     baseline_scores = _latest_assessment_scores_for_user(user_id)
+    week_days = _week_days(resolved_anchor)
     pillars = []
     for pillar_key in PILLAR_TRACKER_CONFIG.keys():
+        required_concepts = tracker_concepts_for_pillar(pillar_key)
         entries_by_day = _load_week_entries(user_id, pillar_key, resolved_anchor)
+        resolved_targets = _resolve_pillar_targets_for_user(user_id, pillar_key, required_concepts)
+        evaluations_by_concept = _build_concept_week_evaluations(entries_by_day, required_concepts, resolved_targets, week_days)
         pillars.append(
             _summary_pillar_payload(
                 pillar_key=pillar_key,
                 entries_by_day=entries_by_day,
+                required_concepts=required_concepts,
+                evaluations_by_concept=evaluations_by_concept,
+                week_days=week_days,
                 anchor=resolved_anchor,
                 baseline_score=baseline_scores.get(pillar_key),
             )
         )
-    week_days = _week_days(resolved_anchor)
     return {
         "week": {
             "anchor_date": resolved_anchor.isoformat(),
@@ -462,11 +766,16 @@ def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None
     entries_by_day = _load_week_entries(user_id, key, resolved_anchor)
     baseline_scores = _latest_assessment_scores_for_user(user_id)
     week_days = _week_days(resolved_anchor)
-    tracker_score = _week_score(entries_by_day, required_concepts)
+    resolved_targets = _resolve_pillar_targets_for_user(user_id, key, required_concepts)
+    evaluations_by_concept = _build_concept_week_evaluations(entries_by_day, required_concepts, resolved_targets, week_days)
+    tracker_score = _week_score(entries_by_day, required_concepts, evaluations_by_concept, week_days)
     completed_days = _completed_days(entries_by_day, required_concepts)
     current_summary = _summary_pillar_payload(
         pillar_key=key,
         entries_by_day=entries_by_day,
+        required_concepts=required_concepts,
+        evaluations_by_concept=evaluations_by_concept,
+        week_days=week_days,
         anchor=resolved_anchor,
         baseline_score=baseline_scores.get(key),
     )
@@ -474,35 +783,50 @@ def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None
     today_rows = entries_by_day.get(resolved_anchor, {})
     for concept_def in required_concepts:
         current_row = today_rows.get(concept_def.concept_key)
+        resolved_target = resolved_targets.get(concept_def.concept_key) or _default_resolved_target(key, concept_def)
+        evaluations_for_concept = evaluations_by_concept.get(concept_def.concept_key, {})
+        today_eval = evaluations_for_concept.get(resolved_anchor, {})
         concepts_payload.append(
             {
                 "concept_key": concept_def.concept_key,
                 "label": concept_def.label,
                 "helper": concept_def.helper,
+                "target_label": resolved_target.target_label,
+                "target_source": resolved_target.source,
+                "target_period": resolved_target.target_period,
+                "target_unit": resolved_target.target_unit,
+                "target_value": resolved_target.target_value,
                 "options": [{"value": option.value, "label": option.label} for option in concept_def.options],
-                "value": float(current_row.value_num) if current_row and current_row.value_num is not None else None,
-                "value_label": str(getattr(current_row, "value_label", "") or "").strip() or None,
-                "score": int(getattr(current_row, "score", 0) or 0) if current_row and current_row.score is not None else None,
-                "target_met": bool(getattr(current_row, "target_met", False)) if current_row else None,
-                "streak_days": _concept_target_streak_days(entries_by_day, concept_def.concept_key, resolved_anchor),
+                "value": (
+                    _normalize_option_value(concept_def, current_row.value_num)
+                    if current_row and current_row.value_num is not None
+                    else None
+                ),
+                "value_label": (
+                    _to_value_label(
+                        concept_def,
+                        _normalize_option_value(concept_def, current_row.value_num),
+                    )
+                    if current_row and current_row.value_num is not None
+                    else None
+                ),
+                "score": int(today_eval.get("score")) if today_eval.get("score") is not None else None,
+                "target_met": bool(today_eval.get("target_met")) if today_eval.get("target_met") is not None else None,
+                "streak_days": _concept_target_streak_days(evaluations_for_concept, resolved_anchor),
                 "week": [
                     {
                         "date": day.isoformat(),
                         "label": day.strftime("%a")[:3],
                         "is_today": day == resolved_anchor,
-                        "value_label": (
-                            str(getattr((entries_by_day.get(day) or {}).get(concept_def.concept_key), "value_label", "") or "").strip()
-                            or None
-                        ),
+                        "value_label": evaluations_for_concept.get(day, {}).get("value_label"),
                         "score": (
-                            int(getattr((entries_by_day.get(day) or {}).get(concept_def.concept_key), "score", 0) or 0)
-                            if (entries_by_day.get(day) or {}).get(concept_def.concept_key) is not None
-                            and getattr((entries_by_day.get(day) or {}).get(concept_def.concept_key), "score", None) is not None
+                            int(evaluations_for_concept.get(day, {}).get("score"))
+                            if evaluations_for_concept.get(day, {}).get("score") is not None
                             else None
                         ),
                         "target_met": (
-                            bool(getattr((entries_by_day.get(day) or {}).get(concept_def.concept_key), "target_met", False))
-                            if (entries_by_day.get(day) or {}).get(concept_def.concept_key) is not None
+                            bool(evaluations_for_concept.get(day, {}).get("target_met"))
+                            if evaluations_for_concept.get(day, {}).get("target_met") is not None
                             else None
                         ),
                     }
@@ -530,7 +854,7 @@ def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None
                 "label": day.strftime("%a")[:3],
                 "is_today": day == resolved_anchor,
                 "complete": _day_complete(entries_by_day.get(day, {}), required_concepts),
-                "score": _day_score(entries_by_day.get(day, {}), required_concepts),
+                "score": _day_score(entries_by_day.get(day, {}), required_concepts, evaluations_by_concept, day),
             }
             for day in week_days
         ],
@@ -549,6 +873,7 @@ def save_pillar_tracker_day(
     resolved_date = score_date or tracker_today()
     key = str(pillar_key or "").strip().lower()
     required_concepts = tracker_concepts_for_pillar(key)
+    resolved_targets = _resolve_pillar_targets_for_user(user_id, key, required_concepts)
     entries = entries or []
     if len(entries) != len(required_concepts):
         raise ValueError("A complete pillar tracker requires all concept values for the day.")
@@ -560,10 +885,9 @@ def save_pillar_tracker_day(
             raise ValueError(f"Unknown concept for pillar {key}: {concept_key}")
         if concept_key in normalized_rows:
             raise ValueError(f"Duplicate concept value submitted: {concept_key}")
-        try:
-            value = float(raw.get("value"))
-        except Exception as exc:
-            raise ValueError(f"Invalid value for {concept_key}") from exc
+        value = _normalize_option_value(config_by_key[concept_key], (raw or {}).get("value"))
+        if value is None:
+            raise ValueError(f"Invalid value for {concept_key}")
         concept_def = config_by_key[concept_key]
         allowed_values = {float(option.value) for option in concept_def.options}
         if value not in allowed_values:
@@ -571,8 +895,8 @@ def save_pillar_tracker_day(
         normalized_rows[concept_key] = {
             "value_num": value,
             "value_label": _to_value_label(concept_def, value),
-            "score": _score_value(concept_def, value),
-            "target_met": _target_met(concept_def, value),
+            "score": _score_for_value(concept_def, value, resolved_targets.get(concept_key) or _default_resolved_target(key, concept_def)),
+            "target_met": _target_met_for_value(concept_def, value, resolved_targets.get(concept_key) or _default_resolved_target(key, concept_def)),
         }
     if set(normalized_rows.keys()) != set(config_by_key.keys()):
         raise ValueError("Each pillar tracker save must include every concept.")
@@ -606,8 +930,13 @@ def save_pillar_tracker_day(
             row.score = payload["score"]
             row.target_met = payload["target_met"]
             row.source = "self_report"
+            resolved_target = resolved_targets.get(concept_key)
             row.meta = {
                 "saved_at": datetime.utcnow().replace(microsecond=0).isoformat(),
+                "target_source": getattr(resolved_target, "source", None),
+                "target_value": getattr(resolved_target, "target_value", None),
+                "target_unit": getattr(resolved_target, "target_unit", None),
+                "target_period": getattr(resolved_target, "target_period", None),
             }
         s.commit()
     return get_pillar_tracker_detail(user_id, key, resolved_date)
