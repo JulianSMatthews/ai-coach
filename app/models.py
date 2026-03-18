@@ -951,6 +951,36 @@ class CheckIn(Base):
     created_at       = Column(DateTime, nullable=False, server_default=func.now())
 
 
+class DailyPillarTrackerEntry(Base):
+    __tablename__ = "daily_pillar_tracker_entries"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    score_date = Column(Date, nullable=False, index=True)
+    pillar_key = Column(String(64), nullable=False, index=True)
+    concept_key = Column(String(64), nullable=False, index=True)
+    value_num = Column(Float, nullable=True)
+    value_label = Column(String(120), nullable=True)
+    score = Column(Integer, nullable=True)
+    target_met = Column(Boolean, nullable=True)
+    source = Column(String(32), nullable=False, server_default=text("'self_report'"))
+    meta = Column(JSONType, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "score_date",
+            "pillar_key",
+            "concept_key",
+            name="uq_daily_pillar_tracker_entries_user_day_pillar_concept",
+        ),
+        Index("ix_daily_pillar_tracker_entries_user_day", "user_id", "score_date"),
+        Index("ix_daily_pillar_tracker_entries_user_pillar_day", "user_id", "pillar_key", "score_date"),
+    )
+
+
 class Touchpoint(Base):
     __tablename__ = "touchpoints"
 

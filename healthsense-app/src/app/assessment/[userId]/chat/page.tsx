@@ -1,6 +1,11 @@
 import Image from "next/image";
 import { cookies } from "next/headers";
-import { getAssessment, getUserStatus, type AssessmentResponse, type UserStatusResponse } from "@/lib/api";
+import {
+  getPillarTrackerSummary,
+  getUserStatus,
+  type PillarTrackerSummaryResponse,
+  type UserStatusResponse,
+} from "@/lib/api";
 import { Card, PageShell, SectionHeader } from "@/components/ui";
 import TextScale from "@/components/TextScale";
 import AssessmentChatBox from "./AssessmentChatBox";
@@ -210,12 +215,12 @@ export default async function AssessmentChatPage(props: PageProps) {
       : leadFlow
       ? ""
       : "Start your assessment with Gia here. Each question will guide you one step at a time.";
-  let latestAssessment: AssessmentResponse | null = null;
+  let pillarTrackerSummary: PillarTrackerSummaryResponse | null = null;
   if (!leadFlow && !leadGuest && assessmentCompleted && !assessmentInProgress) {
     try {
-      latestAssessment = await getAssessment(userId);
+      pillarTrackerSummary = await getPillarTrackerSummary(userId);
     } catch {
-      latestAssessment = null;
+      pillarTrackerSummary = null;
     }
   }
   if (statusLoadError && !leadFlow) {
@@ -270,7 +275,7 @@ export default async function AssessmentChatPage(props: PageProps) {
           coachProductAvatar={coachProductAvatar}
           introAvatarEnabledOverride={introAvatarOverride}
         />
-        {latestAssessment ? <LatestAssessmentPanel assessment={latestAssessment} /> : null}
+        {pillarTrackerSummary ? <LatestAssessmentPanel userId={userId} initialSummary={pillarTrackerSummary} /> : null}
       </section>
     </PageShell>
   );

@@ -32,7 +32,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text, select, desc, func, or_, update
 from pathlib import Path 
-from typing import Optional
+from typing import Any, Optional
 
 # Ensure .env is loaded even when running uvicorn directly (without run.py)
 try:
@@ -105,6 +105,7 @@ from .models import (
     WearableConnection,
     WearableSyncRun,
     WearableDailyMetric,
+    DailyPillarTrackerEntry,
 )  # ensure model registered for metadata
 from . import monday, wednesday, thursday, friday, saturday, weekflow, tuesday, sunday, kickoff, admin_routes, general_support, habit_selector
 from . import psych
@@ -190,6 +191,13 @@ from .wearables import (
     parse_wearable_oauth_state,
     provider_configured as wearable_provider_configured,
     provider_enabled as wearable_provider_enabled,
+)
+from .pillar_tracker import (
+    ensure_pillar_tracker_schema,
+    get_pillar_tracker_detail,
+    get_pillar_tracker_summary,
+    parse_tracker_anchor,
+    save_pillar_tracker_day,
 )
 
 # Lazy import holder to avoid startup/reload ImportError if symbol is added later
@@ -644,6 +652,10 @@ def on_startup():
                 ensure_wearables_schema()
             except Exception as e:
                 print(f"⚠️  Could not ensure wearable schema: {e!r}")
+            try:
+                ensure_pillar_tracker_schema()
+            except Exception as e:
+                print(f"⚠️  Could not ensure pillar tracker schema: {e!r}")
 
             reset_requested, reset_source, reset_values = _resolve_reset_requested()
             print(
@@ -6606,6 +6618,92 @@ def api_user_progress(
         tag="perf",
     )
     return data
+
+
+@api_v1.get("/users/{user_id}/pillar-tracker")
+def api_user_pillar_tracker_summary(
+    user_id: int,
+    request: Request,
+    anchor_date: str | None = None,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    ensure_pillar_tracker_schema()
+    if anchor_date:
+        anchor = parse_tracker_anchor(anchor_date)
+        if anchor is None:
+            raise HTTPException(status_code=400, detail="anchor_date must be YYYY-MM-DD")
+    else:
+        anchor = None
+    return get_pillar_tracker_summary(user_id, anchor=anchor)
+
+
+@api_v1.get("/users/{user_id}/pillar-tracker/{pillar_key}")
+def api_user_pillar_tracker_detail(
+    user_id: int,
+    pillar_key: str,
+    request: Request,
+    anchor_date: str | None = None,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    ensure_pillar_tracker_schema()
+    if anchor_date:
+        anchor = parse_tracker_anchor(anchor_date)
+        if anchor is None:
+            raise HTTPException(status_code=400, detail="anchor_date must be YYYY-MM-DD")
+    else:
+        anchor = None
+    try:
+        return get_pillar_tracker_detail(user_id, pillar_key, anchor=anchor)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@api_v1.post("/users/{user_id}/pillar-tracker/{pillar_key}")
+def api_user_pillar_tracker_save(
+    user_id: int,
+    pillar_key: str,
+    request: Request,
+    body: dict[str, Any] | None = Body(default=None),
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    ensure_pillar_tracker_schema()
+    payload = body or {}
+    raw_date = str(payload.get("score_date") or "").strip()
+    if raw_date:
+        score_date = parse_tracker_anchor(raw_date)
+        if score_date is None:
+            raise HTTPException(status_code=400, detail="score_date must be YYYY-MM-DD")
+    else:
+        score_date = None
+    raw_entries = payload.get("entries")
+    if not isinstance(raw_entries, list):
+        raise HTTPException(status_code=400, detail="entries must be a list")
+    try:
+        result = save_pillar_tracker_day(
+            user_id,
+            pillar_key,
+            score_date=score_date,
+            entries=[item for item in raw_entries if isinstance(item, dict)],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    _log_app_engagement_event(
+        user_id=user_id,
+        unit_type="pillar_tracker_update",
+        meta={
+            "page": "coach_home",
+            "pillar_key": str(pillar_key or "").strip().lower(),
+            "score_date": raw_date or result.get("pillar", {}).get("today"),
+        },
+    )
+    return result
+
 
 @api_v1.get("/users/{user_id}/status")
 def api_user_status_v1(

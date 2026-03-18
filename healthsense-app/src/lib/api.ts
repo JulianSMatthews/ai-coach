@@ -228,6 +228,70 @@ export type WearablesResponse = {
   providers?: WearableProviderState[];
 };
 
+export type PillarTrackerOption = {
+  value?: number;
+  label?: string;
+};
+
+export type PillarTrackerDay = {
+  date?: string;
+  label?: string;
+  is_today?: boolean;
+  complete?: boolean;
+  score?: number | null;
+};
+
+export type PillarTrackerConceptWeekDay = {
+  date?: string;
+  label?: string;
+  is_today?: boolean;
+  value_label?: string | null;
+  score?: number | null;
+  target_met?: boolean | null;
+};
+
+export type PillarTrackerConcept = {
+  concept_key?: string;
+  label?: string;
+  helper?: string;
+  options?: PillarTrackerOption[];
+  value?: number | null;
+  value_label?: string | null;
+  score?: number | null;
+  target_met?: boolean | null;
+  streak_days?: number | null;
+  week?: PillarTrackerConceptWeekDay[];
+};
+
+export type PillarTrackerPillar = {
+  pillar_key?: string;
+  label?: string;
+  score?: number | null;
+  tracker_score?: number | null;
+  baseline_score?: number | null;
+  source?: string | null;
+  completed_days_count?: number | null;
+  streak_days?: number | null;
+  week_start?: string | null;
+  week_end?: string | null;
+  today?: string | null;
+};
+
+export type PillarTrackerSummaryResponse = {
+  week?: {
+    anchor_date?: string;
+    start?: string;
+    end?: string;
+  };
+  pillars?: PillarTrackerPillar[];
+};
+
+export type PillarTrackerDetailResponse = {
+  pillar?: PillarTrackerPillar;
+  days?: PillarTrackerDay[];
+  concepts?: PillarTrackerConcept[];
+};
+
 export type CoachingHistoryResponse = {
   user?: { id?: number; display_name?: string };
   items?: Array<{
@@ -404,6 +468,15 @@ export async function getUserStatus(userId: string | number): Promise<UserStatus
 
 export async function getWearables(userId: string | number): Promise<WearablesResponse> {
   return apiGet<WearablesResponse>(`/api/v1/users/${userId}/wearables`);
+}
+
+export async function getPillarTrackerSummary(
+  userId: string | number,
+  anchorDate?: string,
+): Promise<PillarTrackerSummaryResponse> {
+  return apiGet<PillarTrackerSummaryResponse>(`/api/v1/users/${userId}/pillar-tracker`, {
+    query: { anchor_date: anchorDate },
+  });
 }
 
 export async function getCoachingHistory(
