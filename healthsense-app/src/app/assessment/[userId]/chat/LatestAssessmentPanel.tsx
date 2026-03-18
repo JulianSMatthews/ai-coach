@@ -50,6 +50,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<PillarTrackerDetailResponse | null>(null);
+  const [activePanel, setActivePanel] = useState<"habits" | "insight" | "ask">("habits");
   const [draft, setDraft] = useState<Record<string, number>>({});
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -57,6 +58,10 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
+  const strongestPillar = [...pillars].sort((a, b) => Number(b.score || 0) - Number(a.score || 0))[0] || null;
+  const weakestPillar = [...pillars].sort((a, b) => Number(a.score || 0) - Number(b.score || 0))[0] || null;
+  const longestStreak = pillars.reduce((best, pillar) => Math.max(best, Number(pillar.streak_days || 0)), 0);
+  const completedDaysTotal = pillars.reduce((total, pillar) => total + Number(pillar.completed_days_count || 0), 0);
   const concepts = Array.isArray(detail?.concepts) ? detail?.concepts : [];
   const canSave =
     !saving &&
@@ -108,6 +113,14 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
     setSaveError(null);
     setLoadingDetail(false);
     setSaving(false);
+  };
+
+  const focusChatInput = () => {
+    if (typeof window === "undefined") return;
+    const input = document.getElementById("assessment-chat-input") as HTMLTextAreaElement | null;
+    if (!input) return;
+    input.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => input.focus(), 120);
   };
 
   const saveTracker = async () => {
@@ -163,26 +176,95 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
   return (
     <>
       <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-5 sm:py-6">
-        <div className="grid grid-cols-2 gap-3">
-          {pillars.map((pillar) => {
-            const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
-            const palette = getPillarPalette(pillarKey);
-            const score = Number(pillar.score);
+        <div className="mb-4 grid grid-cols-3 gap-2">
+          {[
+            { key: "habits", label: "Habits" },
+            { key: "insight", label: "Insight" },
+            { key: "ask", label: "Ask" },
+          ].map((item) => {
+            const active = activePanel === item.key;
             return (
               <button
-                key={pillarKey}
+                key={item.key}
                 type="button"
-                onClick={() => void openTracker(pillarKey)}
-                className="rounded-2xl border border-[#efe7db] bg-white px-3 py-4 text-left transition hover:border-[#dccfbe]"
+                onClick={() => {
+                  setActivePanel(item.key as "habits" | "insight" | "ask");
+                  if (item.key === "ask") {
+                    focusChatInput();
+                  }
+                }}
+                className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition ${
+                  active
+                    ? "border border-[var(--accent)] bg-[var(--accent)] text-white"
+                    : "border border-[#d9cdbb] bg-white text-[#5d5348]"
+                }`}
               >
-                <div className="flex flex-col items-center text-center">
-                  <ScoreRing value={Number.isFinite(score) ? score : 0} tone={palette.accent} />
-                  <p className="mt-3 text-sm font-semibold text-[#1e1b16]">{pillar.label}</p>
-                </div>
+                {item.label}
               </button>
             );
           })}
         </div>
+
+        {activePanel === "habits" ? (
+          <div className="grid grid-cols-2 gap-3">
+            {pillars.map((pillar) => {
+              const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
+              const palette = getPillarPalette(pillarKey);
+              const score = Number(pillar.score);
+              return (
+                <button
+                  key={pillarKey}
+                  type="button"
+                  onClick={() => void openTracker(pillarKey)}
+                  className="rounded-2xl border border-[#efe7db] bg-white px-3 py-4 text-left transition hover:border-[#dccfbe]"
+                >
+                  <div className="flex flex-col items-center text-center">
+                    <ScoreRing value={Number.isFinite(score) ? score : 0} tone={palette.accent} />
+                    <p className="mt-3 text-sm font-semibold text-[#1e1b16]">{pillar.label}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        ) : null}
+
+        {activePanel === "insight" ? (
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
+              <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">This week</p>
+              <p className="mt-2 text-sm text-[#3c332b]">
+                {strongestPillar && weakestPillar
+                  ? `Your strongest tracked pillar so far is ${strongestPillar.label} and the area needing most attention is ${weakestPillar.label}.`
+                  : "Complete your first habit tracker to unlock your weekly insight."}
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4 text-center">
+                <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">Longest streak</p>
+                <p className="mt-2 text-2xl font-semibold text-[#1e1b16]">{longestStreak}</p>
+              </div>
+              <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4 text-center">
+                <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">Habit days logged</p>
+                <p className="mt-2 text-2xl font-semibold text-[#1e1b16]">{completedDaysTotal}</p>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {activePanel === "ask" ? (
+          <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-5">
+            <p className="text-sm text-[#3c332b]">
+              Ask Gia anything about your habits, weekly progress, or what to focus on next.
+            </p>
+            <button
+              type="button"
+              onClick={focusChatInput}
+              className="mt-4 rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white"
+            >
+              Jump to chat
+            </button>
+          </div>
+        ) : null}
       </section>
 
       {selectedPillarKey ? (
@@ -243,6 +325,11 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
                           <div>
                             <p className="text-sm font-semibold text-[#1e1b16]">{concept.label}</p>
                             <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[#8c7f70]">{concept.helper}</p>
+                            {concept.target_label ? (
+                              <p className="mt-2 text-xs text-[#6b6257]">
+                                {concept.target_source === "okr" ? `${concept.target_label} from your current OKR` : concept.target_label}
+                              </p>
+                            ) : null}
                           </div>
                           <p className="text-xs text-[#8c7f70]">{`${concept.streak_days || 0} day streak`}</p>
                         </div>

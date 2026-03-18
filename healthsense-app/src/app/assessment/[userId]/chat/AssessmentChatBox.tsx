@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { getPillarPalette } from "@/lib/pillars";
@@ -1313,8 +1312,8 @@ export default function AssessmentChatBox({
 
   const homeChatPanel = showHomeChatPanel ? (
     <section className="overflow-hidden rounded-[28px] border border-[#e7e1d6] bg-white shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]">
-      <div className="flex min-h-[46vh] flex-col sm:min-h-[30rem]">
-        <div className="flex-1 space-y-3 overflow-y-auto px-4 py-5 sm:px-5 sm:py-6">
+      <div className="flex h-[56vh] min-h-[24rem] max-h-[36rem] flex-col sm:h-[34rem]">
+        <div className="flex-1 min-h-0 space-y-3 overflow-y-auto px-4 py-5 sm:px-5 sm:py-6">
           {messages.length ? (
             messages.map((message, index) => {
               const direction = String(message.direction || "").trim().toLowerCase();
@@ -1326,7 +1325,7 @@ export default function AssessmentChatBox({
                   key={`${message.id || "msg"}-${index}`}
                   className={`flex ${isUserMessage ? "justify-end" : "justify-start"}`}
                 >
-                  <div className={`flex max-w-[88%] items-end gap-2 ${isUserMessage ? "flex-row-reverse" : "flex-row"}`}>
+                  <div className="max-w-[88%]">
                     <div
                       className={`rounded-[24px] px-4 py-3 text-sm leading-6 ${
                         isUserMessage
@@ -1336,16 +1335,6 @@ export default function AssessmentChatBox({
                     >
                       <p className="whitespace-pre-wrap">{text}</p>
                     </div>
-                    {!isUserMessage ? (
-                      <Image
-                        src="/healthsense-mark.svg"
-                        alt=""
-                        aria-hidden
-                        width={18}
-                        height={18}
-                        className="mb-1 h-[18px] w-[18px] flex-none opacity-90"
-                      />
-                    ) : null}
                   </div>
                 </div>
               );
@@ -1363,8 +1352,8 @@ export default function AssessmentChatBox({
           <form onSubmit={onSubmit}>
             <textarea
               id="assessment-chat-input"
-              className="w-full rounded-[28px] border border-[#efe7db] bg-white px-4 py-4 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
-              rows={3}
+              className="w-full rounded-[24px] border border-[#efe7db] bg-white px-4 py-3 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
+              rows={2}
               value={draft}
               onChange={(event) => setDraft(event.target.value)}
               onKeyDown={onDraftKeyDown}
@@ -1428,8 +1417,8 @@ export default function AssessmentChatBox({
         <form onSubmit={onSubmit}>
           <textarea
             id="assessment-chat-input"
-            className="w-full rounded-[28px] border border-[#efe7db] bg-white px-4 py-3 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
-            rows={3}
+            className="w-full rounded-[24px] border border-[#efe7db] bg-white px-4 py-3 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
+            rows={2}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={onDraftKeyDown}
