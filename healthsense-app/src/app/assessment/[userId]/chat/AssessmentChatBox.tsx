@@ -476,6 +476,7 @@ export default function AssessmentChatBox({
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
+  const [homeSurface, setHomeSurface] = useState<"ask" | "insight" | "habits">("ask");
 
   const autoStart = useMemo(() => isTruthyToken(searchParams?.get("autostart")), [searchParams]);
   const leadFlow = useMemo(() => isTruthyToken(searchParams?.get("lead")), [searchParams]);
@@ -539,6 +540,18 @@ export default function AssessmentChatBox({
     !summaryExperienceBlocked &&
     (!completionSummaryUsesRealtime ||
       ["playing", "completed", "failed", "stopped", "timeout"].includes(realtimeSummaryPhase));
+  const exampleHabits = [
+    "Drink 2 litres of water across the day.",
+    "Have 3 protein-focused meals or snacks.",
+    "Complete a 20-minute walk or cardio session.",
+    "Do 10 minutes of mobility or stretching.",
+    "Keep to a consistent bedtime tonight.",
+  ];
+  const homeSurfaceOptions: Array<{ key: "habits" | "insight" | "ask"; label: string }> = [
+    { key: "habits", label: "Habits" },
+    { key: "insight", label: "Insight" },
+    { key: "ask", label: "Ask" },
+  ];
 
   const markCompletionSummaryVideoSeen = useCallback(() => {
     if (!completionSummaryVideoStorageKey || typeof window === "undefined") {
@@ -587,6 +600,35 @@ export default function AssessmentChatBox({
       setStarting(false);
     }
   }, [userId, assessmentCompleted, applyChatPayload, leadToken]);
+
+  useEffect(() => {
+    if (!showHomeChatPanel) {
+      setHomeSurface("ask");
+    }
+  }, [showHomeChatPanel, userId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onSurfaceChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ surface?: string }>).detail;
+      const surface = String(detail?.surface || "").trim().toLowerCase();
+      if (surface === "insight") {
+        setHomeSurface("insight");
+        return;
+      }
+      if (surface === "habits") {
+        setHomeSurface("habits");
+        return;
+      }
+      if (surface === "ask") {
+        setHomeSurface("ask");
+      }
+    };
+    window.addEventListener("healthsense-home-surface", onSurfaceChange as EventListener);
+    return () => {
+      window.removeEventListener("healthsense-home-surface", onSurfaceChange as EventListener);
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -805,6 +847,7 @@ export default function AssessmentChatBox({
         body: JSON.stringify({
           userId,
           text: outbound,
+          chat_mode: showHomeChatPanel && homeSurface === "ask" ? "general_support" : undefined,
           lead_token: leadToken || undefined,
           quick_reply: options?.quickReply
             ? {
@@ -1312,55 +1355,77 @@ export default function AssessmentChatBox({
 
   const homeChatPanel = showHomeChatPanel ? (
     <section className="overflow-hidden rounded-[28px] border border-[#e7e1d6] bg-white shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]">
-      <div className="flex h-[56vh] min-h-[24rem] max-h-[36rem] flex-col sm:h-[34rem]">
-        <div className="flex-1 min-h-0 space-y-3 overflow-y-auto px-4 py-5 sm:px-5 sm:py-6">
-          {messages.length ? (
-            messages.map((message, index) => {
-              const direction = String(message.direction || "").trim().toLowerCase();
-              const isUserMessage = direction === "inbound";
-              const text = String(message.text || "").trim();
-              if (!text) return null;
-              return (
-                <div
-                  key={`${message.id || "msg"}-${index}`}
-                  className={`flex ${isUserMessage ? "justify-end" : "justify-start"}`}
-                >
-                  <div className="max-w-[88%]">
-                    <div
-                      className={`rounded-[24px] px-4 py-3 text-sm leading-6 ${
-                        isUserMessage
-                          ? "bg-[var(--accent)] text-white"
-                          : "border border-[#efe7db] bg-[#fffaf3] text-[#3c332b]"
-                      }`}
-                    >
-                      <p className="whitespace-pre-wrap">{text}</p>
-                    </div>
+      <div className="flex h-[56vh] min-h-[22rem] max-h-[34rem] flex-col">
+        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 sm:px-5">
+          {homeSurface === "insight" ? (
+            String(coachProductAvatar?.url || "").trim() ? (
+              <video
+                controls
+                preload="metadata"
+                playsInline
+                poster={String(coachProductAvatar?.posterUrl || "").trim() || undefined}
+                className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
+              >
+                <source src={String(coachProductAvatar?.url || "").trim()} />
+              </video>
+            ) : (
+              <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
+                <p className="text-sm text-[#6b6257]">The coaching intro video is not available right now.</p>
+              </div>
+            )
+          ) : homeSurface === "habits" ? (
+            <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+              <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Example habits</p>
+              <div className="mt-3 space-y-2">
+                {exampleHabits.map((habit) => (
+                  <div
+                    key={habit}
+                    className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm text-[#3c332b]"
+                  >
+                    {habit}
                   </div>
-                </div>
-              );
-            })
-          ) : (
-            <div className="flex h-full min-h-[14rem] items-center justify-center rounded-[24px] border border-dashed border-[#e7e1d6] bg-[#fffaf3] px-6 text-center">
-              <p className="max-w-sm text-sm leading-6 text-[#6b6257]">
-                Ask Gia a question here and HealthSense will respond with coaching support.
-              </p>
+                ))}
+              </div>
             </div>
+          ) : (
+              <div className="flex h-full items-end">
+                <div className="w-full">
+                  <form onSubmit={onSubmit}>
+                    <textarea
+                      id="assessment-chat-input"
+                      className="w-full rounded-[24px] border border-[#efe7db] bg-white px-4 py-3 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
+                      rows={2}
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                      onKeyDown={onDraftKeyDown}
+                      disabled={busy}
+                    />
+                  </form>
+                  {status ? <p className="mt-3 text-sm text-[#6b6257]">{status}</p> : null}
+                </div>
+              </div>
           )}
         </div>
-
-        <div className="border-t border-[#efe7db] px-4 py-4 sm:px-5">
-          <form onSubmit={onSubmit}>
-            <textarea
-              id="assessment-chat-input"
-              className="w-full rounded-[24px] border border-[#efe7db] bg-white px-4 py-3 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
-              rows={2}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={onDraftKeyDown}
-              disabled={busy}
-            />
-          </form>
-          {status ? <p className="mt-3 text-sm text-[#6b6257]">{status}</p> : null}
+        <div className="border-t border-[#efe7db] px-4 py-3 sm:px-5">
+          <div className="grid grid-cols-3 gap-2">
+            {homeSurfaceOptions.map((item) => {
+              const active = homeSurface === item.key;
+              return (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setHomeSurface(item.key)}
+                  className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition ${
+                    active
+                      ? "border border-[var(--accent)] bg-[var(--accent)] text-white"
+                      : "border border-[#d9cdbb] bg-white text-[#5d5348]"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
       </div>
     </section>

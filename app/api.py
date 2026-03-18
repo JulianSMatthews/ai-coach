@@ -6043,6 +6043,7 @@ def api_user_assessment_chat_send(
         raise HTTPException(status_code=400, detail="text is required")
     if len(text_val) > 4000:
         raise HTTPException(status_code=400, detail="text is too long")
+    chat_mode = str(payload.get("chat_mode") or "").strip().lower()
 
     quick_reply_meta: dict[str, object] | None = None
     quick_reply_payload = payload.get("quick_reply")
@@ -6068,9 +6069,12 @@ def api_user_assessment_chat_send(
         outbox=outbox,
         source="api_v1_assessment_chat_send",
     ):
-        handled = bool(continue_combined_assessment(user, text_val))
-        if not handled:
+        if chat_mode == "general_support":
             handled = bool(_handle_app_chat_non_assessment(user, text_val))
+        else:
+            handled = bool(continue_combined_assessment(user, text_val))
+            if not handled:
+                handled = bool(_handle_app_chat_non_assessment(user, text_val))
 
     chat_state = _assessment_chat_state_payload(user_id)
     resolved_handled = bool(handled or outbox)
