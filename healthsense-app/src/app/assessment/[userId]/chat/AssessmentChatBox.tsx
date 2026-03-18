@@ -1355,29 +1355,31 @@ export default function AssessmentChatBox({
       ) : null}
 
       {!currentPrompt && !showResultCard && !showResultsGate ? (
-        <form onSubmit={onSubmit} className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div className="flex-1">
-            <label htmlFor="assessment-chat-input" className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-              Your reply
-            </label>
-            <textarea
-              id="assessment-chat-input"
-              className="mt-2 w-full rounded-2xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-              rows={3}
-              value={draft}
-              onChange={(event) => setDraft(event.target.value)}
-              onKeyDown={onDraftKeyDown}
-              placeholder="Type your answer…"
-              disabled={busy}
-            />
-            <p className="mt-2 text-[11px] text-[#8c7f70]">Press Enter to send, Shift+Enter for a new line.</p>
-          </div>
+        <form onSubmit={onSubmit} className="relative">
+          <textarea
+            id="assessment-chat-input"
+            className="w-full rounded-[28px] border border-[#efe7db] bg-white px-4 py-3 pr-16 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
+            rows={3}
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={onDraftKeyDown}
+            disabled={busy}
+          />
           <button
             type="submit"
-            className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+            aria-label={sending ? "Sending" : "Send message"}
+            className="absolute right-3 bottom-3 inline-flex h-11 w-11 items-center justify-center rounded-full border border-[var(--accent)] bg-[var(--accent)] text-white shadow-[0_16px_30px_-18px_rgba(197,72,23,0.75)] disabled:cursor-not-allowed disabled:opacity-60"
             disabled={busy || !draft.trim()}
           >
-            {sending ? "Sending…" : "Send"}
+            <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden="true">
+              <path
+                d="M5 12h12M13 6l6 6-6 6"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
           </button>
         </form>
       ) : null}
