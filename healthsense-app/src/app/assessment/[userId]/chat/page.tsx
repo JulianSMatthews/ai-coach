@@ -272,7 +272,7 @@ export default async function AssessmentChatPage(props: PageProps) {
           coachProductAvatar={coachProductAvatar}
           introAvatarEnabledOverride={introAvatarOverride}
         />
-        {latestAssessment ? <LatestAssessmentPanel userId={userId} assessment={latestAssessment} /> : null}
+        {latestAssessment ? <LatestAssessmentPanel assessment={latestAssessment} /> : null}
       </section>
     </PageShell>
   );

@@ -483,11 +483,12 @@ export default function AssessmentChatBox({
     const token = String(leadToken || "").trim();
     return token ? `&lt=${encodeURIComponent(token)}` : "";
   }, [leadToken]);
+  const allowResultSummaryInChat = leadFlow || isLeadGuest;
   const busy = loading || starting || sending || claiming;
   const chatReady = hasActiveSession || assessmentCompleted || messages.length > 0;
   const promptActive = Boolean(currentPrompt);
-  const showResultsGate = Boolean(resultSummary) && !promptActive && identityRequired;
-  const showResultCard = Boolean(resultSummary) && !promptActive && !identityRequired;
+  const showResultsGate = allowResultSummaryInChat && Boolean(resultSummary) && !promptActive && identityRequired;
+  const showResultCard = allowResultSummaryInChat && Boolean(resultSummary) && !promptActive && !identityRequired;
   const showAssessmentControls = !assessmentCompleted && !isLeadGuest && !promptActive && (!leadFlow || !chatReady);
   const completionSummaryRunId = parsePositiveUserId(resultSummary?.run_id);
   const completionSummaryVideoStorageKey = useMemo(
@@ -556,10 +557,10 @@ export default function AssessmentChatBox({
     setMessages(persistedMessages.length > 0 ? persistedMessages : fallbackOutboxMessages);
     setHasActiveSession(Boolean(data.has_active_session));
     setCurrentPrompt(nextPrompt);
-    setResultSummary(normalizeResultSummary(data.result_summary));
+    setResultSummary(allowResultSummaryInChat ? normalizeResultSummary(data.result_summary) : null);
     setSelectedPromptValue(null);
     setIdentityRequired(Boolean(data.identity_required));
-  }, []);
+  }, [allowResultSummaryInChat]);
 
   const startAssessment = useCallback(async (forceIntro = false) => {
     setStarting(true);

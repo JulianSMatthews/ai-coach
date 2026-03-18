@@ -4,7 +4,6 @@ import { ProgressBar, ScoreRing } from "@/components/ui";
 import LeadAssessmentBranding from "./LeadAssessmentBranding";
 
 type LatestAssessmentPanelProps = {
-  userId: string;
   assessment: AssessmentResponse;
 };
 
@@ -28,20 +27,6 @@ function normalizePillars(assessment: AssessmentResponse): ResultPillar[] {
     : [];
 }
 
-function resultPillarExtremes(pillars: ResultPillar[]): {
-  strongest: ResultPillar | null;
-  weakest: ResultPillar | null;
-} {
-  if (!pillars.length) {
-    return { strongest: null, weakest: null };
-  }
-  const sorted = [...pillars].sort((a, b) => a.score - b.score);
-  return {
-    weakest: sorted[0] || null,
-    strongest: sorted[sorted.length - 1] || null,
-  };
-}
-
 function formatDateUk(value?: string | null): string {
   if (!value) return "";
   const parsed = new Date(value);
@@ -59,12 +44,11 @@ function summariseText(value?: string | null): string {
   return `${text.slice(0, 217).trim()}...`;
 }
 
-export default function LatestAssessmentPanel({ userId, assessment }: LatestAssessmentPanelProps) {
+export default function LatestAssessmentPanel({ assessment }: LatestAssessmentPanelProps) {
   const combined = Math.round(
     Number(assessment.scores?.combined ?? assessment.run?.combined_overall ?? 0) || 0,
   );
   const pillars = normalizePillars(assessment).sort((a, b) => b.score - a.score);
-  const { strongest, weakest } = resultPillarExtremes(pillars);
   const reportedAt = formatDateUk(assessment.meta?.reported_at || assessment.run?.finished_at || null);
   const avatarUrl = String(assessment.narratives?.completion_summary_avatar_url || "").trim();
   const audioUrl = String(assessment.narratives?.completion_summary_audio_url || "").trim();
@@ -89,12 +73,6 @@ export default function LatestAssessmentPanel({ userId, assessment }: LatestAsse
             <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Latest assessment</p>
             {reportedAt ? <p className="mt-1 text-sm text-[#8c7f70]">{reportedAt}</p> : null}
           </div>
-          <a
-            href={`/assessment/${encodeURIComponent(userId)}`}
-            className="rounded-full border border-[#d9cdbb] bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
-          >
-            Open full results
-          </a>
         </div>
 
         {avatarUrl ? (
@@ -147,32 +125,10 @@ export default function LatestAssessmentPanel({ userId, assessment }: LatestAsse
           </div>
         </div>
 
-        {strongest || weakest ? (
-          <div className="grid gap-3 sm:grid-cols-2">
-            {strongest ? (
-              <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Strongest pillar</p>
-                <p className="mt-2 text-base font-semibold text-[#1e1b16]">{strongest.label}</p>
-                <p className="mt-1 text-sm text-[#6b6257]">{strongest.score}/100</p>
-              </div>
-            ) : null}
-            {weakest ? (
-              <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
-                <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Holding you back</p>
-                <p className="mt-2 text-base font-semibold text-[#1e1b16]">{weakest.label}</p>
-                <p className="mt-1 text-sm text-[#6b6257]">{weakest.score}/100</p>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
         {pillars.length ? (
           <div className="grid grid-cols-2 gap-3">
             {pillars.map((pillar) => {
               const palette = getPillarPalette(pillar.pillar_key);
-              const isStrongest =
-                strongest?.pillar_key === pillar.pillar_key && strongest?.score === pillar.score;
-              const isWeakest = weakest?.pillar_key === pillar.pillar_key && weakest?.score === pillar.score;
               return (
                 <div
                   key={pillar.pillar_key}
@@ -180,11 +136,7 @@ export default function LatestAssessmentPanel({ userId, assessment }: LatestAsse
                 >
                   <div className="flex flex-col items-center text-center">
                     <ScoreRing value={pillar.score} tone={palette.accent} />
-                    <p className="mt-3 text-sm font-semibold text-[#1e1b16]">
-                      {pillar.label}
-                      {isStrongest ? <strong> (strongest)</strong> : null}
-                      {isWeakest ? <strong> (weakest)</strong> : null}
-                    </p>
+                    <p className="mt-3 text-sm font-semibold text-[#1e1b16]">{pillar.label}</p>
                   </div>
                 </div>
               );
