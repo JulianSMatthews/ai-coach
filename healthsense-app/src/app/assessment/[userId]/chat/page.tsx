@@ -1,10 +1,11 @@
 import { cookies } from "next/headers";
-import { getUserStatus, type UserStatusResponse } from "@/lib/api";
+import { getAssessment, getUserStatus, type AssessmentResponse, type UserStatusResponse } from "@/lib/api";
 import { Card, PageShell, SectionHeader } from "@/components/ui";
 import TextScale from "@/components/TextScale";
 import AppNav from "@/components/AppNav";
 import AssessmentChatBox from "./AssessmentChatBox";
 import LeadAssessmentBranding from "./LeadAssessmentBranding";
+import LatestAssessmentPanel from "./LatestAssessmentPanel";
 import type { AssessmentIntroAvatar } from "./AssessmentPromptCard";
 
 function isTruthyToken(value: string | string[] | undefined): boolean {
@@ -151,6 +152,8 @@ function resolveIntroAvatarOverride(value: string | string[] | undefined): boole
 export default async function AssessmentChatPage(props: PageProps) {
   const { userId } = await props.params;
   const resolvedSearchParams = (await props.searchParams) || {};
+  const pageShellClassName = "px-3 py-4 sm:px-5 sm:py-6";
+  const pageContentClassName = "mx-auto max-w-3xl space-y-4 sm:space-y-5";
   const chatPath = `/assessment/${encodeURIComponent(userId)}/chat${isTruthyToken(resolvedSearchParams.lead) ? "?lead=1" : ""}`;
   const reloginHref = `/login?next=${encodeURIComponent(chatPath)}`;
   const leadFlow = isTruthyToken(resolvedSearchParams.lead);
@@ -172,7 +175,7 @@ export default async function AssessmentChatPage(props: PageProps) {
 
   if (leadFlow && leadGuest && !leadToken && !leadTokenParam) {
     return (
-      <PageShell className="px-4 py-6 sm:px-6 sm:py-8" contentClassName="space-y-6">
+      <PageShell className={pageShellClassName} contentClassName={pageContentClassName}>
         <SectionHeader title={leadHeaderTitle} />
         <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
           <h2 className="text-xl">Assessment link expired</h2>
@@ -210,13 +213,21 @@ export default async function AssessmentChatPage(props: PageProps) {
     : assessmentInProgress
       ? ""
       : leadFlow
-        ? ""
-        : "Start your assessment with Gia here. Each question will guide you one step at a time.";
+      ? ""
+      : "Start your assessment with Gia here. Each question will guide you one step at a time.";
+  let latestAssessment: AssessmentResponse | null = null;
+  if (!leadFlow && !leadGuest && assessmentCompleted && !assessmentInProgress) {
+    try {
+      latestAssessment = await getAssessment(userId);
+    } catch {
+      latestAssessment = null;
+    }
+  }
   if (statusLoadError && !leadFlow) {
     const shouldRelogin = statusLoadError.status === 401 || statusLoadError.status === 403;
     return (
-      <PageShell className="px-4 py-6 sm:px-6 sm:py-8" contentClassName="space-y-6">
-        <SectionHeader title="My Coach Gia" />
+      <PageShell className={pageShellClassName} contentClassName={pageContentClassName}>
+        <SectionHeader title={<span className="text-2xl sm:text-3xl">My Coach Gia</span>} />
         <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
           <h2 className="text-xl">My Coach Gia is unavailable</h2>
           <p className="mt-2 text-sm text-[#6b6257]">
@@ -244,12 +255,12 @@ export default async function AssessmentChatPage(props: PageProps) {
   }
 
   return (
-    <PageShell className="px-4 py-6 sm:px-6 sm:py-8" contentClassName="space-y-6">
+    <PageShell className={pageShellClassName} contentClassName={pageContentClassName}>
       <TextScale defaultScale={textScale} />
       {!leadFlow ? <AppNav userId={userId} promptBadge={promptBadge} /> : null}
-      {!leadFlow ? <SectionHeader title="My Coach Gia" /> : null}
+      {!leadFlow ? <SectionHeader title={<span className="text-2xl sm:text-3xl">My Coach Gia</span>} /> : null}
 
-      <section className="space-y-4">
+      <section className="space-y-3 sm:space-y-4">
         {chatIntroText ? <p className="text-sm text-[#6b6257]">{chatIntroText}</p> : null}
         <AssessmentChatBox
           userId={userId}
@@ -261,6 +272,7 @@ export default async function AssessmentChatPage(props: PageProps) {
           coachProductAvatar={coachProductAvatar}
           introAvatarEnabledOverride={introAvatarOverride}
         />
+        {latestAssessment ? <LatestAssessmentPanel userId={userId} assessment={latestAssessment} /> : null}
       </section>
     </PageShell>
   );
