@@ -319,15 +319,20 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
                   {(detail.concepts || []).map((concept) => {
                     const conceptKey = String(concept.concept_key || "").trim();
                     const selectedValue = draft[conceptKey];
+                    const targetLabel = String(concept.target_label || "").trim();
+                    const targetText =
+                      concept.target_source === "okr" && targetLabel
+                        ? `${targetLabel} from your current OKR`
+                        : targetLabel;
                     return (
                       <div key={conceptKey} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="text-sm font-semibold text-[#1e1b16]">{concept.label}</p>
                             <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[#8c7f70]">{concept.helper}</p>
-                            {concept.target_label ? (
+                            {targetText ? (
                               <p className="mt-2 text-xs text-[#6b6257]">
-                                {concept.target_source === "okr" ? `${concept.target_label} from your current OKR` : concept.target_label}
+                                {targetText}
                               </p>
                             ) : null}
                           </div>
