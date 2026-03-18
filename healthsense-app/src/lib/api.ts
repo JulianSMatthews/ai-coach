@@ -254,6 +254,11 @@ export type PillarTrackerConcept = {
   concept_key?: string;
   label?: string;
   helper?: string;
+  target_label?: string | null;
+  target_source?: string | null;
+  target_period?: string | null;
+  target_unit?: string | null;
+  target_value?: number | null;
   options?: PillarTrackerOption[];
   value?: number | null;
   value_label?: string | null;
