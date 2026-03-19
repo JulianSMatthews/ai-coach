@@ -18,6 +18,7 @@ Index (helper → purpose → used by):
 - coaching_approach_prompt: habit-readiness approach → reporting.py (_coaching_approach_text)
 - assessment_scores_prompt: assessment score narrative → reporting.py (_score_narrative_from_llm)
 - assessment_completion_summary_prompt: short end-of-assessment spoken summary → pending audio/avatar flow
+- daily_habit_plan: daily coach-home habits generated from tracker + OKR context → coach home habits panel
 - okr_narrative_prompt: OKR narrative → reporting.py (_okr_narrative_from_llm)
 - assessment_narrative_prompt: assessment narrative → assessor.py
 - assessor_system_prompt: assessor system message → assessor.py
@@ -71,6 +72,25 @@ BUILTIN_PROMPT_TEMPLATE_DEFAULTS: Dict[str, Dict[str, Any]] = {
             "Prefer direct phrasing like 'This week, let's focus on...' rather than 'your plan to...'. Return plain text only."
         ),
         "note": "Runtime builtin template for assessment completion audio/avatar summary.",
+    },
+    "daily_habit_plan": {
+        "touchpoint": "daily_habit_plan",
+        "okr_scope": "pillar",
+        "programme_scope": "none",
+        "response_format": "json",
+        "model_override": None,
+        "is_active": True,
+        "block_order": ["system", "locale", "context", "scores", "okr", "history", "task"],
+        "include_blocks": ["system", "locale", "context", "scores", "okr", "history", "task"],
+        "task_block": (
+            "Create a coach-home daily habit plan. Return STRICT JSON only with this shape: "
+            "{\"title\":\"...\",\"summary\":\"...\",\"habits\":[{\"title\":\"...\",\"detail\":\"...\"}]}. "
+            "Return 3 to 5 habits. Focus on the weakest current pillar and the most recently missed or unlogged concepts. "
+            "Use active KR habit steps when they help. Keep every habit practical for today, specific, brief, and low-friction. "
+            "Each habit title should be short. Each detail should be one sentence and under 18 words. "
+            "Use British English. Do not mention JSON, scores, data tables, or being an AI."
+        ),
+        "note": "Runtime builtin template for coach-home daily habits generated from tracker context.",
     }
 }
 
@@ -1141,6 +1161,7 @@ def build_prompt(
     - weekstart_actions
     - initial_habit_steps_generator
     - assessment_okr_structured
+    - daily_habit_plan
     - sunday_daily
     - sunday_actions (legacy alias)
     - tuesday
@@ -1425,6 +1446,68 @@ def build_prompt(
             "general_support_reply",
             parts,
             meta=_merge_template_meta(okr_meta, template),
+            block_order_override=order_override or settings.get("default_block_order"),
+        )
+    if tp == "daily_habit_plan":
+        timeframe = data.get("timeframe") or "today"
+        pillar_scores = data.get("scores") or []
+        weakest_pillar = data.get("weakest_pillar") or {}
+        focus_concepts = data.get("focus_concepts") or []
+        okr_context = data.get("okr_context") or {}
+        context_extras = (
+            f"Weakest pillar={json.dumps(weakest_pillar, ensure_ascii=False)}; "
+            f"Plan date={data.get('plan_date') or ''}"
+        )
+        history_lines: List[str] = []
+        if focus_concepts:
+            history_lines.append("Recent tracker focus:")
+            for item in focus_concepts:
+                if not isinstance(item, dict):
+                    continue
+                label = str(item.get("label") or item.get("concept_key") or "").strip()
+                signal = str(item.get("signal") or "").strip()
+                target = str(item.get("target_label") or "").strip()
+                latest = str(item.get("latest_value") or "").strip()
+                if not label:
+                    continue
+                bits = [signal] if signal else []
+                if latest:
+                    bits.append(f"latest={latest}")
+                if target:
+                    bits.append(target)
+                suffix = f" ({'; '.join(bits)})" if bits else ""
+                history_lines.append(f"- {label}{suffix}")
+        if (okr_context or {}).get("habit_steps"):
+            history_lines.append("Active KR habit steps:")
+            for step in (okr_context.get("habit_steps") or [])[:5]:
+                step_text = str(step or "").strip()
+                if step_text:
+                    history_lines.append(f"- {step_text}")
+        parts: List[tuple[str, str]] = [
+            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
+            ("locale", settings.get("locale_block") or locale_block(locale)),
+            ("context", context_block("daily_habit_plan", "coach home daily habits", timeframe=str(timeframe), channel="App", extras=context_extras)),
+            ("scores", scores_block(pillar_scores) if pillar_scores else ""),
+            ("okr", okr_block(okr_context) if okr_context else ""),
+            ("history", history_block("daily tracker and current habit focus", history_lines) if history_lines else ""),
+            (
+                "task",
+                (template or {}).get("task_block")
+                or task_block(
+                    "Create a daily habit plan for the coach home screen in strict JSON.",
+                    constraints=(
+                        "Return only {title, summary, habits}. "
+                        "Provide 3 to 5 habits focused on today's practical next steps."
+                    ),
+                ),
+            ),
+        ]
+        parts, order_override = _apply_prompt_template(parts, template)
+        return _prompt_assembly(
+            "daily_habit_plan",
+            "daily_habit_plan",
+            parts,
+            meta=_merge_template_meta({}, template),
             block_order_override=order_override or settings.get("default_block_order"),
         )
     if tp == "initial_habit_steps_generator":

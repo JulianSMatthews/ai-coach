@@ -981,6 +981,30 @@ class DailyPillarTrackerEntry(Base):
     )
 
 
+class DailyCoachHabitPlan(Base):
+    __tablename__ = "daily_coach_habit_plans"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    plan_date = Column(Date, nullable=False, index=True)
+    pillar_key = Column(String(64), nullable=True, index=True)
+    pillar_label = Column(String(120), nullable=True)
+    title = Column(String(200), nullable=True)
+    summary = Column(Text, nullable=True)
+    habits = Column(JSONType, nullable=True)
+    source = Column(String(32), nullable=False, server_default=text("'fallback'"))
+    context_hash = Column(String(64), nullable=True, index=True)
+    context_payload = Column(JSONType, nullable=True)
+    generated_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "plan_date", name="uq_daily_coach_habit_plans_user_day"),
+        Index("ix_daily_coach_habit_plans_user_day", "user_id", "plan_date"),
+    )
+
+
 class Touchpoint(Base):
     __tablename__ = "touchpoints"
 

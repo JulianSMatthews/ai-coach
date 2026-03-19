@@ -15,6 +15,10 @@ from .models import AssessmentRun, DailyPillarTrackerEntry, PillarResult, OKRObj
 from .okr import _GUIDE, _guess_concept_from_description, _normalize_concept_key
 _TRACKER_SCHEMA_READY = False
 _TRACKER_TIMEZONE = (os.getenv("PILLAR_TRACKER_TIMEZONE") or "Europe/London").strip() or "Europe/London"
+try:
+    _TRACKER_YESTERDAY_GRACE_HOUR = int((os.getenv("PILLAR_TRACKER_YESTERDAY_GRACE_HOUR") or "12").strip() or "12")
+except Exception:
+    _TRACKER_YESTERDAY_GRACE_HOUR = 12
 
 
 @dataclass(frozen=True)
@@ -216,11 +220,15 @@ def ensure_pillar_tracker_schema() -> None:
 
 
 def tracker_today() -> date:
+    return tracker_now().date()
+
+
+def tracker_now() -> datetime:
     try:
         tz = ZoneInfo(_TRACKER_TIMEZONE)
     except Exception:
         tz = ZoneInfo("UTC")
-    return datetime.now(tz).date()
+    return datetime.now(tz)
 
 
 def parse_tracker_anchor(raw: str | None) -> date | None:
@@ -231,6 +239,48 @@ def parse_tracker_anchor(raw: str | None) -> date | None:
         return date.fromisoformat(token)
     except Exception:
         return None
+
+
+def _pillar_allows_yesterday_catchup(pillar_key: str) -> bool:
+    key = str(pillar_key or "").strip().lower()
+    return key in {"nutrition", "training", "resilience"}
+
+
+def _yesterday_catchup_allowed(now: datetime | None = None) -> bool:
+    current = now or tracker_now()
+    return int(current.hour) < max(0, min(23, _TRACKER_YESTERDAY_GRACE_HOUR))
+
+
+def _editable_tracker_dates_for_pillar(pillar_key: str, current_day: date | None = None) -> list[date]:
+    today = current_day or tracker_today()
+    dates = [today]
+    if _pillar_allows_yesterday_catchup(pillar_key) and _yesterday_catchup_allowed():
+        dates.insert(0, today - timedelta(days=1))
+    return dates
+
+
+def _format_tracker_day_label(target_day: date, current_day: date) -> str:
+    if target_day == current_day:
+        return "Today"
+    if target_day == current_day - timedelta(days=1):
+        return "Yesterday"
+    return f"{target_day.strftime('%a')} {target_day.day} {target_day.strftime('%b')}"
+
+
+def _contextualize_helper_text(helper: str, pillar_key: str, target_day: date, current_day: date) -> str:
+    text = str(helper or "").strip()
+    if not text:
+        return text
+    if target_day == current_day:
+        return text
+    if target_day == current_day - timedelta(days=1) and _pillar_allows_yesterday_catchup(pillar_key):
+        return (
+            text.replace(" today?", " yesterday?")
+            .replace(" Today?", " Yesterday?")
+            .replace(" today", " yesterday")
+            .replace(" Today", " Yesterday")
+        )
+    return text
 
 
 def start_of_week(anchor: date) -> date:
@@ -625,6 +675,22 @@ def _load_week_entries(user_id: int, pillar_key: str, anchor: date) -> dict[date
     return grouped
 
 
+def _resolve_tracker_detail_anchor(user_id: int, pillar_key: str, requested_anchor: date | None, current_day: date) -> date:
+    editable_dates = _editable_tracker_dates_for_pillar(pillar_key, current_day=current_day)
+    if requested_anchor in editable_dates:
+        return requested_anchor
+    if not editable_dates:
+        return current_day
+    default_anchor = current_day
+    if len(editable_dates) > 1:
+        yesterday = editable_dates[0]
+        required_concepts = tracker_concepts_for_pillar(pillar_key)
+        yesterday_rows = _load_week_entries(user_id, pillar_key, yesterday).get(yesterday, {})
+        if not _day_complete(yesterday_rows, required_concepts):
+            default_anchor = yesterday
+    return default_anchor
+
+
 def _day_complete(day_rows: dict[str, DailyPillarTrackerEntry], required_concepts: tuple[PillarTrackerConceptDefinition, ...]) -> bool:
     required_keys = {item.concept_key for item in required_concepts}
     return required_keys.issubset(set(day_rows.keys()))
@@ -760,8 +826,9 @@ def get_pillar_tracker_summary(user_id: int, anchor: date | None = None) -> dict
 
 def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None = None) -> dict[str, Any]:
     ensure_pillar_tracker_schema()
-    resolved_anchor = anchor or tracker_today()
     key = str(pillar_key or "").strip().lower()
+    current_day = tracker_today()
+    resolved_anchor = _resolve_tracker_detail_anchor(user_id, key, anchor, current_day)
     required_concepts = tracker_concepts_for_pillar(key)
     entries_by_day = _load_week_entries(user_id, key, resolved_anchor)
     baseline_scores = _latest_assessment_scores_for_user(user_id)
@@ -770,6 +837,7 @@ def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None
     evaluations_by_concept = _build_concept_week_evaluations(entries_by_day, required_concepts, resolved_targets, week_days)
     tracker_score = _week_score(entries_by_day, required_concepts, evaluations_by_concept, week_days)
     completed_days = _completed_days(entries_by_day, required_concepts)
+    editable_dates = _editable_tracker_dates_for_pillar(key, current_day=current_day)
     current_summary = _summary_pillar_payload(
         pillar_key=key,
         entries_by_day=entries_by_day,
@@ -790,7 +858,7 @@ def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None
             {
                 "concept_key": concept_def.concept_key,
                 "label": concept_def.label,
-                "helper": concept_def.helper,
+                "helper": _contextualize_helper_text(concept_def.helper, key, resolved_anchor, current_day),
                 "target_label": resolved_target.target_label,
                 "target_source": resolved_target.source,
                 "target_period": resolved_target.target_period,
@@ -817,7 +885,8 @@ def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None
                     {
                         "date": day.isoformat(),
                         "label": day.strftime("%a")[:3],
-                        "is_today": day == resolved_anchor,
+                        "is_today": day == current_day,
+                        "is_active": day == resolved_anchor,
                         "value_label": evaluations_for_concept.get(day, {}).get("value_label"),
                         "score": (
                             int(evaluations_for_concept.get(day, {}).get("score"))
@@ -847,18 +916,30 @@ def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None
             "week_start": week_days[0].isoformat(),
             "week_end": week_days[-1].isoformat(),
             "today": resolved_anchor.isoformat(),
+            "active_date": resolved_anchor.isoformat(),
+            "active_label": _format_tracker_day_label(resolved_anchor, current_day),
+            "current_date": current_day.isoformat(),
+            "yesterday_catchup_available": len(editable_dates) > 1,
         },
         "days": [
             {
                 "date": day.isoformat(),
                 "label": day.strftime("%a")[:3],
-                "is_today": day == resolved_anchor,
+                "is_today": day == current_day,
                 "complete": _day_complete(entries_by_day.get(day, {}), required_concepts),
                 "score": _day_score(entries_by_day.get(day, {}), required_concepts, evaluations_by_concept, day),
             }
             for day in week_days
         ],
         "concepts": concepts_payload,
+        "editable_dates": [
+            {
+                "date": item.isoformat(),
+                "label": _format_tracker_day_label(item, current_day),
+                "is_active": item == resolved_anchor,
+            }
+            for item in editable_dates
+        ],
     }
 
 
@@ -870,8 +951,16 @@ def save_pillar_tracker_day(
     entries: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     ensure_pillar_tracker_schema()
-    resolved_date = score_date or tracker_today()
+    current_day = tracker_today()
+    resolved_date = score_date or current_day
     key = str(pillar_key or "").strip().lower()
+    editable_dates = _editable_tracker_dates_for_pillar(key, current_day=current_day)
+    if resolved_date not in editable_dates:
+        if _pillar_allows_yesterday_catchup(key):
+            raise ValueError(
+                f"You can save {key} for today, or for yesterday before {_TRACKER_YESTERDAY_GRACE_HOUR}:00 local time."
+            )
+        raise ValueError("This pillar can only be saved for today.")
     required_concepts = tracker_concepts_for_pillar(key)
     resolved_targets = _resolve_pillar_targets_for_user(user_id, key, required_concepts)
     entries = entries or []
