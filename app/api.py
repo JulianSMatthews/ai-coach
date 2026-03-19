@@ -1952,22 +1952,38 @@ def _handle_coaching_greeting(user: User, body: str) -> bool:
     return False
 
 
+def _general_support_ready_for_user(user: User) -> bool:
+    completed_assessment = bool(getattr(user, "first_assessment_completed", None))
+    coaching_enabled = False
+    try:
+        with SessionLocal() as s:
+            coaching_enabled = _coaching_enabled_for_user(s, int(user.id))
+    except Exception:
+        coaching_enabled = False
+    return bool(completed_assessment or coaching_enabled)
+
+
+def _handle_app_general_support_message(
+    user: User,
+    body: str,
+    *,
+    source: str = "app_home",
+) -> bool:
+    msg = (body or "").strip()
+    if not msg or not _general_support_ready_for_user(user):
+        return False
+    if not general_support.has_active_state(int(user.id)):
+        general_support.activate(int(user.id), source=source, week_no=None, send_intro=False)
+    general_support.handle_message(user, msg)
+    return True
+
+
 def _handle_app_chat_non_assessment(user: User, body: str) -> bool:
     """
     Route in-app chat replies through the same coaching command/state handlers that
     WhatsApp uses after assessment is complete.
     """
     lower_body = (body or "").strip().lower()
-
-    def _general_support_ready() -> bool:
-        completed_assessment = bool(getattr(user, "first_assessment_completed", None))
-        coaching_enabled = False
-        try:
-            with SessionLocal() as s:
-                coaching_enabled = _coaching_enabled_for_user(s, int(user.id))
-        except Exception:
-            coaching_enabled = False
-        return bool(completed_assessment or coaching_enabled)
 
     if _handle_pending_coaching_day_resume(user, body):
         return True
@@ -2121,13 +2137,11 @@ def _handle_app_chat_non_assessment(user: User, body: str) -> bool:
         )
     )
     if looks_like_marketing_cta:
-        if _general_support_ready():
-            try:
-                if not general_support.has_active_state(int(user.id)):
-                    general_support.activate(int(user.id), source="app_home", week_no=None, send_intro=False)
-                general_support.handle_message(user, body)
-            except Exception as e:
-                send_coaching_text(user=user, text=f"Support reply failed: {e}", source="app_chat")
+        try:
+            if _handle_app_general_support_message(user, body, source="app_home"):
+                return True
+        except Exception as e:
+            send_coaching_text(user=user, text=f"Support reply failed: {e}", source="app_chat")
             return True
         _start_assessment_async(user, force_intro=True)
         return True
@@ -2136,13 +2150,12 @@ def _handle_app_chat_non_assessment(user: User, body: str) -> bool:
         general_support.handle_message(user, body)
         return True
 
-    if _general_support_ready():
+    if _general_support_ready_for_user(user):
         try:
-            general_support.activate(int(user.id), source="app_home", week_no=None, send_intro=False)
-            general_support.handle_message(user, body)
+            if _handle_app_general_support_message(user, body, source="app_home"):
+                return True
         except Exception as e:
             send_coaching_text(user=user, text=f"Support reply failed: {e}", source="app_chat")
-        return True
 
     try:
         _record_freeform_checkin(user, body)
@@ -6080,7 +6093,7 @@ def api_user_assessment_chat_send(
         source="api_v1_assessment_chat_send",
     ):
         if chat_mode == "general_support":
-            handled = bool(_handle_app_chat_non_assessment(user, text_val))
+            handled = bool(_handle_app_general_support_message(user, text_val, source="app_home"))
         else:
             handled = bool(continue_combined_assessment(user, text_val))
             if not handled:
