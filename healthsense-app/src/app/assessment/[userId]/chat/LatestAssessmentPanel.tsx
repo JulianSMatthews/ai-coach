@@ -16,6 +16,7 @@ type LatestAssessmentPanelProps = {
 };
 
 const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
+const HEALTHSENSE_ORANGE = "#c54817";
 
 function sortPillars(pillars: PillarTrackerPillar[]): PillarTrackerPillar[] {
   return [...pillars].sort((a, b) => {
@@ -47,6 +48,46 @@ function completeDayTone(complete?: boolean, isToday?: boolean): string {
   return "border-[#ece5d9] bg-white text-[#8c7f70]";
 }
 
+function CombinedLogoRing({ value }: { value: number }) {
+  const pct = Math.max(0, Math.min(1, value / 100));
+  const size = 84;
+  const stroke = 8;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - pct);
+  return (
+    <div className="relative flex h-[84px] w-[84px] items-center justify-center">
+      <svg width={size} height={size} className="rotate-[-90deg]">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="rgba(197,72,23,0.18)"
+          strokeWidth={stroke}
+          fill="none"
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={HEALTHSENSE_ORANGE}
+          strokeWidth={stroke}
+          fill="none"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+        />
+      </svg>
+      <div className="absolute flex h-[60px] w-[60px] items-center justify-center rounded-full bg-white">
+        <LeadAssessmentBranding
+          titleLines={[]}
+          logoClassName="h-8 w-8"
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function LatestAssessmentPanel({ userId, initialSummary }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
@@ -58,6 +99,13 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
   const [saveError, setSaveError] = useState<string | null>(null);
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
+  const combinedScore = (() => {
+    const scores = pillars
+      .map((pillar) => Number(pillar.score))
+      .filter((score) => Number.isFinite(score));
+    if (!scores.length) return 0;
+    return Math.round(scores.reduce((total, score) => total + score, 0) / scores.length);
+  })();
   const concepts = Array.isArray(detail?.concepts) ? detail?.concepts : [];
   const canSave =
     !saving &&
@@ -205,12 +253,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
           </div>
 
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="rounded-full border border-[#efe7db] bg-white/95 p-2 shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
-              <LeadAssessmentBranding
-                titleLines={[]}
-                logoClassName="h-8 w-8 sm:h-10 sm:w-10"
-              />
-            </div>
+            <CombinedLogoRing value={combinedScore} />
           </div>
         </div>
       </section>
