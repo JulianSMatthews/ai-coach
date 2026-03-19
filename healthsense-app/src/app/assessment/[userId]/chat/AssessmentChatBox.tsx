@@ -558,6 +558,10 @@ export default function AssessmentChatBox({
     { key: "insight", label: "Insight" },
     { key: "ask", label: "Ask" },
   ];
+  const askSurfaceMessages = useMemo(() => {
+    const visible = messages.filter((message) => String(message.text || "").trim());
+    return visible.slice(-3);
+  }, [messages]);
   const insightContent = coachInsight?.content || null;
   const insightMediaUrl = String(insightContent?.podcast_url || "").trim();
   const insightMediaIsVideo = isLikelyVideoUrl(insightMediaUrl);
@@ -1551,22 +1555,53 @@ export default function AssessmentChatBox({
               )}
             </div>
           ) : (
-              <div className="flex h-full items-end">
-                <div className="w-full">
-                  <form onSubmit={onSubmit}>
-                    <textarea
-                      id="assessment-chat-input"
-                      className="w-full rounded-[24px] border border-[#efe7db] bg-white px-4 py-3 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
-                      rows={2}
-                      value={draft}
-                      onChange={(event) => setDraft(event.target.value)}
-                      onKeyDown={onDraftKeyDown}
-                      disabled={busy}
-                    />
-                  </form>
-                  {status ? <p className="mt-3 text-sm text-[#6b6257]">{status}</p> : null}
-                </div>
+            <div className="flex h-full flex-col">
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {askSurfaceMessages.length ? (
+                  <div className="space-y-3">
+                    {askSurfaceMessages.map((message, index) => {
+                      const direction = String(message.direction || "").trim().toLowerCase();
+                      const outbound = direction === "outbound";
+                      return (
+                        <div
+                          key={`${message.id || index}-${direction}`}
+                          className={`flex ${outbound ? "justify-start" : "justify-end"}`}
+                        >
+                          <div
+                            className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6 ${
+                              outbound
+                                ? "border border-[#efe7db] bg-[#fffaf3] text-[#3c332b]"
+                                : "bg-[var(--accent)] text-white"
+                            }`}
+                          >
+                            {String(message.text || "").trim()}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
+                    <p className="text-sm text-[#6b6257]">Ask Gia a question and the latest reply will appear here.</p>
+                  </div>
+                )}
+                {sending ? <p className="mt-3 text-sm text-[#6b6257]">Gia is replying…</p> : null}
               </div>
+              <div className="mt-4 w-full">
+                <form onSubmit={onSubmit}>
+                  <textarea
+                    id="assessment-chat-input"
+                    className="w-full rounded-[24px] border border-[#efe7db] bg-white px-4 py-3 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
+                    rows={2}
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onKeyDown={onDraftKeyDown}
+                    disabled={busy}
+                  />
+                </form>
+                {status ? <p className="mt-3 text-sm text-[#6b6257]">{status}</p> : null}
+              </div>
+            </div>
           )}
         </div>
         <div className="border-t border-[#efe7db] px-4 py-3 sm:px-5">

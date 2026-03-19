@@ -56,6 +56,7 @@ export async function POST(request: Request) {
 
     const payload = {
       text: textValue,
+      chat_mode: String(body.chat_mode || "").trim() || undefined,
       quick_reply:
         body.quick_reply && typeof body.quick_reply === "object"
           ? body.quick_reply
