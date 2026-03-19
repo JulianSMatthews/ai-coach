@@ -48,6 +48,9 @@ export default function ContentEditorForm({ content, action, submitLabel }: Cont
             className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
             placeholder="hydration"
           />
+          <p className="mt-2 text-xs text-[#6b6257]">
+            Use the tracker concept key, for example <code>hydration</code>, <code>protein_intake</code>, or <code>sleep_duration</code>.
+          </p>
         </div>
       </div>
       <div>
@@ -138,7 +141,7 @@ export default function ContentEditorForm({ content, action, submitLabel }: Cont
       </div>
       <div className="grid gap-3 md:grid-cols-2">
         <div>
-          <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Podcast URL (optional)</label>
+          <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Media URL (optional)</label>
           <input
             name="podcast_url"
             defaultValue={content?.podcast_url || ""}

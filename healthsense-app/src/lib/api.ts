@@ -241,10 +241,17 @@ export type PillarTrackerDay = {
   score?: number | null;
 };
 
+export type PillarTrackerEditableDate = {
+  date?: string;
+  label?: string;
+  is_active?: boolean;
+};
+
 export type PillarTrackerConceptWeekDay = {
   date?: string;
   label?: string;
   is_today?: boolean;
+  is_active?: boolean;
   value_label?: string | null;
   score?: number | null;
   target_met?: boolean | null;
@@ -280,6 +287,10 @@ export type PillarTrackerPillar = {
   week_start?: string | null;
   week_end?: string | null;
   today?: string | null;
+  active_date?: string | null;
+  active_label?: string | null;
+  current_date?: string | null;
+  yesterday_catchup_available?: boolean;
 };
 
 export type PillarTrackerSummaryResponse = {
@@ -295,6 +306,46 @@ export type PillarTrackerDetailResponse = {
   pillar?: PillarTrackerPillar;
   days?: PillarTrackerDay[];
   concepts?: PillarTrackerConcept[];
+  editable_dates?: PillarTrackerEditableDate[];
+};
+
+export type DailyHabitPlanItem = {
+  title?: string | null;
+  detail?: string | null;
+};
+
+export type DailyHabitPlanResponse = {
+  user_id?: number;
+  plan_date?: string | null;
+  pillar_key?: string | null;
+  pillar_label?: string | null;
+  title?: string | null;
+  summary?: string | null;
+  habits?: DailyHabitPlanItem[];
+  source?: string | null;
+  generated_at?: string | null;
+};
+
+export type CoachInsightContent = {
+  id?: number;
+  pillar_key?: string | null;
+  concept_code?: string | null;
+  title?: string | null;
+  body?: string | null;
+  podcast_url?: string | null;
+  podcast_voice?: string | null;
+  created_at?: string | null;
+};
+
+export type CoachInsightResponse = {
+  user_id?: number;
+  insight_date?: string | null;
+  pillar_key?: string | null;
+  pillar_label?: string | null;
+  concept_key?: string | null;
+  concept_label?: string | null;
+  matched_by?: string | null;
+  content?: CoachInsightContent | null;
 };
 
 export type CoachingHistoryResponse = {
@@ -490,6 +541,15 @@ export async function getCoachingHistory(
 ): Promise<CoachingHistoryResponse> {
   return apiGet<CoachingHistoryResponse>(`/api/v1/users/${userId}/coaching-history`, {
     query: { limit },
+  });
+}
+
+export async function getCoachInsight(
+  userId: string | number,
+  anchorDate?: string,
+): Promise<CoachInsightResponse> {
+  return apiGet<CoachInsightResponse>(`/api/v1/users/${userId}/coach-insight`, {
+    query: { anchor_date: anchorDate },
   });
 }
 

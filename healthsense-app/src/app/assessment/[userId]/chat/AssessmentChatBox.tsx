@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useState } from "react";
+import type { CoachInsightResponse, DailyHabitPlanResponse } from "@/lib/api";
 import { getPillarPalette } from "@/lib/pillars";
 import { ProgressBar, ScoreRing } from "@/components/ui";
 import AssessmentPromptCard, {
@@ -434,6 +435,12 @@ function looksLikeEmail(value: string): boolean {
   return domain.includes(".");
 }
 
+function isLikelyVideoUrl(value: string): boolean {
+  const token = String(value || "").trim().toLowerCase();
+  if (!token) return false;
+  return /\.(mp4|m4v|mov|webm)(?:$|[?#])/i.test(token);
+}
+
 export default function AssessmentChatBox({
   userId,
   assessmentCompleted = false,
@@ -477,6 +484,12 @@ export default function AssessmentChatBox({
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
   const [homeSurface, setHomeSurface] = useState<"ask" | "insight" | "habits">("ask");
+  const [dailyHabitPlan, setDailyHabitPlan] = useState<DailyHabitPlanResponse | null>(null);
+  const [dailyHabitPlanLoading, setDailyHabitPlanLoading] = useState(false);
+  const [dailyHabitPlanError, setDailyHabitPlanError] = useState<string | null>(null);
+  const [coachInsight, setCoachInsight] = useState<CoachInsightResponse | null>(null);
+  const [coachInsightLoading, setCoachInsightLoading] = useState(false);
+  const [coachInsightError, setCoachInsightError] = useState<string | null>(null);
 
   const autoStart = useMemo(() => isTruthyToken(searchParams?.get("autostart")), [searchParams]);
   const leadFlow = useMemo(() => isTruthyToken(searchParams?.get("lead")), [searchParams]);
@@ -540,18 +553,17 @@ export default function AssessmentChatBox({
     !summaryExperienceBlocked &&
     (!completionSummaryUsesRealtime ||
       ["playing", "completed", "failed", "stopped", "timeout"].includes(realtimeSummaryPhase));
-  const exampleHabits = [
-    "Drink 2 litres of water across the day.",
-    "Have 3 protein-focused meals or snacks.",
-    "Complete a 20-minute walk or cardio session.",
-    "Do 10 minutes of mobility or stretching.",
-    "Keep to a consistent bedtime tonight.",
-  ];
   const homeSurfaceOptions: Array<{ key: "habits" | "insight" | "ask"; label: string }> = [
     { key: "habits", label: "Habits" },
     { key: "insight", label: "Insight" },
     { key: "ask", label: "Ask" },
   ];
+  const insightContent = coachInsight?.content || null;
+  const insightMediaUrl = String(insightContent?.podcast_url || "").trim();
+  const insightMediaIsVideo = isLikelyVideoUrl(insightMediaUrl);
+  const insightLabel = String(
+    coachInsight?.concept_label || insightContent?.title || coachInsight?.pillar_label || "",
+  ).trim();
 
   const markCompletionSummaryVideoSeen = useCallback(() => {
     if (!completionSummaryVideoStorageKey || typeof window === "undefined") {
@@ -601,11 +613,64 @@ export default function AssessmentChatBox({
     }
   }, [userId, assessmentCompleted, applyChatPayload, leadToken]);
 
+  const loadDailyHabitPlan = useCallback(async () => {
+    setDailyHabitPlanLoading(true);
+    setDailyHabitPlanError(null);
+    try {
+      const params = new URLSearchParams({ userId });
+      const res = await fetch(`/api/daily-habits?${params.toString()}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        throw new Error(parseApiError(text, "Failed to load today's habits."));
+      }
+      const data = (text ? (JSON.parse(text) as DailyHabitPlanResponse) : {}) as DailyHabitPlanResponse;
+      setDailyHabitPlan(data);
+    } catch (error) {
+      setDailyHabitPlanError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setDailyHabitPlanLoading(false);
+    }
+  }, [userId]);
+
+  const loadCoachInsight = useCallback(async () => {
+    setCoachInsightLoading(true);
+    setCoachInsightError(null);
+    try {
+      const params = new URLSearchParams({ userId });
+      const res = await fetch(`/api/coach-insight?${params.toString()}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        throw new Error(parseApiError(text, "Failed to load today's insight."));
+      }
+      const data = (text ? (JSON.parse(text) as CoachInsightResponse) : {}) as CoachInsightResponse;
+      setCoachInsight(data);
+    } catch (error) {
+      setCoachInsightError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setCoachInsightLoading(false);
+    }
+  }, [userId]);
+
   useEffect(() => {
     if (!showHomeChatPanel) {
       setHomeSurface("ask");
     }
   }, [showHomeChatPanel, userId]);
+
+  useEffect(() => {
+    setDailyHabitPlan(null);
+    setDailyHabitPlanError(null);
+    setDailyHabitPlanLoading(false);
+    setCoachInsight(null);
+    setCoachInsightError(null);
+    setCoachInsightLoading(false);
+  }, [userId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -629,6 +694,36 @@ export default function AssessmentChatBox({
       window.removeEventListener("healthsense-home-surface", onSurfaceChange as EventListener);
     };
   }, []);
+
+  useEffect(() => {
+    if (!showHomeChatPanel || homeSurface !== "habits") return;
+    void loadDailyHabitPlan();
+  }, [showHomeChatPanel, homeSurface, loadDailyHabitPlan]);
+
+  useEffect(() => {
+    if (!showHomeChatPanel || homeSurface !== "insight") return;
+    void loadCoachInsight();
+  }, [showHomeChatPanel, homeSurface, loadCoachInsight]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onTrackerUpdated = () => {
+      setDailyHabitPlan(null);
+      setDailyHabitPlanError(null);
+      setCoachInsight(null);
+      setCoachInsightError(null);
+      if (showHomeChatPanel && homeSurface === "habits") {
+        void loadDailyHabitPlan();
+      }
+      if (showHomeChatPanel && homeSurface === "insight") {
+        void loadCoachInsight();
+      }
+    };
+    window.addEventListener("healthsense-tracker-updated", onTrackerUpdated as EventListener);
+    return () => {
+      window.removeEventListener("healthsense-tracker-updated", onTrackerUpdated as EventListener);
+    };
+  }, [showHomeChatPanel, homeSurface, loadCoachInsight, loadDailyHabitPlan]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1358,7 +1453,38 @@ export default function AssessmentChatBox({
       <div className="flex h-[56vh] min-h-[22rem] max-h-[34rem] flex-col">
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 sm:px-5">
           {homeSurface === "insight" ? (
-            String(coachProductAvatar?.url || "").trim() ? (
+            coachInsightLoading ? (
+              <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
+                <p className="text-sm text-[#6b6257]">
+                  Reviewing your latest tracker and loading today&apos;s concept insight…
+                </p>
+              </div>
+            ) : insightMediaUrl ? (
+              <div className="space-y-3">
+                {insightLabel ? (
+                  <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">{insightLabel}</p>
+                ) : null}
+                {insightMediaIsVideo ? (
+                  <video
+                    controls
+                    preload="metadata"
+                    playsInline
+                    className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
+                  >
+                    <source src={insightMediaUrl} />
+                  </video>
+                ) : (
+                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                    <audio className="w-full" controls preload="metadata">
+                      <source src={insightMediaUrl} />
+                    </audio>
+                    {String(insightContent?.body || "").trim() ? (
+                      <p className="mt-3 text-sm text-[#6b6257]">{String(insightContent?.body || "").trim()}</p>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            ) : String(coachProductAvatar?.url || "").trim() ? (
               <video
                 controls
                 preload="metadata"
@@ -1370,22 +1496,59 @@ export default function AssessmentChatBox({
               </video>
             ) : (
               <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
-                <p className="text-sm text-[#6b6257]">The coaching intro video is not available right now.</p>
+                <p className="text-sm text-[#6b6257]">
+                  {coachInsightError || "A concept insight is not available right now."}
+                </p>
               </div>
             )
           ) : homeSurface === "habits" ? (
             <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Example habits</p>
-              <div className="mt-3 space-y-2">
-                {exampleHabits.map((habit) => (
-                  <div
-                    key={habit}
-                    className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm text-[#3c332b]"
-                  >
-                    {habit}
+              <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
+                {String(dailyHabitPlan?.pillar_label || "").trim()
+                  ? `${String(dailyHabitPlan?.pillar_label || "").trim()} habits`
+                  : "Today's habits"}
+              </p>
+              {dailyHabitPlanLoading ? (
+                <p className="mt-3 text-sm text-[#6b6257]">
+                  Reviewing your tracker and preparing today&apos;s habit steps…
+                </p>
+              ) : dailyHabitPlanError ? (
+                <p className="mt-3 text-sm text-[#8a3e1a]">{dailyHabitPlanError}</p>
+              ) : (
+                <>
+                  {String(dailyHabitPlan?.title || "").trim() ? (
+                    <p className="mt-3 text-lg font-semibold text-[#1e1b16]">
+                      {String(dailyHabitPlan?.title || "").trim()}
+                    </p>
+                  ) : null}
+                  {String(dailyHabitPlan?.summary || "").trim() ? (
+                    <p className="mt-2 text-sm text-[#6b6257]">
+                      {String(dailyHabitPlan?.summary || "").trim()}
+                    </p>
+                  ) : null}
+                  <div className="mt-3 space-y-2">
+                    {(dailyHabitPlan?.habits || []).map((habit, index) => {
+                      const title = String(habit?.title || "").trim();
+                      const detail = String(habit?.detail || "").trim();
+                      if (!title && !detail) return null;
+                      return (
+                        <div
+                          key={`${title || detail}-${index}`}
+                          className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3"
+                        >
+                          {title ? <p className="text-sm font-semibold text-[#3c332b]">{title}</p> : null}
+                          {detail ? <p className="mt-1 text-sm text-[#6b6257]">{detail}</p> : null}
+                        </div>
+                      );
+                    })}
+                    {!dailyHabitPlan?.habits?.length ? (
+                      <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm text-[#6b6257]">
+                        Your habit steps will appear here once today&apos;s plan is ready.
+                      </div>
+                    ) : null}
                   </div>
-                ))}
-              </div>
+                </>
+              )}
             </div>
           ) : (
               <div className="flex h-full items-end">
@@ -1414,7 +1577,15 @@ export default function AssessmentChatBox({
                 <button
                   key={item.key}
                   type="button"
-                  onClick={() => setHomeSurface(item.key)}
+                  onClick={() => {
+                    setHomeSurface(item.key);
+                    if (item.key === "habits" && homeSurface === "habits") {
+                      void loadDailyHabitPlan();
+                    }
+                    if (item.key === "insight" && homeSurface === "insight") {
+                      void loadCoachInsight();
+                    }
+                  }}
                   className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition ${
                     active
                       ? "border border-[var(--accent)] bg-[var(--accent)] text-white"

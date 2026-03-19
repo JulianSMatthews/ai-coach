@@ -161,7 +161,7 @@ from .usage import (
 from .usage_rates import fetch_provider_rates
 from .concepts import ensure_concept_measure_labels
 from .marketing import ensure_marketing_schema
-from .okr import ensure_cycle
+from .okr import ensure_cycle, _normalize_concept_key
 from .reporting import (
     generate_detailed_report_pdf_by_user,
     generate_assessment_summary_pdf,
@@ -199,6 +199,8 @@ from .pillar_tracker import (
     parse_tracker_anchor,
     save_pillar_tracker_day,
 )
+from .daily_habits import ensure_daily_habit_plan_schema, get_or_generate_daily_habit_plan
+from .coach_insight import get_coach_insight
 
 # Lazy import holder to avoid startup/reload ImportError if symbol is added later
 _gen_okr_summary_report = None
@@ -656,6 +658,14 @@ def on_startup():
                 ensure_pillar_tracker_schema()
             except Exception as e:
                 print(f"⚠️  Could not ensure pillar tracker schema: {e!r}")
+            try:
+                ensure_daily_habit_plan_schema()
+            except Exception as e:
+                print(f"⚠️  Could not ensure daily habit plan schema: {e!r}")
+            try:
+                prompts_module.ensure_builtin_prompt_templates(["assessment_completion_summary", "daily_habit_plan"])
+            except Exception as e:
+                print(f"⚠️  Could not ensure builtin prompt templates: {e!r}")
 
             reset_requested, reset_source, reset_values = _resolve_reset_requested()
             print(
@@ -6724,6 +6734,68 @@ def api_user_pillar_tracker_save(
     return result
 
 
+@api_v1.get("/users/{user_id}/daily-habits")
+def api_user_daily_habits(
+    user_id: int,
+    request: Request,
+    force: bool = False,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    ensure_daily_habit_plan_schema()
+    try:
+        result = get_or_generate_daily_habit_plan(user_id, force=bool(force))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    _log_app_engagement_event(
+        user_id=user_id,
+        unit_type="coach_home_habits_view",
+        meta={
+            "page": "coach_home",
+            "pillar_key": result.get("pillar_key"),
+            "plan_date": result.get("plan_date"),
+            "source": result.get("source"),
+            "force": bool(force),
+        },
+    )
+    return result
+
+
+@api_v1.get("/users/{user_id}/coach-insight")
+def api_user_coach_insight(
+    user_id: int,
+    request: Request,
+    anchor_date: str | None = None,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    ensure_pillar_tracker_schema()
+    if anchor_date:
+        anchor = parse_tracker_anchor(anchor_date)
+        if anchor is None:
+            raise HTTPException(status_code=400, detail="anchor_date must be YYYY-MM-DD")
+    else:
+        anchor = None
+    result = get_coach_insight(user_id, anchor=anchor)
+    content = result.get("content")
+    if isinstance(content, dict):
+        content["podcast_url"] = _normalize_reports_url(content.get("podcast_url"))
+    _log_app_engagement_event(
+        user_id=user_id,
+        unit_type="coach_home_insight_view",
+        meta={
+            "page": "coach_home",
+            "pillar_key": result.get("pillar_key"),
+            "concept_key": result.get("concept_key"),
+            "matched_by": result.get("matched_by"),
+            "anchor_date": result.get("insight_date"),
+        },
+    )
+    return result
+
+
 @api_v1.get("/users/{user_id}/status")
 def api_user_status_v1(
     user_id: int,
@@ -7587,7 +7659,7 @@ def api_user_library_content(
             {
                 "id": row.id,
                 "pillar_key": row.pillar_key,
-                "concept_code": row.concept_code,
+                "concept_code": _normalize_concept_key(row.concept_code) or None,
                 "title": row.title,
                 "body": row.body,
                 "created_at": row.created_at,
@@ -18136,7 +18208,7 @@ def admin_library_content_create(
     pillar_key = (payload.get("pillar_key") or "").strip()
     title = (payload.get("title") or "").strip()
     body = (payload.get("body") or "").strip()
-    concept_code = (payload.get("concept_code") or "").strip() or None
+    concept_code = _normalize_concept_key((payload.get("concept_code") or "").strip()) or None
     status_val = (payload.get("status") or "").strip() or "draft"
     podcast_url = (payload.get("podcast_url") or "").strip() or None
     podcast_url = _promote_library_podcast_url(podcast_url)
@@ -18210,7 +18282,7 @@ def admin_library_content_update(
                 raise HTTPException(status_code=400, detail="pillar_key required")
             row.pillar_key = pillar_key
         if "concept_code" in payload:
-            concept_code = (payload.get("concept_code") or "").strip()
+            concept_code = _normalize_concept_key((payload.get("concept_code") or "").strip())
             row.concept_code = concept_code or None
         if "title" in payload:
             title = (payload.get("title") or "").strip()
