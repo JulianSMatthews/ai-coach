@@ -95,13 +95,6 @@ export async function saveLibraryContentAction(
   const published_at = parsePublishedAt(formData.get("published_at"));
   const tags = parseTags(formData.get("tags"));
   const source_generation_id = Number(formData.get("source_generation_id") || 0) || undefined;
-  const avatar_url = parseAvatarField(formData.get("avatar_url"));
-  const avatar_title = parseAvatarField(formData.get("avatar_title"));
-  const avatar_script = parseAvatarField(formData.get("avatar_script"));
-  const avatar_poster_url = parseAvatarField(formData.get("avatar_poster_url"));
-  const avatar_character = parseAvatarField(formData.get("avatar_character"));
-  const avatar_style = parseAvatarField(formData.get("avatar_style"));
-  const avatar_voice = parseAvatarField(formData.get("avatar_voice"));
   if (!pillar_key || !title || !body) {
     return { ok: false, error: "Pillar, title, and body are required." };
   }
@@ -121,13 +114,6 @@ export async function saveLibraryContentAction(
       published_at,
       tags,
       source_generation_id,
-      avatar_url,
-      avatar_title,
-      avatar_script,
-      avatar_poster_url,
-      avatar_character,
-      avatar_style,
-      avatar_voice,
     });
     revalidatePath("/admin/library");
     return { ok: true };
@@ -161,13 +147,6 @@ export async function createManualLibraryContentAction(_: { ok: boolean; error?:
   const level = String(formData.get("level") || "").trim() || undefined;
   const published_at = parsePublishedAt(formData.get("published_at"));
   const tags = parseTags(formData.get("tags"));
-  const avatar_url = parseAvatarField(formData.get("avatar_url"));
-  const avatar_title = parseAvatarField(formData.get("avatar_title"));
-  const avatar_script = parseAvatarField(formData.get("avatar_script"));
-  const avatar_poster_url = parseAvatarField(formData.get("avatar_poster_url"));
-  const avatar_character = parseAvatarField(formData.get("avatar_character"));
-  const avatar_style = parseAvatarField(formData.get("avatar_style"));
-  const avatar_voice = parseAvatarField(formData.get("avatar_voice"));
   if (!pillar_key || !title || !body) {
     return { ok: false, error: "Pillar, title, and body are required." };
   }
@@ -186,13 +165,6 @@ export async function createManualLibraryContentAction(_: { ok: boolean; error?:
       level,
       published_at,
       tags,
-      avatar_url,
-      avatar_title,
-      avatar_script,
-      avatar_poster_url,
-      avatar_character,
-      avatar_style,
-      avatar_voice,
     });
     const newId = Number((result as Record<string, unknown>).id || 0) || 0;
     revalidatePath("/admin/library");
