@@ -55,12 +55,6 @@ function completeDayTone(complete?: boolean, score?: number | null, isToday?: bo
   return "border-[#ece5d9] bg-white text-[#8c7f70]";
 }
 
-function okrTone(onTrack?: boolean | null): string {
-  if (onTrack === true) return "border-[#d5e8bf] bg-[#f2fae8] text-[#335f16]";
-  if (onTrack === false) return "border-[#f2dccb] bg-[#fff4ea] text-[#8a5a1a]";
-  return "border-[#ece5d9] bg-white text-[#8c7f70]";
-}
-
 function CombinedLogoRing({ value }: { value: number }) {
   const pct = Math.max(0, Math.min(1, value / 100));
   const size = 84;
@@ -406,10 +400,9 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
                     const selectedValue = draft[conceptKey];
                     const targetLabel = String(concept.target_label || "").trim();
                     const okrStatusLabel = String(concept.okr_status_label || "").trim();
-                    const okrStatusDetail = String(concept.okr_status_detail || "").trim();
-                    const targetText =
-                      concept.target_source === "okr" && targetLabel
-                        ? `${targetLabel} from your current OKR`
+                    const targetSummaryText =
+                      concept.target_source === "okr"
+                        ? [targetLabel, okrStatusLabel].filter(Boolean).join(" ")
                         : targetLabel;
                     return (
                       <div key={conceptKey} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
@@ -417,21 +410,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
                           <div>
                             <p className="text-sm font-semibold text-[#1e1b16]">{concept.label}</p>
                             <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[#8c7f70]">{concept.helper}</p>
-                            {targetText || okrStatusLabel ? (
-                              <div className="mt-2 flex flex-wrap items-center gap-2">
-                                {targetText ? <p className="text-xs text-[#6b6257]">{targetText}</p> : null}
-                                {concept.target_source === "okr" && okrStatusLabel ? (
-                                  <span
-                                    className={`rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${okrTone(concept.okr_on_track)}`}
-                                  >
-                                    {`OKR ${okrStatusLabel.toLowerCase()}`}
-                                  </span>
-                                ) : null}
-                              </div>
-                            ) : null}
-                            {concept.target_source === "okr" && okrStatusDetail ? (
-                              <p className="mt-1 text-[11px] text-[#8c7f70]">{`Pace ${okrStatusDetail}`}</p>
-                            ) : null}
+                            {targetSummaryText ? <p className="mt-2 text-xs text-[#6b6257]">{targetSummaryText}</p> : null}
                           </div>
                           <p className="text-xs text-[#8c7f70]">{`${concept.streak_days || 0} day streak`}</p>
                         </div>
