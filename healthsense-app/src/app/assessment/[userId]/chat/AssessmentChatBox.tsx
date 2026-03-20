@@ -1431,7 +1431,7 @@ export default function AssessmentChatBox({
           </button>
           {claimSuccess ? (
             <p className="mt-2 text-sm text-[#3c332b]">
-              Your details have been saved. We&apos;ll be in touch with your personal coaching plan.
+              Thank you for your interest in HealthSense.
             </p>
           ) : null}
           {claimError ? (

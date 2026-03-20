@@ -400,17 +400,27 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
                     const selectedValue = draft[conceptKey];
                     const targetLabel = String(concept.target_label || "").trim();
                     const okrStatusLabel = String(concept.okr_status_label || "").trim();
-                    const targetSummaryText =
-                      concept.target_source === "okr"
-                        ? [targetLabel, okrStatusLabel].filter(Boolean).join(" ")
-                        : targetLabel;
+                    const okrStatusTone =
+                      concept.okr_on_track === true
+                        ? "text-[#4e7a1f]"
+                        : concept.okr_on_track === false
+                          ? "text-[#b55b1d]"
+                          : "text-[#6b6257]";
                     return (
                       <div key={conceptKey} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
                         <div className="flex items-start justify-between gap-3">
                           <div>
                             <p className="text-sm font-semibold text-[#1e1b16]">{concept.label}</p>
                             <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[#8c7f70]">{concept.helper}</p>
-                            {targetSummaryText ? <p className="mt-2 text-xs text-[#6b6257]">{targetSummaryText}</p> : null}
+                            {targetLabel || okrStatusLabel ? (
+                              <p className="mt-2 text-xs text-[#6b6257]">
+                                {targetLabel}
+                                {targetLabel && okrStatusLabel ? " " : null}
+                                {okrStatusLabel ? (
+                                  <span className={`font-medium ${okrStatusTone}`}>{okrStatusLabel}</span>
+                                ) : null}
+                              </p>
+                            ) : null}
                           </div>
                           <p className="text-xs text-[#8c7f70]">{`${concept.streak_days || 0} day streak`}</p>
                         </div>
