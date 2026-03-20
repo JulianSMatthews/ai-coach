@@ -254,7 +254,11 @@ export type PillarTrackerConceptWeekDay = {
   is_active?: boolean;
   value_label?: string | null;
   score?: number | null;
+  target_reached?: boolean | null;
   target_met?: boolean | null;
+  daily_status?: "success" | "warning" | "danger" | null;
+  daily_positive?: boolean | null;
+  okr_on_track?: boolean | null;
 };
 
 export type PillarTrackerConcept = {
@@ -270,7 +274,13 @@ export type PillarTrackerConcept = {
   value?: number | null;
   value_label?: string | null;
   score?: number | null;
+  target_reached?: boolean | null;
   target_met?: boolean | null;
+  daily_status?: "success" | "warning" | "danger" | null;
+  daily_positive?: boolean | null;
+  okr_on_track?: boolean | null;
+  okr_status_label?: string | null;
+  okr_status_detail?: string | null;
   streak_days?: number | null;
   week?: PillarTrackerConceptWeekDay[];
 };
@@ -334,6 +344,21 @@ export type CoachInsightContent = {
   body?: string | null;
   podcast_url?: string | null;
   podcast_voice?: string | null;
+  avatar?: {
+    url?: string | null;
+    title?: string | null;
+    script?: string | null;
+    poster_url?: string | null;
+    character?: string | null;
+    style?: string | null;
+    voice?: string | null;
+    status?: string | null;
+    job_id?: string | null;
+    error?: string | null;
+    generated_at?: string | null;
+    source?: string | null;
+    summary_url?: string | null;
+  } | null;
   created_at?: string | null;
 };
 
@@ -379,6 +404,7 @@ export type LibraryContentResponse = {
       created_at?: string | null;
       podcast_url?: string | null;
       podcast_voice?: string | null;
+      avatar?: CoachInsightContent["avatar"];
     }>
   >;
 };

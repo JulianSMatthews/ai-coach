@@ -1,7 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createContentGeneration, createLibraryContent, updateLibraryContent } from "@/lib/api";
+import {
+  createContentGeneration,
+  createLibraryContent,
+  generateLibraryContentAvatar,
+  refreshLibraryContentAvatar,
+  updateLibraryContent,
+} from "@/lib/api";
 import { redirect } from "next/navigation";
 
 export type GeneratorState = {
@@ -65,6 +71,12 @@ const parsePublishedAt = (value: FormDataEntryValue | null): string | undefined 
   return raw || undefined;
 };
 
+const parseAvatarField = (value: FormDataEntryValue | null): string | undefined => {
+  if (!value) return undefined;
+  const raw = String(value).trim();
+  return raw || undefined;
+};
+
 export async function saveLibraryContentAction(
   _: { ok: boolean; error?: string },
   formData: FormData,
@@ -83,6 +95,13 @@ export async function saveLibraryContentAction(
   const published_at = parsePublishedAt(formData.get("published_at"));
   const tags = parseTags(formData.get("tags"));
   const source_generation_id = Number(formData.get("source_generation_id") || 0) || undefined;
+  const avatar_url = parseAvatarField(formData.get("avatar_url"));
+  const avatar_title = parseAvatarField(formData.get("avatar_title"));
+  const avatar_script = parseAvatarField(formData.get("avatar_script"));
+  const avatar_poster_url = parseAvatarField(formData.get("avatar_poster_url"));
+  const avatar_character = parseAvatarField(formData.get("avatar_character"));
+  const avatar_style = parseAvatarField(formData.get("avatar_style"));
+  const avatar_voice = parseAvatarField(formData.get("avatar_voice"));
   if (!pillar_key || !title || !body) {
     return { ok: false, error: "Pillar, title, and body are required." };
   }
@@ -102,6 +121,13 @@ export async function saveLibraryContentAction(
       published_at,
       tags,
       source_generation_id,
+      avatar_url,
+      avatar_title,
+      avatar_script,
+      avatar_poster_url,
+      avatar_character,
+      avatar_style,
+      avatar_voice,
     });
     revalidatePath("/admin/library");
     return { ok: true };
@@ -135,6 +161,13 @@ export async function createManualLibraryContentAction(_: { ok: boolean; error?:
   const level = String(formData.get("level") || "").trim() || undefined;
   const published_at = parsePublishedAt(formData.get("published_at"));
   const tags = parseTags(formData.get("tags"));
+  const avatar_url = parseAvatarField(formData.get("avatar_url"));
+  const avatar_title = parseAvatarField(formData.get("avatar_title"));
+  const avatar_script = parseAvatarField(formData.get("avatar_script"));
+  const avatar_poster_url = parseAvatarField(formData.get("avatar_poster_url"));
+  const avatar_character = parseAvatarField(formData.get("avatar_character"));
+  const avatar_style = parseAvatarField(formData.get("avatar_style"));
+  const avatar_voice = parseAvatarField(formData.get("avatar_voice"));
   if (!pillar_key || !title || !body) {
     return { ok: false, error: "Pillar, title, and body are required." };
   }
@@ -153,6 +186,13 @@ export async function createManualLibraryContentAction(_: { ok: boolean; error?:
       level,
       published_at,
       tags,
+      avatar_url,
+      avatar_title,
+      avatar_script,
+      avatar_poster_url,
+      avatar_character,
+      avatar_style,
+      avatar_voice,
     });
     const newId = Number((result as Record<string, unknown>).id || 0) || 0;
     revalidatePath("/admin/library");
@@ -183,6 +223,13 @@ export async function updateLibraryContentAction(
   const level = String(formData.get("level") || "").trim() || undefined;
   const published_at = parsePublishedAt(formData.get("published_at"));
   const tags = parseTags(formData.get("tags"));
+  const avatar_url = parseAvatarField(formData.get("avatar_url"));
+  const avatar_title = parseAvatarField(formData.get("avatar_title"));
+  const avatar_script = parseAvatarField(formData.get("avatar_script"));
+  const avatar_poster_url = parseAvatarField(formData.get("avatar_poster_url"));
+  const avatar_character = parseAvatarField(formData.get("avatar_character"));
+  const avatar_style = parseAvatarField(formData.get("avatar_style"));
+  const avatar_voice = parseAvatarField(formData.get("avatar_voice"));
   if (!pillar_key || !title || !body) {
     return { ok: false, error: "Pillar, title, and body are required." };
   }
@@ -201,10 +248,62 @@ export async function updateLibraryContentAction(
       level,
       published_at,
       tags,
+      avatar_url,
+      avatar_title,
+      avatar_script,
+      avatar_poster_url,
+      avatar_character,
+      avatar_style,
+      avatar_voice,
     });
     revalidatePath("/admin/library");
     revalidatePath(`/admin/library/content/${contentId}`);
     return { ok: true };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function generateLibraryContentAvatarAction(
+  contentId: number,
+  _: { ok: boolean; error?: string; avatar?: Record<string, unknown> | null },
+  formData: FormData,
+): Promise<{ ok: boolean; error?: string; avatar?: Record<string, unknown> | null }> {
+  try {
+    const result = await generateLibraryContentAvatar(contentId, {
+      avatar_title: parseAvatarField(formData.get("avatar_title")),
+      avatar_script: parseAvatarField(formData.get("avatar_script")),
+      avatar_poster_url: parseAvatarField(formData.get("avatar_poster_url")),
+      avatar_character: parseAvatarField(formData.get("avatar_character")),
+      avatar_style: parseAvatarField(formData.get("avatar_style")),
+      avatar_voice: parseAvatarField(formData.get("avatar_voice")),
+    });
+    revalidatePath("/admin/library");
+    revalidatePath(`/admin/library/content/${contentId}`);
+    return {
+      ok: Boolean(result.ok),
+      error: result.error || undefined,
+      avatar: (result.avatar as Record<string, unknown> | null) || null,
+    };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function refreshLibraryContentAvatarAction(
+  contentId: number,
+  _: { ok: boolean; error?: string; avatar?: Record<string, unknown> | null },
+): Promise<{ ok: boolean; error?: string; avatar?: Record<string, unknown> | null }> {
+  void _;
+  try {
+    const result = await refreshLibraryContentAvatar(contentId);
+    revalidatePath("/admin/library");
+    revalidatePath(`/admin/library/content/${contentId}`);
+    return {
+      ok: Boolean(result.ok),
+      error: result.error || undefined,
+      avatar: (result.avatar as Record<string, unknown> | null) || null,
+    };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }

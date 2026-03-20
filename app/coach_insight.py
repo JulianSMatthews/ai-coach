@@ -128,8 +128,6 @@ def _load_library_rows(pillar_key: str) -> list[ContentLibraryItem]:
                 .where(
                     ContentLibraryItem.status == "published",
                     ContentLibraryItem.pillar_key == str(pillar_key or "").strip().lower(),
-                    ContentLibraryItem.podcast_url.isnot(None),
-                    ContentLibraryItem.podcast_url != "",
                     or_(
                         ContentLibraryItem.source_type.is_(None),
                         and_(
@@ -149,6 +147,55 @@ def _load_library_rows(pillar_key: str) -> list[ContentLibraryItem]:
         )
 
 
+def _library_avatar_payload(row: ContentLibraryItem) -> dict[str, Any] | None:
+    tags = row.tags if isinstance(getattr(row, "tags", None), dict) else {}
+    if not isinstance(tags, dict):
+        return None
+    raw_url = str(tags.get("library_avatar_url") or "").strip()
+    raw_title = str(tags.get("library_avatar_title") or "").strip()
+    raw_script = str(tags.get("library_avatar_script") or "").strip()
+    raw_poster = str(tags.get("library_avatar_poster_url") or "").strip()
+    raw_character = str(tags.get("library_avatar_character") or "").strip()
+    raw_style = str(tags.get("library_avatar_style") or "").strip()
+    raw_voice = str(tags.get("library_avatar_voice") or "").strip()
+    raw_status = str(tags.get("library_avatar_status") or "").strip()
+    raw_job_id = str(tags.get("library_avatar_job_id") or "").strip()
+    raw_error = str(tags.get("library_avatar_error") or "").strip()
+    raw_generated_at = str(tags.get("library_avatar_generated_at") or "").strip()
+    raw_source = str(tags.get("library_avatar_source") or "").strip()
+    raw_summary_url = str(tags.get("library_avatar_summary_url") or "").strip()
+    if not any(
+        [
+            raw_url,
+            raw_title,
+            raw_script,
+            raw_poster,
+            raw_status,
+            raw_job_id,
+            raw_error,
+            raw_generated_at,
+            raw_source,
+            raw_summary_url,
+        ]
+    ):
+        return None
+    return {
+        "url": raw_url or None,
+        "title": raw_title or str(getattr(row, "title", "") or "").strip() or None,
+        "script": raw_script or str(getattr(row, "body", "") or "").strip() or None,
+        "poster_url": raw_poster or None,
+        "character": raw_character or None,
+        "style": raw_style or None,
+        "voice": raw_voice or None,
+        "status": raw_status or None,
+        "job_id": raw_job_id or None,
+        "error": raw_error or None,
+        "generated_at": raw_generated_at or None,
+        "source": raw_source or None,
+        "summary_url": raw_summary_url or None,
+    }
+
+
 def _normalized_library_concept(row: ContentLibraryItem) -> str | None:
     token = _normalize_concept_key(getattr(row, "concept_code", None))
     return token or None
@@ -159,16 +206,36 @@ def _select_library_item(
     *,
     concept_key: str | None,
 ) -> tuple[ContentLibraryItem | None, str | None]:
+    def _row_priority(row: ContentLibraryItem) -> tuple[int]:
+        avatar = _library_avatar_payload(row)
+        has_avatar = bool(str((avatar or {}).get("url") or "").strip())
+        has_audio = bool(str(getattr(row, "podcast_url", "") or "").strip())
+        has_body = bool(str(getattr(row, "body", "") or "").strip())
+        if has_avatar:
+            return (0,)
+        if has_audio:
+            return (1,)
+        if has_body:
+            return (2,)
+        return (3,)
+
     normalized_concept = _normalize_concept_key(concept_key) or None
     if normalized_concept:
-        exact_rows = [row for row in rows if _normalized_library_concept(row) == normalized_concept]
+        exact_rows = sorted(
+            [row for row in rows if _normalized_library_concept(row) == normalized_concept],
+            key=_row_priority,
+        )
         if exact_rows:
             return exact_rows[0], "concept"
-    pillar_rows = [row for row in rows if not _normalized_library_concept(row)]
+    pillar_rows = sorted(
+        [row for row in rows if not _normalized_library_concept(row)],
+        key=_row_priority,
+    )
     if pillar_rows:
         return pillar_rows[0], "pillar"
-    if rows:
-        return rows[0], "pillar"
+    ranked_rows = sorted(rows, key=_row_priority)
+    if ranked_rows:
+        return ranked_rows[0], "pillar"
     return None, None
 
 
@@ -204,6 +271,7 @@ def get_coach_insight(user_id: int, *, anchor: date | None = None) -> dict[str, 
                 "body": str(getattr(selected_row, "body", "") or "").strip() or None,
                 "podcast_url": str(getattr(selected_row, "podcast_url", "") or "").strip() or None,
                 "podcast_voice": str(getattr(selected_row, "podcast_voice", "") or "").strip() or None,
+                "avatar": _library_avatar_payload(selected_row),
                 "created_at": getattr(selected_row, "created_at", None),
             }
             if selected_row is not None

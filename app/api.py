@@ -4904,6 +4904,20 @@ INTRO_COACH_PRODUCT_AVATAR_ERROR_TAG = "coach_product_avatar_error"
 INTRO_COACH_PRODUCT_AVATAR_GENERATED_AT_TAG = "coach_product_avatar_generated_at"
 INTRO_COACH_PRODUCT_AVATAR_SOURCE_TAG = "coach_product_avatar_source"
 INTRO_COACH_PRODUCT_AVATAR_SUMMARY_URL_TAG = "coach_product_avatar_summary_url"
+LIBRARY_TAG_LABELS_KEY = "labels"
+LIBRARY_AVATAR_URL_TAG = "library_avatar_url"
+LIBRARY_AVATAR_TITLE_TAG = "library_avatar_title"
+LIBRARY_AVATAR_SCRIPT_TAG = "library_avatar_script"
+LIBRARY_AVATAR_POSTER_TAG = "library_avatar_poster_url"
+LIBRARY_AVATAR_CHARACTER_TAG = "library_avatar_character"
+LIBRARY_AVATAR_STYLE_TAG = "library_avatar_style"
+LIBRARY_AVATAR_VOICE_TAG = "library_avatar_voice"
+LIBRARY_AVATAR_STATUS_TAG = "library_avatar_status"
+LIBRARY_AVATAR_JOB_ID_TAG = "library_avatar_job_id"
+LIBRARY_AVATAR_ERROR_TAG = "library_avatar_error"
+LIBRARY_AVATAR_GENERATED_AT_TAG = "library_avatar_generated_at"
+LIBRARY_AVATAR_SOURCE_TAG = "library_avatar_source"
+LIBRARY_AVATAR_SUMMARY_URL_TAG = "library_avatar_summary_url"
 ONBOARDING_PREF_KEYS = {
     "first_login": "first_app_login_at",
     "assessment_reviewed": "assessment_reviewed_at",
@@ -5295,6 +5309,121 @@ def _set_intro_coach_product_avatar_tags(
     tags[INTRO_COACH_PRODUCT_AVATAR_GENERATED_AT_TAG] = generated_at
     tags[INTRO_COACH_PRODUCT_AVATAR_SOURCE_TAG] = source
     tags[INTRO_COACH_PRODUCT_AVATAR_SUMMARY_URL_TAG] = summary_url
+    return tags
+
+
+def _library_tags_list(raw_tags: object) -> list[str]:
+    source = None
+    if isinstance(raw_tags, list):
+        source = raw_tags
+    elif isinstance(raw_tags, dict):
+        source = raw_tags.get(LIBRARY_TAG_LABELS_KEY)
+    if not isinstance(source, list):
+        return []
+    items: list[str] = []
+    for entry in source:
+        token = str(entry or "").strip()
+        if token:
+            items.append(token)
+    return items
+
+
+def _library_avatar_tags_present(raw_tags: object) -> bool:
+    if not isinstance(raw_tags, dict):
+        return False
+    keys = (
+        LIBRARY_AVATAR_URL_TAG,
+        LIBRARY_AVATAR_TITLE_TAG,
+        LIBRARY_AVATAR_SCRIPT_TAG,
+        LIBRARY_AVATAR_POSTER_TAG,
+        LIBRARY_AVATAR_CHARACTER_TAG,
+        LIBRARY_AVATAR_STYLE_TAG,
+        LIBRARY_AVATAR_VOICE_TAG,
+        LIBRARY_AVATAR_STATUS_TAG,
+        LIBRARY_AVATAR_JOB_ID_TAG,
+        LIBRARY_AVATAR_ERROR_TAG,
+        LIBRARY_AVATAR_GENERATED_AT_TAG,
+        LIBRARY_AVATAR_SOURCE_TAG,
+        LIBRARY_AVATAR_SUMMARY_URL_TAG,
+    )
+    for key in keys:
+        value = raw_tags.get(key)
+        if value is None:
+            continue
+        if isinstance(value, str):
+            if value.strip():
+                return True
+            continue
+        return True
+    return False
+
+
+def _library_avatar_payload_from_row(row: ContentLibraryItem | None) -> dict[str, str | None] | None:
+    tags = row.tags if row and isinstance(getattr(row, "tags", None), dict) else {}
+    if not _library_avatar_tags_present(tags):
+        return None
+    defaults = azure_avatar_defaults()
+    raw_url = str((tags or {}).get(LIBRARY_AVATAR_URL_TAG) or "").strip()
+    raw_title = str((tags or {}).get(LIBRARY_AVATAR_TITLE_TAG) or "").strip()
+    raw_script = str((tags or {}).get(LIBRARY_AVATAR_SCRIPT_TAG) or "").strip()
+    raw_poster = str((tags or {}).get(LIBRARY_AVATAR_POSTER_TAG) or "").strip()
+    raw_character = str((tags or {}).get(LIBRARY_AVATAR_CHARACTER_TAG) or "").strip()
+    raw_style = str((tags or {}).get(LIBRARY_AVATAR_STYLE_TAG) or "").strip()
+    raw_voice = str((tags or {}).get(LIBRARY_AVATAR_VOICE_TAG) or "").strip()
+    raw_status = str((tags or {}).get(LIBRARY_AVATAR_STATUS_TAG) or "").strip()
+    raw_job_id = str((tags or {}).get(LIBRARY_AVATAR_JOB_ID_TAG) or "").strip()
+    raw_error = str((tags or {}).get(LIBRARY_AVATAR_ERROR_TAG) or "").strip()
+    raw_generated_at = str((tags or {}).get(LIBRARY_AVATAR_GENERATED_AT_TAG) or "").strip()
+    raw_source = str((tags or {}).get(LIBRARY_AVATAR_SOURCE_TAG) or "").strip()
+    raw_summary_url = str((tags or {}).get(LIBRARY_AVATAR_SUMMARY_URL_TAG) or "").strip()
+    return {
+        "url": _normalize_reports_url(raw_url) if raw_url else None,
+        "title": raw_title or str(getattr(row, "title", "") or "").strip() or "Library insight",
+        "script": raw_script or str(getattr(row, "body", "") or "").strip() or "",
+        "poster_url": _normalize_reports_url(raw_poster) if raw_poster else None,
+        "character": raw_character or str(defaults.get("character") or "lisa"),
+        "style": raw_style or str(defaults.get("style") or "graceful-sitting"),
+        "voice": raw_voice or str(defaults.get("voice") or "en-GB-SoniaNeural"),
+        "status": raw_status or None,
+        "job_id": raw_job_id or None,
+        "error": raw_error or None,
+        "generated_at": raw_generated_at or None,
+        "source": raw_source or None,
+        "summary_url": raw_summary_url or None,
+    }
+
+
+def _set_library_avatar_tags(
+    tags: dict,
+    *,
+    url: str | None,
+    title: str,
+    script: str,
+    poster_url: str | None,
+    character: str,
+    style: str,
+    voice: str,
+    status: str | None,
+    job_id: str | None,
+    error: str | None,
+    generated_at: str | None,
+    source: str | None,
+    summary_url: str | None,
+) -> dict:
+    tags = dict(tags or {})
+    tags[LIBRARY_AVATAR_URL_TAG] = url
+    tags[LIBRARY_AVATAR_TITLE_TAG] = title
+    tags[LIBRARY_AVATAR_SCRIPT_TAG] = script
+    tags[LIBRARY_AVATAR_POSTER_TAG] = poster_url
+    tags[LIBRARY_AVATAR_CHARACTER_TAG] = character
+    tags[LIBRARY_AVATAR_STYLE_TAG] = style
+    tags[LIBRARY_AVATAR_VOICE_TAG] = voice
+    tags[LIBRARY_AVATAR_STATUS_TAG] = status
+    tags[LIBRARY_AVATAR_JOB_ID_TAG] = job_id
+    tags[LIBRARY_AVATAR_ERROR_TAG] = error
+    tags[LIBRARY_AVATAR_GENERATED_AT_TAG] = generated_at
+    tags[LIBRARY_AVATAR_SOURCE_TAG] = source
+    tags[LIBRARY_AVATAR_SUMMARY_URL_TAG] = summary_url
     return tags
 
 
@@ -6795,6 +6924,14 @@ def api_user_coach_insight(
     content = result.get("content")
     if isinstance(content, dict):
         content["podcast_url"] = _normalize_reports_url(content.get("podcast_url"))
+        avatar = content.get("avatar")
+        if isinstance(avatar, dict):
+            avatar_url = str(avatar.get("url") or "").strip()
+            poster_url = str(avatar.get("poster_url") or "").strip()
+            if avatar_url:
+                avatar["url"] = _normalize_reports_url(avatar_url)
+            if poster_url:
+                avatar["poster_url"] = _normalize_reports_url(poster_url)
     _log_app_engagement_event(
         user_id=user_id,
         unit_type="coach_home_insight_view",
@@ -7678,6 +7815,7 @@ def api_user_library_content(
                 "created_at": row.created_at,
                 "podcast_url": _normalize_reports_url(row.podcast_url),
                 "podcast_voice": row.podcast_voice,
+                "avatar": _library_avatar_payload_from_row(row),
             }
         )
     return {"user_id": user_id, "items": grouped}
@@ -17079,7 +17217,8 @@ def admin_library_content_list(
                 "license": row.license,
                 "published_at": row.published_at,
                 "level": row.level,
-                "tags": row.tags,
+                "tags": _library_tags_list(row.tags),
+                "avatar": _library_avatar_payload_from_row(row),
             }
         )
     return {"count": len(items), "items": items}
@@ -18183,6 +18322,133 @@ def admin_library_intro_avatar_refresh(
         return {"ok": str(refreshed.get("status") or "").strip().lower() == "succeeded", "assessment_intro_avatar": refreshed}
 
 
+def _save_library_avatar_generation_result(
+    session,
+    *,
+    row: ContentLibraryItem,
+    title: str,
+    script: str,
+    poster_url: str | None,
+    character: str,
+    style: str,
+    voice: str,
+    status: str,
+    job_id: str | None,
+    error: str | None,
+    summary_url: str | None,
+    video_bytes: bytes | None = None,
+) -> dict[str, object]:
+    asset_url = None
+    generated_at = _utc_now_iso() if status == "Succeeded" else None
+    if status == "Succeeded" and video_bytes:
+        filename = f"library-avatar-{int(getattr(row, 'id', 0) or 0)}-{(job_id or secrets.token_hex(6)).strip()[:48]}.mp4"
+        asset_url = _write_global_report_bytes(f"content/library/{filename}", video_bytes)
+    tags = row.tags if isinstance(getattr(row, "tags", None), dict) else {}
+    labels = _library_tags_list(row.tags)
+    tags = dict(tags or {})
+    if labels:
+        tags[LIBRARY_TAG_LABELS_KEY] = labels
+    tags = _set_library_avatar_tags(
+        tags,
+        url=asset_url,
+        title=title,
+        script=script,
+        poster_url=poster_url,
+        character=character,
+        style=style,
+        voice=voice,
+        status=status.lower(),
+        job_id=job_id,
+        error=error,
+        generated_at=generated_at,
+        source="azure_batch",
+        summary_url=summary_url,
+    )
+    row.tags = tags
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return _library_avatar_payload_from_row(row) or {}
+
+
+def _poll_library_avatar_status(
+    session,
+    *,
+    row: ContentLibraryItem,
+    avatar_payload: dict[str, object],
+) -> dict[str, object]:
+    job_id = str(avatar_payload.get("job_id") or "").strip()
+    if not job_id:
+        raise HTTPException(status_code=400, detail="No avatar job is pending for this library item.")
+    status_payload = get_batch_avatar(job_id)
+    status = str(status_payload.get("status") or "").strip()
+    outputs = status_payload.get("outputs") if isinstance(status_payload.get("outputs"), dict) else {}
+    summary_url = str((outputs or {}).get("summary") or "").strip() or None
+    if status == "Succeeded":
+        result_url = str((outputs or {}).get("result") or "").strip()
+        if not result_url:
+            return _save_library_avatar_generation_result(
+                session,
+                row=row,
+                title=str(avatar_payload.get("title") or "").strip() or str(getattr(row, "title", "") or "").strip() or "Library insight",
+                script=str(avatar_payload.get("script") or "").strip() or str(getattr(row, "body", "") or "").strip(),
+                poster_url=str(avatar_payload.get("poster_url") or "").strip() or None,
+                character=str(avatar_payload.get("character") or "").strip() or str(azure_avatar_defaults().get("character") or "lisa"),
+                style=str(avatar_payload.get("style") or "").strip() or str(azure_avatar_defaults().get("style") or "graceful-sitting"),
+                voice=str(avatar_payload.get("voice") or "").strip() or str(azure_avatar_defaults().get("voice") or "en-GB-SoniaNeural"),
+                status="Failed",
+                job_id=job_id,
+                error="Azure avatar completed without a result video URL.",
+                summary_url=summary_url,
+            )
+        return _save_library_avatar_generation_result(
+            session,
+            row=row,
+            title=str(avatar_payload.get("title") or "").strip() or str(getattr(row, "title", "") or "").strip() or "Library insight",
+            script=str(avatar_payload.get("script") or "").strip() or str(getattr(row, "body", "") or "").strip(),
+            poster_url=str(avatar_payload.get("poster_url") or "").strip() or None,
+            character=str(avatar_payload.get("character") or "").strip() or str(azure_avatar_defaults().get("character") or "lisa"),
+            style=str(avatar_payload.get("style") or "").strip() or str(azure_avatar_defaults().get("style") or "graceful-sitting"),
+            voice=str(avatar_payload.get("voice") or "").strip() or str(azure_avatar_defaults().get("voice") or "en-GB-SoniaNeural"),
+            status=status,
+            job_id=job_id,
+            error=None,
+            summary_url=summary_url,
+            video_bytes=download_batch_avatar_output(result_url),
+        )
+    if status == "Failed":
+        props = status_payload.get("properties") if isinstance(status_payload.get("properties"), dict) else {}
+        error_detail = str((props or {}).get("error") or status_payload.get("error") or "Azure avatar generation failed.").strip()
+        return _save_library_avatar_generation_result(
+            session,
+            row=row,
+            title=str(avatar_payload.get("title") or "").strip() or str(getattr(row, "title", "") or "").strip() or "Library insight",
+            script=str(avatar_payload.get("script") or "").strip() or str(getattr(row, "body", "") or "").strip(),
+            poster_url=str(avatar_payload.get("poster_url") or "").strip() or None,
+            character=str(avatar_payload.get("character") or "").strip() or str(azure_avatar_defaults().get("character") or "lisa"),
+            style=str(avatar_payload.get("style") or "").strip() or str(azure_avatar_defaults().get("style") or "graceful-sitting"),
+            voice=str(avatar_payload.get("voice") or "").strip() or str(azure_avatar_defaults().get("voice") or "en-GB-SoniaNeural"),
+            status=status,
+            job_id=job_id,
+            error=error_detail,
+            summary_url=summary_url,
+        )
+    return _save_library_avatar_generation_result(
+        session,
+        row=row,
+        title=str(avatar_payload.get("title") or "").strip() or str(getattr(row, "title", "") or "").strip() or "Library insight",
+        script=str(avatar_payload.get("script") or "").strip() or str(getattr(row, "body", "") or "").strip(),
+        poster_url=str(avatar_payload.get("poster_url") or "").strip() or None,
+        character=str(avatar_payload.get("character") or "").strip() or str(azure_avatar_defaults().get("character") or "lisa"),
+        style=str(avatar_payload.get("style") or "").strip() or str(azure_avatar_defaults().get("style") or "graceful-sitting"),
+        voice=str(avatar_payload.get("voice") or "").strip() or str(azure_avatar_defaults().get("voice") or "en-GB-SoniaNeural"),
+        status=status or "Running",
+        job_id=job_id,
+        error=None,
+        summary_url=summary_url,
+    )
+
+
 @admin.get("/library/content/{content_id}")
 def admin_library_content_detail(
     content_id: int,
@@ -18209,7 +18475,8 @@ def admin_library_content_detail(
             "license": row.license,
             "published_at": row.published_at,
             "level": row.level,
-            "tags": row.tags,
+            "tags": _library_tags_list(row.tags),
+            "avatar": _library_avatar_payload_from_row(row),
         }
 
 
@@ -18235,7 +18502,7 @@ def admin_library_content_create(
     if tags_val is not None and isinstance(tags_val, str):
         tags_val = [t.strip() for t in tags_val.split(",") if t.strip()]
     if not tags_val:
-        tags_val = None
+        tags_val = []
     if not pillar_key:
         raise HTTPException(status_code=400, detail="pillar_key required")
     if not title:
@@ -18255,6 +18522,44 @@ def admin_library_content_create(
             published_at = None
     if not source_type and source_generation_id:
         source_type = "generated"
+    avatar_requested = any(
+        key in payload
+        for key in (
+            "avatar_url",
+            "avatar_title",
+            "avatar_script",
+            "avatar_poster_url",
+            "avatar_character",
+            "avatar_style",
+            "avatar_voice",
+        )
+    )
+    avatar_defaults = azure_avatar_defaults()
+    stored_tags: list[str] | dict[str, object] | None = tags_val or None
+    if avatar_requested:
+        avatar_url = str(payload.get("avatar_url") or "").strip() or None
+        avatar_title = str(payload.get("avatar_title") or "").strip() or title
+        avatar_script = str(payload.get("avatar_script") or "").strip() or body
+        avatar_poster_url = str(payload.get("avatar_poster_url") or "").strip() or None
+        avatar_character = str(payload.get("avatar_character") or "").strip() or str(avatar_defaults.get("character") or "lisa")
+        avatar_style = str(payload.get("avatar_style") or "").strip() or str(avatar_defaults.get("style") or "graceful-sitting")
+        avatar_voice = str(payload.get("avatar_voice") or "").strip() or str(avatar_defaults.get("voice") or "en-GB-SoniaNeural")
+        stored_tags = _set_library_avatar_tags(
+            {LIBRARY_TAG_LABELS_KEY: tags_val or []},
+            url=avatar_url,
+            title=avatar_title,
+            script=avatar_script,
+            poster_url=avatar_poster_url,
+            character=avatar_character,
+            style=avatar_style,
+            voice=avatar_voice,
+            status=None,
+            job_id=None,
+            error=None,
+            generated_at=None,
+            source=None,
+            summary_url=None,
+        )
     with SessionLocal() as s:
         row = ContentLibraryItem(
             pillar_key=pillar_key,
@@ -18269,7 +18574,7 @@ def admin_library_content_create(
             license=license_val,
             published_at=published_at,
             level=level_val,
-            tags=tags_val,
+            tags=stored_tags,
             source_generation_id=source_generation_id,
             created_by=getattr(admin_user, "id", None),
         )
@@ -18277,6 +18582,140 @@ def admin_library_content_create(
         s.commit()
         s.refresh(row)
     return {"id": row.id}
+
+
+@admin.post("/library/content/{content_id}/avatar/generate")
+def admin_library_content_avatar_generate(
+    content_id: int,
+    payload: dict | None = None,
+    admin_user: User = Depends(_require_admin),
+):
+    if not azure_avatar_enabled():
+        raise HTTPException(status_code=503, detail="Azure avatar generation is not enabled.")
+    payload = payload if isinstance(payload, dict) else {}
+    defaults = azure_avatar_defaults()
+    with SessionLocal() as s:
+        row = s.query(ContentLibraryItem).filter(ContentLibraryItem.id == content_id).one_or_none()
+        if not row:
+            raise HTTPException(status_code=404, detail="content not found")
+        existing_avatar = _library_avatar_payload_from_row(row) or {}
+        title = str(payload.get("avatar_title") or "").strip() or str(existing_avatar.get("title") or row.title or "Library insight").strip()
+        script = str(payload.get("avatar_script") or "").strip() or str(existing_avatar.get("script") or row.body or "").strip()
+        poster_url = str(payload.get("avatar_poster_url") or "").strip() or str(existing_avatar.get("poster_url") or "").strip() or None
+        character = str(payload.get("avatar_character") or "").strip() or str(existing_avatar.get("character") or defaults.get("character") or "lisa")
+        style = str(payload.get("avatar_style") or "").strip() or str(existing_avatar.get("style") or defaults.get("style") or "graceful-sitting")
+        voice = str(payload.get("avatar_voice") or "").strip() or str(existing_avatar.get("voice") or defaults.get("voice") or "en-GB-SoniaNeural")
+        if not script:
+            raise HTTPException(status_code=400, detail="Library avatar script is required.")
+        tags = row.tags if isinstance(getattr(row, "tags", None), dict) else {}
+        tags = dict(tags or {})
+        labels = _library_tags_list(row.tags)
+        if labels:
+            tags[LIBRARY_TAG_LABELS_KEY] = labels
+        tags = _set_library_avatar_tags(
+            tags,
+            url=None,
+            title=title,
+            script=script,
+            poster_url=poster_url,
+            character=character,
+            style=style,
+            voice=voice,
+            status="running",
+            job_id=None,
+            error=None,
+            generated_at=None,
+            source="azure_batch",
+            summary_url=None,
+        )
+        row.tags = tags
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        try:
+            result = generate_batch_avatar_video(
+                script=script,
+                title=title,
+                character=character,
+                style=style,
+                voice=voice,
+            )
+            status = str(result.get("status") or "").strip()
+            if status == "Succeeded" and result.get("video_bytes"):
+                avatar = _save_library_avatar_generation_result(
+                    s,
+                    row=row,
+                    title=title,
+                    script=script,
+                    poster_url=poster_url,
+                    character=character,
+                    style=style,
+                    voice=voice,
+                    status=status,
+                    job_id=str(result.get("job_id") or "").strip() or None,
+                    error=None,
+                    summary_url=str(result.get("summary_url") or "").strip() or None,
+                    video_bytes=result.get("video_bytes") if isinstance(result.get("video_bytes"), (bytes, bytearray)) else None,
+                )
+                return {"ok": True, "avatar": avatar}
+            pending_error = None
+            if status == "Failed":
+                pending_error = str(result.get("response") or "")[:500]
+            avatar = _save_library_avatar_generation_result(
+                s,
+                row=row,
+                title=title,
+                script=script,
+                poster_url=poster_url,
+                character=character,
+                style=style,
+                voice=voice,
+                status=status or "Running",
+                job_id=str(result.get("job_id") or "").strip() or None,
+                error=pending_error,
+                summary_url=str(result.get("summary_url") or "").strip() or None,
+            )
+            return {
+                "ok": status != "Failed",
+                "avatar": avatar,
+                "pending": bool(result.get("timed_out")) or status not in {"Succeeded", "Failed"},
+            }
+        except Exception as exc:
+            avatar = _save_library_avatar_generation_result(
+                s,
+                row=row,
+                title=title,
+                script=script,
+                poster_url=poster_url,
+                character=character,
+                style=style,
+                voice=voice,
+                status="Failed",
+                job_id=None,
+                error=str(exc),
+                summary_url=None,
+            )
+            return {"ok": False, "avatar": avatar, "error": str(exc)}
+
+
+@admin.post("/library/content/{content_id}/avatar/refresh")
+def admin_library_content_avatar_refresh(
+    content_id: int,
+    admin_user: User = Depends(_require_admin),
+):
+    with SessionLocal() as s:
+        row = s.query(ContentLibraryItem).filter(ContentLibraryItem.id == content_id).one_or_none()
+        if not row:
+            raise HTTPException(status_code=404, detail="content not found")
+        avatar = _library_avatar_payload_from_row(row)
+        if not avatar:
+            raise HTTPException(status_code=404, detail="Library avatar is not configured.")
+        refreshed = _poll_library_avatar_status(
+            s,
+            row=row,
+            avatar_payload=avatar,
+        )
+        return {"ok": str(refreshed.get("status") or "").strip().lower() == "succeeded", "avatar": refreshed}
 
 
 @admin.post("/library/content/{content_id}")
@@ -18289,6 +18728,20 @@ def admin_library_content_update(
         row = s.query(ContentLibraryItem).filter(ContentLibraryItem.id == content_id).one_or_none()
         if not row:
             raise HTTPException(status_code=404, detail="content not found")
+        avatar_defaults = azure_avatar_defaults()
+        existing_avatar = _library_avatar_payload_from_row(row) or {}
+        avatar_requested = any(
+            key in payload
+            for key in (
+                "avatar_url",
+                "avatar_title",
+                "avatar_script",
+                "avatar_poster_url",
+                "avatar_character",
+                "avatar_style",
+                "avatar_voice",
+            )
+        ) or _library_avatar_tags_present(getattr(row, "tags", None))
         if "pillar_key" in payload:
             pillar_key = (payload.get("pillar_key") or "").strip()
             if not pillar_key:
@@ -18334,7 +18787,63 @@ def admin_library_content_update(
             tags_val = payload.get("tags")
             if tags_val is not None and isinstance(tags_val, str):
                 tags_val = [t.strip() for t in tags_val.split(",") if t.strip()]
-            row.tags = tags_val or None
+        else:
+            tags_val = _library_tags_list(getattr(row, "tags", None))
+        clean_tags = [str(item or "").strip() for item in (tags_val or []) if str(item or "").strip()]
+        if avatar_requested:
+            avatar_url = (
+                str(payload.get("avatar_url") or "").strip() or None
+                if "avatar_url" in payload
+                else str(existing_avatar.get("url") or "").strip() or None
+            )
+            avatar_title = (
+                str(payload.get("avatar_title") or "").strip() or str(row.title or "").strip() or "Library insight"
+                if "avatar_title" in payload
+                else str(existing_avatar.get("title") or row.title or "Library insight").strip()
+            )
+            avatar_script = (
+                str(payload.get("avatar_script") or "").strip() or str(row.body or "").strip()
+                if "avatar_script" in payload
+                else str(existing_avatar.get("script") or row.body or "").strip()
+            )
+            avatar_poster_url = (
+                str(payload.get("avatar_poster_url") or "").strip() or None
+                if "avatar_poster_url" in payload
+                else str(existing_avatar.get("poster_url") or "").strip() or None
+            )
+            avatar_character = (
+                str(payload.get("avatar_character") or "").strip() or str(avatar_defaults.get("character") or "lisa")
+                if "avatar_character" in payload
+                else str(existing_avatar.get("character") or avatar_defaults.get("character") or "lisa")
+            )
+            avatar_style = (
+                str(payload.get("avatar_style") or "").strip() or str(avatar_defaults.get("style") or "graceful-sitting")
+                if "avatar_style" in payload
+                else str(existing_avatar.get("style") or avatar_defaults.get("style") or "graceful-sitting")
+            )
+            avatar_voice = (
+                str(payload.get("avatar_voice") or "").strip() or str(avatar_defaults.get("voice") or "en-GB-SoniaNeural")
+                if "avatar_voice" in payload
+                else str(existing_avatar.get("voice") or avatar_defaults.get("voice") or "en-GB-SoniaNeural")
+            )
+            row.tags = _set_library_avatar_tags(
+                {LIBRARY_TAG_LABELS_KEY: clean_tags},
+                url=avatar_url,
+                title=avatar_title,
+                script=avatar_script,
+                poster_url=avatar_poster_url,
+                character=avatar_character,
+                style=avatar_style,
+                voice=avatar_voice,
+                status=str(existing_avatar.get("status") or "").strip() or None,
+                job_id=str(existing_avatar.get("job_id") or "").strip() or None,
+                error=str(existing_avatar.get("error") or "").strip() or None,
+                generated_at=str(existing_avatar.get("generated_at") or "").strip() or None,
+                source=str(existing_avatar.get("source") or "").strip() or None,
+                summary_url=str(existing_avatar.get("summary_url") or "").strip() or None,
+            )
+        else:
+            row.tags = clean_tags or None
         s.commit()
     return {"id": content_id}
 

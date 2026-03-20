@@ -490,6 +490,7 @@ export default function AssessmentChatBox({
   const [coachInsight, setCoachInsight] = useState<CoachInsightResponse | null>(null);
   const [coachInsightLoading, setCoachInsightLoading] = useState(false);
   const [coachInsightError, setCoachInsightError] = useState<string | null>(null);
+  const [insightMode, setInsightMode] = useState<"video" | "listen" | "read">("read");
 
   const autoStart = useMemo(() => isTruthyToken(searchParams?.get("autostart")), [searchParams]);
   const leadFlow = useMemo(() => isTruthyToken(searchParams?.get("lead")), [searchParams]);
@@ -501,8 +502,9 @@ export default function AssessmentChatBox({
   const busy = loading || starting || sending || claiming;
   const chatReady = hasActiveSession || assessmentCompleted || messages.length > 0;
   const promptActive = Boolean(currentPrompt);
-  const showResultsGate = allowResultSummaryInChat && Boolean(resultSummary) && !promptActive && identityRequired;
-  const showResultCard = allowResultSummaryInChat && Boolean(resultSummary) && !promptActive && !identityRequired;
+  const showResultCard = allowResultSummaryInChat && Boolean(resultSummary) && !promptActive;
+  const showResultsGate = showResultCard && identityRequired;
+  const showInlineCoachingPlan = (allowResultSummaryInChat && Boolean(resultSummary)) || showCoachingPlan;
   const showAssessmentControls = !assessmentCompleted && !isLeadGuest && !promptActive && (!leadFlow || !chatReady);
   const showHomeChatPanel = assessmentCompleted && !leadFlow && !isLeadGuest && !showResultsGate && !showResultCard && !promptActive;
   const completionSummaryRunId = parsePositiveUserId(resultSummary?.run_id);
@@ -565,9 +567,42 @@ export default function AssessmentChatBox({
   const insightContent = coachInsight?.content || null;
   const insightMediaUrl = String(insightContent?.podcast_url || "").trim();
   const insightMediaIsVideo = isLikelyVideoUrl(insightMediaUrl);
-  const insightLabel = String(
-    coachInsight?.concept_label || insightContent?.title || coachInsight?.pillar_label || "",
+  const insightAvatar = insightContent?.avatar || null;
+  const insightVideoUrl = String(
+    insightAvatar?.url || (insightMediaIsVideo ? insightMediaUrl : "") || coachProductAvatar?.url || "",
   ).trim();
+  const insightVideoPosterUrl = String(
+    insightAvatar?.poster_url || coachProductAvatar?.posterUrl || "",
+  ).trim();
+  const insightAudioUrl = insightMediaIsVideo ? "" : insightMediaUrl;
+  const insightReadBody = String(insightContent?.body || "").trim();
+  const insightHasVideo = Boolean(insightVideoUrl);
+  const insightHasAudio = Boolean(insightAudioUrl);
+  const insightHasRead = Boolean(insightReadBody);
+  const insightLabel = String(
+    insightAvatar?.title ||
+      coachInsight?.concept_label ||
+      insightContent?.title ||
+      coachInsight?.pillar_label ||
+      coachProductAvatar?.title ||
+      "",
+  ).trim();
+  const homePanelHeightClass =
+    homeSurface === "ask"
+      ? "h-[48vh] min-h-[18rem] max-h-[29rem]"
+      : "h-[56vh] min-h-[22rem] max-h-[34rem]";
+
+  useEffect(() => {
+    if (insightHasVideo) {
+      setInsightMode("video");
+      return;
+    }
+    if (insightHasAudio) {
+      setInsightMode("listen");
+      return;
+    }
+    setInsightMode("read");
+  }, [insightHasAudio, insightHasVideo, coachInsight?.insight_date, insightReadBody]);
 
   const markCompletionSummaryVideoSeen = useCallback(() => {
     if (!completionSummaryVideoStorageKey || typeof window === "undefined") {
@@ -1318,23 +1353,31 @@ export default function AssessmentChatBox({
               </div>
             ) : null}
 
-            <div className="border-t border-[#eadfce] pt-4">
-              <button
-                type="button"
-                onClick={() => void onCoachingPlanClick()}
-                className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.18em] whitespace-normal text-white disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                View your personal coaching plan and find out how HealthSense works
-              </button>
-            </div>
+            {!showInlineCoachingPlan ? (
+              <div className="border-t border-[#eadfce] pt-4">
+                <button
+                  type="button"
+                  onClick={() => void onCoachingPlanClick()}
+                  className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.18em] whitespace-normal text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  View your personal coaching plan and find out how HealthSense works
+                </button>
+              </div>
+            ) : null}
           </>
         ) : null}
       </div>
     </section>
   ) : null;
 
-  const coachingPlanPanel = showCoachingPlan ? (
+  const coachingPlanPanel = showInlineCoachingPlan ? (
     <section className="overflow-hidden rounded-[28px] border border-[#e7e1d6] bg-white shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]">
+      <div className="border-b border-[#efe7db] px-4 py-4 sm:px-6">
+        <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">How HealthSense works</p>
+        <p className="mt-1 text-sm text-[#3c332b]">
+          Watch the explainer below, then secure your space when you&apos;re ready.
+        </p>
+      </div>
       {String(coachProductAvatar?.url || "").trim() ? (
         <div className="border-b border-[#efe7db] bg-[#f7f4ee] p-3 sm:p-4">
           <video
@@ -1375,9 +1418,9 @@ export default function AssessmentChatBox({
       <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
         <div className="space-y-4">
           <div className="space-y-2">
-            <h2 className="text-2xl text-[#1e1b16]">Your details</h2>
+            <h2 className="text-2xl text-[#1e1b16]">Save your results</h2>
             <p className="text-sm text-[#6b6257]">
-              Please add your first name, surname, and either a mobile number or email address.
+              You&apos;ve now seen your HealthSense results. Add your details so we can save them and follow up about your place.
             </p>
           </div>
 
@@ -1428,6 +1471,9 @@ export default function AssessmentChatBox({
         <div className="space-y-4">
           <div className="space-y-2">
             <h2 className="text-2xl text-[#1e1b16]">Confirm your consent</h2>
+            <p className="text-sm text-[#6b6257]">
+              We need your consent before saving your results and securing your place.
+            </p>
           </div>
 
           <div className="space-y-3 text-sm text-[#6b6257]">
@@ -1444,7 +1490,7 @@ export default function AssessmentChatBox({
               className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
               disabled={claiming}
             >
-              {claiming ? "Saving…" : "Confirm consent for results and personal coaching plan"}
+              {claiming ? "Saving…" : "Save my results and secure my place"}
             </button>
           </div>
         </div>
@@ -1454,7 +1500,7 @@ export default function AssessmentChatBox({
 
   const homeChatPanel = showHomeChatPanel ? (
     <section className="overflow-hidden rounded-[28px] border border-[#e7e1d6] bg-white shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]">
-      <div className="flex h-[56vh] min-h-[22rem] max-h-[34rem] flex-col">
+      <div className={`flex ${homePanelHeightClass} flex-col`}>
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 sm:px-5">
           {homeSurface === "insight" ? (
             coachInsightLoading ? (
@@ -1463,41 +1509,73 @@ export default function AssessmentChatBox({
                   Reviewing your latest tracker and loading today&apos;s concept insight…
                 </p>
               </div>
-            ) : insightMediaUrl ? (
+            ) : insightHasVideo || insightHasAudio || insightHasRead ? (
               <div className="space-y-3">
                 {insightLabel ? (
                   <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">{insightLabel}</p>
                 ) : null}
-                {insightMediaIsVideo ? (
+                {insightMode === "video" && insightHasVideo ? (
                   <video
                     controls
                     preload="metadata"
                     playsInline
+                    poster={insightVideoPosterUrl || undefined}
                     className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
                   >
-                    <source src={insightMediaUrl} />
+                    <source src={insightVideoUrl} />
                   </video>
-                ) : (
+                ) : null}
+                {insightMode === "listen" && insightHasAudio ? (
                   <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
                     <audio className="w-full" controls preload="metadata">
-                      <source src={insightMediaUrl} />
+                      <source src={insightAudioUrl} />
                     </audio>
-                    {String(insightContent?.body || "").trim() ? (
-                      <p className="mt-3 text-sm text-[#6b6257]">{String(insightContent?.body || "").trim()}</p>
-                    ) : null}
                   </div>
-                )}
+                ) : null}
+                {insightMode === "read" && insightHasRead ? (
+                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                    <p className="whitespace-pre-wrap text-sm leading-6 text-[#6b6257]">{insightReadBody}</p>
+                  </div>
+                ) : null}
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setInsightMode("video")}
+                    disabled={!insightHasVideo}
+                    className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
+                      insightMode === "video"
+                        ? "border-[var(--accent)] text-[var(--accent)]"
+                        : "border-[#d9cdbb] text-[#5d5348]"
+                    } bg-white disabled:cursor-not-allowed disabled:opacity-40`}
+                  >
+                    Video
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInsightMode("listen")}
+                    disabled={!insightHasAudio}
+                    className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
+                      insightMode === "listen"
+                        ? "border-[var(--accent)] text-[var(--accent)]"
+                        : "border-[#d9cdbb] text-[#5d5348]"
+                    } bg-white disabled:cursor-not-allowed disabled:opacity-40`}
+                  >
+                    Listen
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInsightMode("read")}
+                    disabled={!insightHasRead}
+                    className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
+                      insightMode === "read"
+                        ? "border-[var(--accent)] text-[var(--accent)]"
+                        : "border-[#d9cdbb] text-[#5d5348]"
+                    } bg-white disabled:cursor-not-allowed disabled:opacity-40`}
+                  >
+                    Read
+                  </button>
+                </div>
               </div>
-            ) : String(coachProductAvatar?.url || "").trim() ? (
-              <video
-                controls
-                preload="metadata"
-                playsInline
-                poster={String(coachProductAvatar?.posterUrl || "").trim() || undefined}
-                className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
-              >
-                <source src={String(coachProductAvatar?.url || "").trim()} />
-              </video>
             ) : (
               <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
                 <p className="text-sm text-[#6b6257]">
@@ -1568,7 +1646,7 @@ export default function AssessmentChatBox({
                           className={`flex ${outbound ? "justify-start" : "justify-end"}`}
                         >
                           <div
-                            className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-6 ${
+                            className={`max-w-[78%] rounded-[20px] px-3 py-2 text-[13px] leading-5 ${
                               outbound
                                 ? "border border-[#efe7db] bg-[#fffaf3] text-[#3c332b]"
                                 : "bg-[var(--accent)] text-white"
@@ -1591,8 +1669,8 @@ export default function AssessmentChatBox({
                 <form onSubmit={onSubmit}>
                   <textarea
                     id="assessment-chat-input"
-                    className="w-full rounded-[24px] border border-[#efe7db] bg-white px-4 py-3 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
-                    rows={2}
+                    className="w-full rounded-[22px] border border-[#efe7db] bg-white px-4 py-2.5 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
+                    rows={1}
                     value={draft}
                     onChange={(event) => setDraft(event.target.value)}
                     onKeyDown={onDraftKeyDown}
@@ -1674,12 +1752,12 @@ export default function AssessmentChatBox({
             onRestart={onPromptRestart}
           />
         </div>
-      ) : showResultsGate ? (
-        resultsGate
-      ) : showResultCard && showCoachingPlan ? (
-        <div key="coaching-plan-card" className="space-y-4">{coachingPlanPanel}</div>
       ) : showResultCard ? (
-        <div key="assessment-results-card" className="space-y-4">{resultCard}</div>
+        <div key="assessment-results-card" className="space-y-4">
+          {resultCard}
+          {coachingPlanPanel}
+          {showResultsGate ? resultsGate : null}
+        </div>
       ) : null}
 
       {homeChatPanel}

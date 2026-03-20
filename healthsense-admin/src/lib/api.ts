@@ -1097,6 +1097,7 @@ export type ContentLibrarySummary = {
 
 export type ContentLibraryDetail = ContentLibrarySummary & {
   body?: string | null;
+  avatar?: AssessmentIntroAvatarSettings | null;
 };
 
 export type IntroLibrarySettings = {
@@ -2060,6 +2061,13 @@ export async function createLibraryContent(payload: {
   level?: string;
   tags?: string[] | string;
   source_generation_id?: number;
+  avatar_url?: string;
+  avatar_title?: string;
+  avatar_script?: string;
+  avatar_poster_url?: string;
+  avatar_character?: string;
+  avatar_style?: string;
+  avatar_voice?: string;
 }): Promise<Record<string, unknown>> {
   return apiAdmin<Record<string, unknown>>("/admin/library/content", {
     method: "POST",
@@ -2074,6 +2082,32 @@ export async function updateLibraryContent(id: number, payload: Record<string, u
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+}
+
+export async function generateLibraryContentAvatar(
+  id: number,
+  payload: Record<string, unknown>,
+): Promise<{ ok?: boolean; pending?: boolean; error?: string; avatar?: AssessmentIntroAvatarSettings | null }> {
+  return apiAdmin<{ ok?: boolean; pending?: boolean; error?: string; avatar?: AssessmentIntroAvatarSettings | null }>(
+    `/admin/library/content/${id}/avatar/generate`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+export async function refreshLibraryContentAvatar(
+  id: number,
+): Promise<{ ok?: boolean; error?: string; avatar?: AssessmentIntroAvatarSettings | null }> {
+  return apiAdmin<{ ok?: boolean; error?: string; avatar?: AssessmentIntroAvatarSettings | null }>(
+    `/admin/library/content/${id}/avatar/refresh`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    },
+  );
 }
 
 export async function getLibraryIntroSettings(): Promise<IntroLibrarySettings> {

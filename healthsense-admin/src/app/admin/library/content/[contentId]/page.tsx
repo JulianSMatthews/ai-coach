@@ -1,6 +1,11 @@
 import AdminNav from "@/components/AdminNav";
 import { getContentGeneration, getLibraryContent } from "@/lib/api";
-import { updateLibraryContentAction, updateLibraryContentStatusAction } from "@/app/admin/library/actions";
+import {
+  generateLibraryContentAvatarAction,
+  refreshLibraryContentAvatarAction,
+  updateLibraryContentAction,
+  updateLibraryContentStatusAction,
+} from "@/app/admin/library/actions";
 import ContentEditorForm from "../ContentEditorForm";
 
 type PageProps = {
@@ -98,6 +103,8 @@ export default async function LibraryContentDetailPage({ params }: PageProps) {
             <ContentEditorForm
               content={content}
               action={updateLibraryContentAction.bind(null, content.id)}
+              avatarGenerateAction={generateLibraryContentAvatarAction.bind(null, content.id)}
+              avatarRefreshAction={refreshLibraryContentAvatarAction.bind(null, content.id)}
               submitLabel="Update content"
             />
           </div>

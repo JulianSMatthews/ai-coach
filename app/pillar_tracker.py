@@ -551,6 +551,21 @@ def _score_for_value(
     return _score_value(defn, value)
 
 
+def _daily_display_status_for_value(
+    defn: PillarTrackerConceptDefinition,
+    value: float,
+    resolved_target: PillarTrackerResolvedTarget,
+) -> str:
+    if defn.score_mode == "binary":
+        return "success" if value >= 1 else "danger"
+    score = _score_for_value(defn, value, resolved_target)
+    if score >= 100:
+        return "success"
+    if score >= 50:
+        return "warning"
+    return "danger"
+
+
 def _week_target_expected(target_value: float, day_number: int) -> int:
     if target_value <= 0:
         return 0
@@ -579,6 +594,9 @@ def _build_concept_week_evaluations(
                     "score": None,
                     "target_met": None,
                     "target_reached": None,
+                    "daily_status": None,
+                    "daily_positive": None,
+                    "okr_on_track": None,
                 }
                 continue
             value = _normalize_option_value(concept_def, getattr(row, "value_num", 0))
@@ -590,6 +608,9 @@ def _build_concept_week_evaluations(
                     "score": None,
                     "target_met": None,
                     "target_reached": None,
+                    "daily_status": None,
+                    "daily_positive": None,
+                    "okr_on_track": None,
                 }
                 continue
             value_label = _to_value_label(concept_def, value) or str(getattr(row, "value_label", "") or "").strip() or None
@@ -598,6 +619,8 @@ def _build_concept_week_evaluations(
                 resolved_target.success_value,
                 value,
             )
+            daily_status = _daily_display_status_for_value(concept_def, value, resolved_target)
+            daily_positive = daily_status == "success"
             if resolved_target.target_period == "week" and resolved_target.target_value is not None:
                 if target_reached:
                     success_count += 1
@@ -614,6 +637,9 @@ def _build_concept_week_evaluations(
                 "score": score,
                 "target_met": target_met,
                 "target_reached": target_reached,
+                "daily_status": daily_status,
+                "daily_positive": daily_positive,
+                "okr_on_track": target_met if resolved_target.source == "okr" else None,
             }
         evaluations[concept_key] = concept_rows
     return evaluations
@@ -752,6 +778,71 @@ def _concept_target_streak_days(evaluations_for_concept: dict[date, dict[str, An
     return streak
 
 
+def _concept_positive_streak_days(evaluations_for_concept: dict[date, dict[str, Any]], anchor: date) -> int:
+    streak = 0
+    for offset in range(0, 7):
+        day = anchor - timedelta(days=offset)
+        if day < start_of_week(anchor):
+            break
+        if not bool((evaluations_for_concept.get(day) or {}).get("daily_positive")):
+            break
+        streak += 1
+    return streak
+
+
+def _concept_okr_status(
+    defn: PillarTrackerConceptDefinition,
+    evaluations_for_concept: dict[date, dict[str, Any]],
+    resolved_target: PillarTrackerResolvedTarget,
+    anchor: date,
+    week_days: list[date],
+) -> dict[str, Any]:
+    if resolved_target.source != "okr":
+        return {
+            "okr_on_track": None,
+            "okr_status_label": None,
+            "okr_status_detail": None,
+        }
+    anchor_eval = evaluations_for_concept.get(anchor) or {}
+    target_value = _safe_float(resolved_target.target_value)
+    if resolved_target.target_period == "week" and target_value is not None:
+        try:
+            anchor_index = week_days.index(anchor) + 1
+        except ValueError:
+            anchor_index = max(1, len([day for day in week_days if day <= anchor]))
+        successes = sum(
+            1
+            for day in week_days[:anchor_index]
+            if bool((evaluations_for_concept.get(day) or {}).get("target_reached"))
+        )
+        expected = _week_target_expected(target_value, anchor_index)
+        on_track = successes >= expected if expected > 0 else True
+        return {
+            "okr_on_track": on_track,
+            "okr_status_label": "On track" if on_track else "Behind pace",
+            "okr_status_detail": f"{successes}/{expected} by {anchor.strftime('%a')}",
+        }
+    if resolved_target.target_period == "day" and target_value is not None:
+        value = anchor_eval.get("value")
+        if value is None:
+            return {
+                "okr_on_track": None,
+                "okr_status_label": None,
+                "okr_status_detail": None,
+            }
+        on_track = _target_met_for_value(defn, float(value), resolved_target)
+        return {
+            "okr_on_track": on_track,
+            "okr_status_label": "On target" if on_track else "Below target",
+            "okr_status_detail": None,
+        }
+    return {
+        "okr_on_track": None,
+        "okr_status_label": None,
+        "okr_status_detail": None,
+    }
+
+
 def _week_score(
     entries_by_day: dict[date, dict[str, DailyPillarTrackerEntry]],
     required_concepts: tuple[PillarTrackerConceptDefinition, ...],
@@ -854,6 +945,7 @@ def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None
         resolved_target = resolved_targets.get(concept_def.concept_key) or _default_resolved_target(key, concept_def)
         evaluations_for_concept = evaluations_by_concept.get(concept_def.concept_key, {})
         today_eval = evaluations_for_concept.get(resolved_anchor, {})
+        okr_status = _concept_okr_status(concept_def, evaluations_for_concept, resolved_target, resolved_anchor, week_days)
         concepts_payload.append(
             {
                 "concept_key": concept_def.concept_key,
@@ -880,7 +972,21 @@ def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None
                 ),
                 "score": int(today_eval.get("score")) if today_eval.get("score") is not None else None,
                 "target_met": bool(today_eval.get("target_met")) if today_eval.get("target_met") is not None else None,
-                "streak_days": _concept_target_streak_days(evaluations_for_concept, resolved_anchor),
+                "target_reached": (
+                    bool(today_eval.get("target_reached"))
+                    if today_eval.get("target_reached") is not None
+                    else None
+                ),
+                "daily_status": today_eval.get("daily_status"),
+                "daily_positive": (
+                    bool(today_eval.get("daily_positive"))
+                    if today_eval.get("daily_positive") is not None
+                    else None
+                ),
+                "okr_on_track": okr_status.get("okr_on_track"),
+                "okr_status_label": okr_status.get("okr_status_label"),
+                "okr_status_detail": okr_status.get("okr_status_detail"),
+                "streak_days": _concept_positive_streak_days(evaluations_for_concept, resolved_anchor),
                 "week": [
                     {
                         "date": day.isoformat(),
@@ -893,9 +999,25 @@ def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None
                             if evaluations_for_concept.get(day, {}).get("score") is not None
                             else None
                         ),
+                        "target_reached": (
+                            bool(evaluations_for_concept.get(day, {}).get("target_reached"))
+                            if evaluations_for_concept.get(day, {}).get("target_reached") is not None
+                            else None
+                        ),
                         "target_met": (
                             bool(evaluations_for_concept.get(day, {}).get("target_met"))
                             if evaluations_for_concept.get(day, {}).get("target_met") is not None
+                            else None
+                        ),
+                        "daily_status": evaluations_for_concept.get(day, {}).get("daily_status"),
+                        "daily_positive": (
+                            bool(evaluations_for_concept.get(day, {}).get("daily_positive"))
+                            if evaluations_for_concept.get(day, {}).get("daily_positive") is not None
+                            else None
+                        ),
+                        "okr_on_track": (
+                            bool(evaluations_for_concept.get(day, {}).get("okr_on_track"))
+                            if evaluations_for_concept.get(day, {}).get("okr_on_track") is not None
                             else None
                         ),
                     }

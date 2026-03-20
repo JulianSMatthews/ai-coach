@@ -36,15 +36,28 @@ function normalizeError(text: string, fallback: string): string {
   }
 }
 
-function circleDayTone(targetMet?: boolean | null): string {
-  if (targetMet === true) return "border-[#d5e8bf] bg-[#f2fae8] text-[#335f16]";
-  if (targetMet === false) return "border-[#f2dccb] bg-[#fff1ea] text-[#8a3e1a]";
+function circleDayTone(status?: string | null, isActive?: boolean): string {
+  const activeRing = isActive ? " ring-1 ring-[#d9cdbb]" : "";
+  if (status === "success") return `border-[#d5e8bf] bg-[#f2fae8] text-[#335f16]${activeRing}`;
+  if (status === "warning") return `border-[#f2dccb] bg-[#fff4ea] text-[#8a5a1a]${activeRing}`;
+  if (status === "danger") return `border-[#efc4b6] bg-[#fff0eb] text-[#9b3218]${activeRing}`;
+  return `border-[#ece5d9] bg-white text-[#8c7f70]${activeRing}`;
+}
+
+function completeDayTone(complete?: boolean, score?: number | null, isToday?: boolean): string {
+  if (complete && Number.isFinite(Number(score))) {
+    const resolved = Number(score);
+    if (resolved >= 80) return "border-[#d5e8bf] bg-[#f2fae8] text-[#335f16]";
+    if (resolved >= 40) return "border-[#f2dccb] bg-[#fff4ea] text-[#8a5a1a]";
+    return "border-[#efc4b6] bg-[#fff0eb] text-[#9b3218]";
+  }
+  if (isToday) return "border-[#f3d8c9] bg-[#fff5ef] text-[#8a3e1a]";
   return "border-[#ece5d9] bg-white text-[#8c7f70]";
 }
 
-function completeDayTone(complete?: boolean, isToday?: boolean): string {
-  if (complete) return "border-[#d5e8bf] bg-[#f2fae8] text-[#335f16]";
-  if (isToday) return "border-[#f3d8c9] bg-[#fff5ef] text-[#8a3e1a]";
+function okrTone(onTrack?: boolean | null): string {
+  if (onTrack === true) return "border-[#d5e8bf] bg-[#f2fae8] text-[#335f16]";
+  if (onTrack === false) return "border-[#f2dccb] bg-[#fff4ea] text-[#8a5a1a]";
   return "border-[#ece5d9] bg-white text-[#8c7f70]";
 }
 
@@ -90,6 +103,7 @@ function CombinedLogoRing({ value }: { value: number }) {
 
 export default function LatestAssessmentPanel({ userId, initialSummary }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
+  const [scoreCardOpen, setScoreCardOpen] = useState(false);
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<PillarTrackerDetailResponse | null>(null);
   const [draft, setDraft] = useState<Record<string, number>>({});
@@ -168,6 +182,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
   };
 
   const openTracker = async (pillarKey: string, anchorDate?: string) => {
+    setScoreCardOpen(false);
     setSelectedPillarKey(pillarKey);
     setDetail(null);
     setDraft({});
@@ -253,10 +268,60 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
           </div>
 
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <CombinedLogoRing value={combinedScore} />
+            <button
+              type="button"
+              onClick={() => setScoreCardOpen(true)}
+              className="pointer-events-auto rounded-full"
+              aria-label="Open HealthSense score breakdown"
+            >
+              <CombinedLogoRing value={combinedScore} />
+            </button>
           </div>
         </div>
       </section>
+
+      {scoreCardOpen ? (
+        <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/30 px-3 py-3 sm:items-center sm:p-6">
+          <div className="w-full max-w-sm rounded-[28px] border border-[#e7e1d6] bg-white p-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">HealthSense</p>
+                <p className="mt-1 text-lg font-semibold text-[#1e1b16]">Score breakdown</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setScoreCardOpen(false)}
+                className="rounded-full border border-[#e7e1d6] px-3 py-2 text-xs uppercase tracking-[0.18em] text-[#5d5348]"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5 flex flex-col items-center text-center">
+              <CombinedLogoRing value={combinedScore} />
+              <p className="mt-3 text-3xl font-semibold text-[#1e1b16]">{combinedScore}</p>
+              <p className="text-sm text-[#6b6257]">Combined HealthSense score</p>
+            </div>
+
+            <div className="mt-5 space-y-2">
+              {pillars.map((pillar) => {
+                const score = Number(pillar.score);
+                return (
+                  <div
+                    key={`score-card-${pillar.pillar_key}`}
+                    className="flex items-center justify-between rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3"
+                  >
+                    <p className="text-sm font-semibold text-[#1e1b16]">{pillar.label}</p>
+                    <p className="text-sm text-[#6b6257]">
+                      {Number.isFinite(score) ? `${score}/100` : "—"}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {selectedPillarKey ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-3 py-3 sm:items-center sm:p-6">
@@ -278,7 +343,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
                 </p>
                 {detail?.pillar?.completed_days_count !== undefined || detail?.pillar?.streak_days !== undefined ? (
                   <p className="text-xs text-[#8c7f70]">
-                    {`${detail?.pillar?.completed_days_count || 0}/7 days complete · ${detail?.pillar?.streak_days || 0} day streak`}
+                    {`${detail?.pillar?.completed_days_count || 0}/7 days complete · ${detail?.pillar?.streak_days || 0} day check-in streak`}
                   </p>
                 ) : null}
               </div>
@@ -327,7 +392,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
                       {(detail.days || []).map((day) => (
                         <div
                           key={day.date}
-                          className={`rounded-xl border px-2 py-2 text-center text-[11px] ${completeDayTone(day.complete, day.is_today)}`}
+                          className={`rounded-xl border px-2 py-2 text-center text-[11px] ${completeDayTone(day.complete, day.score, day.is_today)}`}
                         >
                           <p className="font-semibold">{day.label}</p>
                           <p className="mt-1">{day.complete ? day.score ?? "Done" : day.is_today ? "Today" : "—"}</p>
@@ -340,6 +405,8 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
                     const conceptKey = String(concept.concept_key || "").trim();
                     const selectedValue = draft[conceptKey];
                     const targetLabel = String(concept.target_label || "").trim();
+                    const okrStatusLabel = String(concept.okr_status_label || "").trim();
+                    const okrStatusDetail = String(concept.okr_status_detail || "").trim();
                     const targetText =
                       concept.target_source === "okr" && targetLabel
                         ? `${targetLabel} from your current OKR`
@@ -350,10 +417,20 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
                           <div>
                             <p className="text-sm font-semibold text-[#1e1b16]">{concept.label}</p>
                             <p className="mt-1 text-xs uppercase tracking-[0.18em] text-[#8c7f70]">{concept.helper}</p>
-                            {targetText ? (
-                              <p className="mt-2 text-xs text-[#6b6257]">
-                                {targetText}
-                              </p>
+                            {targetText || okrStatusLabel ? (
+                              <div className="mt-2 flex flex-wrap items-center gap-2">
+                                {targetText ? <p className="text-xs text-[#6b6257]">{targetText}</p> : null}
+                                {concept.target_source === "okr" && okrStatusLabel ? (
+                                  <span
+                                    className={`rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] ${okrTone(concept.okr_on_track)}`}
+                                  >
+                                    {`OKR ${okrStatusLabel.toLowerCase()}`}
+                                  </span>
+                                ) : null}
+                              </div>
+                            ) : null}
+                            {concept.target_source === "okr" && okrStatusDetail ? (
+                              <p className="mt-1 text-[11px] text-[#8c7f70]">{`Pace ${okrStatusDetail}`}</p>
                             ) : null}
                           </div>
                           <p className="text-xs text-[#8c7f70]">{`${concept.streak_days || 0} day streak`}</p>
@@ -363,7 +440,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
                           {(concept.week || []).map((day) => (
                             <div
                               key={`${conceptKey}-${day.date}`}
-                              className={`rounded-xl border px-2 py-2 text-center text-[11px] ${circleDayTone(day.target_met)}`}
+                              className={`rounded-xl border px-2 py-2 text-center text-[11px] ${circleDayTone(day.daily_status, day.is_active)}`}
                             >
                               <p className="font-semibold">{day.label}</p>
                               <p className="mt-1 truncate">{day.value_label || "—"}</p>
