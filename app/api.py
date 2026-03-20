@@ -6272,19 +6272,12 @@ def api_user_assessment_chat_claim_identity(
     surname = _titlecase_name(body.get("surname"))
     phone_raw = _strip_invisible(str(body.get("phone") or "")).strip()
     email_val = _normalize_email(body.get("email"))
-    consent_raw = body.get("consent")
-    if isinstance(consent_raw, str):
-        consent_given = consent_raw.strip().lower() in {"1", "true", "yes", "on"}
-    else:
-        consent_given = bool(consent_raw)
     if not first_name or not surname:
         raise HTTPException(status_code=400, detail="first_name and surname are required")
     if len(first_name) > 120 or len(surname) > 120:
         raise HTTPException(status_code=400, detail="name is too long")
-    if not phone_raw and not email_val:
-        raise HTTPException(status_code=400, detail="phone or email is required")
-    if not consent_given:
-        raise HTTPException(status_code=400, detail="consent is required")
+    if not email_val:
+        raise HTTPException(status_code=400, detail="email is required")
 
     phone_norm = ""
     if phone_raw:
@@ -6391,9 +6384,6 @@ def api_user_assessment(
         u = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
         if not u:
             raise HTTPException(status_code=404, detail="user not found")
-        identity_required = str(_pref_value(s, user_id, "lead_identity_required") or "").strip() == "1"
-        if identity_required:
-            raise HTTPException(status_code=403, detail="identity details are required before viewing assessment")
         if not readonly_preview:
             assessment_review_marked = _set_pref_value(
                 s,
@@ -6479,9 +6469,6 @@ def api_public_user_assessment(user_id: int, run_id: int | None = None, fast: bo
         u = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
         if not u:
             raise HTTPException(status_code=404, detail="user not found")
-        identity_required = str(_pref_value(s, user_id, "lead_identity_required") or "").strip() == "1"
-        if identity_required:
-            raise HTTPException(status_code=403, detail="identity details are required before viewing assessment")
         rid = run_id
         if rid is None:
             latest_finished = s.execute(
@@ -6533,9 +6520,6 @@ def _resolve_assessment_summary_run(user_id: int, run_id: int | None = None) -> 
         u = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
         if not u:
             raise HTTPException(status_code=404, detail="user not found")
-        identity_required = str(_pref_value(s, user_id, "lead_identity_required") or "").strip() == "1"
-        if identity_required:
-            raise HTTPException(status_code=403, detail="identity details are required before viewing assessment")
         rid = run_id
         if rid is None:
             latest_finished = s.execute(

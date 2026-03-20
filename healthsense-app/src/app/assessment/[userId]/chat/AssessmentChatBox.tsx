@@ -462,13 +462,11 @@ export default function AssessmentChatBox({
   const [selectedPromptValue, setSelectedPromptValue] = useState<string | null>(null);
   const [claimFirstName, setClaimFirstName] = useState("");
   const [claimSurname, setClaimSurname] = useState("");
-  const [claimPhone, setClaimPhone] = useState("");
   const [claimEmail, setClaimEmail] = useState("");
   const [claiming, setClaiming] = useState(false);
+  const [claimError, setClaimError] = useState<string | null>(null);
+  const [claimSuccess, setClaimSuccess] = useState(false);
   const [showCoachingPlan, setShowCoachingPlan] = useState(false);
-  const [coachingInterestSubmitting, setCoachingInterestSubmitting] = useState(false);
-  const [coachingInterestLogged, setCoachingInterestLogged] = useState(false);
-  const [coachingInterestError, setCoachingInterestError] = useState<string | null>(null);
   const [completionSummaryMedia, setCompletionSummaryMedia] =
     useState<AssessmentCompletionSummaryMedia | null>(null);
   const [completionSummaryLoading, setCompletionSummaryLoading] = useState(false);
@@ -503,10 +501,9 @@ export default function AssessmentChatBox({
   const chatReady = hasActiveSession || assessmentCompleted || messages.length > 0;
   const promptActive = Boolean(currentPrompt);
   const showResultCard = allowResultSummaryInChat && Boolean(resultSummary) && !promptActive;
-  const showResultsGate = showResultCard && identityRequired;
-  const showInlineCoachingPlan = (allowResultSummaryInChat && Boolean(resultSummary)) || showCoachingPlan;
+  const showInlineCoachingPlan = showResultCard && showCoachingPlan;
   const showAssessmentControls = !assessmentCompleted && !isLeadGuest && !promptActive && (!leadFlow || !chatReady);
-  const showHomeChatPanel = assessmentCompleted && !leadFlow && !isLeadGuest && !showResultsGate && !showResultCard && !promptActive;
+  const showHomeChatPanel = assessmentCompleted && !leadFlow && !isLeadGuest && !showResultCard && !promptActive;
   const completionSummaryRunId = parsePositiveUserId(resultSummary?.run_id);
   const completionSummaryVideoStorageKey = useMemo(
     () => (completionSummaryRunId ? `hs:assessment-summary-video:${userId}:${completionSummaryRunId}` : null),
@@ -532,7 +529,7 @@ export default function AssessmentChatBox({
   const showStoredSummaryVideo =
     !completionSummaryUsesRealtime &&
     Boolean(completionSummaryMedia?.avatarUrl) &&
-    !completionSummaryVideoSeen;
+    (allowResultSummaryInChat || !completionSummaryVideoSeen);
   const showCompletionSummaryPanel =
     (completionSummaryUsesRealtime && Boolean(completionSummaryRunId)) ||
     Boolean(
@@ -848,9 +845,8 @@ export default function AssessmentChatBox({
 
   useEffect(() => {
     setShowCoachingPlan(false);
-    setCoachingInterestSubmitting(false);
-    setCoachingInterestLogged(false);
-    setCoachingInterestError(null);
+    setClaimError(null);
+    setClaimSuccess(false);
     setCompletionSummaryMedia(null);
     setCompletionSummaryError(null);
     setCompletionSummaryLoading(false);
@@ -1069,22 +1065,25 @@ export default function AssessmentChatBox({
     event.preventDefault();
     const firstName = claimFirstName.trim();
     const surname = claimSurname.trim();
-    const phone = claimPhone.trim();
     const email = claimEmail.trim().toLowerCase();
+    if (claiming || claimSuccess) {
+      return;
+    }
     if (!firstName || !surname) {
-      setStatus("First name and surname are required.");
+      setClaimError("First name and surname are required.");
       return;
     }
-    if (!phone && !email) {
-      setStatus("Add either a mobile number or an email address to continue.");
+    if (!email) {
+      setClaimError("Email address is required.");
       return;
     }
-    if (email && !looksLikeEmail(email)) {
-      setStatus("That email doesn’t look right. Please check it.");
+    if (!looksLikeEmail(email)) {
+      setClaimError("That email doesn’t look right. Please check it.");
       return;
     }
 
     setClaiming(true);
+    setClaimError(null);
     setStatus(null);
     try {
       const res = await fetch("/api/assessment/chat/claim-identity", {
@@ -1094,10 +1093,8 @@ export default function AssessmentChatBox({
           userId,
           first_name: firstName,
           surname,
-          phone,
           email,
           lead_token: leadToken || undefined,
-          consent: true,
         }),
       });
       const text = await res.text().catch(() => "");
@@ -1108,28 +1105,8 @@ export default function AssessmentChatBox({
         JSON.parse(text);
       }
       setIdentityRequired(false);
-    } catch (error) {
-      setStatus(error instanceof Error ? error.message : String(error));
-    } finally {
-      setClaiming(false);
-    }
-  }
-
-  async function onCoachingPlanClick() {
-    if (showCoachingPlan) {
-      return;
-    }
-    setShowCoachingPlan(true);
-  }
-
-  async function onCoachingInterestClick() {
-    if (coachingInterestSubmitting || coachingInterestLogged) {
-      return;
-    }
-    setCoachingInterestSubmitting(true);
-    setCoachingInterestError(null);
-    try {
-      const res = await fetch("/api/engagement", {
+      setClaimSuccess(true);
+      void fetch("/api/engagement", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1139,20 +1116,23 @@ export default function AssessmentChatBox({
           meta: {
             surface: "assessment_results",
             source: "personal_coaching_plan",
-            component: "how_healthsense_works",
+            component: "secure_your_place",
           },
         }),
-      });
-      const text = await res.text().catch(() => "");
-      if (!res.ok) {
-        throw new Error(parseApiError(text, "Failed to record your interest."));
-      }
-      setCoachingInterestLogged(true);
+      }).catch(() => undefined);
     } catch (error) {
-      setCoachingInterestError(error instanceof Error ? error.message : String(error));
+      setClaimError(error instanceof Error ? error.message : String(error));
     } finally {
-      setCoachingInterestSubmitting(false);
+      setClaiming(false);
     }
+  }
+
+  async function onCoachingPlanClick() {
+    if (showCoachingPlan) {
+      return;
+    }
+    setClaimError(null);
+    setShowCoachingPlan(true);
   }
 
   const resultExtremes = resultSummary ? resultPillarExtremes(resultSummary.pillars) : { strongest: null, weakest: null };
@@ -1360,7 +1340,7 @@ export default function AssessmentChatBox({
                   onClick={() => void onCoachingPlanClick()}
                   className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-center text-xs font-semibold uppercase tracking-[0.18em] whitespace-normal text-white disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  View your personal coaching plan and find out how HealthSense works
+                  Get your personal coaching plan
                 </button>
               </div>
             ) : null}
@@ -1371,11 +1351,15 @@ export default function AssessmentChatBox({
   ) : null;
 
   const coachingPlanPanel = showInlineCoachingPlan ? (
-    <section className="overflow-hidden rounded-[28px] border border-[#e7e1d6] bg-white shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]">
+    <form
+      onSubmit={onClaimIdentity}
+      className="overflow-hidden rounded-[28px] border border-[#e7e1d6] bg-white shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]"
+      autoComplete="on"
+    >
       <div className="border-b border-[#efe7db] px-4 py-4 sm:px-6">
         <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">How HealthSense works</p>
         <p className="mt-1 text-sm text-[#3c332b]">
-          Watch the explainer below, then secure your space when you&apos;re ready.
+          Watch the explainer below, then secure your place when you&apos;re ready.
         </p>
       </div>
       {String(coachProductAvatar?.url || "").trim() ? (
@@ -1392,109 +1376,69 @@ export default function AssessmentChatBox({
         </div>
       ) : null}
       <div className="space-y-4 px-4 py-5 sm:px-6 sm:py-6">
+        <div className="space-y-2">
+          <h2 className="text-2xl text-[#1e1b16]">Secure your place</h2>
+          <p className="text-sm text-[#6b6257]">
+            {identityRequired
+              ? "Add your details below to secure your place and receive your personal coaching plan."
+              : "Confirm your details below to secure your place and receive your personal coaching plan."}
+          </p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <input
+            className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+            type="text"
+            placeholder="First name"
+            autoComplete="given-name"
+            value={claimFirstName}
+            onChange={(event) => setClaimFirstName(event.target.value)}
+            disabled={claiming || claimSuccess}
+            required
+          />
+          <input
+            className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+            type="text"
+            placeholder="Surname"
+            autoComplete="family-name"
+            value={claimSurname}
+            onChange={(event) => setClaimSurname(event.target.value)}
+            disabled={claiming || claimSuccess}
+            required
+          />
+          <input
+            className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm sm:col-span-2"
+            type="email"
+            placeholder="Email address"
+            autoComplete="email"
+            value={claimEmail}
+            onChange={(event) => setClaimEmail(event.target.value)}
+            disabled={claiming || claimSuccess}
+            required
+          />
+        </div>
+
         <div>
           <button
-            type="button"
-            onClick={() => void onCoachingInterestClick()}
-            disabled={coachingInterestSubmitting || coachingInterestLogged}
+            type="submit"
             className="w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] whitespace-normal text-white disabled:cursor-not-allowed disabled:opacity-60"
+            disabled={claiming || claimSuccess}
           >
-            {coachingInterestLogged
+            {claimSuccess
               ? "Your place has been secured."
-              : coachingInterestSubmitting
-                ? "Saving interest…"
-                : "Click here to secure your space"}
+              : claiming
+                ? "Securing your place…"
+                : "Click here to secure your place"}
           </button>
-          {coachingInterestError ? (
-            <p className="mt-2 text-sm text-[#8a3e1a]">{coachingInterestError}</p>
+          {claimSuccess ? (
+            <p className="mt-2 text-sm text-[#3c332b]">
+              Your details have been saved. We&apos;ll be in touch with your personal coaching plan.
+            </p>
+          ) : null}
+          {claimError ? (
+            <p className="mt-2 text-sm text-[#8a3e1a]">{claimError}</p>
           ) : null}
         </div>
       </div>
-    </section>
-  ) : null;
-
-  const resultsGate = resultSummary ? (
-    <form onSubmit={onClaimIdentity} className="space-y-4" autoComplete="on">
-      <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <h2 className="text-2xl text-[#1e1b16]">Save your results</h2>
-            <p className="text-sm text-[#6b6257]">
-              You&apos;ve now seen your HealthSense results. Add your details so we can save them and follow up about your place.
-            </p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <input
-              className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-              type="text"
-              placeholder="First name"
-              autoComplete="given-name"
-              value={claimFirstName}
-              onChange={(event) => setClaimFirstName(event.target.value)}
-              disabled={claiming}
-              required
-            />
-            <input
-              className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-              type="text"
-              placeholder="Surname"
-              autoComplete="family-name"
-              value={claimSurname}
-              onChange={(event) => setClaimSurname(event.target.value)}
-              disabled={claiming}
-              required
-            />
-            <input
-              className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-              type="tel"
-              placeholder="Mobile number"
-              autoComplete="tel"
-              value={claimPhone}
-              onChange={(event) => setClaimPhone(event.target.value)}
-              disabled={claiming}
-            />
-            <input
-              className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-              type="email"
-              placeholder="Email address"
-              autoComplete="email"
-              value={claimEmail}
-              onChange={(event) => setClaimEmail(event.target.value)}
-              disabled={claiming}
-            />
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-6 sm:py-8">
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <h2 className="text-2xl text-[#1e1b16]">Confirm your consent</h2>
-            <p className="text-sm text-[#6b6257]">
-              We need your consent before saving your results and securing your place.
-            </p>
-          </div>
-
-          <div className="space-y-3 text-sm text-[#6b6257]">
-            <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4 text-[#3c332b]">
-              <p className="mt-2">Your answers are stored securely and only used to personalise your wellbeing programme.</p>
-              <p className="mt-2">We never share your information with third parties, and you can stop at any time.</p>
-              <p className="mt-2">Replying is optional, and you can request deletion of your data whenever you want.</p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="submit"
-              className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-              disabled={claiming}
-            >
-              {claiming ? "Saving…" : "Save my results and secure my place"}
-            </button>
-          </div>
-        </div>
-      </section>
     </form>
   ) : null;
 
@@ -1756,13 +1700,12 @@ export default function AssessmentChatBox({
         <div key="assessment-results-card" className="space-y-4">
           {resultCard}
           {coachingPlanPanel}
-          {showResultsGate ? resultsGate : null}
         </div>
       ) : null}
 
       {homeChatPanel}
 
-      {!showHomeChatPanel && !currentPrompt && !showResultCard && !showResultsGate ? (
+      {!showHomeChatPanel && !currentPrompt && !showResultCard ? (
         <form onSubmit={onSubmit}>
           <textarea
             id="assessment-chat-input"

@@ -64,7 +64,6 @@ export async function POST(request: Request) {
       surname: body.surname ?? "",
       phone: body.phone ?? "",
       email: body.email ?? "",
-      consent: body.consent ?? false,
     };
 
     const session = getCookieValue(cookieHeader, "hs_session");
