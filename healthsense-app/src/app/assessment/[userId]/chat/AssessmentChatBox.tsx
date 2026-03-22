@@ -492,6 +492,7 @@ export default function AssessmentChatBox({
   const [coachInsight, setCoachInsight] = useState<CoachInsightResponse | null>(null);
   const [coachInsightLoading, setCoachInsightLoading] = useState(false);
   const [coachInsightError, setCoachInsightError] = useState<string | null>(null);
+  const [insightActiveConceptKey, setInsightActiveConceptKey] = useState("");
   const [insightMode, setInsightMode] = useState<"video" | "listen" | "read">("read");
 
   const autoStart = useMemo(() => isTruthyToken(searchParams?.get("autostart")), [searchParams]);
@@ -566,6 +567,11 @@ export default function AssessmentChatBox({
     return visible.slice(-3);
   }, [messages]);
   const insightContent = coachInsight?.content || null;
+  const insightConcepts = useMemo(
+    () => (Array.isArray(coachInsight?.available_concepts) ? coachInsight.available_concepts : []),
+    [coachInsight?.available_concepts],
+  );
+  const insightSelectedConceptKey = String(coachInsight?.concept_key || "").trim();
   const insightMediaUrl = String(insightContent?.podcast_url || "").trim();
   const insightMediaIsVideo = isLikelyVideoUrl(insightMediaUrl);
   const insightAvatar = insightContent?.avatar || null;
@@ -623,6 +629,44 @@ export default function AssessmentChatBox({
         (item) => String(item?.concept_key || "").trim() === dailyHabitActiveConceptKey,
       )
     : [];
+  const askPromptSuggestions = useMemo(() => {
+    const suggestions: Array<{ label: string; text: string }> = [];
+    const seen = new Set<string>();
+
+    const pushSuggestion = (label: string, text: string) => {
+      const normalizedLabel = String(label || "").trim();
+      const normalizedText = String(text || "").trim();
+      if (!normalizedLabel || !normalizedText) return;
+      const key = `${normalizedLabel.toLowerCase()}::${normalizedText.toLowerCase()}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      suggestions.push({ label: normalizedLabel, text: normalizedText });
+    };
+
+    if (dailyHabitSelected.length) {
+      pushSuggestion(
+        "Selected habits",
+        "How can I stay consistent with my selected habits today?",
+      );
+    }
+
+    dailyHabitConcepts.forEach((concept) => {
+      const label = String(concept?.label || concept?.concept_key || "").trim();
+      const signal = String(concept?.signal || "").trim().toLowerCase();
+      if (!label) return;
+      if (signal === "not_logged_today") {
+        pushSuggestion(`Track ${label}`, `How should I track ${label.toLowerCase()} today?`);
+        return;
+      }
+      if (signal === "needs_support") {
+        pushSuggestion(`Support ${label}`, `What is one simple step to improve ${label.toLowerCase()}?`);
+        return;
+      }
+      pushSuggestion(`Improve ${label}`, `How can I improve ${label.toLowerCase()} today?`);
+    });
+
+    return suggestions.slice(0, 5);
+  }, [dailyHabitConcepts, dailyHabitSelected]);
   const homePanelHeightClass =
     homeSurface === "ask"
       ? "h-[48vh] min-h-[18rem] max-h-[29rem]"
@@ -643,6 +687,19 @@ export default function AssessmentChatBox({
       return preferredTag;
     });
   }, [dailyHabitConcepts, dailyHabitSelectedConceptKey]);
+
+  useEffect(() => {
+    const validConceptKeys = insightConcepts
+      .map((concept) => String(concept?.concept_key || "").trim())
+      .filter((key) => Boolean(key));
+    const preferredTag = insightSelectedConceptKey || validConceptKeys[0] || "";
+    setInsightActiveConceptKey((current) => {
+      if (current && validConceptKeys.includes(current)) {
+        return current;
+      }
+      return preferredTag;
+    });
+  }, [insightConcepts, insightSelectedConceptKey]);
 
   useEffect(() => {
     if (insightHasVideo) {
@@ -781,11 +838,14 @@ export default function AssessmentChatBox({
     [dailyHabitBusy, dailyHabitSelected, saveDailyHabitPlanSelection],
   );
 
-  const loadCoachInsight = useCallback(async () => {
+  const loadCoachInsight = useCallback(async (options?: { conceptKey?: string }) => {
     setCoachInsightLoading(true);
     setCoachInsightError(null);
     try {
       const params = new URLSearchParams({ userId });
+      if (options?.conceptKey) {
+        params.set("conceptKey", options.conceptKey);
+      }
       const res = await fetch(`/api/coach-insight?${params.toString()}`, {
         method: "GET",
         cache: "no-store",
@@ -813,11 +873,12 @@ export default function AssessmentChatBox({
     setDailyHabitPlan(null);
     setDailyHabitPlanError(null);
     setDailyHabitPlanLoading(false);
-    setDailyHabitPlanSaving(false);
-    setCoachInsight(null);
-    setCoachInsightError(null);
-    setCoachInsightLoading(false);
-  }, [userId]);
+      setDailyHabitPlanSaving(false);
+      setCoachInsight(null);
+      setCoachInsightError(null);
+      setCoachInsightLoading(false);
+      setInsightActiveConceptKey("");
+    }, [userId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -848,9 +909,16 @@ export default function AssessmentChatBox({
   }, [showHomeChatPanel, homeSurface, loadDailyHabitPlan]);
 
   useEffect(() => {
+    if (!showHomeChatPanel || homeSurface !== "ask") return;
+    if (dailyHabitPlan || dailyHabitPlanLoading) return;
+    void loadDailyHabitPlan();
+  }, [showHomeChatPanel, homeSurface, dailyHabitPlan, dailyHabitPlanLoading, loadDailyHabitPlan]);
+
+  useEffect(() => {
     if (!showHomeChatPanel || homeSurface !== "insight") return;
-    void loadCoachInsight();
-  }, [showHomeChatPanel, homeSurface, loadCoachInsight]);
+    if (coachInsight && insightActiveConceptKey && insightActiveConceptKey === insightSelectedConceptKey) return;
+    void loadCoachInsight(insightActiveConceptKey ? { conceptKey: insightActiveConceptKey } : undefined);
+  }, [showHomeChatPanel, homeSurface, loadCoachInsight, insightActiveConceptKey, coachInsight, insightSelectedConceptKey]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -863,14 +931,14 @@ export default function AssessmentChatBox({
         void loadDailyHabitPlan();
       }
       if (showHomeChatPanel && homeSurface === "insight") {
-        void loadCoachInsight();
+        void loadCoachInsight(insightActiveConceptKey ? { conceptKey: insightActiveConceptKey } : undefined);
       }
     };
     window.addEventListener("healthsense-tracker-updated", onTrackerUpdated as EventListener);
     return () => {
       window.removeEventListener("healthsense-tracker-updated", onTrackerUpdated as EventListener);
     };
-  }, [showHomeChatPanel, homeSurface, loadCoachInsight, loadDailyHabitPlan]);
+  }, [showHomeChatPanel, homeSurface, loadCoachInsight, loadDailyHabitPlan, insightActiveConceptKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1558,78 +1626,121 @@ export default function AssessmentChatBox({
       <div className={`flex ${homePanelHeightClass} flex-col`}>
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 sm:px-5">
           {homeSurface === "insight" ? (
-            coachInsightLoading ? (
+            coachInsightLoading && !coachInsight ? (
               <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
                 <p className="text-sm text-[#6b6257]">
                   Reviewing your latest tracker and loading today&apos;s concept insight…
                 </p>
               </div>
-            ) : insightHasVideo || insightHasAudio || insightHasRead ? (
+            ) : insightHasVideo || insightHasAudio || insightHasRead || insightConcepts.length ? (
               <div className="space-y-3">
+                {insightConcepts.length ? (
+                  <div className="flex flex-wrap gap-2">
+                    {insightConcepts.map((concept, index) => {
+                      const conceptKey = String(concept?.concept_key || "").trim();
+                      const label = String(concept?.label || conceptKey || "").trim();
+                      const active =
+                        conceptKey &&
+                        conceptKey === (insightActiveConceptKey || insightSelectedConceptKey);
+                      if (!conceptKey || !label) return null;
+                      return (
+                        <button
+                          key={`${conceptKey}-${index}`}
+                          type="button"
+                          onClick={() => {
+                            setInsightActiveConceptKey(conceptKey);
+                            void loadCoachInsight({ conceptKey });
+                          }}
+                          disabled={coachInsightLoading}
+                          className={`rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] ${
+                            active
+                              ? "border-[var(--accent)] bg-white text-[var(--accent)]"
+                              : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                          } disabled:cursor-not-allowed disabled:opacity-50`}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+                {coachInsightLoading && coachInsight ? (
+                  <p className="text-sm text-[#6b6257]">Loading concept insight…</p>
+                ) : null}
                 {insightLabel ? (
                   <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">{insightLabel}</p>
                 ) : null}
-                {insightMode === "video" && insightHasVideo ? (
-                  <video
-                    controls
-                    preload="metadata"
-                    playsInline
-                    poster={insightVideoPosterUrl || undefined}
-                    className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
-                  >
-                    <source src={insightVideoUrl} />
-                  </video>
-                ) : null}
-                {insightMode === "listen" && insightHasAudio ? (
-                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
-                    <audio className="w-full" controls preload="metadata">
-                      <source src={insightAudioUrl} />
-                    </audio>
+                {insightHasVideo || insightHasAudio || insightHasRead ? (
+                  <>
+                    {insightMode === "video" && insightHasVideo ? (
+                      <video
+                        controls
+                        preload="metadata"
+                        playsInline
+                        poster={insightVideoPosterUrl || undefined}
+                        className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
+                      >
+                        <source src={insightVideoUrl} />
+                      </video>
+                    ) : null}
+                    {insightMode === "listen" && insightHasAudio ? (
+                      <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                        <audio className="w-full" controls preload="metadata">
+                          <source src={insightAudioUrl} />
+                        </audio>
+                      </div>
+                    ) : null}
+                    {insightMode === "read" && insightHasRead ? (
+                      <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                        <p className="whitespace-pre-wrap text-sm leading-6 text-[#6b6257]">{insightReadBody}</p>
+                      </div>
+                    ) : null}
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setInsightMode("video")}
+                        disabled={!insightHasVideo}
+                        className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
+                          insightMode === "video"
+                            ? "border-[var(--accent)] text-[var(--accent)]"
+                            : "border-[#d9cdbb] text-[#5d5348]"
+                        } bg-white disabled:cursor-not-allowed disabled:opacity-40`}
+                      >
+                        Video
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInsightMode("listen")}
+                        disabled={!insightHasAudio}
+                        className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
+                          insightMode === "listen"
+                            ? "border-[var(--accent)] text-[var(--accent)]"
+                            : "border-[#d9cdbb] text-[#5d5348]"
+                        } bg-white disabled:cursor-not-allowed disabled:opacity-40`}
+                      >
+                        Listen
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setInsightMode("read")}
+                        disabled={!insightHasRead}
+                        className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
+                          insightMode === "read"
+                            ? "border-[var(--accent)] text-[var(--accent)]"
+                            : "border-[#d9cdbb] text-[#5d5348]"
+                        } bg-white disabled:cursor-not-allowed disabled:opacity-40`}
+                      >
+                        Read
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
+                    <p className="text-sm text-[#6b6257]">
+                      {coachInsightError || "A concept insight is not available right now."}
+                    </p>
                   </div>
-                ) : null}
-                {insightMode === "read" && insightHasRead ? (
-                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
-                    <p className="whitespace-pre-wrap text-sm leading-6 text-[#6b6257]">{insightReadBody}</p>
-                  </div>
-                ) : null}
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setInsightMode("video")}
-                    disabled={!insightHasVideo}
-                    className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
-                      insightMode === "video"
-                        ? "border-[var(--accent)] text-[var(--accent)]"
-                        : "border-[#d9cdbb] text-[#5d5348]"
-                    } bg-white disabled:cursor-not-allowed disabled:opacity-40`}
-                  >
-                    Video
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setInsightMode("listen")}
-                    disabled={!insightHasAudio}
-                    className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
-                      insightMode === "listen"
-                        ? "border-[var(--accent)] text-[var(--accent)]"
-                        : "border-[#d9cdbb] text-[#5d5348]"
-                    } bg-white disabled:cursor-not-allowed disabled:opacity-40`}
-                  >
-                    Listen
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setInsightMode("read")}
-                    disabled={!insightHasRead}
-                    className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
-                      insightMode === "read"
-                        ? "border-[var(--accent)] text-[var(--accent)]"
-                        : "border-[#d9cdbb] text-[#5d5348]"
-                    } bg-white disabled:cursor-not-allowed disabled:opacity-40`}
-                  >
-                    Read
-                  </button>
-                </div>
+                )}
               </div>
             ) : (
               <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
@@ -1657,7 +1768,7 @@ export default function AssessmentChatBox({
                         disabled={dailyHabitBusy}
                         className={`rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] ${
                           dailyHabitActiveTag === SELECTED_HABITS_TAG
-                            ? "border-[var(--accent)] bg-white text-[var(--accent)]"
+                            ? "border-[#1e1b16] bg-white text-[#1e1b16]"
                             : "border-[#d9cdbb] bg-white text-[#5d5348]"
                         } disabled:cursor-not-allowed disabled:opacity-50`}
                       >
@@ -1718,15 +1829,15 @@ export default function AssessmentChatBox({
                                 type="button"
                                 onClick={() => toggleDailyHabitSelection(habitId, conceptKey)}
                                 disabled={!habitId || !conceptKey || dailyHabitBusy}
-                                className="w-full rounded-2xl border border-[#87b17a] bg-[#eef7e7] px-4 py-3 text-left text-[#2f5b2f] transition hover:border-[#709b65] hover:bg-[#e6f3dc] disabled:cursor-not-allowed disabled:opacity-60"
+                                className="w-full rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-left text-[#1e1b16] transition hover:border-[#d9cdbb] hover:bg-[#fffdf8] disabled:cursor-not-allowed disabled:opacity-60"
                               >
                                 <div className="flex items-start justify-between gap-3">
                                   <div>
                                     {title ? <p className="text-sm font-semibold">{title}</p> : null}
-                                    {detail ? <p className="mt-1 text-sm text-[#476a43]">{detail}</p> : null}
+                                    {detail ? <p className="mt-1 text-sm text-[#6b6257]">{detail}</p> : null}
                                   </div>
                                   {conceptLabel ? (
-                                    <span className="rounded-full border border-[#b9d3b1] bg-white/70 px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-[#476a43]">
+                                    <span className="rounded-full border border-[#ece5d9] bg-[#fffaf3] px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-[#6b6257]">
                                       {conceptLabel}
                                     </span>
                                   ) : null}
@@ -1810,10 +1921,10 @@ export default function AssessmentChatBox({
                       return (
                         <div
                           key={`${message.id || index}-${direction}`}
-                          className={`flex ${outbound ? "justify-start" : "justify-end"}`}
+                          className={`flex ${outbound ? "w-full justify-start" : "justify-end"}`}
                         >
                           <div
-                            className={`max-w-[78%] rounded-[20px] px-3 py-2 text-[13px] leading-5 ${
+                            className={`${outbound ? "w-full max-w-none" : "max-w-[78%]"} rounded-[20px] px-3 py-2 text-[13px] leading-5 ${
                               outbound
                                 ? "border border-[#efe7db] bg-[#fffaf3] text-[#3c332b]"
                                 : "bg-[var(--accent)] text-white"
@@ -1833,6 +1944,31 @@ export default function AssessmentChatBox({
                 {sending ? <p className="mt-3 text-sm text-[#6b6257]">Gia is replying…</p> : null}
               </div>
               <div className="mt-4 w-full">
+                {askPromptSuggestions.length ? (
+                  <div className="mb-3">
+                    <div className="flex flex-wrap gap-2">
+                      {askPromptSuggestions.map((suggestion, index) => (
+                        <button
+                          key={`${suggestion.label}-${index}`}
+                          type="button"
+                          onClick={() =>
+                            void sendMessage(suggestion.text, {
+                              quickReply: {
+                                used: true,
+                                hideInChat: true,
+                                label: suggestion.label,
+                              },
+                            })
+                          }
+                          disabled={busy}
+                          className="rounded-full border border-[#d9cdbb] bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348] disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {suggestion.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 <form onSubmit={onSubmit}>
                   <textarea
                     id="assessment-chat-input"

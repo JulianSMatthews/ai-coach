@@ -31,12 +31,16 @@ export async function GET(request: Request) {
     const cookieHeader = request.headers.get("cookie") || "";
     const userId = String(url.searchParams.get("userId") || getCookieValue(cookieHeader, "hs_user_id") || "").trim();
     const anchorDate = String(url.searchParams.get("anchorDate") || "").trim();
+    const conceptKey = String(url.searchParams.get("conceptKey") || "").trim();
     if (!userId) {
       return NextResponse.json({ error: "userId is required" }, { status: 400 });
     }
     const params = new URLSearchParams();
     if (anchorDate) {
       params.set("anchor_date", anchorDate);
+    }
+    if (conceptKey) {
+      params.set("concept_key", conceptKey);
     }
     const base = getBaseUrl();
     const upstream = `${base}/api/v1/users/${encodeURIComponent(userId)}/coach-insight${params.toString() ? `?${params.toString()}` : ""}`;

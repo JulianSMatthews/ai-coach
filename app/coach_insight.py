@@ -120,6 +120,49 @@ def _select_focus_concept(user_id: int, anchor: date) -> tuple[dict[str, Any] | 
     return sorted(signal_rows, key=_sort_key)[0], summary
 
 
+def _select_focus_concepts(
+    user_id: int,
+    anchor: date,
+    *,
+    preferred_concept_key: str | None = None,
+) -> tuple[list[dict[str, Any]], dict[str, Any] | None, dict[str, Any]]:
+    summary = get_pillar_tracker_summary(user_id, anchor=anchor)
+    candidates: list[dict[str, Any]] = []
+    for pillar_row in summary.get("pillars") or []:
+        pillar_key = str(pillar_row.get("pillar_key") or "").strip().lower()
+        if not pillar_key:
+            continue
+        detail = get_pillar_tracker_detail(user_id, pillar_key, anchor=anchor)
+        for concept_row in detail.get("concepts") or []:
+            candidates.append(_concept_candidate(pillar_row, concept_row, anchor=anchor))
+    signal_rows = [row for row in candidates if row.get("has_signal")]
+    if not signal_rows:
+        return [], None, summary
+
+    def _sort_key(row: dict[str, Any]) -> tuple[int, int, int, int, int, str]:
+        current_score = _safe_int(row.get("current_score"))
+        recent_average = _safe_int(row.get("recent_average"))
+        pillar_score = _safe_int(row.get("pillar_score"))
+        return (
+            -int(row.get("recent_misses") or 0),
+            current_score if current_score is not None else 999,
+            recent_average if recent_average is not None else 999,
+            pillar_score if pillar_score is not None else 999,
+            _pillar_rank(str(row.get("pillar_key") or "")),
+            str(row.get("concept_label") or ""),
+        )
+
+    ranked_rows = sorted(signal_rows, key=_sort_key)
+    preferred = _normalize_concept_key(preferred_concept_key) or None
+    selected = next((row for row in ranked_rows if row.get("concept_key") == preferred), None)
+    visible = ranked_rows[:8]
+    if selected and not any(str(item.get("concept_key") or "").strip().lower() == selected.get("concept_key") for item in visible):
+        visible = [selected, *visible[:7]]
+    if selected is None:
+        selected = visible[0] if visible else None
+    return visible, selected, summary
+
+
 def _load_library_rows(pillar_key: str) -> list[ContentLibraryItem]:
     with SessionLocal() as s:
         return (
@@ -239,9 +282,18 @@ def _select_library_item(
     return None, None
 
 
-def get_coach_insight(user_id: int, *, anchor: date | None = None) -> dict[str, Any]:
+def get_coach_insight(
+    user_id: int,
+    *,
+    anchor: date | None = None,
+    concept_key: str | None = None,
+) -> dict[str, Any]:
     resolved_anchor = anchor or tracker_today()
-    focus_concept, summary = _select_focus_concept(user_id, resolved_anchor)
+    available_concepts, focus_concept, summary = _select_focus_concepts(
+        user_id,
+        resolved_anchor,
+        preferred_concept_key=concept_key,
+    )
     weakest_pillar = _select_weakest_pillar(summary)
     selected_pillar_key = str(
         (focus_concept or {}).get("pillar_key") or weakest_pillar.get("pillar_key") or "nutrition"
@@ -261,6 +313,18 @@ def get_coach_insight(user_id: int, *, anchor: date | None = None) -> dict[str, 
         "pillar_label": selected_pillar_label,
         "concept_key": str((focus_concept or {}).get("concept_key") or "").strip() or None,
         "concept_label": str((focus_concept or {}).get("concept_label") or "").strip() or None,
+        "available_concepts": [
+            {
+                "pillar_key": str(item.get("pillar_key") or "").strip().lower() or None,
+                "pillar_label": str(item.get("pillar_label") or "").strip() or None,
+                "concept_key": str(item.get("concept_key") or "").strip().lower() or None,
+                "label": str(item.get("concept_label") or "").strip() or None,
+                "is_selected": str(item.get("concept_key") or "").strip().lower()
+                == str((focus_concept or {}).get("concept_key") or "").strip().lower(),
+            }
+            for item in available_concepts
+            if str(item.get("concept_key") or "").strip()
+        ],
         "matched_by": matched_by,
         "content": (
             {

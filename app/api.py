@@ -6942,6 +6942,7 @@ def api_user_coach_insight(
     user_id: int,
     request: Request,
     anchor_date: str | None = None,
+    concept_key: str | None = None,
     x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
 ):
@@ -6953,7 +6954,7 @@ def api_user_coach_insight(
             raise HTTPException(status_code=400, detail="anchor_date must be YYYY-MM-DD")
     else:
         anchor = None
-    result = get_coach_insight(user_id, anchor=anchor)
+    result = get_coach_insight(user_id, anchor=anchor, concept_key=concept_key)
     content = result.get("content")
     if isinstance(content, dict):
         content["podcast_url"] = _normalize_reports_url(content.get("podcast_url"))

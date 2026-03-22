@@ -392,6 +392,13 @@ export type CoachInsightResponse = {
   pillar_label?: string | null;
   concept_key?: string | null;
   concept_label?: string | null;
+  available_concepts?: Array<{
+    pillar_key?: string | null;
+    pillar_label?: string | null;
+    concept_key?: string | null;
+    label?: string | null;
+    is_selected?: boolean;
+  }>;
   matched_by?: string | null;
   content?: CoachInsightContent | null;
 };
@@ -596,9 +603,10 @@ export async function getCoachingHistory(
 export async function getCoachInsight(
   userId: string | number,
   anchorDate?: string,
+  conceptKey?: string,
 ): Promise<CoachInsightResponse> {
   return apiGet<CoachInsightResponse>(`/api/v1/users/${userId}/coach-insight`, {
-    query: { anchor_date: anchorDate },
+    query: { anchor_date: anchorDate, concept_key: conceptKey },
   });
 }
 
