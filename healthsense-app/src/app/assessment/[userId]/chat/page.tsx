@@ -1,7 +1,9 @@
 import { cookies } from "next/headers";
 import {
+  getProgress,
   getPillarTrackerSummary,
   getUserStatus,
+  type ProgressResponse,
   type PillarTrackerSummaryResponse,
   type UserStatusResponse,
 } from "@/lib/api";
@@ -215,11 +217,17 @@ export default async function AssessmentChatPage(props: PageProps) {
       ? ""
       : "Start your assessment with Gia here. Each question will guide you one step at a time.";
   let pillarTrackerSummary: PillarTrackerSummaryResponse | null = null;
+  let progressData: ProgressResponse | null = null;
   if (!leadFlow && !leadGuest && assessmentCompleted && !assessmentInProgress) {
     try {
       pillarTrackerSummary = await getPillarTrackerSummary(userId);
     } catch {
       pillarTrackerSummary = null;
+    }
+    try {
+      progressData = await getProgress(userId);
+    } catch {
+      progressData = null;
     }
   }
   if (statusLoadError && !leadFlow) {
@@ -268,7 +276,13 @@ export default async function AssessmentChatPage(props: PageProps) {
           coachProductAvatar={coachProductAvatar}
           introAvatarEnabledOverride={introAvatarOverride}
         />
-        {pillarTrackerSummary ? <LatestAssessmentPanel userId={userId} initialSummary={pillarTrackerSummary} /> : null}
+        {pillarTrackerSummary ? (
+          <LatestAssessmentPanel
+            userId={userId}
+            initialSummary={pillarTrackerSummary}
+            initialProgress={progressData}
+          />
+        ) : null}
       </section>
     </PageShell>
   );

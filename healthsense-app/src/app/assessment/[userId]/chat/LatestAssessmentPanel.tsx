@@ -5,6 +5,7 @@ import type {
   PillarTrackerDetailResponse,
   PillarTrackerPillar,
   PillarTrackerSummaryResponse,
+  ProgressResponse,
 } from "@/lib/api";
 import { getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
@@ -13,6 +14,7 @@ import LeadAssessmentBranding from "./LeadAssessmentBranding";
 type LatestAssessmentPanelProps = {
   userId: string;
   initialSummary: PillarTrackerSummaryResponse;
+  initialProgress?: ProgressResponse | null;
 };
 
 const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
@@ -40,25 +42,6 @@ function resolveScore(value?: number | null): number | null {
   const resolved = Number(value);
   if (!Number.isFinite(resolved)) return null;
   return Math.max(0, Math.min(100, Math.round(resolved)));
-}
-
-function deltaLabel(base?: number | null, current?: number | null): string {
-  const resolvedBase = resolveScore(base);
-  const resolvedCurrent = resolveScore(current);
-  if (resolvedBase === null || resolvedCurrent === null) return "—";
-  const delta = resolvedCurrent - resolvedBase;
-  if (delta > 0) return `+${delta}`;
-  if (delta < 0) return `${delta}`;
-  return "0";
-}
-
-function deltaTone(base?: number | null, current?: number | null): string {
-  const resolvedBase = resolveScore(base);
-  const resolvedCurrent = resolveScore(current);
-  if (resolvedBase === null || resolvedCurrent === null) return "text-[#6b6257]";
-  if (resolvedCurrent > resolvedBase) return "text-[#4e7a1f]";
-  if (resolvedCurrent < resolvedBase) return "text-[#8a3e1a]";
-  return "text-[#6b6257]";
 }
 
 function circleDayTone(status?: string | null, isActive?: boolean): string {
@@ -120,63 +103,81 @@ function CombinedLogoRing({ value }: { value: number }) {
   );
 }
 
-function ScoreMetricBar({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value?: number | null;
-  tone: string;
-}) {
-  const resolved = resolveScore(value);
-  return (
-    <div>
-      <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.16em] text-[#6b6257]">
-        <span>{label}</span>
-        <span className="font-semibold text-[#3f372f]">{resolved !== null ? `${resolved}/100` : "—"}</span>
-      </div>
-      <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#f1e9dd]">
-        <div
-          className="h-full rounded-full transition-[width]"
-          style={{ width: `${resolved ?? 0}%`, background: tone }}
-        />
-      </div>
-    </div>
-  );
+function normalizePillarKey(value?: string | null): string {
+  const key = String(value || "").trim().toLowerCase();
+  if (key.includes("nutri")) return "nutrition";
+  if (key.includes("recover")) return "recovery";
+  if (key.includes("train")) return "training";
+  if (key.includes("resilien")) return "resilience";
+  return key;
 }
 
-function ScoreProgressCard({
-  label,
-  base,
-  current,
-  tone,
-  subtitle,
-}: {
-  label: string;
-  base?: number | null;
-  current?: number | null;
-  tone: string;
-  subtitle?: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-sm font-semibold text-[#1e1b16]">{label}</p>
-          {subtitle ? <p className="mt-1 text-xs text-[#6b6257]">{subtitle}</p> : null}
-        </div>
-        <p className={`text-sm font-semibold ${deltaTone(base, current)}`}>{deltaLabel(base, current)}</p>
-      </div>
-      <div className="mt-3 space-y-3">
-        <ScoreMetricBar label="Base" value={base} tone="#d6c6b1" />
-        <ScoreMetricBar label="Current" value={current} tone={tone} />
-      </div>
-    </div>
-  );
+function formatNumber(value?: number | null): string {
+  if (value === null || value === undefined) return "—";
+  const resolved = Number(value);
+  if (!Number.isFinite(resolved)) return "—";
+  if (Number.isInteger(resolved)) return String(resolved);
+  return resolved.toFixed(2).replace(/\.?0+$/, "");
 }
 
-export default function LatestAssessmentPanel({ userId, initialSummary }: LatestAssessmentPanelProps) {
+function toFiniteNumber(value?: number | null): number | null {
+  if (value === null || value === undefined) return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function progressRatio(actual?: number | null, target?: number | null, baseline?: number | null): number | null {
+  const actualNum = toFiniteNumber(actual);
+  const targetNum = toFiniteNumber(target);
+  const baselineNum = toFiniteNumber(baseline);
+  if (actualNum === null || targetNum === null) return null;
+  if (baselineNum !== null && Math.abs(targetNum - baselineNum) > 1e-9) {
+    return Math.max(0, Math.min(1, (actualNum - baselineNum) / (targetNum - baselineNum)));
+  }
+  if (Math.abs(targetNum) < 1e-9) return null;
+  return Math.max(0, Math.min(1, actualNum / targetNum));
+}
+
+function progressStatus(actual?: number | null, target?: number | null, baseline?: number | null): {
+  label: string;
+  pct: number | null;
+  tone: string;
+  chipBg: string;
+} {
+  const pct = progressRatio(actual, target, baseline);
+  if (pct === null) {
+    return {
+      label: "In progress",
+      pct: null,
+      tone: "#1d4ed8",
+      chipBg: "#eff6ff",
+    };
+  }
+  if (pct >= 0.9) {
+    return {
+      label: "On track",
+      pct,
+      tone: "#027a48",
+      chipBg: "#ecfdf3",
+    };
+  }
+  if (pct >= 0.5) {
+    return {
+      label: "At risk",
+      pct,
+      tone: "#c2410c",
+      chipBg: "#fff7ed",
+    };
+  }
+  return {
+    label: "Off track",
+    pct,
+    tone: "#b42318",
+    chipBg: "#fef2f2",
+  };
+}
+
+export default function LatestAssessmentPanel({ userId, initialSummary, initialProgress }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
   const [scoreCardOpen, setScoreCardOpen] = useState(false);
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
@@ -195,13 +196,11 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
     if (!scores.length) return 0;
     return Math.round(scores.reduce((total, score) => total + score, 0) / scores.length);
   })();
-  const combinedBaselineScore = (() => {
-    const scores = pillars
-      .map((pillar) => resolveScore(pillar.baseline_score))
-      .filter((score): score is number => score !== null);
-    if (!scores.length) return null;
-    return Math.round(scores.reduce((total, score) => total + score, 0) / scores.length);
-  })();
+  const progressRows = [...(Array.isArray(initialProgress?.rows) ? initialProgress.rows : [])].sort((left, right) => {
+    const leftIndex = PILLAR_ORDER.indexOf(normalizePillarKey(left?.pillar));
+    const rightIndex = PILLAR_ORDER.indexOf(normalizePillarKey(right?.pillar));
+    return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
+  });
   const concepts = Array.isArray(detail?.concepts) ? detail?.concepts : [];
   const canSave =
     !saving &&
@@ -386,26 +385,96 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
             </div>
 
             <div className="mt-5 space-y-2">
-              <ScoreProgressCard
-                label="Overall"
-                subtitle="Base and current progress"
-                base={combinedBaselineScore}
-                current={combinedScore}
-                tone={HEALTHSENSE_ORANGE}
-              />
-              {pillars.map((pillar) => {
-                const palette = getPillarPalette(pillar.pillar_key);
-                return (
-                  <ScoreProgressCard
-                    key={`score-card-${pillar.pillar_key}`}
-                    label={String(pillar.label || palette.label || "").trim() || "Pillar"}
-                    base={pillar.baseline_score}
-                    current={pillar.score}
-                    tone={palette.accent}
-                    subtitle="Base and current progress"
-                  />
-                );
-              })}
+              {progressRows.length ? (
+                progressRows.map((row, rowIndex) => {
+                  const pillarKey = normalizePillarKey(row?.pillar);
+                  const palette = getPillarPalette(pillarKey);
+                  const objective = String(row?.objective || "").trim();
+                  const krs = Array.isArray(row?.krs) ? row.krs : [];
+                  return (
+                    <div
+                      key={`okr-progress-${pillarKey || rowIndex}`}
+                      className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">
+                            {String(row?.pillar || palette.label || "Pillar").trim() || "Pillar"}
+                          </p>
+                          {objective ? (
+                            <p className="mt-1 text-sm font-semibold text-[#1e1b16]">{objective}</p>
+                          ) : null}
+                        </div>
+                        {row?.cycle_label ? (
+                          <span className="text-[11px] uppercase tracking-[0.16em] text-[#8c7f70]">
+                            {row.cycle_label}
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {krs.length ? (
+                        <div className="mt-3 space-y-3">
+                          {krs.map((kr, krIndex) => {
+                            const status = progressStatus(kr?.actual, kr?.target, kr?.baseline);
+                            const pctLabel = status.pct !== null ? `${Math.round(status.pct * 100)}%` : "—";
+                            const barWidth = status.pct !== null ? `${Math.round(status.pct * 100)}%` : "4%";
+                            return (
+                              <div
+                                key={`okr-${pillarKey || "pillar"}-${kr?.id || krIndex}`}
+                                className="rounded-2xl border border-[#eadcc6] bg-white px-3 py-3"
+                              >
+                                <p className="text-sm font-semibold text-[#1e1b16]">
+                                  {String(kr?.description || "Key result").trim() || "Key result"}
+                                </p>
+                                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                                  <span
+                                    className="rounded-full px-2 py-0.5"
+                                    style={{ background: status.chipBg, color: status.tone }}
+                                  >
+                                    {status.label}
+                                  </span>
+                                  {kr?.metric_label ? (
+                                    <span className="text-[#6b6257]">{kr.metric_label}</span>
+                                  ) : null}
+                                </div>
+                                <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-[#6b6257]">
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Base</p>
+                                    <p className="text-sm text-[#1e1b16]">{formatNumber(kr?.baseline)}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Current</p>
+                                    <p className="text-sm text-[#1e1b16]">{formatNumber(kr?.actual)}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Target</p>
+                                    <p className="text-sm text-[#1e1b16]">{formatNumber(kr?.target)}</p>
+                                  </div>
+                                </div>
+                                <div className="mt-3 flex items-center gap-2">
+                                  <span className="text-xs font-semibold text-[#101828]">{pctLabel}</span>
+                                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#e4e7ec]">
+                                    <div
+                                      className="h-full rounded-full"
+                                      style={{ width: barWidth, background: palette.accent }}
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <p className="mt-3 text-sm text-[#6b6257]">No key results recorded yet.</p>
+                      )}
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4 text-sm text-[#6b6257]">
+                  No key results recorded yet.
+                </div>
+              )}
             </div>
           </div>
         </div>

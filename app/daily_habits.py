@@ -521,6 +521,101 @@ def _selected_habits_from_row(
     return _dedupe_habit_plan_items(items)
 
 
+def _normalize_selected_ids_map(payload: dict[str, Any]) -> dict[str, list[str]]:
+    raw_map = payload.get("selected_option_ids_by_concept") if isinstance(payload, dict) else None
+    if not isinstance(raw_map, dict):
+        return {}
+    normalized: dict[str, list[str]] = {}
+    for raw_key, raw_ids in raw_map.items():
+        concept_key = _normalize_concept_token(raw_key)
+        if not concept_key or not isinstance(raw_ids, list):
+            continue
+        ids: list[str] = []
+        seen: set[str] = set()
+        for raw_id in raw_ids:
+            item_id = str(raw_id or "").strip()
+            if not item_id or item_id in seen:
+                continue
+            seen.add(item_id)
+            ids.append(item_id)
+        if ids:
+            normalized[concept_key] = ids
+    return normalized
+
+
+def _recover_selected_ids_map_from_row(
+    row: DailyCoachHabitPlan | None,
+    *,
+    available_concepts: list[dict[str, Any]],
+    option_sets: dict[str, list[dict[str, Any]]],
+) -> dict[str, list[str]]:
+    if row is None:
+        return {}
+    recovered_items = _selected_habits_from_row(
+        row,
+        available_concepts=available_concepts,
+        structured_state=True,
+    )
+    if not recovered_items:
+        return {}
+    recovered: dict[str, list[str]] = {}
+    for item in recovered_items:
+        concept_key = _normalize_concept_token(item.get("concept_key"))
+        item_id = str(item.get("id") or "").strip()
+        if not concept_key or not item_id:
+            continue
+        recovered.setdefault(concept_key, []).append(item_id)
+    cleaned: dict[str, list[str]] = {}
+    for concept_key, ids in recovered.items():
+        deduped_ids = list(dict.fromkeys(ids))
+        option_ids = [
+            str(item.get("id") or "").strip()
+            for item in option_sets.get(concept_key, [])
+            if str(item.get("id") or "").strip()
+        ]
+        if option_ids and len(option_ids) > 1 and set(deduped_ids) == set(option_ids):
+            continue
+        cleaned[concept_key] = deduped_ids
+    return cleaned
+
+
+def _selected_ids_by_concept(
+    payload: dict[str, Any],
+    *,
+    row: DailyCoachHabitPlan | None,
+    available_concepts: list[dict[str, Any]],
+    option_sets: dict[str, list[dict[str, Any]]],
+) -> dict[str, list[str]]:
+    selected_map = _normalize_selected_ids_map(payload)
+    if selected_map:
+        return selected_map
+    return _recover_selected_ids_map_from_row(
+        row,
+        available_concepts=available_concepts,
+        option_sets=option_sets,
+    )
+
+
+def _selected_habits_from_option_sets(
+    option_sets: dict[str, list[dict[str, Any]]],
+    selected_ids_by_concept: dict[str, list[str]],
+) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for concept_key, selected_ids in selected_ids_by_concept.items():
+        if not selected_ids:
+            continue
+        option_lookup = {
+            str(item.get("id") or "").strip(): item
+            for item in option_sets.get(concept_key, [])
+            if str(item.get("id") or "").strip()
+        }
+        for item_id in selected_ids:
+            item = option_lookup.get(item_id)
+            if item:
+                items.append(item)
+    return _dedupe_habit_plan_items(items)
+
+
 def _resolve_selected_concept(
     payload: dict[str, Any],
     *,
@@ -714,12 +809,13 @@ def _serialize_plan(row: DailyCoachHabitPlan) -> dict[str, Any]:
         legacy_habits=getattr(row, "habits", None) if isinstance(getattr(row, "habits", None), list) else None,
         default_selected_concept=selected_concept,
     )
-    structured_state = _habit_plan_version(payload) >= 2
-    selected_habits = _selected_habits_from_row(
-        row,
+    selected_ids_by_concept = _selected_ids_by_concept(
+        payload,
+        row=row,
         available_concepts=available_concepts,
-        structured_state=structured_state,
+        option_sets=option_sets,
     )
+    selected_habits = _selected_habits_from_option_sets(option_sets, selected_ids_by_concept)
     selected_ids = {str(item.get("id") or "").strip() for item in selected_habits}
     selected_concept_key = _normalize_concept_token((selected_concept or {}).get("concept_key"))
     current_options = []
@@ -785,12 +881,13 @@ def get_or_generate_daily_habit_plan(
             legacy_habits=(getattr(existing, "habits", None) if existing is not None else None),
             default_selected_concept=selected_concept,
         )
-        structured_state = _habit_plan_version(existing_payload) >= 2
-        selected_habits = (
-            _selected_habits_from_row(existing, available_concepts=available_concepts, structured_state=structured_state)
-            if existing is not None
-            else []
+        selected_ids_by_concept = _selected_ids_by_concept(
+            existing_payload,
+            row=existing,
+            available_concepts=available_concepts,
+            option_sets=option_sets,
         )
+        selected_habits = _selected_habits_from_option_sets(option_sets, selected_ids_by_concept)
         selected_concept_key = _normalize_concept_token(selected_concept.get("concept_key"))
         if (
             existing
@@ -801,11 +898,12 @@ def get_or_generate_daily_habit_plan(
         ):
             existing.context_payload = {
                 **context,
-                "habit_plan_version": 2,
+                "habit_plan_version": 3,
                 "selected_concept_key": selected_concept_key,
                 "habit_option_sets": option_sets,
+                "selected_option_ids_by_concept": selected_ids_by_concept,
             }
-            existing.habits = selected_habits if structured_state else []
+            existing.habits = selected_habits
             s.add(existing)
             s.commit()
             s.refresh(existing)
@@ -838,9 +936,10 @@ def get_or_generate_daily_habit_plan(
         row.context_hash = hash_value
         row.context_payload = {
             **context,
-            "habit_plan_version": 2,
+            "habit_plan_version": 3,
             "selected_concept_key": selected_concept_key,
             "habit_option_sets": option_sets,
+            "selected_option_ids_by_concept": selected_ids_by_concept,
         }
         row.generated_at = datetime.utcnow().replace(microsecond=0)
         s.add(row)
@@ -875,7 +974,6 @@ def update_daily_habit_plan_selection(
         payload = row.context_payload if isinstance(getattr(row, "context_payload", None), dict) else {}
         available_concepts = [item for item in (payload.get("focus_concepts") or []) if isinstance(item, dict)]
         fallback_concept = payload.get("selected_focus_concept") if isinstance(payload.get("selected_focus_concept"), dict) else None
-        structured_state = _habit_plan_version(payload) >= 2
         selected_concept = _resolve_selected_concept(
             {"selected_concept_key": concept_key or payload.get("selected_concept_key")},
             available_concepts=available_concepts,
@@ -897,23 +995,23 @@ def update_daily_habit_plan_selection(
             for raw_id in (selected_option_ids or [])
             if str(raw_id or "").strip()
         ]
-        selected_habits = _selected_habits_from_row(
-            row,
+        selected_ids_by_concept = _selected_ids_by_concept(
+            payload,
+            row=row,
             available_concepts=available_concepts,
-            structured_state=structured_state,
+            option_sets=option_sets,
         )
-        preserved = [
-            item
-            for item in selected_habits
-            if _normalize_concept_token(item.get("concept_key")) != selected_concept_key
-        ]
-        next_for_concept = [option_lookup[item_id] for item_id in requested_ids if item_id in option_lookup]
-        row.habits = _dedupe_habit_plan_items([*preserved, *next_for_concept])
+        if requested_ids:
+            selected_ids_by_concept[selected_concept_key] = [item_id for item_id in requested_ids if item_id in option_lookup]
+        else:
+            selected_ids_by_concept.pop(selected_concept_key, None)
+        row.habits = _selected_habits_from_option_sets(option_sets, selected_ids_by_concept)
         row.context_payload = {
             **payload,
-            "habit_plan_version": 2,
+            "habit_plan_version": 3,
             "selected_concept_key": selected_concept_key,
             "habit_option_sets": option_sets,
+            "selected_option_ids_by_concept": selected_ids_by_concept,
         }
         row.updated_at = datetime.utcnow().replace(microsecond=0)
         s.add(row)
