@@ -320,8 +320,27 @@ export type PillarTrackerDetailResponse = {
 };
 
 export type DailyHabitPlanItem = {
+  id?: string | null;
   title?: string | null;
   detail?: string | null;
+  concept_key?: string | null;
+  concept_label?: string | null;
+  pillar_key?: string | null;
+  pillar_label?: string | null;
+  selected?: boolean;
+};
+
+export type DailyHabitPlanConcept = {
+  pillar_key?: string | null;
+  pillar_label?: string | null;
+  concept_key?: string | null;
+  label?: string | null;
+  helper?: string | null;
+  target_label?: string | null;
+  signal?: string | null;
+  latest_value?: string | null;
+  score?: number | null;
+  is_selected?: boolean;
 };
 
 export type DailyHabitPlanResponse = {
@@ -332,6 +351,10 @@ export type DailyHabitPlanResponse = {
   title?: string | null;
   summary?: string | null;
   habits?: DailyHabitPlanItem[];
+  options?: DailyHabitPlanItem[];
+  available_concepts?: DailyHabitPlanConcept[];
+  selected_concept_key?: string | null;
+  selected_concept_label?: string | null;
   source?: string | null;
   generated_at?: string | null;
 };

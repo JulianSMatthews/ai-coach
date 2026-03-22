@@ -199,7 +199,11 @@ from .pillar_tracker import (
     parse_tracker_anchor,
     save_pillar_tracker_day,
 )
-from .daily_habits import ensure_daily_habit_plan_schema, get_or_generate_daily_habit_plan
+from .daily_habits import (
+    ensure_daily_habit_plan_schema,
+    get_or_generate_daily_habit_plan,
+    update_daily_habit_plan_selection,
+)
 from .coach_insight import get_coach_insight
 
 # Lazy import holder to avoid startup/reload ImportError if symbol is added later
@@ -6865,13 +6869,18 @@ def api_user_daily_habits(
     user_id: int,
     request: Request,
     force: bool = False,
+    concept_key: str | None = None,
     x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
 ):
     _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
     ensure_daily_habit_plan_schema()
     try:
-        result = get_or_generate_daily_habit_plan(user_id, force=bool(force))
+        result = get_or_generate_daily_habit_plan(
+            user_id,
+            force=bool(force),
+            concept_key=concept_key,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     _log_app_engagement_event(
@@ -6883,6 +6892,46 @@ def api_user_daily_habits(
             "plan_date": result.get("plan_date"),
             "source": result.get("source"),
             "force": bool(force),
+            "concept_key": result.get("selected_concept_key"),
+        },
+    )
+    return result
+
+
+@api_v1.post("/users/{user_id}/daily-habits")
+def api_user_daily_habits_update(
+    user_id: int,
+    request: Request,
+    body: dict[str, Any] | None = Body(default=None),
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    ensure_daily_habit_plan_schema()
+    payload = body or {}
+    raw_selected_ids = payload.get("selected_option_ids")
+    if raw_selected_ids is None:
+        raw_selected_ids = []
+    if not isinstance(raw_selected_ids, list):
+        raise HTTPException(status_code=400, detail="selected_option_ids must be a list")
+    concept_key = str(payload.get("concept_key") or "").strip() or None
+    try:
+        result = update_daily_habit_plan_selection(
+            user_id,
+            concept_key=concept_key,
+            selected_option_ids=raw_selected_ids,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    _log_app_engagement_event(
+        user_id=user_id,
+        unit_type="coach_home_habits_update",
+        meta={
+            "page": "coach_home",
+            "plan_date": result.get("plan_date"),
+            "pillar_key": result.get("pillar_key"),
+            "concept_key": result.get("selected_concept_key"),
+            "selected_count": len(result.get("habits") or []),
         },
     )
     return result
@@ -18438,6 +18487,7 @@ def admin_library_content_detail(
     content_id: int,
     admin_user: User = Depends(_require_admin),
 ):
+    avatar_defaults = azure_avatar_defaults()
     with SessionLocal() as s:
         row = s.query(ContentLibraryItem).filter(ContentLibraryItem.id == content_id).one_or_none()
         if not row:
@@ -18461,6 +18511,11 @@ def admin_library_content_detail(
             "level": row.level,
             "tags": _library_tags_list(row.tags),
             "avatar": _library_avatar_payload_from_row(row),
+            "avatar_defaults": {
+                "character": str(avatar_defaults.get("character") or "lisa"),
+                "style": str(avatar_defaults.get("style") or "graceful-sitting"),
+                "voice": str(avatar_defaults.get("voice") or "en-GB-SoniaNeural"),
+            },
         }
 
 

@@ -1453,12 +1453,29 @@ def build_prompt(
         pillar_scores = data.get("scores") or []
         weakest_pillar = data.get("weakest_pillar") or {}
         focus_concepts = data.get("focus_concepts") or []
+        selected_focus_concept = data.get("selected_focus_concept") or {}
+        selected_pillar = data.get("selected_pillar") or {}
         okr_context = data.get("okr_context") or {}
         context_extras = (
             f"Weakest pillar={json.dumps(weakest_pillar, ensure_ascii=False)}; "
+            f"Selected pillar={json.dumps(selected_pillar, ensure_ascii=False)}; "
+            f"Selected concept={json.dumps(selected_focus_concept, ensure_ascii=False)}; "
             f"Plan date={data.get('plan_date') or ''}"
         )
         history_lines: List[str] = []
+        if selected_focus_concept:
+            label = str(selected_focus_concept.get("label") or selected_focus_concept.get("concept_key") or "").strip()
+            signal = str(selected_focus_concept.get("signal") or "").strip()
+            target = str(selected_focus_concept.get("target_label") or "").strip()
+            latest = str(selected_focus_concept.get("latest_value") or "").strip()
+            if label:
+                bits = [signal] if signal else []
+                if latest:
+                    bits.append(f"latest={latest}")
+                if target:
+                    bits.append(target)
+                suffix = f" ({'; '.join(bits)})" if bits else ""
+                history_lines.append(f"Selected concept focus: {label}{suffix}")
         if focus_concepts:
             history_lines.append("Recent tracker focus:")
             for item in focus_concepts:

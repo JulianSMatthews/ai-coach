@@ -484,6 +484,7 @@ export default function AssessmentChatBox({
   const [homeSurface, setHomeSurface] = useState<"ask" | "insight" | "habits">("ask");
   const [dailyHabitPlan, setDailyHabitPlan] = useState<DailyHabitPlanResponse | null>(null);
   const [dailyHabitPlanLoading, setDailyHabitPlanLoading] = useState(false);
+  const [dailyHabitPlanSaving, setDailyHabitPlanSaving] = useState(false);
   const [dailyHabitPlanError, setDailyHabitPlanError] = useState<string | null>(null);
   const [coachInsight, setCoachInsight] = useState<CoachInsightResponse | null>(null);
   const [coachInsightLoading, setCoachInsightLoading] = useState(false);
@@ -566,10 +567,10 @@ export default function AssessmentChatBox({
   const insightMediaIsVideo = isLikelyVideoUrl(insightMediaUrl);
   const insightAvatar = insightContent?.avatar || null;
   const insightVideoUrl = String(
-    insightAvatar?.url || (insightMediaIsVideo ? insightMediaUrl : "") || coachProductAvatar?.url || "",
+    insightAvatar?.url || (insightMediaIsVideo ? insightMediaUrl : "") || "",
   ).trim();
   const insightVideoPosterUrl = String(
-    insightAvatar?.poster_url || coachProductAvatar?.posterUrl || "",
+    insightAvatar?.poster_url || "",
   ).trim();
   const insightAudioUrl = insightMediaIsVideo ? "" : insightMediaUrl;
   const insightReadBody = String(insightContent?.body || "").trim();
@@ -581,9 +582,13 @@ export default function AssessmentChatBox({
       coachInsight?.concept_label ||
       insightContent?.title ||
       coachInsight?.pillar_label ||
-      coachProductAvatar?.title ||
       "",
   ).trim();
+  const dailyHabitSelectedConceptKey = String(dailyHabitPlan?.selected_concept_key || "").trim();
+  const dailyHabitOptions = Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : [];
+  const dailyHabitSelected = Array.isArray(dailyHabitPlan?.habits) ? dailyHabitPlan.habits : [];
+  const dailyHabitConcepts = Array.isArray(dailyHabitPlan?.available_concepts) ? dailyHabitPlan.available_concepts : [];
+  const dailyHabitBusy = dailyHabitPlanLoading || dailyHabitPlanSaving;
   const homePanelHeightClass =
     homeSurface === "ask"
       ? "h-[48vh] min-h-[18rem] max-h-[29rem]"
@@ -649,11 +654,17 @@ export default function AssessmentChatBox({
     }
   }, [userId, assessmentCompleted, applyChatPayload, leadToken]);
 
-  const loadDailyHabitPlan = useCallback(async () => {
+  const loadDailyHabitPlan = useCallback(async (options?: { force?: boolean; conceptKey?: string }) => {
     setDailyHabitPlanLoading(true);
     setDailyHabitPlanError(null);
     try {
       const params = new URLSearchParams({ userId });
+      if (options?.force) {
+        params.set("force", "1");
+      }
+      if (options?.conceptKey) {
+        params.set("conceptKey", options.conceptKey);
+      }
       const res = await fetch(`/api/daily-habits?${params.toString()}`, {
         method: "GET",
         cache: "no-store",
@@ -670,6 +681,35 @@ export default function AssessmentChatBox({
       setDailyHabitPlanLoading(false);
     }
   }, [userId]);
+
+  const saveDailyHabitPlanSelection = useCallback(
+    async (conceptKey: string, selectedOptionIds: string[]) => {
+      setDailyHabitPlanSaving(true);
+      setDailyHabitPlanError(null);
+      try {
+        const res = await fetch("/api/daily-habits", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            conceptKey,
+            selectedOptionIds,
+          }),
+        });
+        const text = await res.text().catch(() => "");
+        if (!res.ok) {
+          throw new Error(parseApiError(text, "Failed to update habit steps."));
+        }
+        const data = (text ? (JSON.parse(text) as DailyHabitPlanResponse) : {}) as DailyHabitPlanResponse;
+        setDailyHabitPlan(data);
+      } catch (error) {
+        setDailyHabitPlanError(error instanceof Error ? error.message : String(error));
+      } finally {
+        setDailyHabitPlanSaving(false);
+      }
+    },
+    [userId],
+  );
 
   const loadCoachInsight = useCallback(async () => {
     setCoachInsightLoading(true);
@@ -703,6 +743,7 @@ export default function AssessmentChatBox({
     setDailyHabitPlan(null);
     setDailyHabitPlanError(null);
     setDailyHabitPlanLoading(false);
+    setDailyHabitPlanSaving(false);
     setCoachInsight(null);
     setCoachInsightError(null);
     setCoachInsightLoading(false);
@@ -1529,19 +1570,13 @@ export default function AssessmentChatBox({
             )
           ) : homeSurface === "habits" ? (
             <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
-                {String(dailyHabitPlan?.pillar_label || "").trim()
-                  ? `${String(dailyHabitPlan?.pillar_label || "").trim()} habits`
-                  : "Today's habits"}
-              </p>
-              {dailyHabitPlanLoading ? (
-                <p className="mt-3 text-sm text-[#6b6257]">
-                  Reviewing your tracker and preparing today&apos;s habit steps…
-                </p>
-              ) : dailyHabitPlanError ? (
-                <p className="mt-3 text-sm text-[#8a3e1a]">{dailyHabitPlanError}</p>
-              ) : (
-                <>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
+                    {String(dailyHabitPlan?.pillar_label || "").trim()
+                      ? `${String(dailyHabitPlan?.pillar_label || "").trim()} habits`
+                      : "Today's habits"}
+                  </p>
                   {String(dailyHabitPlan?.title || "").trim() ? (
                     <p className="mt-3 text-lg font-semibold text-[#1e1b16]">
                       {String(dailyHabitPlan?.title || "").trim()}
@@ -1552,27 +1587,160 @@ export default function AssessmentChatBox({
                       {String(dailyHabitPlan?.summary || "").trim()}
                     </p>
                   ) : null}
-                  <div className="mt-3 space-y-2">
-                    {(dailyHabitPlan?.habits || []).map((habit, index) => {
-                      const title = String(habit?.title || "").trim();
-                      const detail = String(habit?.detail || "").trim();
-                      if (!title && !detail) return null;
-                      return (
-                        <div
-                          key={`${title || detail}-${index}`}
-                          className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3"
-                        >
-                          {title ? <p className="text-sm font-semibold text-[#3c332b]">{title}</p> : null}
-                          {detail ? <p className="mt-1 text-sm text-[#6b6257]">{detail}</p> : null}
-                        </div>
-                      );
-                    })}
-                    {!dailyHabitPlan?.habits?.length ? (
-                      <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm text-[#6b6257]">
-                        Your habit steps will appear here once today&apos;s plan is ready.
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void loadDailyHabitPlan({ force: true, conceptKey: dailyHabitSelectedConceptKey || undefined })}
+                  disabled={dailyHabitBusy}
+                  className="rounded-full border border-[#d9cdbb] bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {dailyHabitPlanLoading ? "Refreshing..." : "Refresh ideas"}
+                </button>
+              </div>
+              {dailyHabitPlanLoading && !dailyHabitPlan ? (
+                <p className="mt-3 text-sm text-[#6b6257]">
+                  Reviewing your tracker and preparing today&apos;s habit steps…
+                </p>
+              ) : dailyHabitPlanError && !dailyHabitPlan ? (
+                <p className="mt-3 text-sm text-[#8a3e1a]">{dailyHabitPlanError}</p>
+              ) : (
+                <>
+                  <div className="mt-4">
+                    <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">My habit steps</p>
+                    {dailyHabitSelected.length ? (
+                      <div className="mt-3 space-y-2">
+                        {dailyHabitSelected.map((habit, index) => {
+                          const habitId = String(habit?.id || "").trim();
+                          const title = String(habit?.title || "").trim();
+                          const detail = String(habit?.detail || "").trim();
+                          const conceptLabel = String(habit?.concept_label || "").trim();
+                          if (!title && !detail) return null;
+                          return (
+                            <div
+                              key={habitId || `${title || detail}-${index}`}
+                              className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  {title ? <p className="text-sm font-semibold text-[#3c332b]">{title}</p> : null}
+                                  {detail ? <p className="mt-1 text-sm text-[#6b6257]">{detail}</p> : null}
+                                </div>
+                                {conceptLabel ? (
+                                  <span className="rounded-full border border-[#ece5d9] bg-[#fffaf3] px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-[#7c6f61]">
+                                    {conceptLabel}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    ) : null}
+                    ) : (
+                      <div className="mt-3 rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm text-[#6b6257]">
+                        Select the habit steps you want to follow and they&apos;ll build your current list here.
+                      </div>
+                    )}
                   </div>
+
+                  {dailyHabitConcepts.length ? (
+                    <div className="mt-4">
+                      <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Choose a concept</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {dailyHabitConcepts.map((concept, index) => {
+                          const conceptKey = String(concept?.concept_key || "").trim();
+                          const label = String(concept?.label || conceptKey || "").trim();
+                          const signal = String(concept?.signal || "").trim();
+                          const active = Boolean(concept?.is_selected) || conceptKey === dailyHabitSelectedConceptKey;
+                          const signalLabel =
+                            signal === "missed_today"
+                              ? "Missed today"
+                              : signal === "missed_yesterday"
+                                ? "Missed yesterday"
+                                : signal === "not_logged_today"
+                                  ? "Not logged"
+                                  : signal === "needs_support"
+                                    ? "Needs support"
+                                    : "";
+                          if (!conceptKey || !label) return null;
+                          return (
+                            <button
+                              key={`${conceptKey}-${index}`}
+                              type="button"
+                              onClick={() => void loadDailyHabitPlan({ conceptKey })}
+                              disabled={dailyHabitBusy && !active}
+                              className={`rounded-2xl border px-3 py-2 text-left ${
+                                active
+                                  ? "border-[var(--accent)] bg-white text-[var(--accent)]"
+                                  : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                              } disabled:cursor-not-allowed disabled:opacity-50`}
+                            >
+                              <p className="text-xs font-semibold uppercase tracking-[0.14em]">{label}</p>
+                              {signalLabel ? <p className="mt-1 text-[11px] normal-case tracking-normal">{signalLabel}</p> : null}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="mt-4">
+                    <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
+                      {String(dailyHabitPlan?.selected_concept_label || "").trim() || "Habit ideas"}
+                    </p>
+                    <div className="mt-3 space-y-2">
+                      {dailyHabitOptions.map((habit, index) => {
+                        const optionId = String(habit?.id || "").trim();
+                        const title = String(habit?.title || "").trim();
+                        const detail = String(habit?.detail || "").trim();
+                        const selected = Boolean(habit?.selected);
+                        if (!title && !detail) return null;
+                        const nextSelectedIds = selected
+                          ? dailyHabitOptions
+                              .filter((item) => item?.selected && String(item?.id || "").trim() && String(item?.id || "").trim() !== optionId)
+                              .map((item) => String(item?.id || "").trim())
+                          : [
+                              ...dailyHabitOptions
+                                .filter((item) => item?.selected && String(item?.id || "").trim())
+                                .map((item) => String(item?.id || "").trim()),
+                              optionId,
+                            ];
+                        return (
+                          <div
+                            key={optionId || `${title || detail}-${index}`}
+                            className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                {title ? <p className="text-sm font-semibold text-[#3c332b]">{title}</p> : null}
+                                {detail ? <p className="mt-1 text-sm text-[#6b6257]">{detail}</p> : null}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  void saveDailyHabitPlanSelection(dailyHabitSelectedConceptKey, nextSelectedIds)
+                                }
+                                disabled={!dailyHabitSelectedConceptKey || !optionId || dailyHabitBusy}
+                                className={`rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] ${
+                                  selected
+                                    ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                                    : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                                } disabled:cursor-not-allowed disabled:opacity-50`}
+                              >
+                                {selected ? "Selected" : "Add"}
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                      {!dailyHabitOptions.length ? (
+                        <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm text-[#6b6257]">
+                          Choose a concept above, or refresh ideas to see more habit steps you could follow.
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  {dailyHabitPlanError ? <p className="mt-3 text-sm text-[#8a3e1a]">{dailyHabitPlanError}</p> : null}
                 </>
               )}
             </div>
