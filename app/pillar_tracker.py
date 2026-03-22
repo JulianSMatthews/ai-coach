@@ -11,7 +11,7 @@ from typing import Any
 from sqlalchemy import desc, select
 
 from .db import SessionLocal, engine
-from .models import AssessmentRun, DailyPillarTrackerEntry, PillarResult, OKRObjective, OKRKeyResult
+from .models import AssessmentRun, DailyPillarTrackerEntry, PillarResult, OKRObjective, OKRKeyResult, User
 from .okr import _GUIDE, _guess_concept_from_description, _normalize_concept_key
 _TRACKER_SCHEMA_READY = False
 _TRACKER_TIMEZONE = (os.getenv("PILLAR_TRACKER_TIMEZONE") or "Europe/London").strip() or "Europe/London"
@@ -51,6 +51,7 @@ class PillarTrackerResolvedTarget:
     metric_label: str | None
     success_value: float
     success_direction: str
+    start_date: date | None = None
 
 
 PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
@@ -241,7 +242,27 @@ def parse_tracker_anchor(raw: str | None) -> date | None:
         return None
 
 
+def _to_tracker_local_date(value: Any) -> date | None:
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return value
+    if not isinstance(value, datetime):
+        return None
+    try:
+        tz = ZoneInfo(_TRACKER_TIMEZONE)
+    except Exception:
+        tz = ZoneInfo("UTC")
+    current = value
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=ZoneInfo("UTC"))
+    return current.astimezone(tz).date()
+
+
 def _pillar_allows_yesterday_catchup(pillar_key: str) -> bool:
+    key = str(pillar_key or "").strip().lower()
+    return key in {"nutrition", "training", "resilience", "recovery"}
+
+
+def _pillar_yesterday_catchup_is_time_limited(pillar_key: str) -> bool:
     key = str(pillar_key or "").strip().lower()
     return key in {"nutrition", "training", "resilience"}
 
@@ -254,7 +275,9 @@ def _yesterday_catchup_allowed(now: datetime | None = None) -> bool:
 def _editable_tracker_dates_for_pillar(pillar_key: str, current_day: date | None = None) -> list[date]:
     today = current_day or tracker_today()
     dates = [today]
-    if _pillar_allows_yesterday_catchup(pillar_key) and _yesterday_catchup_allowed():
+    if _pillar_allows_yesterday_catchup(pillar_key) and (
+        not _pillar_yesterday_catchup_is_time_limited(pillar_key) or _yesterday_catchup_allowed()
+    ):
         dates.insert(0, today - timedelta(days=1))
     return dates
 
@@ -393,6 +416,84 @@ def _format_target_label(value: float | None, unit: str | None) -> str | None:
     return f"Target {number}"
 
 
+def _format_progress_label(prefix: str, value: float | None, unit: str | None) -> str | None:
+    number = _format_target_number(value)
+    if not number:
+        return None
+    unit_text = str(unit or "").strip()
+    if unit_text:
+        return f"{prefix} {number} {unit_text}"
+    return f"{prefix} {number}"
+
+
+def _user_tracker_start_date(user_id: int, user: User | None = None) -> date | None:
+    row = user
+    if row is None:
+        with SessionLocal() as s:
+            row = s.get(User, int(user_id))
+    if row is None:
+        return None
+    anchor_raw = getattr(row, "first_assessment_completed", None) or getattr(row, "created_on", None)
+    return _to_tracker_local_date(anchor_raw)
+
+
+def _later_date(left: date | None, right: date | None) -> date | None:
+    if left is None:
+        return right
+    if right is None:
+        return left
+    return max(left, right)
+
+
+def _effective_okr_window_start(resolved_target: PillarTrackerResolvedTarget, week_days: list[date], anchor: date) -> date:
+    effective_start = week_days[0]
+    if resolved_target.start_date is not None and resolved_target.start_date > effective_start:
+        effective_start = min(anchor, resolved_target.start_date)
+    return effective_start
+
+
+def _concept_okr_actual_achieved(
+    evaluations_for_concept: dict[date, dict[str, Any]],
+    resolved_target: PillarTrackerResolvedTarget,
+    anchor: date,
+    week_days: list[date],
+) -> dict[str, Any]:
+    target_value = _safe_float(resolved_target.target_value)
+    if target_value is None or resolved_target.target_period not in {"day", "week"}:
+        return {
+            "on_track": None,
+            "actual_value": None,
+            "detail_label": None,
+            "logged_days": 0,
+        }
+    effective_start = _effective_okr_window_start(resolved_target, week_days, anchor)
+    logged_values = [
+        _safe_float((evaluations_for_concept.get(day) or {}).get("value"))
+        for day in week_days
+        if effective_start <= day <= anchor
+    ]
+    logged_values = [value for value in logged_values if value is not None]
+    if not logged_values:
+        return {
+            "on_track": None,
+            "actual_value": None,
+            "detail_label": None,
+            "logged_days": 0,
+        }
+    average_value_per_logged_day = sum(logged_values) / float(len(logged_values))
+    actual_value = (
+        average_value_per_logged_day * 7.0
+        if resolved_target.target_period == "week"
+        else average_value_per_logged_day
+    )
+    return {
+        "on_track": _value_meets_threshold(resolved_target.target_direction, target_value, actual_value),
+        "actual_value": actual_value,
+        "detail_label": _format_progress_label("Actual", actual_value, resolved_target.target_unit),
+        "logged_days": len(logged_values),
+    }
+
+
 def _score_against_daily_target(
     defn: PillarTrackerConceptDefinition,
     value: float,
@@ -463,6 +564,7 @@ def _default_resolved_target(pillar_key: str, defn: PillarTrackerConceptDefiniti
         metric_label=guide.get("label"),
         success_value=defn.target_value,
         success_direction=defn.target_direction,
+        start_date=None,
     )
 
 
@@ -477,6 +579,8 @@ def _resolve_pillar_targets_for_user(
         for item in required_concepts
     }
     with SessionLocal() as s:
+        user = s.get(User, int(user_id))
+        user_start_date = _user_tracker_start_date(user_id, user=user)
         objective = (
             s.execute(
                 select(OKRObjective)
@@ -491,6 +595,7 @@ def _resolve_pillar_targets_for_user(
         )
         if objective is None:
             return resolved
+        objective_start_date = _to_tracker_local_date(getattr(objective, "created_at", None))
         rows = (
             s.execute(
                 select(OKRKeyResult)
@@ -522,6 +627,7 @@ def _resolve_pillar_targets_for_user(
             metric_label=str(getattr(kr, "metric_label", "") or "").strip() or current.metric_label,
             success_value=current.success_value,
             success_direction=current.success_direction,
+            start_date=_later_date(user_start_date, objective_start_date) or current.start_date,
         )
     return resolved
 
@@ -803,39 +909,23 @@ def _concept_okr_status(
             "okr_status_label": None,
             "okr_status_detail": None,
         }
-    anchor_eval = evaluations_for_concept.get(anchor) or {}
-    target_value = _safe_float(resolved_target.target_value)
-    if resolved_target.target_period == "week" and target_value is not None:
-        try:
-            anchor_index = week_days.index(anchor) + 1
-        except ValueError:
-            anchor_index = max(1, len([day for day in week_days if day <= anchor]))
-        successes = sum(
-            1
-            for day in week_days[:anchor_index]
-            if bool((evaluations_for_concept.get(day) or {}).get("target_reached"))
-        )
-        expected = _week_target_expected(target_value, anchor_index)
-        on_track = successes >= expected if expected > 0 else True
+    progress = _concept_okr_actual_achieved(
+        evaluations_for_concept,
+        resolved_target,
+        anchor,
+        week_days,
+    )
+    if progress.get("on_track") is None:
         return {
-            "okr_on_track": on_track,
-            "okr_status_label": "On track" if on_track else "Behind pace",
-            "okr_status_detail": f"{successes}/{expected} by {anchor.strftime('%a')}",
-        }
-    if resolved_target.target_period == "day" and target_value is not None:
-        value = anchor_eval.get("value")
-        if value is None:
-            return {
-                "okr_on_track": None,
-                "okr_status_label": None,
-                "okr_status_detail": None,
-            }
-        on_track = _target_met_for_value(defn, float(value), resolved_target)
-        return {
-            "okr_on_track": on_track,
-            "okr_status_label": "On target" if on_track else "Below target",
+            "okr_on_track": None,
+            "okr_status_label": None,
             "okr_status_detail": None,
         }
+    return {
+        "okr_on_track": bool(progress.get("on_track")),
+        "okr_status_label": "On track" if progress.get("on_track") else "Behind pace",
+        "okr_status_detail": progress.get("detail_label"),
+    }
     return {
         "okr_on_track": None,
         "okr_status_label": None,
@@ -1079,6 +1169,8 @@ def save_pillar_tracker_day(
     editable_dates = _editable_tracker_dates_for_pillar(key, current_day=current_day)
     if resolved_date not in editable_dates:
         if _pillar_allows_yesterday_catchup(key):
+            if not _pillar_yesterday_catchup_is_time_limited(key):
+                raise ValueError(f"You can save {key} for today, or for yesterday.")
             raise ValueError(
                 f"You can save {key} for today, or for yesterday before {_TRACKER_YESTERDAY_GRACE_HOUR}:00 local time."
             )

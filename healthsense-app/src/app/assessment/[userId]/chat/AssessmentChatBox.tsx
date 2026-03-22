@@ -92,6 +92,8 @@ type AssessmentCompletionSummaryMedia = {
   realtimeMaxReplays: number | null;
 };
 
+const SELECTED_HABITS_TAG = "__selected_habits__";
+
 function parseApiError(text: string, fallback: string) {
   if (!text) return fallback;
   try {
@@ -486,6 +488,7 @@ export default function AssessmentChatBox({
   const [dailyHabitPlanLoading, setDailyHabitPlanLoading] = useState(false);
   const [dailyHabitPlanSaving, setDailyHabitPlanSaving] = useState(false);
   const [dailyHabitPlanError, setDailyHabitPlanError] = useState<string | null>(null);
+  const [dailyHabitActiveTag, setDailyHabitActiveTag] = useState("");
   const [coachInsight, setCoachInsight] = useState<CoachInsightResponse | null>(null);
   const [coachInsightLoading, setCoachInsightLoading] = useState(false);
   const [coachInsightError, setCoachInsightError] = useState<string | null>(null);
@@ -585,14 +588,61 @@ export default function AssessmentChatBox({
       "",
   ).trim();
   const dailyHabitSelectedConceptKey = String(dailyHabitPlan?.selected_concept_key || "").trim();
-  const dailyHabitOptions = Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : [];
-  const dailyHabitSelected = Array.isArray(dailyHabitPlan?.habits) ? dailyHabitPlan.habits : [];
-  const dailyHabitConcepts = Array.isArray(dailyHabitPlan?.available_concepts) ? dailyHabitPlan.available_concepts : [];
+  const dailyHabitOptions = useMemo(
+    () => (Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : []),
+    [dailyHabitPlan?.options],
+  );
+  const dailyHabitSelected = useMemo(
+    () => (Array.isArray(dailyHabitPlan?.habits) ? dailyHabitPlan.habits : []),
+    [dailyHabitPlan?.habits],
+  );
+  const dailyHabitConcepts = useMemo(
+    () => (Array.isArray(dailyHabitPlan?.available_concepts) ? dailyHabitPlan.available_concepts : []),
+    [dailyHabitPlan?.available_concepts],
+  );
   const dailyHabitBusy = dailyHabitPlanLoading || dailyHabitPlanSaving;
+  const dailyHabitConceptLookup = useMemo(() => {
+    const lookup = new Map<string, { label: string; pillarLabel: string }>();
+    dailyHabitConcepts.forEach((concept) => {
+      const conceptKey = String(concept?.concept_key || "").trim();
+      if (!conceptKey) return;
+      lookup.set(conceptKey, {
+        label: String(concept?.label || conceptKey).trim(),
+        pillarLabel: String(concept?.pillar_label || "").trim(),
+      });
+    });
+    return lookup;
+  }, [dailyHabitConcepts]);
+  const dailyHabitActiveConceptKey =
+    dailyHabitActiveTag && dailyHabitActiveTag !== SELECTED_HABITS_TAG ? dailyHabitActiveTag : "";
+  const dailyHabitActiveConceptLabel = dailyHabitActiveConceptKey
+    ? dailyHabitConceptLookup.get(dailyHabitActiveConceptKey)?.label || dailyHabitPlan?.selected_concept_label || "Habit ideas"
+    : "";
+  const dailyHabitSelectedItemsForActiveConcept = dailyHabitActiveConceptKey
+    ? dailyHabitSelected.filter(
+        (item) => String(item?.concept_key || "").trim() === dailyHabitActiveConceptKey,
+      )
+    : [];
   const homePanelHeightClass =
     homeSurface === "ask"
       ? "h-[48vh] min-h-[18rem] max-h-[29rem]"
       : "h-[56vh] min-h-[22rem] max-h-[34rem]";
+
+  useEffect(() => {
+    const validConceptKeys = dailyHabitConcepts
+      .map((concept) => String(concept?.concept_key || "").trim())
+      .filter((key) => Boolean(key));
+    const preferredTag = dailyHabitSelectedConceptKey || validConceptKeys[0] || "";
+    setDailyHabitActiveTag((current) => {
+      if (current === SELECTED_HABITS_TAG) {
+        return current;
+      }
+      if (current && validConceptKeys.includes(current)) {
+        return current;
+      }
+      return preferredTag;
+    });
+  }, [dailyHabitConcepts, dailyHabitSelectedConceptKey]);
 
   useEffect(() => {
     if (insightHasVideo) {
@@ -709,6 +759,26 @@ export default function AssessmentChatBox({
       }
     },
     [userId],
+  );
+
+  const toggleDailyHabitSelection = useCallback(
+    (habitId: string, conceptKey: string) => {
+      const normalizedHabitId = String(habitId || "").trim();
+      const normalizedConceptKey = String(conceptKey || "").trim();
+      if (!normalizedHabitId || !normalizedConceptKey || dailyHabitBusy) {
+        return;
+      }
+      const currentSelectedIds = dailyHabitSelected
+        .filter((item) => String(item?.concept_key || "").trim() === normalizedConceptKey)
+        .map((item) => String(item?.id || "").trim())
+        .filter((itemId) => Boolean(itemId));
+      const alreadySelected = currentSelectedIds.includes(normalizedHabitId);
+      const nextSelectedIds = alreadySelected
+        ? currentSelectedIds.filter((itemId) => itemId !== normalizedHabitId)
+        : [...currentSelectedIds, normalizedHabitId];
+      void saveDailyHabitPlanSelection(normalizedConceptKey, nextSelectedIds);
+    },
+    [dailyHabitBusy, dailyHabitSelected, saveDailyHabitPlanSelection],
   );
 
   const loadCoachInsight = useCallback(async () => {
@@ -1570,33 +1640,7 @@ export default function AssessmentChatBox({
             )
           ) : homeSurface === "habits" ? (
             <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
-                    {String(dailyHabitPlan?.pillar_label || "").trim()
-                      ? `${String(dailyHabitPlan?.pillar_label || "").trim()} habits`
-                      : "Today's habits"}
-                  </p>
-                  {String(dailyHabitPlan?.title || "").trim() ? (
-                    <p className="mt-3 text-lg font-semibold text-[#1e1b16]">
-                      {String(dailyHabitPlan?.title || "").trim()}
-                    </p>
-                  ) : null}
-                  {String(dailyHabitPlan?.summary || "").trim() ? (
-                    <p className="mt-2 text-sm text-[#6b6257]">
-                      {String(dailyHabitPlan?.summary || "").trim()}
-                    </p>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => void loadDailyHabitPlan({ force: true, conceptKey: dailyHabitSelectedConceptKey || undefined })}
-                  disabled={dailyHabitBusy}
-                  className="rounded-full border border-[#d9cdbb] bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {dailyHabitPlanLoading ? "Refreshing..." : "Refresh ideas"}
-                </button>
-              </div>
+              <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Today&apos;s habits</p>
               {dailyHabitPlanLoading && !dailyHabitPlan ? (
                 <p className="mt-3 text-sm text-[#6b6257]">
                   Reviewing your tracker and preparing today&apos;s habit steps…
@@ -1606,139 +1650,150 @@ export default function AssessmentChatBox({
               ) : (
                 <>
                   <div className="mt-4">
-                    <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">My habit steps</p>
-                    {dailyHabitSelected.length ? (
-                      <div className="mt-3 space-y-2">
-                        {dailyHabitSelected.map((habit, index) => {
-                          const habitId = String(habit?.id || "").trim();
-                          const title = String(habit?.title || "").trim();
-                          const detail = String(habit?.detail || "").trim();
-                          const conceptLabel = String(habit?.concept_label || "").trim();
-                          if (!title && !detail) return null;
-                          return (
-                            <div
-                              key={habitId || `${title || detail}-${index}`}
-                              className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3"
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div>
-                                  {title ? <p className="text-sm font-semibold text-[#3c332b]">{title}</p> : null}
-                                  {detail ? <p className="mt-1 text-sm text-[#6b6257]">{detail}</p> : null}
-                                </div>
-                                {conceptLabel ? (
-                                  <span className="rounded-full border border-[#ece5d9] bg-[#fffaf3] px-2 py-1 text-[10px] uppercase tracking-[0.16em] text-[#7c6f61]">
-                                    {conceptLabel}
-                                  </span>
-                                ) : null}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="mt-3 rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm text-[#6b6257]">
-                        Select the habit steps you want to follow and they&apos;ll build your current list here.
-                      </div>
-                    )}
-                  </div>
-
-                  {dailyHabitConcepts.length ? (
-                    <div className="mt-4">
-                      <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Choose a concept</p>
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {dailyHabitConcepts.map((concept, index) => {
-                          const conceptKey = String(concept?.concept_key || "").trim();
-                          const label = String(concept?.label || conceptKey || "").trim();
-                          const signal = String(concept?.signal || "").trim();
-                          const active = Boolean(concept?.is_selected) || conceptKey === dailyHabitSelectedConceptKey;
-                          const signalLabel =
-                            signal === "missed_today"
-                              ? "Missed today"
-                              : signal === "missed_yesterday"
-                                ? "Missed yesterday"
-                                : signal === "not_logged_today"
-                                  ? "Not logged"
-                                  : signal === "needs_support"
-                                    ? "Needs support"
-                                    : "";
-                          if (!conceptKey || !label) return null;
-                          return (
-                            <button
-                              key={`${conceptKey}-${index}`}
-                              type="button"
-                              onClick={() => void loadDailyHabitPlan({ conceptKey })}
-                              disabled={dailyHabitBusy && !active}
-                              className={`rounded-2xl border px-3 py-2 text-left ${
-                                active
-                                  ? "border-[var(--accent)] bg-white text-[var(--accent)]"
-                                  : "border-[#d9cdbb] bg-white text-[#5d5348]"
-                              } disabled:cursor-not-allowed disabled:opacity-50`}
-                            >
-                              <p className="text-xs font-semibold uppercase tracking-[0.14em]">{label}</p>
-                              {signalLabel ? <p className="mt-1 text-[11px] normal-case tracking-normal">{signalLabel}</p> : null}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : null}
-
-                  <div className="mt-4">
-                    <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
-                      {String(dailyHabitPlan?.selected_concept_label || "").trim() || "Habit ideas"}
-                    </p>
-                    <div className="mt-3 space-y-2">
-                      {dailyHabitOptions.map((habit, index) => {
-                        const optionId = String(habit?.id || "").trim();
-                        const title = String(habit?.title || "").trim();
-                        const detail = String(habit?.detail || "").trim();
-                        const selected = Boolean(habit?.selected);
-                        if (!title && !detail) return null;
-                        const nextSelectedIds = selected
-                          ? dailyHabitOptions
-                              .filter((item) => item?.selected && String(item?.id || "").trim() && String(item?.id || "").trim() !== optionId)
-                              .map((item) => String(item?.id || "").trim())
-                          : [
-                              ...dailyHabitOptions
-                                .filter((item) => item?.selected && String(item?.id || "").trim())
-                                .map((item) => String(item?.id || "").trim()),
-                              optionId,
-                            ];
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setDailyHabitActiveTag(SELECTED_HABITS_TAG)}
+                        disabled={dailyHabitBusy}
+                        className={`rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] ${
+                          dailyHabitActiveTag === SELECTED_HABITS_TAG
+                            ? "border-[var(--accent)] bg-white text-[var(--accent)]"
+                            : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                        } disabled:cursor-not-allowed disabled:opacity-50`}
+                      >
+                        Selected habits
+                      </button>
+                      {dailyHabitConcepts.map((concept, index) => {
+                        const conceptKey = String(concept?.concept_key || "").trim();
+                        const label = String(concept?.label || conceptKey || "").trim();
+                        const active = conceptKey === dailyHabitActiveTag;
+                        if (!conceptKey || !label) return null;
                         return (
-                          <div
-                            key={optionId || `${title || detail}-${index}`}
-                            className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3"
+                          <button
+                            key={`${conceptKey}-${index}`}
+                            type="button"
+                            onClick={() => {
+                              setDailyHabitActiveTag(conceptKey);
+                              void loadDailyHabitPlan({ conceptKey });
+                            }}
+                            disabled={dailyHabitBusy}
+                            className={`rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] ${
+                              active
+                                ? "border-[var(--accent)] bg-white text-[var(--accent)]"
+                                : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                            } disabled:cursor-not-allowed disabled:opacity-50`}
                           >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                {title ? <p className="text-sm font-semibold text-[#3c332b]">{title}</p> : null}
-                                {detail ? <p className="mt-1 text-sm text-[#6b6257]">{detail}</p> : null}
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  void saveDailyHabitPlanSelection(dailyHabitSelectedConceptKey, nextSelectedIds)
-                                }
-                                disabled={!dailyHabitSelectedConceptKey || !optionId || dailyHabitBusy}
-                                className={`rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] ${
-                                  selected
-                                    ? "border-[var(--accent)] bg-[var(--accent)] text-white"
-                                    : "border-[#d9cdbb] bg-white text-[#5d5348]"
-                                } disabled:cursor-not-allowed disabled:opacity-50`}
-                              >
-                                {selected ? "Selected" : "Add"}
-                              </button>
-                            </div>
-                          </div>
+                            {label}
+                          </button>
                         );
                       })}
-                      {!dailyHabitOptions.length ? (
+                    </div>
+                    {dailyHabitPlanLoading && dailyHabitPlan ? (
+                      <p className="mt-3 text-sm text-[#6b6257]">Loading habits…</p>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-4">
+                    <p className="text-lg font-semibold text-[#1e1b16]">
+                      {dailyHabitActiveTag === SELECTED_HABITS_TAG
+                        ? "Selected habits"
+                        : dailyHabitActiveConceptLabel || "Habit ideas"}
+                    </p>
+                    <div className="mt-3 space-y-2">
+                      {dailyHabitActiveTag === SELECTED_HABITS_TAG ? (
+                        dailyHabitSelected.length ? (
+                          dailyHabitSelected.map((habit, index) => {
+                            const habitId = String(habit?.id || "").trim();
+                            const title = String(habit?.title || "").trim();
+                            const detail = String(habit?.detail || "").trim();
+                            const conceptKey = String(habit?.concept_key || "").trim();
+                            const conceptLabel =
+                              String(habit?.concept_label || "").trim() ||
+                              dailyHabitConceptLookup.get(conceptKey)?.label ||
+                              "";
+                            if (!title && !detail) return null;
+                            return (
+                              <button
+                                key={habitId || `${title || detail}-${index}`}
+                                type="button"
+                                onClick={() => toggleDailyHabitSelection(habitId, conceptKey)}
+                                disabled={!habitId || !conceptKey || dailyHabitBusy}
+                                className="w-full rounded-2xl border border-[#87b17a] bg-[#eef7e7] px-4 py-3 text-left text-[#2f5b2f] transition hover:border-[#709b65] hover:bg-[#e6f3dc] disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div>
+                                    {title ? <p className="text-sm font-semibold">{title}</p> : null}
+                                    {detail ? <p className="mt-1 text-sm text-[#476a43]">{detail}</p> : null}
+                                  </div>
+                                  {conceptLabel ? (
+                                    <span className="rounded-full border border-[#b9d3b1] bg-white/70 px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-[#476a43]">
+                                      {conceptLabel}
+                                    </span>
+                                  ) : null}
+                                </div>
+                              </button>
+                            );
+                          })
+                        ) : (
+                          <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm text-[#6b6257]">
+                            Tap a habit from any concept to add it here.
+                          </div>
+                        )
+                      ) : dailyHabitOptions.length ? (
+                        dailyHabitOptions.map((habit, index) => {
+                          const optionId = String(habit?.id || "").trim();
+                          const title = String(habit?.title || "").trim();
+                          const detail = String(habit?.detail || "").trim();
+                          const selected = Boolean(habit?.selected);
+                          if (!title && !detail) return null;
+                          return (
+                            <button
+                              key={optionId || `${title || detail}-${index}`}
+                              type="button"
+                              onClick={() => toggleDailyHabitSelection(optionId, dailyHabitActiveConceptKey)}
+                              disabled={!dailyHabitActiveConceptKey || !optionId || dailyHabitBusy}
+                              className={`w-full rounded-2xl border px-4 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
+                                selected
+                                  ? "border-[#87b17a] bg-[#eef7e7] text-[#2f5b2f] hover:border-[#709b65] hover:bg-[#e6f3dc]"
+                                  : "border-[#efe7db] bg-white text-[#3c332b] hover:border-[#d9cdbb] hover:bg-[#fffdf8]"
+                              }`}
+                            >
+                              {title ? <p className="text-sm font-semibold">{title}</p> : null}
+                              {detail ? (
+                                <p className={`mt-1 text-sm ${selected ? "text-[#476a43]" : "text-[#6b6257]"}`}>
+                                  {detail}
+                                </p>
+                              ) : null}
+                            </button>
+                          );
+                        })
+                      ) : (
                         <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm text-[#6b6257]">
-                          Choose a concept above, or refresh ideas to see more habit steps you could follow.
+                          Choose a concept tag to see more habit steps.
                         </div>
-                      ) : null}
+                      )}
                     </div>
                   </div>
+
+                  {dailyHabitActiveConceptKey ? (
+                    <div className="mt-4">
+                      <button
+                        type="button"
+                        onClick={() => void loadDailyHabitPlan({ force: true, conceptKey: dailyHabitActiveConceptKey })}
+                        disabled={dailyHabitBusy}
+                        className="w-full rounded-full border border-[#d9cdbb] bg-white px-3 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {dailyHabitPlanLoading
+                          ? "Refreshing habits..."
+                          : `Refresh ${dailyHabitActiveConceptLabel || "habit"} habits`}
+                      </button>
+                      {dailyHabitSelectedItemsForActiveConcept.length ? (
+                        <p className="mt-2 text-xs text-[#6b6257]">
+                          {dailyHabitSelectedItemsForActiveConcept.length} selected for {dailyHabitActiveConceptLabel || "this concept"}.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
 
                   {dailyHabitPlanError ? <p className="mt-3 text-sm text-[#8a3e1a]">{dailyHabitPlanError}</p> : null}
                 </>

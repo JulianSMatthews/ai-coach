@@ -400,6 +400,8 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
                     const selectedValue = draft[conceptKey];
                     const targetLabel = String(concept.target_label || "").trim();
                     const okrStatusLabel = String(concept.okr_status_label || "").trim();
+                    const okrStatusDetail = String(concept.okr_status_detail || "").trim();
+                    const showInlineOkrProgress = Boolean(okrStatusDetail);
                     const okrStatusTone =
                       concept.okr_on_track === true
                         ? "text-[#4e7a1f]"
@@ -415,7 +417,9 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
                             {targetLabel || okrStatusLabel ? (
                               <p className="mt-2 text-xs text-[#6b6257]">
                                 {targetLabel}
-                                {targetLabel && okrStatusLabel ? " " : null}
+                                {targetLabel && showInlineOkrProgress ? " · " : null}
+                                {showInlineOkrProgress ? okrStatusDetail : null}
+                                {(targetLabel || showInlineOkrProgress) && okrStatusLabel ? " · " : null}
                                 {okrStatusLabel ? (
                                   <span className={`font-medium ${okrStatusTone}`}>{okrStatusLabel}</span>
                                 ) : null}
