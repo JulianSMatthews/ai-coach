@@ -5850,7 +5850,8 @@ def api_auth_login_verify(payload: dict, request: Request):
     phone_raw = (payload or {}).get("phone")
     otp_id = (payload or {}).get("otp_id")
     code = (payload or {}).get("code")
-    remember_me = bool((payload or {}).get("remember_me"))
+    remember_raw = (payload or {}).get("remember_me")
+    remember_me = True if remember_raw is None else bool(remember_raw)
     if not phone_raw or not otp_id or not code:
         raise HTTPException(status_code=400, detail="phone, otp_id, and code required")
     try:
@@ -5970,7 +5971,8 @@ def api_auth_password_reset_verify(payload: dict, request: Request):
     otp_id = (payload or {}).get("otp_id")
     code = (payload or {}).get("code")
     password = (payload or {}).get("password")
-    remember_me = bool((payload or {}).get("remember_me"))
+    remember_raw = (payload or {}).get("remember_me")
+    remember_me = True if remember_raw is None else bool(remember_raw)
     if not phone_raw or not otp_id or not code or password is None:
         raise HTTPException(status_code=400, detail="phone, otp_id, code, and password required")
     try:

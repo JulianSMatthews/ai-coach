@@ -1098,6 +1098,11 @@ export type ContentLibrarySummary = {
 export type ContentLibraryDetail = ContentLibrarySummary & {
   body?: string | null;
   avatar?: AssessmentIntroAvatarSettings | null;
+  avatar_defaults?: {
+    character?: string | null;
+    style?: string | null;
+    voice?: string | null;
+  } | null;
 };
 
 export type IntroLibrarySettings = {

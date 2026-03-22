@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useState } from "react";
+import { useActionState, useEffect, useMemo, useState } from "react";
 import type { ContentLibraryDetail } from "@/lib/api";
 
 type SaveState = { ok: boolean; error?: string };
@@ -28,15 +28,98 @@ const pillarOptions = [
   { value: "habit_forming", label: "Habit forming" },
 ];
 
-function normalizeAvatar(raw: Record<string, unknown> | null | undefined, fallbackTitle: string, fallbackScript: string) {
+const avatarCharacterOptions = [
+  { value: "harry", label: "Harry" },
+  { value: "jeff", label: "Jeff" },
+  { value: "lisa", label: "Lisa" },
+  { value: "lori", label: "Lori" },
+  { value: "max", label: "Max" },
+  { value: "meg", label: "Meg" },
+];
+
+const avatarStylesByCharacter: Record<string, Array<{ value: string; label: string }>> = {
+  harry: [
+    { value: "business", label: "Business" },
+    { value: "casual", label: "Casual" },
+    { value: "youthful", label: "Youthful" },
+  ],
+  jeff: [
+    { value: "business", label: "Business" },
+    { value: "formal", label: "Formal" },
+  ],
+  lisa: [
+    { value: "casual-sitting", label: "Casual sitting" },
+    { value: "graceful-sitting", label: "Graceful sitting" },
+    { value: "graceful-standing", label: "Graceful standing" },
+    { value: "technical-sitting", label: "Technical sitting" },
+    { value: "technical-standing", label: "Technical standing" },
+  ],
+  lori: [
+    { value: "casual", label: "Casual" },
+    { value: "graceful", label: "Graceful" },
+    { value: "formal", label: "Formal" },
+  ],
+  max: [
+    { value: "business", label: "Business" },
+    { value: "casual", label: "Casual" },
+    { value: "formal", label: "Formal" },
+  ],
+  meg: [
+    { value: "business", label: "Business" },
+    { value: "casual", label: "Casual" },
+    { value: "formal", label: "Formal" },
+  ],
+};
+
+const avatarVoiceOptions = [
+  { value: "en-GB-LibbyNeural", label: "Libby · UK English" },
+  { value: "en-GB-SoniaNeural", label: "Sonia · UK English" },
+  { value: "en-GB-RyanNeural", label: "Ryan · UK English" },
+  { value: "en-GB-ThomasNeural", label: "Thomas · UK English" },
+  { value: "en-US-AvaNeural", label: "Ava · US English" },
+  { value: "en-US-AriaNeural", label: "Aria · US English" },
+  { value: "en-US-JennyNeural", label: "Jenny · US English" },
+  { value: "en-US-GuyNeural", label: "Guy · US English" },
+];
+
+type AvatarDefaults = {
+  character: string;
+  style: string;
+  voice: string;
+};
+
+function withCurrentOption(
+  options: Array<{ value: string; label: string }>,
+  currentValue: string,
+): Array<{ value: string; label: string }> {
+  const value = String(currentValue || "").trim();
+  if (!value) return options;
+  if (options.some((option) => option.value === value)) return options;
+  return [{ value, label: `${value} (Current)` }, ...options];
+}
+
+function resolveAvatarDefaults(raw: ContentLibraryDetail["avatar_defaults"]): AvatarDefaults {
+  return {
+    character: String(raw?.character || "").trim() || "lisa",
+    style: String(raw?.style || "").trim() || "graceful-sitting",
+    voice: String(raw?.voice || "").trim() || "en-GB-SoniaNeural",
+  };
+}
+
+function normalizeAvatar(
+  raw: Record<string, unknown> | null | undefined,
+  fallbackTitle: string,
+  fallbackScript: string,
+  defaults: AvatarDefaults,
+) {
   return {
     url: String(raw?.url || "").trim(),
     title: String(raw?.title || "").trim() || fallbackTitle,
     script: String(raw?.script || "").trim() || fallbackScript,
     poster_url: String(raw?.poster_url || "").trim(),
-    character: String(raw?.character || "").trim() || "lisa",
-    style: String(raw?.style || "").trim() || "graceful-sitting",
-    voice: String(raw?.voice || "").trim() || "en-GB-SoniaNeural",
+    character: String(raw?.character || "").trim() || defaults.character,
+    style: String(raw?.style || "").trim() || defaults.style,
+    voice: String(raw?.voice || "").trim() || defaults.voice,
     status: String(raw?.status || "").trim(),
     job_id: String(raw?.job_id || "").trim(),
     error: String(raw?.error || "").trim(),
@@ -63,10 +146,15 @@ export default function ContentEditorForm({
   );
   const tagsValue = Array.isArray(content?.tags) ? content?.tags?.join(", ") : "";
   const publishedDate = content?.published_at ? String(content.published_at).slice(0, 10) : "";
+  const avatarDefaults = useMemo(
+    () => resolveAvatarDefaults(content?.avatar_defaults || null),
+    [content?.avatar_defaults],
+  );
   const initialAvatar = normalizeAvatar(
     (content?.avatar as Record<string, unknown> | null | undefined) || null,
     String(content?.title || "").trim(),
     String(content?.body || "").trim(),
+    avatarDefaults,
   );
   const [avatarUrl, setAvatarUrl] = useState(initialAvatar.url);
   const [avatarTitle, setAvatarTitle] = useState(initialAvatar.title);
@@ -81,6 +169,19 @@ export default function ContentEditorForm({
   const [avatarGeneratedAt, setAvatarGeneratedAt] = useState(initialAvatar.generated_at);
   const [avatarSummaryUrl, setAvatarSummaryUrl] = useState(initialAvatar.summary_url);
   const canManageAvatar = Boolean(content?.id);
+  const characterOptions = useMemo(
+    () => withCurrentOption(avatarCharacterOptions, avatarCharacter),
+    [avatarCharacter],
+  );
+  const styleOptions = useMemo(() => {
+    const key = String(avatarCharacter || "").trim().toLowerCase();
+    const options = avatarStylesByCharacter[key] || [];
+    return withCurrentOption(options, avatarStyle);
+  }, [avatarCharacter, avatarStyle]);
+  const voiceOptions = useMemo(
+    () => withCurrentOption(avatarVoiceOptions, avatarVoice),
+    [avatarVoice],
+  );
 
   useEffect(() => {
     const next = avatarGenerationState.avatar || avatarRefreshState.avatar;
@@ -89,6 +190,7 @@ export default function ContentEditorForm({
       next,
       String(content?.title || "").trim(),
       String(content?.body || "").trim(),
+      avatarDefaults,
     );
     queueMicrotask(() => {
       setAvatarUrl(normalized.url);
@@ -107,9 +209,29 @@ export default function ContentEditorForm({
   }, [
     avatarGenerationState.avatar,
     avatarRefreshState.avatar,
+    avatarDefaults,
     content?.body,
     content?.title,
   ]);
+
+  function onAvatarCharacterChange(nextCharacter: string) {
+    setAvatarCharacter(nextCharacter);
+    const key = String(nextCharacter || "").trim().toLowerCase();
+    const validStyles = avatarStylesByCharacter[key] || [];
+    if (!validStyles.length) {
+      return;
+    }
+    const currentStyle = String(avatarStyle || "").trim();
+    if (validStyles.some((option) => option.value === currentStyle)) {
+      return;
+    }
+    const defaultStyle = String(avatarDefaults.style || "").trim();
+    if (validStyles.some((option) => option.value === defaultStyle)) {
+      setAvatarStyle(defaultStyle);
+      return;
+    }
+    setAvatarStyle(validStyles[0]?.value || "");
+  }
 
   return (
     <form action={formAction} className="space-y-4">
@@ -291,33 +413,48 @@ export default function ContentEditorForm({
             </div>
             <div>
               <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Character</label>
-              <input
+              <select
                 name="avatar_character"
                 value={avatarCharacter}
-                onChange={(event) => setAvatarCharacter(event.target.value)}
+                onChange={(event) => onAvatarCharacterChange(event.target.value)}
                 className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                placeholder="lisa"
-              />
+              >
+                {characterOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Style</label>
-              <input
+              <select
                 name="avatar_style"
                 value={avatarStyle}
                 onChange={(event) => setAvatarStyle(event.target.value)}
                 className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                placeholder="graceful-sitting"
-              />
+              >
+                {styleOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div>
               <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Voice</label>
-              <input
+              <select
                 name="avatar_voice"
                 value={avatarVoice}
                 onChange={(event) => setAvatarVoice(event.target.value)}
                 className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                placeholder="en-GB-SoniaNeural"
-              />
+              >
+                {voiceOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="md:col-span-2">
               <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Avatar script</label>
