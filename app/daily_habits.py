@@ -448,6 +448,12 @@ def _concept_lookup_map(concepts: list[dict[str, Any]]) -> dict[str, dict[str, A
     return lookup
 
 
+def _habit_plan_version(payload: dict[str, Any]) -> int:
+    if not isinstance(payload, dict):
+        return 0
+    return _safe_int(payload.get("habit_plan_version")) or 0
+
+
 def _habit_option_sets_from_state(
     payload: dict[str, Any],
     *,
@@ -708,7 +714,7 @@ def _serialize_plan(row: DailyCoachHabitPlan) -> dict[str, Any]:
         legacy_habits=getattr(row, "habits", None) if isinstance(getattr(row, "habits", None), list) else None,
         default_selected_concept=selected_concept,
     )
-    structured_state = bool(option_sets) or (_safe_int(payload.get("habit_plan_version")) or 0) >= 2
+    structured_state = _habit_plan_version(payload) >= 2
     selected_habits = _selected_habits_from_row(
         row,
         available_concepts=available_concepts,
@@ -779,7 +785,7 @@ def get_or_generate_daily_habit_plan(
             legacy_habits=(getattr(existing, "habits", None) if existing is not None else None),
             default_selected_concept=selected_concept,
         )
-        structured_state = bool(option_sets) or (_safe_int(existing_payload.get("habit_plan_version")) or 0) >= 2
+        structured_state = _habit_plan_version(existing_payload) >= 2
         selected_habits = (
             _selected_habits_from_row(existing, available_concepts=available_concepts, structured_state=structured_state)
             if existing is not None
@@ -799,8 +805,7 @@ def get_or_generate_daily_habit_plan(
                 "selected_concept_key": selected_concept_key,
                 "habit_option_sets": option_sets,
             }
-            if structured_state:
-                existing.habits = selected_habits
+            existing.habits = selected_habits if structured_state else []
             s.add(existing)
             s.commit()
             s.refresh(existing)
@@ -870,6 +875,7 @@ def update_daily_habit_plan_selection(
         payload = row.context_payload if isinstance(getattr(row, "context_payload", None), dict) else {}
         available_concepts = [item for item in (payload.get("focus_concepts") or []) if isinstance(item, dict)]
         fallback_concept = payload.get("selected_focus_concept") if isinstance(payload.get("selected_focus_concept"), dict) else None
+        structured_state = _habit_plan_version(payload) >= 2
         selected_concept = _resolve_selected_concept(
             {"selected_concept_key": concept_key or payload.get("selected_concept_key")},
             available_concepts=available_concepts,
@@ -894,7 +900,7 @@ def update_daily_habit_plan_selection(
         selected_habits = _selected_habits_from_row(
             row,
             available_concepts=available_concepts,
-            structured_state=True,
+            structured_state=structured_state,
         )
         preserved = [
             item

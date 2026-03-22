@@ -6,7 +6,6 @@ export default function SessionBootstrap() {
   useEffect(() => {
     try {
       const hasSessionCookie = document.cookie.includes("hs_session=");
-      const hasUserCookie = document.cookie.includes("hs_user_id=");
       const inLeadFlow = (() => {
         try {
           const url = new URL(window.location.href);
@@ -17,7 +16,7 @@ export default function SessionBootstrap() {
         }
       })();
       const token = window.localStorage.getItem("hs_session_local");
-      if (!hasSessionCookie && !hasUserCookie && !inLeadFlow && token) {
+      if (!hasSessionCookie && !inLeadFlow && token) {
         fetch("/api/auth/refresh", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

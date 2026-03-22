@@ -36,6 +36,31 @@ function normalizeError(text: string, fallback: string): string {
   }
 }
 
+function resolveScore(value?: number | null): number | null {
+  const resolved = Number(value);
+  if (!Number.isFinite(resolved)) return null;
+  return Math.max(0, Math.min(100, Math.round(resolved)));
+}
+
+function deltaLabel(base?: number | null, current?: number | null): string {
+  const resolvedBase = resolveScore(base);
+  const resolvedCurrent = resolveScore(current);
+  if (resolvedBase === null || resolvedCurrent === null) return "—";
+  const delta = resolvedCurrent - resolvedBase;
+  if (delta > 0) return `+${delta}`;
+  if (delta < 0) return `${delta}`;
+  return "0";
+}
+
+function deltaTone(base?: number | null, current?: number | null): string {
+  const resolvedBase = resolveScore(base);
+  const resolvedCurrent = resolveScore(current);
+  if (resolvedBase === null || resolvedCurrent === null) return "text-[#6b6257]";
+  if (resolvedCurrent > resolvedBase) return "text-[#4e7a1f]";
+  if (resolvedCurrent < resolvedBase) return "text-[#8a3e1a]";
+  return "text-[#6b6257]";
+}
+
 function circleDayTone(status?: string | null, isActive?: boolean): string {
   const activeRing = isActive ? " ring-1 ring-[#d9cdbb]" : "";
   if (status === "success") return `border-[#d5e8bf] bg-[#f2fae8] text-[#335f16]${activeRing}`;
@@ -95,6 +120,62 @@ function CombinedLogoRing({ value }: { value: number }) {
   );
 }
 
+function ScoreMetricBar({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value?: number | null;
+  tone: string;
+}) {
+  const resolved = resolveScore(value);
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 text-[11px] uppercase tracking-[0.16em] text-[#6b6257]">
+        <span>{label}</span>
+        <span className="font-semibold text-[#3f372f]">{resolved !== null ? `${resolved}/100` : "—"}</span>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-[#f1e9dd]">
+        <div
+          className="h-full rounded-full transition-[width]"
+          style={{ width: `${resolved ?? 0}%`, background: tone }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function ScoreProgressCard({
+  label,
+  base,
+  current,
+  tone,
+  subtitle,
+}: {
+  label: string;
+  base?: number | null;
+  current?: number | null;
+  tone: string;
+  subtitle?: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold text-[#1e1b16]">{label}</p>
+          {subtitle ? <p className="mt-1 text-xs text-[#6b6257]">{subtitle}</p> : null}
+        </div>
+        <p className={`text-sm font-semibold ${deltaTone(base, current)}`}>{deltaLabel(base, current)}</p>
+      </div>
+      <div className="mt-3 space-y-3">
+        <ScoreMetricBar label="Base" value={base} tone="#d6c6b1" />
+        <ScoreMetricBar label="Current" value={current} tone={tone} />
+      </div>
+    </div>
+  );
+}
+
 export default function LatestAssessmentPanel({ userId, initialSummary }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
   const [scoreCardOpen, setScoreCardOpen] = useState(false);
@@ -109,9 +190,16 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
   const combinedScore = (() => {
     const scores = pillars
-      .map((pillar) => Number(pillar.score))
-      .filter((score) => Number.isFinite(score));
+      .map((pillar) => resolveScore(pillar.score))
+      .filter((score): score is number => score !== null);
     if (!scores.length) return 0;
+    return Math.round(scores.reduce((total, score) => total + score, 0) / scores.length);
+  })();
+  const combinedBaselineScore = (() => {
+    const scores = pillars
+      .map((pillar) => resolveScore(pillar.baseline_score))
+      .filter((score): score is number => score !== null);
+    if (!scores.length) return null;
     return Math.round(scores.reduce((total, score) => total + score, 0) / scores.length);
   })();
   const concepts = Array.isArray(detail?.concepts) ? detail?.concepts : [];
@@ -266,7 +354,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
               type="button"
               onClick={() => setScoreCardOpen(true)}
               className="pointer-events-auto rounded-full"
-              aria-label="Open HealthSense score breakdown"
+              aria-label="Open HealthSense OKR progress"
             >
               <CombinedLogoRing value={combinedScore} />
             </button>
@@ -280,7 +368,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
             <div className="flex items-start justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">HealthSense</p>
-                <p className="mt-1 text-lg font-semibold text-[#1e1b16]">Score breakdown</p>
+                <p className="mt-1 text-lg font-semibold text-[#1e1b16]">OKR progress</p>
               </div>
               <button
                 type="button"
@@ -298,18 +386,24 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
             </div>
 
             <div className="mt-5 space-y-2">
+              <ScoreProgressCard
+                label="Overall"
+                subtitle="Base and current progress"
+                base={combinedBaselineScore}
+                current={combinedScore}
+                tone={HEALTHSENSE_ORANGE}
+              />
               {pillars.map((pillar) => {
-                const score = Number(pillar.score);
+                const palette = getPillarPalette(pillar.pillar_key);
                 return (
-                  <div
+                  <ScoreProgressCard
                     key={`score-card-${pillar.pillar_key}`}
-                    className="flex items-center justify-between rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3"
-                  >
-                    <p className="text-sm font-semibold text-[#1e1b16]">{pillar.label}</p>
-                    <p className="text-sm text-[#6b6257]">
-                      {Number.isFinite(score) ? `${score}/100` : "—"}
-                    </p>
-                  </div>
+                    label={String(pillar.label || palette.label || "").trim() || "Pillar"}
+                    base={pillar.baseline_score}
+                    current={pillar.score}
+                    tone={palette.accent}
+                    subtitle="Base and current progress"
+                  />
                 );
               })}
             </div>
@@ -320,34 +414,36 @@ export default function LatestAssessmentPanel({ userId, initialSummary }: Latest
       {selectedPillarKey ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-3 py-3 sm:items-center sm:p-6">
           <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-[#e7e1d6] bg-white shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)]">
-            <div className="relative border-b border-[#efe7db] px-4 py-4 pr-20 sm:px-5 sm:pr-5">
-              <div className="space-y-1">
-                <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
-                  {detail?.pillar?.label || selectedPillarKey.replace(/_/g, " ")}
-                </p>
-                <p className="text-sm font-medium text-[#3f372f]">
-                  {savingPastDay ? `Catching up ${activeLabel || "yesterday"}` : "Tracking today"}
-                </p>
-                <p className="text-sm text-[#6b6257]">
-                  {detail?.pillar?.tracker_score !== null && detail?.pillar?.tracker_score !== undefined
-                    ? `${detail?.pillar?.tracker_score}/100 this week so far`
-                    : savingPastDay
-                      ? `Complete ${activeLabel || "yesterday"} to update this week's score`
-                      : "Complete today to start this week's score"}
-                </p>
-                {detail?.pillar?.completed_days_count !== undefined || detail?.pillar?.streak_days !== undefined ? (
-                  <p className="text-xs text-[#8c7f70]">
-                    {`${detail?.pillar?.completed_days_count || 0}/7 days complete · ${detail?.pillar?.streak_days || 0} day check-in streak`}
+            <div className="border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1">
+                  <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
+                    {detail?.pillar?.label || selectedPillarKey.replace(/_/g, " ")}
                   </p>
-                ) : null}
+                  <p className="text-sm font-medium text-[#3f372f]">
+                    {savingPastDay ? `Catching up ${activeLabel || "yesterday"}` : "Tracking today"}
+                  </p>
+                  <p className="text-sm text-[#6b6257]">
+                    {detail?.pillar?.tracker_score !== null && detail?.pillar?.tracker_score !== undefined
+                      ? `${detail?.pillar?.tracker_score}/100 this week so far`
+                      : savingPastDay
+                        ? `Complete ${activeLabel || "yesterday"} to update this week's score`
+                        : "Complete today to start this week's score"}
+                  </p>
+                  {detail?.pillar?.completed_days_count !== undefined || detail?.pillar?.streak_days !== undefined ? (
+                    <p className="text-xs text-[#8c7f70]">
+                      {`${detail?.pillar?.completed_days_count || 0}/7 days complete · ${detail?.pillar?.streak_days || 0} day check-in streak`}
+                    </p>
+                  ) : null}
+                </div>
+                <button
+                  type="button"
+                  onClick={closeTracker}
+                  className="shrink-0 rounded-full border border-[#e7e1d6] bg-white px-3 py-2 text-xs uppercase tracking-[0.18em] text-[#5d5348]"
+                >
+                  Close
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={closeTracker}
-                className="absolute right-4 top-4 rounded-full border border-[#e7e1d6] px-3 py-2 text-xs uppercase tracking-[0.18em] text-[#5d5348] sm:right-5"
-              >
-                Close
-              </button>
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">

@@ -13,6 +13,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [setupRequired, setSetupRequired] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
+  const [restoringSession, setRestoringSession] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -26,6 +27,78 @@ export default function LoginPage() {
         setSetupRequired(savedSetup === "true");
       }
     } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let cancelled = false;
+
+    const requestedNext = String(new URLSearchParams(window.location.search).get("next") || "").trim();
+    const safeNext =
+      requestedNext && requestedNext.startsWith("/") && !requestedNext.startsWith("//") && !requestedNext.startsWith("/api")
+        ? requestedNext
+        : "";
+
+    const redirectToApp = (userId?: string | number | null) => {
+      const resolvedUserId =
+        String(
+          userId ||
+            document.cookie
+              .split("; ")
+              .find((item) => item.startsWith("hs_user_id="))
+              ?.split("=")[1] ||
+            window.localStorage.getItem("hs_user_id_local") ||
+            process.env.NEXT_PUBLIC_DEFAULT_USER_ID ||
+            "1",
+        ).trim() || "1";
+      window.location.replace(safeNext || `/assessment/${resolvedUserId}/chat`);
+    };
+
+    const hasSessionCookie = document.cookie.includes("hs_session=");
+    if (hasSessionCookie) {
+      redirectToApp();
+      return;
+    }
+
+    const token = window.localStorage.getItem("hs_session_local");
+    if (!token) return;
+
+    const restoreSession = async () => {
+      setRestoringSession(true);
+      setStatus("Restoring your session…");
+      try {
+        const res = await fetch("/api/auth/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token }),
+        });
+        if (!res.ok) {
+          throw new Error("invalid session");
+        }
+        const data = (await res.json().catch(() => null)) as { user_id?: string | number } | null;
+        if (!cancelled) {
+          redirectToApp(data?.user_id);
+        }
+      } catch {
+        try {
+          window.localStorage.removeItem("hs_session_local");
+          window.localStorage.removeItem("hs_user_id_local");
+        } catch {}
+        if (!cancelled) {
+          setStatus(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setRestoringSession(false);
+        }
+      }
+    };
+
+    void restoreSession();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const requestOtp = async (event: React.FormEvent | null, channel: "auto" | "whatsapp" | "sms" = "auto") => {
@@ -177,7 +250,7 @@ export default function LoginPage() {
             <button
               className="w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               type="submit"
-              disabled={loading}
+              disabled={loading || restoringSession}
             >
               {loading ? "Sending…" : "Send login code"}
             </button>
@@ -210,7 +283,7 @@ export default function LoginPage() {
             <button
               className="w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               type="submit"
-              disabled={loading}
+              disabled={loading || restoringSession}
             >
               {loading ? "Verifying…" : "Verify & continue"}
             </button>
@@ -218,7 +291,7 @@ export default function LoginPage() {
               type="button"
               className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
               onClick={() => requestOtp(null, "whatsapp")}
-              disabled={loading}
+              disabled={loading || restoringSession}
             >
               {loading ? "Sending…" : "Resend via WhatsApp"}
             </button>
@@ -226,7 +299,7 @@ export default function LoginPage() {
               type="button"
               className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
               onClick={() => requestOtp(null, "sms")}
-              disabled={loading}
+              disabled={loading || restoringSession}
             >
               {loading ? "Sending…" : "Send via SMS"}
             </button>
