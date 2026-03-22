@@ -484,6 +484,7 @@ export default function AssessmentChatBox({
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
   const [homeSurface, setHomeSurface] = useState<"ask" | "insight" | "habits">("ask");
+  const [askPromptTagsHidden, setAskPromptTagsHidden] = useState(false);
   const [dailyHabitPlan, setDailyHabitPlan] = useState<DailyHabitPlanResponse | null>(null);
   const [dailyHabitPlanLoading, setDailyHabitPlanLoading] = useState(false);
   const [dailyHabitPlanSaving, setDailyHabitPlanSaving] = useState(false);
@@ -870,15 +871,22 @@ export default function AssessmentChatBox({
   }, [showHomeChatPanel, userId]);
 
   useEffect(() => {
+    if (homeSurface !== "ask") {
+      setAskPromptTagsHidden(false);
+    }
+  }, [homeSurface]);
+
+  useEffect(() => {
     setDailyHabitPlan(null);
     setDailyHabitPlanError(null);
     setDailyHabitPlanLoading(false);
-      setDailyHabitPlanSaving(false);
-      setCoachInsight(null);
-      setCoachInsightError(null);
-      setCoachInsightLoading(false);
-      setInsightActiveConceptKey("");
-    }, [userId]);
+    setDailyHabitPlanSaving(false);
+    setCoachInsight(null);
+    setCoachInsightError(null);
+    setCoachInsightLoading(false);
+    setInsightActiveConceptKey("");
+    setAskPromptTagsHidden(false);
+  }, [userId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1944,22 +1952,23 @@ export default function AssessmentChatBox({
                 {sending ? <p className="mt-3 text-sm text-[#6b6257]">Gia is replying…</p> : null}
               </div>
               <div className="mt-4 w-full">
-                {askPromptSuggestions.length ? (
+                {askPromptSuggestions.length && !askPromptTagsHidden ? (
                   <div className="mb-3">
                     <div className="flex flex-wrap gap-2">
                       {askPromptSuggestions.map((suggestion, index) => (
                         <button
                           key={`${suggestion.label}-${index}`}
                           type="button"
-                          onClick={() =>
+                          onClick={() => {
+                            setAskPromptTagsHidden(true);
                             void sendMessage(suggestion.text, {
                               quickReply: {
                                 used: true,
                                 hideInChat: true,
                                 label: suggestion.label,
                               },
-                            })
-                          }
+                            });
+                          }}
                           disabled={busy}
                           className="rounded-full border border-[#d9cdbb] bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348] disabled:cursor-not-allowed disabled:opacity-50"
                         >
