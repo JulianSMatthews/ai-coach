@@ -11,7 +11,7 @@ from typing import Any
 from sqlalchemy import desc, select
 
 from .db import SessionLocal, engine
-from .models import AssessmentRun, DailyPillarTrackerEntry, PillarResult, OKRObjective, OKRKeyResult, User
+from .models import AssessmentRun, DailyPillarTrackerEntry, PillarResult, OKRObjective, OKRKeyResult, OKRKrEntry, User
 from .okr import _GUIDE, _guess_concept_from_description, _normalize_concept_key
 _TRACKER_SCHEMA_READY = False
 _TRACKER_TIMEZONE = (os.getenv("PILLAR_TRACKER_TIMEZONE") or "Europe/London").strip() or "Europe/London"
@@ -482,6 +482,18 @@ def _concept_okr_actual_achieved(
     anchor: date,
     week_days: list[date],
 ) -> dict[str, Any]:
+    logged_values = [
+        _safe_float((evaluations_for_concept.get(day) or {}).get("value"))
+        for day in week_days
+        if _effective_okr_window_start(resolved_target, week_days, anchor) <= day <= anchor
+    ]
+    return _okr_actual_achieved_from_logged_values(logged_values, resolved_target)
+
+
+def _okr_actual_achieved_from_logged_values(
+    logged_values: list[float | None],
+    resolved_target: PillarTrackerResolvedTarget,
+) -> dict[str, Any]:
     target_value = _safe_float(resolved_target.target_value)
     if target_value is None or resolved_target.target_period not in {"day", "week"}:
         return {
@@ -490,12 +502,6 @@ def _concept_okr_actual_achieved(
             "detail_label": None,
             "logged_days": 0,
         }
-    effective_start = _effective_okr_window_start(resolved_target, week_days, anchor)
-    logged_values = [
-        _safe_float((evaluations_for_concept.get(day) or {}).get("value"))
-        for day in week_days
-        if effective_start <= day <= anchor
-    ]
     logged_values = [value for value in logged_values if value is not None]
     if not logged_values:
         return {
@@ -516,6 +522,154 @@ def _concept_okr_actual_achieved(
         "detail_label": _format_progress_label("Actual", actual_value, resolved_target.target_unit),
         "logged_days": len(logged_values),
     }
+
+
+def _resolve_pillar_targets_for_user_with_session(
+    s,
+    user_id: int,
+    pillar_key: str,
+    required_concepts: tuple[PillarTrackerConceptDefinition, ...],
+) -> tuple[dict[str, PillarTrackerResolvedTarget], dict[str, OKRKeyResult]]:
+    key = str(pillar_key or "").strip().lower()
+    resolved = {
+        item.concept_key: _default_resolved_target(key, item)
+        for item in required_concepts
+    }
+    user = s.get(User, int(user_id))
+    user_start_date = _user_tracker_start_date(user_id, user=user)
+    objective = (
+        s.execute(
+            select(OKRObjective)
+            .where(
+                OKRObjective.owner_user_id == int(user_id),
+                OKRObjective.pillar_key == key,
+            )
+            .order_by(desc(OKRObjective.created_at), desc(OKRObjective.id))
+        )
+        .scalars()
+        .first()
+    )
+    if objective is None:
+        return resolved, {}
+    objective_start_date = _to_tracker_local_date(getattr(objective, "created_at", None))
+    rows = (
+        s.execute(
+            select(OKRKeyResult)
+            .where(OKRKeyResult.objective_id == int(objective.id))
+            .order_by(desc(OKRKeyResult.updated_at), desc(OKRKeyResult.id))
+        )
+        .scalars()
+        .all()
+    )
+    best_by_concept: dict[str, OKRKeyResult] = {}
+    for row in rows:
+        concept_key = _extract_kr_concept_key(key, row)
+        if not concept_key or concept_key not in resolved:
+            continue
+        current = best_by_concept.get(concept_key)
+        if current is None or _kr_priority(row) > _kr_priority(current):
+            best_by_concept[concept_key] = row
+    for concept_key, kr in best_by_concept.items():
+        current = resolved[concept_key]
+        target_value = _safe_float(getattr(kr, "target_num", None))
+        unit = str(getattr(kr, "unit", "") or "").strip() or current.target_unit
+        resolved[concept_key] = PillarTrackerResolvedTarget(
+            source="okr" if target_value is not None else current.source,
+            target_value=target_value if target_value is not None else current.target_value,
+            target_direction=current.target_direction,
+            target_unit=unit,
+            target_period=_target_period_from_unit(unit) or current.target_period,
+            target_label=_format_target_label(target_value, unit) if target_value is not None else current.target_label,
+            metric_label=str(getattr(kr, "metric_label", "") or "").strip() or current.metric_label,
+            success_value=current.success_value,
+            success_direction=current.success_direction,
+            start_date=_later_date(user_start_date, objective_start_date) or current.start_date,
+        )
+    return resolved, best_by_concept
+
+
+def _sync_pillar_tracker_actuals_to_okrs(
+    s,
+    *,
+    user_id: int,
+    pillar_key: str,
+    anchor_date: date,
+    required_concepts: tuple[PillarTrackerConceptDefinition, ...],
+) -> None:
+    key = str(pillar_key or "").strip().lower()
+    resolved_targets, best_by_concept = _resolve_pillar_targets_for_user_with_session(
+        s,
+        user_id=user_id,
+        pillar_key=key,
+        required_concepts=required_concepts,
+    )
+    if not best_by_concept:
+        return
+    concept_defs = {item.concept_key: item for item in required_concepts}
+    tracker_rows = (
+        s.execute(
+            select(DailyPillarTrackerEntry)
+            .where(
+                DailyPillarTrackerEntry.user_id == int(user_id),
+                DailyPillarTrackerEntry.pillar_key == key,
+            )
+            .order_by(DailyPillarTrackerEntry.score_date.asc(), DailyPillarTrackerEntry.id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    rows_by_concept: dict[str, list[DailyPillarTrackerEntry]] = {}
+    for row in tracker_rows:
+        concept_key = str(getattr(row, "concept_key", "") or "").strip().lower()
+        if concept_key in best_by_concept:
+            rows_by_concept.setdefault(concept_key, []).append(row)
+    sync_time = datetime.utcnow().replace(microsecond=0)
+    sync_note = f"daily_tracker_sync:{anchor_date.isoformat()}"
+    for concept_key, kr in best_by_concept.items():
+        resolved_target = resolved_targets.get(concept_key)
+        concept_def = concept_defs.get(concept_key)
+        if resolved_target is None or concept_def is None:
+            continue
+        effective_start = resolved_target.start_date
+        logged_values: list[float | None] = []
+        for row in rows_by_concept.get(concept_key, []):
+            row_date = getattr(row, "score_date", None)
+            if not isinstance(row_date, date):
+                continue
+            if row_date > anchor_date:
+                continue
+            if effective_start is not None and row_date < effective_start:
+                continue
+            value = _normalize_option_value(concept_def, getattr(row, "value_num", None))
+            logged_values.append(value)
+        actual_progress = _okr_actual_achieved_from_logged_values(logged_values, resolved_target)
+        actual_value = _safe_float(actual_progress.get("actual_value"))
+        kr.actual_num = actual_value
+        kr.updated_at = sync_time
+        existing_entry = (
+            s.execute(
+                select(OKRKrEntry)
+                .where(
+                    OKRKrEntry.key_result_id == int(kr.id),
+                    OKRKrEntry.source == "pillar_tracker",
+                    OKRKrEntry.note == sync_note,
+                )
+                .order_by(desc(OKRKrEntry.occurred_at), desc(OKRKrEntry.id))
+            )
+            .scalars()
+            .first()
+        )
+        if existing_entry is None:
+            existing_entry = OKRKrEntry(
+                key_result_id=int(kr.id),
+                occurred_at=sync_time,
+                source="pillar_tracker",
+                note=sync_note,
+            )
+            s.add(existing_entry)
+        existing_entry.actual_num = actual_value
+        existing_entry.occurred_at = sync_time
+        s.add(kr)
 
 
 def _score_against_daily_target(
@@ -1272,5 +1426,12 @@ def save_pillar_tracker_day(
                 "target_unit": getattr(resolved_target, "target_unit", None),
                 "target_period": getattr(resolved_target, "target_period", None),
             }
+        _sync_pillar_tracker_actuals_to_okrs(
+            s,
+            user_id=int(user_id),
+            pillar_key=key,
+            anchor_date=resolved_date,
+            required_concepts=required_concepts,
+        )
         s.commit()
     return get_pillar_tracker_detail(user_id, key, resolved_date)

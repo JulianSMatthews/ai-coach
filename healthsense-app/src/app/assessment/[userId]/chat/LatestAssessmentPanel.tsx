@@ -195,6 +195,7 @@ function progressStatus(actual?: number | null, target?: number | null, baseline
 
 export default function LatestAssessmentPanel({ userId, initialSummary, initialProgress }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
+  const [progress, setProgress] = useState<ProgressResponse | null>(initialProgress ?? null);
   const [scoreCardOpen, setScoreCardOpen] = useState(false);
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<PillarTrackerDetailResponse | null>(null);
@@ -212,7 +213,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
     if (!scores.length) return 0;
     return Math.round(scores.reduce((total, score) => total + score, 0) / scores.length);
   })();
-  const progressRows = [...(Array.isArray(initialProgress?.rows) ? initialProgress.rows : [])].sort((left, right) => {
+  const progressRows = [...(Array.isArray(progress?.rows) ? progress.rows : [])].sort((left, right) => {
     const leftIndex = PILLAR_ORDER.indexOf(normalizePillarKey(left?.pillar));
     const rightIndex = PILLAR_ORDER.indexOf(normalizePillarKey(right?.pillar));
     return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
@@ -251,6 +252,19 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
     }
     const payload = (text ? (JSON.parse(text) as PillarTrackerSummaryResponse) : {}) as PillarTrackerSummaryResponse;
     setSummary(payload);
+  };
+
+  const refreshProgress = async () => {
+    const res = await fetch(`/api/progress?userId=${encodeURIComponent(userId)}`, {
+      method: "GET",
+      cache: "no-store",
+    });
+    const text = await res.text().catch(() => "");
+    if (!res.ok) {
+      throw new Error(normalizeError(text, "Failed to refresh progress."));
+    }
+    const payload = (text ? (JSON.parse(text) as ProgressResponse) : {}) as ProgressResponse;
+    setProgress(payload);
   };
 
   const loadTrackerDetail = async (pillarKey: string, anchorDate?: string) => {
@@ -341,7 +355,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
         );
       }
       closeTracker();
-      void refreshSummary().catch(() => {});
+      void Promise.all([refreshSummary(), refreshProgress()]).catch(() => {});
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -439,7 +453,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
                                   <p className="text-[10px] leading-4 text-[#6b6257]">
                                     {`Target ${formatMetricValue(kr?.target, kr?.metric_label, kr?.unit)}`}
                                     {kr?.actual !== null && kr?.actual !== undefined
-                                      ? ` · Actual ${formatMetricValue(kr?.actual, kr?.metric_label, kr?.unit)}`
+                                      ? ` · Actual ${formatNumber(kr?.actual)}`
                                       : ""}
                                     {" · "}
                                     <span className={`font-medium ${statusTone}`}>{status.label}</span>
