@@ -77,7 +77,13 @@ def _process_assessment_narratives_seed(payload: dict) -> dict:
     run_id = payload.get("run_id")
     if not run_id:
         raise ValueError("assessment_narratives_seed requires run_id")
-    return generate_assessment_narratives(int(run_id))
+    result = generate_assessment_completion_summary_media(int(run_id))
+    return {
+        "ok": bool(result.get("ok")),
+        "mode": "summary_only_compat",
+        "run_id": int(run_id),
+        "summary": result,
+    }
 
 
 def _process_assessment_narratives_core_seed(payload: dict) -> dict:

@@ -2,19 +2,20 @@
 
 import { useState } from "react";
 import type {
+  // Keep tracker responses local to this panel.
   PillarTrackerDetailResponse,
   PillarTrackerPillar,
   PillarTrackerSummaryResponse,
-  ProgressResponse,
 } from "@/lib/api";
 import { getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
+import type { AssessmentIntroAvatar } from "./AssessmentPromptCard";
 import LeadAssessmentBranding from "./LeadAssessmentBranding";
 
 type LatestAssessmentPanelProps = {
   userId: string;
   initialSummary: PillarTrackerSummaryResponse;
-  initialProgress?: ProgressResponse | null;
+  coachProductAvatar?: AssessmentIntroAvatar | null;
 };
 
 const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
@@ -116,86 +117,8 @@ function WeeklyScoreRing({ value, tone }: { value?: number | null; tone: string 
   );
 }
 
-function normalizePillarKey(value?: string | null): string {
-  const key = String(value || "").trim().toLowerCase();
-  if (key.includes("nutri")) return "nutrition";
-  if (key.includes("recover")) return "recovery";
-  if (key.includes("train")) return "training";
-  if (key.includes("resilien")) return "resilience";
-  return key;
-}
-
-function formatNumber(value?: number | null): string {
-  if (value === null || value === undefined) return "—";
-  const resolved = Number(value);
-  if (!Number.isFinite(resolved)) return "—";
-  if (Number.isInteger(resolved)) return String(resolved);
-  return resolved.toFixed(2).replace(/\.?0+$/, "");
-}
-
-function formatMetricValue(
-  value?: number | null,
-  metricLabel?: string | null,
-  unit?: string | null,
-): string {
-  const formatted = formatNumber(value);
-  if (formatted === "—") return formatted;
-  const suffix = String(metricLabel || unit || "").trim();
-  return suffix ? `${formatted} ${suffix}` : formatted;
-}
-
-function toFiniteNumber(value?: number | null): number | null {
-  if (value === null || value === undefined) return null;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function progressRatio(actual?: number | null, target?: number | null, baseline?: number | null): number | null {
-  const actualNum = toFiniteNumber(actual);
-  const targetNum = toFiniteNumber(target);
-  const baselineNum = toFiniteNumber(baseline);
-  if (actualNum === null || targetNum === null) return null;
-  if (baselineNum !== null && Math.abs(targetNum - baselineNum) > 1e-9) {
-    return Math.max(0, Math.min(1, (actualNum - baselineNum) / (targetNum - baselineNum)));
-  }
-  if (Math.abs(targetNum) < 1e-9) return null;
-  return Math.max(0, Math.min(1, actualNum / targetNum));
-}
-
-function progressStatus(actual?: number | null, target?: number | null, baseline?: number | null): {
-  label: string;
-  pct: number | null;
-  tone: string;
-  chipBg: string;
-} {
-  const pct = progressRatio(actual, target, baseline);
-  if (pct === null) {
-    return {
-      label: "No update",
-      pct: null,
-      tone: "#475467",
-      chipBg: "#f2f4f7",
-    };
-  }
-  if (pct >= 0.9) {
-    return {
-      label: "On track",
-      pct,
-      tone: "#027a48",
-      chipBg: "#ecfdf3",
-    };
-  }
-  return {
-    label: "Behind pace",
-    pct,
-    tone: pct >= 0.5 ? "#c2410c" : "#b42318",
-    chipBg: pct >= 0.5 ? "#fff7ed" : "#fef2f2",
-  };
-}
-
-export default function LatestAssessmentPanel({ userId, initialSummary, initialProgress }: LatestAssessmentPanelProps) {
+export default function LatestAssessmentPanel({ userId, initialSummary, coachProductAvatar = null }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
-  const [progress, setProgress] = useState<ProgressResponse | null>(initialProgress ?? null);
   const [scoreCardOpen, setScoreCardOpen] = useState(false);
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<PillarTrackerDetailResponse | null>(null);
@@ -213,11 +136,6 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
     if (!scores.length) return 0;
     return Math.round(scores.reduce((total, score) => total + score, 0) / scores.length);
   })();
-  const progressRows = [...(Array.isArray(progress?.rows) ? progress.rows : [])].sort((left, right) => {
-    const leftIndex = PILLAR_ORDER.indexOf(normalizePillarKey(left?.pillar));
-    const rightIndex = PILLAR_ORDER.indexOf(normalizePillarKey(right?.pillar));
-    return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex);
-  });
   const concepts = Array.isArray(detail?.concepts) ? detail?.concepts : [];
   const canSave =
     !saving &&
@@ -252,19 +170,6 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
     }
     const payload = (text ? (JSON.parse(text) as PillarTrackerSummaryResponse) : {}) as PillarTrackerSummaryResponse;
     setSummary(payload);
-  };
-
-  const refreshProgress = async () => {
-    const res = await fetch(`/api/progress?userId=${encodeURIComponent(userId)}`, {
-      method: "GET",
-      cache: "no-store",
-    });
-    const text = await res.text().catch(() => "");
-    if (!res.ok) {
-      throw new Error(normalizeError(text, "Failed to refresh progress."));
-    }
-    const payload = (text ? (JSON.parse(text) as ProgressResponse) : {}) as ProgressResponse;
-    setProgress(payload);
   };
 
   const loadTrackerDetail = async (pillarKey: string, anchorDate?: string) => {
@@ -355,7 +260,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
         );
       }
       closeTracker();
-      void Promise.all([refreshSummary(), refreshProgress()]).catch(() => {});
+      void refreshSummary().catch(() => {});
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -393,7 +298,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
               type="button"
               onClick={() => setScoreCardOpen(true)}
               className="pointer-events-auto rounded-full"
-              aria-label="Open HealthSense OKR progress"
+              aria-label="Open How HealthSense works"
             >
               <CombinedLogoRing value={combinedScore} />
             </button>
@@ -408,7 +313,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.18em] text-[#6b6257]">HealthSense</p>
-                  <p className="mt-0.5 text-base font-semibold text-[#1e1b16]">Key results</p>
+                  <p className="mt-0.5 text-base font-semibold text-[#1e1b16]">How HealthSense works</p>
                 </div>
                 <button
                   type="button"
@@ -421,71 +326,29 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
             </div>
 
             <div className="flex-1 overflow-y-auto px-3 py-3 sm:px-5">
-              <div className="space-y-2">
-                {progressRows.length ? (
-                  progressRows.map((row, rowIndex) => {
-                    const pillarKey = normalizePillarKey(row?.pillar);
-                    const krs = Array.isArray(row?.krs) ? row.krs : [];
-                    return (
-                      <div
-                        key={`okr-progress-${pillarKey || rowIndex}`}
-                        className="rounded-xl border border-[#efe7db] bg-[#fffaf3] px-2.5 py-2.5"
-                      >
-                        <p className="text-[10px] uppercase tracking-[0.16em] text-[#6b6257]">
-                          {String(row?.pillar || getPillarPalette(pillarKey).label || "Pillar").trim() || "Pillar"}
-                        </p>
-
-                        {krs.length ? (
-                          <div className="mt-1.5 divide-y divide-[#eadfcf] rounded-lg bg-white/80">
-                            {krs.map((kr, krIndex) => {
-                              const backendStatusLabel = String(kr?.okr_status_label || "").trim();
-                              const status = backendStatusLabel
-                                ? {
-                                    label: backendStatusLabel,
-                                    pct: null,
-                                    tone:
-                                      backendStatusLabel === "On track"
-                                        ? "#4e7a1f"
-                                        : backendStatusLabel === "Behind pace"
-                                          ? "#b55b1d"
-                                          : "#6b6257",
-                                    chipBg: "",
-                                  }
-                                : progressStatus(kr?.actual, kr?.target, kr?.baseline);
-                              const statusTone =
-                                status.label === "On track"
-                                  ? "text-[#4e7a1f]"
-                                  : status.label === "Behind pace"
-                                    ? "text-[#b55b1d]"
-                                    : "text-[#6b6257]";
-                              return (
-                                <div
-                                  key={`okr-${pillarKey || "pillar"}-${kr?.id || krIndex}`}
-                                  className={`py-1.5 ${krIndex > 0 ? "mt-0" : ""}`}
-                                >
-                                  <p className="text-[10px] leading-4 text-[#6b6257]">
-                                    {`Target ${formatMetricValue(kr?.target, kr?.metric_label, kr?.unit)}`}
-                                    {kr?.actual !== null && kr?.actual !== undefined
-                                      ? ` · Actual ${formatNumber(kr?.actual)}`
-                                      : ""}
-                                    {" · "}
-                                    <span className={`font-medium ${statusTone}`}>{status.label}</span>
-                                  </p>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        ) : (
-                          <p className="mt-2 text-xs text-[#6b6257]">No key results recorded yet.</p>
-                        )}
-                      </div>
-                    );
-                  })
+              <div className="space-y-3">
+                {String(coachProductAvatar?.url || "").trim() ? (
+                  <video
+                    controls
+                    preload="metadata"
+                    playsInline
+                    poster={String(coachProductAvatar?.posterUrl || "").trim() || undefined}
+                    className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
+                  >
+                    <source src={String(coachProductAvatar?.url || "").trim()} />
+                  </video>
                 ) : (
-                  <div className="rounded-xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3 text-xs text-[#6b6257]">
-                    No key results recorded yet.
+                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5 text-sm text-[#6b6257]">
+                    The HealthSense introduction video is not available right now.
                   </div>
                 )}
+                {String(coachProductAvatar?.script || "").trim() ? (
+                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                    <p className="whitespace-pre-wrap text-sm leading-6 text-[#6b6257]">
+                      {String(coachProductAvatar?.script || "").trim()}
+                    </p>
+                  </div>
+                ) : null}
               </div>
             </div>
 

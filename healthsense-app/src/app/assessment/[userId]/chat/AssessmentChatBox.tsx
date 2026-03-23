@@ -514,6 +514,7 @@ export default function AssessmentChatBox({
   const [insightActiveConceptKey, setInsightActiveConceptKey] = useState("");
   const [insightMode, setInsightMode] = useState<"video" | "listen" | "read">("read");
   const askComposerFormRef = useRef<HTMLFormElement | null>(null);
+  const insightRequestIdRef = useRef(0);
 
   const autoStart = useMemo(() => isTruthyToken(searchParams?.get("autostart")), [searchParams]);
   const leadFlow = useMemo(() => isTruthyToken(searchParams?.get("lead")), [searchParams]);
@@ -633,6 +634,12 @@ export default function AssessmentChatBox({
   const insightHasAudio = Boolean(insightAudioUrl);
   const insightHasRead = Boolean(insightReadBody);
   const insightMediaKey = `${insightSelectedConceptKey || insightActiveConceptKey || "insight"}:${insightVideoUrl || insightAudioUrl || insightReadBody.slice(0, 32)}`;
+  const insightIsSwitchingConcept = Boolean(
+    coachInsightLoading &&
+    insightActiveConceptKey &&
+    insightSelectedConceptKey &&
+    insightActiveConceptKey !== insightSelectedConceptKey,
+  );
   const dailyHabitSelectedConceptKey = String(dailyHabitPlan?.selected_concept_key || "").trim();
   const dailyHabitDefaultView = String(dailyHabitPlan?.default_habits_view || "").trim();
   const dailyHabitOptions = useMemo(
@@ -880,12 +887,21 @@ export default function AssessmentChatBox({
   );
 
   const loadCoachInsight = useCallback(async (options?: { conceptKey?: string }) => {
+    const normalizedConceptKey = String(options?.conceptKey || "").trim();
+    const requestId = insightRequestIdRef.current + 1;
+    insightRequestIdRef.current = requestId;
     setCoachInsightLoading(true);
     setCoachInsightError(null);
+    if (normalizedConceptKey) {
+      setCoachInsight((current) => {
+        const currentConceptKey = String(current?.concept_key || "").trim();
+        return currentConceptKey === normalizedConceptKey ? current : null;
+      });
+    }
     try {
       const params = new URLSearchParams({ userId });
-      if (options?.conceptKey) {
-        params.set("conceptKey", options.conceptKey);
+      if (normalizedConceptKey) {
+        params.set("conceptKey", normalizedConceptKey);
       }
       const res = await fetch(`/api/coach-insight?${params.toString()}`, {
         method: "GET",
@@ -896,11 +912,19 @@ export default function AssessmentChatBox({
         throw new Error(parseApiError(text, "Failed to load today's insight."));
       }
       const data = (text ? (JSON.parse(text) as CoachInsightResponse) : {}) as CoachInsightResponse;
+      if (requestId !== insightRequestIdRef.current) {
+        return;
+      }
       setCoachInsight(data);
     } catch (error) {
+      if (requestId !== insightRequestIdRef.current) {
+        return;
+      }
       setCoachInsightError(error instanceof Error ? error.message : String(error));
     } finally {
-      setCoachInsightLoading(false);
+      if (requestId === insightRequestIdRef.current) {
+        setCoachInsightLoading(false);
+      }
     }
   }, [userId]);
 
@@ -1705,7 +1729,6 @@ export default function AssessmentChatBox({
                           type="button"
                           onClick={() => {
                             setInsightActiveConceptKey(conceptKey);
-                            void loadCoachInsight({ conceptKey });
                           }}
                           disabled={coachInsightLoading}
                           className={`rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] ${
@@ -1720,10 +1743,10 @@ export default function AssessmentChatBox({
                     })}
                   </div>
                 ) : null}
-                {coachInsightLoading && coachInsight ? (
+                {coachInsightLoading && (coachInsight || insightActiveConceptKey) ? (
                   <p className="text-sm text-[#6b6257]">Loading concept insight…</p>
                 ) : null}
-                {insightHasVideo || insightHasAudio || insightHasRead ? (
+                {!insightIsSwitchingConcept && (insightHasVideo || insightHasAudio || insightHasRead) ? (
                   <>
                     {insightMode === "video" && insightHasVideo ? (
                       <video
@@ -2001,7 +2024,7 @@ export default function AssessmentChatBox({
                 </form>
                 {status ? <p className="mt-3 text-sm text-[#6b6257]">{status}</p> : null}
                 {askPromptSuggestions.length && !askPromptTagsHidden ? (
-                  <div className="mt-3 rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3">
+                  <div className="mt-3 rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-2.5 py-2.5">
                     <div className="flex flex-wrap gap-1.5">
                       {askPromptSuggestions.map((suggestion, index) => (
                         <button
@@ -2018,7 +2041,7 @@ export default function AssessmentChatBox({
                             });
                           }}
                           disabled={busy}
-                          className="rounded-full border border-[#d9cdbb] bg-white px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#5d5348] disabled:cursor-not-allowed disabled:opacity-50"
+                          className="rounded-full border border-[#d9cdbb] bg-white px-2.5 py-1 text-[13px] leading-5 text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {suggestion.label}
                         </button>

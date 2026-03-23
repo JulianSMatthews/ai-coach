@@ -305,7 +305,7 @@ def _finalize_combined_assessment_completion(
     if state.get("run_id"):
         try:
             job_id = enqueue_job(
-                "assessment_narratives_seed",
+                "assessment_completion_summary_media",
                 {
                     "run_id": int(state["run_id"]),
                     "user_id": int(user.id),
@@ -321,7 +321,7 @@ def _finalize_combined_assessment_completion(
     try:
         s.add(
             JobAudit(
-                job_name=str(enqueue_audit_job_name or "assessment_narratives_seed_enqueue_completion"),
+                job_name=str(enqueue_audit_job_name or "assessment_completion_summary_enqueue_completion"),
                 status="ok" if not enqueue_error else "error",
                 payload={
                     "run_id": int(state.get("run_id")) if state.get("run_id") else None,
@@ -436,7 +436,7 @@ def _continue_psych_phase(s, sess: AssessSession, state: dict, user: User, user_
             state,
             user,
             trigger="psych_complete_main_path",
-            enqueue_audit_job_name="assessment_narratives_seed_enqueue_psych_complete",
+            enqueue_audit_job_name="assessment_completion_summary_enqueue_psych_complete",
             completion_message=pending_msg or None,
             completion_note="Thanks—saved your readiness profile. I’ll use this to set the right KR load and coaching style.",
             psych_state={"idx": total, "answers": answers},
@@ -1400,7 +1400,7 @@ def _continue_from_app_pillar_result(user: User, state: dict, turns: list[dict],
             state,
             user,
             trigger="pillars_complete_app_path",
-            enqueue_audit_job_name="assessment_narratives_seed_enqueue_pillars_complete",
+            enqueue_audit_job_name="assessment_completion_summary_enqueue_pillars_complete",
             psych_state={"idx": 0, "answers": {}},
         )
 
@@ -2322,7 +2322,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 state,
                 user,
                 trigger="legacy_psych_auto_finalize",
-                enqueue_audit_job_name="assessment_narratives_seed_enqueue_legacy_psych_finalize",
+                enqueue_audit_job_name="assessment_completion_summary_enqueue_legacy_psych_finalize",
                 completion_message=None if _is_app_assessment_delivery() else (pending_msg or None),
                 psych_state={"idx": 0, "answers": {}},
             )
@@ -3502,7 +3502,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     state,
                     user,
                     trigger="pillars_complete_main_path",
-                    enqueue_audit_job_name="assessment_narratives_seed_enqueue_pillars_complete",
+                    enqueue_audit_job_name="assessment_completion_summary_enqueue_pillars_complete",
                     completion_message=final_msg,
                     psych_state={"idx": 0, "answers": {}},
                 )

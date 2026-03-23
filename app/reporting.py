@@ -4907,30 +4907,20 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
 
 def generate_assessment_core_narratives(run_id: int) -> dict:
     """
-    Generate/cache score + OKR assessment narratives only.
-    Habit-readiness/coaching narrative is intentionally excluded here.
+    Deprecated. Assessment completion no longer generates score or OKR narratives.
+    Retained only so older worker/job paths can exit cleanly.
     """
     started = time.perf_counter()
-    data = build_assessment_dashboard_data(
-        run_id,
-        include_llm=True,
-        generate_core_narratives=True,
-        generate_habit_narrative=False,
-    )
-    user = data.get("user") or {}
-    meta = data.get("meta") or {}
     result = {
         "ok": True,
-        "mode": "core",
+        "mode": "disabled",
         "run_id": int(run_id),
-        "user_id": user.get("id"),
-        "narratives_cached": meta.get("narratives_cached"),
-        "narratives_source": meta.get("narratives_source"),
+        "reason": "assessment_core_narratives_removed",
         "duration_ms": int((time.perf_counter() - started) * 1000),
     }
     try:
         with SessionLocal() as s:
-            s.add(JobAudit(job_name="assessment_narratives_core_generate", status="ok", payload=result))
+            s.add(JobAudit(job_name="assessment_narratives_core_skipped", status="ok", payload=result))
             s.commit()
     except Exception:
         pass
@@ -4939,30 +4929,20 @@ def generate_assessment_core_narratives(run_id: int) -> dict:
 
 def generate_assessment_habit_narrative(run_id: int) -> dict:
     """
-    Generate/cache habit-readiness coaching narrative only.
-    Intended to run after psych questions are completed.
+    Deprecated. Assessment completion no longer generates coaching-approach narrative.
+    Retained only so older worker/job paths can exit cleanly.
     """
     started = time.perf_counter()
-    data = build_assessment_dashboard_data(
-        run_id,
-        include_llm=True,
-        generate_core_narratives=False,
-        generate_habit_narrative=True,
-    )
-    user = data.get("user") or {}
-    meta = data.get("meta") or {}
     result = {
         "ok": True,
-        "mode": "habit",
+        "mode": "disabled",
         "run_id": int(run_id),
-        "user_id": user.get("id"),
-        "narratives_cached": meta.get("narratives_cached"),
-        "narratives_source": meta.get("narratives_source"),
+        "reason": "assessment_habit_narrative_removed",
         "duration_ms": int((time.perf_counter() - started) * 1000),
     }
     try:
         with SessionLocal() as s:
-            s.add(JobAudit(job_name="assessment_narratives_habit_generate", status="ok", payload=result))
+            s.add(JobAudit(job_name="assessment_narratives_habit_skipped", status="ok", payload=result))
             s.commit()
     except Exception:
         pass
@@ -4971,22 +4951,20 @@ def generate_assessment_habit_narrative(run_id: int) -> dict:
 
 def generate_assessment_narratives(run_id: int) -> dict:
     """
-    Legacy combined path. Retained for compatibility with old queued jobs.
+    Legacy combined path. Old queued jobs now generate the completion summary only.
     """
-    core = generate_assessment_core_narratives(run_id)
-    habit = generate_assessment_habit_narrative(run_id)
+    summary = generate_assessment_completion_summary_media(run_id)
     return {
-        "ok": bool(core.get("ok")) and bool(habit.get("ok")),
-        "mode": "combined",
+        "ok": bool(summary.get("ok")),
+        "mode": "summary_only_compat",
         "run_id": int(run_id),
-        "user_id": core.get("user_id") or habit.get("user_id"),
-        "core": core,
-        "habit": habit,
-        "duration_ms": int((core.get("duration_ms") or 0) + (habit.get("duration_ms") or 0)),
+        "summary": summary,
+        "duration_ms": int(summary.get("duration_ms") or 0),
     }
 
 
 def generate_assessment_completion_summary_media(run_id: int) -> dict[str, Any]:
+    started = time.perf_counter()
     data = build_assessment_dashboard_data(
         int(run_id),
         include_llm=False,
@@ -5007,6 +4985,7 @@ def generate_assessment_completion_summary_media(run_id: int) -> dict[str, Any]:
         "avatar_retry_after": meta.get("completion_summary_avatar_retry_after"),
         "avatar_retry_after_seconds": meta.get("completion_summary_avatar_retry_after_seconds"),
         "pending": bool(meta.get("completion_summary_pending")),
+        "duration_ms": int((time.perf_counter() - started) * 1000),
     }
 
 def generate_detailed_report_pdf_by_user(user_id: int) -> str:

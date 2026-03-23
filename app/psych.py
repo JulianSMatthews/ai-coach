@@ -284,8 +284,7 @@ def handle_message(user: User, text: str):
             pending = pop_pending_summary(s, user.id)
             s.commit()
 
-            # Habit readiness is part of assessment completion. Once profile is saved,
-            # trigger full assessment narrative generation (score + OKR + habit).
+            # Once readiness is saved, only the completion summary media should be generated.
             run_id = _resolve_latest_run_id(s, int(user.id))
             run_id_source = "latest_run_lookup" if run_id else "missing"
             if run_id:
@@ -293,14 +292,14 @@ def handle_message(user: User, text: str):
                     from .job_queue import enqueue_job
 
                     job_id = enqueue_job(
-                        "assessment_narratives_seed",
+                        "assessment_completion_summary_media",
                         {"run_id": int(run_id), "user_id": int(user.id), "trigger": "psych_complete"},
                         user_id=int(user.id),
                     )
                     try:
                         s.add(
                             JobAudit(
-                                job_name="assessment_narratives_seed_enqueue_psych_complete",
+                                job_name="assessment_completion_summary_enqueue_psych_complete",
                                 status="ok",
                                 payload={
                                     "run_id": int(run_id),
@@ -317,7 +316,7 @@ def handle_message(user: User, text: str):
                     try:
                         s.add(
                             JobAudit(
-                                job_name="assessment_narratives_seed_enqueue_psych_complete",
+                                job_name="assessment_completion_summary_enqueue_psych_complete",
                                 status="error",
                                 payload={
                                     "run_id": int(run_id),
@@ -334,7 +333,7 @@ def handle_message(user: User, text: str):
                 try:
                     s.add(
                         JobAudit(
-                            job_name="assessment_narratives_seed_enqueue_psych_complete",
+                            job_name="assessment_completion_summary_enqueue_psych_complete",
                             status="error",
                             payload={"run_id": None, "user_id": int(user.id), "run_id_source": "missing"},
                             error="missing_run_id",

@@ -1490,7 +1490,7 @@ def _assessment_chat_state_payload(user_id: int, *, message_limit: int = 60) -> 
                             state_obj,
                             db_user,
                             trigger="state_auto_finalize_without_readiness",
-                            enqueue_audit_job_name="assessment_narratives_seed_enqueue_state_finalize",
+                            enqueue_audit_job_name="assessment_completion_summary_enqueue_state_finalize",
                             psych_state={"idx": 0, "answers": {}},
                         )
                         active_session = None
