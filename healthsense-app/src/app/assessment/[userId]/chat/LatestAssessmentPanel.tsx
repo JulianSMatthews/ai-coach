@@ -325,7 +325,10 @@ export default function LatestAssessmentPanel({ userId, initialSummary, appIntro
             <div className="shrink-0 border-b border-[#efe7db] bg-white px-3 py-3 sm:px-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-base font-semibold text-[#1e1b16]">{`HealthSense score ${combinedScore}/100`}</p>
+                  <div className="flex items-center gap-1.5 text-base font-semibold text-[#1e1b16]">
+                    <LeadAssessmentBranding titleLines={[]} logoClassName="h-4 w-4" />
+                    <p>{`HealthSense score ${combinedScore}/100`}</p>
+                  </div>
                   <p className="mt-1 text-xs text-[#6b6257]">How HealthSense works</p>
                 </div>
                 <button
