@@ -380,6 +380,29 @@ def _normalize_habit_item(raw: Any) -> dict[str, str] | None:
     return {"title": title[:90], "detail": detail[:180]}
 
 
+def _normalize_ask_suggestion(raw: Any) -> dict[str, str] | None:
+    if not isinstance(raw, dict):
+        return None
+    label = str(raw.get("label") or raw.get("title") or "").strip()
+    text = str(raw.get("text") or raw.get("question") or raw.get("prompt") or "").strip()
+    if not label or not text:
+        return None
+    return {
+        "label": label[:40],
+        "text": text[:220],
+    }
+
+
+def _normalized_ask_suggestions(items: Any) -> list[dict[str, str]]:
+    if not isinstance(items, list):
+        return []
+    return [
+        item
+        for item in (_normalize_ask_suggestion(row) for row in items)
+        if item
+    ][:4]
+
+
 def _normalize_habit_plan_item(
     raw: Any,
     *,
@@ -454,6 +477,21 @@ def _habit_plan_version(payload: dict[str, Any]) -> int:
     return _safe_int(payload.get("habit_plan_version")) or 0
 
 
+def _items_for_concept(
+    items: list[dict[str, Any]],
+    *,
+    concept_key: str | None,
+) -> list[dict[str, Any]]:
+    normalized_key = _normalize_concept_token(concept_key)
+    if not normalized_key:
+        return []
+    return [
+        item
+        for item in items
+        if _normalize_concept_token(item.get("concept_key")) == normalized_key
+    ]
+
+
 def _habit_option_sets_from_state(
     payload: dict[str, Any],
     *,
@@ -478,6 +516,7 @@ def _habit_option_sets_from_state(
                 )
                 if item
             ]
+            items = _items_for_concept(items, concept_key=concept_key)
             if items:
                 option_sets[concept_key] = _dedupe_habit_plan_items(items)
     if option_sets:
@@ -493,6 +532,7 @@ def _habit_option_sets_from_state(
         )
         if item
     ]
+    legacy_items = _items_for_concept(legacy_items, concept_key=selected_key)
     if legacy_items:
         option_sets[selected_key] = _dedupe_habit_plan_items(legacy_items)
     return option_sets
@@ -737,6 +777,40 @@ def _fallback_plan(context: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _fallback_ask_suggestions(context: dict[str, Any]) -> list[dict[str, str]]:
+    suggestions: list[dict[str, str]] = []
+    seen: set[str] = set()
+
+    def push(label: str, text: str) -> None:
+        normalized_label = str(label or "").strip()
+        normalized_text = str(text or "").strip()
+        if not normalized_label or not normalized_text:
+            return
+        key = f"{normalized_label.lower()}::{normalized_text.lower()}"
+        if key in seen:
+            return
+        seen.add(key)
+        suggestions.append({"label": normalized_label[:40], "text": normalized_text[:220]})
+
+    focus_concepts = [item for item in (context.get("focus_concepts") or []) if isinstance(item, dict)]
+    selected_habits = [item for item in (context.get("selected_habits") or []) if isinstance(item, dict)]
+    signals = [str(item.get("signal") or "").strip().lower() for item in focus_concepts]
+
+    if "missed_today" in signals or "missed_yesterday" in signals:
+        push("Get back on track", "What is the best way for me to get back on track today?")
+    if "not_logged_today" in signals:
+        push("Log it simply", "What's the simplest way for me to track properly today?")
+    if "needs_support" in signals:
+        push("Why is this slipping", "Why does this keep slipping for me and what should I change?")
+    if selected_habits:
+        push("Stick to my plan", "How can I stay consistent with the habits I've chosen today?")
+
+    push("Best next step", "Based on my tracking, what's the most useful next step for me today?")
+    push("Recover today", "What would help me recover well today without overcomplicating it?")
+    push("Build consistency", "How do I make this feel easier to repeat tomorrow as well?")
+    return suggestions[:4]
+
+
 def _generate_plan_from_llm(user_id: int, context: dict[str, Any]) -> dict[str, Any] | None:
     selected_pillar = context.get("selected_pillar") or {}
     selected_concept = context.get("selected_focus_concept") or {}
@@ -794,6 +868,59 @@ def _generate_plan_from_llm(user_id: int, context: dict[str, Any]) -> dict[str, 
     }
 
 
+def _generate_ask_suggestions_from_llm(
+    user_id: int,
+    context: dict[str, Any],
+    selected_habits: list[dict[str, Any]],
+) -> list[dict[str, str]] | None:
+    selected_pillar = context.get("selected_pillar") or {}
+    selected_concept = context.get("selected_focus_concept") or {}
+    user_name = str(context.get("user_name") or "User").strip() or "User"
+    ensure_builtin_prompt_templates(["daily_ask_suggestions"])
+    assembly = build_prompt(
+        "daily_ask_suggestions",
+        user_id=user_id,
+        coach_name="HealthSense",
+        user_name=user_name,
+        locale="UK",
+        timeframe="today",
+        plan_date=context.get("plan_date"),
+        scores=context.get("pillar_scores") or [],
+        weakest_pillar=context.get("weakest_pillar") or {},
+        focus_concepts=context.get("focus_concepts") or [],
+        selected_focus_concept=selected_concept,
+        selected_pillar=selected_pillar,
+        okr_context=context.get("okr_context") or {},
+        selected_habits=selected_habits,
+    )
+    raw = run_llm_prompt(
+        assembly.text,
+        user_id=user_id,
+        touchpoint="daily_ask_suggestions",
+        prompt_variant=assembly.variant,
+        task_label=assembly.task_label,
+        context_meta={
+            "page": "coach_home",
+            "pillar_key": str(selected_pillar.get("pillar_key") or "").strip().lower(),
+            "concept_key": str(selected_concept.get("concept_key") or "").strip().lower(),
+            "plan_date": _today_iso(),
+        },
+        prompt_blocks=assembly.blocks,
+        block_order=assembly.block_order,
+    )
+    parsed = _extract_json_object(raw)
+    if not parsed:
+        return None
+    suggestions = [
+        item
+        for item in (_normalize_ask_suggestion(row) for row in (parsed.get("suggestions") or []))
+        if item
+    ]
+    if len(suggestions) < 2:
+        return None
+    return suggestions[:4]
+
+
 def _serialize_plan(row: DailyCoachHabitPlan) -> dict[str, Any]:
     payload = row.context_payload if isinstance(getattr(row, "context_payload", None), dict) else {}
     available_concepts = [item for item in (payload.get("focus_concepts") or []) if isinstance(item, dict)]
@@ -816,6 +943,7 @@ def _serialize_plan(row: DailyCoachHabitPlan) -> dict[str, Any]:
         option_sets=option_sets,
     )
     selected_habits = _selected_habits_from_option_sets(option_sets, selected_ids_by_concept)
+    ask_suggestions = _normalized_ask_suggestions(payload.get("ask_suggestions") or [])
     selected_ids = {str(item.get("id") or "").strip() for item in selected_habits}
     selected_concept_key = _normalize_concept_token((selected_concept or {}).get("concept_key"))
     current_options = []
@@ -840,6 +968,7 @@ def _serialize_plan(row: DailyCoachHabitPlan) -> dict[str, Any]:
         "summary": str(getattr(row, "summary", "") or "").strip() or None,
         "habits": selected_habits,
         "options": current_options,
+        "ask_suggestions": ask_suggestions[:4],
         "available_concepts": concepts_payload,
         "selected_concept_key": selected_concept_key,
         "selected_concept_label": str((selected_concept or {}).get("label") or "").strip() or None,
@@ -871,6 +1000,7 @@ def get_or_generate_daily_habit_plan(
     concept_key: str | None = None,
 ) -> dict[str, Any]:
     ensure_daily_habit_plan_schema()
+    ensure_builtin_prompt_templates(["daily_habit_plan", "daily_ask_suggestions"])
     today = tracker_today()
     with SessionLocal() as s:
         existing = (
@@ -913,12 +1043,18 @@ def get_or_generate_daily_habit_plan(
             and selected_concept_key
             and option_sets.get(selected_concept_key)
         ):
+            ask_suggestions = _normalized_ask_suggestions(existing_payload.get("ask_suggestions") or [])
+            if not ask_suggestions:
+                ask_suggestions = _generate_ask_suggestions_from_llm(user_id, context, selected_habits) or _fallback_ask_suggestions(
+                    {**context, "selected_habits": selected_habits}
+                )
             existing.context_payload = {
                 **context,
                 "habit_plan_version": 3,
                 "selected_concept_key": selected_concept_key,
                 "habit_option_sets": option_sets,
                 "selected_option_ids_by_concept": selected_ids_by_concept,
+                "ask_suggestions": ask_suggestions,
             }
             existing.habits = selected_habits
             s.add(existing)
@@ -935,6 +1071,7 @@ def get_or_generate_daily_habit_plan(
             )
             if item
         ]
+        generated_items = _items_for_concept(generated_items, concept_key=selected_concept_key)
         if selected_concept_key and generated_items:
             existing_options = option_sets.get(selected_concept_key, [])
             preserved_selected_for_concept = [
@@ -951,12 +1088,16 @@ def get_or_generate_daily_habit_plan(
         row.habits = selected_habits
         row.source = str(generated.get("source") or "fallback").strip() or "fallback"
         row.context_hash = hash_value
+        ask_suggestions = _generate_ask_suggestions_from_llm(user_id, context, selected_habits) or _fallback_ask_suggestions(
+            {**context, "selected_habits": selected_habits}
+        )
         row.context_payload = {
             **context,
             "habit_plan_version": 3,
             "selected_concept_key": selected_concept_key,
             "habit_option_sets": option_sets,
             "selected_option_ids_by_concept": selected_ids_by_concept,
+            "ask_suggestions": ask_suggestions,
         }
         row.generated_at = datetime.utcnow().replace(microsecond=0)
         s.add(row)
@@ -1023,12 +1164,23 @@ def update_daily_habit_plan_selection(
         else:
             selected_ids_by_concept.pop(selected_concept_key, None)
         row.habits = _selected_habits_from_option_sets(option_sets, selected_ids_by_concept)
+        ask_context = {
+            **payload,
+            "selected_focus_concept": selected_concept,
+            "selected_concept_key": selected_concept_key,
+        }
+        ask_suggestions = _generate_ask_suggestions_from_llm(
+            user_id,
+            ask_context,
+            row.habits,
+        ) or _fallback_ask_suggestions({**ask_context, "selected_habits": row.habits})
         row.context_payload = {
             **payload,
             "habit_plan_version": 3,
             "selected_concept_key": selected_concept_key,
             "habit_option_sets": option_sets,
             "selected_option_ids_by_concept": selected_ids_by_concept,
+            "ask_suggestions": ask_suggestions,
         }
         row.updated_at = datetime.utcnow().replace(microsecond=0)
         s.add(row)

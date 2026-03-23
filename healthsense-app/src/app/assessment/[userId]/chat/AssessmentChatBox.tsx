@@ -587,13 +587,6 @@ export default function AssessmentChatBox({
   const insightHasVideo = Boolean(insightVideoUrl);
   const insightHasAudio = Boolean(insightAudioUrl);
   const insightHasRead = Boolean(insightReadBody);
-  const insightLabel = String(
-    insightAvatar?.title ||
-      coachInsight?.concept_label ||
-      insightContent?.title ||
-      coachInsight?.pillar_label ||
-      "",
-  ).trim();
   const dailyHabitSelectedConceptKey = String(dailyHabitPlan?.selected_concept_key || "").trim();
   const dailyHabitOptions = useMemo(
     () => (Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : []),
@@ -639,36 +632,15 @@ export default function AssessmentChatBox({
       )
     : [];
   const askPromptSuggestions = useMemo(() => {
-    const suggestions: Array<{ label: string; text: string }> = [];
-    const seen = new Set<string>();
-
-    const pushSuggestion = (label: string, text: string) => {
-      const normalizedLabel = String(label || "").trim();
-      const normalizedText = String(text || "").trim();
-      if (!normalizedLabel || !normalizedText) return;
-      const key = `${normalizedLabel.toLowerCase()}::${normalizedText.toLowerCase()}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-      suggestions.push({ label: normalizedLabel, text: normalizedText });
-    };
-
-    visibleDailyHabitConcepts.forEach((concept) => {
-      const label = String(concept?.label || concept?.concept_key || "").trim();
-      const signal = String(concept?.signal || "").trim().toLowerCase();
-      if (!label) return;
-      if (signal === "not_logged_today") {
-        pushSuggestion(label, `How should I track ${label.toLowerCase()} today?`);
-        return;
-      }
-      if (signal === "needs_support") {
-        pushSuggestion(label, `What is one simple step to improve ${label.toLowerCase()}?`);
-        return;
-      }
-      pushSuggestion(label, `How can I improve ${label.toLowerCase()} today?`);
-    });
-
-    return suggestions.slice(0, 4);
-  }, [visibleDailyHabitConcepts]);
+    const raw = Array.isArray(dailyHabitPlan?.ask_suggestions) ? dailyHabitPlan.ask_suggestions : [];
+    return raw
+      .map((item) => ({
+        label: String(item?.label || "").trim(),
+        text: String(item?.text || "").trim(),
+      }))
+      .filter((item) => item.label && item.text)
+      .slice(0, 4);
+  }, [dailyHabitPlan?.ask_suggestions]);
   const homePanelHeightClass =
     homeSurface === "ask"
       ? "h-[48vh] min-h-[18rem] max-h-[29rem]"
@@ -1676,9 +1648,6 @@ export default function AssessmentChatBox({
                 {coachInsightLoading && coachInsight ? (
                   <p className="text-sm text-[#6b6257]">Loading concept insight…</p>
                 ) : null}
-                {insightLabel ? (
-                  <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">{insightLabel}</p>
-                ) : null}
                 {insightHasVideo || insightHasAudio || insightHasRead ? (
                   <>
                     {insightMode === "video" && insightHasVideo ? (
@@ -1760,16 +1729,15 @@ export default function AssessmentChatBox({
             )
           ) : homeSurface === "habits" ? (
             <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
-              <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Today&apos;s habits</p>
               {dailyHabitPlanLoading && !dailyHabitPlan ? (
-                <p className="mt-3 text-sm text-[#6b6257]">
+                <p className="text-sm text-[#6b6257]">
                   Reviewing your tracker and preparing today&apos;s habit steps…
                 </p>
               ) : dailyHabitPlanError && !dailyHabitPlan ? (
-                <p className="mt-3 text-sm text-[#8a3e1a]">{dailyHabitPlanError}</p>
+                <p className="text-sm text-[#8a3e1a]">{dailyHabitPlanError}</p>
               ) : (
                 <>
-                  <div className="mt-4">
+                  <div>
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
@@ -1814,12 +1782,7 @@ export default function AssessmentChatBox({
                   </div>
 
                   <div className="mt-4">
-                    <p className="text-lg font-semibold text-[#1e1b16]">
-                      {dailyHabitActiveTag === SELECTED_HABITS_TAG
-                        ? "Selected habits"
-                        : dailyHabitActiveConceptLabel || "Habit ideas"}
-                    </p>
-                    <div className="mt-3 space-y-2">
+                    <div className="space-y-2">
                       {dailyHabitActiveTag === SELECTED_HABITS_TAG ? (
                         dailyHabitSelected.length ? (
                           dailyHabitSelected.map((habit, index) => {

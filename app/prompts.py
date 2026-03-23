@@ -19,6 +19,7 @@ Index (helper → purpose → used by):
 - assessment_scores_prompt: assessment score narrative → reporting.py (_score_narrative_from_llm)
 - assessment_completion_summary_prompt: short end-of-assessment spoken summary → pending audio/avatar flow
 - daily_habit_plan: daily coach-home habits generated from tracker + OKR context → coach home habits panel
+- daily_ask_suggestions: daily coach-home ask suggestions generated from tracker + OKR context → coach home ask panel
 - okr_narrative_prompt: OKR narrative → reporting.py (_okr_narrative_from_llm)
 - assessment_narrative_prompt: assessment narrative → assessor.py
 - assessor_system_prompt: assessor system message → assessor.py
@@ -91,7 +92,28 @@ BUILTIN_PROMPT_TEMPLATE_DEFAULTS: Dict[str, Dict[str, Any]] = {
             "Use British English. Do not mention JSON, scores, data tables, or being an AI."
         ),
         "note": "Runtime builtin template for coach-home daily habits generated from tracker context.",
-    }
+    },
+    "daily_ask_suggestions": {
+        "touchpoint": "daily_ask_suggestions",
+        "okr_scope": "pillar",
+        "programme_scope": "none",
+        "response_format": "json",
+        "model_override": None,
+        "is_active": True,
+        "block_order": ["system", "locale", "context", "scores", "okr", "history", "task"],
+        "include_blocks": ["system", "locale", "context", "scores", "okr", "history", "task"],
+        "task_block": (
+            "Create coach-home Ask suggestions. Return STRICT JSON only with this shape: "
+            "{\"suggestions\":[{\"label\":\"...\",\"text\":\"...\"}]}. "
+            "Return 3 to 4 suggestions. Base them on how the user has been tracking recently, what looks off track, "
+            "what they may want to understand better, and where they may need help today. "
+            "Do not simply repeat concept names as labels. Each label should be short, natural, and under 4 words. "
+            "Each text should be a single question the user could send to their coach, in natural British English, under 18 words. "
+            "Focus on likely user intent: what to do next, why something is slipping, how to recover today, how to stay consistent. "
+            "Do not mention JSON, scores, data tables, or being an AI."
+        ),
+        "note": "Runtime builtin template for coach-home Ask suggestions generated from tracker context.",
+    },
 }
 
 def _prompt_log_debug_enabled() -> bool:
@@ -1162,6 +1184,7 @@ def build_prompt(
     - initial_habit_steps_generator
     - assessment_okr_structured
     - daily_habit_plan
+    - daily_ask_suggestions
     - sunday_daily
     - sunday_actions (legacy alias)
     - tuesday
@@ -1523,6 +1546,82 @@ def build_prompt(
         return _prompt_assembly(
             "daily_habit_plan",
             "daily_habit_plan",
+            parts,
+            meta=_merge_template_meta({}, template),
+            block_order_override=order_override or settings.get("default_block_order"),
+        )
+    if tp == "daily_ask_suggestions":
+        timeframe = data.get("timeframe") or "today"
+        pillar_scores = data.get("scores") or []
+        weakest_pillar = data.get("weakest_pillar") or {}
+        focus_concepts = data.get("focus_concepts") or []
+        selected_focus_concept = data.get("selected_focus_concept") or {}
+        selected_pillar = data.get("selected_pillar") or {}
+        okr_context = data.get("okr_context") or {}
+        selected_habits = data.get("selected_habits") or []
+        context_extras = (
+            f"Weakest pillar={json.dumps(weakest_pillar, ensure_ascii=False)}; "
+            f"Selected pillar={json.dumps(selected_pillar, ensure_ascii=False)}; "
+            f"Selected concept={json.dumps(selected_focus_concept, ensure_ascii=False)}; "
+            f"Plan date={data.get('plan_date') or ''}"
+        )
+        history_lines: List[str] = []
+        if focus_concepts:
+            history_lines.append("Recent tracker focus:")
+            for item in focus_concepts:
+                if not isinstance(item, dict):
+                    continue
+                label = str(item.get("label") or item.get("concept_key") or "").strip()
+                signal = str(item.get("signal") or "").strip()
+                target = str(item.get("target_label") or "").strip()
+                latest = str(item.get("latest_value") or "").strip()
+                if not label:
+                    continue
+                bits = [signal] if signal else []
+                if latest:
+                    bits.append(f"latest={latest}")
+                if target:
+                    bits.append(target)
+                suffix = f" ({'; '.join(bits)})" if bits else ""
+                history_lines.append(f"- {label}{suffix}")
+        if selected_habits:
+            history_lines.append("Currently selected habits:")
+            for item in selected_habits[:5]:
+                if isinstance(item, dict):
+                    title = str(item.get("title") or "").strip()
+                else:
+                    title = str(item or "").strip()
+                if title:
+                    history_lines.append(f"- {title}")
+        if (okr_context or {}).get("habit_steps"):
+            history_lines.append("Active KR habit steps:")
+            for step in (okr_context.get("habit_steps") or [])[:5]:
+                step_text = str(step or "").strip()
+                if step_text:
+                    history_lines.append(f"- {step_text}")
+        parts: List[tuple[str, str]] = [
+            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
+            ("locale", settings.get("locale_block") or locale_block(locale)),
+            ("context", context_block("daily_ask_suggestions", "coach home ask suggestions", timeframe=str(timeframe), channel="App", extras=context_extras)),
+            ("scores", scores_block(pillar_scores) if pillar_scores else ""),
+            ("okr", okr_block(okr_context) if okr_context else ""),
+            ("history", history_block("daily tracker, current habit focus, and selected habits", history_lines) if history_lines else ""),
+            (
+                "task",
+                (template or {}).get("task_block")
+                or task_block(
+                    "Create ask suggestions for the coach home screen in strict JSON.",
+                    constraints=(
+                        "Return only {suggestions}. "
+                        "Provide 3 to 4 short, useful suggestion questions the user might want to ask today."
+                    ),
+                ),
+            ),
+        ]
+        parts, order_override = _apply_prompt_template(parts, template)
+        return _prompt_assembly(
+            "daily_ask_suggestions",
+            "daily_ask_suggestions",
             parts,
             meta=_merge_template_meta({}, template),
             block_order_override=order_override or settings.get("default_block_order"),

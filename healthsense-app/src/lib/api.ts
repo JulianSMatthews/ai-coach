@@ -346,6 +346,11 @@ export type DailyHabitPlanConcept = {
   is_selected?: boolean;
 };
 
+export type DailyHabitPlanAskSuggestion = {
+  label?: string | null;
+  text?: string | null;
+};
+
 export type DailyHabitPlanResponse = {
   user_id?: number;
   plan_date?: string | null;
@@ -355,6 +360,7 @@ export type DailyHabitPlanResponse = {
   summary?: string | null;
   habits?: DailyHabitPlanItem[];
   options?: DailyHabitPlanItem[];
+  ask_suggestions?: DailyHabitPlanAskSuggestion[];
   available_concepts?: DailyHabitPlanConcept[];
   selected_concept_key?: string | null;
   selected_concept_label?: string | null;
