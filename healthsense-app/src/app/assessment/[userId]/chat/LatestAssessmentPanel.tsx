@@ -158,6 +158,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary, coachPro
           ? `Complete ${activeLabel || "yesterday"} to update this week's score`
           : "Complete today to start this week's score"
         : "No completed tracker days last week";
+  const hasIntroMessage = Boolean(String(coachProductAvatar?.url || "").trim());
 
   const refreshSummary = async () => {
     const res = await fetch(`/api/pillar-tracker/summary?userId=${encodeURIComponent(userId)}`, {
@@ -297,10 +298,22 @@ export default function LatestAssessmentPanel({ userId, initialSummary, coachPro
             <button
               type="button"
               onClick={() => setScoreCardOpen(true)}
-              className="pointer-events-auto rounded-full"
+              className="pointer-events-auto flex flex-col items-center gap-1 rounded-full"
               aria-label="Open How HealthSense works"
             >
-              <CombinedLogoRing value={combinedScore} />
+              <div className="relative">
+                <CombinedLogoRing value={combinedScore} />
+                {hasIntroMessage ? (
+                  <span className="absolute -right-1 top-0 flex h-5 w-5 items-center justify-center rounded-full border border-white bg-[var(--accent)] shadow-sm">
+                    <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                  </span>
+                ) : null}
+              </div>
+              {hasIntroMessage ? (
+                <span className="rounded-full border border-[#e7e1d6] bg-white/95 px-2.5 py-1 text-[10px] leading-none text-[#5d5348] shadow-sm">
+                  Message available
+                </span>
+              ) : null}
             </button>
           </div>
         </div>
@@ -314,6 +327,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary, coachPro
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.18em] text-[#6b6257]">HealthSense</p>
                   <p className="mt-0.5 text-base font-semibold text-[#1e1b16]">How HealthSense works</p>
+                  <p className="mt-1 text-xs text-[#6b6257]">{`HealthSense score ${combinedScore}/100`}</p>
                 </div>
                 <button
                   type="button"
