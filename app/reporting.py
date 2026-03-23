@@ -22,6 +22,7 @@ from .okr import (
     _guess_concept_from_description,
     _normalize_concept_key,
 )
+from .pillar_tracker import PILLAR_TRACKER_CONFIG, _value_meets_threshold
 from .models import (
     AssessmentRun,
     AssessmentNarrative,
@@ -5222,6 +5223,18 @@ def _collect_progress_rows(
                 entry_actual = getattr(latest_entry, "actual_num", None) if latest_entry else None
                 baseline_val = kr.baseline_num if kr.baseline_num is not None else state_val
                 actual_val = entry_actual if entry_actual is not None else (kr.actual_num if kr.actual_num is not None else state_val)
+                target_val = kr.target_num
+                status_on_track = None
+                status_label = None
+                tracker_defs = PILLAR_TRACKER_CONFIG.get(str(getattr(obj, "pillar_key", "") or "").strip().lower(), ())
+                tracker_def = next((item for item in tracker_defs if item.concept_key == concept_key), None)
+                actual_num = _safe_float(actual_val)
+                target_num = _safe_float(target_val)
+                if tracker_def is not None and actual_num is not None and target_num is not None:
+                    status_on_track = _value_meets_threshold(tracker_def.target_direction, target_num, actual_num)
+                    status_label = "On track" if status_on_track else "Behind pace"
+                elif actual_num is None:
+                    status_label = "No update"
                 _progress_debug(
                     "kr_baseline_choice",
                     {
@@ -5242,10 +5255,12 @@ def _collect_progress_rows(
                     "description": kr.description or "",
                     "id": kr.id,
                     "baseline": baseline_val,
-                    "target": kr.target_num,
+                    "target": target_val,
                     "unit": kr.unit,
                     "metric_label": kr.metric_label,
                     "actual": actual_val,
+                    "okr_on_track": status_on_track,
+                    "okr_status_label": status_label,
                     "habit_steps": steps_by_kr.get(int(kr.id), []),
                 })
 

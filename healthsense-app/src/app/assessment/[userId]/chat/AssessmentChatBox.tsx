@@ -632,6 +632,7 @@ export default function AssessmentChatBox({
   const insightHasVideo = Boolean(insightVideoUrl);
   const insightHasAudio = Boolean(insightAudioUrl);
   const insightHasRead = Boolean(insightReadBody);
+  const insightMediaKey = `${insightSelectedConceptKey || insightActiveConceptKey || "insight"}:${insightVideoUrl || insightAudioUrl || insightReadBody.slice(0, 32)}`;
   const dailyHabitSelectedConceptKey = String(dailyHabitPlan?.selected_concept_key || "").trim();
   const dailyHabitDefaultView = String(dailyHabitPlan?.default_habits_view || "").trim();
   const dailyHabitOptions = useMemo(
@@ -723,6 +724,20 @@ export default function AssessmentChatBox({
       return preferredTag;
     });
   }, [visibleInsightConcepts, insightSelectedConceptKey]);
+
+  useEffect(() => {
+    if (insightHasVideo) {
+      setInsightMode("video");
+      return;
+    }
+    if (insightHasAudio) {
+      setInsightMode("listen");
+      return;
+    }
+    if (insightHasRead) {
+      setInsightMode("read");
+    }
+  }, [insightSelectedConceptKey, insightVideoUrl, insightAudioUrl, insightReadBody, insightHasVideo, insightHasAudio, insightHasRead]);
 
   useEffect(() => {
     if (insightHasVideo) {
@@ -1712,6 +1727,7 @@ export default function AssessmentChatBox({
                   <>
                     {insightMode === "video" && insightHasVideo ? (
                       <video
+                        key={`video-${insightMediaKey}`}
                         controls
                         preload="metadata"
                         playsInline
@@ -1722,14 +1738,14 @@ export default function AssessmentChatBox({
                       </video>
                     ) : null}
                     {insightMode === "listen" && insightHasAudio ? (
-                      <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                      <div key={`audio-${insightMediaKey}`} className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
                         <audio className="w-full" controls preload="metadata">
                           <source src={insightAudioUrl} />
                         </audio>
                       </div>
                     ) : null}
                     {insightMode === "read" && insightHasRead ? (
-                      <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                      <div key={`read-${insightMediaKey}`} className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
                         <p className="whitespace-pre-wrap text-sm leading-6 text-[#6b6257]">{insightReadBody}</p>
                       </div>
                     ) : null}

@@ -438,7 +438,20 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
                         {krs.length ? (
                           <div className="mt-1.5 divide-y divide-[#eadfcf] rounded-lg bg-white/80">
                             {krs.map((kr, krIndex) => {
-                              const status = progressStatus(kr?.actual, kr?.target, kr?.baseline);
+                              const backendStatusLabel = String(kr?.okr_status_label || "").trim();
+                              const status = backendStatusLabel
+                                ? {
+                                    label: backendStatusLabel,
+                                    pct: null,
+                                    tone:
+                                      backendStatusLabel === "On track"
+                                        ? "#4e7a1f"
+                                        : backendStatusLabel === "Behind pace"
+                                          ? "#b55b1d"
+                                          : "#6b6257",
+                                    chipBg: "",
+                                  }
+                                : progressStatus(kr?.actual, kr?.target, kr?.baseline);
                               const statusTone =
                                 status.label === "On track"
                                   ? "text-[#4e7a1f]"

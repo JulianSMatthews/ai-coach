@@ -104,6 +104,8 @@ export type ProgressResponse = {
       target?: number | null;
       unit?: string | null;
       metric_label?: string | null;
+      okr_on_track?: boolean | null;
+      okr_status_label?: string | null;
       habit_steps?: Array<{
         id?: number;
         text?: string;
