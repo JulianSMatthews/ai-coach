@@ -422,19 +422,12 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
                         key={`okr-progress-${pillarKey || rowIndex}`}
                         className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4"
                       >
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">
-                              {String(row?.pillar || palette.label || "Pillar").trim() || "Pillar"}
-                            </p>
-                            {objective ? (
-                              <p className="mt-1 text-sm font-semibold text-[#1e1b16]">{objective}</p>
-                            ) : null}
-                          </div>
-                          {row?.cycle_label ? (
-                            <span className="text-[11px] uppercase tracking-[0.16em] text-[#8c7f70]">
-                              {row.cycle_label}
-                            </span>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">
+                            {String(row?.pillar || palette.label || "Pillar").trim() || "Pillar"}
+                          </p>
+                          {objective ? (
+                            <p className="mt-1 text-sm font-semibold text-[#1e1b16]">{objective}</p>
                           ) : null}
                         </div>
 
