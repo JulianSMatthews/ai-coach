@@ -892,12 +892,6 @@ export default function AssessmentChatBox({
     insightRequestIdRef.current = requestId;
     setCoachInsightLoading(true);
     setCoachInsightError(null);
-    if (normalizedConceptKey) {
-      setCoachInsight((current) => {
-        const currentConceptKey = String(current?.concept_key || "").trim();
-        return currentConceptKey === normalizedConceptKey ? current : null;
-      });
-    }
     try {
       const params = new URLSearchParams({ userId });
       if (normalizedConceptKey) {

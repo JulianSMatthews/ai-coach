@@ -335,6 +335,15 @@ export default async function AssessmentChatPage(props: PageProps) {
       <TextScale defaultScale={textScale} />
 
       <section className="space-y-3 sm:space-y-4">
+        {pillarTrackerSummary ? (
+          <LatestAssessmentPanel
+            userId={userId}
+            initialSummary={pillarTrackerSummary}
+            initialTheme={themePreference}
+            appIntroAvatar={appIntroAvatar}
+            appIntroHelpVideos={appIntroHelpVideos}
+          />
+        ) : null}
         {chatIntroText ? <p className="text-sm text-[#6b6257]">{chatIntroText}</p> : null}
         <AssessmentChatBox
           userId={userId}
@@ -346,15 +355,6 @@ export default async function AssessmentChatPage(props: PageProps) {
           coachProductAvatar={coachProductAvatar}
           introAvatarEnabledOverride={introAvatarOverride}
         />
-        {pillarTrackerSummary ? (
-              <LatestAssessmentPanel
-                userId={userId}
-                initialSummary={pillarTrackerSummary}
-                initialTheme={themePreference}
-                appIntroAvatar={appIntroAvatar}
-                appIntroHelpVideos={appIntroHelpVideos}
-              />
-            ) : null}
       </section>
     </PageShell>
   );

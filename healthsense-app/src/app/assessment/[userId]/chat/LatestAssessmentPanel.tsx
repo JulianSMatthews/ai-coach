@@ -180,13 +180,13 @@ export default function LatestAssessmentPanel({
           : "Complete today to start this week's score"
         : "No completed tracker days last week";
   const introVideoOptions = [
-    { key: "intro" as const, label: "Intro", avatar: appIntroAvatar },
+    { key: "intro" as const, label: "General", avatar: appIntroAvatar },
     { key: "habits" as const, label: "Habits", avatar: appIntroHelpVideos?.habits ?? null },
     { key: "insight" as const, label: "Insight", avatar: appIntroHelpVideos?.insight ?? null },
     { key: "ask" as const, label: "Ask", avatar: appIntroHelpVideos?.ask ?? null },
     {
       key: "dailyTracking" as const,
-      label: "Daily tracking",
+      label: "Tracking",
       avatar: appIntroHelpVideos?.dailyTracking ?? null,
     },
   ].filter((item) => Boolean(String(item.avatar?.url || "").trim()));
@@ -425,50 +425,29 @@ export default function LatestAssessmentPanel({
                     <source src={String(activeIntroVideo.avatar?.url || "").trim()} />
                   </video>
                   {introVideoOptions.length > 1 ? (
-                    <div className="flex flex-wrap gap-2">
-                      {introVideoOptions.map((option) => {
-                        const active = option.key === activeIntroVideo.key;
-                        return (
-                          <button
-                            key={option.key}
-                            type="button"
-                            onClick={() => setSelectedIntroVideoKey(option.key)}
-                            className={`rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                              active
-                                ? "border-[#d6c3ab] bg-[#f6ede3] text-[#5d472d]"
-                                : "border-[#e7e1d6] bg-white text-[#5d5348]"
-                            }`}
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      })}
+                    <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3">
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">Help videos</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {introVideoOptions.map((option) => {
+                          const active = option.key === activeIntroVideo.key;
+                          return (
+                            <button
+                              key={option.key}
+                              type="button"
+                              onClick={() => setSelectedIntroVideoKey(option.key)}
+                              className={`rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                                active
+                                  ? "border-[#d6c3ab] bg-[#f6ede3] text-[#5d472d]"
+                                  : "border-[#e7e1d6] bg-white text-[#5d5348]"
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
                     </div>
                   ) : null}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setSetupOpen((current) => !current)}
-                      className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                        setupOpen
-                          ? "border-[#d6c3ab] bg-[#f6ede3] text-[#5d472d]"
-                          : "border-[#e7e1d6] bg-white text-[#5d5348]"
-                      }`}
-                    >
-                      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" aria-hidden="true">
-                        <path
-                          d="M12 8.5a3.5 3.5 0 1 0 0 7a3.5 3.5 0 0 0 0-7Zm8 3.5l-1.71-.57a6.76 6.76 0 0 0-.46-1.1l.82-1.6l-1.73-1.73l-1.6.82c-.35-.18-.72-.33-1.1-.46L13 4h-2l-.57 1.71c-.38.13-.75.28-1.1.46l-1.6-.82L5 7.08l.82 1.6c-.18.35-.33.72-.46 1.1L3.65 10v2l1.71.57c.13.38.28.75.46 1.1L5 15.27L6.73 17l1.6-.82c.35.18.72.33 1.1.46L11 18.35h2l.57-1.71c.38-.13.75-.28 1.1-.46l1.6.82l1.73-1.73l-.82-1.6c.18-.35.33-.72.46-1.1L20 14v-2Z"
-                          fill="none"
-                          stroke="currentColor"
-                          strokeWidth="1.35"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                        />
-                      </svg>
-                      Setup
-                    </button>
-                    {themeSaving ? <span className="text-[11px] text-[#6b6257]">Saving…</span> : null}
-                  </div>
                   {setupOpen ? (
                     <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3">
                       <p className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">Mode</p>
@@ -508,13 +487,38 @@ export default function LatestAssessmentPanel({
             </div>
 
             <div className="shrink-0 border-t border-[#efe7db] px-3 py-3 sm:px-5">
-              <button
-                type="button"
-                onClick={() => setScoreCardOpen(false)}
-                className="w-full rounded-full border border-[#d9cdbb] bg-white px-4 py-2.5 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
-              >
-                Close
-              </button>
+              {themeSaving ? <p className="mb-2 text-center text-[11px] text-[#6b6257]">Saving…</p> : null}
+              {themeError && !setupOpen ? <p className="mb-2 text-center text-xs text-[#8a3e1a]">{themeError}</p> : null}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSetupOpen((current) => !current)}
+                  className={`inline-flex items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-center text-[11px] font-semibold uppercase tracking-[0.16em] ${
+                    setupOpen
+                      ? "border-[#d6c3ab] bg-[#f6ede3] text-[#5d472d]"
+                      : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                  }`}
+                >
+                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" aria-hidden="true">
+                    <path
+                      d="M12 8.5a3.5 3.5 0 1 0 0 7a3.5 3.5 0 0 0 0-7Zm8 3.5l-1.71-.57a6.76 6.76 0 0 0-.46-1.1l.82-1.6l-1.73-1.73l-1.6.82c-.35-.18-.72-.33-1.1-.46L13 4h-2l-.57 1.71c-.38.13-.75.28-1.1.46l-1.6-.82L5 7.08l.82 1.6c-.18.35-.33.72-.46 1.1L3.65 10v2l1.71.57c.13.38.28.75.46 1.1L5 15.27L6.73 17l1.6-.82c.35.18.72.33 1.1.46L11 18.35h2l.57-1.71c.38-.13.75-.28 1.1-.46l1.6.82l1.73-1.73l-.82-1.6c.18-.35.33-.72.46-1.1L20 14v-2Z"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.35"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  Setup
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setScoreCardOpen(false)}
+                  className="w-full rounded-full border border-[#d9cdbb] bg-white px-4 py-2.5 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
+                >
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>
