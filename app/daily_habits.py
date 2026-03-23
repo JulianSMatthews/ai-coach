@@ -695,6 +695,54 @@ def _selected_habits_from_option_sets(
     return _dedupe_habit_plan_items(items)
 
 
+def _merge_concept_option_set(
+    *,
+    existing_items: list[dict[str, Any]],
+    selected_items: list[dict[str, Any]],
+    generated_items: list[dict[str, Any]],
+    force: bool,
+) -> list[dict[str, Any]]:
+    selected_text_keys = {
+        (
+            str(item.get("title") or "").strip().lower(),
+            str(item.get("detail") or "").strip().lower(),
+        )
+        for item in selected_items
+        if str(item.get("title") or "").strip() or str(item.get("detail") or "").strip()
+    }
+    selected_ids = {
+        str(item.get("id") or "").strip()
+        for item in selected_items
+        if str(item.get("id") or "").strip()
+    }
+    filtered_generated = [
+        item
+        for item in generated_items
+        if (
+            str(item.get("title") or "").strip().lower(),
+            str(item.get("detail") or "").strip().lower(),
+        ) not in selected_text_keys
+    ]
+    generated_ids = {
+        str(item.get("id") or "").strip()
+        for item in filtered_generated
+        if str(item.get("id") or "").strip()
+    }
+    if force:
+        preserved_selected = [
+            item
+            for item in existing_items
+            if str(item.get("id") or "").strip() in selected_ids
+        ]
+        return _dedupe_habit_plan_items([*preserved_selected, *filtered_generated])
+    preserved_existing = [
+        item
+        for item in existing_items
+        if str(item.get("id") or "").strip() not in generated_ids
+    ]
+    return _dedupe_habit_plan_items([*selected_items, *filtered_generated, *preserved_existing])
+
+
 def _resolve_selected_concept(
     payload: dict[str, Any],
     *,
@@ -1080,13 +1128,13 @@ def get_or_generate_daily_habit_plan(
         )
         selected_habits = _selected_habits_from_option_sets(option_sets, selected_ids_by_concept)
         selected_concept_key = _normalize_concept_token(selected_concept.get("concept_key"))
+        existing_options_for_concept = option_sets.get(selected_concept_key or "", [])
         if (
             existing
             and not force
             and _habit_plan_version(existing_payload) >= _CURRENT_HABIT_PLAN_VERSION
-            and str(getattr(existing, "context_hash", "") or "") == hash_value
             and selected_concept_key
-            and option_sets.get(selected_concept_key)
+            and existing_options_for_concept
         ):
             ask_suggestions = _normalized_ask_suggestions(existing_payload.get("ask_suggestions") or [])
             if not ask_suggestions:
@@ -1102,6 +1150,7 @@ def get_or_generate_daily_habit_plan(
                 "ask_suggestions": ask_suggestions,
             }
             existing.habits = selected_habits
+            existing.context_hash = hash_value
             s.add(existing)
             s.commit()
             s.refresh(existing)
@@ -1122,8 +1171,11 @@ def get_or_generate_daily_habit_plan(
             preserved_selected_for_concept = [
                 item for item in selected_habits if _normalize_concept_token(item.get("concept_key")) == selected_concept_key
             ]
-            option_sets[selected_concept_key] = _dedupe_habit_plan_items(
-                [*preserved_selected_for_concept, *generated_items, *existing_options]
+            option_sets[selected_concept_key] = _merge_concept_option_set(
+                existing_items=existing_options,
+                selected_items=preserved_selected_for_concept,
+                generated_items=generated_items,
+                force=bool(force),
             )
         row = existing or DailyCoachHabitPlan(user_id=int(user_id), plan_date=today)
         row.pillar_key = str((context.get("selected_pillar") or {}).get("pillar_key") or "").strip() or None
