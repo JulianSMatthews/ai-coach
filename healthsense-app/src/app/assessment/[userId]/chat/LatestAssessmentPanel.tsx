@@ -681,9 +681,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
                   >
                     {saving
                       ? "Saving tracker…"
-                      : savingPastDay
-                        ? `Save ${activeLabel ? activeLabel.toLowerCase() : "yesterday"}'s tracker`
-                        : "Save today's tracker"}
+                      : "Save"}
                   </button>
                 </div>
               ) : (
