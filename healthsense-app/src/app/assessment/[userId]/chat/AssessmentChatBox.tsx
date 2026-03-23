@@ -607,6 +607,14 @@ export default function AssessmentChatBox({
     () => (Array.isArray(dailyHabitPlan?.available_concepts) ? dailyHabitPlan.available_concepts : []),
     [dailyHabitPlan?.available_concepts],
   );
+  const visibleDailyHabitConcepts = useMemo(
+    () => dailyHabitConcepts.slice(0, 4),
+    [dailyHabitConcepts],
+  );
+  const visibleInsightConcepts = useMemo(
+    () => insightConcepts.slice(0, 4),
+    [insightConcepts],
+  );
   const dailyHabitBusy = dailyHabitPlanLoading || dailyHabitPlanSaving;
   const dailyHabitConceptLookup = useMemo(() => {
     const lookup = new Map<string, { label: string; pillarLabel: string }>();
@@ -644,37 +652,30 @@ export default function AssessmentChatBox({
       suggestions.push({ label: normalizedLabel, text: normalizedText });
     };
 
-    if (dailyHabitSelected.length) {
-      pushSuggestion(
-        "Selected habits",
-        "How can I stay consistent with my selected habits today?",
-      );
-    }
-
-    dailyHabitConcepts.forEach((concept) => {
+    visibleDailyHabitConcepts.forEach((concept) => {
       const label = String(concept?.label || concept?.concept_key || "").trim();
       const signal = String(concept?.signal || "").trim().toLowerCase();
       if (!label) return;
       if (signal === "not_logged_today") {
-        pushSuggestion(`Track ${label}`, `How should I track ${label.toLowerCase()} today?`);
+        pushSuggestion(label, `How should I track ${label.toLowerCase()} today?`);
         return;
       }
       if (signal === "needs_support") {
-        pushSuggestion(`Support ${label}`, `What is one simple step to improve ${label.toLowerCase()}?`);
+        pushSuggestion(label, `What is one simple step to improve ${label.toLowerCase()}?`);
         return;
       }
-      pushSuggestion(`Improve ${label}`, `How can I improve ${label.toLowerCase()} today?`);
+      pushSuggestion(label, `How can I improve ${label.toLowerCase()} today?`);
     });
 
-    return suggestions.slice(0, 5);
-  }, [dailyHabitConcepts, dailyHabitSelected]);
+    return suggestions.slice(0, 4);
+  }, [visibleDailyHabitConcepts]);
   const homePanelHeightClass =
     homeSurface === "ask"
       ? "h-[48vh] min-h-[18rem] max-h-[29rem]"
       : "h-[56vh] min-h-[22rem] max-h-[34rem]";
 
   useEffect(() => {
-    const validConceptKeys = dailyHabitConcepts
+    const validConceptKeys = visibleDailyHabitConcepts
       .map((concept) => String(concept?.concept_key || "").trim())
       .filter((key) => Boolean(key));
     const preferredTag = dailyHabitSelectedConceptKey || validConceptKeys[0] || "";
@@ -687,10 +688,10 @@ export default function AssessmentChatBox({
       }
       return preferredTag;
     });
-  }, [dailyHabitConcepts, dailyHabitSelectedConceptKey]);
+  }, [visibleDailyHabitConcepts, dailyHabitSelectedConceptKey]);
 
   useEffect(() => {
-    const validConceptKeys = insightConcepts
+    const validConceptKeys = visibleInsightConcepts
       .map((concept) => String(concept?.concept_key || "").trim())
       .filter((key) => Boolean(key));
     const preferredTag = insightSelectedConceptKey || validConceptKeys[0] || "";
@@ -700,7 +701,7 @@ export default function AssessmentChatBox({
       }
       return preferredTag;
     });
-  }, [insightConcepts, insightSelectedConceptKey]);
+  }, [visibleInsightConcepts, insightSelectedConceptKey]);
 
   useEffect(() => {
     if (insightHasVideo) {
@@ -1642,9 +1643,9 @@ export default function AssessmentChatBox({
               </div>
             ) : insightHasVideo || insightHasAudio || insightHasRead || insightConcepts.length ? (
               <div className="space-y-3">
-                {insightConcepts.length ? (
+                {visibleInsightConcepts.length ? (
                   <div className="flex flex-wrap gap-2">
-                    {insightConcepts.map((concept, index) => {
+                    {visibleInsightConcepts.map((concept, index) => {
                       const conceptKey = String(concept?.concept_key || "").trim();
                       const label = String(concept?.label || conceptKey || "").trim();
                       const active =
@@ -1782,7 +1783,7 @@ export default function AssessmentChatBox({
                       >
                         Selected habits
                       </button>
-                      {dailyHabitConcepts.map((concept, index) => {
+                      {visibleDailyHabitConcepts.map((concept, index) => {
                         const conceptKey = String(concept?.concept_key || "").trim();
                         const label = String(concept?.label || conceptKey || "").trim();
                         const active = conceptKey === dailyHabitActiveTag;
@@ -1839,17 +1840,13 @@ export default function AssessmentChatBox({
                                 disabled={!habitId || !conceptKey || dailyHabitBusy}
                                 className="w-full rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-left text-[#1e1b16] transition hover:border-[#d9cdbb] hover:bg-[#fffdf8] disabled:cursor-not-allowed disabled:opacity-60"
                               >
-                                <div className="flex items-start justify-between gap-3">
-                                  <div>
-                                    {title ? <p className="text-sm font-semibold">{title}</p> : null}
-                                    {detail ? <p className="mt-1 text-sm text-[#6b6257]">{detail}</p> : null}
-                                  </div>
-                                  {conceptLabel ? (
-                                    <span className="rounded-full border border-[#ece5d9] bg-[#fffaf3] px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-[#6b6257]">
-                                      {conceptLabel}
-                                    </span>
-                                  ) : null}
-                                </div>
+                                {title ? <p className="text-sm font-semibold">{title}</p> : null}
+                                {detail ? <p className="mt-1 text-sm text-[#6b6257]">{detail}</p> : null}
+                                {conceptLabel ? (
+                                  <p className="mt-2 text-[10px] uppercase tracking-[0.12em] text-[#8c7f70]">
+                                    {conceptLabel}
+                                  </p>
+                                ) : null}
                               </button>
                             );
                           })
@@ -1949,12 +1946,9 @@ export default function AssessmentChatBox({
                     <p className="text-sm text-[#6b6257]">Ask Gia a question and the latest reply will appear here.</p>
                   </div>
                 )}
-                {sending ? <p className="mt-3 text-sm text-[#6b6257]">Gia is replying…</p> : null}
-              </div>
-              <div className="mt-4 w-full">
                 {askPromptSuggestions.length && !askPromptTagsHidden ? (
-                  <div className="mb-3">
-                    <div className="flex flex-wrap gap-2">
+                  <div className="mt-3 rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3">
+                    <div className="flex flex-wrap gap-1.5">
                       {askPromptSuggestions.map((suggestion, index) => (
                         <button
                           key={`${suggestion.label}-${index}`}
@@ -1970,7 +1964,7 @@ export default function AssessmentChatBox({
                             });
                           }}
                           disabled={busy}
-                          className="rounded-full border border-[#d9cdbb] bg-white px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348] disabled:cursor-not-allowed disabled:opacity-50"
+                          className="rounded-full border border-[#d9cdbb] bg-white px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-[#5d5348] disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {suggestion.label}
                         </button>
@@ -1978,6 +1972,9 @@ export default function AssessmentChatBox({
                     </div>
                   </div>
                 ) : null}
+                {sending ? <p className="mt-3 text-sm text-[#6b6257]">Gia is replying…</p> : null}
+              </div>
+              <div className="mt-4 w-full">
                 <form onSubmit={onSubmit}>
                   <textarea
                     id="assessment-chat-input"

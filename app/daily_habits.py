@@ -848,6 +848,22 @@ def _serialize_plan(row: DailyCoachHabitPlan) -> dict[str, Any]:
     }
 
 
+def _latest_prior_daily_habit_plan(user_id: int, today: date) -> DailyCoachHabitPlan | None:
+    with SessionLocal() as s:
+        return (
+            s.execute(
+                select(DailyCoachHabitPlan)
+                .where(
+                    DailyCoachHabitPlan.user_id == int(user_id),
+                    DailyCoachHabitPlan.plan_date < today,
+                )
+                .order_by(desc(DailyCoachHabitPlan.plan_date), desc(DailyCoachHabitPlan.id))
+            )
+            .scalars()
+            .first()
+        )
+
+
 def get_or_generate_daily_habit_plan(
     user_id: int,
     *,
@@ -867,23 +883,24 @@ def get_or_generate_daily_habit_plan(
                 .order_by(desc(DailyCoachHabitPlan.id))
             )
             .scalars()
-            .first()
+                .first()
         )
-        existing_payload = existing.context_payload if existing and isinstance(getattr(existing, "context_payload", None), dict) else {}
-        preferred_concept_key = _normalize_concept_token(concept_key) or _normalize_concept_token(existing_payload.get("selected_concept_key"))
+        carryover = existing or _latest_prior_daily_habit_plan(user_id, today)
+        seed_payload = carryover.context_payload if carryover and isinstance(getattr(carryover, "context_payload", None), dict) else {}
+        preferred_concept_key = _normalize_concept_token(concept_key) or _normalize_concept_token(seed_payload.get("selected_concept_key"))
         context = _build_generation_context(user_id, selected_concept_key=preferred_concept_key)
         hash_value = _context_hash(context)
         selected_concept = context.get("selected_focus_concept") or {}
         available_concepts = [item for item in (context.get("focus_concepts") or []) if isinstance(item, dict)]
         option_sets = _habit_option_sets_from_state(
-            existing_payload,
+            seed_payload,
             available_concepts=available_concepts,
-            legacy_habits=(getattr(existing, "habits", None) if existing is not None else None),
+            legacy_habits=(getattr(carryover, "habits", None) if carryover is not None else None),
             default_selected_concept=selected_concept,
         )
         selected_ids_by_concept = _selected_ids_by_concept(
-            existing_payload,
-            row=existing,
+            seed_payload,
+            row=carryover,
             available_concepts=available_concepts,
             option_sets=option_sets,
         )

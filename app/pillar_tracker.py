@@ -282,6 +282,30 @@ def _editable_tracker_dates_for_pillar(pillar_key: str, current_day: date | None
     return dates
 
 
+def _last_week_anchor(current_day: date) -> date:
+    return current_day - timedelta(days=7)
+
+
+def _is_last_week_anchor(target_day: date, current_day: date) -> bool:
+    return start_of_week(target_day) == start_of_week(_last_week_anchor(current_day))
+
+
+def _week_has_completed_tracker_days(user_id: int, pillar_key: str, anchor: date) -> bool:
+    required_concepts = tracker_concepts_for_pillar(pillar_key)
+    entries_by_day = _load_week_entries(user_id, pillar_key, anchor)
+    return bool(_completed_days(entries_by_day, required_concepts))
+
+
+def _viewable_tracker_dates_for_pillar(user_id: int, pillar_key: str, current_day: date | None = None) -> list[date]:
+    today = current_day or tracker_today()
+    dates: list[date] = []
+    last_week = _last_week_anchor(today)
+    if _week_has_completed_tracker_days(user_id, pillar_key, last_week):
+        dates.append(last_week)
+    dates.extend(_editable_tracker_dates_for_pillar(pillar_key, current_day=today))
+    return dates
+
+
 def _format_tracker_day_label(target_day: date, current_day: date) -> str:
     if target_day == current_day:
         return "Today"
@@ -808,10 +832,11 @@ def _load_week_entries(user_id: int, pillar_key: str, anchor: date) -> dict[date
 
 
 def _resolve_tracker_detail_anchor(user_id: int, pillar_key: str, requested_anchor: date | None, current_day: date) -> date:
+    viewable_dates = _viewable_tracker_dates_for_pillar(user_id, pillar_key, current_day=current_day)
     editable_dates = _editable_tracker_dates_for_pillar(pillar_key, current_day=current_day)
-    if requested_anchor in editable_dates:
+    if requested_anchor in viewable_dates:
         return requested_anchor
-    if not editable_dates:
+    if not viewable_dates:
         return current_day
     default_anchor = current_day
     if len(editable_dates) > 1:
@@ -1019,6 +1044,9 @@ def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None
     tracker_score = _week_score(entries_by_day, required_concepts, evaluations_by_concept, week_days)
     completed_days = _completed_days(entries_by_day, required_concepts)
     editable_dates = _editable_tracker_dates_for_pillar(key, current_day=current_day)
+    viewable_dates = _viewable_tracker_dates_for_pillar(user_id, key, current_day=current_day)
+    is_editable = resolved_anchor in editable_dates
+    is_current_week = start_of_week(resolved_anchor) == start_of_week(current_day)
     current_summary = _summary_pillar_payload(
         pillar_key=key,
         entries_by_day=entries_by_day,
@@ -1127,11 +1155,13 @@ def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None
             "streak_days": current_summary.get("streak_days"),
             "week_start": week_days[0].isoformat(),
             "week_end": week_days[-1].isoformat(),
-            "today": resolved_anchor.isoformat(),
+            "today": current_day.isoformat(),
             "active_date": resolved_anchor.isoformat(),
-            "active_label": _format_tracker_day_label(resolved_anchor, current_day),
+            "active_label": "Last week" if _is_last_week_anchor(resolved_anchor, current_day) else _format_tracker_day_label(resolved_anchor, current_day),
             "current_date": current_day.isoformat(),
             "yesterday_catchup_available": len(editable_dates) > 1,
+            "is_editable": is_editable,
+            "is_current_week": is_current_week,
         },
         "days": [
             {
@@ -1147,10 +1177,11 @@ def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None
         "editable_dates": [
             {
                 "date": item.isoformat(),
-                "label": _format_tracker_day_label(item, current_day),
+                "label": "Last week" if _is_last_week_anchor(item, current_day) else _format_tracker_day_label(item, current_day),
                 "is_active": item == resolved_anchor,
+                "editable": item in editable_dates,
             }
-            for item in editable_dates
+            for item in viewable_dates
         ],
     }
 

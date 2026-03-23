@@ -245,6 +245,7 @@ export type PillarTrackerEditableDate = {
   date?: string;
   label?: string;
   is_active?: boolean;
+  editable?: boolean;
 };
 
 export type PillarTrackerConceptWeekDay = {
@@ -301,6 +302,8 @@ export type PillarTrackerPillar = {
   active_label?: string | null;
   current_date?: string | null;
   yesterday_catchup_available?: boolean;
+  is_editable?: boolean;
+  is_current_week?: boolean;
 };
 
 export type PillarTrackerSummaryResponse = {

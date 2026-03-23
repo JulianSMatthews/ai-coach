@@ -103,6 +103,19 @@ function CombinedLogoRing({ value }: { value: number }) {
   );
 }
 
+function WeeklyScoreRing({ value, tone }: { value?: number | null; tone: string }) {
+  const resolved = resolveScore(value);
+  if (resolved !== null) {
+    return <ScoreRing value={resolved} tone={tone} />;
+  }
+  return (
+    <div className="relative flex h-[84px] w-[84px] items-center justify-center">
+      <div className="h-[84px] w-[84px] rounded-full border-[8px] border-[#efe7db]" />
+      <span className="absolute text-lg font-semibold text-[#8c7f70]">—</span>
+    </div>
+  );
+}
+
 function normalizePillarKey(value?: string | null): string {
   const key = String(value || "").trim().toLowerCase();
   if (key.includes("nutri")) return "nutrition";
@@ -191,7 +204,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
   const combinedScore = (() => {
     const scores = pillars
-      .map((pillar) => resolveScore(pillar.score))
+      .map((pillar) => resolveScore(pillar.tracker_score))
       .filter((score): score is number => score !== null);
     if (!scores.length) return 0;
     return Math.round(scores.reduce((total, score) => total + score, 0) / scores.length);
@@ -213,6 +226,16 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
   const activeLabel = String(detail?.pillar?.active_label || "").trim();
   const currentDate = String(detail?.pillar?.current_date || "").trim();
   const savingPastDay = Boolean(activeDate && currentDate && activeDate !== currentDate);
+  const viewingCurrentWeek = detail?.pillar?.is_current_week !== false;
+  const canEditActiveWeek = detail?.pillar?.is_editable !== false;
+  const trackerScoreLabel =
+    detail?.pillar?.tracker_score !== null && detail?.pillar?.tracker_score !== undefined
+      ? `${detail?.pillar?.tracker_score}/100 ${viewingCurrentWeek ? "this week so far" : "last week"}`
+      : viewingCurrentWeek
+        ? savingPastDay
+          ? `Complete ${activeLabel || "yesterday"} to update this week's score`
+          : "Complete today to start this week's score"
+        : "No completed tracker days last week";
 
   const refreshSummary = async () => {
     const res = await fetch(`/api/pillar-tracker/summary?userId=${encodeURIComponent(userId)}`, {
@@ -331,7 +354,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
             {pillars.map((pillar) => {
               const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
               const palette = getPillarPalette(pillarKey);
-              const score = Number(pillar.score);
+              const score = resolveScore(pillar.tracker_score);
               return (
                 <button
                   key={pillarKey}
@@ -340,7 +363,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
                   className="rounded-2xl border border-[#efe7db] bg-white px-3 py-4 text-left transition hover:border-[#dccfbe]"
                 >
                   <div className="flex flex-col items-center text-center">
-                    <ScoreRing value={Number.isFinite(score) ? score : 0} tone={palette.accent} />
+                    <WeeklyScoreRing value={score} tone={palette.accent} />
                     <p className="mt-3 text-sm font-semibold text-[#1e1b16]">{pillar.label}</p>
                   </div>
                 </button>
@@ -362,143 +385,155 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
       </section>
 
       {scoreCardOpen ? (
-        <div className="fixed inset-0 z-40 flex items-end justify-center bg-black/30 px-3 py-3 sm:items-center sm:p-6">
-          <div className="w-full max-w-sm rounded-[28px] border border-[#e7e1d6] bg-white p-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)]">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">HealthSense</p>
-                <p className="mt-1 text-lg font-semibold text-[#1e1b16]">OKR progress</p>
+        <div className="fixed inset-0 z-40 flex items-stretch justify-center bg-black/30 sm:items-center sm:px-3 sm:py-3">
+          <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-sm flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
+            <div className="shrink-0 border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">HealthSense</p>
+                  <p className="mt-1 text-lg font-semibold text-[#1e1b16]">OKR progress</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setScoreCardOpen(false)}
+                  className="shrink-0 rounded-full border border-[#e7e1d6] bg-white px-3 py-2 text-xs uppercase tracking-[0.18em] text-[#5d5348]"
+                >
+                  Close
+                </button>
               </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-5">
+              <div className="flex flex-col items-center text-center">
+                <CombinedLogoRing value={combinedScore} />
+                <p className="mt-3 text-3xl font-semibold text-[#1e1b16]">{combinedScore}</p>
+                <p className="text-sm text-[#6b6257]">Combined HealthSense score</p>
+              </div>
+
+              <div className="mt-5 space-y-2">
+                {progressRows.length ? (
+                  progressRows.map((row, rowIndex) => {
+                    const pillarKey = normalizePillarKey(row?.pillar);
+                    const palette = getPillarPalette(pillarKey);
+                    const objective = String(row?.objective || "").trim();
+                    const krs = Array.isArray(row?.krs) ? row.krs : [];
+                    return (
+                      <div
+                        key={`okr-progress-${pillarKey || rowIndex}`}
+                        className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">
+                              {String(row?.pillar || palette.label || "Pillar").trim() || "Pillar"}
+                            </p>
+                            {objective ? (
+                              <p className="mt-1 text-sm font-semibold text-[#1e1b16]">{objective}</p>
+                            ) : null}
+                          </div>
+                          {row?.cycle_label ? (
+                            <span className="text-[11px] uppercase tracking-[0.16em] text-[#8c7f70]">
+                              {row.cycle_label}
+                            </span>
+                          ) : null}
+                        </div>
+
+                        {krs.length ? (
+                          <div className="mt-3 space-y-3">
+                            {krs.map((kr, krIndex) => {
+                              const status = progressStatus(kr?.actual, kr?.target, kr?.baseline);
+                              const pctLabel = status.pct !== null ? `${Math.round(status.pct * 100)}%` : "—";
+                              const barWidth = status.pct !== null ? `${Math.round(status.pct * 100)}%` : "4%";
+                              return (
+                                <div
+                                  key={`okr-${pillarKey || "pillar"}-${kr?.id || krIndex}`}
+                                  className="rounded-2xl border border-[#eadcc6] bg-white px-3 py-3"
+                                >
+                                  <p className="text-sm font-semibold text-[#1e1b16]">
+                                    {String(kr?.description || "Key result").trim() || "Key result"}
+                                  </p>
+                                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                                    <span
+                                      className="rounded-full px-2 py-0.5"
+                                      style={{ background: status.chipBg, color: status.tone }}
+                                    >
+                                      {status.label}
+                                    </span>
+                                    {kr?.metric_label ? (
+                                      <span className="text-[#6b6257]">{kr.metric_label}</span>
+                                    ) : null}
+                                  </div>
+                                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-[#6b6257]">
+                                    <div>
+                                      <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Base</p>
+                                      <p className="text-sm text-[#1e1b16]">{formatNumber(kr?.baseline)}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Current</p>
+                                      <p className="text-sm text-[#1e1b16]">{formatNumber(kr?.actual)}</p>
+                                    </div>
+                                    <div>
+                                      <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Target</p>
+                                      <p className="text-sm text-[#1e1b16]">{formatNumber(kr?.target)}</p>
+                                    </div>
+                                  </div>
+                                  <div className="mt-3 flex items-center gap-2">
+                                    <span className="text-xs font-semibold text-[#101828]">{pctLabel}</span>
+                                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#e4e7ec]">
+                                      <div
+                                        className="h-full rounded-full"
+                                        style={{ width: barWidth, background: palette.accent }}
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-sm text-[#6b6257]">No key results recorded yet.</p>
+                        )}
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4 text-sm text-[#6b6257]">
+                    No key results recorded yet.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="shrink-0 border-t border-[#efe7db] px-4 py-4 sm:px-5">
               <button
                 type="button"
                 onClick={() => setScoreCardOpen(false)}
-                className="rounded-full border border-[#e7e1d6] px-3 py-2 text-xs uppercase tracking-[0.18em] text-[#5d5348]"
+                className="w-full rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
               >
                 Close
               </button>
-            </div>
-
-            <div className="mt-5 flex flex-col items-center text-center">
-              <CombinedLogoRing value={combinedScore} />
-              <p className="mt-3 text-3xl font-semibold text-[#1e1b16]">{combinedScore}</p>
-              <p className="text-sm text-[#6b6257]">Combined HealthSense score</p>
-            </div>
-
-            <div className="mt-5 space-y-2">
-              {progressRows.length ? (
-                progressRows.map((row, rowIndex) => {
-                  const pillarKey = normalizePillarKey(row?.pillar);
-                  const palette = getPillarPalette(pillarKey);
-                  const objective = String(row?.objective || "").trim();
-                  const krs = Array.isArray(row?.krs) ? row.krs : [];
-                  return (
-                    <div
-                      key={`okr-progress-${pillarKey || rowIndex}`}
-                      className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">
-                            {String(row?.pillar || palette.label || "Pillar").trim() || "Pillar"}
-                          </p>
-                          {objective ? (
-                            <p className="mt-1 text-sm font-semibold text-[#1e1b16]">{objective}</p>
-                          ) : null}
-                        </div>
-                        {row?.cycle_label ? (
-                          <span className="text-[11px] uppercase tracking-[0.16em] text-[#8c7f70]">
-                            {row.cycle_label}
-                          </span>
-                        ) : null}
-                      </div>
-
-                      {krs.length ? (
-                        <div className="mt-3 space-y-3">
-                          {krs.map((kr, krIndex) => {
-                            const status = progressStatus(kr?.actual, kr?.target, kr?.baseline);
-                            const pctLabel = status.pct !== null ? `${Math.round(status.pct * 100)}%` : "—";
-                            const barWidth = status.pct !== null ? `${Math.round(status.pct * 100)}%` : "4%";
-                            return (
-                              <div
-                                key={`okr-${pillarKey || "pillar"}-${kr?.id || krIndex}`}
-                                className="rounded-2xl border border-[#eadcc6] bg-white px-3 py-3"
-                              >
-                                <p className="text-sm font-semibold text-[#1e1b16]">
-                                  {String(kr?.description || "Key result").trim() || "Key result"}
-                                </p>
-                                <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                                  <span
-                                    className="rounded-full px-2 py-0.5"
-                                    style={{ background: status.chipBg, color: status.tone }}
-                                  >
-                                    {status.label}
-                                  </span>
-                                  {kr?.metric_label ? (
-                                    <span className="text-[#6b6257]">{kr.metric_label}</span>
-                                  ) : null}
-                                </div>
-                                <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-[#6b6257]">
-                                  <div>
-                                    <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Base</p>
-                                    <p className="text-sm text-[#1e1b16]">{formatNumber(kr?.baseline)}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Current</p>
-                                    <p className="text-sm text-[#1e1b16]">{formatNumber(kr?.actual)}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Target</p>
-                                    <p className="text-sm text-[#1e1b16]">{formatNumber(kr?.target)}</p>
-                                  </div>
-                                </div>
-                                <div className="mt-3 flex items-center gap-2">
-                                  <span className="text-xs font-semibold text-[#101828]">{pctLabel}</span>
-                                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#e4e7ec]">
-                                    <div
-                                      className="h-full rounded-full"
-                                      style={{ width: barWidth, background: palette.accent }}
-                                    />
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <p className="mt-3 text-sm text-[#6b6257]">No key results recorded yet.</p>
-                      )}
-                    </div>
-                  );
-                })
-              ) : (
-                <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4 text-sm text-[#6b6257]">
-                  No key results recorded yet.
-                </div>
-              )}
             </div>
           </div>
         </div>
       ) : null}
 
       {selectedPillarKey ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-3 py-3 sm:items-center sm:p-6">
-          <div className="flex max-h-[92vh] w-full max-w-2xl flex-col overflow-hidden rounded-[28px] border border-[#e7e1d6] bg-white shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)]">
-            <div className="border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 sm:items-center sm:px-3 sm:py-3">
+          <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-2xl flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
+            <div className="shrink-0 border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 space-y-1">
                   <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
                     {detail?.pillar?.label || selectedPillarKey.replace(/_/g, " ")}
                   </p>
                   <p className="text-sm font-medium text-[#3f372f]">
-                    {savingPastDay ? `Catching up ${activeLabel || "yesterday"}` : "Tracking today"}
+                    {viewingCurrentWeek
+                      ? savingPastDay
+                        ? `Catching up ${activeLabel || "yesterday"}`
+                        : "Tracking today"
+                      : "Last week results"}
                   </p>
-                  <p className="text-sm text-[#6b6257]">
-                    {detail?.pillar?.tracker_score !== null && detail?.pillar?.tracker_score !== undefined
-                      ? `${detail?.pillar?.tracker_score}/100 this week so far`
-                      : savingPastDay
-                        ? `Complete ${activeLabel || "yesterday"} to update this week's score`
-                        : "Complete today to start this week's score"}
-                  </p>
+                  <p className="text-sm text-[#6b6257]">{trackerScoreLabel}</p>
                   {detail?.pillar?.completed_days_count !== undefined || detail?.pillar?.streak_days !== undefined ? (
                     <p className="text-xs text-[#8c7f70]">
                       {`${detail?.pillar?.completed_days_count || 0}/7 days complete · ${detail?.pillar?.streak_days || 0} day check-in streak`}
@@ -607,29 +642,31 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
                         </div>
 
                         <div className="mt-3 flex flex-wrap gap-2">
-                          {(concept.options || []).map((option) => {
-                            const value = Number(option.value);
-                            const active = Number.isFinite(value) && value === selectedValue;
-                            return (
-                              <button
-                                key={`${conceptKey}-${option.label}-${option.value}`}
-                                type="button"
-                                onClick={() =>
-                                  setDraft((current) => ({
-                                    ...current,
-                                    [conceptKey]: value,
-                                  }))
-                                }
-                                className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
-                                  active
-                                    ? "border-[var(--accent)] bg-[var(--accent)] text-white"
-                                    : "border-[#d9cdbb] bg-white text-[#5d5348]"
-                                }`}
-                              >
-                                {option.label}
-                              </button>
-                            );
-                          })}
+                          {canEditActiveWeek
+                            ? (concept.options || []).map((option) => {
+                                const value = Number(option.value);
+                                const active = Number.isFinite(value) && value === selectedValue;
+                                return (
+                                  <button
+                                    key={`${conceptKey}-${option.label}-${option.value}`}
+                                    type="button"
+                                    onClick={() =>
+                                      setDraft((current) => ({
+                                        ...current,
+                                        [conceptKey]: value,
+                                      }))
+                                    }
+                                    className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
+                                      active
+                                        ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                                        : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                                    }`}
+                                  >
+                                    {option.label}
+                                  </button>
+                                );
+                              })
+                            : null}
                         </div>
                       </div>
                     );
@@ -640,19 +677,38 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
                 ) : null}
               </div>
 
-            <div className="border-t border-[#efe7db] px-4 py-4 sm:px-5">
-              <button
-                type="button"
-                onClick={() => void saveTracker()}
-                disabled={!canSave}
-                className="w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {saving
-                  ? "Saving tracker…"
-                  : savingPastDay
-                    ? `Save ${activeLabel ? activeLabel.toLowerCase() : "yesterday"}'s tracker`
-                    : "Save today's tracker"}
-              </button>
+            <div className="shrink-0 border-t border-[#efe7db] px-4 py-4 sm:px-5">
+              {canEditActiveWeek ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={closeTracker}
+                    className="rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void saveTracker()}
+                    disabled={!canSave}
+                    className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {saving
+                      ? "Saving tracker…"
+                      : savingPastDay
+                        ? `Save ${activeLabel ? activeLabel.toLowerCase() : "yesterday"}'s tracker`
+                        : "Save today's tracker"}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={closeTracker}
+                  className="w-full rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+                >
+                  Close
+                </button>
+              )}
             </div>
           </div>
         </div>
