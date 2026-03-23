@@ -1969,6 +1969,21 @@ export default function AssessmentChatBox({
                     <p className="text-sm text-[#6b6257]">Ask Gia a question and the latest reply will appear here.</p>
                   </div>
                 )}
+                {sending ? <p className="mt-3 text-sm text-[#6b6257]">Gia is replying…</p> : null}
+              </div>
+              <div className="mt-4 w-full">
+                <form ref={askComposerFormRef} onSubmit={onSubmit}>
+                  <textarea
+                    id="assessment-chat-input"
+                    className="w-full rounded-[22px] border border-[#efe7db] bg-white px-4 py-2.5 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
+                    rows={1}
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    onKeyDown={onDraftKeyDown}
+                    disabled={busy}
+                  />
+                </form>
+                {status ? <p className="mt-3 text-sm text-[#6b6257]">{status}</p> : null}
                 {askPromptSuggestions.length && !askPromptTagsHidden ? (
                   <div className="mt-3 rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3">
                     <div className="flex flex-wrap gap-1.5">
@@ -1995,21 +2010,6 @@ export default function AssessmentChatBox({
                     </div>
                   </div>
                 ) : null}
-                {sending ? <p className="mt-3 text-sm text-[#6b6257]">Gia is replying…</p> : null}
-              </div>
-              <div className="mt-4 w-full">
-                <form ref={askComposerFormRef} onSubmit={onSubmit}>
-                  <textarea
-                    id="assessment-chat-input"
-                    className="w-full rounded-[22px] border border-[#efe7db] bg-white px-4 py-2.5 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
-                    rows={1}
-                    value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
-                    onKeyDown={onDraftKeyDown}
-                    disabled={busy}
-                  />
-                </form>
-                {status ? <p className="mt-3 text-sm text-[#6b6257]">{status}</p> : null}
               </div>
             </div>
           )}
