@@ -16,7 +16,6 @@ const makeLinks = (userId: string) => [
   { label: "Progress", href: `/progress/${userId}` },
   { label: "Assessment", href: `/assessment/${userId}` },
   { label: "Library", href: `/library/${userId}` },
-  { label: "Preferences", href: `/preferences/${userId}` },
   { label: "History", href: `/history/${userId}` },
 ];
 
@@ -35,24 +34,24 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
 
   return (
     <>
-      <nav className="sticky top-0 z-30 -mx-6 mb-4 flex flex-col gap-2 border-y border-[#efe7db] bg-[#fbf7f0]/90 px-6 py-3 text-xs uppercase tracking-[0.2em] text-[#6b6257] backdrop-blur md:static md:mx-0 md:mb-6 md:flex-row md:flex-nowrap md:items-center md:border md:border-[#efe7db] md:rounded-full md:px-6 md:py-3">
+      <nav className="sticky top-0 z-30 -mx-6 mb-4 flex flex-col gap-2 border-y border-[var(--border)] bg-[var(--surface-soft)] px-6 py-3 text-xs uppercase tracking-[0.2em] text-[var(--text-secondary)] backdrop-blur md:static md:mx-0 md:mb-6 md:flex-row md:flex-nowrap md:items-center md:border md:border-[var(--border)] md:rounded-full md:px-6 md:py-3">
         <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
           <a href={`/assessment/${userId}/chat`} className="flex items-center gap-2" aria-label="HealthSense home">
             <img
               src="/healthsense-logo.svg"
               alt="HealthSense"
-              className="h-8 w-auto md:hidden"
+              className="hs-brand-logo h-8 w-auto md:hidden"
             />
             <img
               src="/healthsense-mark.svg"
               alt="HealthSense"
-              className="hidden h-8 w-auto md:block"
+              className="hs-brand-mark hidden h-8 w-auto md:block"
             />
-            <span className="text-[11px] uppercase tracking-[0.22em] text-[#6b6257]">{APP_LABEL}</span>
+            <span className="text-[11px] uppercase tracking-[0.22em] text-[var(--text-secondary)]">{APP_LABEL}</span>
           </a>
           <button
             type="button"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-[#efe7db] bg-white text-[#6b6257] md:hidden"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] md:hidden"
             aria-label="Open menu"
             aria-expanded={open}
             onClick={() => setOpen(true)}
@@ -72,7 +71,7 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
           {links.map((link) => (
             <a
               key={link.label}
-              className="rounded-full border border-[#efe7db] bg-white px-3 py-1"
+              className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1"
               href={link.href}
             >
               {link.label}
@@ -92,18 +91,18 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
           onClick={() => setOpen(false)}
         />
         <div
-          className={`absolute right-0 top-0 h-full w-full max-w-sm transform bg-[#fbf7f0] px-6 pb-8 pt-6 shadow-2xl transition-transform duration-300 ${
+          className={`absolute right-0 top-0 h-full w-full max-w-sm transform bg-[var(--surface-soft)] px-6 pb-8 pt-6 shadow-2xl transition-transform duration-300 ${
             open ? "translate-x-0" : "translate-x-full"
           }`}
         >
           <div className="flex items-center justify-between">
             <a href={`/assessment/${userId}/chat`} className="flex items-center gap-2" aria-label="HealthSense home">
-              <img src="/healthsense-logo.svg" alt="HealthSense" className="h-9 w-auto" />
-              <span className="text-[11px] uppercase tracking-[0.22em] text-[#6b6257]">{APP_LABEL}</span>
+              <img src="/healthsense-logo.svg" alt="HealthSense" className="hs-brand-logo h-9 w-auto" />
+              <span className="text-[11px] uppercase tracking-[0.22em] text-[var(--text-secondary)]">{APP_LABEL}</span>
             </a>
             <button
               type="button"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-[#efe7db] bg-white text-[#6b6257]"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]"
               aria-label="Close menu"
               onClick={() => setOpen(false)}
             >
@@ -119,13 +118,13 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
             </button>
           </div>
 
-          <div className="mt-6 grid gap-3 text-[13px] uppercase tracking-[0.18em] text-[#3c332b]">
+          <div className="mt-6 grid gap-3 text-[13px] uppercase tracking-[0.18em] text-[var(--text-primary)]">
             {links.map((link) => (
               <a
                 key={link.label}
                 href={link.href}
                 onClick={() => setOpen(false)}
-                className="rounded-full border border-[#efe7db] bg-white px-5 py-3 text-sm"
+                className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-5 py-3 text-sm"
               >
                 {link.label}
               </a>

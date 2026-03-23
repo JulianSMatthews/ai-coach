@@ -46,6 +46,7 @@ export default async function HistoryPage(props: PageProps) {
   const textScale = status.coaching_preferences?.text_scale
     ? Number.parseFloat(status.coaching_preferences.text_scale)
     : undefined;
+  const themePreference = status.coaching_preferences?.theme || "system";
   const promptState = (status.prompt_state_override || "").toLowerCase();
   const promptBadge =
     promptState && promptState !== "live"
@@ -155,7 +156,7 @@ export default async function HistoryPage(props: PageProps) {
   const displayFirstName = displayName.split(" ")[0];
 
   return (
-    <PageShell>
+    <PageShell defaultTheme={themePreference}>
       <TextScale defaultScale={textScale} />
       <AppNav userId={userId} promptBadge={promptBadge} />
 

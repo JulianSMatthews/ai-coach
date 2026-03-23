@@ -7214,6 +7214,7 @@ def api_user_status_v1(
             "voice": pref_map.get("tts_voice_pref", ""),
             "schedule": schedule,
             "text_scale": pref_map.get("text_scale", ""),
+            "theme": pref_map.get("theme", "system"),
             "training_objective": training_objective.objective if training_objective else "",
             "preferred_channel": pref_map.get("preferred_channel", "whatsapp"),
             "marketing_opt_in": pref_map.get("marketing_opt_in", ""),
@@ -7274,6 +7275,7 @@ def api_user_preferences_update(
     """
     allowed_days = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
     allowed_channels = {"whatsapp", "app", "sms", "email"}
+    allowed_themes = {"light", "dark", "system"}
     _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
     if _is_readonly_admin_preview_request(
         request,
@@ -7431,6 +7433,25 @@ def api_user_preferences_update(
                     pref.value = scale_val
                 else:
                     s.add(UserPreference(user_id=user_id, key="text_scale", value=scale_val))
+            else:
+                if pref:
+                    s.delete(pref)
+
+        theme = payload.get("theme") if isinstance(payload, dict) else None
+        if theme is not None:
+            theme_val = str(theme).strip().lower()
+            if theme_val and theme_val not in allowed_themes:
+                raise HTTPException(status_code=400, detail="theme must be light|dark|system")
+            pref = (
+                s.query(UserPreference)
+                .filter(UserPreference.user_id == user_id, UserPreference.key == "theme")
+                .one_or_none()
+            )
+            if theme_val and theme_val != "system":
+                if pref:
+                    pref.value = theme_val
+                else:
+                    s.add(UserPreference(user_id=user_id, key="theme", value=theme_val))
             else:
                 if pref:
                     s.delete(pref)

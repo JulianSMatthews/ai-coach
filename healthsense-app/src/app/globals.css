@@ -3,9 +3,26 @@
 :root {
   --background: #ffffff;
   --foreground: #1e1b16;
+  --surface: #ffffff;
+  --surface-soft: rgba(251, 247, 240, 0.92);
+  --surface-muted: #fffaf0;
+  --surface-translucent: rgba(255, 250, 243, 0.88);
+  --border: #e7e1d6;
+  --border-strong: #efe7db;
+  --text-primary: #1e1b16;
+  --text-secondary: #6b6257;
+  --text-tertiary: #8c7f70;
   --accent: #d3541b;
   --accent-soft: #ffe6d1;
+  --badge-bg: #fff4e8;
+  --badge-border: #f5d0a0;
+  --badge-text: #a14514;
   --ink-muted: #6b6257;
+  --ring-track: #eadfce;
+  --input-background: #ffffff;
+  --input-background-muted: #fffaf0;
+  --placeholder: #8c7f70;
+  --shadow-strong: rgba(30, 27, 22, 0.5);
   --text-scale: 1;
 }
 
@@ -16,11 +33,29 @@
   --font-mono: var(--font-body);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #f7f4ee;
-    --foreground: #1e1b16;
-  }
+:root[data-theme="dark"] {
+  --background: #15110d;
+  --foreground: #f4ecdf;
+  --surface: #211a16;
+  --surface-soft: rgba(27, 22, 18, 0.94);
+  --surface-muted: #2a221d;
+  --surface-translucent: rgba(33, 26, 22, 0.9);
+  --border: #4c4035;
+  --border-strong: #5c4d40;
+  --text-primary: #f4ecdf;
+  --text-secondary: #d1c3b4;
+  --text-tertiary: #ab9c8d;
+  --accent: #f08948;
+  --accent-soft: #4a2c1a;
+  --badge-bg: #34251b;
+  --badge-border: #76492d;
+  --badge-text: #ffd8ba;
+  --ink-muted: #d1c3b4;
+  --ring-track: #463930;
+  --input-background: #261f1a;
+  --input-background-muted: #322922;
+  --placeholder: #9f8f81;
+  --shadow-strong: rgba(0, 0, 0, 0.7);
 }
 
 body {
@@ -28,6 +63,7 @@ body {
   color: var(--foreground);
   font-family: var(--font-body), system-ui, sans-serif;
   line-height: 1.5;
+  transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 body .text-xs { font-size: calc(0.75rem * var(--text-scale)); }
@@ -47,8 +83,97 @@ a {
   transition: color 0.2s ease, border-color 0.2s ease;
 }
 
+input,
+textarea,
+select {
+  color: var(--text-primary);
+}
+
+input:not([type="checkbox"]):not([type="radio"]),
+textarea,
+select {
+  background: var(--input-background);
+  border-color: var(--border);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--placeholder);
+}
+
 details > summary::-webkit-details-marker {
   display: none;
+}
+
+:root[data-theme="dark"] .bg-white,
+:root[data-theme="dark"] .bg-white\/70,
+:root[data-theme="dark"] .bg-white\/80,
+:root[data-theme="dark"] .bg-white\/90,
+:root[data-theme="dark"] .bg-white\/95 {
+  background-color: var(--surface) !important;
+}
+
+:root[data-theme="dark"] .bg-\[\#fbf7f0\]\/90 {
+  background-color: var(--surface-soft) !important;
+}
+
+:root[data-theme="dark"] .bg-\[\#fffaf0\],
+:root[data-theme="dark"] .bg-\[\#fffaf3\],
+:root[data-theme="dark"] .bg-\[\#fffaf4\],
+:root[data-theme="dark"] .bg-\[\#fdfaf4\],
+:root[data-theme="dark"] .bg-\[\#fbf7f0\],
+:root[data-theme="dark"] .bg-\[\#f7f4ee\],
+:root[data-theme="dark"] .bg-\[\#f8f3ec\],
+:root[data-theme="dark"] .bg-\[\#f6efe5\],
+:root[data-theme="dark"] .bg-\[\#f1e9dd\] {
+  background-color: var(--surface-muted) !important;
+}
+
+:root[data-theme="dark"] .bg-\[\#ecfdf3\] {
+  background-color: #163327 !important;
+}
+
+:root[data-theme="dark"] .bg-\[\#eff6ff\] {
+  background-color: #18283d !important;
+}
+
+:root[data-theme="dark"] .bg-\[\#fef2f2\] {
+  background-color: #3a1f21 !important;
+}
+
+:root[data-theme="dark"] .bg-\[\#fff7ed\] {
+  background-color: #3d2818 !important;
+}
+
+:root[data-theme="dark"] .border-\[\#efe7db\],
+:root[data-theme="dark"] .border-\[\#e7e1d6\],
+:root[data-theme="dark"] .border-\[\#d9cdbb\],
+:root[data-theme="dark"] .border-\[\#eadfce\],
+:root[data-theme="dark"] .border-\[\#eadcc6\] {
+  border-color: var(--border) !important;
+}
+
+:root[data-theme="dark"] .border-\[\#f4c9a9\] {
+  border-color: #7b5538 !important;
+}
+
+:root[data-theme="dark"] .text-\[\#1e1b16\],
+:root[data-theme="dark"] .text-\[\#3c332b\],
+:root[data-theme="dark"] .text-\[\#2f2a21\] {
+  color: var(--text-primary) !important;
+}
+
+:root[data-theme="dark"] .text-\[\#6b6257\],
+:root[data-theme="dark"] .text-\[\#5d5348\],
+:root[data-theme="dark"] .text-\[\#8c7f70\],
+:root[data-theme="dark"] .text-\[\#8a8176\],
+:root[data-theme="dark"] .text-\[\#8b8074\] {
+  color: var(--text-secondary) !important;
+}
+
+:root[data-theme="dark"] .hs-brand-logo,
+:root[data-theme="dark"] img[src$="/healthsense-logo.svg"] {
+  filter: brightness(0) invert(0.96);
 }
 
 @media (max-width: 640px) {

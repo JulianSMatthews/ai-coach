@@ -9,12 +9,14 @@ import type {
 } from "@/lib/api";
 import { getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
+import { applyThemePreference, normalizeThemePreference, type ThemePreference } from "@/lib/theme";
 import type { AssessmentIntroAvatar } from "./AssessmentPromptCard";
 import LeadAssessmentBranding from "./LeadAssessmentBranding";
 
 type LatestAssessmentPanelProps = {
   userId: string;
   initialSummary: PillarTrackerSummaryResponse;
+  initialTheme?: string;
   appIntroAvatar?: AssessmentIntroAvatar | null;
   appIntroHelpVideos?: {
     habits?: AssessmentIntroAvatar | null;
@@ -126,6 +128,7 @@ function WeeklyScoreRing({ value, tone }: { value?: number | null; tone: string 
 export default function LatestAssessmentPanel({
   userId,
   initialSummary,
+  initialTheme = "system",
   appIntroAvatar = null,
   appIntroHelpVideos = null,
 }: LatestAssessmentPanelProps) {
@@ -141,6 +144,10 @@ export default function LatestAssessmentPanel({
   const [saving, setSaving] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [themePreference, setThemePreference] = useState<ThemePreference>(normalizeThemePreference(initialTheme));
+  const [themeSaving, setThemeSaving] = useState(false);
+  const [themeError, setThemeError] = useState<string | null>(null);
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
   const combinedScore = (() => {
@@ -299,7 +306,37 @@ export default function LatestAssessmentPanel({
 
   const openScoreCard = () => {
     setSelectedIntroVideoKey(defaultIntroVideoKey);
+    setSetupOpen(false);
     setScoreCardOpen(true);
+  };
+
+  const saveThemePreference = async (nextThemeInput: string) => {
+    const nextTheme = normalizeThemePreference(nextThemeInput);
+    const previousTheme = themePreference;
+    setThemePreference(nextTheme);
+    setThemeSaving(true);
+    setThemeError(null);
+    applyThemePreference(nextTheme, true);
+    try {
+      const res = await fetch("/api/preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          theme: nextTheme,
+        }),
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => "");
+        throw new Error(normalizeError(text, "Failed to update appearance."));
+      }
+    } catch (error) {
+      setThemePreference(previousTheme);
+      applyThemePreference(previousTheme, true);
+      setThemeError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setThemeSaving(false);
+    }
   };
 
   return (
@@ -406,6 +443,60 @@ export default function LatestAssessmentPanel({
                           </button>
                         );
                       })}
+                    </div>
+                  ) : null}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSetupOpen((current) => !current)}
+                      className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                        setupOpen
+                          ? "border-[#d6c3ab] bg-[#f6ede3] text-[#5d472d]"
+                          : "border-[#e7e1d6] bg-white text-[#5d5348]"
+                      }`}
+                    >
+                      <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" aria-hidden="true">
+                        <path
+                          d="M12 8.5a3.5 3.5 0 1 0 0 7a3.5 3.5 0 0 0 0-7Zm8 3.5l-1.71-.57a6.76 6.76 0 0 0-.46-1.1l.82-1.6l-1.73-1.73l-1.6.82c-.35-.18-.72-.33-1.1-.46L13 4h-2l-.57 1.71c-.38.13-.75.28-1.1.46l-1.6-.82L5 7.08l.82 1.6c-.18.35-.33.72-.46 1.1L3.65 10v2l1.71.57c.13.38.28.75.46 1.1L5 15.27L6.73 17l1.6-.82c.35.18.72.33 1.1.46L11 18.35h2l.57-1.71c.38-.13.75-.28 1.1-.46l1.6.82l1.73-1.73l-.82-1.6c.18-.35.33-.72.46-1.1L20 14v-2Z"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="1.35"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        />
+                      </svg>
+                      Setup
+                    </button>
+                    {themeSaving ? <span className="text-[11px] text-[#6b6257]">Saving…</span> : null}
+                  </div>
+                  {setupOpen ? (
+                    <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3">
+                      <p className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">Mode</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {[
+                          { key: "system", label: "Match device" },
+                          { key: "light", label: "Light" },
+                          { key: "dark", label: "Dark" },
+                        ].map((option) => {
+                          const active = themePreference === option.key;
+                          return (
+                            <button
+                              key={option.key}
+                              type="button"
+                              disabled={themeSaving}
+                              onClick={() => void saveThemePreference(option.key)}
+                              className={`rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                                active
+                                  ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                                  : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                              } disabled:cursor-not-allowed disabled:opacity-60`}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {themeError ? <p className="mt-2 text-xs text-[#8a3e1a]">{themeError}</p> : null}
                     </div>
                   ) : null}
                 </div>

@@ -22,7 +22,7 @@ export default function LogoutButton({ className = "", label = "Log out" }: Logo
   return (
     <form onSubmit={handleLogout}>
       <button
-        className={`rounded-full border border-[#efe7db] bg-white px-3 py-1 text-xs uppercase tracking-[0.2em] text-[#6b6257] ${className}`}
+        className={`rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[var(--text-secondary)] ${className}`}
       >
         {label}
       </button>

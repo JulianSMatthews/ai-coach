@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, Source_Sans_3 } from "next/font/google";
 import "./globals.css";
+import { themeBootstrapScript } from "@/lib/theme";
 
 const headingFont = Fraunces({
   variable: "--font-heading",
@@ -30,7 +31,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript() }} />
+      </head>
       <body className={`${headingFont.variable} ${bodyFont.variable} antialiased`}>{children}</body>
     </html>
   );

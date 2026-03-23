@@ -18,6 +18,7 @@ export default async function PreferencesPage(props: PageProps) {
   const user = data.user || {};
   const prefs = data.coaching_preferences || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
+  const themePreference = prefs.theme || "system";
   const promptState = (data.prompt_state_override || "").toLowerCase();
   const promptBadge =
     promptState && promptState !== "live"
@@ -31,7 +32,7 @@ export default async function PreferencesPage(props: PageProps) {
   const displayFirstName = displayName.split(" ")[0];
 
   return (
-    <PageShell>
+    <PageShell defaultTheme={themePreference}>
       <TextScale defaultScale={textScale} />
       <AppNav userId={userId} promptBadge={promptBadge} />
       <SectionHeader
@@ -51,6 +52,7 @@ export default async function PreferencesPage(props: PageProps) {
               initialVoice={prefs.voice || ""}
               initialSchedule={prefs.schedule || {}}
               initialTextScale={prefs.text_scale || "1.0"}
+              initialTheme={themePreference}
               initialTrainingObjective={prefs.training_objective || ""}
               initialPreferredChannel={prefs.preferred_channel || "whatsapp"}
               initialMarketingOptIn={prefs.marketing_opt_in || ""}

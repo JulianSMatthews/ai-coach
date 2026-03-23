@@ -279,6 +279,7 @@ export default async function AssessmentChatPage(props: PageProps) {
   }
   const prefs = status.coaching_preferences || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
+  const themePreference = prefs.theme || "system";
   const assessmentCompleted =
     status.status === "completed" ||
     Boolean(status.onboarding?.assessment_completed_at) ||
@@ -302,7 +303,7 @@ export default async function AssessmentChatPage(props: PageProps) {
   if (statusLoadError && !leadFlow) {
     const shouldRelogin = statusLoadError.status === 401 || statusLoadError.status === 403;
     return (
-      <PageShell className={pageShellClassName} contentClassName={pageContentClassName}>
+      <PageShell defaultTheme={themePreference} className={pageShellClassName} contentClassName={pageContentClassName}>
         <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
           <h2 className="text-xl">My Coach Gia is unavailable</h2>
           <p className="mt-2 text-sm text-[#6b6257]">
@@ -330,7 +331,7 @@ export default async function AssessmentChatPage(props: PageProps) {
   }
 
   return (
-    <PageShell className={pageShellClassName} contentClassName={pageContentClassName}>
+    <PageShell defaultTheme={themePreference} className={pageShellClassName} contentClassName={pageContentClassName}>
       <TextScale defaultScale={textScale} />
 
       <section className="space-y-3 sm:space-y-4">
@@ -349,6 +350,7 @@ export default async function AssessmentChatPage(props: PageProps) {
               <LatestAssessmentPanel
                 userId={userId}
                 initialSummary={pillarTrackerSummary}
+                initialTheme={themePreference}
                 appIntroAvatar={appIntroAvatar}
                 appIntroHelpVideos={appIntroHelpVideos}
               />

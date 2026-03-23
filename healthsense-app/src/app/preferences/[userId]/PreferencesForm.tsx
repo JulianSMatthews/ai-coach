@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { applyThemePreference, normalizeThemePreference } from "@/lib/theme";
 
 type PreferencesFormProps = {
   userId: string;
@@ -9,6 +10,7 @@ type PreferencesFormProps = {
   initialVoice?: string;
   initialSchedule?: Record<string, string>;
   initialTextScale?: string;
+  initialTheme?: string;
   initialTrainingObjective?: string;
   initialPreferredChannel?: string;
   initialMarketingOptIn?: string;
@@ -31,6 +33,7 @@ export default function PreferencesForm({
   initialVoice = "",
   initialSchedule = {},
   initialTextScale = "1.0",
+  initialTheme = "system",
   initialTrainingObjective = "",
   initialPreferredChannel = "whatsapp",
   initialMarketingOptIn = "",
@@ -39,6 +42,7 @@ export default function PreferencesForm({
   const [note, setNote] = useState(initialNote);
   const [voice, setVoice] = useState(initialVoice || "");
   const [textScale, setTextScale] = useState(initialTextScale || "1.0");
+  const [theme, setTheme] = useState(normalizeThemePreference(initialTheme));
   const [trainingObjective, setTrainingObjective] = useState(initialTrainingObjective || "");
   const [preferredChannel, setPreferredChannel] = useState(
     String(initialPreferredChannel || "").toLowerCase() === "app" ? "app" : "whatsapp",
@@ -80,6 +84,7 @@ export default function PreferencesForm({
         voice: voice || "",
         schedule,
         text_scale: textScale,
+        theme,
         training_objective: trainingObjective,
         preferred_channel: preferredChannel,
         marketing_opt_in: marketingOptIn ? "1" : "0",
@@ -100,6 +105,7 @@ export default function PreferencesForm({
       if (typeof window !== "undefined") {
         window.localStorage.setItem("healthsense.textScale", textScale || "1.0");
         document.documentElement.style.setProperty("--text-scale", textScale || "1.0");
+        applyThemePreference(theme, true);
       }
       if (changePassword) {
         setPassword("");
@@ -218,6 +224,20 @@ export default function PreferencesForm({
           <option value="1.3">huge</option>
         </select>
         <p className="mt-2 text-xs text-[#6b6257]">Adjusts the overall font size across the dashboard.</p>
+      </div>
+
+      <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
+        <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Appearance</label>
+        <select
+          className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+          value={theme}
+          onChange={(e) => setTheme(normalizeThemePreference(e.target.value))}
+        >
+          <option value="system">match device</option>
+          <option value="light">light</option>
+          <option value="dark">dark</option>
+        </select>
+        <p className="mt-2 text-xs text-[#6b6257]">Switch the member app between light and dark mode.</p>
       </div>
 
       <div className="rounded-2xl border border-[#efe7db] bg-white p-4">

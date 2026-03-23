@@ -18,6 +18,7 @@ export default async function LibraryPage(props: PageProps) {
   const textScale = status.coaching_preferences?.text_scale
     ? Number.parseFloat(status.coaching_preferences.text_scale)
     : undefined;
+  const themePreference = status.coaching_preferences?.theme || "system";
   const itemsByPillar = library.items || {};
   const truncate = (text: string, limit = 220) =>
     text.length <= limit ? text : `${text.slice(0, Math.max(0, limit - 1))}…`;
@@ -27,7 +28,7 @@ export default async function LibraryPage(props: PageProps) {
       ? `${promptState.charAt(0).toUpperCase()}${promptState.slice(1)} mode`
       : "";
   return (
-    <PageShell>
+    <PageShell defaultTheme={themePreference}>
       <TextScale defaultScale={textScale} />
       <AppNav userId={userId} promptBadge={promptBadge} />
       <SectionHeader

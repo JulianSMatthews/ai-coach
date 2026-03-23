@@ -141,6 +141,7 @@ export type UserStatusResponse = {
     voice?: string;
     schedule?: Record<string, string>;
     text_scale?: string;
+    theme?: string;
     training_objective?: string;
     preferred_channel?: string;
     marketing_opt_in?: string;

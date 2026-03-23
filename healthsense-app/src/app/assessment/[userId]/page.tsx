@@ -35,6 +35,7 @@ export default async function AssessmentPage(props: PageProps) {
   const textScale = status.coaching_preferences?.text_scale
     ? Number.parseFloat(status.coaching_preferences.text_scale)
     : undefined;
+  const themePreference = status.coaching_preferences?.theme || "system";
   const promptState = (status.prompt_state_override || "").toLowerCase();
   const promptBadge =
     promptState && promptState !== "live"
@@ -125,7 +126,7 @@ export default async function AssessmentPage(props: PageProps) {
     const statusCode = err?.status;
     const isAuthError = statusCode === 401 || statusCode === 403;
     return (
-      <PageShell>
+      <PageShell defaultTheme={themePreference}>
         <AppNav userId={userId} promptBadge={promptBadge} />
         <SectionHeader
           eyebrow="Assessment"
@@ -161,7 +162,7 @@ export default async function AssessmentPage(props: PageProps) {
 
   if (missing) {
     return (
-      <PageShell>
+      <PageShell defaultTheme={themePreference}>
         <AppNav userId={userId} promptBadge={promptBadge} />
         <SectionHeader
           eyebrow="Assessment"
@@ -181,7 +182,7 @@ export default async function AssessmentPage(props: PageProps) {
   }
 
   return (
-    <PageShell>
+    <PageShell defaultTheme={themePreference}>
       <AutoRefreshOnPending enabled={autoRefreshPending} intervalMs={8000} />
       <TextScale defaultScale={textScale} />
       <AppNav userId={userId} promptBadge={promptBadge} />

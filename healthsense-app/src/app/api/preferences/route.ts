@@ -42,6 +42,7 @@ export async function POST(request: Request) {
       auto_prompts: body.auto_prompts ?? undefined,
       schedule: body.schedule ?? undefined,
       text_scale: body.text_scale ?? undefined,
+      theme: body.theme ?? undefined,
       training_objective: body.training_objective ?? undefined,
       preferred_channel: body.preferred_channel ?? undefined,
       marketing_opt_in: body.marketing_opt_in ?? undefined,

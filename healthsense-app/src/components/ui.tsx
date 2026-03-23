@@ -1,18 +1,22 @@
 import React from "react";
 import SessionBootstrap from "./SessionBootstrap";
+import ThemeBootstrap from "./ThemeBootstrap";
 
 export function PageShell({
   children,
   className = "",
   contentClassName = "mx-auto max-w-6xl space-y-10",
+  defaultTheme,
 }: {
   children: React.ReactNode;
   className?: string;
   contentClassName?: string;
+  defaultTheme?: string;
 }) {
   return (
-    <main className={`min-h-screen bg-white px-6 py-10 text-[#1e1b16] ${className}`.trim()}>
+    <main className={`min-h-screen bg-[var(--background)] px-6 py-10 text-[var(--foreground)] ${className}`.trim()}>
       <SessionBootstrap />
+      <ThemeBootstrap defaultTheme={defaultTheme} />
       <div className={contentClassName}>{children}</div>
     </main>
   );
@@ -27,7 +31,7 @@ export function Card({
   className?: string;
 }) {
   return (
-    <div className={`rounded-3xl border border-[#e7e1d6] bg-white p-6 ${className}`} {...props}>
+    <div className={`rounded-3xl border border-[var(--border-strong)] bg-[var(--surface)] p-6 ${className}`} {...props}>
       {children}
     </div>
   );
@@ -47,19 +51,19 @@ export function SectionHeader({
   brandMark?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-3xl border border-[#e7e1d6] bg-white/70 p-8 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.5)] backdrop-blur">
+    <div className="rounded-3xl border border-[var(--border-strong)] bg-[var(--surface-translucent)] p-8 shadow-[0_30px_80px_-60px_var(--shadow-strong)] backdrop-blur">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="space-y-2">
           {brandMark ? <div className="flex items-center gap-3">{brandMark}</div> : null}
           {eyebrow ? (
             typeof eyebrow === "string" ? (
-              <p className="text-xs uppercase tracking-[0.3em] text-[#6b6257]">{eyebrow}</p>
+              <p className="text-xs uppercase tracking-[0.3em] text-[var(--text-secondary)]">{eyebrow}</p>
             ) : (
               eyebrow
             )
           ) : null}
           <h1 className="text-3xl md:text-4xl">{title}</h1>
-          {subtitle ? <p className="text-sm text-[#6b6257]">{subtitle}</p> : null}
+          {subtitle ? <p className="text-sm text-[var(--text-secondary)]">{subtitle}</p> : null}
         </div>
         {side}
       </div>
@@ -69,7 +73,7 @@ export function SectionHeader({
 
 export function Badge({ label }: { label: string }) {
   return (
-    <span className="rounded-full border border-[#f5d0a0] bg-[#fff3dc] px-3 py-1 text-xs">
+    <span className="rounded-full border border-[var(--badge-border)] bg-[var(--badge-bg)] px-3 py-1 text-xs text-[var(--badge-text)]">
       {label}
     </span>
   );
@@ -109,7 +113,7 @@ export function ProgressBar({
 }) {
   const pct = Math.max(0, Math.min(100, (value / max) * 100));
   return (
-    <div className="mt-3 h-2 overflow-hidden rounded-full bg-[#f1e9dd]">
+    <div className="mt-3 h-2 overflow-hidden rounded-full bg-[var(--ring-track)]">
       <div className="h-full rounded-full" style={{ width: `${pct}%`, background: tone }} />
     </div>
   );
@@ -137,7 +141,7 @@ export function ScoreRing({
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke="#efe7db"
+          stroke="var(--ring-track)"
           strokeWidth={stroke}
           fill="none"
         />
