@@ -15,7 +15,7 @@ import LeadAssessmentBranding from "./LeadAssessmentBranding";
 type LatestAssessmentPanelProps = {
   userId: string;
   initialSummary: PillarTrackerSummaryResponse;
-  coachProductAvatar?: AssessmentIntroAvatar | null;
+  appIntroAvatar?: AssessmentIntroAvatar | null;
 };
 
 const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
@@ -117,7 +117,7 @@ function WeeklyScoreRing({ value, tone }: { value?: number | null; tone: string 
   );
 }
 
-export default function LatestAssessmentPanel({ userId, initialSummary, coachProductAvatar = null }: LatestAssessmentPanelProps) {
+export default function LatestAssessmentPanel({ userId, initialSummary, appIntroAvatar = null }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
   const [scoreCardOpen, setScoreCardOpen] = useState(false);
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
@@ -158,7 +158,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary, coachPro
           ? `Complete ${activeLabel || "yesterday"} to update this week's score`
           : "Complete today to start this week's score"
         : "No completed tracker days last week";
-  const hasIntroMessage = Boolean(String(coachProductAvatar?.url || "").trim());
+  const hasIntroMessage = Boolean(String(appIntroAvatar?.url || "").trim());
 
   const refreshSummary = async () => {
     const res = await fetch(`/api/pillar-tracker/summary?userId=${encodeURIComponent(userId)}`, {
@@ -325,9 +325,8 @@ export default function LatestAssessmentPanel({ userId, initialSummary, coachPro
             <div className="shrink-0 border-b border-[#efe7db] bg-white px-3 py-3 sm:px-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-[10px] uppercase tracking-[0.18em] text-[#6b6257]">HealthSense</p>
-                  <p className="mt-0.5 text-base font-semibold text-[#1e1b16]">How HealthSense works</p>
-                  <p className="mt-1 text-xs text-[#6b6257]">{`HealthSense score ${combinedScore}/100`}</p>
+                  <p className="text-base font-semibold text-[#1e1b16]">{`HealthSense score ${combinedScore}/100`}</p>
+                  <p className="mt-1 text-xs text-[#6b6257]">How HealthSense works</p>
                 </div>
                 <button
                   type="button"
@@ -340,15 +339,15 @@ export default function LatestAssessmentPanel({ userId, initialSummary, coachPro
             </div>
 
             <div className="flex-1 overflow-y-auto px-3 py-3 sm:px-5">
-              {String(coachProductAvatar?.url || "").trim() ? (
+              {String(appIntroAvatar?.url || "").trim() ? (
                 <video
                   controls
                   preload="metadata"
                   playsInline
-                  poster={String(coachProductAvatar?.posterUrl || "").trim() || undefined}
+                  poster={String(appIntroAvatar?.posterUrl || "").trim() || undefined}
                   className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
                 >
-                  <source src={String(coachProductAvatar?.url || "").trim()} />
+                  <source src={String(appIntroAvatar?.url || "").trim()} />
                 </video>
               ) : (
                 <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5 text-sm text-[#6b6257]">

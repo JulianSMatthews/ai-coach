@@ -136,6 +136,43 @@ async function getCoachProductAvatar(): Promise<AssessmentIntroAvatar | null> {
   }
 }
 
+async function getAppIntroAvatar(): Promise<AssessmentIntroAvatar | null> {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/admin/library/intro`, {
+      method: "GET",
+      headers: getAdminHeaders(),
+      cache: "no-store",
+    });
+    if (!res.ok) {
+      return null;
+    }
+    const payload = (await res.json().catch(() => ({}))) as {
+      app_intro_avatar?: {
+        url?: string | null;
+        title?: string | null;
+        script?: string | null;
+        poster_url?: string | null;
+      } | null;
+    };
+    const avatar = payload.app_intro_avatar || null;
+    const url = String(avatar?.url || "").trim();
+    const title = String(avatar?.title || "").trim();
+    const script = String(avatar?.script || "").trim();
+    const posterUrl = String(avatar?.poster_url || "").trim();
+    if (!url && !script && !title) {
+      return null;
+    }
+    return {
+      url: url || null,
+      title: title || "Welcome to HealthSense",
+      script: script || null,
+      posterUrl: posterUrl || null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 type PageProps = {
   params: Promise<{ userId: string }>;
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -173,6 +210,7 @@ export default async function AssessmentChatPage(props: PageProps) {
   const assessmentIntroAvatar = shouldLoadAssessmentIntroAvatar
     ? await getAssessmentIntroAvatar(introAvatarOverride === true)
     : null;
+  const appIntroAvatar = await getAppIntroAvatar();
   const coachProductAvatar = await getCoachProductAvatar();
 
   const leadHeaderTitle = <LeadAssessmentBranding />;
@@ -272,7 +310,7 @@ export default async function AssessmentChatPage(props: PageProps) {
           <LatestAssessmentPanel
             userId={userId}
             initialSummary={pillarTrackerSummary}
-            coachProductAvatar={coachProductAvatar}
+            appIntroAvatar={appIntroAvatar}
           />
         ) : null}
       </section>
