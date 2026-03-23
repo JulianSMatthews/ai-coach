@@ -412,49 +412,43 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
                   progressRows.map((row, rowIndex) => {
                     const pillarKey = normalizePillarKey(row?.pillar);
                     const krs = Array.isArray(row?.krs) ? row.krs : [];
-                    const objective = String(row?.objective || "").trim();
                     return (
                       <div
                         key={`okr-progress-${pillarKey || rowIndex}`}
-                        className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4"
+                        className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3"
                       >
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">
-                            {String(row?.pillar || getPillarPalette(pillarKey).label || "Pillar").trim() || "Pillar"}
-                          </p>
-                          {objective ? (
-                            <p className="mt-1 text-sm font-semibold text-[#1e1b16]">{objective}</p>
-                          ) : null}
-                        </div>
+                        <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">
+                          {String(row?.pillar || getPillarPalette(pillarKey).label || "Pillar").trim() || "Pillar"}
+                        </p>
 
                         {krs.length ? (
-                          <div className="mt-3 divide-y divide-[#f1e7d8] overflow-hidden rounded-2xl border border-[#eadcc6] bg-white">
+                          <div className="mt-2 space-y-2">
                             {krs.map((kr, krIndex) => {
                               const status = progressStatus(kr?.actual, kr?.target, kr?.baseline);
+                              const statusTone =
+                                status.label === "On track"
+                                  ? "text-[#4e7a1f]"
+                                  : status.label === "Behind pace"
+                                    ? "text-[#b55b1d]"
+                                    : "text-[#6b6257]";
                               return (
                                 <div
                                   key={`okr-${pillarKey || "pillar"}-${kr?.id || krIndex}`}
-                                  className="px-3 py-3"
+                                  className={`rounded-xl border border-[#eadcc6] bg-white px-3 py-2.5 ${
+                                    krIndex > 0 ? "" : ""
+                                  }`}
                                 >
-                                  <div className="flex items-start justify-between gap-3">
-                                    <div className="min-w-0 flex-1">
-                                      <p className="text-sm font-semibold text-[#1e1b16]">
-                                        {String(kr?.description || "Key result").trim() || "Key result"}
-                                      </p>
-                                      <p className="mt-1 text-xs text-[#6b6257]">
-                                        {`Target ${formatMetricValue(kr?.target, kr?.metric_label, kr?.unit)}`}
-                                        {kr?.actual !== null && kr?.actual !== undefined
-                                          ? ` · Actual ${formatMetricValue(kr?.actual, kr?.metric_label, kr?.unit)}`
-                                          : ""}
-                                      </p>
-                                    </div>
-                                    <span
-                                      className="shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
-                                      style={{ background: status.chipBg, color: status.tone }}
-                                    >
-                                      {status.label}
-                                    </span>
-                                  </div>
+                                  <p className="text-xs font-semibold text-[#1e1b16]">
+                                    {String(kr?.description || "Key result").trim() || "Key result"}
+                                  </p>
+                                  <p className="mt-1 text-[11px] text-[#6b6257]">
+                                    {`Target ${formatMetricValue(kr?.target, kr?.metric_label, kr?.unit)}`}
+                                    {kr?.actual !== null && kr?.actual !== undefined
+                                      ? ` · Actual ${formatMetricValue(kr?.actual, kr?.metric_label, kr?.unit)}`
+                                      : ""}
+                                    {" · "}
+                                    <span className={`font-medium ${statusTone}`}>{status.label}</span>
+                                  </p>
                                 </div>
                               );
                             })}
