@@ -514,32 +514,23 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
         <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 sm:items-center sm:px-3 sm:py-3">
           <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-2xl flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
             <div className="shrink-0 border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0 space-y-1">
-                  <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
-                    {detail?.pillar?.label || selectedPillarKey.replace(/_/g, " ")}
+              <div className="min-w-0 space-y-1">
+                <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
+                  {detail?.pillar?.label || selectedPillarKey.replace(/_/g, " ")}
+                </p>
+                <p className="text-sm font-medium text-[#3f372f]">
+                  {viewingCurrentWeek
+                    ? savingPastDay
+                      ? `Catching up ${activeLabel || "yesterday"}`
+                      : "Tracking today"
+                    : "Last week results"}
+                </p>
+                <p className="text-sm text-[#6b6257]">{trackerScoreLabel}</p>
+                {detail?.pillar?.completed_days_count !== undefined || detail?.pillar?.streak_days !== undefined ? (
+                  <p className="text-xs text-[#8c7f70]">
+                    {`${detail?.pillar?.completed_days_count || 0}/7 days complete · ${detail?.pillar?.streak_days || 0} day check-in streak`}
                   </p>
-                  <p className="text-sm font-medium text-[#3f372f]">
-                    {viewingCurrentWeek
-                      ? savingPastDay
-                        ? `Catching up ${activeLabel || "yesterday"}`
-                        : "Tracking today"
-                      : "Last week results"}
-                  </p>
-                  <p className="text-sm text-[#6b6257]">{trackerScoreLabel}</p>
-                  {detail?.pillar?.completed_days_count !== undefined || detail?.pillar?.streak_days !== undefined ? (
-                    <p className="text-xs text-[#8c7f70]">
-                      {`${detail?.pillar?.completed_days_count || 0}/7 days complete · ${detail?.pillar?.streak_days || 0} day check-in streak`}
-                    </p>
-                  ) : null}
-                </div>
-                <button
-                  type="button"
-                  onClick={closeTracker}
-                  className="shrink-0 rounded-full border border-[#e7e1d6] bg-white px-3 py-2 text-xs uppercase tracking-[0.18em] text-[#5d5348]"
-                >
-                  Close
-                </button>
+                ) : null}
               </div>
             </div>
 
@@ -574,7 +565,9 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
                   ) : null}
 
                   <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
-                    <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">This week</p>
+                    <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
+                      {viewingCurrentWeek ? "This week" : "Last week"}
+                    </p>
                     <div className="mt-3 grid grid-cols-7 gap-2">
                       {(detail.days || []).map((day) => (
                         <div

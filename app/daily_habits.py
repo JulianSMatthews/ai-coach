@@ -1015,6 +1015,11 @@ def get_or_generate_daily_habit_plan(
             .scalars()
                 .first()
         )
+        existing_payload = (
+            existing.context_payload
+            if existing and isinstance(getattr(existing, "context_payload", None), dict)
+            else {}
+        )
         carryover = existing or _latest_prior_daily_habit_plan(user_id, today)
         seed_payload = carryover.context_payload if carryover and isinstance(getattr(carryover, "context_payload", None), dict) else {}
         preferred_concept_key = _normalize_concept_token(concept_key) or _normalize_concept_token(seed_payload.get("selected_concept_key"))

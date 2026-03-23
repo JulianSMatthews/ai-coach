@@ -287,7 +287,7 @@ def _last_week_anchor(current_day: date) -> date:
 
 
 def _is_last_week_anchor(target_day: date, current_day: date) -> bool:
-    return start_of_week(target_day) == start_of_week(_last_week_anchor(current_day))
+    return target_day == _last_week_anchor(current_day)
 
 
 def _week_has_completed_tracker_days(user_id: int, pillar_key: str, anchor: date) -> bool:
