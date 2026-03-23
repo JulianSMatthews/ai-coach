@@ -1499,24 +1499,6 @@ def build_prompt(
                     bits.append(target)
                 suffix = f" ({'; '.join(bits)})" if bits else ""
                 history_lines.append(f"Selected concept focus: {label}{suffix}")
-        if focus_concepts:
-            history_lines.append("Recent tracker focus:")
-            for item in focus_concepts:
-                if not isinstance(item, dict):
-                    continue
-                label = str(item.get("label") or item.get("concept_key") or "").strip()
-                signal = str(item.get("signal") or "").strip()
-                target = str(item.get("target_label") or "").strip()
-                latest = str(item.get("latest_value") or "").strip()
-                if not label:
-                    continue
-                bits = [signal] if signal else []
-                if latest:
-                    bits.append(f"latest={latest}")
-                if target:
-                    bits.append(target)
-                suffix = f" ({'; '.join(bits)})" if bits else ""
-                history_lines.append(f"- {label}{suffix}")
         if (okr_context or {}).get("habit_steps"):
             history_lines.append("Active KR habit steps:")
             for step in (okr_context.get("habit_steps") or [])[:5]:
@@ -1537,7 +1519,9 @@ def build_prompt(
                     "Create a daily habit plan for the coach home screen in strict JSON.",
                     constraints=(
                         "Return only {title, summary, habits}. "
-                        "Provide 3 to 5 habits focused on today's practical next steps."
+                        "Provide 3 to 5 habits focused on today's practical next steps. "
+                        "Every habit must directly support the selected concept only. "
+                        "Do not include habits for any other concept or pillar, even if other tracker context is visible."
                     ),
                 ),
             ),

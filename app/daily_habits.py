@@ -10,12 +10,13 @@ from sqlalchemy import desc, select
 
 from .db import SessionLocal, engine
 from .models import DailyCoachHabitPlan, OKRKeyResult, OKRKrHabitStep, OKRObjective, User
-from .okr import _normalize_concept_key
+from .okr import _guess_concept_from_description, _normalize_concept_key
 from .pillar_tracker import get_pillar_tracker_detail, get_pillar_tracker_summary, tracker_today
 from .prompts import build_prompt, ensure_builtin_prompt_templates, run_llm_prompt
 
 _DAILY_HABITS_SCHEMA_READY = False
 _PILLAR_ORDER = ("nutrition", "training", "resilience", "recovery")
+_CURRENT_HABIT_PLAN_VERSION = 4
 
 
 def ensure_daily_habit_plan_schema() -> None:
@@ -83,7 +84,30 @@ def _habit_item_id(
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
-def _load_pillar_okr_context(user_id: int, pillar_key: str) -> dict[str, Any]:
+def _kr_notes_dict(notes: Any) -> dict[str, Any]:
+    if not notes:
+        return {}
+    if isinstance(notes, dict):
+        return notes
+    try:
+        data = json.loads(notes)
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _extract_kr_concept_key(pillar_key: str, kr: OKRKeyResult) -> str | None:
+    notes_dict = _kr_notes_dict(getattr(kr, "notes", None))
+    concept_key = notes_dict.get("concept_key")
+    if concept_key:
+        concept_key = str(concept_key).split(".")[-1]
+    if not concept_key:
+        concept_key = _guess_concept_from_description(pillar_key, getattr(kr, "description", "") or "")
+    return _normalize_concept_token(concept_key)
+
+
+def _load_pillar_okr_context(user_id: int, pillar_key: str, *, concept_key: str | None = None) -> dict[str, Any]:
+    requested_concept_key = _normalize_concept_token(concept_key)
     with SessionLocal() as s:
         objective = (
             s.execute(
@@ -108,6 +132,12 @@ def _load_pillar_okr_context(user_id: int, pillar_key: str) -> dict[str, Any]:
             .scalars()
             .all()
         )
+        if requested_concept_key:
+            krs = [
+                row
+                for row in krs
+                if _extract_kr_concept_key(str(pillar_key or "").strip().lower(), row) == requested_concept_key
+            ]
         kr_ids = [int(getattr(row, "id", 0) or 0) for row in krs if getattr(row, "id", None)]
         habit_rows = []
         if kr_ids:
@@ -307,7 +337,11 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
     selected_pillar_label = str(
         (selected_focus or {}).get("pillar_label") or weakest.get("label") or selected_pillar_key.title()
     ).strip()
-    okr_context = _load_pillar_okr_context(user_id, selected_pillar_key)
+    okr_context = _load_pillar_okr_context(
+        user_id,
+        selected_pillar_key,
+        concept_key=(selected_focus or {}).get("concept_key"),
+    )
     pillars_payload = [
         {
             "pillar_key": str(item.get("pillar_key") or "").strip(),
@@ -501,8 +535,9 @@ def _habit_option_sets_from_state(
 ) -> dict[str, list[dict[str, Any]]]:
     concept_lookup = _concept_lookup_map(available_concepts)
     option_sets: dict[str, list[dict[str, Any]]] = {}
+    state_version = _habit_plan_version(payload)
     raw_sets = payload.get("habit_option_sets") if isinstance(payload, dict) else None
-    if isinstance(raw_sets, dict):
+    if state_version >= _CURRENT_HABIT_PLAN_VERSION and isinstance(raw_sets, dict):
         for raw_key, raw_items in raw_sets.items():
             concept_key = _normalize_concept_token(raw_key)
             if not concept_key or not isinstance(raw_items, list):
@@ -626,7 +661,11 @@ def _selected_ids_by_concept(
     available_concepts: list[dict[str, Any]],
     option_sets: dict[str, list[dict[str, Any]]],
 ) -> dict[str, list[str]]:
-    selected_map = _normalize_selected_ids_map(payload)
+    selected_map = (
+        _normalize_selected_ids_map(payload)
+        if _habit_plan_version(payload) >= _CURRENT_HABIT_PLAN_VERSION
+        else {}
+    )
     if selected_map:
         return selected_map
     return _recover_selected_ids_map_from_row(
@@ -1044,6 +1083,7 @@ def get_or_generate_daily_habit_plan(
         if (
             existing
             and not force
+            and _habit_plan_version(existing_payload) >= _CURRENT_HABIT_PLAN_VERSION
             and str(getattr(existing, "context_hash", "") or "") == hash_value
             and selected_concept_key
             and option_sets.get(selected_concept_key)
@@ -1055,7 +1095,7 @@ def get_or_generate_daily_habit_plan(
                 )
             existing.context_payload = {
                 **context,
-                "habit_plan_version": 3,
+                "habit_plan_version": _CURRENT_HABIT_PLAN_VERSION,
                 "selected_concept_key": selected_concept_key,
                 "habit_option_sets": option_sets,
                 "selected_option_ids_by_concept": selected_ids_by_concept,
@@ -1098,7 +1138,7 @@ def get_or_generate_daily_habit_plan(
         )
         row.context_payload = {
             **context,
-            "habit_plan_version": 3,
+            "habit_plan_version": _CURRENT_HABIT_PLAN_VERSION,
             "selected_concept_key": selected_concept_key,
             "habit_option_sets": option_sets,
             "selected_option_ids_by_concept": selected_ids_by_concept,
@@ -1181,7 +1221,7 @@ def update_daily_habit_plan_selection(
         ) or _fallback_ask_suggestions({**ask_context, "selected_habits": row.habits})
         row.context_payload = {
             **payload,
-            "habit_plan_version": 3,
+            "habit_plan_version": _CURRENT_HABIT_PLAN_VERSION,
             "selected_concept_key": selected_concept_key,
             "habit_option_sets": option_sets,
             "selected_option_ids_by_concept": selected_ids_by_concept,
