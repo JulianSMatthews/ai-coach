@@ -326,30 +326,21 @@ export default function LatestAssessmentPanel({ userId, initialSummary, coachPro
             </div>
 
             <div className="flex-1 overflow-y-auto px-3 py-3 sm:px-5">
-              <div className="space-y-3">
-                {String(coachProductAvatar?.url || "").trim() ? (
-                  <video
-                    controls
-                    preload="metadata"
-                    playsInline
-                    poster={String(coachProductAvatar?.posterUrl || "").trim() || undefined}
-                    className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
-                  >
-                    <source src={String(coachProductAvatar?.url || "").trim()} />
-                  </video>
-                ) : (
-                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5 text-sm text-[#6b6257]">
-                    The HealthSense introduction video is not available right now.
-                  </div>
-                )}
-                {String(coachProductAvatar?.script || "").trim() ? (
-                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
-                    <p className="whitespace-pre-wrap text-sm leading-6 text-[#6b6257]">
-                      {String(coachProductAvatar?.script || "").trim()}
-                    </p>
-                  </div>
-                ) : null}
-              </div>
+              {String(coachProductAvatar?.url || "").trim() ? (
+                <video
+                  controls
+                  preload="metadata"
+                  playsInline
+                  poster={String(coachProductAvatar?.posterUrl || "").trim() || undefined}
+                  className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
+                >
+                  <source src={String(coachProductAvatar?.url || "").trim()} />
+                </video>
+              ) : (
+                <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5 text-sm text-[#6b6257]">
+                  The HealthSense introduction video is not available right now.
+                </div>
+              )}
             </div>
 
             <div className="shrink-0 border-t border-[#efe7db] px-3 py-3 sm:px-5">
