@@ -160,10 +160,10 @@ function progressStatus(actual?: number | null, target?: number | null, baseline
   const pct = progressRatio(actual, target, baseline);
   if (pct === null) {
     return {
-      label: "In progress",
+      label: "No update",
       pct: null,
-      tone: "#1d4ed8",
-      chipBg: "#eff6ff",
+      tone: "#475467",
+      chipBg: "#f2f4f7",
     };
   }
   if (pct >= 0.9) {
@@ -174,19 +174,11 @@ function progressStatus(actual?: number | null, target?: number | null, baseline
       chipBg: "#ecfdf3",
     };
   }
-  if (pct >= 0.5) {
-    return {
-      label: "At risk",
-      pct,
-      tone: "#c2410c",
-      chipBg: "#fff7ed",
-    };
-  }
   return {
-    label: "Off track",
+    label: "Behind pace",
     pct,
-    tone: "#b42318",
-    chipBg: "#fef2f2",
+    tone: pct >= 0.5 ? "#c2410c" : "#b42318",
+    chipBg: pct >= 0.5 ? "#fff7ed" : "#fef2f2",
   };
 }
 
@@ -391,7 +383,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">HealthSense</p>
-                  <p className="mt-1 text-lg font-semibold text-[#1e1b16]">OKR progress</p>
+                  <p className="mt-1 text-lg font-semibold text-[#1e1b16]">Key results</p>
                 </div>
                 <button
                   type="button"
@@ -404,81 +396,64 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-5">
-              <div className="flex flex-col items-center text-center">
-                <CombinedLogoRing value={combinedScore} />
-                <p className="mt-3 text-3xl font-semibold text-[#1e1b16]">{combinedScore}</p>
-                <p className="text-sm text-[#6b6257]">Combined HealthSense score</p>
-              </div>
-
-              <div className="mt-5 space-y-2">
+              <div className="space-y-3">
                 {progressRows.length ? (
                   progressRows.map((row, rowIndex) => {
                     const pillarKey = normalizePillarKey(row?.pillar);
-                    const palette = getPillarPalette(pillarKey);
-                    const objective = String(row?.objective || "").trim();
                     const krs = Array.isArray(row?.krs) ? row.krs : [];
                     return (
                       <div
                         key={`okr-progress-${pillarKey || rowIndex}`}
                         className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4"
                       >
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">
-                            {String(row?.pillar || palette.label || "Pillar").trim() || "Pillar"}
-                          </p>
-                          {objective ? (
-                            <p className="mt-1 text-sm font-semibold text-[#1e1b16]">{objective}</p>
-                          ) : null}
-                        </div>
+                        <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">
+                          {String(row?.pillar || getPillarPalette(pillarKey).label || "Pillar").trim() || "Pillar"}
+                        </p>
 
                         {krs.length ? (
-                          <div className="mt-3 space-y-3">
+                          <div className="mt-3 space-y-2">
                             {krs.map((kr, krIndex) => {
                               const status = progressStatus(kr?.actual, kr?.target, kr?.baseline);
-                              const pctLabel = status.pct !== null ? `${Math.round(status.pct * 100)}%` : "—";
-                              const barWidth = status.pct !== null ? `${Math.round(status.pct * 100)}%` : "4%";
                               return (
                                 <div
                                   key={`okr-${pillarKey || "pillar"}-${kr?.id || krIndex}`}
                                   className="rounded-2xl border border-[#eadcc6] bg-white px-3 py-3"
                                 >
-                                  <p className="text-sm font-semibold text-[#1e1b16]">
-                                    {String(kr?.description || "Key result").trim() || "Key result"}
-                                  </p>
-                                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-sm font-semibold text-[#1e1b16]">
+                                        {String(kr?.description || "Key result").trim() || "Key result"}
+                                      </p>
+                                      {kr?.metric_label ? (
+                                        <p className="mt-1 text-xs text-[#6b6257]">{kr.metric_label}</p>
+                                      ) : null}
+                                    </div>
                                     <span
-                                      className="rounded-full px-2 py-0.5"
+                                      className="shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
                                       style={{ background: status.chipBg, color: status.tone }}
                                     >
                                       {status.label}
                                     </span>
-                                    {kr?.metric_label ? (
-                                      <span className="text-[#6b6257]">{kr.metric_label}</span>
-                                    ) : null}
                                   </div>
-                                  <div className="mt-3 grid grid-cols-3 gap-2 text-xs text-[#6b6257]">
-                                    <div>
-                                      <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Base</p>
-                                      <p className="text-sm text-[#1e1b16]">{formatNumber(kr?.baseline)}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Current</p>
-                                      <p className="text-sm text-[#1e1b16]">{formatNumber(kr?.actual)}</p>
-                                    </div>
-                                    <div>
-                                      <p className="text-[10px] uppercase tracking-[0.22em] text-[#8b8074]">Target</p>
-                                      <p className="text-sm text-[#1e1b16]">{formatNumber(kr?.target)}</p>
-                                    </div>
+                                  <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[#6b6257]">
+                                    <span>
+                                      <span className="uppercase tracking-[0.12em] text-[#8b8074]">Base</span>{" "}
+                                      <span className="text-[#1e1b16]">{formatNumber(kr?.baseline)}</span>
+                                    </span>
+                                    <span>
+                                      <span className="uppercase tracking-[0.12em] text-[#8b8074]">Current</span>{" "}
+                                      <span className="text-[#1e1b16]">{formatNumber(kr?.actual)}</span>
+                                    </span>
+                                    <span>
+                                      <span className="uppercase tracking-[0.12em] text-[#8b8074]">Target</span>{" "}
+                                      <span className="text-[#1e1b16]">{formatNumber(kr?.target)}</span>
+                                    </span>
                                   </div>
-                                  <div className="mt-3 flex items-center gap-2">
-                                    <span className="text-xs font-semibold text-[#101828]">{pctLabel}</span>
-                                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#e4e7ec]">
-                                      <div
-                                        className="h-full rounded-full"
-                                        style={{ width: barWidth, background: palette.accent }}
-                                      />
+                                  {status.pct !== null ? (
+                                    <div className="mt-2 text-xs text-[#6b6257]">
+                                      {`${Math.round(status.pct * 100)}% of the way from base to target`}
                                     </div>
-                                  </div>
+                                  ) : null}
                                 </div>
                               );
                             })}
