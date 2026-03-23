@@ -502,6 +502,7 @@ export default function AssessmentChatBox({
   const [sending, setSending] = useState(false);
   const [homeSurface, setHomeSurface] = useState<"ask" | "insight" | "habits">("ask");
   const [askPromptTagsHidden, setAskPromptTagsHidden] = useState(false);
+  const [pendingAskMessage, setPendingAskMessage] = useState("");
   const [dailyHabitPlan, setDailyHabitPlan] = useState<DailyHabitPlanResponse | null>(null);
   const [dailyHabitPlanLoading, setDailyHabitPlanLoading] = useState(false);
   const [dailyHabitPlanSaving, setDailyHabitPlanSaving] = useState(false);
@@ -583,8 +584,34 @@ export default function AssessmentChatBox({
   ];
   const askSurfaceMessages = useMemo(() => {
     const visible = messages.filter((message) => String(message.text || "").trim());
-    return visible.slice(-3);
-  }, [messages]);
+    const pendingText = pendingAskMessage.trim();
+    const withPending = [...visible];
+    if (pendingText) {
+      const alreadyVisible = withPending.some((message) => {
+        const direction = String(message.direction || "").trim().toLowerCase();
+        return direction !== "outbound" && String(message.text || "").trim() === pendingText;
+      });
+      if (!alreadyVisible) {
+        withPending.push({
+          direction: "inbound",
+          channel: "app",
+          text: pendingText,
+        });
+      }
+    }
+    let lastUserIndex = -1;
+    for (let index = withPending.length - 1; index >= 0; index -= 1) {
+      const direction = String(withPending[index]?.direction || "").trim().toLowerCase();
+      if (direction !== "outbound") {
+        lastUserIndex = index;
+        break;
+      }
+    }
+    if (lastUserIndex < 0) {
+      return withPending.slice(-1);
+    }
+    return withPending.slice(lastUserIndex, lastUserIndex + 3);
+  }, [messages, pendingAskMessage]);
   const insightContent = coachInsight?.content || null;
   const insightConcepts = useMemo(
     () => (Array.isArray(coachInsight?.available_concepts) ? coachInsight.available_concepts : []),
@@ -884,6 +911,7 @@ export default function AssessmentChatBox({
     setCoachInsightLoading(false);
     setInsightActiveConceptKey("");
     setAskPromptTagsHidden(false);
+    setPendingAskMessage("");
   }, [userId]);
 
   useEffect(() => {
@@ -1153,8 +1181,12 @@ export default function AssessmentChatBox({
   ) {
     const outbound = String(textValue || "").trim();
     if (!outbound || sending) return;
+    const isAskSubmission = showHomeChatPanel && homeSurface === "ask";
     setSending(true);
     setStatus(null);
+    if (isAskSubmission) {
+      setPendingAskMessage(outbound);
+    }
     try {
       const res = await fetch("/api/assessment/chat/send", {
         method: "POST",
@@ -1203,6 +1235,9 @@ export default function AssessmentChatBox({
         setDraft(outbound);
       }
     } finally {
+      if (isAskSubmission) {
+        setPendingAskMessage("");
+      }
       setSending(false);
     }
   }
