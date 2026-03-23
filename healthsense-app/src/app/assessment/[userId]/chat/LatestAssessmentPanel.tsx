@@ -133,6 +133,17 @@ function formatNumber(value?: number | null): string {
   return resolved.toFixed(2).replace(/\.?0+$/, "");
 }
 
+function formatMetricValue(
+  value?: number | null,
+  metricLabel?: string | null,
+  unit?: string | null,
+): string {
+  const formatted = formatNumber(value);
+  if (formatted === "—") return formatted;
+  const suffix = String(metricLabel || unit || "").trim();
+  return suffix ? `${formatted} ${suffix}` : formatted;
+}
+
 function toFiniteNumber(value?: number | null): number | null {
   if (value === null || value === undefined) return null;
   const parsed = Number(value);
@@ -401,32 +412,41 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
                   progressRows.map((row, rowIndex) => {
                     const pillarKey = normalizePillarKey(row?.pillar);
                     const krs = Array.isArray(row?.krs) ? row.krs : [];
+                    const objective = String(row?.objective || "").trim();
                     return (
                       <div
                         key={`okr-progress-${pillarKey || rowIndex}`}
                         className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4"
                       >
-                        <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">
-                          {String(row?.pillar || getPillarPalette(pillarKey).label || "Pillar").trim() || "Pillar"}
-                        </p>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">
+                            {String(row?.pillar || getPillarPalette(pillarKey).label || "Pillar").trim() || "Pillar"}
+                          </p>
+                          {objective ? (
+                            <p className="mt-1 text-sm font-semibold text-[#1e1b16]">{objective}</p>
+                          ) : null}
+                        </div>
 
                         {krs.length ? (
-                          <div className="mt-3 space-y-2">
+                          <div className="mt-3 divide-y divide-[#f1e7d8] overflow-hidden rounded-2xl border border-[#eadcc6] bg-white">
                             {krs.map((kr, krIndex) => {
                               const status = progressStatus(kr?.actual, kr?.target, kr?.baseline);
                               return (
                                 <div
                                   key={`okr-${pillarKey || "pillar"}-${kr?.id || krIndex}`}
-                                  className="rounded-2xl border border-[#eadcc6] bg-white px-3 py-3"
+                                  className="px-3 py-3"
                                 >
                                   <div className="flex items-start justify-between gap-3">
                                     <div className="min-w-0 flex-1">
                                       <p className="text-sm font-semibold text-[#1e1b16]">
                                         {String(kr?.description || "Key result").trim() || "Key result"}
                                       </p>
-                                      {kr?.metric_label ? (
-                                        <p className="mt-1 text-xs text-[#6b6257]">{kr.metric_label}</p>
-                                      ) : null}
+                                      <p className="mt-1 text-xs text-[#6b6257]">
+                                        {`Target ${formatMetricValue(kr?.target, kr?.metric_label, kr?.unit)}`}
+                                        {kr?.actual !== null && kr?.actual !== undefined
+                                          ? ` · Actual ${formatMetricValue(kr?.actual, kr?.metric_label, kr?.unit)}`
+                                          : ""}
+                                      </p>
                                     </div>
                                     <span
                                       className="shrink-0 rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]"
@@ -435,25 +455,6 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
                                       {status.label}
                                     </span>
                                   </div>
-                                  <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 text-xs text-[#6b6257]">
-                                    <span>
-                                      <span className="uppercase tracking-[0.12em] text-[#8b8074]">Base</span>{" "}
-                                      <span className="text-[#1e1b16]">{formatNumber(kr?.baseline)}</span>
-                                    </span>
-                                    <span>
-                                      <span className="uppercase tracking-[0.12em] text-[#8b8074]">Current</span>{" "}
-                                      <span className="text-[#1e1b16]">{formatNumber(kr?.actual)}</span>
-                                    </span>
-                                    <span>
-                                      <span className="uppercase tracking-[0.12em] text-[#8b8074]">Target</span>{" "}
-                                      <span className="text-[#1e1b16]">{formatNumber(kr?.target)}</span>
-                                    </span>
-                                  </div>
-                                  {status.pct !== null ? (
-                                    <div className="mt-2 text-xs text-[#6b6257]">
-                                      {`${Math.round(status.pct * 100)}% of the way from base to target`}
-                                    </div>
-                                  ) : null}
                                 </div>
                               );
                             })}
