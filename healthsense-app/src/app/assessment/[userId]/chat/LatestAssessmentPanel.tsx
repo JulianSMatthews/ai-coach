@@ -390,24 +390,24 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
       {scoreCardOpen ? (
         <div className="fixed inset-0 z-40 flex items-stretch justify-center bg-black/30 sm:items-center sm:px-3 sm:py-3">
           <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-sm flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
-            <div className="shrink-0 border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
+            <div className="shrink-0 border-b border-[#efe7db] bg-white px-3 py-3 sm:px-5">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">HealthSense</p>
-                  <p className="mt-1 text-lg font-semibold text-[#1e1b16]">Key results</p>
+                  <p className="text-[10px] uppercase tracking-[0.18em] text-[#6b6257]">HealthSense</p>
+                  <p className="mt-0.5 text-base font-semibold text-[#1e1b16]">Key results</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setScoreCardOpen(false)}
-                  className="shrink-0 rounded-full border border-[#e7e1d6] bg-white px-3 py-2 text-xs uppercase tracking-[0.18em] text-[#5d5348]"
+                  className="shrink-0 rounded-full border border-[#e7e1d6] bg-white px-2.5 py-1.5 text-[10px] uppercase tracking-[0.16em] text-[#5d5348]"
                 >
                   Close
                 </button>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-4 py-5 sm:px-5">
-              <div className="space-y-3">
+            <div className="flex-1 overflow-y-auto px-3 py-3 sm:px-5">
+              <div className="space-y-2">
                 {progressRows.length ? (
                   progressRows.map((row, rowIndex) => {
                     const pillarKey = normalizePillarKey(row?.pillar);
@@ -415,14 +415,14 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
                     return (
                       <div
                         key={`okr-progress-${pillarKey || rowIndex}`}
-                        className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3"
+                        className="rounded-xl border border-[#efe7db] bg-[#fffaf3] px-2.5 py-2.5"
                       >
-                        <p className="text-xs uppercase tracking-[0.18em] text-[#6b6257]">
+                        <p className="text-[10px] uppercase tracking-[0.16em] text-[#6b6257]">
                           {String(row?.pillar || getPillarPalette(pillarKey).label || "Pillar").trim() || "Pillar"}
                         </p>
 
                         {krs.length ? (
-                          <div className="mt-2 space-y-2">
+                          <div className="mt-1.5 divide-y divide-[#eadfcf] rounded-lg bg-white/80">
                             {krs.map((kr, krIndex) => {
                               const status = progressStatus(kr?.actual, kr?.target, kr?.baseline);
                               const statusTone =
@@ -434,14 +434,9 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
                               return (
                                 <div
                                   key={`okr-${pillarKey || "pillar"}-${kr?.id || krIndex}`}
-                                  className={`rounded-xl border border-[#eadcc6] bg-white px-3 py-2.5 ${
-                                    krIndex > 0 ? "" : ""
-                                  }`}
+                                  className={`py-1.5 ${krIndex > 0 ? "mt-0" : ""}`}
                                 >
-                                  <p className="text-xs font-semibold text-[#1e1b16]">
-                                    {String(kr?.description || "Key result").trim() || "Key result"}
-                                  </p>
-                                  <p className="mt-1 text-[11px] text-[#6b6257]">
+                                  <p className="text-[10px] leading-4 text-[#6b6257]">
                                     {`Target ${formatMetricValue(kr?.target, kr?.metric_label, kr?.unit)}`}
                                     {kr?.actual !== null && kr?.actual !== undefined
                                       ? ` · Actual ${formatMetricValue(kr?.actual, kr?.metric_label, kr?.unit)}`
@@ -454,24 +449,24 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
                             })}
                           </div>
                         ) : (
-                          <p className="mt-3 text-sm text-[#6b6257]">No key results recorded yet.</p>
+                          <p className="mt-2 text-xs text-[#6b6257]">No key results recorded yet.</p>
                         )}
                       </div>
                     );
                   })
                 ) : (
-                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4 text-sm text-[#6b6257]">
+                  <div className="rounded-xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3 text-xs text-[#6b6257]">
                     No key results recorded yet.
                   </div>
                 )}
               </div>
             </div>
 
-            <div className="shrink-0 border-t border-[#efe7db] px-4 py-4 sm:px-5">
+            <div className="shrink-0 border-t border-[#efe7db] px-3 py-3 sm:px-5">
               <button
                 type="button"
                 onClick={() => setScoreCardOpen(false)}
-                className="w-full rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+                className="w-full rounded-full border border-[#d9cdbb] bg-white px-4 py-2.5 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
               >
                 Close
               </button>
