@@ -81,91 +81,58 @@ export async function saveIntroSettingsAction(
   _: IntroSaveState,
   formData: FormData,
 ): Promise<IntroSaveState> {
-  const active = Boolean(formData.get("active"));
-  const title = String(formData.get("title") || "").trim();
-  const welcome_message_template = String(formData.get("welcome_message_template") || "").trim();
-  const body = String(formData.get("body") || "").trim();
-  const podcast_url = String(formData.get("podcast_url") || "").trim();
-  const podcast_voice = String(formData.get("podcast_voice") || "").trim();
-  const app_intro_avatar_url = String(formData.get("app_intro_avatar_url") || "").trim();
-  const app_intro_avatar_title = String(formData.get("app_intro_avatar_title") || "").trim();
-  const app_intro_avatar_script = String(formData.get("app_intro_avatar_script") || "").trim();
-  const app_intro_avatar_poster_url = String(formData.get("app_intro_avatar_poster_url") || "").trim();
-  const app_intro_avatar_character = String(formData.get("app_intro_avatar_character") || "").trim();
-  const app_intro_avatar_style = String(formData.get("app_intro_avatar_style") || "").trim();
-  const app_intro_avatar_voice = String(formData.get("app_intro_avatar_voice") || "").trim();
-  const app_habits_avatar_url = String(formData.get("app_habits_avatar_url") || "").trim();
-  const app_habits_avatar_title = String(formData.get("app_habits_avatar_title") || "").trim();
-  const app_habits_avatar_script = String(formData.get("app_habits_avatar_script") || "").trim();
-  const app_habits_avatar_poster_url = String(formData.get("app_habits_avatar_poster_url") || "").trim();
-  const app_habits_avatar_character = String(formData.get("app_habits_avatar_character") || "").trim();
-  const app_habits_avatar_style = String(formData.get("app_habits_avatar_style") || "").trim();
-  const app_habits_avatar_voice = String(formData.get("app_habits_avatar_voice") || "").trim();
-  const app_insight_avatar_url = String(formData.get("app_insight_avatar_url") || "").trim();
-  const app_insight_avatar_title = String(formData.get("app_insight_avatar_title") || "").trim();
-  const app_insight_avatar_script = String(formData.get("app_insight_avatar_script") || "").trim();
-  const app_insight_avatar_poster_url = String(formData.get("app_insight_avatar_poster_url") || "").trim();
-  const app_insight_avatar_character = String(formData.get("app_insight_avatar_character") || "").trim();
-  const app_insight_avatar_style = String(formData.get("app_insight_avatar_style") || "").trim();
-  const app_insight_avatar_voice = String(formData.get("app_insight_avatar_voice") || "").trim();
-  const app_ask_avatar_url = String(formData.get("app_ask_avatar_url") || "").trim();
-  const app_ask_avatar_title = String(formData.get("app_ask_avatar_title") || "").trim();
-  const app_ask_avatar_script = String(formData.get("app_ask_avatar_script") || "").trim();
-  const app_ask_avatar_poster_url = String(formData.get("app_ask_avatar_poster_url") || "").trim();
-  const app_ask_avatar_character = String(formData.get("app_ask_avatar_character") || "").trim();
-  const app_ask_avatar_style = String(formData.get("app_ask_avatar_style") || "").trim();
-  const app_ask_avatar_voice = String(formData.get("app_ask_avatar_voice") || "").trim();
-  const app_daily_tracking_avatar_url = String(formData.get("app_daily_tracking_avatar_url") || "").trim();
-  const app_daily_tracking_avatar_title = String(formData.get("app_daily_tracking_avatar_title") || "").trim();
-  const app_daily_tracking_avatar_script = String(formData.get("app_daily_tracking_avatar_script") || "").trim();
-  const app_daily_tracking_avatar_poster_url = String(formData.get("app_daily_tracking_avatar_poster_url") || "").trim();
-  const app_daily_tracking_avatar_character = String(formData.get("app_daily_tracking_avatar_character") || "").trim();
-  const app_daily_tracking_avatar_style = String(formData.get("app_daily_tracking_avatar_style") || "").trim();
-  const app_daily_tracking_avatar_voice = String(formData.get("app_daily_tracking_avatar_voice") || "").trim();
+  const payload: Record<string, unknown> = {};
+  if (formData.has("active")) {
+    payload.active = Boolean(formData.get("active"));
+  }
+  const stringFields = [
+    "title",
+    "welcome_message_template",
+    "body",
+    "podcast_url",
+    "podcast_voice",
+    "app_intro_avatar_url",
+    "app_intro_avatar_title",
+    "app_intro_avatar_script",
+    "app_intro_avatar_poster_url",
+    "app_intro_avatar_character",
+    "app_intro_avatar_style",
+    "app_intro_avatar_voice",
+    "app_habits_avatar_url",
+    "app_habits_avatar_title",
+    "app_habits_avatar_script",
+    "app_habits_avatar_poster_url",
+    "app_habits_avatar_character",
+    "app_habits_avatar_style",
+    "app_habits_avatar_voice",
+    "app_insight_avatar_url",
+    "app_insight_avatar_title",
+    "app_insight_avatar_script",
+    "app_insight_avatar_poster_url",
+    "app_insight_avatar_character",
+    "app_insight_avatar_style",
+    "app_insight_avatar_voice",
+    "app_ask_avatar_url",
+    "app_ask_avatar_title",
+    "app_ask_avatar_script",
+    "app_ask_avatar_poster_url",
+    "app_ask_avatar_character",
+    "app_ask_avatar_style",
+    "app_ask_avatar_voice",
+    "app_daily_tracking_avatar_url",
+    "app_daily_tracking_avatar_title",
+    "app_daily_tracking_avatar_script",
+    "app_daily_tracking_avatar_poster_url",
+    "app_daily_tracking_avatar_character",
+    "app_daily_tracking_avatar_style",
+    "app_daily_tracking_avatar_voice",
+  ] as const;
+  stringFields.forEach((field) => {
+    if (!formData.has(field)) return;
+    payload[field] = String(formData.get(field) || "").trim();
+  });
   try {
-    const result = await updateLibraryIntroSettings({
-      active,
-      title,
-      welcome_message_template,
-      body,
-      podcast_url,
-      podcast_voice,
-      app_intro_avatar_url,
-      app_intro_avatar_title,
-      app_intro_avatar_script,
-      app_intro_avatar_poster_url,
-      app_intro_avatar_character,
-      app_intro_avatar_style,
-      app_intro_avatar_voice,
-      app_habits_avatar_url,
-      app_habits_avatar_title,
-      app_habits_avatar_script,
-      app_habits_avatar_poster_url,
-      app_habits_avatar_character,
-      app_habits_avatar_style,
-      app_habits_avatar_voice,
-      app_insight_avatar_url,
-      app_insight_avatar_title,
-      app_insight_avatar_script,
-      app_insight_avatar_poster_url,
-      app_insight_avatar_character,
-      app_insight_avatar_style,
-      app_insight_avatar_voice,
-      app_ask_avatar_url,
-      app_ask_avatar_title,
-      app_ask_avatar_script,
-      app_ask_avatar_poster_url,
-      app_ask_avatar_character,
-      app_ask_avatar_style,
-      app_ask_avatar_voice,
-      app_daily_tracking_avatar_url,
-      app_daily_tracking_avatar_title,
-      app_daily_tracking_avatar_script,
-      app_daily_tracking_avatar_poster_url,
-      app_daily_tracking_avatar_character,
-      app_daily_tracking_avatar_style,
-      app_daily_tracking_avatar_voice,
-    });
+    const result = await updateLibraryIntroSettings(payload);
     revalidatePath("/admin/library");
     revalidatePath("/admin/library/intro");
     return { ok: true, result };

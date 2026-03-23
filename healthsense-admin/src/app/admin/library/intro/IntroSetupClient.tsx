@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useEffect, useMemo, useState } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import type {
   AssessmentIntroLibrarySettings,
   AssessmentIntroAvatarSettings,
@@ -33,6 +33,7 @@ type IntroSetupClientProps = {
 };
 
 type IntroSetupTab = "app" | "coaching" | "assessment";
+type AppIntroSettingsTab = "general" | IntroHelpAvatarSlot;
 type IntroHelpAvatarSlot = "habits" | "insight" | "ask" | "daily_tracking";
 type IntroHelpAvatarFieldState = {
   url: string;
@@ -356,6 +357,7 @@ export default function IntroSetupClient({
     introHelpAvatarMapFromIntro(appIntro),
   );
   const [activeHelpAvatarSlot, setActiveHelpAvatarSlot] = useState<IntroHelpAvatarSlot | null>(null);
+  const helpAvatarSlotInputRef = useRef<HTMLInputElement | null>(null);
   const [coachProductAvatarUrl, setCoachProductAvatarUrl] = useState(
     appIntro.coach_product_avatar?.url || "",
   );
@@ -434,6 +436,7 @@ export default function IntroSetupClient({
     assessmentIntro.assessment_intro_avatar?.summary_url || "",
   );
   const [activeTab, setActiveTab] = useState<IntroSetupTab>("assessment");
+  const [activeAppIntroTab, setActiveAppIntroTab] = useState<AppIntroSettingsTab>("general");
 
   const generatedPayload = useMemo(
     () => (((generationState.result?.result as Record<string, unknown> | undefined) || {}) as Record<string, unknown>),
@@ -492,6 +495,8 @@ export default function IntroSetupClient({
       ) as Record<IntroHelpAvatarSlot, (typeof INTRO_HELP_AVATAR_CONFIGS)[number]>,
     [],
   );
+  const selectedHelpAvatarConfig =
+    activeAppIntroTab !== "general" ? helpAvatarConfigBySlot[activeAppIntroTab] : null;
 
   const updateHelpAvatarField = (
     slot: IntroHelpAvatarSlot,
@@ -917,104 +922,122 @@ export default function IntroSetupClient({
               label="HealthSense app intro"
               description="Controls the onboarding intro inside the HealthSense app, including welcome copy and podcast audio."
             />
+            <div className="mt-4 flex flex-wrap gap-2">
+              <TabButton
+                active={activeAppIntroTab === "general"}
+                label="General"
+                onClick={() => setActiveAppIntroTab("general")}
+              />
+              {INTRO_HELP_AVATAR_CONFIGS.map((config) => (
+                <TabButton
+                  key={config.slot}
+                  active={activeAppIntroTab === config.slot}
+                  label={config.defaultTitle}
+                  onClick={() => setActiveAppIntroTab(config.slot)}
+                />
+              ))}
+            </div>
             <form action={saveAction} className="mt-4 space-y-4">
-              <label className="flex items-center gap-2 text-sm text-[#3c332b]">
-                <input
-                  type="checkbox"
-                  name="active"
-                  checked={active}
-                  onChange={(e) => setActive(e.target.checked)}
-                />
-                Intro flow active
-              </label>
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Title</label>
-                <input
-                  name="title"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                  Welcome message template
-                </label>
-                <input
-                  name="welcome_message_template"
-                  value={welcomeTemplate}
-                  onChange={(e) => setWelcomeTemplate(e.target.value)}
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
-                />
-                <p className="mt-1 text-xs text-[#8a8176]">
-                  Supports {"{first_name}"} and {"{display_name}"}.
-                </p>
-              </div>
-              <div>
-                <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                  Read content
-                </label>
-                <textarea
-                  name="body"
-                  rows={8}
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                  className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
-                />
-              </div>
-              <div className="grid gap-3 md:grid-cols-2">
-                <div>
-                  <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                    Podcast URL
+              <input ref={helpAvatarSlotInputRef} type="hidden" name="app_help_avatar_slot" defaultValue="" />
+              {activeAppIntroTab === "general" ? (
+                <>
+                  <label className="flex items-center gap-2 text-sm text-[#3c332b]">
+                    <input
+                      type="checkbox"
+                      name="active"
+                      checked={active}
+                      onChange={(e) => setActive(e.target.checked)}
+                    />
+                    Intro flow active
                   </label>
-                  <input
-                    name="podcast_url"
-                    value={podcastUrl}
-                    onChange={(e) => setPodcastUrl(e.target.value)}
-                    className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                    Podcast voice
-                  </label>
-                  <select
-                    name="podcast_voice"
-                    value={podcastVoice}
-                    onChange={(e) => setPodcastVoice(e.target.value)}
-                    className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
-                  >
-                    {voiceOptions.map((voice) => (
-                      <option key={voice.value || "default"} value={voice.value}>
-                        {voice.label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-              {podcastUrl ? (
-                <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] p-3">
-                  <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                    Podcast preview
-                  </p>
-                  <audio
-                    key={podcastUrl}
-                    controls
-                    preload="none"
-                    className="mt-2 w-full"
-                    src={podcastUrl}
-                  />
-                  <a
-                    href={podcastUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-2 inline-flex text-[11px] uppercase tracking-[0.2em] text-[var(--accent)]"
-                  >
-                    Open audio
-                  </a>
-                </div>
-              ) : null}
-              <div className="space-y-4 rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Title</label>
+                    <input
+                      name="title"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                      Welcome message template
+                    </label>
+                    <input
+                      name="welcome_message_template"
+                      value={welcomeTemplate}
+                      onChange={(e) => setWelcomeTemplate(e.target.value)}
+                      className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                    />
+                    <p className="mt-1 text-xs text-[#8a8176]">
+                      Supports {"{first_name}"} and {"{display_name}"}.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                      Read content
+                    </label>
+                    <textarea
+                      name="body"
+                      rows={8}
+                      value={body}
+                      onChange={(e) => setBody(e.target.value)}
+                      className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                    />
+                  </div>
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div>
+                      <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                        Podcast URL
+                      </label>
+                      <input
+                        name="podcast_url"
+                        value={podcastUrl}
+                        onChange={(e) => setPodcastUrl(e.target.value)}
+                        className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                        Podcast voice
+                      </label>
+                      <select
+                        name="podcast_voice"
+                        value={podcastVoice}
+                        onChange={(e) => setPodcastVoice(e.target.value)}
+                        className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                      >
+                        {voiceOptions.map((voice) => (
+                          <option key={voice.value || "default"} value={voice.value}>
+                            {voice.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  {podcastUrl ? (
+                    <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] p-3">
+                      <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                        Podcast preview
+                      </p>
+                      <audio
+                        key={podcastUrl}
+                        controls
+                        preload="none"
+                        className="mt-2 w-full"
+                        src={podcastUrl}
+                      />
+                      <a
+                        href={podcastUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-flex text-[11px] uppercase tracking-[0.2em] text-[var(--accent)]"
+                      >
+                        Open audio
+                      </a>
+                    </div>
+                  ) : null}
+                  <div className="space-y-4 rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
                 <div>
                   <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
                     App intro avatar
@@ -1195,8 +1218,11 @@ export default function IntroSetupClient({
                     </a>
                   </div>
                 ) : null}
-              </div>
-              {INTRO_HELP_AVATAR_CONFIGS.map((config) => {
+                  </div>
+                </>
+              ) : null}
+              {selectedHelpAvatarConfig ? (() => {
+                const config = selectedHelpAvatarConfig;
                 const state = helpAvatars[config.slot];
                 const characterOptions = withCurrentOption(
                   assessmentAvatarCharacterOptions,
@@ -1349,10 +1375,13 @@ export default function IntroSetupClient({
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="submit"
-                        name="app_help_avatar_slot"
-                        value={config.slot}
                         formAction={helpAvatarGenerationAction}
-                        onClick={() => setActiveHelpAvatarSlot(config.slot)}
+                        onClick={() => {
+                          setActiveHelpAvatarSlot(config.slot);
+                          if (helpAvatarSlotInputRef.current) {
+                            helpAvatarSlotInputRef.current.value = config.slot;
+                          }
+                        }}
                         disabled={generatingHelpAvatar || refreshingHelpAvatar || saving}
                         className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
                       >
@@ -1360,10 +1389,13 @@ export default function IntroSetupClient({
                       </button>
                       <button
                         type="submit"
-                        name="app_help_avatar_slot"
-                        value={config.slot}
                         formAction={helpAvatarRefreshAction}
-                        onClick={() => setActiveHelpAvatarSlot(config.slot)}
+                        onClick={() => {
+                          setActiveHelpAvatarSlot(config.slot);
+                          if (helpAvatarSlotInputRef.current) {
+                            helpAvatarSlotInputRef.current.value = config.slot;
+                          }
+                        }}
                         disabled={refreshingHelpAvatar || generatingHelpAvatar || saving}
                         className="rounded-full border border-[#e7e1d6] bg-white px-5 py-2 text-xs uppercase tracking-[0.2em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
                       >
@@ -1403,7 +1435,7 @@ export default function IntroSetupClient({
                     ) : null}
                   </div>
                 );
-              })}
+              })() : null}
               <button
                 type="submit"
                 disabled={
@@ -1415,7 +1447,11 @@ export default function IntroSetupClient({
                 }
                 className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {saving ? "Saving…" : "Save app intro"}
+                {saving
+                  ? "Saving…"
+                  : activeAppIntroTab === "general"
+                    ? "Save app intro"
+                    : `Save ${selectedHelpAvatarConfig?.defaultTitle || "help video"}`}
               </button>
               {saveState.error ? <p className="text-sm text-red-600">{saveState.error}</p> : null}
               {saveState.ok ? <p className="text-sm text-[var(--accent)]">Saved.</p> : null}
