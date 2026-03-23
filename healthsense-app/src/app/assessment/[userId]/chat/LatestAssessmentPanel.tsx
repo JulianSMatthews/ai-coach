@@ -516,14 +516,12 @@ export default function LatestAssessmentPanel({ userId, initialSummary, initialP
             <div className="shrink-0 border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
               <div className="min-w-0 space-y-1">
                 <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
-                  {detail?.pillar?.label || selectedPillarKey.replace(/_/g, " ")}
-                </p>
-                <p className="text-sm font-medium text-[#3f372f]">
-                  {viewingCurrentWeek
-                    ? savingPastDay
-                      ? `Catching up ${activeLabel || "yesterday"}`
-                      : "Tracking today"
-                    : "Last week results"}
+                  {(detail?.pillar?.label || selectedPillarKey.replace(/_/g, " ")) +
+                    (viewingCurrentWeek
+                      ? savingPastDay
+                        ? ` · Catching up ${activeLabel || "yesterday"}`
+                        : " · Tracking today"
+                      : " · Last week results")}
                 </p>
                 <p className="text-sm text-[#6b6257]">{trackerScoreLabel}</p>
                 {detail?.pillar?.completed_days_count !== undefined || detail?.pillar?.streak_days !== undefined ? (

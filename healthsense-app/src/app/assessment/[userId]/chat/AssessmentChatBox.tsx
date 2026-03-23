@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CoachInsightResponse, DailyHabitPlanResponse } from "@/lib/api";
 import { getPillarPalette } from "@/lib/pillars";
 import { ProgressBar, ScoreRing } from "@/components/ui";
@@ -93,6 +93,23 @@ type AssessmentCompletionSummaryMedia = {
 };
 
 const SELECTED_HABITS_TAG = "__selected_habits__";
+
+function resolveDailyHabitDefaultTag(plan: DailyHabitPlanResponse | null): string {
+  if (!plan || typeof plan !== "object") return "";
+  const selectedConceptKey = String(plan.selected_concept_key || "").trim();
+  const visibleConceptKeys = (Array.isArray(plan.available_concepts) ? plan.available_concepts : [])
+    .map((concept) => String(concept?.concept_key || "").trim())
+    .filter((key) => Boolean(key))
+    .slice(0, 4);
+  const preferredConceptKey =
+    (selectedConceptKey && visibleConceptKeys.includes(selectedConceptKey) ? selectedConceptKey : "") ||
+    visibleConceptKeys[0] ||
+    "";
+  if (plan.default_habits_view === "selected_habits" && Array.isArray(plan.habits) && plan.habits.length) {
+    return SELECTED_HABITS_TAG;
+  }
+  return preferredConceptKey;
+}
 
 function parseApiError(text: string, fallback: string) {
   if (!text) return fallback;
@@ -495,6 +512,7 @@ export default function AssessmentChatBox({
   const [coachInsightError, setCoachInsightError] = useState<string | null>(null);
   const [insightActiveConceptKey, setInsightActiveConceptKey] = useState("");
   const [insightMode, setInsightMode] = useState<"video" | "listen" | "read">("read");
+  const askComposerFormRef = useRef<HTMLFormElement | null>(null);
 
   const autoStart = useMemo(() => isTruthyToken(searchParams?.get("autostart")), [searchParams]);
   const leadFlow = useMemo(() => isTruthyToken(searchParams?.get("lead")), [searchParams]);
@@ -588,6 +606,7 @@ export default function AssessmentChatBox({
   const insightHasAudio = Boolean(insightAudioUrl);
   const insightHasRead = Boolean(insightReadBody);
   const dailyHabitSelectedConceptKey = String(dailyHabitPlan?.selected_concept_key || "").trim();
+  const dailyHabitDefaultView = String(dailyHabitPlan?.default_habits_view || "").trim();
   const dailyHabitOptions = useMemo(
     () => (Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : []),
     [dailyHabitPlan?.options],
@@ -650,9 +669,12 @@ export default function AssessmentChatBox({
     const validConceptKeys = visibleDailyHabitConcepts
       .map((concept) => String(concept?.concept_key || "").trim())
       .filter((key) => Boolean(key));
-    const preferredTag = dailyHabitSelectedConceptKey || validConceptKeys[0] || "";
+    const preferredTag =
+      dailyHabitDefaultView === "selected_habits" && dailyHabitSelected.length
+        ? SELECTED_HABITS_TAG
+        : dailyHabitSelectedConceptKey || validConceptKeys[0] || "";
     setDailyHabitActiveTag((current) => {
-      if (current === SELECTED_HABITS_TAG) {
+      if (current === SELECTED_HABITS_TAG && dailyHabitSelected.length) {
         return current;
       }
       if (current && validConceptKeys.includes(current)) {
@@ -660,7 +682,7 @@ export default function AssessmentChatBox({
       }
       return preferredTag;
     });
-  }, [visibleDailyHabitConcepts, dailyHabitSelectedConceptKey]);
+  }, [visibleDailyHabitConcepts, dailyHabitSelectedConceptKey, dailyHabitDefaultView, dailyHabitSelected.length]);
 
   useEffect(() => {
     const validConceptKeys = visibleInsightConcepts
@@ -756,6 +778,9 @@ export default function AssessmentChatBox({
       }
       const data = (text ? (JSON.parse(text) as DailyHabitPlanResponse) : {}) as DailyHabitPlanResponse;
       setDailyHabitPlan(data);
+      if (!options?.force && !options?.conceptKey) {
+        setDailyHabitActiveTag(resolveDailyHabitDefaultTag(data));
+      }
     } catch (error) {
       setDailyHabitPlanError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -1938,7 +1963,7 @@ export default function AssessmentChatBox({
                 {sending ? <p className="mt-3 text-sm text-[#6b6257]">Gia is replying…</p> : null}
               </div>
               <div className="mt-4 w-full">
-                <form onSubmit={onSubmit}>
+                <form ref={askComposerFormRef} onSubmit={onSubmit}>
                   <textarea
                     id="assessment-chat-input"
                     className="w-full rounded-[22px] border border-[#efe7db] bg-white px-4 py-2.5 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
@@ -1963,6 +1988,12 @@ export default function AssessmentChatBox({
                   key={item.key}
                   type="button"
                   onClick={() => {
+                    if (item.key === "ask" && homeSurface === "ask") {
+                      if (draft.trim() && !busy) {
+                        askComposerFormRef.current?.requestSubmit();
+                      }
+                      return;
+                    }
                     setHomeSurface(item.key);
                     if (item.key === "habits" && homeSurface === "habits") {
                       void loadDailyHabitPlan();

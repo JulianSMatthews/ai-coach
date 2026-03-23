@@ -20,6 +20,23 @@ COACH_NAME = os.getenv("COACH_NAME", "Gia")
 STATE_KEY = "general_support_state"
 
 
+def _coach_message_prefix() -> str:
+    label = (COACH_NAME or "").strip() or "Gia"
+    return f"*{label}*"
+
+
+def _coach_message_prefixes() -> tuple[str, ...]:
+    current = _coach_message_prefix().lower()
+    if current == "*coach*":
+        return (current,)
+    return (current, "*coach*")
+
+
+def _has_coach_prefix(text: str | None) -> bool:
+    raw = (text or "").strip().lower()
+    return any(raw.startswith(prefix) for prefix in _coach_message_prefixes())
+
+
 def _get_state(session: Session, user_id: int) -> Optional[dict]:
     pref = (
         session.query(UserPreference)
@@ -81,7 +98,7 @@ def activate(
         user = s.query(User).get(user_id)
     if send_intro and user and getattr(user, "phone", None):
         name = (getattr(user, "first_name", None) or "there").strip().title()
-        intro = f"*Coach* Hi {name}, {COACH_NAME} here. I'm here if you want a hand, have a good day."
+        intro = f"{_coach_message_prefix()} Hi {name}, {COACH_NAME} here. I'm here if you want a hand, have a good day."
         print(f"[coach] prompt started source={source or 'unknown'} user_id={user_id}")
         send_coaching_text(user=user, text=intro, source="general_support")
 
@@ -201,7 +218,7 @@ def handle_message(user: User, text: str) -> None:
         intro_sent = bool(state.get("intro_sent"))
         if not intro_sent and cleaned in {"all good", "all ok", "all okay", "need help"}:
             name = (getattr(user, "first_name", None) or "there").strip().title()
-            intro = f"*Coach* Hi {name}, {COACH_NAME} here. I'm here if you want a hand, have a good day."
+            intro = f"{_coach_message_prefix()} Hi {name}, {COACH_NAME} here. I'm here if you want a hand, have a good day."
             print(f"[coach] prompt started source={source or 'unknown'} user_id={user.id}")
             send_coaching_text(user=user, text=intro, source="general_support")
             state["intro_sent"] = True
@@ -229,8 +246,8 @@ def handle_message(user: User, text: str) -> None:
         text_out = candidate.strip()
     if not text_out:
         text_out = "Sorry - I couldn't pull that response just now. Please try again."
-    if not text_out.lower().startswith("*coach*"):
-        text_out = "*Coach* " + text_out
+    if not _has_coach_prefix(text_out):
+        text_out = f"{_coach_message_prefix()} {text_out}"
 
     new_history = list(history)
     new_history.append({"role": "user", "content": msg})

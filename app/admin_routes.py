@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 from fastapi import APIRouter, HTTPException, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
-from sqlalchemy import func, text as sa_text, case
+from sqlalchemy import func, text as sa_text, case, false
 
 from .db import SessionLocal, engine
 from .models import AssessmentRun, AssessmentTurn, PillarResult, PromptTemplate, PromptSettings, PromptTemplateVersionLog
@@ -795,13 +795,23 @@ def test_prompt_template(
         with SessionLocal() as s:
             q = s.query(User).order_by(User.id.asc())
             if user_filter:
-                like = f"%{user_filter.strip()}%"
+                raw_filter = user_filter.strip()
+                like = f"%{raw_filter}%"
+                numeric_filter = raw_filter.removeprefix("#")
+                user_id_filter = None
+                if numeric_filter.isdigit():
+                    try:
+                        user_id_filter = int(numeric_filter)
+                    except Exception:
+                        user_id_filter = None
                 q = q.filter(
-                    (User.first_name.ilike(like))
+                    (User.id == user_id_filter if user_id_filter is not None else false())
+                    | (User.first_name.ilike(like))
                     | (User.surname.ilike(like))
                     | (User.phone.ilike(like))
+                    | (User.email.ilike(like))
                 )
-            users = q.limit(50).all()
+            users = q.limit(2000).all()
             options = []
             for u in users:
                 label = f"#{u.id} — {u.first_name or ''} {u.surname or ''} ({u.phone})".strip()
@@ -822,8 +832,8 @@ def test_prompt_template(
       <form method="get" action="/admin/prompt-templates/test">
         <div class="field">Touchpoint: <input name="touchpoint" value="{tp}" required /></div>
         <div class="field">User: <select name="user_id" required>{user_opts}</select></div>
-        <div class="field">Filter users (name/phone): <input name="user_filter" value="{uf}" placeholder="e.g. Julian or +44" /></div>
-        <div class="help">Showing up to 50 users matching the filter.</div>
+        <div class="field">Filter users (id/name/phone/email): <input name="user_filter" value="{uf}" placeholder="e.g. 123, Julian, +44 or julian@" /></div>
+        <div class="help">Showing up to 2000 users matching the filter.</div>
         <div class="field">State:
           <select name="state">
             <option value="live" {sel_live}>live</option>

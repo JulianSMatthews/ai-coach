@@ -364,6 +364,7 @@ export type DailyHabitPlanResponse = {
   available_concepts?: DailyHabitPlanConcept[];
   selected_concept_key?: string | null;
   selected_concept_label?: string | null;
+  default_habits_view?: "selected_habits" | "suggestions" | null;
   source?: string | null;
   generated_at?: string | null;
 };

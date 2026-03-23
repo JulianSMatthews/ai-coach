@@ -72,17 +72,6 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
       return "—";
     }
   };
-  const isOutside24h = (value?: string | null) => {
-    if (!value) return true;
-    try {
-      const dt = new Date(value);
-      if (Number.isNaN(dt.getTime())) return true;
-      return Date.now() - dt.getTime() > 24 * 60 * 60 * 1000;
-    } catch {
-      return true;
-    }
-  };
-
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto w-full max-w-6xl space-y-6">
@@ -122,7 +111,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
               <input
                 name="q"
                 defaultValue={query}
-                placeholder="Search name or phone"
+                placeholder="Search id, name, phone or email"
                 className="rounded-full border border-[#efe7db] px-3 py-2 text-sm"
               />
               <select
@@ -168,7 +157,7 @@ export default async function UsersPage({ searchParams }: UsersPageProps) {
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">{u.phone || "—"}</td>
                     <td className="py-3 pr-6 whitespace-nowrap text-[#6b6257]">{u.consent_given ? "Yes" : "No"}</td>
                     <td
-                      className={`py-3 pr-6 whitespace-nowrap ${isOutside24h(u.last_inbound_message_at) ? "text-[#b42318] font-semibold" : "text-[#6b6257]"}`}
+                      className={`py-3 pr-6 whitespace-nowrap ${u.outside_24h ? "text-[#b42318] font-semibold" : "text-[#6b6257]"}`}
                     >
                       {formatDateTime(u.last_inbound_message_at)}
                     </td>

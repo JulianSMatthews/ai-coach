@@ -1008,7 +1008,11 @@ def _generate_ask_suggestions_from_llm(
     return suggestions[:4]
 
 
-def _serialize_plan(row: DailyCoachHabitPlan) -> dict[str, Any]:
+def _serialize_plan(
+    row: DailyCoachHabitPlan,
+    *,
+    default_habits_view: str | None = None,
+) -> dict[str, Any]:
     payload = row.context_payload if isinstance(getattr(row, "context_payload", None), dict) else {}
     available_concepts = [item for item in (payload.get("focus_concepts") or []) if isinstance(item, dict)]
     fallback_concept = payload.get("selected_focus_concept") if isinstance(payload.get("selected_focus_concept"), dict) else None
@@ -1059,6 +1063,11 @@ def _serialize_plan(row: DailyCoachHabitPlan) -> dict[str, Any]:
         "available_concepts": concepts_payload,
         "selected_concept_key": selected_concept_key,
         "selected_concept_label": str((selected_concept or {}).get("label") or "").strip() or None,
+        "default_habits_view": (
+            "selected_habits"
+            if default_habits_view == "selected_habits" and selected_habits
+            else "suggestions"
+        ),
         "source": str(getattr(row, "source", "") or "").strip() or None,
         "generated_at": getattr(row, "generated_at", None).isoformat() if getattr(row, "generated_at", None) else None,
     }
@@ -1102,6 +1111,7 @@ def get_or_generate_daily_habit_plan(
             .scalars()
                 .first()
         )
+        created_today = existing is None
         existing_payload = (
             existing.context_payload
             if existing and isinstance(getattr(existing, "context_payload", None), dict)
@@ -1154,7 +1164,10 @@ def get_or_generate_daily_habit_plan(
             s.add(existing)
             s.commit()
             s.refresh(existing)
-            return _serialize_plan(existing)
+            return _serialize_plan(
+                existing,
+                default_habits_view="selected_habits" if selected_habits else "suggestions",
+            )
 
         generated = _generate_plan_from_llm(user_id, context) or _fallback_plan(context)
         generated_items = [
@@ -1200,7 +1213,14 @@ def get_or_generate_daily_habit_plan(
         s.add(row)
         s.commit()
         s.refresh(row)
-        return _serialize_plan(row)
+        return _serialize_plan(
+            row,
+            default_habits_view=(
+                "suggestions"
+                if created_today
+                else ("selected_habits" if selected_habits else "suggestions")
+            ),
+        )
 
 
 def update_daily_habit_plan_selection(
@@ -1283,4 +1303,7 @@ def update_daily_habit_plan_selection(
         s.add(row)
         s.commit()
         s.refresh(row)
-        return _serialize_plan(row)
+        return _serialize_plan(
+            row,
+            default_habits_view="selected_habits" if getattr(row, "habits", None) else "suggestions",
+        )

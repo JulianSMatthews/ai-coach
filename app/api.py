@@ -30,7 +30,7 @@ from zoneinfo import ZoneInfo
 from fastapi import FastAPI, APIRouter, Request, Response, Depends, Header, HTTPException, status, Body
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import text, select, desc, func, or_, update
+from sqlalchemy import text, select, desc, func, or_, update, false
 from pathlib import Path 
 from typing import Any, Optional
 
@@ -40,6 +40,8 @@ try:
     load_dotenv(override=False)
 except Exception:
     pass
+
+COACH_NAME = (os.getenv("COACH_NAME") or "Gia").strip() or "Gia"
 
 from .db import engine, SessionLocal, _is_postgres
 from .debug_utils import debug_log
@@ -8565,6 +8567,25 @@ def _touchpoint_filter_variant(raw_touchpoint: object) -> str | None:
     return None
 
 
+def _coach_message_prefixes() -> tuple[str, ...]:
+    current = f"*{COACH_NAME.lower()}*"
+    if current == "*coach*":
+        return (current,)
+    return (current, "*coach*")
+
+
+def _coach_message_like_patterns() -> list[str]:
+    patterns = [f"{prefix}%" for prefix in _coach_message_prefixes()]
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for pattern in patterns:
+        if pattern in seen:
+            continue
+        seen.add(pattern)
+        ordered.append(pattern)
+    return ordered
+
+
 def _coaching_day_from_message_text(raw_text: object) -> str | None:
     text = str(raw_text or "").strip().lower()
     if not text.startswith("*"):
@@ -8573,7 +8594,7 @@ def _coaching_day_from_message_text(raw_text: object) -> str | None:
         return "kickoff"
     if text.startswith("*first day") or text.startswith("*first-day"):
         return "first_day"
-    if text.startswith("*coach*"):
+    if any(text.startswith(prefix) for prefix in _coach_message_prefixes()):
         return "out_of_session"
     for day in ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"):
         if text.startswith(f"*{day}"):
@@ -8592,7 +8613,7 @@ def _touchpoint_message_like_patterns(canonical_touchpoint: str | None) -> list[
     if tp == "first_day":
         return ["*first day%", "*first-day%"]
     if tp == "out_of_session":
-        return ["*coach*%"]
+        return _coach_message_like_patterns()
     if tp in {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}:
         return [f"*{tp}%"]
     return []
@@ -8604,7 +8625,7 @@ def _is_out_of_session_message(meta_obj: object, text_obj: object) -> bool:
     if category in {"session-reopen", "session_reopen", "out_of_session", "day-reopen", "day_reopen"}:
         return True
     text = str(text_obj or "").strip().lower()
-    if text.startswith("*coach* hi"):
+    if any(text.startswith(f"{prefix} hi") for prefix in _coach_message_prefixes()):
         return True
     return False
 
@@ -19481,21 +19502,21 @@ def admin_kb_snippet_update(snippet_id: int, payload: dict, admin_user: User = D
 def admin_list_users(
     q: str | None = None,
     inbound_window: str | None = None,
-    limit: int = 50,
+    limit: int = 2000,
     admin_user: User = Depends(_require_admin),
 ):
     """
     List users in the admin's club scope with optional search.
     Query params:
-      - q: filter by name or phone
+      - q: filter by id, name, phone, or email
       - inbound_window: all|outside_24h|inside_24h
-      - limit: max results (default 50, max 200)
+      - limit: max results (default 2000, max 5000)
     """
     try:
         limit = int(limit)
     except Exception:
-        limit = 50
-    limit = max(1, min(limit, 200))
+        limit = 2000
+    limit = max(1, min(limit, 5000))
     inbound_filter = (inbound_window or "all").strip().lower()
     if inbound_filter not in {"all", "outside_24h", "inside_24h"}:
         inbound_filter = "all"
@@ -19506,12 +19527,22 @@ def admin_list_users(
         if club_scope_id is not None:
             query = query.where(User.club_id == club_scope_id)
         if q:
-            like = f"%{q.strip()}%"
+            raw_q = q.strip()
+            like = f"%{raw_q}%"
+            numeric_q = raw_q.removeprefix("#")
+            user_id_filter = None
+            if numeric_q.isdigit():
+                try:
+                    user_id_filter = int(numeric_q)
+                except Exception:
+                    user_id_filter = None
             query = query.where(
                 or_(
+                    User.id == user_id_filter if user_id_filter is not None else false(),
                     User.first_name.ilike(like),
                     User.surname.ilike(like),
                     User.phone.ilike(like),
+                    User.email.ilike(like),
                 )
             )
         if inbound_filter == "outside_24h":
@@ -19669,6 +19700,10 @@ def admin_list_users(
                 "consent_given": bool(getattr(u, "consent_given", False)),
                 "consent_at": getattr(u, "consent_at", None),
                 "last_inbound_message_at": getattr(u, "last_inbound_message_at", None),
+                "outside_24h": (
+                    getattr(u, "last_inbound_message_at", None) is None
+                    or getattr(u, "last_inbound_message_at", None) < cutoff_24h
+                ),
                 "last_template_message_at": last_template_sent.get(u.id),
                 "latest_run_id": run_id,
                 "latest_run_finished_at": latest_finished.get(run_id) if run_id else None,
