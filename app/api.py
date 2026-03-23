@@ -4871,6 +4871,47 @@ INTRO_COACH_PRODUCT_AVATAR_SCRIPT_DEFAULT = (
     "Your objectives and key results show where to focus first, and coaching turns them into practical weekly actions.\n\n"
     "Review your plan below to see your priorities and how HealthSense will support you step by step."
 )
+INTRO_HELP_AVATAR_SPECS: dict[str, dict[str, str]] = {
+    "habits": {
+        "tag_prefix": "app_habits_avatar",
+        "title_default": "Habits",
+        "script_default": (
+            "Habits helps you choose simple daily steps for the area you want to improve.\n\n"
+            "Pick the habit steps that feel realistic, keep the ones that are working, "
+            "and refresh the list when you want new options."
+        ),
+        "filename_prefix": "intro-habits-avatar",
+    },
+    "insight": {
+        "tag_prefix": "app_insight_avatar",
+        "title_default": "Insight",
+        "script_default": (
+            "Insight gives you focused support for the concepts you are finding hardest right now.\n\n"
+            "Choose the area you want help with and HealthSense will show a short video, audio, "
+            "or read option to guide you."
+        ),
+        "filename_prefix": "intro-insight-avatar",
+    },
+    "ask": {
+        "tag_prefix": "app_ask_avatar",
+        "title_default": "Ask",
+        "script_default": (
+            "Ask lets you message Gia directly when you want quick coaching support.\n\n"
+            "Use it to ask focused questions about nutrition, training, recovery, or resilience, "
+            "and get a clear reply that fits where you are right now."
+        ),
+        "filename_prefix": "intro-ask-avatar",
+    },
+    "daily_tracking": {
+        "tag_prefix": "app_daily_tracking_avatar",
+        "title_default": "Daily tracking",
+        "script_default": (
+            "Daily tracking helps you log how you are doing across nutrition, training, recovery, and resilience.\n\n"
+            "It shows what you completed today, whether you are on track, and how your routines are building over time."
+        ),
+        "filename_prefix": "intro-daily-tracking-avatar",
+    },
+}
 INTRO_ASSESSMENT_AVATAR_URL_TAG = "assessment_intro_avatar_url"
 INTRO_ASSESSMENT_AVATAR_TITLE_TAG = "assessment_intro_avatar_title"
 INTRO_ASSESSMENT_AVATAR_SCRIPT_TAG = "assessment_intro_avatar_script"
@@ -5248,6 +5289,89 @@ def _set_intro_app_avatar_tags(
     tags[INTRO_APP_AVATAR_GENERATED_AT_TAG] = generated_at
     tags[INTRO_APP_AVATAR_SOURCE_TAG] = source
     tags[INTRO_APP_AVATAR_SUMMARY_URL_TAG] = summary_url
+    return tags
+
+
+def _intro_help_avatar_spec(slot: str) -> dict[str, str]:
+    key = str(slot or "").strip().lower()
+    spec = INTRO_HELP_AVATAR_SPECS.get(key)
+    if not spec:
+        raise HTTPException(status_code=404, detail="Unknown intro help avatar slot.")
+    return spec
+
+
+def _intro_help_avatar_payload_from_row(
+    row: ContentLibraryItem | None,
+    slot: str,
+) -> dict[str, str | None]:
+    spec = _intro_help_avatar_spec(slot)
+    prefix = spec["tag_prefix"]
+    tags = row.tags if row and isinstance(getattr(row, "tags", None), dict) else {}
+    defaults = azure_avatar_defaults()
+    raw_url = str((tags or {}).get(f"{prefix}_url") or "").strip()
+    raw_title = str((tags or {}).get(f"{prefix}_title") or "").strip()
+    raw_script = str((tags or {}).get(f"{prefix}_script") or "").strip()
+    raw_poster = str((tags or {}).get(f"{prefix}_poster_url") or "").strip()
+    raw_character = str((tags or {}).get(f"{prefix}_character") or "").strip()
+    raw_style = str((tags or {}).get(f"{prefix}_style") or "").strip()
+    raw_voice = str((tags or {}).get(f"{prefix}_voice") or "").strip()
+    raw_status = str((tags or {}).get(f"{prefix}_status") or "").strip()
+    raw_job_id = str((tags or {}).get(f"{prefix}_job_id") or "").strip()
+    raw_error = str((tags or {}).get(f"{prefix}_error") or "").strip()
+    raw_generated_at = str((tags or {}).get(f"{prefix}_generated_at") or "").strip()
+    raw_source = str((tags or {}).get(f"{prefix}_source") or "").strip()
+    raw_summary_url = str((tags or {}).get(f"{prefix}_summary_url") or "").strip()
+    return {
+        "url": _normalize_reports_url(raw_url) if raw_url else None,
+        "title": raw_title or spec["title_default"],
+        "script": raw_script or spec["script_default"],
+        "poster_url": _normalize_reports_url(raw_poster) if raw_poster else None,
+        "character": raw_character or str(defaults.get("character") or "lisa"),
+        "style": raw_style or str(defaults.get("style") or "graceful-sitting"),
+        "voice": raw_voice or str(defaults.get("voice") or "en-GB-SoniaNeural"),
+        "status": raw_status or None,
+        "job_id": raw_job_id or None,
+        "error": raw_error or None,
+        "generated_at": raw_generated_at or None,
+        "source": raw_source or None,
+        "summary_url": raw_summary_url or None,
+    }
+
+
+def _set_intro_help_avatar_tags(
+    tags: dict,
+    *,
+    slot: str,
+    url: str | None,
+    title: str,
+    script: str,
+    poster_url: str | None,
+    character: str,
+    style: str,
+    voice: str,
+    status: str | None,
+    job_id: str | None,
+    error: str | None,
+    generated_at: str | None,
+    source: str | None,
+    summary_url: str | None,
+) -> dict:
+    spec = _intro_help_avatar_spec(slot)
+    prefix = spec["tag_prefix"]
+    tags = dict(tags or {})
+    tags[f"{prefix}_url"] = url
+    tags[f"{prefix}_title"] = title
+    tags[f"{prefix}_script"] = script
+    tags[f"{prefix}_poster_url"] = poster_url
+    tags[f"{prefix}_character"] = character
+    tags[f"{prefix}_style"] = style
+    tags[f"{prefix}_voice"] = voice
+    tags[f"{prefix}_status"] = status
+    tags[f"{prefix}_job_id"] = job_id
+    tags[f"{prefix}_error"] = error
+    tags[f"{prefix}_generated_at"] = generated_at
+    tags[f"{prefix}_source"] = source
+    tags[f"{prefix}_summary_url"] = summary_url
     return tags
 
 
@@ -17312,6 +17436,10 @@ def _admin_intro_settings_payload(row: ContentLibraryItem | None) -> dict[str, o
         "podcast_voice": getattr(row, "podcast_voice", None),
         "app_intro_avatar": _intro_app_avatar_payload_from_row(row),
         "coach_product_avatar": _intro_coach_product_avatar_payload_from_row(row),
+        "app_habits_avatar": _intro_help_avatar_payload_from_row(row, "habits"),
+        "app_insight_avatar": _intro_help_avatar_payload_from_row(row, "insight"),
+        "app_ask_avatar": _intro_help_avatar_payload_from_row(row, "ask"),
+        "app_daily_tracking_avatar": _intro_help_avatar_payload_from_row(row, "daily_tracking"),
         "source_type": INTRO_SOURCE_TYPE,
         "updated_at": getattr(row, "updated_at", None),
     }
@@ -17772,6 +17900,10 @@ def admin_library_intro_update(
         row = _get_or_create_intro_library_row(s, admin_user)
         existing_app_avatar = _intro_app_avatar_payload_from_row(row)
         existing_avatar = _intro_coach_product_avatar_payload_from_row(row)
+        existing_help_avatars = {
+            slot: _intro_help_avatar_payload_from_row(row, slot)
+            for slot in INTRO_HELP_AVATAR_SPECS.keys()
+        }
         active_raw = payload.get("active") if "active" in payload else None
         if isinstance(active_raw, bool):
             active = active_raw
@@ -17877,6 +18009,50 @@ def admin_library_intro_update(
             if "coach_product_avatar_voice" in payload
             else str(existing_avatar.get("voice") or "").strip() or str(avatar_defaults.get("voice") or "en-GB-SoniaNeural")
         )
+        resolved_help_avatars: dict[str, dict[str, str | None]] = {}
+        for slot, spec in INTRO_HELP_AVATAR_SPECS.items():
+            prefix = spec["tag_prefix"]
+            existing_help = existing_help_avatars[slot]
+            resolved_help_avatars[slot] = {
+                "url": (
+                    str(payload.get(f"{prefix}_url") or "").strip() or None
+                    if f"{prefix}_url" in payload
+                    else str(existing_help.get("url") or "").strip() or None
+                ),
+                "title": (
+                    str(payload.get(f"{prefix}_title") or "").strip() or spec["title_default"]
+                    if f"{prefix}_title" in payload
+                    else str(existing_help.get("title") or "").strip() or spec["title_default"]
+                ),
+                "script": (
+                    str(payload.get(f"{prefix}_script") or "").strip() or spec["script_default"]
+                    if f"{prefix}_script" in payload
+                    else str(existing_help.get("script") or "").strip() or spec["script_default"]
+                ),
+                "poster_url": (
+                    str(payload.get(f"{prefix}_poster_url") or "").strip() or None
+                    if f"{prefix}_poster_url" in payload
+                    else str(existing_help.get("poster_url") or "").strip() or None
+                ),
+                "character": (
+                    str(payload.get(f"{prefix}_character") or "").strip()
+                    or str(avatar_defaults.get("character") or "lisa")
+                    if f"{prefix}_character" in payload
+                    else str(existing_help.get("character") or "").strip() or str(avatar_defaults.get("character") or "lisa")
+                ),
+                "style": (
+                    str(payload.get(f"{prefix}_style") or "").strip()
+                    or str(avatar_defaults.get("style") or "graceful-sitting")
+                    if f"{prefix}_style" in payload
+                    else str(existing_help.get("style") or "").strip() or str(avatar_defaults.get("style") or "graceful-sitting")
+                ),
+                "voice": (
+                    str(payload.get(f"{prefix}_voice") or "").strip()
+                    or str(avatar_defaults.get("voice") or "en-GB-SoniaNeural")
+                    if f"{prefix}_voice" in payload
+                    else str(existing_help.get("voice") or "").strip() or str(avatar_defaults.get("voice") or "en-GB-SoniaNeural")
+                ),
+            }
         tags = row.tags if isinstance(getattr(row, "tags", None), dict) else {}
         tags = dict(tags or {})
         tags["welcome_message_template"] = welcome_template
@@ -17912,6 +18088,25 @@ def admin_library_intro_update(
             source=str(existing_avatar.get("source") or "").strip() or None,
             summary_url=str(existing_avatar.get("summary_url") or "").strip() or None,
         )
+        for slot, resolved in resolved_help_avatars.items():
+            existing_help = existing_help_avatars[slot]
+            tags = _set_intro_help_avatar_tags(
+                tags,
+                slot=slot,
+                url=resolved["url"],
+                title=str(resolved["title"] or "").strip() or INTRO_HELP_AVATAR_SPECS[slot]["title_default"],
+                script=str(resolved["script"] or "").strip() or INTRO_HELP_AVATAR_SPECS[slot]["script_default"],
+                poster_url=resolved["poster_url"],
+                character=str(resolved["character"] or "").strip() or str(avatar_defaults.get("character") or "lisa"),
+                style=str(resolved["style"] or "").strip() or str(avatar_defaults.get("style") or "graceful-sitting"),
+                voice=str(resolved["voice"] or "").strip() or str(avatar_defaults.get("voice") or "en-GB-SoniaNeural"),
+                status=str(existing_help.get("status") or "").strip() or None,
+                job_id=str(existing_help.get("job_id") or "").strip() or None,
+                error=str(existing_help.get("error") or "").strip() or None,
+                generated_at=str(existing_help.get("generated_at") or "").strip() or None,
+                source=str(existing_help.get("source") or "").strip() or None,
+                summary_url=str(existing_help.get("summary_url") or "").strip() or None,
+            )
         row.pillar_key = INTRO_PILLAR_KEY
         row.concept_code = INTRO_CONCEPT_CODE
         row.source_type = INTRO_SOURCE_TYPE
@@ -18179,6 +18374,273 @@ def admin_library_intro_coach_avatar_refresh(
         if not refreshed:
             raise HTTPException(status_code=404, detail="Coach product avatar is not configured.")
         return {"ok": str(refreshed.get("status") or "").strip().lower() == "succeeded", "coach_product_avatar": refreshed}
+
+
+def _save_intro_help_avatar_generation_result(
+    session,
+    *,
+    row: ContentLibraryItem,
+    slot: str,
+    title: str,
+    script: str,
+    poster_url: str | None,
+    character: str,
+    style: str,
+    voice: str,
+    status: str,
+    job_id: str | None,
+    error: str | None,
+    summary_url: str | None,
+    video_bytes: bytes | None = None,
+) -> dict[str, object]:
+    spec = _intro_help_avatar_spec(slot)
+    asset_url = None
+    generated_at = _utc_now_iso() if status == "Succeeded" else None
+    if status == "Succeeded" and video_bytes:
+        filename = f"{spec['filename_prefix']}-{(job_id or secrets.token_hex(6)).strip()[:48]}.mp4"
+        asset_url = _write_global_report_bytes(f"content/intro/{filename}", video_bytes)
+    tags = row.tags if isinstance(getattr(row, "tags", None), dict) else {}
+    tags = _set_intro_help_avatar_tags(
+        tags,
+        slot=slot,
+        url=asset_url,
+        title=title,
+        script=script,
+        poster_url=poster_url,
+        character=character,
+        style=style,
+        voice=voice,
+        status=status.lower(),
+        job_id=job_id,
+        error=error,
+        generated_at=generated_at,
+        source="azure_batch",
+        summary_url=summary_url,
+    )
+    row.tags = tags
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return _intro_help_avatar_payload_from_row(row, slot)
+
+
+def _poll_intro_help_avatar_status(
+    session,
+    *,
+    row: ContentLibraryItem,
+    slot: str,
+    avatar_payload: dict[str, object],
+) -> dict[str, object]:
+    spec = _intro_help_avatar_spec(slot)
+    defaults = azure_avatar_defaults()
+    job_id = str(avatar_payload.get("job_id") or "").strip()
+    if not job_id:
+        raise HTTPException(status_code=400, detail=f"No {spec['title_default'].lower()} avatar job is pending for this intro item.")
+    status_payload = get_batch_avatar(job_id)
+    status = str(status_payload.get("status") or "").strip()
+    outputs = status_payload.get("outputs") if isinstance(status_payload.get("outputs"), dict) else {}
+    summary_url = str((outputs or {}).get("summary") or "").strip() or None
+    if status == "Succeeded":
+        result_url = str((outputs or {}).get("result") or "").strip()
+        if not result_url:
+            return _save_intro_help_avatar_generation_result(
+                session,
+                row=row,
+                slot=slot,
+                title=str(avatar_payload.get("title") or "").strip() or spec["title_default"],
+                script=str(avatar_payload.get("script") or "").strip() or spec["script_default"],
+                poster_url=str(avatar_payload.get("poster_url") or "").strip() or None,
+                character=str(avatar_payload.get("character") or "").strip() or str(defaults.get("character") or "lisa"),
+                style=str(avatar_payload.get("style") or "").strip() or str(defaults.get("style") or "graceful-sitting"),
+                voice=str(avatar_payload.get("voice") or "").strip() or str(defaults.get("voice") or "en-GB-SoniaNeural"),
+                status="Failed",
+                job_id=job_id,
+                error="Azure avatar completed without a result video URL.",
+                summary_url=summary_url,
+            )
+        return _save_intro_help_avatar_generation_result(
+            session,
+            row=row,
+            slot=slot,
+            title=str(avatar_payload.get("title") or "").strip() or spec["title_default"],
+            script=str(avatar_payload.get("script") or "").strip() or spec["script_default"],
+            poster_url=str(avatar_payload.get("poster_url") or "").strip() or None,
+            character=str(avatar_payload.get("character") or "").strip() or str(defaults.get("character") or "lisa"),
+            style=str(avatar_payload.get("style") or "").strip() or str(defaults.get("style") or "graceful-sitting"),
+            voice=str(avatar_payload.get("voice") or "").strip() or str(defaults.get("voice") or "en-GB-SoniaNeural"),
+            status=status,
+            job_id=job_id,
+            error=None,
+            summary_url=summary_url,
+            video_bytes=download_batch_avatar_output(result_url),
+        )
+    if status == "Failed":
+        props = status_payload.get("properties") if isinstance(status_payload.get("properties"), dict) else {}
+        error_detail = str((props or {}).get("error") or status_payload.get("error") or "Azure avatar generation failed.").strip()
+        return _save_intro_help_avatar_generation_result(
+            session,
+            row=row,
+            slot=slot,
+            title=str(avatar_payload.get("title") or "").strip() or spec["title_default"],
+            script=str(avatar_payload.get("script") or "").strip() or spec["script_default"],
+            poster_url=str(avatar_payload.get("poster_url") or "").strip() or None,
+            character=str(avatar_payload.get("character") or "").strip() or str(defaults.get("character") or "lisa"),
+            style=str(avatar_payload.get("style") or "").strip() or str(defaults.get("style") or "graceful-sitting"),
+            voice=str(avatar_payload.get("voice") or "").strip() or str(defaults.get("voice") or "en-GB-SoniaNeural"),
+            status=status,
+            job_id=job_id,
+            error=error_detail,
+            summary_url=summary_url,
+        )
+    return _save_intro_help_avatar_generation_result(
+        session,
+        row=row,
+        slot=slot,
+        title=str(avatar_payload.get("title") or "").strip() or spec["title_default"],
+        script=str(avatar_payload.get("script") or "").strip() or spec["script_default"],
+        poster_url=str(avatar_payload.get("poster_url") or "").strip() or None,
+        character=str(avatar_payload.get("character") or "").strip() or str(defaults.get("character") or "lisa"),
+        style=str(avatar_payload.get("style") or "").strip() or str(defaults.get("style") or "graceful-sitting"),
+        voice=str(avatar_payload.get("voice") or "").strip() or str(defaults.get("voice") or "en-GB-SoniaNeural"),
+        status=status or "Running",
+        job_id=job_id,
+        error=None,
+        summary_url=summary_url,
+    )
+
+
+@admin.post("/library/intro/help-avatar/{slot}/generate")
+def admin_library_intro_help_avatar_generate(
+    slot: str,
+    payload: dict | None = None,
+    admin_user: User = Depends(_require_admin),
+):
+    if not azure_avatar_enabled():
+        raise HTTPException(status_code=503, detail="Azure avatar generation is not enabled.")
+    spec = _intro_help_avatar_spec(slot)
+    payload = payload if isinstance(payload, dict) else {}
+    defaults = azure_avatar_defaults()
+    title = str(payload.get("title") or "").strip() or spec["title_default"]
+    script = str(payload.get("script") or "").strip() or spec["script_default"]
+    poster_url = str(payload.get("poster_url") or "").strip() or None
+    character = str(payload.get("character") or "").strip() or str(defaults.get("character") or "lisa")
+    style = str(payload.get("style") or "").strip() or str(defaults.get("style") or "graceful-sitting")
+    voice = str(payload.get("voice") or "").strip() or str(defaults.get("voice") or "en-GB-SoniaNeural")
+    if not script:
+        raise HTTPException(status_code=400, detail=f"{spec['title_default']} avatar script is required.")
+    with SessionLocal() as s:
+        row = _get_or_create_intro_library_row(s, admin_user)
+        tags = row.tags if isinstance(getattr(row, "tags", None), dict) else {}
+        tags = _set_intro_help_avatar_tags(
+            tags,
+            slot=slot,
+            url=None,
+            title=title,
+            script=script,
+            poster_url=poster_url,
+            character=character,
+            style=style,
+            voice=voice,
+            status="running",
+            job_id=None,
+            error=None,
+            generated_at=None,
+            source="azure_batch",
+            summary_url=None,
+        )
+        row.tags = tags
+        row.body = row.body or INTRO_BODY_DEFAULT
+        s.add(row)
+        s.commit()
+        s.refresh(row)
+        try:
+            result = generate_batch_avatar_video(
+                script=script,
+                title=title,
+                character=character,
+                style=style,
+                voice=voice,
+            )
+            status = str(result.get("status") or "").strip()
+            if status == "Succeeded" and result.get("video_bytes"):
+                avatar = _save_intro_help_avatar_generation_result(
+                    s,
+                    row=row,
+                    slot=slot,
+                    title=title,
+                    script=script,
+                    poster_url=poster_url,
+                    character=character,
+                    style=style,
+                    voice=voice,
+                    status=status,
+                    job_id=str(result.get("job_id") or "").strip() or None,
+                    error=None,
+                    summary_url=str(result.get("summary_url") or "").strip() or None,
+                    video_bytes=result.get("video_bytes") if isinstance(result.get("video_bytes"), (bytes, bytearray)) else None,
+                )
+                return {"ok": True, "slot": slot, "avatar": avatar}
+            pending_error = None
+            if status == "Failed":
+                pending_error = str(result.get("response") or "")[:500]
+            avatar = _save_intro_help_avatar_generation_result(
+                s,
+                row=row,
+                slot=slot,
+                title=title,
+                script=script,
+                poster_url=poster_url,
+                character=character,
+                style=style,
+                voice=voice,
+                status=status or "Running",
+                job_id=str(result.get("job_id") or "").strip() or None,
+                error=pending_error,
+                summary_url=str(result.get("summary_url") or "").strip() or None,
+            )
+            return {
+                "ok": status != "Failed",
+                "slot": slot,
+                "avatar": avatar,
+                "pending": bool(result.get("timed_out")) or status not in {"Succeeded", "Failed"},
+            }
+        except Exception as e:
+            avatar = _save_intro_help_avatar_generation_result(
+                s,
+                row=row,
+                slot=slot,
+                title=title,
+                script=script,
+                poster_url=poster_url,
+                character=character,
+                style=style,
+                voice=voice,
+                status="Failed",
+                job_id=None,
+                error=str(e),
+                summary_url=None,
+            )
+            return {"ok": False, "slot": slot, "avatar": avatar, "error": str(e)}
+
+
+@admin.post("/library/intro/help-avatar/{slot}/refresh")
+def admin_library_intro_help_avatar_refresh(
+    slot: str,
+    admin_user: User = Depends(_require_admin),
+):
+    _intro_help_avatar_spec(slot)
+    with SessionLocal() as s:
+        row = _get_or_create_intro_library_row(s, admin_user)
+        avatar = _intro_help_avatar_payload_from_row(row, slot)
+        refreshed = _poll_intro_help_avatar_status(
+            s,
+            row=row,
+            slot=slot,
+            avatar_payload=avatar,
+        )
+        if not refreshed:
+            raise HTTPException(status_code=404, detail="Intro help avatar is not configured.")
+        return {"ok": str(refreshed.get("status") or "").strip().lower() == "succeeded", "slot": slot, "avatar": refreshed}
 
 
 @admin.post("/library/assessment-intro")

@@ -16,6 +16,12 @@ type LatestAssessmentPanelProps = {
   userId: string;
   initialSummary: PillarTrackerSummaryResponse;
   appIntroAvatar?: AssessmentIntroAvatar | null;
+  appIntroHelpVideos?: {
+    habits?: AssessmentIntroAvatar | null;
+    insight?: AssessmentIntroAvatar | null;
+    ask?: AssessmentIntroAvatar | null;
+    dailyTracking?: AssessmentIntroAvatar | null;
+  } | null;
 };
 
 const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
@@ -117,9 +123,17 @@ function WeeklyScoreRing({ value, tone }: { value?: number | null; tone: string 
   );
 }
 
-export default function LatestAssessmentPanel({ userId, initialSummary, appIntroAvatar = null }: LatestAssessmentPanelProps) {
+export default function LatestAssessmentPanel({
+  userId,
+  initialSummary,
+  appIntroAvatar = null,
+  appIntroHelpVideos = null,
+}: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
   const [scoreCardOpen, setScoreCardOpen] = useState(false);
+  const [selectedIntroVideoKey, setSelectedIntroVideoKey] = useState<
+    "intro" | "habits" | "insight" | "ask" | "dailyTracking"
+  >("intro");
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<PillarTrackerDetailResponse | null>(null);
   const [draft, setDraft] = useState<Record<string, number>>({});
@@ -158,7 +172,21 @@ export default function LatestAssessmentPanel({ userId, initialSummary, appIntro
           ? `Complete ${activeLabel || "yesterday"} to update this week's score`
           : "Complete today to start this week's score"
         : "No completed tracker days last week";
-  const hasIntroMessage = Boolean(String(appIntroAvatar?.url || "").trim());
+  const introVideoOptions = [
+    { key: "intro" as const, label: "Intro", avatar: appIntroAvatar },
+    { key: "habits" as const, label: "Habits", avatar: appIntroHelpVideos?.habits ?? null },
+    { key: "insight" as const, label: "Insight", avatar: appIntroHelpVideos?.insight ?? null },
+    { key: "ask" as const, label: "Ask", avatar: appIntroHelpVideos?.ask ?? null },
+    {
+      key: "dailyTracking" as const,
+      label: "Daily tracking",
+      avatar: appIntroHelpVideos?.dailyTracking ?? null,
+    },
+  ].filter((item) => Boolean(String(item.avatar?.url || "").trim()));
+  const hasIntroMessage = introVideoOptions.length > 0;
+  const defaultIntroVideoKey = introVideoOptions[0]?.key || "intro";
+  const activeIntroVideo =
+    introVideoOptions.find((item) => item.key === selectedIntroVideoKey) || introVideoOptions[0] || null;
 
   const refreshSummary = async () => {
     const res = await fetch(`/api/pillar-tracker/summary?userId=${encodeURIComponent(userId)}`, {
@@ -269,6 +297,11 @@ export default function LatestAssessmentPanel({ userId, initialSummary, appIntro
     }
   };
 
+  const openScoreCard = () => {
+    setSelectedIntroVideoKey(defaultIntroVideoKey);
+    setScoreCardOpen(true);
+  };
+
   return (
     <>
       <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-5 sm:py-6">
@@ -297,7 +330,7 @@ export default function LatestAssessmentPanel({ userId, initialSummary, appIntro
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <button
               type="button"
-              onClick={() => setScoreCardOpen(true)}
+              onClick={openScoreCard}
               className="pointer-events-auto flex flex-col items-center gap-1 rounded-full"
               aria-label="Open How HealthSense works"
             >
@@ -342,16 +375,40 @@ export default function LatestAssessmentPanel({ userId, initialSummary, appIntro
             </div>
 
             <div className="flex-1 overflow-y-auto px-3 py-3 sm:px-5">
-              {String(appIntroAvatar?.url || "").trim() ? (
-                <video
-                  controls
-                  preload="metadata"
-                  playsInline
-                  poster={String(appIntroAvatar?.posterUrl || "").trim() || undefined}
-                  className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
-                >
-                  <source src={String(appIntroAvatar?.url || "").trim()} />
-                </video>
+              {activeIntroVideo && String(activeIntroVideo.avatar?.url || "").trim() ? (
+                <div className="space-y-3">
+                  <video
+                    key={`${activeIntroVideo.key}-${String(activeIntroVideo.avatar?.url || "").trim()}`}
+                    controls
+                    preload="metadata"
+                    playsInline
+                    poster={String(activeIntroVideo.avatar?.posterUrl || "").trim() || undefined}
+                    className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
+                  >
+                    <source src={String(activeIntroVideo.avatar?.url || "").trim()} />
+                  </video>
+                  {introVideoOptions.length > 1 ? (
+                    <div className="flex flex-wrap gap-2">
+                      {introVideoOptions.map((option) => {
+                        const active = option.key === activeIntroVideo.key;
+                        return (
+                          <button
+                            key={option.key}
+                            type="button"
+                            onClick={() => setSelectedIntroVideoKey(option.key)}
+                            className={`rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                              active
+                                ? "border-[#d6c3ab] bg-[#f6ede3] text-[#5d472d]"
+                                : "border-[#e7e1d6] bg-white text-[#5d5348]"
+                            }`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
               ) : (
                 <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5 text-sm text-[#6b6257]">
                   The HealthSense introduction video is not available right now.

@@ -4,9 +4,11 @@ import { revalidatePath } from "next/cache";
 import {
   createContentGeneration,
   generateLibraryAppIntroAvatar,
+  generateLibraryIntroHelpAvatar,
   generateLibraryIntroAvatar,
   generateLibraryAssessmentIntroAvatar,
   refreshLibraryAppIntroAvatar,
+  refreshLibraryIntroHelpAvatar,
   refreshLibraryIntroAvatar,
   refreshLibraryAssessmentIntroAvatar,
   updateLibraryAssessmentIntroSettings,
@@ -92,6 +94,34 @@ export async function saveIntroSettingsAction(
   const app_intro_avatar_character = String(formData.get("app_intro_avatar_character") || "").trim();
   const app_intro_avatar_style = String(formData.get("app_intro_avatar_style") || "").trim();
   const app_intro_avatar_voice = String(formData.get("app_intro_avatar_voice") || "").trim();
+  const app_habits_avatar_url = String(formData.get("app_habits_avatar_url") || "").trim();
+  const app_habits_avatar_title = String(formData.get("app_habits_avatar_title") || "").trim();
+  const app_habits_avatar_script = String(formData.get("app_habits_avatar_script") || "").trim();
+  const app_habits_avatar_poster_url = String(formData.get("app_habits_avatar_poster_url") || "").trim();
+  const app_habits_avatar_character = String(formData.get("app_habits_avatar_character") || "").trim();
+  const app_habits_avatar_style = String(formData.get("app_habits_avatar_style") || "").trim();
+  const app_habits_avatar_voice = String(formData.get("app_habits_avatar_voice") || "").trim();
+  const app_insight_avatar_url = String(formData.get("app_insight_avatar_url") || "").trim();
+  const app_insight_avatar_title = String(formData.get("app_insight_avatar_title") || "").trim();
+  const app_insight_avatar_script = String(formData.get("app_insight_avatar_script") || "").trim();
+  const app_insight_avatar_poster_url = String(formData.get("app_insight_avatar_poster_url") || "").trim();
+  const app_insight_avatar_character = String(formData.get("app_insight_avatar_character") || "").trim();
+  const app_insight_avatar_style = String(formData.get("app_insight_avatar_style") || "").trim();
+  const app_insight_avatar_voice = String(formData.get("app_insight_avatar_voice") || "").trim();
+  const app_ask_avatar_url = String(formData.get("app_ask_avatar_url") || "").trim();
+  const app_ask_avatar_title = String(formData.get("app_ask_avatar_title") || "").trim();
+  const app_ask_avatar_script = String(formData.get("app_ask_avatar_script") || "").trim();
+  const app_ask_avatar_poster_url = String(formData.get("app_ask_avatar_poster_url") || "").trim();
+  const app_ask_avatar_character = String(formData.get("app_ask_avatar_character") || "").trim();
+  const app_ask_avatar_style = String(formData.get("app_ask_avatar_style") || "").trim();
+  const app_ask_avatar_voice = String(formData.get("app_ask_avatar_voice") || "").trim();
+  const app_daily_tracking_avatar_url = String(formData.get("app_daily_tracking_avatar_url") || "").trim();
+  const app_daily_tracking_avatar_title = String(formData.get("app_daily_tracking_avatar_title") || "").trim();
+  const app_daily_tracking_avatar_script = String(formData.get("app_daily_tracking_avatar_script") || "").trim();
+  const app_daily_tracking_avatar_poster_url = String(formData.get("app_daily_tracking_avatar_poster_url") || "").trim();
+  const app_daily_tracking_avatar_character = String(formData.get("app_daily_tracking_avatar_character") || "").trim();
+  const app_daily_tracking_avatar_style = String(formData.get("app_daily_tracking_avatar_style") || "").trim();
+  const app_daily_tracking_avatar_voice = String(formData.get("app_daily_tracking_avatar_voice") || "").trim();
   try {
     const result = await updateLibraryIntroSettings({
       active,
@@ -107,6 +137,34 @@ export async function saveIntroSettingsAction(
       app_intro_avatar_character,
       app_intro_avatar_style,
       app_intro_avatar_voice,
+      app_habits_avatar_url,
+      app_habits_avatar_title,
+      app_habits_avatar_script,
+      app_habits_avatar_poster_url,
+      app_habits_avatar_character,
+      app_habits_avatar_style,
+      app_habits_avatar_voice,
+      app_insight_avatar_url,
+      app_insight_avatar_title,
+      app_insight_avatar_script,
+      app_insight_avatar_poster_url,
+      app_insight_avatar_character,
+      app_insight_avatar_style,
+      app_insight_avatar_voice,
+      app_ask_avatar_url,
+      app_ask_avatar_title,
+      app_ask_avatar_script,
+      app_ask_avatar_poster_url,
+      app_ask_avatar_character,
+      app_ask_avatar_style,
+      app_ask_avatar_voice,
+      app_daily_tracking_avatar_url,
+      app_daily_tracking_avatar_title,
+      app_daily_tracking_avatar_script,
+      app_daily_tracking_avatar_poster_url,
+      app_daily_tracking_avatar_character,
+      app_daily_tracking_avatar_style,
+      app_daily_tracking_avatar_voice,
     });
     revalidatePath("/admin/library");
     revalidatePath("/admin/library/intro");
@@ -213,6 +271,56 @@ export async function refreshAppIntroAvatarAction(
   void _formData;
   try {
     const result = await refreshLibraryAppIntroAvatar();
+    revalidatePath("/admin/library");
+    revalidatePath("/admin/library/intro");
+    return { ok: Boolean(result.ok), error: result.error ? String(result.error) : null, result };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function generateAppHelpAvatarAction(
+  _: IntroAvatarState,
+  formData: FormData,
+): Promise<IntroAvatarState> {
+  const slot = String(formData.get("app_help_avatar_slot") || "").trim();
+  if (!slot) {
+    return { ok: false, error: "Help avatar slot is required." };
+  }
+  const prefix = `app_${slot}_avatar`;
+  const title = String(formData.get(`${prefix}_title`) || "").trim();
+  const script = String(formData.get(`${prefix}_script`) || "").trim();
+  const poster_url = String(formData.get(`${prefix}_poster_url`) || "").trim();
+  const character = String(formData.get(`${prefix}_character`) || "").trim();
+  const style = String(formData.get(`${prefix}_style`) || "").trim();
+  const voice = String(formData.get(`${prefix}_voice`) || "").trim();
+  try {
+    const result = await generateLibraryIntroHelpAvatar(slot, {
+      title: title || undefined,
+      script: script || undefined,
+      poster_url: poster_url || undefined,
+      character: character || undefined,
+      style: style || undefined,
+      voice: voice || undefined,
+    });
+    revalidatePath("/admin/library");
+    revalidatePath("/admin/library/intro");
+    return { ok: Boolean(result.ok), error: result.error ? String(result.error) : null, result };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export async function refreshAppHelpAvatarAction(
+  _: IntroAvatarState,
+  formData: FormData,
+): Promise<IntroAvatarState> {
+  const slot = String(formData.get("app_help_avatar_slot") || "").trim();
+  if (!slot) {
+    return { ok: false, error: "Help avatar slot is required." };
+  }
+  try {
+    const result = await refreshLibraryIntroHelpAvatar(slot);
     revalidatePath("/admin/library");
     revalidatePath("/admin/library/intro");
     return { ok: Boolean(result.ok), error: result.error ? String(result.error) : null, result };

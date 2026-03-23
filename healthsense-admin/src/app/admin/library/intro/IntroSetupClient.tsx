@@ -3,15 +3,18 @@
 import { useActionState, useEffect, useMemo, useState } from "react";
 import type {
   AssessmentIntroLibrarySettings,
+  AssessmentIntroAvatarSettings,
   ContentPromptTemplateSummary,
   IntroLibrarySettings,
 } from "@/lib/api";
 import {
   generateAppIntroAvatarAction,
+  generateAppHelpAvatarAction,
   generateAssessmentIntroAvatarAction,
   generateIntroDraftAction,
   generateIntroAvatarAction,
   refreshAppIntroAvatarAction,
+  refreshAppHelpAvatarAction,
   refreshAssessmentIntroAvatarAction,
   refreshIntroAvatarAction,
   saveCoachingSettingsAction,
@@ -30,11 +33,63 @@ type IntroSetupClientProps = {
 };
 
 type IntroSetupTab = "app" | "coaching" | "assessment";
+type IntroHelpAvatarSlot = "habits" | "insight" | "ask" | "daily_tracking";
+type IntroHelpAvatarFieldState = {
+  url: string;
+  title: string;
+  script: string;
+  posterUrl: string;
+  character: string;
+  style: string;
+  voice: string;
+  status: string;
+  jobId: string;
+  error: string;
+  generatedAt: string;
+  summaryUrl: string;
+};
+type IntroHelpAvatarStateMap = Record<IntroHelpAvatarSlot, IntroHelpAvatarFieldState>;
 
 const emptyGenerationState: IntroGenerationState = { ok: false, error: null };
 const emptySaveState: IntroSaveState = { ok: false, error: null };
 const emptyAssessmentSaveState: AssessmentIntroSaveState = { ok: false, error: null };
 const emptyAvatarState: IntroAvatarState = { ok: false, error: null };
+const INTRO_HELP_AVATAR_CONFIGS: Array<{
+  slot: IntroHelpAvatarSlot;
+  fieldPrefix: string;
+  label: string;
+  description: string;
+  defaultTitle: string;
+}> = [
+  {
+    slot: "habits",
+    fieldPrefix: "app_habits_avatar",
+    label: "Habits help video",
+    description: "Shown from the HealthSense intro modal when the user wants a quick walkthrough of habits.",
+    defaultTitle: "Habits",
+  },
+  {
+    slot: "insight",
+    fieldPrefix: "app_insight_avatar",
+    label: "Insight help video",
+    description: "Shown from the HealthSense intro modal for the Insight area.",
+    defaultTitle: "Insight",
+  },
+  {
+    slot: "ask",
+    fieldPrefix: "app_ask_avatar",
+    label: "Ask help video",
+    description: "Shown from the HealthSense intro modal for the Ask coaching area.",
+    defaultTitle: "Ask",
+  },
+  {
+    slot: "daily_tracking",
+    fieldPrefix: "app_daily_tracking_avatar",
+    label: "Daily tracking help video",
+    description: "Shown from the HealthSense intro modal for daily pillar tracking.",
+    defaultTitle: "Daily tracking",
+  },
+];
 
 const voiceOptions = [
   { value: "", label: "Default" },
@@ -129,6 +184,35 @@ function withCurrentOption(
   return [{ value, label: `${value} (Current)` }, ...options];
 }
 
+function introHelpAvatarStateFromSettings(
+  settings: AssessmentIntroAvatarSettings | null | undefined,
+  fallbackTitle: string,
+): IntroHelpAvatarFieldState {
+  return {
+    url: settings?.url || "",
+    title: settings?.title || fallbackTitle,
+    script: settings?.script || "",
+    posterUrl: settings?.poster_url || "",
+    character: settings?.character || "lisa",
+    style: settings?.style || "graceful-sitting",
+    voice: settings?.voice || "en-GB-SoniaNeural",
+    status: settings?.status || "",
+    jobId: settings?.job_id || "",
+    error: settings?.error || "",
+    generatedAt: settings?.generated_at || "",
+    summaryUrl: settings?.summary_url || "",
+  };
+}
+
+function introHelpAvatarMapFromIntro(intro: IntroLibrarySettings): IntroHelpAvatarStateMap {
+  return {
+    habits: introHelpAvatarStateFromSettings(intro.app_habits_avatar, "Habits"),
+    insight: introHelpAvatarStateFromSettings(intro.app_insight_avatar, "Insight"),
+    ask: introHelpAvatarStateFromSettings(intro.app_ask_avatar, "Ask"),
+    daily_tracking: introHelpAvatarStateFromSettings(intro.app_daily_tracking_avatar, "Daily tracking"),
+  };
+}
+
 function SectionHeading({
   label,
   description,
@@ -188,6 +272,14 @@ export default function IntroSetupClient({
   );
   const [appAvatarRefreshState, appAvatarRefreshAction, refreshingAppAvatar] = useActionState(
     refreshAppIntroAvatarAction,
+    emptyAvatarState,
+  );
+  const [helpAvatarGenerationState, helpAvatarGenerationAction, generatingHelpAvatar] = useActionState(
+    generateAppHelpAvatarAction,
+    emptyAvatarState,
+  );
+  const [helpAvatarRefreshState, helpAvatarRefreshAction, refreshingHelpAvatar] = useActionState(
+    refreshAppHelpAvatarAction,
     emptyAvatarState,
   );
   const [coachSaveState, coachSaveAction, savingCoach] = useActionState(
@@ -260,6 +352,10 @@ export default function IntroSetupClient({
   const [appIntroAvatarSummaryUrl, setAppIntroAvatarSummaryUrl] = useState(
     appIntro.app_intro_avatar?.summary_url || "",
   );
+  const [helpAvatars, setHelpAvatars] = useState<IntroHelpAvatarStateMap>(() =>
+    introHelpAvatarMapFromIntro(appIntro),
+  );
+  const [activeHelpAvatarSlot, setActiveHelpAvatarSlot] = useState<IntroHelpAvatarSlot | null>(null);
   const [coachProductAvatarUrl, setCoachProductAvatarUrl] = useState(
     appIntro.coach_product_avatar?.url || "",
   );
@@ -389,6 +485,45 @@ export default function IntroSetupClient({
     () => withCurrentOption(assessmentAvatarVoiceOptions, coachProductAvatarVoice),
     [coachProductAvatarVoice],
   );
+  const helpAvatarConfigBySlot = useMemo(
+    () =>
+      Object.fromEntries(
+        INTRO_HELP_AVATAR_CONFIGS.map((config) => [config.slot, config]),
+      ) as Record<IntroHelpAvatarSlot, (typeof INTRO_HELP_AVATAR_CONFIGS)[number]>,
+    [],
+  );
+
+  const updateHelpAvatarField = (
+    slot: IntroHelpAvatarSlot,
+    field: keyof IntroHelpAvatarFieldState,
+    value: string,
+  ) => {
+    setHelpAvatars((current) => ({
+      ...current,
+      [slot]: {
+        ...current[slot],
+        [field]: value,
+      },
+    }));
+  };
+
+  const updateHelpAvatarCharacter = (slot: IntroHelpAvatarSlot, value: string) => {
+    const key = String(value || "").trim().toLowerCase();
+    const validStyles = assessmentAvatarStylesByCharacter[key] || [];
+    setHelpAvatars((current) => {
+      const nextStyle = validStyles.some((option) => option.value === current[slot].style)
+        ? current[slot].style
+        : validStyles[0]?.value || current[slot].style;
+      return {
+        ...current,
+        [slot]: {
+          ...current[slot],
+          character: value,
+          style: nextStyle,
+        },
+      };
+    });
+  };
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -420,6 +555,7 @@ export default function IntroSetupClient({
     setAppIntroAvatarError(appIntro.app_intro_avatar?.error || "");
     setAppIntroAvatarGeneratedAt(appIntro.app_intro_avatar?.generated_at || "");
     setAppIntroAvatarSummaryUrl(appIntro.app_intro_avatar?.summary_url || "");
+    setHelpAvatars(introHelpAvatarMapFromIntro(appIntro));
     setCoachProductAvatarUrl(appIntro.coach_product_avatar?.url || "");
     setCoachProductAvatarTitle(appIntro.coach_product_avatar?.title || "How HealthSense works");
     setCoachProductAvatarScript(appIntro.coach_product_avatar?.script || "");
@@ -432,17 +568,7 @@ export default function IntroSetupClient({
     setCoachProductAvatarError(appIntro.coach_product_avatar?.error || "");
     setCoachProductAvatarGeneratedAt(appIntro.coach_product_avatar?.generated_at || "");
     setCoachProductAvatarSummaryUrl(appIntro.coach_product_avatar?.summary_url || "");
-  }, [
-    appIntro.active,
-    appIntro.app_intro_avatar,
-    appIntro.body,
-    appIntro.coach_product_avatar,
-    appIntro.podcast_url,
-    appIntro.podcast_voice,
-    appIntro.title,
-    appIntro.updated_at,
-    appIntro.welcome_message_template,
-  ]);
+  }, [appIntro]);
 
   useEffect(() => {
     setAssessmentIntroActive(Boolean(assessmentIntro.active));
@@ -503,6 +629,7 @@ export default function IntroSetupClient({
     setAppIntroAvatarError(result.app_intro_avatar?.error || "");
     setAppIntroAvatarGeneratedAt(result.app_intro_avatar?.generated_at || "");
     setAppIntroAvatarSummaryUrl(result.app_intro_avatar?.summary_url || "");
+    setHelpAvatars(introHelpAvatarMapFromIntro(result));
     setCoachProductAvatarUrl(result.coach_product_avatar?.url || "");
     setCoachProductAvatarTitle(result.coach_product_avatar?.title || "How HealthSense works");
     setCoachProductAvatarScript(result.coach_product_avatar?.script || "");
@@ -583,6 +710,34 @@ export default function IntroSetupClient({
     setAppIntroAvatarGeneratedAt(String(avatar.generated_at || "").trim());
     setAppIntroAvatarSummaryUrl(String(avatar.summary_url || "").trim());
   }, [appAvatarGenerationState.result, appAvatarRefreshState.result]);
+
+  useEffect(() => {
+    const result = helpAvatarGenerationState.result || helpAvatarRefreshState.result;
+    const rawSlot = String(result?.slot || "").trim() as IntroHelpAvatarSlot;
+    const config = rawSlot ? helpAvatarConfigBySlot[rawSlot] : null;
+    const avatar =
+      result && typeof result.avatar === "object" && result.avatar
+        ? (result.avatar as Record<string, unknown>)
+        : null;
+    if (!config || !avatar) return;
+    setHelpAvatars((current) => ({
+      ...current,
+      [rawSlot]: {
+        url: String(avatar.url || "").trim(),
+        title: String(avatar.title || "").trim() || config.defaultTitle,
+        script: String(avatar.script || "").trim(),
+        posterUrl: String(avatar.poster_url || "").trim(),
+        character: String(avatar.character || "").trim() || "lisa",
+        style: String(avatar.style || "").trim() || "graceful-sitting",
+        voice: String(avatar.voice || "").trim() || "en-GB-SoniaNeural",
+        status: String(avatar.status || "").trim(),
+        jobId: String(avatar.job_id || "").trim(),
+        error: String(avatar.error || "").trim(),
+        generatedAt: String(avatar.generated_at || "").trim(),
+        summaryUrl: String(avatar.summary_url || "").trim(),
+      },
+    }));
+  }, [helpAvatarConfigBySlot, helpAvatarGenerationState.result, helpAvatarRefreshState.result]);
 
   useEffect(() => {
     const result = coachAvatarGenerationState.result || coachAvatarRefreshState.result;
@@ -1041,9 +1196,223 @@ export default function IntroSetupClient({
                   </div>
                 ) : null}
               </div>
+              {INTRO_HELP_AVATAR_CONFIGS.map((config) => {
+                const state = helpAvatars[config.slot];
+                const characterOptions = withCurrentOption(
+                  assessmentAvatarCharacterOptions,
+                  state.character,
+                );
+                const styleOptions = withCurrentOption(
+                  assessmentAvatarStylesByCharacter[String(state.character || "").trim().toLowerCase()] || [],
+                  state.style,
+                );
+                const voiceOptionsForSlot = withCurrentOption(
+                  assessmentAvatarVoiceOptions,
+                  state.voice,
+                );
+                const showGenerationError =
+                  activeHelpAvatarSlot === config.slot ? helpAvatarGenerationState.error : null;
+                const showRefreshError =
+                  activeHelpAvatarSlot === config.slot ? helpAvatarRefreshState.error : null;
+                const isGeneratingThisSlot =
+                  generatingHelpAvatar && activeHelpAvatarSlot === config.slot;
+                const isRefreshingThisSlot =
+                  refreshingHelpAvatar && activeHelpAvatarSlot === config.slot;
+                return (
+                  <div
+                    key={config.slot}
+                    className="space-y-4 rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4"
+                  >
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                        {config.label}
+                      </p>
+                      <p className="mt-1 text-sm text-[#6b6257]">{config.description}</p>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                          Video URL
+                        </label>
+                        <input
+                          name={`${config.fieldPrefix}_url`}
+                          value={state.url}
+                          onChange={(e) => updateHelpAvatarField(config.slot, "url", e.target.value)}
+                          className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                          Label
+                        </label>
+                        <input
+                          name={`${config.fieldPrefix}_title`}
+                          value={state.title}
+                          onChange={(e) => updateHelpAvatarField(config.slot, "title", e.target.value)}
+                          className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                          Poster URL
+                        </label>
+                        <input
+                          name={`${config.fieldPrefix}_poster_url`}
+                          value={state.posterUrl}
+                          onChange={(e) => updateHelpAvatarField(config.slot, "posterUrl", e.target.value)}
+                          className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                          Character
+                        </label>
+                        <select
+                          name={`${config.fieldPrefix}_character`}
+                          value={state.character}
+                          onChange={(e) => updateHelpAvatarCharacter(config.slot, e.target.value)}
+                          className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                        >
+                          {characterOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                          Style
+                        </label>
+                        <select
+                          name={`${config.fieldPrefix}_style`}
+                          value={state.style}
+                          onChange={(e) => updateHelpAvatarField(config.slot, "style", e.target.value)}
+                          className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                        >
+                          {styleOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                          Voice
+                        </label>
+                        <select
+                          name={`${config.fieldPrefix}_voice`}
+                          value={state.voice}
+                          onChange={(e) => updateHelpAvatarField(config.slot, "voice", e.target.value)}
+                          className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                        >
+                          {voiceOptionsForSlot.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                        Avatar script
+                      </label>
+                      <textarea
+                        name={`${config.fieldPrefix}_script`}
+                        rows={6}
+                        value={state.script}
+                        onChange={(e) => updateHelpAvatarField(config.slot, "script", e.target.value)}
+                        className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
+                      />
+                    </div>
+                    <div className="rounded-xl border border-[#efe7db] bg-white p-3 text-sm text-[#6b6257]">
+                      <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                        Azure avatar status
+                      </p>
+                      <p className="mt-2">Status: {state.status || "not generated"}</p>
+                      {state.jobId ? <p className="mt-1 break-all">Job ID: {state.jobId}</p> : null}
+                      {state.generatedAt ? <p className="mt-1">Generated: {state.generatedAt}</p> : null}
+                      {state.summaryUrl ? (
+                        <a
+                          href={state.summaryUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-2 inline-flex text-[11px] uppercase tracking-[0.2em] text-[var(--accent)]"
+                        >
+                          Open Azure summary
+                        </a>
+                      ) : null}
+                      {state.error ? <p className="mt-2 text-red-600">{state.error}</p> : null}
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="submit"
+                        name="app_help_avatar_slot"
+                        value={config.slot}
+                        formAction={helpAvatarGenerationAction}
+                        onClick={() => setActiveHelpAvatarSlot(config.slot)}
+                        disabled={generatingHelpAvatar || refreshingHelpAvatar || saving}
+                        className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isGeneratingThisSlot ? "Generating avatar…" : "Generate avatar"}
+                      </button>
+                      <button
+                        type="submit"
+                        name="app_help_avatar_slot"
+                        value={config.slot}
+                        formAction={helpAvatarRefreshAction}
+                        onClick={() => setActiveHelpAvatarSlot(config.slot)}
+                        disabled={refreshingHelpAvatar || generatingHelpAvatar || saving}
+                        className="rounded-full border border-[#e7e1d6] bg-white px-5 py-2 text-xs uppercase tracking-[0.2em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {isRefreshingThisSlot ? "Refreshing…" : "Refresh avatar status"}
+                      </button>
+                    </div>
+                    {showGenerationError ? (
+                      <p className="text-sm text-red-600">{showGenerationError}</p>
+                    ) : null}
+                    {showRefreshError ? (
+                      <p className="text-sm text-red-600">{showRefreshError}</p>
+                    ) : null}
+                    {state.url ? (
+                      <div className="rounded-xl border border-[#efe7db] bg-white p-3">
+                        <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
+                          Video preview
+                        </p>
+                        <video
+                          key={`${config.slot}-${state.url}`}
+                          controls
+                          preload="metadata"
+                          playsInline
+                          poster={state.posterUrl || undefined}
+                          className="mt-2 w-full rounded-2xl border border-[#efe7db]"
+                        >
+                          <source src={state.url} />
+                        </video>
+                        <a
+                          href={state.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-2 inline-flex text-[11px] uppercase tracking-[0.2em] text-[var(--accent)]"
+                        >
+                          Open video
+                        </a>
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
               <button
                 type="submit"
-                disabled={saving || generatingAppAvatar || refreshingAppAvatar}
+                disabled={
+                  saving ||
+                  generatingAppAvatar ||
+                  refreshingAppAvatar ||
+                  generatingHelpAvatar ||
+                  refreshingHelpAvatar
+                }
                 className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {saving ? "Saving…" : "Save app intro"}

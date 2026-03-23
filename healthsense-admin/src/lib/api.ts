@@ -1115,6 +1115,10 @@ export type IntroLibrarySettings = {
   podcast_voice?: string | null;
   app_intro_avatar?: AssessmentIntroAvatarSettings | null;
   coach_product_avatar?: AssessmentIntroAvatarSettings | null;
+  app_habits_avatar?: AssessmentIntroAvatarSettings | null;
+  app_insight_avatar?: AssessmentIntroAvatarSettings | null;
+  app_ask_avatar?: AssessmentIntroAvatarSettings | null;
+  app_daily_tracking_avatar?: AssessmentIntroAvatarSettings | null;
   source_type?: string | null;
   updated_at?: string | null;
 };
@@ -2147,6 +2151,34 @@ export async function updateLibraryIntroSettings(payload: {
   coach_product_avatar_character?: string;
   coach_product_avatar_style?: string;
   coach_product_avatar_voice?: string;
+  app_habits_avatar_url?: string;
+  app_habits_avatar_title?: string;
+  app_habits_avatar_script?: string;
+  app_habits_avatar_poster_url?: string;
+  app_habits_avatar_character?: string;
+  app_habits_avatar_style?: string;
+  app_habits_avatar_voice?: string;
+  app_insight_avatar_url?: string;
+  app_insight_avatar_title?: string;
+  app_insight_avatar_script?: string;
+  app_insight_avatar_poster_url?: string;
+  app_insight_avatar_character?: string;
+  app_insight_avatar_style?: string;
+  app_insight_avatar_voice?: string;
+  app_ask_avatar_url?: string;
+  app_ask_avatar_title?: string;
+  app_ask_avatar_script?: string;
+  app_ask_avatar_poster_url?: string;
+  app_ask_avatar_character?: string;
+  app_ask_avatar_style?: string;
+  app_ask_avatar_voice?: string;
+  app_daily_tracking_avatar_url?: string;
+  app_daily_tracking_avatar_title?: string;
+  app_daily_tracking_avatar_script?: string;
+  app_daily_tracking_avatar_poster_url?: string;
+  app_daily_tracking_avatar_character?: string;
+  app_daily_tracking_avatar_style?: string;
+  app_daily_tracking_avatar_voice?: string;
 }): Promise<Record<string, unknown>> {
   return apiAdmin<Record<string, unknown>>("/admin/library/intro", {
     method: "POST",
@@ -2226,6 +2258,30 @@ export async function refreshLibraryIntroAvatar(): Promise<Record<string, unknow
 
 export async function refreshLibraryAppIntroAvatar(): Promise<Record<string, unknown>> {
   return apiAdmin<Record<string, unknown>>("/admin/library/intro/app-avatar/refresh", {
+    method: "POST",
+  });
+}
+
+export async function generateLibraryIntroHelpAvatar(
+  slot: string,
+  payload: {
+    title?: string;
+    script?: string;
+    poster_url?: string;
+    character?: string;
+    style?: string;
+    voice?: string;
+  },
+): Promise<Record<string, unknown>> {
+  return apiAdmin<Record<string, unknown>>(`/admin/library/intro/help-avatar/${encodeURIComponent(slot)}/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function refreshLibraryIntroHelpAvatar(slot: string): Promise<Record<string, unknown>> {
+  return apiAdmin<Record<string, unknown>>(`/admin/library/intro/help-avatar/${encodeURIComponent(slot)}/refresh`, {
     method: "POST",
   });
 }

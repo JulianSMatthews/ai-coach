@@ -12,6 +12,19 @@ import LeadAssessmentBranding from "./LeadAssessmentBranding";
 import LatestAssessmentPanel from "./LatestAssessmentPanel";
 import type { AssessmentIntroAvatar } from "./AssessmentPromptCard";
 
+type AppIntroHelpVideos = {
+  habits?: AssessmentIntroAvatar | null;
+  insight?: AssessmentIntroAvatar | null;
+  ask?: AssessmentIntroAvatar | null;
+  dailyTracking?: AssessmentIntroAvatar | null;
+};
+
+type IntroLibraryMediaBundle = {
+  appIntroAvatar: AssessmentIntroAvatar | null;
+  coachProductAvatar: AssessmentIntroAvatar | null;
+  helpVideos: AppIntroHelpVideos;
+};
+
 function isTruthyToken(value: string | string[] | undefined): boolean {
   const raw = Array.isArray(value) ? value[0] : value;
   const token = String(raw || "").trim().toLowerCase();
@@ -99,44 +112,34 @@ async function getAssessmentIntroAvatar(forceEnabled = false): Promise<Assessmen
   }
 }
 
-async function getCoachProductAvatar(): Promise<AssessmentIntroAvatar | null> {
-  try {
-    const res = await fetch(`${getApiBaseUrl()}/admin/library/intro`, {
-      method: "GET",
-      headers: getAdminHeaders(),
-      cache: "no-store",
-    });
-    if (!res.ok) {
-      return null;
-    }
-    const payload = (await res.json().catch(() => ({}))) as {
-      coach_product_avatar?: {
+function mapIntroAvatar(
+  avatar:
+    | {
         url?: string | null;
         title?: string | null;
         script?: string | null;
         poster_url?: string | null;
-      } | null;
-    };
-    const avatar = payload.coach_product_avatar || null;
-    const url = String(avatar?.url || "").trim();
-    const title = String(avatar?.title || "").trim();
-    const script = String(avatar?.script || "").trim();
-    const posterUrl = String(avatar?.poster_url || "").trim();
-    if (!url && !script && !title) {
-      return null;
-    }
-    return {
-      url: url || null,
-      title: title || "How HealthSense works",
-      script: script || null,
-      posterUrl: posterUrl || null,
-    };
-  } catch {
+      }
+    | null
+    | undefined,
+  fallbackTitle: string,
+): AssessmentIntroAvatar | null {
+  const url = String(avatar?.url || "").trim();
+  const title = String(avatar?.title || "").trim();
+  const script = String(avatar?.script || "").trim();
+  const posterUrl = String(avatar?.poster_url || "").trim();
+  if (!url && !script && !title) {
     return null;
   }
+  return {
+    url: url || null,
+    title: title || fallbackTitle,
+    script: script || null,
+    posterUrl: posterUrl || null,
+  };
 }
 
-async function getAppIntroAvatar(): Promise<AssessmentIntroAvatar | null> {
+async function getAppIntroLibraryMedia(): Promise<IntroLibraryMediaBundle> {
   try {
     const res = await fetch(`${getApiBaseUrl()}/admin/library/intro`, {
       method: "GET",
@@ -144,7 +147,11 @@ async function getAppIntroAvatar(): Promise<AssessmentIntroAvatar | null> {
       cache: "no-store",
     });
     if (!res.ok) {
-      return null;
+      return {
+        appIntroAvatar: null,
+        coachProductAvatar: null,
+        helpVideos: {},
+      };
     }
     const payload = (await res.json().catch(() => ({}))) as {
       app_intro_avatar?: {
@@ -153,23 +160,53 @@ async function getAppIntroAvatar(): Promise<AssessmentIntroAvatar | null> {
         script?: string | null;
         poster_url?: string | null;
       } | null;
+      coach_product_avatar?: {
+        url?: string | null;
+        title?: string | null;
+        script?: string | null;
+        poster_url?: string | null;
+      } | null;
+      app_habits_avatar?: {
+        url?: string | null;
+        title?: string | null;
+        script?: string | null;
+        poster_url?: string | null;
+      } | null;
+      app_insight_avatar?: {
+        url?: string | null;
+        title?: string | null;
+        script?: string | null;
+        poster_url?: string | null;
+      } | null;
+      app_ask_avatar?: {
+        url?: string | null;
+        title?: string | null;
+        script?: string | null;
+        poster_url?: string | null;
+      } | null;
+      app_daily_tracking_avatar?: {
+        url?: string | null;
+        title?: string | null;
+        script?: string | null;
+        poster_url?: string | null;
+      } | null;
     };
-    const avatar = payload.app_intro_avatar || null;
-    const url = String(avatar?.url || "").trim();
-    const title = String(avatar?.title || "").trim();
-    const script = String(avatar?.script || "").trim();
-    const posterUrl = String(avatar?.poster_url || "").trim();
-    if (!url && !script && !title) {
-      return null;
-    }
     return {
-      url: url || null,
-      title: title || "Welcome to HealthSense",
-      script: script || null,
-      posterUrl: posterUrl || null,
+      appIntroAvatar: mapIntroAvatar(payload.app_intro_avatar, "Welcome to HealthSense"),
+      coachProductAvatar: mapIntroAvatar(payload.coach_product_avatar, "How HealthSense works"),
+      helpVideos: {
+        habits: mapIntroAvatar(payload.app_habits_avatar, "Habits"),
+        insight: mapIntroAvatar(payload.app_insight_avatar, "Insight"),
+        ask: mapIntroAvatar(payload.app_ask_avatar, "Ask"),
+        dailyTracking: mapIntroAvatar(payload.app_daily_tracking_avatar, "Daily tracking"),
+      },
     };
   } catch {
-    return null;
+    return {
+      appIntroAvatar: null,
+      coachProductAvatar: null,
+      helpVideos: {},
+    };
   }
 }
 
@@ -210,8 +247,10 @@ export default async function AssessmentChatPage(props: PageProps) {
   const assessmentIntroAvatar = shouldLoadAssessmentIntroAvatar
     ? await getAssessmentIntroAvatar(introAvatarOverride === true)
     : null;
-  const appIntroAvatar = await getAppIntroAvatar();
-  const coachProductAvatar = await getCoachProductAvatar();
+  const introLibraryMedia = await getAppIntroLibraryMedia();
+  const appIntroAvatar = introLibraryMedia.appIntroAvatar;
+  const coachProductAvatar = introLibraryMedia.coachProductAvatar;
+  const appIntroHelpVideos = introLibraryMedia.helpVideos;
 
   const leadHeaderTitle = <LeadAssessmentBranding />;
 
@@ -307,12 +346,13 @@ export default async function AssessmentChatPage(props: PageProps) {
           introAvatarEnabledOverride={introAvatarOverride}
         />
         {pillarTrackerSummary ? (
-          <LatestAssessmentPanel
-            userId={userId}
-            initialSummary={pillarTrackerSummary}
-            appIntroAvatar={appIntroAvatar}
-          />
-        ) : null}
+              <LatestAssessmentPanel
+                userId={userId}
+                initialSummary={pillarTrackerSummary}
+                appIntroAvatar={appIntroAvatar}
+                appIntroHelpVideos={appIntroHelpVideos}
+              />
+            ) : null}
       </section>
     </PageShell>
   );
