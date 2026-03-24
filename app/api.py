@@ -2298,6 +2298,38 @@ def _lead_pending_secret() -> str:
     return env_secret or _LEAD_PENDING_RUNTIME_SECRET
 
 
+def _normalize_auth_email(value: object) -> str:
+    return _strip_invisible(str(value or "")).strip().lower()
+
+
+def _resolve_auth_user(
+    session,
+    *,
+    email_raw: object = None,
+    phone_raw: object = None,
+) -> tuple[User, str | None, str | None]:
+    email_val = _normalize_auth_email(email_raw)
+    phone_val = _strip_invisible(str(phone_raw or "")).strip()
+
+    if not email_val and not phone_val:
+        raise HTTPException(status_code=400, detail="email or phone required")
+
+    if email_val:
+        if "@" not in email_val or "." not in email_val.split("@")[-1]:
+            raise HTTPException(status_code=400, detail="invalid email")
+        user = session.execute(select(User).where(func.lower(User.email) == email_val)).scalars().first()
+        if not user:
+            raise HTTPException(status_code=404, detail="user not found")
+        return user, email_val, None
+
+    phone_norm = _norm_phone(phone_val)
+    phone_variants = [phone_norm, f"whatsapp:{phone_norm}"]
+    user = session.execute(select(User).where(User.phone.in_(phone_variants))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="user not found")
+    return user, None, phone_norm
+
+
 def _b64url_encode(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
 
@@ -5918,23 +5950,20 @@ def api_public_assessment_lead_first_reply(payload: dict | None, request: Reques
 
 @api_v1.post("/auth/login/request")
 def api_auth_login_request(payload: dict, request: Request):
+    email_raw = (payload or {}).get("email")
     phone_raw = (payload or {}).get("phone")
     password = (payload or {}).get("password")
     channel = (payload or {}).get("channel") or "auto"
-    if not phone_raw:
-        raise HTTPException(status_code=400, detail="phone required")
-    phone_norm = _norm_phone(str(phone_raw))
-    phone_variants = [phone_norm, f"whatsapp:{phone_norm}"]
     with SessionLocal() as s:
-        user = s.execute(select(User).where(User.phone.in_(phone_variants))).scalar_one_or_none()
-        if not user:
-            raise HTTPException(status_code=404, detail="user not found")
+        user, _, _ = _resolve_auth_user(s, email_raw=email_raw, phone_raw=phone_raw)
         has_password = bool(getattr(user, "password_hash", None))
         if has_password:
             if not password or not _verify_password(str(password), getattr(user, "password_hash", None)):
                 raise HTTPException(status_code=401, detail="invalid credentials")
         user_id = int(user.id)
-        user_phone = str(user.phone)
+        user_phone = str(getattr(user, "phone", "") or "").strip()
+        if not user_phone:
+            raise HTTPException(status_code=400, detail="mobile number required")
         code = f"{secrets.randbelow(1_000_000):06d}"
         otp = AuthOtp(
             user_id=user_id,
@@ -5973,25 +6002,22 @@ def api_auth_login_request(payload: dict, request: Request):
 
 @api_v1.post("/auth/login/verify")
 def api_auth_login_verify(payload: dict, request: Request):
+    email_raw = (payload or {}).get("email")
     phone_raw = (payload or {}).get("phone")
     otp_id = (payload or {}).get("otp_id")
     code = (payload or {}).get("code")
     remember_raw = (payload or {}).get("remember_me")
     remember_me = True if remember_raw is None else bool(remember_raw)
-    if not phone_raw or not otp_id or not code:
-        raise HTTPException(status_code=400, detail="phone, otp_id, and code required")
+    if (not email_raw and not phone_raw) or not otp_id or not code:
+        raise HTTPException(status_code=400, detail="email or phone, otp_id, and code required")
     try:
         otp_id = int(otp_id)
     except Exception:
         raise HTTPException(status_code=400, detail="otp_id must be an integer")
-    phone_norm = _norm_phone(str(phone_raw))
-    phone_variants = [phone_norm, f"whatsapp:{phone_norm}"]
     now = datetime.utcnow()
     first_login_marked = False
     with SessionLocal() as s:
-        user = s.execute(select(User).where(User.phone.in_(phone_variants))).scalar_one_or_none()
-        if not user:
-            raise HTTPException(status_code=404, detail="user not found")
+        user, _, _ = _resolve_auth_user(s, email_raw=email_raw, phone_raw=phone_raw)
         setup_required = not bool(getattr(user, "password_hash", None))
         otp = s.query(AuthOtp).filter(AuthOtp.id == otp_id, AuthOtp.user_id == user.id).one_or_none()
         if not otp or otp.purpose != "login_2fa":
@@ -6044,18 +6070,15 @@ def api_auth_login_verify(payload: dict, request: Request):
 
 @api_v1.post("/auth/password/reset/request")
 def api_auth_password_reset_request(payload: dict, request: Request):
+    email_raw = (payload or {}).get("email")
     phone_raw = (payload or {}).get("phone")
     channel = (payload or {}).get("channel") or "auto"
-    if not phone_raw:
-        raise HTTPException(status_code=400, detail="phone required")
-    phone_norm = _norm_phone(str(phone_raw))
-    phone_variants = [phone_norm, f"whatsapp:{phone_norm}"]
     with SessionLocal() as s:
-        user = s.execute(select(User).where(User.phone.in_(phone_variants))).scalar_one_or_none()
-        if not user:
-            raise HTTPException(status_code=404, detail="user not found")
+        user, _, _ = _resolve_auth_user(s, email_raw=email_raw, phone_raw=phone_raw)
         user_id = int(user.id)
-        user_phone = str(user.phone)
+        user_phone = str(getattr(user, "phone", "") or "").strip()
+        if not user_phone:
+            raise HTTPException(status_code=400, detail="mobile number required")
         code = f"{secrets.randbelow(1_000_000):06d}"
         otp = AuthOtp(
             user_id=user_id,
@@ -6093,14 +6116,15 @@ def api_auth_password_reset_request(payload: dict, request: Request):
 
 @api_v1.post("/auth/password/reset/verify")
 def api_auth_password_reset_verify(payload: dict, request: Request):
+    email_raw = (payload or {}).get("email")
     phone_raw = (payload or {}).get("phone")
     otp_id = (payload or {}).get("otp_id")
     code = (payload or {}).get("code")
     password = (payload or {}).get("password")
     remember_raw = (payload or {}).get("remember_me")
     remember_me = True if remember_raw is None else bool(remember_raw)
-    if not phone_raw or not otp_id or not code or password is None:
-        raise HTTPException(status_code=400, detail="phone, otp_id, code, and password required")
+    if (not email_raw and not phone_raw) or not otp_id or not code or password is None:
+        raise HTTPException(status_code=400, detail="email or phone, otp_id, code, and password required")
     try:
         otp_id = int(otp_id)
     except Exception:
@@ -6108,14 +6132,10 @@ def api_auth_password_reset_verify(payload: dict, request: Request):
     pw_val = str(password).strip()
     if len(pw_val) < 8:
         raise HTTPException(status_code=400, detail="password must be at least 8 characters")
-    phone_norm = _norm_phone(str(phone_raw))
-    phone_variants = [phone_norm, f"whatsapp:{phone_norm}"]
     now = datetime.utcnow()
     first_login_marked = False
     with SessionLocal() as s:
-        user = s.execute(select(User).where(User.phone.in_(phone_variants))).scalar_one_or_none()
-        if not user:
-            raise HTTPException(status_code=404, detail="user not found")
+        user, _, _ = _resolve_auth_user(s, email_raw=email_raw, phone_raw=phone_raw)
         otp = s.query(AuthOtp).filter(AuthOtp.id == otp_id, AuthOtp.user_id == user.id).one_or_none()
         if not otp or otp.purpose != "password_reset":
             raise HTTPException(status_code=404, detail="otp not found")
@@ -12629,11 +12649,11 @@ def _resolve_checkout_urls(
         return f"{base_url}{path}"
 
     success_url = _build(
-        default_path=f"/progress/{int(user_id)}?billing=success",
+        default_path=f"/preferences/{int(user_id)}?billing=success",
         override_value=success_path,
     )
     cancel_url = _build(
-        default_path=f"/progress/{int(user_id)}?billing=cancel",
+        default_path=f"/preferences/{int(user_id)}?billing=cancel",
         override_value=cancel_path,
     )
     if "CHECKOUT_SESSION_ID" not in success_url:

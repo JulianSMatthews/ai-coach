@@ -38,8 +38,12 @@ export function friendlyAuthError(raw: unknown): string {
   if (lower.includes("upstream returned invalid response")) {
     return "We’re having trouble connecting. Please try again.";
   }
+  if (lower.includes("email or phone required")) return "Enter your email to continue.";
   if (lower.includes("phone required")) return "Enter your phone number to continue.";
-  if (lower.includes("user not found")) return "We couldn’t find an account for that phone number.";
+  if (lower.includes("user not found")) return "We couldn’t find an account for that email or mobile number.";
+  if (lower.includes("mobile number required")) {
+    return "This account does not have a mobile number on file yet. Please contact support.";
+  }
   if (lower.includes("invalid credentials")) {
     return "That password didn’t match. Try again, or leave it blank if this is your first login.";
   }
@@ -59,8 +63,14 @@ export function friendlyAuthError(raw: unknown): string {
   if (lower.includes("failed to request otp")) {
     return "We couldn’t send a code. Please try again.";
   }
+  if (lower.includes("email or phone, otp_id, code, and password required")) {
+    return "Enter the 6-digit code and a new password.";
+  }
   if (lower.includes("phone, otp_id, code, and password required")) {
     return "Enter the 6-digit code and a new password.";
+  }
+  if (lower.includes("email or phone, otp_id, and code required") || lower.includes("otp_id must")) {
+    return "Enter the 6-digit code we sent.";
   }
   if (lower.includes("phone, otp_id, and code required") || lower.includes("otp_id must")) {
     return "Enter the 6-digit code we sent.";
