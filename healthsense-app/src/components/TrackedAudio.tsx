@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 type TrackedAudioProps = {
   userId: string | number;
   src: string;
-  surface: "assessment" | "library";
+  surface: "assessment";
   podcastId?: string | number;
   className?: string;
 };

@@ -80,7 +80,7 @@ async function openAppAction(formData: FormData) {
   const appBase = normalizeHsAppBase(session.app_base_url) || resolveHsAppBase();
   const token = String(session.session_token || "").trim();
   if (!token) return;
-  const nextPath = `/progress/${userId}`;
+  const nextPath = `/assessment/${userId}/chat`;
   const url =
     `${appBase}/api/auth/admin-app-login?session_token=${encodeURIComponent(token)}` +
     `&user_id=${encodeURIComponent(String(userId))}` +

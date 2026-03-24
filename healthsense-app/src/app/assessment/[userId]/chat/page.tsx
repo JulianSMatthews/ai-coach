@@ -318,12 +318,6 @@ export default async function AssessmentChatPage(props: PageProps) {
             >
               {shouldRelogin ? "sign in again" : "try again"}
             </a>
-            <a
-              href={`/assessment/${encodeURIComponent(userId)}`}
-              className="rounded-full border border-[#efe7db] px-4 py-2 text-xs uppercase tracking-[0.2em]"
-            >
-              view assessment
-            </a>
           </div>
         </Card>
       </PageShell>

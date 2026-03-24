@@ -17,7 +17,7 @@ const appTitle = process.env.NODE_ENV === "development" ? "HealthSense App (Deve
 
 export const metadata: Metadata = {
   title: appTitle,
-  description: "HealthSense assessment and progress dashboards",
+  description: "HealthSense coaching and assessment app",
   icons: {
     icon: "/healthsense-mark.svg",
     shortcut: "/healthsense-mark.svg",

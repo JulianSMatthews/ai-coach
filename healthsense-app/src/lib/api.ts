@@ -1,121 +1,4 @@
-// Render sync marker: force fresh HealthSense app build/deploy from latest commit.
 type FetchOptions = RequestInit & { query?: Record<string, string | number | undefined> };
-
-export type AssessmentResponse = {
-  user?: { id?: number; first_name?: string; surname?: string; display_name?: string };
-  run?: { id?: number; finished_at?: string; combined_overall?: number };
-  scores?: {
-    combined?: number;
-    rows?: Array<{ label?: string; value?: number; bucket?: string }>;
-    by_pillar?: Record<string, number>;
-  };
-  pillars?: Array<{
-    pillar_key?: string;
-    pillar_name?: string;
-    score?: number;
-    bucket?: string;
-    concept_scores?: Record<string, number>;
-    concept_labels?: Record<string, string>;
-    qa_samples?: Array<{ question?: string; answer?: string }>;
-    focus_note?: string;
-  }>;
-  okrs?: Array<{
-    pillar_key?: string;
-    pillar_name?: string;
-    score?: number;
-    objective?: string;
-    key_results?: string[];
-    focus_note?: string;
-  }>;
-  narratives?: {
-    score_html?: string;
-    okr_html?: string;
-    coaching_html?: string;
-    score_audio_url?: string;
-    okr_audio_url?: string;
-    coaching_audio_url?: string;
-    completion_summary_text?: string;
-    completion_summary_audio_url?: string;
-    completion_summary_avatar_url?: string;
-    completion_summary_avatar_status?: string;
-    completion_summary_avatar_error?: string;
-    completion_summary_avatar_mode?: string;
-    completion_summary_realtime_enabled?: boolean;
-    completion_summary_realtime_max_session_seconds?: number;
-    completion_summary_realtime_max_replays?: number;
-  };
-  readiness?: { score?: number; label?: string; note?: string } | null;
-  readiness_breakdown?: Array<{ key?: string; label?: string; value?: number }>;
-  readiness_responses?: Array<{ key?: string; question?: string; answer?: number | string }>;
-  meta?: {
-    reported_at?: string;
-    narratives_cached?: boolean;
-    narratives_source?: string;
-    habit_narrative_pending?: boolean;
-    completion_summary_pending?: boolean;
-  };
-  reports?: {
-    assessment_html?: string;
-    assessment_pdf?: string;
-    assessment_image?: string;
-  };
-};
-
-export type ProgressResponse = {
-  user?: { id?: number; first_name?: string; surname?: string; display_name?: string };
-  meta?: { anchor_date?: string; anchor_label?: string; is_virtual_date?: boolean; reported_at?: string };
-  status_counts?: Record<string, number>;
-  total_krs?: number;
-  engagement?: {
-    daily_streak?: number;
-    active_today?: boolean;
-    last_interaction_date?: string | null;
-    recent_window_days?: number;
-    recent_active_dates?: string[];
-    source?: string;
-  };
-  focus?: { kr_ids?: number[]; kr_titles?: string[] };
-  week_window?: { start?: string | null; end?: string | null; is_current?: boolean };
-  readiness?: { score?: number; label?: string; note?: string } | null;
-  programme?: {
-    blocks?: Array<{
-      pillar_key?: string;
-      pillar_label?: string;
-      label?: string;
-      week_label?: string;
-      week_start?: number;
-      week_end?: number;
-      start?: string | null;
-      end?: string | null;
-      bridge_days?: number;
-    }>;
-  };
-  rows?: Array<{
-    pillar?: string;
-    cycle_label?: string;
-    cycle_start?: string;
-    cycle_end?: string;
-    objective?: string;
-    krs?: Array<{
-      id?: number;
-      description?: string;
-      baseline?: number | null;
-      actual?: number | null;
-      target?: number | null;
-      unit?: string | null;
-      metric_label?: string | null;
-      okr_on_track?: boolean | null;
-      okr_status_label?: string | null;
-      habit_steps?: Array<{
-        id?: number;
-        text?: string;
-        status?: string;
-        week_no?: number | null;
-      }>;
-    }>;
-  }>;
-  reports?: { progress_html?: string };
-};
 
 export type UserStatusResponse = {
   user?: {
@@ -416,42 +299,6 @@ export type CoachInsightResponse = {
   content?: CoachInsightContent | null;
 };
 
-export type CoachingHistoryResponse = {
-  user?: { id?: number; display_name?: string };
-  items?: Array<{
-    id?: number;
-    ts?: string;
-    type?: "podcast" | "prompt" | "dialog";
-    title?: string;
-    preview?: string;
-    full_text?: string;
-    is_truncated?: boolean;
-    audio_url?: string;
-    channel?: string;
-    direction?: string;
-    touchpoint_type?: string;
-    week_no?: number | null;
-  }>;
-};
-
-export type LibraryContentResponse = {
-  user_id?: number;
-  items?: Record<
-    string,
-    Array<{
-      id?: number;
-      pillar_key?: string;
-      concept_code?: string | null;
-      title?: string;
-      body?: string;
-      created_at?: string | null;
-      podcast_url?: string | null;
-      podcast_voice?: string | null;
-      avatar?: CoachInsightContent["avatar"];
-    }>
-  >;
-};
-
 export type BillingPriceOption = {
   id?: number;
   plan_id?: number;
@@ -575,18 +422,6 @@ async function apiGet<T>(path: string, options: FetchOptions = {}): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function getAssessment(userId: string | number, runId?: string | number): Promise<AssessmentResponse> {
-  return apiGet<AssessmentResponse>(`/api/v1/users/${userId}/assessment`, {
-    query: { run_id: runId },
-  });
-}
-
-export async function getProgress(userId: string | number, anchorDate?: string): Promise<ProgressResponse> {
-  return apiGet<ProgressResponse>(`/api/v1/users/${userId}/progress`, {
-    query: { anchor_date: anchorDate },
-  });
-}
-
 export async function getUserStatus(userId: string | number): Promise<UserStatusResponse> {
   return apiGet<UserStatusResponse>(`/api/v1/users/${userId}/status`);
 }
@@ -604,15 +439,6 @@ export async function getPillarTrackerSummary(
   });
 }
 
-export async function getCoachingHistory(
-  userId: string | number,
-  limit?: number,
-): Promise<CoachingHistoryResponse> {
-  return apiGet<CoachingHistoryResponse>(`/api/v1/users/${userId}/coaching-history`, {
-    query: { limit },
-  });
-}
-
 export async function getCoachInsight(
   userId: string | number,
   anchorDate?: string,
@@ -621,10 +447,6 @@ export async function getCoachInsight(
   return apiGet<CoachInsightResponse>(`/api/v1/users/${userId}/coach-insight`, {
     query: { anchor_date: anchorDate, concept_key: conceptKey },
   });
-}
-
-export async function getLibraryContent(userId: string | number): Promise<LibraryContentResponse> {
-  return apiGet<LibraryContentResponse>(`/api/v1/users/${userId}/library`);
 }
 
 export async function getBillingPlans(): Promise<BillingPlansResponse> {

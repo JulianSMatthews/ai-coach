@@ -11,17 +11,9 @@ type AppNavProps = {
 
 const APP_LABEL = process.env.NODE_ENV === "development" ? "App (Develop)" : "App";
 
-const makeLinks = (userId: string) => [
-  { label: "My Coach Gia", href: `/assessment/${userId}/chat` },
-  { label: "Progress", href: `/progress/${userId}` },
-  { label: "Assessment", href: `/assessment/${userId}` },
-  { label: "Library", href: `/library/${userId}` },
-  { label: "History", href: `/history/${userId}` },
-];
-
 export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
   const [open, setOpen] = useState(false);
-  const links = makeLinks(userId);
+  const links: Array<{ label: string; href: string }> = [];
 
   useEffect(() => {
     if (!open) return;
