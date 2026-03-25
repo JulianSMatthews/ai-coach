@@ -52,7 +52,13 @@ export function friendlyAuthError(raw: unknown): string {
   }
   if (lower.includes("channel must be")) return "Choose email, WhatsApp, or SMS.";
   if (lower.includes("failed to send otp")) {
-    if (lower.includes("auth email is not configured") || lower.includes("auth_smtp")) {
+    if (
+      lower.includes("auth email is not configured") ||
+      lower.includes("auth_smtp") ||
+      lower.includes("auth_ms_graph") ||
+      lower.includes("auth_email_transport") ||
+      lower.includes("microsoft graph email is not configured")
+    ) {
       return "We couldn’t send a code because email delivery is not configured.";
     }
     if (
@@ -60,9 +66,17 @@ export function friendlyAuthError(raw: unknown): string {
       lower.includes("authentication unsuccessful") ||
       lower.includes("client not authenticated") ||
       lower.includes("535 5.7.139") ||
-      lower.includes("535 5.7.3")
+      lower.includes("535 5.7.3") ||
+      lower.includes("microsoft graph") ||
+      lower.includes("graph.microsoft.com") ||
+      lower.includes("login.microsoftonline.com") ||
+      lower.includes("aadsts") ||
+      lower.includes("mail.send") ||
+      lower.includes("erroraccessdenied") ||
+      lower.includes("access to odata is disabled") ||
+      lower.includes("invalid_client")
     ) {
-      return "We couldn’t send a code because the Microsoft 365 mail account is rejecting SMTP sign-in.";
+      return "We couldn’t send a code because the Microsoft 365 email delivery setup is rejecting the request.";
     }
     if (lower.includes("twilio_sms_from")) {
       return "We couldn’t send a code because SMS fallback is not configured.";

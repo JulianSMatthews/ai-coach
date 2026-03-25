@@ -25,7 +25,7 @@ import sys
 import threading
 import shutil
 from email.message import EmailMessage
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, quote
 from datetime import datetime, timedelta, date
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
@@ -2961,6 +2961,238 @@ def _hash_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
+_AUTH_MS_GRAPH_TOKEN_CACHE: dict[str, object] = {
+    "cache_key": "",
+    "access_token": "",
+    "expires_at": 0.0,
+}
+_AUTH_MS_GRAPH_TOKEN_LOCK = threading.Lock()
+
+
+def _parse_auth_delivery_error(raw: str) -> str:
+    text = str(raw or "").strip()
+    if not text:
+        return ""
+    try:
+        payload = json.loads(text)
+    except Exception:
+        return text
+    if isinstance(payload, str):
+        return payload.strip()
+    if not isinstance(payload, dict):
+        return text
+    direct = payload.get("error_description") or payload.get("detail") or payload.get("message")
+    if isinstance(direct, str) and direct.strip():
+        return direct.strip()
+    nested = payload.get("error")
+    if isinstance(nested, dict):
+        code = str(nested.get("code") or "").strip()
+        message = str(nested.get("message") or "").strip()
+        if code and message:
+            return f"{code}: {message}"
+        if message:
+            return message
+        if code:
+            return code
+    if isinstance(nested, str) and nested.strip():
+        return nested.strip()
+    return text
+
+
+def _auth_email_transport() -> str:
+    transport = (os.getenv("AUTH_EMAIL_TRANSPORT") or "auto").strip().lower()
+    if transport not in {"auto", "smtp", "microsoft_graph"}:
+        raise RuntimeError("AUTH_EMAIL_TRANSPORT must be auto|smtp|microsoft_graph")
+    return transport
+
+
+def _auth_ms_graph_enabled() -> bool:
+    if _auth_email_transport() == "microsoft_graph":
+        return True
+    return any(
+        bool((os.getenv(name) or "").strip())
+        for name in (
+            "AUTH_MS_GRAPH_TENANT_ID",
+            "AUTH_MS_GRAPH_CLIENT_ID",
+            "AUTH_MS_GRAPH_CLIENT_SECRET",
+            "AUTH_MS_GRAPH_SENDER",
+        )
+    )
+
+
+def _auth_ms_graph_config(*, from_email: str, reply_to: str) -> dict[str, object]:
+    tenant_id = (os.getenv("AUTH_MS_GRAPH_TENANT_ID") or "").strip()
+    client_id = (os.getenv("AUTH_MS_GRAPH_CLIENT_ID") or "").strip()
+    client_secret = os.getenv("AUTH_MS_GRAPH_CLIENT_SECRET") or ""
+    sender_email = _normalize_auth_email(os.getenv("AUTH_MS_GRAPH_SENDER") or from_email)
+    token_base_url = (os.getenv("AUTH_MS_GRAPH_TOKEN_BASE_URL") or "https://login.microsoftonline.com").strip().rstrip("/")
+    api_base_url = (os.getenv("AUTH_MS_GRAPH_API_BASE_URL") or "https://graph.microsoft.com/v1.0").strip().rstrip("/")
+    scope = (os.getenv("AUTH_MS_GRAPH_SCOPE") or "https://graph.microsoft.com/.default").strip()
+    timeout_raw = (os.getenv("AUTH_MS_GRAPH_TIMEOUT_SECONDS") or os.getenv("AUTH_SMTP_TIMEOUT_SECONDS") or "20").strip()
+
+    missing: list[str] = []
+    if not from_email:
+        missing.append("AUTH_EMAIL_FROM")
+    if not tenant_id:
+        missing.append("AUTH_MS_GRAPH_TENANT_ID")
+    if not client_id:
+        missing.append("AUTH_MS_GRAPH_CLIENT_ID")
+    if not client_secret:
+        missing.append("AUTH_MS_GRAPH_CLIENT_SECRET")
+    if not sender_email:
+        missing.append("AUTH_MS_GRAPH_SENDER or AUTH_EMAIL_FROM")
+    if missing:
+        raise RuntimeError(f"Microsoft Graph email is not configured: missing {', '.join(missing)}")
+    if not token_base_url:
+        raise RuntimeError("AUTH_MS_GRAPH_TOKEN_BASE_URL is required")
+    if not api_base_url:
+        raise RuntimeError("AUTH_MS_GRAPH_API_BASE_URL is required")
+    if not scope:
+        raise RuntimeError("AUTH_MS_GRAPH_SCOPE is required")
+    try:
+        timeout = max(1.0, float(timeout_raw))
+    except Exception:
+        timeout = 20.0
+    token_url = f"{token_base_url}/{tenant_id}/oauth2/v2.0/token"
+    return {
+        "tenant_id": tenant_id,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "sender_email": sender_email,
+        "from_email": from_email,
+        "reply_to": reply_to,
+        "token_url": token_url,
+        "api_base_url": api_base_url,
+        "scope": scope,
+        "timeout": timeout,
+    }
+
+
+def _get_auth_ms_graph_access_token(config: dict[str, object]) -> str:
+    token_url = str(config["token_url"])
+    client_id = str(config["client_id"])
+    client_secret = str(config["client_secret"])
+    scope = str(config["scope"])
+    timeout = float(config["timeout"])
+    cache_key = f"{token_url}|{client_id}|{scope}"
+    now_ts = time.time()
+
+    with _AUTH_MS_GRAPH_TOKEN_LOCK:
+        cached_key = str(_AUTH_MS_GRAPH_TOKEN_CACHE.get("cache_key") or "")
+        cached_token = str(_AUTH_MS_GRAPH_TOKEN_CACHE.get("access_token") or "")
+        cached_expires = float(_AUTH_MS_GRAPH_TOKEN_CACHE.get("expires_at") or 0.0)
+        if cached_key == cache_key and cached_token and cached_expires > now_ts + 60:
+            return cached_token
+
+    body = urlencode(
+        {
+            "client_id": client_id,
+            "scope": scope,
+            "client_secret": client_secret,
+            "grant_type": "client_credentials",
+        }
+    ).encode("utf-8")
+    request = urllib.request.Request(
+        token_url,
+        data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            response_text = response.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as exc:
+        error_text = exc.read().decode("utf-8", errors="replace")
+        detail = _parse_auth_delivery_error(error_text) or str(exc)
+        raise RuntimeError(f"Microsoft Graph token request failed: {detail}")
+    except Exception as exc:
+        raise RuntimeError(f"Microsoft Graph token request failed: {exc}")
+
+    try:
+        payload = json.loads(response_text)
+    except Exception:
+        raise RuntimeError("Microsoft Graph token request returned invalid JSON")
+
+    access_token = str((payload or {}).get("access_token") or "").strip()
+    expires_in_raw = (payload or {}).get("expires_in") or 0
+    try:
+        expires_in = max(300, int(expires_in_raw))
+    except Exception:
+        expires_in = 3600
+    if not access_token:
+        detail = _parse_auth_delivery_error(response_text) or "missing access token"
+        raise RuntimeError(f"Microsoft Graph token request failed: {detail}")
+
+    with _AUTH_MS_GRAPH_TOKEN_LOCK:
+        _AUTH_MS_GRAPH_TOKEN_CACHE["cache_key"] = cache_key
+        _AUTH_MS_GRAPH_TOKEN_CACHE["access_token"] = access_token
+        _AUTH_MS_GRAPH_TOKEN_CACHE["expires_at"] = time.time() + expires_in
+    return access_token
+
+
+def _send_auth_email_via_ms_graph(
+    *,
+    email_target: str,
+    subject: str,
+    text: str,
+    from_email: str,
+    reply_to: str,
+) -> str:
+    config = _auth_ms_graph_config(from_email=from_email, reply_to=reply_to)
+    token = _get_auth_ms_graph_access_token(config)
+    sender_email = str(config["sender_email"])
+    timeout = float(config["timeout"])
+    api_base_url = str(config["api_base_url"])
+    send_url = f"{api_base_url}/users/{quote(sender_email, safe='')}/sendMail"
+
+    message: dict[str, object] = {
+        "subject": subject,
+        "body": {
+            "contentType": "Text",
+            "content": text,
+        },
+        "toRecipients": [
+            {
+                "emailAddress": {
+                    "address": email_target,
+                }
+            }
+        ],
+    }
+    if reply_to:
+        message["replyTo"] = [
+            {
+                "emailAddress": {
+                    "address": reply_to,
+                }
+            }
+        ]
+
+    payload = {
+        "message": message,
+        "saveToSentItems": False,
+    }
+    request = urllib.request.Request(
+        send_url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            response.read()
+    except urllib.error.HTTPError as exc:
+        error_text = exc.read().decode("utf-8", errors="replace")
+        detail = _parse_auth_delivery_error(error_text) or str(exc)
+        raise RuntimeError(f"Microsoft Graph sendMail failed: {detail}")
+    except Exception as exc:
+        raise RuntimeError(f"Microsoft Graph sendMail failed: {exc}")
+    return "email"
+
+
 def _has_recent_whatsapp_inbound(
     user_id: int,
     *,
@@ -3054,7 +3286,7 @@ def _send_auth_code(
     text = f"Your HealthSense {purpose_label} is {code}. It expires in {_OTP_TTL_MINUTES} minutes."
     email_subject = f"Your HealthSense {purpose_label}"
 
-    def _try_email() -> str:
+    def _try_email_via_smtp() -> str:
         host = (os.getenv("AUTH_SMTP_HOST") or "").strip()
         from_email = _normalize_auth_email(os.getenv("AUTH_EMAIL_FROM") or "")
         username = (os.getenv("AUTH_SMTP_USERNAME") or "").strip()
@@ -3095,11 +3327,27 @@ def _send_auth_code(
                 smtp.ehlo()
                 if use_tls:
                     smtp.starttls()
-                    smtp.ehlo()
+                smtp.ehlo()
             if username:
                 smtp.login(username, password)
             smtp.send_message(message)
         return "email"
+
+    def _try_email() -> str:
+        from_email = _normalize_auth_email(os.getenv("AUTH_EMAIL_FROM") or "")
+        reply_to = _normalize_auth_email(os.getenv("AUTH_EMAIL_REPLY_TO") or "")
+        if not email_target:
+            raise RuntimeError("email address required")
+        use_ms_graph = _auth_ms_graph_enabled()
+        if use_ms_graph:
+            return _send_auth_email_via_ms_graph(
+                email_target=email_target,
+                subject=email_subject,
+                text=text,
+                from_email=from_email,
+                reply_to=reply_to,
+            )
+        return _try_email_via_smtp()
 
     if chosen == "email":
         print(f"[auth][otp] dispatch_result user_id={user_id} channel=email reason=explicit")
@@ -7392,7 +7640,7 @@ def api_user_status_v1(
             "text_scale": pref_map.get("text_scale", ""),
             "theme": pref_map.get("theme", "system"),
             "training_objective": training_objective.objective if training_objective else "",
-            "preferred_channel": pref_map.get("preferred_channel", "whatsapp"),
+            "preferred_channel": pref_map.get("preferred_channel", "app"),
             "marketing_opt_in": pref_map.get("marketing_opt_in", ""),
         },
         "prompt_state_override": pref_map.get("prompt_state_override", ""),
