@@ -120,11 +120,38 @@ function parseApiError(text: string, fallback: string) {
     if (!normalized || normalized === "internal server error") {
       return fallback;
     }
+    if (normalized.includes("email already in use")) {
+      return "That email address is already linked to another account.";
+    }
+    if (normalized.includes("phone already in use")) {
+      return "That mobile number is already linked to another account.";
+    }
+    if (normalized.includes("mobile number required for whatsapp")) {
+      return "Add a mobile number if you want WhatsApp coaching.";
+    }
+    if (normalized.includes("mobile number required")) {
+      return "Add a mobile number if you want WhatsApp coaching.";
+    }
+    if (normalized.includes("password is required")) {
+      return "Create a password to finish setting up your app login.";
+    }
     return message;
   } catch {
     const normalized = String(text || "").trim().toLowerCase();
     if (!normalized || normalized === "internal server error") {
       return fallback;
+    }
+    if (normalized.includes("email already in use")) {
+      return "That email address is already linked to another account.";
+    }
+    if (normalized.includes("phone already in use")) {
+      return "That mobile number is already linked to another account.";
+    }
+    if (normalized.includes("mobile number required for whatsapp")) {
+      return "Add a mobile number if you want WhatsApp coaching.";
+    }
+    if (normalized.includes("mobile number required")) {
+      return "Add a mobile number if you want WhatsApp coaching.";
     }
     return text;
   }
@@ -454,6 +481,13 @@ function looksLikeEmail(value: string): boolean {
   return domain.includes(".");
 }
 
+function looksLikePhone(value: string): boolean {
+  const token = String(value || "").trim();
+  if (!token) return false;
+  const digits = token.replace(/\D/g, "");
+  return digits.length >= 8;
+}
+
 function isLikelyVideoUrl(value: string): boolean {
   const token = String(value || "").trim().toLowerCase();
   if (!token) return false;
@@ -482,9 +516,15 @@ export default function AssessmentChatBox({
   const [claimFirstName, setClaimFirstName] = useState("");
   const [claimSurname, setClaimSurname] = useState("");
   const [claimEmail, setClaimEmail] = useState("");
+  const [claimPhone, setClaimPhone] = useState("");
+  const [claimPassword, setClaimPassword] = useState("");
+  const [claimConfirmPassword, setClaimConfirmPassword] = useState("");
+  const [claimPreferredChannel, setClaimPreferredChannel] = useState<"app" | "whatsapp">("app");
+  const [claimMarketingOptIn, setClaimMarketingOptIn] = useState(true);
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
   const [claimSuccess, setClaimSuccess] = useState(false);
+  const [claimNextPath, setClaimNextPath] = useState("");
   const [showCoachingPlan, setShowCoachingPlan] = useState(false);
   const [completionSummaryMedia, setCompletionSummaryMedia] =
     useState<AssessmentCompletionSummaryMedia | null>(null);
@@ -1319,6 +1359,9 @@ export default function AssessmentChatBox({
     const firstName = claimFirstName.trim();
     const surname = claimSurname.trim();
     const email = claimEmail.trim().toLowerCase();
+    const phone = claimPhone.trim();
+    const password = claimPassword;
+    const confirmPassword = claimConfirmPassword;
     if (claiming || claimSuccess) {
       return;
     }
@@ -1334,6 +1377,22 @@ export default function AssessmentChatBox({
       setClaimError("That email doesn’t look right. Please check it.");
       return;
     }
+    if (phone && !looksLikePhone(phone)) {
+      setClaimError("Enter a valid mobile number, ideally with country code.");
+      return;
+    }
+    if (claimPreferredChannel === "whatsapp" && !phone) {
+      setClaimError("Add a mobile number if you want WhatsApp coaching.");
+      return;
+    }
+    if (!password || password.length < 8) {
+      setClaimError("Password must be at least 8 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setClaimError("Passwords do not match.");
+      return;
+    }
 
     setClaiming(true);
     setClaimError(null);
@@ -1346,7 +1405,12 @@ export default function AssessmentChatBox({
           userId,
           first_name: firstName,
           surname,
+          phone,
           email,
+          password,
+          preferred_channel: claimPreferredChannel,
+          marketing_opt_in: claimMarketingOptIn ? "1" : "0",
+          create_app_session: true,
           lead_token: leadToken || undefined,
         }),
       });
@@ -1354,11 +1418,17 @@ export default function AssessmentChatBox({
       if (!res.ok) {
         throw new Error(parseApiError(text, "Failed to save your details."));
       }
-      if (text) {
-        JSON.parse(text);
-      }
+      const payload = text ? (JSON.parse(text) as {
+        user?: { id?: number | string };
+        next_path?: string | null;
+      }) : {};
+      const resolvedUserId = String(payload.user?.id || "").trim();
+      const nextPath =
+        String(payload.next_path || "").trim() ||
+        (resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "");
       setIdentityRequired(false);
       setClaimSuccess(true);
+      setClaimNextPath(nextPath);
       void fetch("/api/engagement", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1610,9 +1680,9 @@ export default function AssessmentChatBox({
       autoComplete="on"
     >
       <div className="border-b border-[#efe7db] px-4 py-4 sm:px-6">
-        <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">How HealthSense works</p>
+        <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Early access</p>
         <p className="mt-1 text-sm text-[#3c332b]">
-          Watch the explainer below, then secure your place when you&apos;re ready.
+          Watch the explainer below, then create your HealthSense login and keep this assessment linked to your app account.
         </p>
       </div>
       {String(coachProductAvatar?.url || "").trim() ? (
@@ -1630,11 +1700,11 @@ export default function AssessmentChatBox({
       ) : null}
       <div className="space-y-4 px-4 py-5 sm:px-6 sm:py-6">
         <div className="space-y-2">
-          <h2 className="text-2xl text-[#1e1b16]">Secure your place</h2>
+          <h2 className="text-2xl text-[#1e1b16]">Create your early access login</h2>
           <p className="text-sm text-[#6b6257]">
             {identityRequired
-              ? "Add your details below to secure your place and receive your personal coaching plan."
-              : "Confirm your details below to secure your place and receive your personal coaching plan."}
+              ? "Add your details below to create your app login, link this assessment to your account, and unlock early access."
+              : "Confirm your details below to create your app login, link this assessment to your account, and unlock early access."}
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -1668,6 +1738,59 @@ export default function AssessmentChatBox({
             disabled={claiming || claimSuccess}
             required
           />
+          <input
+            className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm sm:col-span-2"
+            type="tel"
+            placeholder="Mobile number (optional)"
+            autoComplete="tel"
+            inputMode="tel"
+            value={claimPhone}
+            onChange={(event) => setClaimPhone(event.target.value)}
+            disabled={claiming || claimSuccess}
+          />
+          <input
+            className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+            type="password"
+            placeholder="Create password"
+            autoComplete="new-password"
+            value={claimPassword}
+            onChange={(event) => setClaimPassword(event.target.value)}
+            disabled={claiming || claimSuccess}
+            required
+          />
+          <input
+            className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+            type="password"
+            placeholder="Confirm password"
+            autoComplete="new-password"
+            value={claimConfirmPassword}
+            onChange={(event) => setClaimConfirmPassword(event.target.value)}
+            disabled={claiming || claimSuccess}
+            required
+          />
+          <select
+            className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm sm:col-span-2"
+            value={claimPreferredChannel}
+            onChange={(event) => setClaimPreferredChannel(event.target.value === "whatsapp" ? "whatsapp" : "app")}
+            disabled={claiming || claimSuccess}
+          >
+            <option value="app">Prefer app chat</option>
+            <option value="whatsapp">Prefer WhatsApp</option>
+          </select>
+        </div>
+        <div className="rounded-xl border border-[#efe7db] bg-[#fffaf0] p-3">
+          <label className="flex items-center gap-2 text-sm text-[#3c332b]">
+            <input
+              type="checkbox"
+              checked={claimMarketingOptIn}
+              onChange={(event) => setClaimMarketingOptIn(event.target.checked)}
+              disabled={claiming || claimSuccess}
+            />
+            I’d like product updates and tips
+          </label>
+          <p className="mt-2 text-xs text-[#6b6257]">
+            Email is used for login verification. Add a mobile number if you want WhatsApp coaching or SMS fallback later.
+          </p>
         </div>
 
         <div>
@@ -1677,15 +1800,28 @@ export default function AssessmentChatBox({
             disabled={claiming || claimSuccess}
           >
             {claimSuccess
-              ? "Your place has been secured."
+              ? "Your account is ready."
               : claiming
-                ? "Securing your place…"
-                : "Click here to secure your place"}
+                ? "Creating your login…"
+                : "Create my app access"}
           </button>
           {claimSuccess ? (
-            <p className="mt-2 text-sm text-[#3c332b]">
-              Thank you for your interest in HealthSense.
-            </p>
+            <div className="mt-3 space-y-2">
+              <p className="text-sm text-[#3c332b]">
+                Your HealthSense account is ready and this assessment is now linked to it.
+              </p>
+              {claimNextPath ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.location.href = claimNextPath;
+                  }}
+                  className="w-full rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+                >
+                  Open the app
+                </button>
+              ) : null}
+            </div>
           ) : null}
           {claimError ? (
             <p className="mt-2 text-sm text-[#8a3e1a]">{claimError}</p>

@@ -33,7 +33,7 @@ export default function PreferencesForm({
   initialVoice = "",
   initialSchedule = {},
   initialTextScale = "1.0",
-  initialTheme = "system",
+  initialTheme = "dark",
   initialTrainingObjective = "",
   initialPreferredChannel = "whatsapp",
   initialMarketingOptIn = "",

@@ -55,7 +55,7 @@ export default function ResetPasswordPage() {
     } catch {}
   }, []);
 
-  const requestReset = async (event: React.FormEvent | null, channel: "auto" | "whatsapp" | "sms" = "auto") => {
+  const requestReset = async (event: React.FormEvent | null, channel: "auto" | "whatsapp" | "sms" | "email" = "auto") => {
     if (event) event.preventDefault();
     setLoading(true);
     setStatus(null);
@@ -81,7 +81,9 @@ export default function ResetPasswordPage() {
       const data = await res.json();
       setOtpId(Number(data.otp_id));
       const channelUsed = data.channel || channel;
-      if (channelUsed === "sms") {
+      if (channelUsed === "email") {
+        setStatus("We sent a reset code to your email address.");
+      } else if (channelUsed === "sms") {
         setStatus(usingEmail ? "We sent a reset code to the mobile number on your account by SMS." : "We sent a reset code by SMS.");
       } else {
         setStatus(
@@ -176,7 +178,7 @@ export default function ResetPasswordPage() {
           <h1 className="mt-2 text-3xl">Reset password</h1>
           <p className="mt-2 text-sm text-[#6b6257]">
             {usingEmail
-              ? "Enter your email. We’ll send a reset code to the mobile number on your account."
+              ? "Enter your email. We’ll send a reset code to your email address."
               : "Enter your mobile number. We’ll send a reset code by WhatsApp or SMS."}
           </p>
         </div>
@@ -212,14 +214,16 @@ export default function ResetPasswordPage() {
             >
               {loading ? "Sending…" : "Send reset code"}
             </button>
-            <button
-              type="button"
-              className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
-              onClick={() => requestReset(null, "sms")}
-              disabled={loading}
-            >
-              {loading ? "Sending…" : "Send via SMS"}
-            </button>
+            {!usingEmail ? (
+              <button
+                type="button"
+                className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
+                onClick={() => requestReset(null, "sms")}
+                disabled={loading}
+              >
+                {loading ? "Sending…" : "Send via SMS"}
+              </button>
+            ) : null}
           </form>
         ) : (
           <form onSubmit={verifyReset} className="space-y-4" autoComplete="off">
@@ -237,7 +241,7 @@ export default function ResetPasswordPage() {
             </div>
             <p className="text-sm text-[#6b6257]">
               {usingEmail
-                ? "Use the code sent to the mobile number on your account."
+                ? "Use the code sent to your email address."
                 : "Use the code sent to your mobile number."}
             </p>
             <div>
@@ -277,22 +281,35 @@ export default function ResetPasswordPage() {
               />
               Keep me signed in
             </label>
-            <button
-              type="button"
-              className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
-              onClick={() => requestReset(null, "whatsapp")}
-              disabled={loading}
-            >
-              {loading ? "Sending…" : "Resend via WhatsApp"}
-            </button>
-            <button
-              type="button"
-              className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
-              onClick={() => requestReset(null, "sms")}
-              disabled={loading}
-            >
-              {loading ? "Sending…" : "Send via SMS"}
-            </button>
+            {usingEmail ? (
+              <button
+                type="button"
+                className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
+                onClick={() => requestReset(null, "email")}
+                disabled={loading}
+              >
+                {loading ? "Sending…" : "Resend email"}
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
+                  onClick={() => requestReset(null, "whatsapp")}
+                  disabled={loading}
+                >
+                  {loading ? "Sending…" : "Resend via WhatsApp"}
+                </button>
+                <button
+                  type="button"
+                  className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
+                  onClick={() => requestReset(null, "sms")}
+                  disabled={loading}
+                >
+                  {loading ? "Sending…" : "Send via SMS"}
+                </button>
+              </>
+            )}
             <button
               type="button"
               className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"

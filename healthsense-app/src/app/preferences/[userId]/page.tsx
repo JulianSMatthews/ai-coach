@@ -1,9 +1,10 @@
-import { getUserStatus, getWearables } from "@/lib/api";
+import { getBillingPlans, getUserStatus, getWearables } from "@/lib/api";
 import { Card, PageShell, SectionHeader } from "@/components/ui";
 import PreferencesForm from "./PreferencesForm";
 import WearablesPanel from "./WearablesPanel";
 import TextScale from "@/components/TextScale";
 import AppNav from "@/components/AppNav";
+import BillingCheckoutCard from "@/components/BillingCheckoutCard";
 
 type PageProps = {
   params: Promise<{ userId: string }>;
@@ -13,12 +14,15 @@ type PageProps = {
 export default async function PreferencesPage(props: PageProps) {
   const { userId } = await props.params;
   const searchParams = props.searchParams ? await props.searchParams : {};
-  const data = await getUserStatus(userId);
-  const wearables = await getWearables(userId);
+  const [data, wearables, billingPlans] = await Promise.all([
+    getUserStatus(userId),
+    getWearables(userId),
+    getBillingPlans(),
+  ]);
   const user = data.user || {};
   const prefs = data.coaching_preferences || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
-  const themePreference = prefs.theme || "system";
+  const themePreference = prefs.theme || "dark";
   const promptState = (data.prompt_state_override || "").toLowerCase();
   const promptBadge =
     promptState && promptState !== "live"
@@ -28,6 +32,7 @@ export default async function PreferencesPage(props: PageProps) {
     String(Array.isArray(value) ? value[0] : value || "").trim();
   const wearableStatus = firstValue(searchParams?.wearable_status);
   const wearableMessage = firstValue(searchParams?.wearable_message) || null;
+  const billingFlag = firstValue(searchParams?.billing) || null;
   const displayName = user.display_name || user.first_name || "User";
   const displayFirstName = displayName.split(" ")[0];
 
@@ -66,6 +71,16 @@ export default async function PreferencesPage(props: PageProps) {
             providers={wearables.providers || []}
             initialMessage={wearableMessage}
             initialStatus={wearableStatus}
+          />
+        </Card>
+
+        <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
+          <BillingCheckoutCard
+            userId={String(userId)}
+            billingState={user.billing_status || null}
+            billingFlag={billingFlag}
+            plans={billingPlans.plans || []}
+            defaultPriceId={billingPlans.default_price_id ?? null}
           />
         </Card>
       </section>

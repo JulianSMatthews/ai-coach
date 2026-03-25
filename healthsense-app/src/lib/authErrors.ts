@@ -41,14 +41,20 @@ export function friendlyAuthError(raw: unknown): string {
   if (lower.includes("email or phone required")) return "Enter your email to continue.";
   if (lower.includes("phone required")) return "Enter your phone number to continue.";
   if (lower.includes("user not found")) return "We couldn’t find an account for that email or mobile number.";
+  if (lower.includes("email address required")) {
+    return "This account does not have an email address on file. Use mobile instead or contact support.";
+  }
   if (lower.includes("mobile number required")) {
-    return "This account does not have a mobile number on file yet. Please contact support.";
+    return "This account does not have a mobile number on file. Use email instead or contact support.";
   }
   if (lower.includes("invalid credentials")) {
     return "That password didn’t match. Try again, or leave it blank if this is your first login.";
   }
-  if (lower.includes("channel must be")) return "Choose WhatsApp or SMS.";
+  if (lower.includes("channel must be")) return "Choose email, WhatsApp, or SMS.";
   if (lower.includes("failed to send otp")) {
+    if (lower.includes("auth email is not configured") || lower.includes("auth_smtp")) {
+      return "We couldn’t send a code because email delivery is not configured.";
+    }
     if (lower.includes("twilio_sms_from")) {
       return "We couldn’t send a code because SMS fallback is not configured.";
     }
@@ -79,7 +85,7 @@ export function friendlyAuthError(raw: unknown): string {
   if (lower.includes("otp already used")) return "That code was already used. Request a new one.";
   if (lower.includes("otp expired")) return "That code has expired. Request a new one.";
   if (lower.includes("invalid otp")) {
-    return "That code didn’t match. Use the latest code or tap “Send via SMS”.";
+    return "That code didn’t match. Use the latest code or request a new one.";
   }
   if (lower.includes("userId is required") || lower.includes("missing user id")) {
     return "We couldn’t identify your account. Please sign in again.";

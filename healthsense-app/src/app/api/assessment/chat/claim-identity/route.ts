@@ -64,6 +64,10 @@ export async function POST(request: Request) {
       surname: body.surname ?? "",
       phone: body.phone ?? "",
       email: body.email ?? "",
+      password: body.password ?? "",
+      preferred_channel: body.preferred_channel ?? "",
+      marketing_opt_in: body.marketing_opt_in ?? undefined,
+      create_app_session: body.create_app_session ?? undefined,
     };
 
     const session = getCookieValue(cookieHeader, "hs_session");
@@ -91,11 +95,38 @@ export async function POST(request: Request) {
     if (!text) {
       return NextResponse.json({ ok: true });
     }
+    let data: Record<string, unknown>;
     try {
-      return NextResponse.json(JSON.parse(text));
+      data = JSON.parse(text) as Record<string, unknown>;
     } catch {
       return NextResponse.json({ error: "Upstream returned invalid response." }, { status: 502 });
     }
+    const response = NextResponse.json(data);
+    const token = typeof data.session_token === "string" ? data.session_token : "";
+    const responseUser = data.user && typeof data.user === "object" ? (data.user as Record<string, unknown>) : null;
+    const userIdValue = responseUser?.id;
+    const rememberDaysRaw = Number(data.remember_days || 0);
+    const rememberDays = Number.isFinite(rememberDaysRaw) && rememberDaysRaw > 0 ? Math.floor(rememberDaysRaw) : 30;
+    const maxAge = rememberDays * 24 * 60 * 60;
+    if (token) {
+      response.cookies.set("hs_session", token, {
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+        maxAge,
+        secure: process.env.NODE_ENV === "production",
+      });
+    }
+    if (userIdValue) {
+      response.cookies.set("hs_user_id", String(userIdValue), {
+        httpOnly: false,
+        sameSite: "lax",
+        path: "/",
+        maxAge,
+        secure: process.env.NODE_ENV === "production",
+      });
+    }
+    return response;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: 500 });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   // Keep tracker responses local to this panel.
   PillarTrackerDetailResponse,
@@ -25,6 +25,8 @@ type LatestAssessmentPanelProps = {
     dailyTracking?: AssessmentIntroAvatar | null;
   } | null;
 };
+
+type IntroVideoKey = "intro" | "habits" | "insight" | "ask" | "dailyTracking";
 
 const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
 const HEALTHSENSE_ORANGE = "#c54817";
@@ -128,15 +130,13 @@ function WeeklyScoreRing({ value, tone }: { value?: number | null; tone: string 
 export default function LatestAssessmentPanel({
   userId,
   initialSummary,
-  initialTheme = "system",
+  initialTheme = "dark",
   appIntroAvatar = null,
   appIntroHelpVideos = null,
 }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
   const [scoreCardOpen, setScoreCardOpen] = useState(false);
-  const [selectedIntroVideoKey, setSelectedIntroVideoKey] = useState<
-    "intro" | "habits" | "insight" | "ask" | "dailyTracking"
-  >("intro");
+  const [selectedIntroVideoKey, setSelectedIntroVideoKey] = useState<IntroVideoKey>("intro");
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<PillarTrackerDetailResponse | null>(null);
   const [draft, setDraft] = useState<Record<string, number>>({});
@@ -148,6 +148,7 @@ export default function LatestAssessmentPanel({
   const [themePreference, setThemePreference] = useState<ThemePreference>(normalizeThemePreference(initialTheme));
   const [themeSaving, setThemeSaving] = useState(false);
   const [themeError, setThemeError] = useState<string | null>(null);
+  const introVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
   const combinedScore = (() => {
@@ -194,6 +195,17 @@ export default function LatestAssessmentPanel({
   const defaultIntroVideoKey = introVideoOptions[0]?.key || "intro";
   const activeIntroVideo =
     introVideoOptions.find((item) => item.key === selectedIntroVideoKey) || introVideoOptions[0] || null;
+  const activeIntroVideoKey = activeIntroVideo?.key || null;
+
+  useEffect(() => {
+    if (!scoreCardOpen || !activeIntroVideoKey) return;
+    const videoEl = introVideoRef.current;
+    if (!videoEl) return;
+    try {
+      videoEl.currentTime = 0;
+    } catch {}
+    void videoEl.play().catch(() => undefined);
+  }, [activeIntroVideoKey, scoreCardOpen]);
 
   const refreshSummary = async () => {
     const res = await fetch(`/api/pillar-tracker/summary?userId=${encodeURIComponent(userId)}`, {
@@ -310,6 +322,10 @@ export default function LatestAssessmentPanel({
     setScoreCardOpen(true);
   };
 
+  const selectIntroVideo = (nextKey: IntroVideoKey) => {
+    setSelectedIntroVideoKey(nextKey);
+  };
+
   const saveThemePreference = async (nextThemeInput: string) => {
     const nextTheme = normalizeThemePreference(nextThemeInput);
     const previousTheme = themePreference;
@@ -416,6 +432,8 @@ export default function LatestAssessmentPanel({
                 <div className="space-y-3">
                   <video
                     key={`${activeIntroVideo.key}-${String(activeIntroVideo.avatar?.url || "").trim()}`}
+                    ref={introVideoRef}
+                    autoPlay
                     controls
                     preload="metadata"
                     playsInline
@@ -434,7 +452,7 @@ export default function LatestAssessmentPanel({
                             <button
                               key={option.key}
                               type="button"
-                              onClick={() => setSelectedIntroVideoKey(option.key)}
+                              onClick={() => selectIntroVideo(option.key)}
                               className={`rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] ${
                                 active
                                   ? "border-[#d6c3ab] bg-[#f6ede3] text-[#5d472d]"

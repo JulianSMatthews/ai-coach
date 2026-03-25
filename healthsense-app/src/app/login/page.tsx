@@ -131,7 +131,7 @@ export default function LoginPage() {
     };
   }, []);
 
-  const requestOtp = async (event: React.FormEvent | null, channel: "auto" | "whatsapp" | "sms" = "auto") => {
+  const requestOtp = async (event: React.FormEvent | null, channel: "auto" | "whatsapp" | "sms" | "email" = "auto") => {
     if (event) event.preventDefault();
     setLoading(true);
     setStatus(null);
@@ -160,7 +160,9 @@ export default function LoginPage() {
       setOtpId(Number(data.otp_id));
       setSetupRequired(Boolean(data.setup_required));
       const channelUsed = data.channel || channel;
-      if (channelUsed === "sms") {
+      if (channelUsed === "email") {
+        setStatus("We sent a login code to your email address.");
+      } else if (channelUsed === "sms") {
         setStatus(usingEmail ? "We sent a login code to the mobile number on your account by SMS." : "We sent a login code by SMS.");
       } else {
         setStatus(
@@ -264,7 +266,7 @@ export default function LoginPage() {
           <h1 className="mt-4 text-3xl">Sign in</h1>
           <p className="mt-2 text-sm text-[#6b6257]">
             {usingEmail
-              ? "Enter your email. We’ll send a code to the mobile number on your account."
+              ? "Enter your email. We’ll send a code to your email address."
               : "Enter your mobile number. We’ll send a code via WhatsApp or SMS."}
           </p>
         </div>
@@ -341,7 +343,7 @@ export default function LoginPage() {
             </div>
             <p className="text-sm text-[#6b6257]">
               {usingEmail
-                ? "Use the code sent to the mobile number on your account."
+                ? "Use the code sent to your email address."
                 : "Use the code sent to your mobile number."}
             </p>
             {setupRequired ? (
@@ -354,22 +356,35 @@ export default function LoginPage() {
             >
               {loading ? "Verifying…" : "Verify & continue"}
             </button>
-            <button
-              type="button"
-              className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
-              onClick={() => requestOtp(null, "whatsapp")}
-              disabled={loading || restoringSession}
-            >
-              {loading ? "Sending…" : "Resend via WhatsApp"}
-            </button>
-            <button
-              type="button"
-              className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
-              onClick={() => requestOtp(null, "sms")}
-              disabled={loading || restoringSession}
-            >
-              {loading ? "Sending…" : "Send via SMS"}
-            </button>
+            {usingEmail ? (
+              <button
+                type="button"
+                className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
+                onClick={() => requestOtp(null, "email")}
+                disabled={loading || restoringSession}
+              >
+                {loading ? "Sending…" : "Resend email"}
+              </button>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
+                  onClick={() => requestOtp(null, "whatsapp")}
+                  disabled={loading || restoringSession}
+                >
+                  {loading ? "Sending…" : "Resend via WhatsApp"}
+                </button>
+                <button
+                  type="button"
+                  className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
+                  onClick={() => requestOtp(null, "sms")}
+                  disabled={loading || restoringSession}
+                >
+                  {loading ? "Sending…" : "Send via SMS"}
+                </button>
+              </>
+            )}
             <button
               type="button"
               className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"

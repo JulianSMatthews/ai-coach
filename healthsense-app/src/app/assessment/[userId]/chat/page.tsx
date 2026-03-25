@@ -279,7 +279,7 @@ export default async function AssessmentChatPage(props: PageProps) {
   }
   const prefs = status.coaching_preferences || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
-  const themePreference = prefs.theme || "system";
+  const themePreference = prefs.theme || "dark";
   const assessmentCompleted =
     status.status === "completed" ||
     Boolean(status.onboarding?.assessment_completed_at) ||
