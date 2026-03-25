@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { friendlyAuthError } from "@/lib/authErrors";
+import HealthSenseMark from "@/components/HealthSenseMark";
 
 type ResetMethod = "email" | "phone";
 
@@ -204,8 +205,10 @@ export default function ResetPasswordPage() {
     <main className="min-h-screen bg-white px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto flex w-full max-w-md flex-col gap-6 rounded-3xl border border-[#e7e1d6] bg-white p-8 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.5)]">
         <div>
-          <p className="text-xs uppercase tracking-[0.3em] text-[#6b6257]">HealthSense</p>
-          <h1 className="mt-2 text-3xl">Reset password</h1>
+          <div className="flex items-center">
+            <HealthSenseMark className="h-10 w-7" />
+          </div>
+          <h1 className="mt-4 text-3xl">Reset password</h1>
           <p className="mt-2 text-sm text-[#6b6257]">
             {usingEmail
               ? "Enter your email. We’ll send a reset code to your email address."
