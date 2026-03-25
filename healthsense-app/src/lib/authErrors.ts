@@ -55,6 +55,15 @@ export function friendlyAuthError(raw: unknown): string {
     if (lower.includes("auth email is not configured") || lower.includes("auth_smtp")) {
       return "We couldn’t send a code because email delivery is not configured.";
     }
+    if (
+      lower.includes("smtp.office365.com") ||
+      lower.includes("authentication unsuccessful") ||
+      lower.includes("client not authenticated") ||
+      lower.includes("535 5.7.139") ||
+      lower.includes("535 5.7.3")
+    ) {
+      return "We couldn’t send a code because the Microsoft 365 mail account is rejecting SMTP sign-in.";
+    }
     if (lower.includes("twilio_sms_from")) {
       return "We couldn’t send a code because SMS fallback is not configured.";
     }

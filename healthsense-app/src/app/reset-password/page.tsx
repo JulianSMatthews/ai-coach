@@ -5,6 +5,17 @@ import { friendlyAuthError } from "@/lib/authErrors";
 
 type ResetMethod = "email" | "phone";
 
+function looksLikeEmail(value: string) {
+  const trimmed = value.trim();
+  return /\S+@\S+\.\S+/.test(trimmed);
+}
+
+function looksLikePhone(value: string) {
+  const trimmed = value.trim();
+  const digits = trimmed.replace(/[^\d]/g, "");
+  return trimmed.startsWith("+") && digits.length >= 8;
+}
+
 export default function ResetPasswordPage() {
   const [method, setMethod] = useState<ResetMethod>("email");
   const [email, setEmail] = useState("");
@@ -57,6 +68,25 @@ export default function ResetPasswordPage() {
 
   const requestReset = async (event: React.FormEvent | null, channel: "auto" | "whatsapp" | "sms" | "email" = "auto") => {
     if (event) event.preventDefault();
+    if (usingEmail) {
+      if (!email.trim()) {
+        setStatus("Please enter your email to continue.");
+        return;
+      }
+      if (!looksLikeEmail(email)) {
+        setStatus("That email doesn’t look right. Please check it.");
+        return;
+      }
+    } else {
+      if (!phone.trim()) {
+        setStatus("Please enter your phone number to continue.");
+        return;
+      }
+      if (!looksLikePhone(phone)) {
+        setStatus("Enter a valid mobile number, ideally with country code.");
+        return;
+      }
+    }
     setLoading(true);
     setStatus(null);
     try {

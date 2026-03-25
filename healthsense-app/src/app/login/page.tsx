@@ -1,9 +1,21 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { friendlyAuthError } from "@/lib/authErrors";
 
 type LoginMethod = "email" | "phone";
+
+function looksLikeEmail(value: string) {
+  const trimmed = value.trim();
+  return /\S+@\S+\.\S+/.test(trimmed);
+}
+
+function looksLikePhone(value: string) {
+  const trimmed = value.trim();
+  const digits = trimmed.replace(/[^\d]/g, "");
+  return trimmed.startsWith("+") && digits.length >= 8;
+}
 
 export default function LoginPage() {
   const appLabel = process.env.NODE_ENV === "development" ? "Member App (Develop)" : "Member App";
@@ -133,6 +145,25 @@ export default function LoginPage() {
 
   const requestOtp = async (event: React.FormEvent | null, channel: "auto" | "whatsapp" | "sms" | "email" = "auto") => {
     if (event) event.preventDefault();
+    if (usingEmail) {
+      if (!email.trim()) {
+        setStatus("Please enter your email to continue.");
+        return;
+      }
+      if (!looksLikeEmail(email)) {
+        setStatus("That email doesn’t look right. Please check it.");
+        return;
+      }
+    } else {
+      if (!phone.trim()) {
+        setStatus("Please enter your phone number to continue.");
+        return;
+      }
+      if (!looksLikePhone(phone)) {
+        setStatus("Enter a valid mobile number, ideally with country code.");
+        return;
+      }
+    }
     setLoading(true);
     setStatus(null);
     try {
@@ -260,7 +291,15 @@ export default function LoginPage() {
       <div className="mx-auto flex w-full max-w-md flex-col gap-6 rounded-3xl border border-[#e7e1d6] bg-white p-8 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.5)]">
         <div>
           <div className="flex items-center gap-3">
-            <img src="/healthsense-logo.svg" alt="HealthSense" className="h-11 w-auto" />
+            <Image
+              src="/healthsense-mark.svg"
+              alt="HealthSense"
+              width={28}
+              height={40}
+              className="h-10 w-auto"
+              priority
+            />
+            <span className="text-2xl text-[var(--text-primary)]">HealthSense</span>
             <span className="text-xs uppercase tracking-[0.3em] text-[#6b6257]">{appLabel}</span>
           </div>
           <h1 className="mt-4 text-3xl">Sign in</h1>
