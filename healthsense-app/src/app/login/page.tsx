@@ -18,7 +18,6 @@ function looksLikePhone(value: string) {
 }
 
 export default function LoginPage() {
-  const appLabel = process.env.NODE_ENV === "development" ? "Member App (Develop)" : "Member App";
   const [method, setMethod] = useState<LoginMethod>("email");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -300,7 +299,6 @@ export default function LoginPage() {
               priority
             />
             <span className="text-2xl text-[var(--text-primary)]">HealthSense</span>
-            <span className="text-xs uppercase tracking-[0.3em] text-[#6b6257]">{appLabel}</span>
           </div>
           <h1 className="mt-4 text-3xl">Sign in</h1>
           <p className="mt-2 text-sm text-[#6b6257]">
