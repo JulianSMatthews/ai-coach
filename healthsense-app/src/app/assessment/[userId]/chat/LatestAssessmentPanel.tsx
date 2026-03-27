@@ -184,7 +184,6 @@ export default function LatestAssessmentPanel({
   const scoreCardSubtitle = hasTrackerScores
     ? "Daily tracking scores now lead once you start logging."
     : "Your baseline scores before daily tracking";
-  const scoreCardTitle = hasTrackerScores ? "Current scores" : "Assessment scores";
   const scoreCardHelper = hasTrackerScores
     ? "Tracked pillars show daily scores. The rest stay on baseline until you log them."
     : null;
@@ -488,30 +487,16 @@ export default function LatestAssessmentPanel({
 
             <div className="flex-1 overflow-y-auto px-3 py-3 sm:px-5">
               <div className="mb-3 rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">{scoreCardTitle}</p>
-                {scoreCardHelper ? (
-                  <p className="mt-2 text-xs text-[#6b6257]">{scoreCardHelper}</p>
-                ) : null}
-                <div className="mt-3 grid grid-cols-2 gap-3">
-                  {pillars.map((pillar) => {
-                    const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
-                    const palette = getPillarPalette(pillarKey);
-                    const score = resolvePillarDisplayScore(pillar);
-                    const scoreSource = resolvePillarSource(pillar);
-                    return (
-                      <div key={`scorecard-${pillarKey}`} className="rounded-2xl border border-[#efe7db] bg-white px-3 py-3 text-center">
-                        <div className="flex justify-center">
-                          <WeeklyScoreRing value={score} tone={palette.accent} />
-                        </div>
-                        <p className="mt-2 text-sm font-semibold text-[#1e1b16]">{pillar.label}</p>
-                        {hasTrackerScores ? (
-                          <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-[#8c7f70]">
-                            {scoreSource === "tracker" ? "Daily" : "Baseline"}
-                          </p>
-                        ) : null}
-                      </div>
-                    );
-                  })}
+                <p className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">HealthSense score</p>
+                <div className="mt-3 flex items-center gap-4 rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
+                  <CombinedLogoRing value={combinedScore} />
+                  <div className="min-w-0">
+                    <p className="text-2xl font-semibold text-[#1e1b16]">{combinedScore}/100</p>
+                    <p className="mt-1 text-sm text-[#6b6257]">{scoreCardSubtitle}</p>
+                    {scoreCardHelper ? (
+                      <p className="mt-2 text-xs text-[#8c7f70]">{scoreCardHelper}</p>
+                    ) : null}
+                  </div>
                 </div>
               </div>
               {activeIntroVideo && String(activeIntroVideo.avatar?.url || "").trim() ? (
