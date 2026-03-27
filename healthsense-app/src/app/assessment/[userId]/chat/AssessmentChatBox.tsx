@@ -127,10 +127,10 @@ function parseApiError(text: string, fallback: string) {
       return "That mobile number is already linked to another account.";
     }
     if (normalized.includes("mobile number required for whatsapp")) {
-      return "Add a mobile number if you want WhatsApp coaching.";
+      return "Add a mobile number if you want it saved on your account.";
     }
     if (normalized.includes("mobile number required")) {
-      return "Add a mobile number if you want WhatsApp coaching.";
+      return "Add a mobile number if you want it saved on your account.";
     }
     if (normalized.includes("password is required")) {
       return "Create a password to finish setting up your app login.";
@@ -148,10 +148,10 @@ function parseApiError(text: string, fallback: string) {
       return "That mobile number is already linked to another account.";
     }
     if (normalized.includes("mobile number required for whatsapp")) {
-      return "Add a mobile number if you want WhatsApp coaching.";
+      return "Add a mobile number if you want it saved on your account.";
     }
     if (normalized.includes("mobile number required")) {
-      return "Add a mobile number if you want WhatsApp coaching.";
+      return "Add a mobile number if you want it saved on your account.";
     }
     return text;
   }
@@ -519,8 +519,6 @@ export default function AssessmentChatBox({
   const [claimPhone, setClaimPhone] = useState("");
   const [claimPassword, setClaimPassword] = useState("");
   const [claimConfirmPassword, setClaimConfirmPassword] = useState("");
-  const [claimPreferredChannel, setClaimPreferredChannel] = useState<"app" | "whatsapp">("app");
-  const [claimMarketingOptIn, setClaimMarketingOptIn] = useState(true);
   const [claiming, setClaiming] = useState(false);
   const [claimError, setClaimError] = useState<string | null>(null);
   const [claimSuccess, setClaimSuccess] = useState(false);
@@ -1381,10 +1379,6 @@ export default function AssessmentChatBox({
       setClaimError("Enter a valid mobile number, ideally with country code.");
       return;
     }
-    if (claimPreferredChannel === "whatsapp" && !phone) {
-      setClaimError("Add a mobile number if you want WhatsApp coaching.");
-      return;
-    }
     if (!password || password.length < 8) {
       setClaimError("Password must be at least 8 characters.");
       return;
@@ -1408,8 +1402,6 @@ export default function AssessmentChatBox({
           phone,
           email,
           password,
-          preferred_channel: claimPreferredChannel,
-          marketing_opt_in: claimMarketingOptIn ? "1" : "0",
           create_app_session: true,
           lead_token: leadToken || undefined,
         }),
@@ -1768,30 +1760,10 @@ export default function AssessmentChatBox({
             disabled={claiming || claimSuccess}
             required
           />
-          <select
-            className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm sm:col-span-2"
-            value={claimPreferredChannel}
-            onChange={(event) => setClaimPreferredChannel(event.target.value === "whatsapp" ? "whatsapp" : "app")}
-            disabled={claiming || claimSuccess}
-          >
-            <option value="app">Prefer app chat</option>
-            <option value="whatsapp">Prefer WhatsApp</option>
-          </select>
         </div>
-        <div className="rounded-xl border border-[#efe7db] bg-[#fffaf0] p-3">
-          <label className="flex items-center gap-2 text-sm text-[#3c332b]">
-            <input
-              type="checkbox"
-              checked={claimMarketingOptIn}
-              onChange={(event) => setClaimMarketingOptIn(event.target.checked)}
-              disabled={claiming || claimSuccess}
-            />
-            I’d like product updates and tips
-          </label>
-          <p className="mt-2 text-xs text-[#6b6257]">
-            Email is used for login verification. Add a mobile number if you want WhatsApp coaching or SMS fallback later.
-          </p>
-        </div>
+        <p className="text-xs text-[#6b6257]">
+          Email is used for login verification. Add a mobile number if you want it on your account.
+        </p>
 
         <div>
           <button
