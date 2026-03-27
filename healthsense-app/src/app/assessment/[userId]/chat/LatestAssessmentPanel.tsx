@@ -16,6 +16,9 @@ import LeadAssessmentBranding from "./LeadAssessmentBranding";
 type LatestAssessmentPanelProps = {
   userId: string;
   initialSummary: PillarTrackerSummaryResponse;
+  initialAssessmentCombinedScore?: number | null;
+  initialAssessmentReviewed?: boolean;
+  autoOpenResults?: boolean;
   initialTheme?: string;
   appIntroAvatar?: AssessmentIntroAvatar | null;
   appIntroHelpVideos?: {
@@ -53,6 +56,14 @@ function resolveScore(value?: number | null): number | null {
   const resolved = Number(value);
   if (!Number.isFinite(resolved)) return null;
   return Math.max(0, Math.min(100, Math.round(resolved)));
+}
+
+function resolvePillarDisplayScore(pillar: PillarTrackerPillar): number | null {
+  return resolveScore(pillar.score);
+}
+
+function resolvePillarSource(pillar: PillarTrackerPillar): "tracker" | "assessment" {
+  return resolveScore(pillar.tracker_score) !== null ? "tracker" : "assessment";
 }
 
 function circleDayTone(status?: string | null, isActive?: boolean): string {
@@ -130,6 +141,9 @@ function WeeklyScoreRing({ value, tone }: { value?: number | null; tone: string 
 export default function LatestAssessmentPanel({
   userId,
   initialSummary,
+  initialAssessmentCombinedScore = null,
+  initialAssessmentReviewed = false,
+  autoOpenResults = false,
   initialTheme = "dark",
   appIntroAvatar = null,
   appIntroHelpVideos = null,
@@ -148,16 +162,32 @@ export default function LatestAssessmentPanel({
   const [themePreference, setThemePreference] = useState<ThemePreference>(normalizeThemePreference(initialTheme));
   const [themeSaving, setThemeSaving] = useState(false);
   const [themeError, setThemeError] = useState<string | null>(null);
+  const [assessmentReviewed, setAssessmentReviewed] = useState(initialAssessmentReviewed);
+  const [assessmentReviewSyncStarted, setAssessmentReviewSyncStarted] = useState(initialAssessmentReviewed);
   const introVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
+  const hasTrackerScores = pillars.some((pillar) => resolvePillarSource(pillar) === "tracker");
   const combinedScore = (() => {
+    if (!hasTrackerScores) {
+      const assessmentCombined = resolveScore(initialAssessmentCombinedScore);
+      if (assessmentCombined !== null) {
+        return assessmentCombined;
+      }
+    }
     const scores = pillars
-      .map((pillar) => resolveScore(pillar.tracker_score))
+      .map((pillar) => resolvePillarDisplayScore(pillar))
       .filter((score): score is number => score !== null);
     if (!scores.length) return 0;
     return Math.round(scores.reduce((total, score) => total + score, 0) / scores.length);
   })();
+  const scoreCardSubtitle = hasTrackerScores
+    ? "Daily tracking scores now lead once you start logging."
+    : "Your baseline scores before daily tracking";
+  const scoreCardTitle = hasTrackerScores ? "Current scores" : "Assessment scores";
+  const scoreCardHelper = hasTrackerScores
+    ? "Tracked pillars show daily scores. The rest stay on baseline until you log them."
+    : null;
   const concepts = Array.isArray(detail?.concepts) ? detail?.concepts : [];
   const canSave =
     !saving &&
@@ -206,6 +236,35 @@ export default function LatestAssessmentPanel({
     } catch {}
     void videoEl.play().catch(() => undefined);
   }, [activeIntroVideoKey, scoreCardOpen]);
+
+  useEffect(() => {
+    if (!autoOpenResults) return;
+    setScoreCardOpen(true);
+  }, [autoOpenResults]);
+
+  useEffect(() => {
+    if (!scoreCardOpen || assessmentReviewed || assessmentReviewSyncStarted) return;
+    let cancelled = false;
+    setAssessmentReviewSyncStarted(true);
+    const syncAssessmentReview = async () => {
+      try {
+        const params = new URLSearchParams({ userId });
+        const res = await fetch(`/api/assessment/report?${params.toString()}`, {
+          method: "GET",
+          cache: "no-store",
+        });
+        if (res.ok && !cancelled) {
+          setAssessmentReviewed(true);
+        }
+      } catch {
+        // Ignore silent review sync failures; the score view still works without this marker.
+      }
+    };
+    void syncAssessmentReview();
+    return () => {
+      cancelled = true;
+    };
+  }, [assessmentReviewed, assessmentReviewSyncStarted, scoreCardOpen, userId]);
 
   const refreshSummary = async () => {
     const res = await fetch(`/api/pillar-tracker/summary?userId=${encodeURIComponent(userId)}`, {
@@ -363,7 +422,7 @@ export default function LatestAssessmentPanel({
             {pillars.map((pillar) => {
               const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
               const palette = getPillarPalette(pillarKey);
-              const score = resolveScore(pillar.tracker_score);
+              const score = resolvePillarDisplayScore(pillar);
               return (
                 <button
                   key={pillarKey}
@@ -415,7 +474,7 @@ export default function LatestAssessmentPanel({
                     <LeadAssessmentBranding titleLines={[]} logoClassName="h-4 w-4" />
                     <p>{`HealthSense score ${combinedScore}/100`}</p>
                   </div>
-                  <p className="mt-1 text-xs text-[#6b6257]">How HealthSense works</p>
+                  <p className="mt-1 text-xs text-[#6b6257]">{scoreCardSubtitle}</p>
                 </div>
                 <button
                   type="button"
@@ -428,6 +487,33 @@ export default function LatestAssessmentPanel({
             </div>
 
             <div className="flex-1 overflow-y-auto px-3 py-3 sm:px-5">
+              <div className="mb-3 rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">{scoreCardTitle}</p>
+                {scoreCardHelper ? (
+                  <p className="mt-2 text-xs text-[#6b6257]">{scoreCardHelper}</p>
+                ) : null}
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  {pillars.map((pillar) => {
+                    const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
+                    const palette = getPillarPalette(pillarKey);
+                    const score = resolvePillarDisplayScore(pillar);
+                    const scoreSource = resolvePillarSource(pillar);
+                    return (
+                      <div key={`scorecard-${pillarKey}`} className="rounded-2xl border border-[#efe7db] bg-white px-3 py-3 text-center">
+                        <div className="flex justify-center">
+                          <WeeklyScoreRing value={score} tone={palette.accent} />
+                        </div>
+                        <p className="mt-2 text-sm font-semibold text-[#1e1b16]">{pillar.label}</p>
+                        {hasTrackerScores ? (
+                          <p className="mt-1 text-[11px] uppercase tracking-[0.14em] text-[#8c7f70]">
+                            {scoreSource === "tracker" ? "Daily" : "Baseline"}
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
               {activeIntroVideo && String(activeIntroVideo.avatar?.url || "").trim() ? (
                 <div className="space-y-3">
                   <video

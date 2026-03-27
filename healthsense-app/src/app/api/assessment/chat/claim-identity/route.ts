@@ -65,8 +65,7 @@ export async function POST(request: Request) {
       phone: body.phone ?? "",
       email: body.email ?? "",
       password: body.password ?? "",
-      preferred_channel: body.preferred_channel ?? "",
-      marketing_opt_in: body.marketing_opt_in ?? undefined,
+      preferred_channel: "app",
       create_app_session: body.create_app_session ?? undefined,
     };
 

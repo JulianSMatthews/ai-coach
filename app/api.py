@@ -3031,8 +3031,6 @@ def _auth_ms_graph_config(*, from_email: str, reply_to: str) -> dict[str, object
     timeout_raw = (os.getenv("AUTH_MS_GRAPH_TIMEOUT_SECONDS") or os.getenv("AUTH_SMTP_TIMEOUT_SECONDS") or "20").strip()
 
     missing: list[str] = []
-    if not from_email:
-        missing.append("AUTH_EMAIL_FROM")
     if not tenant_id:
         missing.append("AUTH_MS_GRAPH_TENANT_ID")
     if not client_id:

@@ -44,7 +44,7 @@ export async function POST(request: Request) {
       text_scale: body.text_scale ?? undefined,
       theme: body.theme ?? undefined,
       training_objective: body.training_objective ?? undefined,
-      preferred_channel: body.preferred_channel ?? undefined,
+      preferred_channel: "app",
       marketing_opt_in: body.marketing_opt_in ?? undefined,
       password,
     };

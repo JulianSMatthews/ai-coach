@@ -278,13 +278,15 @@ export default async function AssessmentChatPage(props: PageProps) {
     }
   }
   const prefs = status.coaching_preferences || {};
+  const onboarding = status.onboarding || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
   const themePreference = prefs.theme || "dark";
   const assessmentCompleted =
     status.status === "completed" ||
-    Boolean(status.onboarding?.assessment_completed_at) ||
+    Boolean(onboarding.assessment_completed_at) ||
     Boolean(status.latest_run?.finished_at);
   const assessmentInProgress = status.status === "in_progress";
+  const autoOpenResults = Boolean(assessmentCompleted && onboarding.first_app_login_at && !onboarding.assessment_reviewed_at);
   const chatIntroText = assessmentCompleted
     ? ""
     : assessmentInProgress
@@ -333,6 +335,9 @@ export default async function AssessmentChatPage(props: PageProps) {
           <LatestAssessmentPanel
             userId={userId}
             initialSummary={pillarTrackerSummary}
+            initialAssessmentCombinedScore={status.latest_run?.combined_overall ?? null}
+            initialAssessmentReviewed={Boolean(onboarding.assessment_reviewed_at)}
+            autoOpenResults={autoOpenResults}
             initialTheme={themePreference}
             appIntroAvatar={appIntroAvatar}
             appIntroHelpVideos={appIntroHelpVideos}

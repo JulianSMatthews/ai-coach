@@ -59,8 +59,6 @@ export default async function PreferencesPage(props: PageProps) {
               initialTextScale={prefs.text_scale || "1.0"}
               initialTheme={themePreference}
               initialTrainingObjective={prefs.training_objective || ""}
-              initialPreferredChannel={prefs.preferred_channel || "whatsapp"}
-              initialMarketingOptIn={prefs.marketing_opt_in || ""}
             />
           </div>
         </Card>
@@ -85,20 +83,6 @@ export default async function PreferencesPage(props: PageProps) {
         </Card>
       </section>
 
-      <section className="mt-6 grid gap-6 lg:grid-cols-[1fr_1fr]">
-        <Card>
-          <h2 className="text-xl">Update via WhatsApp</h2>
-          <p className="mt-3 text-sm text-[#6b6257]">
-            Send these commands from your WhatsApp number to update preferences.
-          </p>
-          <ul className="mt-4 space-y-2 text-sm text-[#3c332b]">
-            <li>coachmycoach &lt;note&gt;</li>
-            <li>coachmycoach clear</li>
-            <li>coachmycoach male | female</li>
-            <li>coachmycoach time &lt;day&gt; &lt;HH:MM&gt;</li>
-          </ul>
-        </Card>
-      </section>
     </PageShell>
   );
 }

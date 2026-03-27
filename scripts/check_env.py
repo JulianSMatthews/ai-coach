@@ -52,6 +52,59 @@ OPTIONAL_API = [
 ]
 
 
+def _warn_auth_email_config() -> None:
+    transport = (os.getenv("AUTH_EMAIL_TRANSPORT") or "auto").strip().lower() or "auto"
+    graph_keys = (
+        "AUTH_MS_GRAPH_TENANT_ID",
+        "AUTH_MS_GRAPH_CLIENT_ID",
+        "AUTH_MS_GRAPH_CLIENT_SECRET",
+        "AUTH_MS_GRAPH_SENDER",
+    )
+    smtp_keys = (
+        "AUTH_SMTP_HOST",
+        "AUTH_SMTP_PORT",
+        "AUTH_SMTP_USERNAME",
+        "AUTH_SMTP_PASSWORD",
+        "AUTH_SMTP_USE_TLS",
+        "AUTH_SMTP_USE_SSL",
+    )
+    using_graph = transport == "microsoft_graph" or any(_is_set(k) for k in graph_keys)
+    using_smtp = transport == "smtp" or any(_is_set(k) for k in smtp_keys)
+
+    if transport not in {"auto", "smtp", "microsoft_graph"}:
+        print("[env-check] Auth email config warning:")
+        print("  - AUTH_EMAIL_TRANSPORT must be auto, smtp, or microsoft_graph")
+        return
+
+    if using_graph:
+        missing: List[str] = []
+        if not _is_set("AUTH_MS_GRAPH_TENANT_ID"):
+            missing.append("AUTH_MS_GRAPH_TENANT_ID")
+        if not _is_set("AUTH_MS_GRAPH_CLIENT_ID"):
+            missing.append("AUTH_MS_GRAPH_CLIENT_ID")
+        if not _is_set("AUTH_MS_GRAPH_CLIENT_SECRET"):
+            missing.append("AUTH_MS_GRAPH_CLIENT_SECRET")
+        if not (_is_set("AUTH_MS_GRAPH_SENDER") or _is_set("AUTH_EMAIL_FROM")):
+            missing.append("AUTH_MS_GRAPH_SENDER or AUTH_EMAIL_FROM")
+        if missing:
+            print("[env-check] Auth email Graph config warning:")
+            for item in missing:
+                print(f"  - {item}")
+
+    if using_smtp:
+        missing: List[str] = []
+        if not _is_set("AUTH_SMTP_HOST"):
+            missing.append("AUTH_SMTP_HOST")
+        if not _is_set("AUTH_EMAIL_FROM"):
+            missing.append("AUTH_EMAIL_FROM")
+        if _is_set("AUTH_SMTP_USERNAME") != _is_set("AUTH_SMTP_PASSWORD"):
+            missing.append("AUTH_SMTP_USERNAME and AUTH_SMTP_PASSWORD must both be set")
+        if missing:
+            print("[env-check] Auth email SMTP config warning:")
+            for item in missing:
+                print(f"  - {item}")
+
+
 def _is_set(key: str) -> bool:
     return bool((os.getenv(key) or "").strip())
 
@@ -105,6 +158,7 @@ def main() -> int:
 
     if args.warn_optional:
         _warn_optional(OPTIONAL_API)
+        _warn_auth_email_config()
 
     print("[env-check] OK")
     return 0

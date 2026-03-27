@@ -12,8 +12,6 @@ type PreferencesFormProps = {
   initialTextScale?: string;
   initialTheme?: string;
   initialTrainingObjective?: string;
-  initialPreferredChannel?: string;
-  initialMarketingOptIn?: string;
 };
 
 const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "sunday"];
@@ -35,8 +33,6 @@ export default function PreferencesForm({
   initialTextScale = "1.0",
   initialTheme = "dark",
   initialTrainingObjective = "",
-  initialPreferredChannel = "whatsapp",
-  initialMarketingOptIn = "",
 }: PreferencesFormProps) {
   const [email, setEmail] = useState(initialEmail || "");
   const [note, setNote] = useState(initialNote);
@@ -44,10 +40,6 @@ export default function PreferencesForm({
   const [textScale, setTextScale] = useState(initialTextScale || "1.0");
   const [theme, setTheme] = useState(normalizeThemePreference(initialTheme));
   const [trainingObjective, setTrainingObjective] = useState(initialTrainingObjective || "");
-  const [preferredChannel, setPreferredChannel] = useState(
-    String(initialPreferredChannel || "").toLowerCase() === "app" ? "app" : "whatsapp",
-  );
-  const [marketingOptIn, setMarketingOptIn] = useState(initialMarketingOptIn === "1");
   const [changePassword, setChangePassword] = useState(false);
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
@@ -86,8 +78,7 @@ export default function PreferencesForm({
         text_scale: textScale,
         theme,
         training_objective: trainingObjective,
-        preferred_channel: preferredChannel,
-        marketing_opt_in: marketingOptIn ? "1" : "0",
+        preferred_channel: "app",
       };
       if (changePassword) {
         payload.password = password;
@@ -154,37 +145,6 @@ export default function PreferencesForm({
             <option value="female">female</option>
           </select>
           <p className="mt-2 text-xs text-[#6b6257]">Controls the voice for podcast-style outputs.</p>
-        </div>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
-        <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
-          <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Preferred channel (coaching + assessment)</label>
-          <select
-            className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-            value={preferredChannel}
-            onChange={(e) => setPreferredChannel(e.target.value)}
-          >
-            <option value="whatsapp">WhatsApp</option>
-            <option value="app">App chat box</option>
-          </select>
-          <p className="mt-2 text-xs text-[#6b6257]">
-            All coaching and assessment replies follow this channel.
-          </p>
-        </div>
-        <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
-          <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Marketing updates</label>
-          <label className="mt-3 flex items-center gap-2 text-sm text-[#3c332b]">
-            <input
-              type="checkbox"
-              checked={marketingOptIn}
-              onChange={(e) => setMarketingOptIn(e.target.checked)}
-            />
-            I’d like product updates and tips (optional)
-          </label>
-          <p className="mt-2 text-xs text-[#6b6257]">
-            You can unsubscribe anytime by replying STOP.
-          </p>
         </div>
       </div>
 

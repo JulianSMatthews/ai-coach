@@ -15,8 +15,6 @@ export default function SetupSecurityPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [preferredChannel, setPreferredChannel] = useState("whatsapp");
-  const [marketingOptIn, setMarketingOptIn] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -67,8 +65,7 @@ export default function SetupSecurityPage() {
           userId: resolvedUserId,
           email,
           password,
-          preferred_channel: preferredChannel,
-          marketing_opt_in: marketingOptIn ? "1" : "0",
+          preferred_channel: "app",
         }),
       });
       if (!res.ok) {
@@ -142,31 +139,6 @@ export default function SetupSecurityPage() {
               value={confirm}
               onChange={(e) => setConfirm(e.target.value)}
             />
-          </div>
-          <div>
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Preferred channel (coaching + assessment)</label>
-            <select
-              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-              value={preferredChannel}
-              onChange={(e) => setPreferredChannel(e.target.value)}
-            >
-              <option value="whatsapp">WhatsApp</option>
-              <option value="app">App chat box</option>
-            </select>
-            <p className="mt-2 text-xs text-[#6b6257]">
-              All coaching and assessment replies follow this channel.
-            </p>
-          </div>
-          <div className="rounded-xl border border-[#efe7db] bg-[#fffaf0] p-3">
-            <label className="flex items-center gap-2 text-sm text-[#3c332b]">
-              <input
-                type="checkbox"
-                checked={marketingOptIn}
-                onChange={(e) => setMarketingOptIn(e.target.checked)}
-              />
-              I’d like product updates and tips (optional)
-            </label>
-            <p className="mt-2 text-xs text-[#6b6257]">You can unsubscribe anytime by replying STOP.</p>
           </div>
           <button
             className="w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
