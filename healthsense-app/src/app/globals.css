@@ -23,7 +23,7 @@
   --input-background-muted: #fffaf0;
   --placeholder: #8c7f70;
   --shadow-strong: rgba(30, 27, 22, 0.5);
-  --text-scale: 1;
+  --text-scale: 1.25;
 }
 
 @theme inline {

@@ -465,7 +465,7 @@ export default function AssessmentPromptCard({
                 type="button"
                 onClick={onRedo}
                 disabled={busy}
-                className="rounded-full border border-[#e0d4c3] bg-white px-4 py-2 text-xs uppercase tracking-[0.18em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-full border border-[#e0d4c3] bg-[#fff3dc] px-4 py-2 text-xs uppercase tracking-[0.18em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Redo question
               </button>

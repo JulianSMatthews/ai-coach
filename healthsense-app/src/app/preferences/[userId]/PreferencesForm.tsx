@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { applyThemePreference, normalizeThemePreference } from "@/lib/theme";
+import { DEFAULT_TEXT_SCALE_STRING } from "@/lib/textScale";
 
 type PreferencesFormProps = {
   userId: string;
@@ -30,14 +31,14 @@ export default function PreferencesForm({
   initialNote = "",
   initialVoice = "",
   initialSchedule = {},
-  initialTextScale = "1.0",
+  initialTextScale = DEFAULT_TEXT_SCALE_STRING,
   initialTheme = "dark",
   initialTrainingObjective = "",
 }: PreferencesFormProps) {
   const [email, setEmail] = useState(initialEmail || "");
   const [note, setNote] = useState(initialNote);
   const [voice, setVoice] = useState(initialVoice || "");
-  const [textScale, setTextScale] = useState(initialTextScale || "1.0");
+  const [textScale, setTextScale] = useState(initialTextScale || DEFAULT_TEXT_SCALE_STRING);
   const [theme, setTheme] = useState(normalizeThemePreference(initialTheme));
   const [trainingObjective, setTrainingObjective] = useState(initialTrainingObjective || "");
   const [changePassword, setChangePassword] = useState(false);
@@ -94,8 +95,8 @@ export default function PreferencesForm({
       }
       setStatus("Saved");
       if (typeof window !== "undefined") {
-        window.localStorage.setItem("healthsense.textScale", textScale || "1.0");
-        document.documentElement.style.setProperty("--text-scale", textScale || "1.0");
+        window.localStorage.setItem("healthsense.textScale", textScale || DEFAULT_TEXT_SCALE_STRING);
+        document.documentElement.style.setProperty("--text-scale", textScale || DEFAULT_TEXT_SCALE_STRING);
         applyThemePreference(theme, true);
       }
       if (changePassword) {
@@ -178,9 +179,10 @@ export default function PreferencesForm({
           value={textScale}
           onChange={(e) => setTextScale(e.target.value)}
         >
-          <option value="1.0">default</option>
+          <option value="1.0">smaller</option>
           <option value="1.1">large</option>
           <option value="1.2">extra large</option>
+          <option value={DEFAULT_TEXT_SCALE_STRING}>default</option>
           <option value="1.3">huge</option>
         </select>
         <p className="mt-2 text-xs text-[#6b6257]">Adjusts the overall font size across the dashboard.</p>

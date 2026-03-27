@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { DEFAULT_TEXT_SCALE } from "@/lib/textScale";
 
 const STORAGE_KEY = "healthsense.textScale";
 
@@ -15,12 +16,12 @@ export default function TextScale({ defaultScale }: TextScaleProps) {
       const stored = typeof window !== "undefined" ? window.localStorage.getItem(STORAGE_KEY) : null;
       if (stored) {
         const parsed = Number.parseFloat(stored);
-        if (!Number.isNaN(parsed)) {
+        if (!Number.isNaN(parsed) && parsed > 0 && parsed !== 1) {
           scale = parsed;
         }
       }
     }
-    const finalScale = scale && scale > 0 ? scale : 1;
+    const finalScale = scale && scale > 0 ? scale : DEFAULT_TEXT_SCALE;
     if (typeof window !== "undefined") {
       window.localStorage.setItem(STORAGE_KEY, String(finalScale));
       document.documentElement.style.setProperty("--text-scale", String(finalScale));

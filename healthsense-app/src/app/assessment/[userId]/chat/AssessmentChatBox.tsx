@@ -727,10 +727,9 @@ export default function AssessmentChatBox({
     const raw = Array.isArray(dailyHabitPlan?.ask_suggestions) ? dailyHabitPlan.ask_suggestions : [];
     return raw
       .map((item) => ({
-        label: String(item?.label || "").trim(),
-        text: String(item?.text || "").trim(),
+        text: String(item?.text || item?.label || "").trim(),
       }))
-      .filter((item) => item.label && item.text)
+      .filter((item) => item.text)
       .slice(0, 4);
   }, [dailyHabitPlan?.ask_suggestions]);
   const homePanelHeightClass =
@@ -2130,7 +2129,7 @@ export default function AssessmentChatBox({
                     <div className="flex flex-wrap gap-1.5">
                       {askPromptSuggestions.map((suggestion, index) => (
                         <button
-                          key={`${suggestion.label}-${index}`}
+                          key={`${suggestion.text}-${index}`}
                           type="button"
                           onClick={() => {
                             setAskPromptTagsHidden(true);
@@ -2138,14 +2137,14 @@ export default function AssessmentChatBox({
                               quickReply: {
                                 used: true,
                                 hideInChat: true,
-                                label: suggestion.label,
+                                label: suggestion.text,
                               },
                             });
                           }}
                           disabled={busy}
-                          className="rounded-full border border-[#d9cdbb] bg-white px-2.5 py-1 text-[13px] leading-5 text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-50"
+                          className="rounded-full border border-[#d9cdbb] bg-white px-2.5 py-1 text-left text-[13px] leading-5 text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          {suggestion.label}
+                          {suggestion.text}
                         </button>
                       ))}
                     </div>
