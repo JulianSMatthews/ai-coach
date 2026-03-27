@@ -181,12 +181,6 @@ export default function LatestAssessmentPanel({
     if (!scores.length) return 0;
     return Math.round(scores.reduce((total, score) => total + score, 0) / scores.length);
   })();
-  const scoreCardSubtitle = hasTrackerScores
-    ? "Daily tracking scores now lead once you start logging."
-    : "Your baseline scores before daily tracking";
-  const scoreCardHelper = hasTrackerScores
-    ? "Tracked pillars show daily scores. The rest stay on baseline until you log them."
-    : null;
   const concepts = Array.isArray(detail?.concepts) ? detail?.concepts : [];
   const canSave =
     !saving &&
@@ -473,7 +467,6 @@ export default function LatestAssessmentPanel({
                     <LeadAssessmentBranding titleLines={[]} logoClassName="h-4 w-4" />
                     <p>{`HealthSense score ${combinedScore}/100`}</p>
                   </div>
-                  <p className="mt-1 text-xs text-[#6b6257]">{scoreCardSubtitle}</p>
                 </div>
                 <button
                   type="button"
@@ -486,19 +479,6 @@ export default function LatestAssessmentPanel({
             </div>
 
             <div className="flex-1 overflow-y-auto px-3 py-3 sm:px-5">
-              <div className="mb-3 rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">HealthSense score</p>
-                <div className="mt-3 flex items-center gap-4 rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
-                  <CombinedLogoRing value={combinedScore} />
-                  <div className="min-w-0">
-                    <p className="text-2xl font-semibold text-[#1e1b16]">{combinedScore}/100</p>
-                    <p className="mt-1 text-sm text-[#6b6257]">{scoreCardSubtitle}</p>
-                    {scoreCardHelper ? (
-                      <p className="mt-2 text-xs text-[#8c7f70]">{scoreCardHelper}</p>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
               {activeIntroVideo && String(activeIntroVideo.avatar?.url || "").trim() ? (
                 <div className="space-y-3">
                   <video
