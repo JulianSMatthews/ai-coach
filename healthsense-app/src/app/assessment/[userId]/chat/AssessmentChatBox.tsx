@@ -2092,7 +2092,7 @@ export default function AssessmentChatBox({
                           className={`flex ${outbound ? "w-full justify-start" : "justify-end"}`}
                         >
                           <div
-                            className={`${outbound ? "w-full max-w-none" : "max-w-[78%]"} rounded-[20px] px-3 py-2 text-[13px] leading-5 ${
+                            className={`${outbound ? "w-full max-w-none" : "max-w-[78%]"} rounded-[20px] px-3 py-2 text-[16.25px] leading-6 ${
                               outbound
                                 ? "border border-[#efe7db] bg-[#fffaf3] text-[#3c332b]"
                                 : "bg-[var(--accent)] text-white"
@@ -2142,7 +2142,7 @@ export default function AssessmentChatBox({
                             });
                           }}
                           disabled={busy}
-                          className="rounded-full border border-[#d9cdbb] bg-white px-2.5 py-1 text-left text-[13px] leading-5 text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-50"
+                          className="rounded-full border border-[#d9cdbb] bg-white px-2.5 py-1 text-left text-[16.25px] leading-6 text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {suggestion.text}
                         </button>
