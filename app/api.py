@@ -6726,6 +6726,8 @@ def api_user_assessment_chat_send(
     ):
         if chat_mode == "general_support":
             handled = bool(_handle_app_general_support_message(user, text_val, source="app_home"))
+        elif chat_mode == "tracker_summary":
+            handled = bool(_handle_app_general_support_message(user, text_val, source="app_tracker_summary"))
         else:
             handled = bool(continue_combined_assessment(user, text_val))
             if not handled:

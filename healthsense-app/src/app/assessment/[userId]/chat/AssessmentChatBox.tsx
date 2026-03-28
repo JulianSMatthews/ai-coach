@@ -126,8 +126,8 @@ const HOME_SURFACE_COPY: Record<
   },
   ask: {
     eyebrow: "Step 4 of 4",
-    title: "Gia's coaching",
-    description: "Finish with Gia's message about your progress today, then ask a follow-up if you need one.",
+    title: "Gia's message",
+    description: "Finish with Gia's message based on the latest results you entered, then mark this check-in complete.",
     nextLabel: null,
   },
 };
@@ -560,16 +560,18 @@ export default function AssessmentChatBox({
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
   const [homeSurface, setHomeSurface] = useState<HomeSurface>("tracking");
-  const [askPromptTagsHidden, setAskPromptTagsHidden] = useState(false);
-  const [pendingAskMessage, setPendingAskMessage] = useState("");
+  const [journeyCompleted, setJourneyCompleted] = useState(false);
+  const [finalGiaMessage, setFinalGiaMessage] = useState<string | null>(null);
+  const [finalGiaMessageLoading, setFinalGiaMessageLoading] = useState(false);
+  const [finalGiaMessageError, setFinalGiaMessageError] = useState<string | null>(null);
   const [dailyHabitPlan, setDailyHabitPlan] = useState<DailyHabitPlanResponse | null>(null);
   const [dailyHabitPlanLoading, setDailyHabitPlanLoading] = useState(false);
   const [dailyHabitPlanError, setDailyHabitPlanError] = useState<string | null>(null);
   const [coachInsight, setCoachInsight] = useState<CoachInsightResponse | null>(null);
   const [coachInsightLoading, setCoachInsightLoading] = useState(false);
   const [coachInsightError, setCoachInsightError] = useState<string | null>(null);
-  const askComposerFormRef = useRef<HTMLFormElement | null>(null);
   const insightRequestIdRef = useRef(0);
+  const finalGiaRequestIdRef = useRef(0);
 
   const autoStart = useMemo(() => isTruthyToken(searchParams?.get("autostart")), [searchParams]);
   const leadFlow = useMemo(() => isTruthyToken(searchParams?.get("lead")), [searchParams]);
@@ -585,6 +587,7 @@ export default function AssessmentChatBox({
   const showInlineCoachingPlan = showResultCard && showCoachingPlan;
   const showAssessmentControls = !assessmentCompleted && !isLeadGuest && !promptActive && (!leadFlow || !chatReady);
   const showHomeChatPanel = assessmentCompleted && !leadFlow && !isLeadGuest && !showResultCard && !promptActive;
+  const showGuidedHomeChatPanel = showHomeChatPanel && !journeyCompleted;
   const completionSummaryRunId = parsePositiveUserId(resultSummary?.run_id);
   const completionSummaryVideoStorageKey = useMemo(
     () => (completionSummaryRunId ? `hs:assessment-summary-video:${userId}:${completionSummaryRunId}` : null),
@@ -633,36 +636,6 @@ export default function AssessmentChatBox({
     !summaryExperienceBlocked &&
     (!completionSummaryUsesRealtime ||
       ["playing", "completed", "failed", "stopped", "timeout"].includes(realtimeSummaryPhase));
-  const askSurfaceMessages = useMemo(() => {
-    const visible = messages.filter((message) => String(message.text || "").trim());
-    const pendingText = pendingAskMessage.trim();
-    const withPending = [...visible];
-    if (pendingText) {
-      const alreadyVisible = withPending.some((message) => {
-        const direction = String(message.direction || "").trim().toLowerCase();
-        return direction !== "outbound" && String(message.text || "").trim() === pendingText;
-      });
-      if (!alreadyVisible) {
-        withPending.push({
-          direction: "inbound",
-          channel: "app",
-          text: pendingText,
-        });
-      }
-    }
-    let lastUserIndex = -1;
-    for (let index = withPending.length - 1; index >= 0; index -= 1) {
-      const direction = String(withPending[index]?.direction || "").trim().toLowerCase();
-      if (direction !== "outbound") {
-        lastUserIndex = index;
-        break;
-      }
-    }
-    if (lastUserIndex < 0) {
-      return withPending.slice(-1);
-    }
-    return withPending.slice(lastUserIndex, lastUserIndex + 3);
-  }, [messages, pendingAskMessage]);
   const insightContent = coachInsight?.content || null;
   const insightSelectedConceptKey = String(coachInsight?.concept_key || "").trim();
   const insightMediaUrl = String(insightContent?.podcast_url || "").trim();
@@ -688,15 +661,6 @@ export default function AssessmentChatBox({
       })
       .slice(0, 3);
   }, [dailyHabitPlan?.habits, dailyHabitPlan?.options]);
-  const askPromptSuggestions = useMemo(() => {
-    const raw = Array.isArray(dailyHabitPlan?.ask_suggestions) ? dailyHabitPlan.ask_suggestions : [];
-    return raw
-      .map((item) => ({
-        text: String(item?.text || item?.label || "").trim(),
-      }))
-      .filter((item) => item.text)
-      .slice(0, 4);
-  }, [dailyHabitPlan?.ask_suggestions]);
   const currentHomeSurfaceIndex = HOME_SURFACE_SEQUENCE.indexOf(homeSurface);
   const homeSurfaceMeta = HOME_SURFACE_COPY[homeSurface];
   const previousHomeSurface =
@@ -848,38 +812,97 @@ export default function AssessmentChatBox({
     [userId, leadTokenQuery, applyChatPayload],
   );
 
-  useEffect(() => {
-    if (!showHomeChatPanel) {
-      setHomeSurface("tracking");
+  const requestFinalGiaMessage = useCallback(async () => {
+    const requestId = finalGiaRequestIdRef.current + 1;
+    finalGiaRequestIdRef.current = requestId;
+    const previousLatestOutboundId =
+      [...messages]
+        .reverse()
+        .find((message) => String(message.direction || "").trim().toLowerCase() === "outbound")?.id ?? null;
+    setFinalGiaMessageLoading(true);
+    setFinalGiaMessageError(null);
+    setStatus(null);
+    try {
+      const res = await fetch("/api/assessment/chat/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          text: "Please give me today's coaching message based on my latest tracker results.",
+          chat_mode: "tracker_summary",
+          lead_token: leadToken || undefined,
+          quick_reply: {
+            used: true,
+            hide_in_chat: true,
+            label: "Daily coaching summary",
+          },
+        }),
+      });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        throw new Error(parseApiError(text, "Failed to load Gia's message."));
+      }
+      const data = (text ? (JSON.parse(text) as ChatResponse) : {}) as ChatResponse;
+      applyChatPayload(data);
+      if (requestId !== finalGiaRequestIdRef.current) return;
+      const resolvedMessages = normalizeMessages(data.messages);
+      const fallbackOutboxMessages = normalizeMessages(data.outbox);
+      const nextMessages = resolvedMessages.length > 0 ? resolvedMessages : fallbackOutboxMessages;
+      const freshOutbound =
+        [...nextMessages]
+          .reverse()
+          .find((message) => {
+            const direction = String(message.direction || "").trim().toLowerCase();
+            if (direction !== "outbound") return false;
+            if (!String(message.text || "").trim()) return false;
+            return message.id !== previousLatestOutboundId;
+          }) ||
+        [...nextMessages]
+          .reverse()
+          .find((message) => String(message.direction || "").trim().toLowerCase() === "outbound" && String(message.text || "").trim());
+      const nextText = String(freshOutbound?.text || "").trim();
+      if (!nextText) {
+        throw new Error("Gia's message is not available right now.");
+      }
+      setFinalGiaMessage(nextText);
+    } catch (error) {
+      if (requestId !== finalGiaRequestIdRef.current) return;
+      setFinalGiaMessageError(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (requestId === finalGiaRequestIdRef.current) {
+        setFinalGiaMessageLoading(false);
+      }
     }
-  }, [showHomeChatPanel, userId]);
+  }, [messages, userId, leadToken, applyChatPayload]);
 
   useEffect(() => {
-    if (homeSurface !== "ask") {
-      setAskPromptTagsHidden(false);
+    if (!showGuidedHomeChatPanel) {
+      setHomeSurface("tracking");
     }
-  }, [homeSurface]);
+  }, [showGuidedHomeChatPanel, userId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     window.dispatchEvent(
       new CustomEvent("healthsense-score-panel-visibility", {
         detail: {
-          visible: showHomeChatPanel && homeSurface === "ask",
+          visible: journeyCompleted,
         },
       }),
     );
-  }, [showHomeChatPanel, homeSurface]);
+  }, [journeyCompleted]);
 
   useEffect(() => {
+    setJourneyCompleted(false);
+    setFinalGiaMessage(null);
+    setFinalGiaMessageError(null);
+    setFinalGiaMessageLoading(false);
     setDailyHabitPlan(null);
     setDailyHabitPlanError(null);
     setDailyHabitPlanLoading(false);
     setCoachInsight(null);
     setCoachInsightError(null);
     setCoachInsightLoading(false);
-    setAskPromptTagsHidden(false);
-    setPendingAskMessage("");
   }, [userId]);
 
   useEffect(() => {
@@ -910,21 +933,29 @@ export default function AssessmentChatBox({
   }, []);
 
   useEffect(() => {
-    if (!showHomeChatPanel || homeSurface !== "habits") return;
+    if (!showGuidedHomeChatPanel || homeSurface !== "habits") return;
     void loadDailyHabitPlan();
-  }, [showHomeChatPanel, homeSurface, loadDailyHabitPlan]);
+  }, [showGuidedHomeChatPanel, homeSurface, loadDailyHabitPlan]);
 
   useEffect(() => {
-    if (!showHomeChatPanel || homeSurface !== "ask") return;
-    if (dailyHabitPlan || dailyHabitPlanLoading) return;
-    void loadDailyHabitPlan();
-  }, [showHomeChatPanel, homeSurface, dailyHabitPlan, dailyHabitPlanLoading, loadDailyHabitPlan]);
+    if (!showGuidedHomeChatPanel || homeSurface !== "ask") return;
+    if (journeyCompleted || finalGiaMessage || finalGiaMessageLoading || finalGiaMessageError) return;
+    void requestFinalGiaMessage();
+  }, [
+    showGuidedHomeChatPanel,
+    homeSurface,
+    journeyCompleted,
+    finalGiaMessage,
+    finalGiaMessageLoading,
+    finalGiaMessageError,
+    requestFinalGiaMessage,
+  ]);
 
   useEffect(() => {
-    if (!showHomeChatPanel || homeSurface !== "insight") return;
+    if (!showGuidedHomeChatPanel || homeSurface !== "insight") return;
     if (coachInsight) return;
     void loadCoachInsight();
-  }, [showHomeChatPanel, homeSurface, loadCoachInsight, coachInsight]);
+  }, [showGuidedHomeChatPanel, homeSurface, loadCoachInsight, coachInsight]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -933,7 +964,11 @@ export default function AssessmentChatBox({
       setDailyHabitPlanError(null);
       setCoachInsight(null);
       setCoachInsightError(null);
-      if (showHomeChatPanel) {
+      setFinalGiaMessage(null);
+      setFinalGiaMessageError(null);
+      setFinalGiaMessageLoading(false);
+      setJourneyCompleted(false);
+      if (showGuidedHomeChatPanel) {
         void loadDailyHabitPlan();
         void refreshChatState().catch(() => undefined);
       }
@@ -942,7 +977,7 @@ export default function AssessmentChatBox({
     return () => {
       window.removeEventListener("healthsense-tracker-updated", onTrackerUpdated as EventListener);
     };
-  }, [showHomeChatPanel, loadDailyHabitPlan, refreshChatState]);
+  }, [showGuidedHomeChatPanel, loadDailyHabitPlan, refreshChatState]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1121,12 +1156,8 @@ export default function AssessmentChatBox({
   ) {
     const outbound = String(textValue || "").trim();
     if (!outbound || sending) return;
-    const isAskSubmission = showHomeChatPanel && homeSurface === "ask";
     setSending(true);
     setStatus(null);
-    if (isAskSubmission) {
-      setPendingAskMessage(outbound);
-    }
     try {
       const res = await fetch("/api/assessment/chat/send", {
         method: "POST",
@@ -1134,7 +1165,7 @@ export default function AssessmentChatBox({
         body: JSON.stringify({
           userId,
           text: outbound,
-          chat_mode: showHomeChatPanel && homeSurface === "ask" ? "general_support" : undefined,
+          chat_mode: showGuidedHomeChatPanel && homeSurface === "ask" ? "general_support" : undefined,
           lead_token: leadToken || undefined,
           quick_reply: options?.quickReply
             ? {
@@ -1175,9 +1206,6 @@ export default function AssessmentChatBox({
         setDraft(outbound);
       }
     } finally {
-      if (isAskSubmission) {
-        setPendingAskMessage("");
-      }
       setSending(false);
     }
   }
@@ -1672,7 +1700,7 @@ export default function AssessmentChatBox({
     </form>
   ) : null;
 
-  const homeChatPanel = showHomeChatPanel ? (
+  const homeChatPanel = showGuidedHomeChatPanel ? (
     <section className="-mx-3 overflow-hidden border-y border-[#e7e1d6] bg-white sm:mx-0 sm:rounded-[28px] sm:border sm:shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]">
       <div className={`flex ${homePanelHeightClass} flex-col`}>
         <div className="shrink-0 border-b border-[#efe7db] bg-[#fffaf3] px-4 py-4 sm:px-5">
@@ -1815,88 +1843,38 @@ export default function AssessmentChatBox({
             </div>
           ) : (
             <div className="flex h-full flex-col">
-              <div className="min-h-0 flex-1 overflow-y-auto">
-                {askSurfaceMessages.length ? (
-                  <div className="space-y-3">
-                    {askSurfaceMessages.map((message, index) => {
-                      const direction = String(message.direction || "").trim().toLowerCase();
-                      const outbound = direction === "outbound";
-                      return (
-                        <div
-                          key={`${message.id || index}-${direction}`}
-                          className={`flex ${outbound ? "w-full justify-start" : "justify-end"}`}
-                        >
-                          <div
-                            className={`${outbound ? "w-full max-w-none" : "max-w-[78%]"} rounded-[20px] px-3 py-2 text-[16.25px] leading-6 ${
-                              outbound
-                                ? "border border-[#efe7db] bg-[#fffaf3] text-[#3c332b]"
-                                : "bg-[var(--accent)] text-white"
-                            }`}
-                          >
-                            {String(message.text || "").trim()}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
-                    <p className="text-sm text-[#6b6257]">
-                      Gia&apos;s latest coaching message will appear here. Ask a follow-up question if you need one.
+              <div className="flex h-full flex-col justify-center">
+                {finalGiaMessageLoading ? (
+                  <div className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
+                    <p className="text-sm font-semibold text-[#1e1b16]">Gia is reviewing today&apos;s tracker results…</p>
+                    <p className="mt-2 text-sm leading-6 text-[#6b6257]">
+                      Preparing your message based on the latest results you entered.
                     </p>
                   </div>
-                )}
-                {sending ? <p className="mt-3 text-sm text-[#6b6257]">Gia is replying…</p> : null}
-              </div>
-              <div className="mt-4 w-full">
-                <form ref={askComposerFormRef} onSubmit={onSubmit}>
-                  <textarea
-                    id="assessment-chat-input"
-                    className="w-full rounded-[22px] border border-[#efe7db] bg-white px-4 py-2.5 text-sm shadow-[0_18px_50px_-40px_rgba(30,27,22,0.35)]"
-                    rows={1}
-                    value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
-                    onKeyDown={onDraftKeyDown}
-                    disabled={busy}
-                  />
-                </form>
-                <div className="mt-3 flex justify-end">
-                  <button
-                    type="button"
-                    onClick={() => askComposerFormRef.current?.requestSubmit()}
-                    disabled={busy || !draft.trim()}
-                    className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {sending ? "Sending…" : "Send to Gia"}
-                  </button>
-                </div>
-                {status ? <p className="mt-3 text-sm text-[#6b6257]">{status}</p> : null}
-                {askPromptSuggestions.length && !askPromptTagsHidden ? (
-                  <div className="mt-3 rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-2.5 py-2.5">
-                    <div className="flex flex-wrap gap-1.5">
-                      {askPromptSuggestions.map((suggestion, index) => (
-                        <button
-                          key={`${suggestion.text}-${index}`}
-                          type="button"
-                          onClick={() => {
-                            setAskPromptTagsHidden(true);
-                            void sendMessage(suggestion.text, {
-                              quickReply: {
-                                used: true,
-                                hideInChat: true,
-                                label: suggestion.text,
-                              },
-                            });
-                          }}
-                          disabled={busy}
-                          className="rounded-full border border-[#d9cdbb] bg-white px-2.5 py-1 text-left text-[16.25px] leading-6 text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          {suggestion.text}
-                        </button>
-                      ))}
-                    </div>
+                ) : finalGiaMessage ? (
+                  <div className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5 sm:px-5 sm:py-6">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--accent)]">Gia</p>
+                    <p className="mt-3 whitespace-pre-wrap text-[17px] leading-7 text-[#3c332b]">
+                      {finalGiaMessage}
+                    </p>
                   </div>
-                ) : null}
+                ) : (
+                  <div className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
+                    <p className="text-sm text-[#8a3e1a]">
+                      {finalGiaMessageError || "Gia's message is not available right now."}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFinalGiaMessageError(null);
+                        void requestFinalGiaMessage();
+                      }}
+                      className="mt-4 rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white"
+                    >
+                      Try again
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1923,6 +1901,15 @@ export default function AssessmentChatBox({
                   className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white"
                 >
                   {homeSurfaceMeta.nextLabel}
+                </button>
+              ) : homeSurface === "ask" ? (
+                <button
+                  type="button"
+                  onClick={() => setJourneyCompleted(true)}
+                  disabled={finalGiaMessageLoading || !finalGiaMessage}
+                  className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Completed
                 </button>
               ) : null}
             </div>
@@ -1978,7 +1965,7 @@ export default function AssessmentChatBox({
 
       {homeChatPanel}
 
-      {!showHomeChatPanel && !currentPrompt && !showResultCard ? (
+      {!showGuidedHomeChatPanel && !assessmentCompleted && !currentPrompt && !showResultCard ? (
         <form onSubmit={onSubmit}>
           <textarea
             id="assessment-chat-input"
@@ -1992,7 +1979,7 @@ export default function AssessmentChatBox({
         </form>
       ) : null}
 
-      {!showHomeChatPanel && status ? <p className="text-sm text-[#6b6257]">{status}</p> : null}
+      {!showGuidedHomeChatPanel && status ? <p className="text-sm text-[#6b6257]">{status}</p> : null}
     </div>
   );
 }

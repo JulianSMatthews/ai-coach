@@ -1453,6 +1453,7 @@ def build_prompt(
             history_lines.extend(str(item or "").strip() for item in tracker_history if str(item or "").strip())
         if history:
             history_lines.extend(history.splitlines())
+        tracker_summary_mode = source == "app_tracker_summary"
         parts: List[tuple[str, str]] = [
             ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
             ("locale", settings.get("locale_block") or locale_block(locale)),
@@ -1460,7 +1461,9 @@ def build_prompt(
                 "context",
                 context_block(
                     "general_support",
-                    "open coaching support based on the latest daily tracker results",
+                    "one-way mobile coaching message based on the latest daily tracker results"
+                    if tracker_summary_mode
+                    else "open coaching support based on the latest daily tracker results",
                     timeframe=timeframe,
                     channel="App" if source.startswith("app") else "WhatsApp",
                     extras=extras,
@@ -1473,13 +1476,19 @@ def build_prompt(
             (
                 "task",
                 task_block(
-                    "Reply with a brief coaching message grounded in the latest daily tracker results. "
-                    "Reference the most relevant tracker pattern for today or yesterday, give one practical next step tied to that result, "
-                    "and end with one short follow-up question.",
+                    (
+                        "Write a brief one-way coaching message grounded in the latest daily tracker results. "
+                        "Reference the most relevant tracker pattern for today or yesterday and give one practical next step tied to that result."
+                        if tracker_summary_mode
+                        else "Reply with a brief coaching message grounded in the latest daily tracker results. "
+                        "Reference the most relevant tracker pattern for today or yesterday, give one practical next step tied to that result, "
+                        "and end with one short follow-up question."
+                    ),
                     constraints=(
                         "Keep it concise (2-4 short sentences), warm, calm, supportive. "
                         "Base the reply on the tracker context when it is available; do not give a generic encouragement message. "
-                        "Use plain language, avoid OKR/KR jargon, and do not introduce new goals unless asked."
+                        "Use plain language, avoid OKR/KR jargon, and do not introduce new goals unless asked. "
+                        + ("Do not ask a question and do not invite a reply." if tracker_summary_mode else "")
                     ),
                 ),
             ),
