@@ -707,10 +707,10 @@ export default function AssessmentChatBox({
       : null;
   const homePanelHeightClass =
     homeSurface === "tracking"
-      ? "h-[44vh] min-h-[20rem] max-h-[28rem]"
+      ? "min-h-[calc(100dvh-8.5rem)] sm:h-[44vh] sm:min-h-[20rem] sm:max-h-[28rem]"
       : homeSurface === "ask"
-        ? "h-[58vh] min-h-[22rem] max-h-[38rem]"
-        : "h-[78vh] min-h-[32rem] max-h-[56rem]";
+        ? "min-h-[calc(100dvh-8.5rem)] sm:h-[58vh] sm:min-h-[22rem] sm:max-h-[38rem]"
+        : "min-h-[calc(100dvh-8.5rem)] sm:h-[78vh] sm:min-h-[32rem] sm:max-h-[56rem]";
 
   const markCompletionSummaryVideoSeen = useCallback(() => {
     if (!completionSummaryVideoStorageKey || typeof window === "undefined") {
@@ -859,6 +859,17 @@ export default function AssessmentChatBox({
       setAskPromptTagsHidden(false);
     }
   }, [homeSurface]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.dispatchEvent(
+      new CustomEvent("healthsense-score-panel-visibility", {
+        detail: {
+          visible: showHomeChatPanel && homeSurface === "ask",
+        },
+      }),
+    );
+  }, [showHomeChatPanel, homeSurface]);
 
   useEffect(() => {
     setDailyHabitPlan(null);
@@ -1662,7 +1673,7 @@ export default function AssessmentChatBox({
   ) : null;
 
   const homeChatPanel = showHomeChatPanel ? (
-    <section className="overflow-hidden rounded-[28px] border border-[#e7e1d6] bg-white shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]">
+    <section className="-mx-3 overflow-hidden border-y border-[#e7e1d6] bg-white sm:mx-0 sm:rounded-[28px] sm:border sm:shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]">
       <div className={`flex ${homePanelHeightClass} flex-col`}>
         <div className="shrink-0 border-b border-[#efe7db] bg-[#fffaf3] px-4 py-4 sm:px-5">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6b6257]">

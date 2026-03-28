@@ -125,15 +125,21 @@ function CombinedLogoRing({ value }: { value: number }) {
   );
 }
 
-function WeeklyScoreRing({ value, tone }: { value?: number | null; tone: string }) {
+function WeeklyScoreRing({ value, tone, compact = false }: { value?: number | null; tone: string; compact?: boolean }) {
   const resolved = resolveScore(value);
   if (resolved !== null) {
-    return <ScoreRing value={resolved} tone={tone} />;
+    return (
+      <div className={compact ? "origin-center scale-[0.78] sm:scale-100" : ""}>
+        <ScoreRing value={resolved} tone={tone} />
+      </div>
+    );
   }
   return (
-    <div className="relative flex h-[84px] w-[84px] items-center justify-center">
-      <div className="h-[84px] w-[84px] rounded-full border-[8px] border-[#efe7db]" />
-      <span className="absolute text-lg font-semibold text-[#8c7f70]">—</span>
+    <div className={compact ? "origin-center scale-[0.78] sm:scale-100" : ""}>
+      <div className="relative flex h-[84px] w-[84px] items-center justify-center">
+        <div className="h-[84px] w-[84px] rounded-full border-[8px] border-[#efe7db]" />
+        <span className="absolute text-lg font-semibold text-[#8c7f70]">—</span>
+      </div>
     </div>
   );
 }
@@ -149,6 +155,7 @@ export default function LatestAssessmentPanel({
   appIntroHelpVideos = null,
 }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
+  const [summaryPanelVisible, setSummaryPanelVisible] = useState(false);
   const [scoreCardOpen, setScoreCardOpen] = useState(false);
   const [selectedIntroVideoKey, setSelectedIntroVideoKey] = useState<IntroVideoKey>("intro");
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
@@ -243,9 +250,26 @@ export default function LatestAssessmentPanel({
   }, [activeIntroVideoKey, scoreCardOpen]);
 
   useEffect(() => {
-    if (!autoOpenResults) return;
+    if (!autoOpenResults || !summaryPanelVisible) return;
     setScoreCardOpen(true);
-  }, [autoOpenResults]);
+  }, [autoOpenResults, summaryPanelVisible]);
+
+  useEffect(() => {
+    if (summaryPanelVisible) return;
+    setScoreCardOpen(false);
+  }, [summaryPanelVisible]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onSummaryVisibilityChange = (event: Event) => {
+      const detail = (event as CustomEvent<{ visible?: boolean }>).detail;
+      setSummaryPanelVisible(Boolean(detail?.visible));
+    };
+    window.addEventListener("healthsense-score-panel-visibility", onSummaryVisibilityChange as EventListener);
+    return () => {
+      window.removeEventListener("healthsense-score-panel-visibility", onSummaryVisibilityChange as EventListener);
+    };
+  }, []);
 
   useEffect(() => {
     if (!scoreCardOpen || assessmentReviewed || assessmentReviewSyncStarted) return;
@@ -466,53 +490,61 @@ export default function LatestAssessmentPanel({
 
   return (
     <>
-      <section className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-5 sm:py-6">
-        <div className="relative">
-          <div className="grid grid-cols-2 gap-3">
-            {pillars.map((pillar) => {
-              const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
-              const palette = getPillarPalette(pillarKey);
-              const score = resolvePillarDisplayScore(pillar);
-              return (
-                <button
-                  key={pillarKey}
-                  type="button"
-                  onClick={() => void openTracker(pillarKey)}
-                  className="rounded-2xl border border-[#efe7db] bg-white px-3 py-4 text-left transition hover:border-[#dccfbe]"
-                >
-                  <div className="flex flex-col items-center text-center">
-                    <WeeklyScoreRing value={score} tone={palette.accent} />
-                    <p className="mt-3 text-sm font-semibold text-[#1e1b16]">{pillar.label}</p>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+      {summaryPanelVisible ? (
+        <section className="-mx-3 border-y border-[#e7e1d6] bg-[#fffaf3] px-3 py-4 sm:mx-0 sm:rounded-[28px] sm:border sm:px-5 sm:py-6 sm:shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]">
+          <div className="space-y-3">
             <button
               type="button"
               onClick={openScoreCard}
-              className="pointer-events-auto flex flex-col items-center gap-1 rounded-full"
+              className="flex w-full items-center gap-3 rounded-[24px] border border-[#efe7db] bg-white px-3 py-3 text-left transition hover:border-[#dccfbe] sm:px-4 sm:py-4"
               aria-label="Open How HealthSense works"
             >
-              <div className="relative">
-                <CombinedLogoRing value={combinedScore} />
-                {hasIntroMessage ? (
-                  <span className="absolute -right-1 top-0 flex h-5 w-5 items-center justify-center rounded-full border border-white bg-[var(--accent)] shadow-sm">
-                    <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                  </span>
-                ) : null}
+              <div className="shrink-0 origin-left scale-[0.76] sm:scale-100">
+                <div className="relative">
+                  <CombinedLogoRing value={combinedScore} />
+                  {hasIntroMessage ? (
+                    <span className="absolute -right-1 top-0 flex h-5 w-5 items-center justify-center rounded-full border border-white bg-[var(--accent)] shadow-sm">
+                      <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                    </span>
+                  ) : null}
+                </div>
               </div>
-              {hasIntroMessage ? (
-                <span className="rounded-full border border-[#e7e1d6] bg-white/95 px-2.5 py-1 text-[10px] leading-none text-[#5d5348] shadow-sm">
-                  Message available
-                </span>
-              ) : null}
+              <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6b6257]">
+                  HealthSense score
+                </p>
+                <p className="mt-1 text-xl font-semibold text-[#1e1b16] sm:text-2xl">{combinedScore}/100</p>
+                <p className="mt-1 text-sm text-[#6b6257]">
+                  {hasIntroMessage ? "Open your score and video." : "Open your score."}
+                </p>
+              </div>
             </button>
+
+            <div className="grid grid-cols-4 gap-2 sm:gap-3">
+              {pillars.map((pillar) => {
+                const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
+                const palette = getPillarPalette(pillarKey);
+                const score = resolvePillarDisplayScore(pillar);
+                return (
+                  <button
+                    key={pillarKey}
+                    type="button"
+                    onClick={() => void openTracker(pillarKey)}
+                    className="min-w-0 rounded-[24px] border border-[#efe7db] bg-white px-1.5 py-3 text-center transition hover:border-[#dccfbe] sm:px-3 sm:py-4"
+                  >
+                    <div className="flex flex-col items-center">
+                      <WeeklyScoreRing value={score} tone={palette.accent} compact />
+                      <p className="mt-1 text-[11px] font-semibold leading-4 text-[#1e1b16] sm:mt-2 sm:text-sm sm:leading-5">
+                        {pillar.label}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
 
       {scoreCardOpen ? (
         <div className="fixed inset-0 z-40 flex items-stretch justify-center bg-black/30 sm:items-center sm:px-3 sm:py-3">
