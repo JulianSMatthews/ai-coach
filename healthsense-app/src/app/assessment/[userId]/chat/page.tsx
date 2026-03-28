@@ -248,9 +248,7 @@ export default async function AssessmentChatPage(props: PageProps) {
     ? await getAssessmentIntroAvatar(introAvatarOverride === true)
     : null;
   const introLibraryMedia = await getAppIntroLibraryMedia();
-  const appIntroAvatar = introLibraryMedia.appIntroAvatar;
   const coachProductAvatar = introLibraryMedia.coachProductAvatar;
-  const appIntroHelpVideos = introLibraryMedia.helpVideos;
 
   const leadHeaderTitle = <LeadAssessmentBranding />;
 
@@ -331,18 +329,6 @@ export default async function AssessmentChatPage(props: PageProps) {
       <TextScale defaultScale={textScale} />
 
       <section className="space-y-3 sm:space-y-4">
-        {pillarTrackerSummary ? (
-          <LatestAssessmentPanel
-            userId={userId}
-            initialSummary={pillarTrackerSummary}
-            initialAssessmentCombinedScore={status.latest_run?.combined_overall ?? null}
-            initialAssessmentReviewed={Boolean(onboarding.assessment_reviewed_at)}
-            autoOpenResults={autoOpenResults}
-            initialTheme={themePreference}
-            appIntroAvatar={appIntroAvatar}
-            appIntroHelpVideos={appIntroHelpVideos}
-          />
-        ) : null}
         {chatIntroText ? <p className="text-sm text-[#6b6257]">{chatIntroText}</p> : null}
         <AssessmentChatBox
           userId={userId}
@@ -354,6 +340,16 @@ export default async function AssessmentChatPage(props: PageProps) {
           coachProductAvatar={coachProductAvatar}
           introAvatarEnabledOverride={introAvatarOverride}
         />
+        {pillarTrackerSummary ? (
+          <LatestAssessmentPanel
+            userId={userId}
+            initialSummary={pillarTrackerSummary}
+            initialAssessmentCombinedScore={status.latest_run?.combined_overall ?? null}
+            initialAssessmentReviewed={Boolean(onboarding.assessment_reviewed_at)}
+            autoOpenResults={autoOpenResults}
+            initialTheme={themePreference}
+          />
+        ) : null}
       </section>
     </PageShell>
   );

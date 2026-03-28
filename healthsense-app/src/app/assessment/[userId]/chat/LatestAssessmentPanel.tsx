@@ -10,7 +10,6 @@ import type {
 import { getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
 import { applyThemePreference, normalizeThemePreference, type ThemePreference } from "@/lib/theme";
-import type { AssessmentIntroAvatar } from "./AssessmentPromptCard";
 import LeadAssessmentBranding from "./LeadAssessmentBranding";
 
 type LatestAssessmentPanelProps = {
@@ -20,16 +19,7 @@ type LatestAssessmentPanelProps = {
   initialAssessmentReviewed?: boolean;
   autoOpenResults?: boolean;
   initialTheme?: string;
-  appIntroAvatar?: AssessmentIntroAvatar | null;
-  appIntroHelpVideos?: {
-    habits?: AssessmentIntroAvatar | null;
-    insight?: AssessmentIntroAvatar | null;
-    ask?: AssessmentIntroAvatar | null;
-    dailyTracking?: AssessmentIntroAvatar | null;
-  } | null;
 };
-
-type IntroVideoKey = "intro" | "habits" | "insight" | "ask" | "dailyTracking";
 
 const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
 const HEALTHSENSE_ORANGE = "#c54817";
@@ -151,13 +141,10 @@ export default function LatestAssessmentPanel({
   initialAssessmentReviewed = false,
   autoOpenResults = false,
   initialTheme = "dark",
-  appIntroAvatar = null,
-  appIntroHelpVideos = null,
 }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
   const [summaryPanelVisible, setSummaryPanelVisible] = useState(false);
   const [scoreCardOpen, setScoreCardOpen] = useState(false);
-  const [selectedIntroVideoKey, setSelectedIntroVideoKey] = useState<IntroVideoKey>("intro");
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<PillarTrackerDetailResponse | null>(null);
   const [draft, setDraft] = useState<Record<string, number>>({});
@@ -172,7 +159,7 @@ export default function LatestAssessmentPanel({
   const [themeError, setThemeError] = useState<string | null>(null);
   const [assessmentReviewed, setAssessmentReviewed] = useState(initialAssessmentReviewed);
   const [assessmentReviewSyncStarted, setAssessmentReviewSyncStarted] = useState(initialAssessmentReviewed);
-  const introVideoRef = useRef<HTMLVideoElement | null>(null);
+  const summaryPanelRef = useRef<HTMLElement | null>(null);
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
   const orderedPillarKeys = pillars
@@ -222,32 +209,12 @@ export default function LatestAssessmentPanel({
           ? `Complete ${activeLabel || "yesterday"} to update this week's score`
           : "Complete today to start this week's score"
         : "No completed tracker days last week";
-  const introVideoOptions = [
-    { key: "intro" as const, label: "General", avatar: appIntroAvatar },
-    { key: "habits" as const, label: "Habits", avatar: appIntroHelpVideos?.habits ?? null },
-    { key: "insight" as const, label: "Insight", avatar: appIntroHelpVideos?.insight ?? null },
-    { key: "ask" as const, label: "Ask", avatar: appIntroHelpVideos?.ask ?? null },
-    {
-      key: "dailyTracking" as const,
-      label: "Tracking",
-      avatar: appIntroHelpVideos?.dailyTracking ?? null,
-    },
-  ].filter((item) => Boolean(String(item.avatar?.url || "").trim()));
-  const hasIntroMessage = introVideoOptions.length > 0;
-  const defaultIntroVideoKey = introVideoOptions[0]?.key || "intro";
-  const activeIntroVideo =
-    introVideoOptions.find((item) => item.key === selectedIntroVideoKey) || introVideoOptions[0] || null;
-  const activeIntroVideoKey = activeIntroVideo?.key || null;
-
-  useEffect(() => {
-    if (!scoreCardOpen || !activeIntroVideoKey) return;
-    const videoEl = introVideoRef.current;
-    if (!videoEl) return;
-    try {
-      videoEl.currentTime = 0;
-    } catch {}
-    void videoEl.play().catch(() => undefined);
-  }, [activeIntroVideoKey, scoreCardOpen]);
+  const pillarPositionClasses: Record<string, string> = {
+    nutrition: "left-0 top-0",
+    training: "right-0 top-0",
+    resilience: "left-0 bottom-0",
+    recovery: "right-0 bottom-0",
+  };
 
   useEffect(() => {
     if (!autoOpenResults || !summaryPanelVisible) return;
@@ -270,6 +237,18 @@ export default function LatestAssessmentPanel({
       window.removeEventListener("healthsense-score-panel-visibility", onSummaryVisibilityChange as EventListener);
     };
   }, []);
+
+  useEffect(() => {
+    if (!summaryPanelVisible) return;
+    const panel = summaryPanelRef.current;
+    if (!panel || typeof panel.scrollIntoView !== "function") return;
+    const frame = window.requestAnimationFrame(() => {
+      panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [summaryPanelVisible]);
 
   useEffect(() => {
     if (!scoreCardOpen || assessmentReviewed || assessmentReviewSyncStarted) return;
@@ -433,13 +412,22 @@ export default function LatestAssessmentPanel({
   };
 
   const openScoreCard = () => {
-    setSelectedIntroVideoKey(defaultIntroVideoKey);
     setSetupOpen(false);
     setScoreCardOpen(true);
   };
 
-  const selectIntroVideo = (nextKey: IntroVideoKey) => {
-    setSelectedIntroVideoKey(nextKey);
+  const openDailyMenuSurface = (surface: "habits" | "insight" | "ask") => {
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("healthsense-home-surface", {
+          detail: {
+            surface,
+          },
+        }),
+      );
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+    setScoreCardOpen(false);
   };
 
   useEffect(() => {
@@ -491,56 +479,47 @@ export default function LatestAssessmentPanel({
   return (
     <>
       {summaryPanelVisible ? (
-        <section className="-mx-3 border-y border-[#e7e1d6] bg-[#fffaf3] px-3 py-4 sm:mx-0 sm:rounded-[28px] sm:border sm:px-5 sm:py-6 sm:shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]">
-          <div className="space-y-3">
-            <button
-              type="button"
-              onClick={openScoreCard}
-              className="flex w-full items-center gap-3 rounded-[24px] border border-[#efe7db] bg-white px-3 py-3 text-left transition hover:border-[#dccfbe] sm:px-4 sm:py-4"
-              aria-label="Open How HealthSense works"
-            >
-              <div className="shrink-0 origin-left scale-[0.76] sm:scale-100">
-                <div className="relative">
-                  <CombinedLogoRing value={combinedScore} />
-                  {hasIntroMessage ? (
-                    <span className="absolute -right-1 top-0 flex h-5 w-5 items-center justify-center rounded-full border border-white bg-[var(--accent)] shadow-sm">
-                      <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6b6257]">
-                  HealthSense score
-                </p>
-                <p className="mt-1 text-xl font-semibold text-[#1e1b16] sm:text-2xl">{combinedScore}/100</p>
-                <p className="mt-1 text-sm text-[#6b6257]">
-                  {hasIntroMessage ? "Open your score and video." : "Open your score."}
-                </p>
-              </div>
-            </button>
-
-            <div className="grid grid-cols-4 gap-2 sm:gap-3">
+        <section
+          ref={summaryPanelRef}
+          className="-mx-3 flex min-h-[calc(100dvh-4rem)] flex-col justify-center border-y border-[#e7e1d6] bg-[#fffaf3] px-3 py-5 sm:mx-0 sm:min-h-0 sm:rounded-[28px] sm:border sm:px-5 sm:py-6 sm:shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]"
+        >
+          <div className="mx-auto flex w-full max-w-[24rem] flex-1 items-center justify-center">
+            <div className="relative aspect-square w-full max-w-[22rem] sm:max-w-[24rem]">
               {pillars.map((pillar) => {
                 const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
                 const palette = getPillarPalette(pillarKey);
                 const score = resolvePillarDisplayScore(pillar);
+                const positionClass = pillarPositionClasses[pillarKey] || "left-0 top-0";
                 return (
                   <button
                     key={pillarKey}
                     type="button"
                     onClick={() => void openTracker(pillarKey)}
-                    className="min-w-0 rounded-[24px] border border-[#efe7db] bg-white px-1.5 py-3 text-center transition hover:border-[#dccfbe] sm:px-3 sm:py-4"
+                    className={`absolute ${positionClass} flex h-[8.9rem] w-[8.9rem] flex-col items-center justify-center rounded-full bg-white/94 px-2 py-3 text-center shadow-[0_24px_40px_-36px_rgba(30,27,22,0.5)] transition hover:bg-white hover:shadow-[0_28px_48px_-34px_rgba(30,27,22,0.5)] sm:h-[10rem] sm:w-[10rem]`}
                   >
-                    <div className="flex flex-col items-center">
-                      <WeeklyScoreRing value={score} tone={palette.accent} compact />
-                      <p className="mt-1 text-[11px] font-semibold leading-4 text-[#1e1b16] sm:mt-2 sm:text-sm sm:leading-5">
-                        {pillar.label}
-                      </p>
+                    <div className="origin-center scale-[0.68] sm:scale-[0.8]">
+                      <WeeklyScoreRing value={score} tone={palette.accent} />
                     </div>
+                    <p className="mt-1 text-[10px] font-semibold leading-4 text-[#1e1b16] sm:mt-2 sm:text-xs sm:leading-4">
+                      {pillar.label}
+                    </p>
                   </button>
                 );
               })}
+              <button
+                type="button"
+                onClick={openScoreCard}
+                className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center rounded-full border border-[#efe7db] bg-white px-3 py-3 text-center shadow-[0_28px_48px_-30px_rgba(30,27,22,0.45)] sm:px-4 sm:py-4"
+                aria-label="Open HealthSense menu"
+              >
+                <div className="relative origin-center scale-[1.08] sm:scale-[1.18]">
+                  <CombinedLogoRing value={combinedScore} />
+                </div>
+                <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-[#6b6257]">
+                  HealthSense
+                </p>
+                <p className="mt-1 text-lg font-semibold text-[#1e1b16] sm:text-xl">{combinedScore}/100</p>
+              </button>
             </div>
           </div>
         </section>
@@ -568,80 +547,64 @@ export default function LatestAssessmentPanel({
             </div>
 
             <div className="flex-1 overflow-y-auto px-3 py-3 sm:px-5">
-              {activeIntroVideo && String(activeIntroVideo.avatar?.url || "").trim() ? (
-                <div className="space-y-3">
-                  <video
-                    key={`${activeIntroVideo.key}-${String(activeIntroVideo.avatar?.url || "").trim()}`}
-                    ref={introVideoRef}
-                    autoPlay
-                    controls
-                    preload="metadata"
-                    playsInline
-                    poster={String(activeIntroVideo.avatar?.posterUrl || "").trim() || undefined}
-                    className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
-                  >
-                    <source src={String(activeIntroVideo.avatar?.url || "").trim()} />
-                  </video>
-                  {introVideoOptions.length > 1 ? (
-                    <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3">
-                      <p className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">Help videos</p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {introVideoOptions.map((option) => {
-                          const active = option.key === activeIntroVideo.key;
-                          return (
-                            <button
-                              key={option.key}
-                              type="button"
-                              onClick={() => selectIntroVideo(option.key)}
-                              className={`rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                                active
-                                  ? "border-[#d6c3ab] bg-[#f6ede3] text-[#5d472d]"
-                                  : "border-[#e7e1d6] bg-white text-[#5d5348]"
-                              }`}
-                            >
-                              {option.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ) : null}
-                  {setupOpen ? (
-                    <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3">
-                      <p className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">Mode</p>
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {[
-                          { key: "system", label: "Match device" },
-                          { key: "light", label: "Light" },
-                          { key: "dark", label: "Dark" },
-                        ].map((option) => {
-                          const active = themePreference === option.key;
-                          return (
-                            <button
-                              key={option.key}
-                              type="button"
-                              disabled={themeSaving}
-                              onClick={() => void saveThemePreference(option.key)}
-                              className={`rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                                active
-                                  ? "border-[var(--accent)] bg-[var(--accent)] text-white"
-                                  : "border-[#d9cdbb] bg-white text-[#5d5348]"
-                              } disabled:cursor-not-allowed disabled:opacity-60`}
-                            >
-                              {option.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {themeError ? <p className="mt-2 text-xs text-[#8a3e1a]">{themeError}</p> : null}
-                    </div>
-                  ) : null}
+              <div className="space-y-3">
+                <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">View today</p>
+                  <div className="mt-3 grid gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openDailyMenuSurface("habits")}
+                      className="rounded-full border border-[#d9cdbb] bg-white px-3 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#5d5348]"
+                    >
+                      Habits for the day
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openDailyMenuSurface("insight")}
+                      className="rounded-full border border-[#d9cdbb] bg-white px-3 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#5d5348]"
+                    >
+                      Insight of the day
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openDailyMenuSurface("ask")}
+                      className="rounded-full border border-[#d9cdbb] bg-white px-3 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#5d5348]"
+                    >
+                      Gia&apos;s message of the day
+                    </button>
+                  </div>
                 </div>
-              ) : (
-                <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5 text-sm text-[#6b6257]">
-                  The HealthSense introduction video is not available right now.
-                </div>
-              )}
+                {setupOpen ? (
+                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">Mode</p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {[
+                        { key: "system", label: "Match device" },
+                        { key: "light", label: "Light" },
+                        { key: "dark", label: "Dark" },
+                      ].map((option) => {
+                        const active = themePreference === option.key;
+                        return (
+                          <button
+                            key={option.key}
+                            type="button"
+                            disabled={themeSaving}
+                            onClick={() => void saveThemePreference(option.key)}
+                            className={`rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] ${
+                              active
+                                ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                                : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                            } disabled:cursor-not-allowed disabled:opacity-60`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {themeError ? <p className="mt-2 text-xs text-[#8a3e1a]">{themeError}</p> : null}
+                  </div>
+                ) : null}
+              </div>
             </div>
 
             <div className="shrink-0 border-t border-[#efe7db] px-3 py-3 sm:px-5">
