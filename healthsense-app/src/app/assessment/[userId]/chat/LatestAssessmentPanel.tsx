@@ -358,6 +358,13 @@ export default function LatestAssessmentPanel({
             },
           }),
         );
+        window.dispatchEvent(
+          new CustomEvent("healthsense-home-surface", {
+            detail: {
+              surface: "ask",
+            },
+          }),
+        );
       }
       closeTracker();
       void refreshSummary().catch(() => {});

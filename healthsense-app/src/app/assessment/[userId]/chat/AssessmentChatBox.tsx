@@ -92,24 +92,38 @@ type AssessmentCompletionSummaryMedia = {
   realtimeMaxReplays: number | null;
 };
 
-const SELECTED_HABITS_TAG = "__selected_habits__";
+type HomeSurface = "ask" | "habits" | "insight";
 
-function resolveDailyHabitDefaultTag(plan: DailyHabitPlanResponse | null): string {
-  if (!plan || typeof plan !== "object") return "";
-  const selectedConceptKey = String(plan.selected_concept_key || "").trim();
-  const visibleConceptKeys = (Array.isArray(plan.available_concepts) ? plan.available_concepts : [])
-    .map((concept) => String(concept?.concept_key || "").trim())
-    .filter((key) => Boolean(key))
-    .slice(0, 4);
-  const preferredConceptKey =
-    (selectedConceptKey && visibleConceptKeys.includes(selectedConceptKey) ? selectedConceptKey : "") ||
-    visibleConceptKeys[0] ||
-    "";
-  if (plan.default_habits_view === "selected_habits" && Array.isArray(plan.habits) && plan.habits.length) {
-    return SELECTED_HABITS_TAG;
+const HOME_SURFACE_SEQUENCE: HomeSurface[] = ["ask", "habits", "insight"];
+
+const HOME_SURFACE_COPY: Record<
+  HomeSurface,
+  {
+    eyebrow: string;
+    title: string;
+    description: string;
+    nextLabel: string | null;
   }
-  return preferredConceptKey;
-}
+> = {
+  ask: {
+    eyebrow: "Step 1 of 3",
+    title: "Today's coaching",
+    description: "Start with Gia's message about your progress today, then continue to today's habits.",
+    nextLabel: "Review habits",
+  },
+  habits: {
+    eyebrow: "Step 2 of 3",
+    title: "Today's habits",
+    description: "Review the three habits set for today, then continue to today's insight.",
+    nextLabel: "Watch insight",
+  },
+  insight: {
+    eyebrow: "Step 3 of 3",
+    title: "Today's insight",
+    description: "Finish with today's avatar insight.",
+    nextLabel: null,
+  },
+};
 
 function parseApiError(text: string, fallback: string) {
   if (!text) return fallback;
@@ -538,19 +552,15 @@ export default function AssessmentChatBox({
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
-  const [homeSurface, setHomeSurface] = useState<"ask" | "insight" | "habits">("ask");
+  const [homeSurface, setHomeSurface] = useState<HomeSurface>("ask");
   const [askPromptTagsHidden, setAskPromptTagsHidden] = useState(false);
   const [pendingAskMessage, setPendingAskMessage] = useState("");
   const [dailyHabitPlan, setDailyHabitPlan] = useState<DailyHabitPlanResponse | null>(null);
   const [dailyHabitPlanLoading, setDailyHabitPlanLoading] = useState(false);
-  const [dailyHabitPlanSaving, setDailyHabitPlanSaving] = useState(false);
   const [dailyHabitPlanError, setDailyHabitPlanError] = useState<string | null>(null);
-  const [dailyHabitActiveTag, setDailyHabitActiveTag] = useState("");
   const [coachInsight, setCoachInsight] = useState<CoachInsightResponse | null>(null);
   const [coachInsightLoading, setCoachInsightLoading] = useState(false);
   const [coachInsightError, setCoachInsightError] = useState<string | null>(null);
-  const [insightActiveConceptKey, setInsightActiveConceptKey] = useState("");
-  const [insightMode, setInsightMode] = useState<"video" | "listen" | "read">("read");
   const askComposerFormRef = useRef<HTMLFormElement | null>(null);
   const insightRequestIdRef = useRef(0);
 
@@ -616,11 +626,6 @@ export default function AssessmentChatBox({
     !summaryExperienceBlocked &&
     (!completionSummaryUsesRealtime ||
       ["playing", "completed", "failed", "stopped", "timeout"].includes(realtimeSummaryPhase));
-  const homeSurfaceOptions: Array<{ key: "habits" | "insight" | "ask"; label: string }> = [
-    { key: "habits", label: "Habits" },
-    { key: "insight", label: "Insight" },
-    { key: "ask", label: "Ask" },
-  ];
   const askSurfaceMessages = useMemo(() => {
     const visible = messages.filter((message) => String(message.text || "").trim());
     const pendingText = pendingAskMessage.trim();
@@ -652,10 +657,6 @@ export default function AssessmentChatBox({
     return withPending.slice(lastUserIndex, lastUserIndex + 3);
   }, [messages, pendingAskMessage]);
   const insightContent = coachInsight?.content || null;
-  const insightConcepts = useMemo(
-    () => (Array.isArray(coachInsight?.available_concepts) ? coachInsight.available_concepts : []),
-    [coachInsight?.available_concepts],
-  );
   const insightSelectedConceptKey = String(coachInsight?.concept_key || "").trim();
   const insightMediaUrl = String(insightContent?.podcast_url || "").trim();
   const insightMediaIsVideo = isLikelyVideoUrl(insightMediaUrl);
@@ -666,63 +667,20 @@ export default function AssessmentChatBox({
   const insightVideoPosterUrl = String(
     insightAvatar?.poster_url || "",
   ).trim();
-  const insightAudioUrl = insightMediaIsVideo ? "" : insightMediaUrl;
-  const insightReadBody = String(insightContent?.body || "").trim();
   const insightHasVideo = Boolean(insightVideoUrl);
-  const insightHasAudio = Boolean(insightAudioUrl);
-  const insightHasRead = Boolean(insightReadBody);
-  const insightMediaKey = `${insightSelectedConceptKey || insightActiveConceptKey || "insight"}:${insightVideoUrl || insightAudioUrl || insightReadBody.slice(0, 32)}`;
-  const insightIsSwitchingConcept = Boolean(
-    coachInsightLoading &&
-    insightActiveConceptKey &&
-    insightSelectedConceptKey &&
-    insightActiveConceptKey !== insightSelectedConceptKey,
-  );
-  const dailyHabitSelectedConceptKey = String(dailyHabitPlan?.selected_concept_key || "").trim();
-  const dailyHabitDefaultView = String(dailyHabitPlan?.default_habits_view || "").trim();
-  const dailyHabitOptions = useMemo(
-    () => (Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : []),
-    [dailyHabitPlan?.options],
-  );
-  const dailyHabitSelected = useMemo(
-    () => (Array.isArray(dailyHabitPlan?.habits) ? dailyHabitPlan.habits : []),
-    [dailyHabitPlan?.habits],
-  );
-  const dailyHabitConcepts = useMemo(
-    () => (Array.isArray(dailyHabitPlan?.available_concepts) ? dailyHabitPlan.available_concepts : []),
-    [dailyHabitPlan?.available_concepts],
-  );
-  const visibleDailyHabitConcepts = useMemo(
-    () => dailyHabitConcepts.slice(0, 4),
-    [dailyHabitConcepts],
-  );
-  const visibleInsightConcepts = useMemo(
-    () => insightConcepts.slice(0, 4),
-    [insightConcepts],
-  );
-  const dailyHabitBusy = dailyHabitPlanLoading || dailyHabitPlanSaving;
-  const dailyHabitConceptLookup = useMemo(() => {
-    const lookup = new Map<string, { label: string; pillarLabel: string }>();
-    dailyHabitConcepts.forEach((concept) => {
-      const conceptKey = String(concept?.concept_key || "").trim();
-      if (!conceptKey) return;
-      lookup.set(conceptKey, {
-        label: String(concept?.label || conceptKey).trim(),
-        pillarLabel: String(concept?.pillar_label || "").trim(),
-      });
-    });
-    return lookup;
-  }, [dailyHabitConcepts]);
-  const dailyHabitActiveConceptKey =
-    dailyHabitActiveTag && dailyHabitActiveTag !== SELECTED_HABITS_TAG ? dailyHabitActiveTag : "";
-  const dailyHabitActiveConceptLabel = dailyHabitActiveConceptKey
-    ? dailyHabitConceptLookup.get(dailyHabitActiveConceptKey)?.label || dailyHabitPlan?.selected_concept_label || "Habit ideas"
-    : "";
-  const dailyHabitSelectedItemsForActiveConcept = dailyHabitActiveConceptKey
-    ? dailyHabitSelected.filter(
-        (item) => String(item?.concept_key || "").trim() === dailyHabitActiveConceptKey,
-      )
-    : [];
+  const insightMediaKey = `${insightSelectedConceptKey || "insight"}:${insightVideoUrl}`;
+  const dailyHabits = useMemo(() => {
+    const selected = Array.isArray(dailyHabitPlan?.habits) ? dailyHabitPlan.habits : [];
+    const fallback = Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : [];
+    const source = selected.length ? selected : fallback;
+    return source
+      .filter((item) => {
+        const title = String(item?.title || "").trim();
+        const detail = String(item?.detail || "").trim();
+        return Boolean(title || detail);
+      })
+      .slice(0, 3);
+  }, [dailyHabitPlan?.habits, dailyHabitPlan?.options]);
   const askPromptSuggestions = useMemo(() => {
     const raw = Array.isArray(dailyHabitPlan?.ask_suggestions) ? dailyHabitPlan.ask_suggestions : [];
     return raw
@@ -732,68 +690,18 @@ export default function AssessmentChatBox({
       .filter((item) => item.text)
       .slice(0, 4);
   }, [dailyHabitPlan?.ask_suggestions]);
+  const currentHomeSurfaceIndex = HOME_SURFACE_SEQUENCE.indexOf(homeSurface);
+  const homeSurfaceMeta = HOME_SURFACE_COPY[homeSurface];
+  const previousHomeSurface =
+    currentHomeSurfaceIndex > 0 ? HOME_SURFACE_SEQUENCE[currentHomeSurfaceIndex - 1] : null;
+  const nextHomeSurface =
+    currentHomeSurfaceIndex >= 0 && currentHomeSurfaceIndex < HOME_SURFACE_SEQUENCE.length - 1
+      ? HOME_SURFACE_SEQUENCE[currentHomeSurfaceIndex + 1]
+      : null;
   const homePanelHeightClass =
     homeSurface === "ask"
       ? "h-[48vh] min-h-[18rem] max-h-[29rem]"
       : "h-[56vh] min-h-[22rem] max-h-[34rem]";
-
-  useEffect(() => {
-    const validConceptKeys = visibleDailyHabitConcepts
-      .map((concept) => String(concept?.concept_key || "").trim())
-      .filter((key) => Boolean(key));
-    const preferredTag =
-      dailyHabitDefaultView === "selected_habits" && dailyHabitSelected.length
-        ? SELECTED_HABITS_TAG
-        : dailyHabitSelectedConceptKey || validConceptKeys[0] || "";
-    setDailyHabitActiveTag((current) => {
-      if (current === SELECTED_HABITS_TAG && dailyHabitSelected.length) {
-        return current;
-      }
-      if (current && validConceptKeys.includes(current)) {
-        return current;
-      }
-      return preferredTag;
-    });
-  }, [visibleDailyHabitConcepts, dailyHabitSelectedConceptKey, dailyHabitDefaultView, dailyHabitSelected.length]);
-
-  useEffect(() => {
-    const validConceptKeys = visibleInsightConcepts
-      .map((concept) => String(concept?.concept_key || "").trim())
-      .filter((key) => Boolean(key));
-    const preferredTag = insightSelectedConceptKey || validConceptKeys[0] || "";
-    setInsightActiveConceptKey((current) => {
-      if (current && validConceptKeys.includes(current)) {
-        return current;
-      }
-      return preferredTag;
-    });
-  }, [visibleInsightConcepts, insightSelectedConceptKey]);
-
-  useEffect(() => {
-    if (insightHasVideo) {
-      setInsightMode("video");
-      return;
-    }
-    if (insightHasAudio) {
-      setInsightMode("listen");
-      return;
-    }
-    if (insightHasRead) {
-      setInsightMode("read");
-    }
-  }, [insightSelectedConceptKey, insightVideoUrl, insightAudioUrl, insightReadBody, insightHasVideo, insightHasAudio, insightHasRead]);
-
-  useEffect(() => {
-    if (insightHasVideo) {
-      setInsightMode("video");
-      return;
-    }
-    if (insightHasAudio) {
-      setInsightMode("listen");
-      return;
-    }
-    setInsightMode("read");
-  }, [insightHasAudio, insightHasVideo, coachInsight?.insight_date, insightReadBody]);
 
   const markCompletionSummaryVideoSeen = useCallback(() => {
     if (!completionSummaryVideoStorageKey || typeof window === "undefined") {
@@ -843,16 +751,13 @@ export default function AssessmentChatBox({
     }
   }, [userId, assessmentCompleted, applyChatPayload, leadToken]);
 
-  const loadDailyHabitPlan = useCallback(async (options?: { force?: boolean; conceptKey?: string }) => {
+  const loadDailyHabitPlan = useCallback(async (options?: { force?: boolean }) => {
     setDailyHabitPlanLoading(true);
     setDailyHabitPlanError(null);
     try {
       const params = new URLSearchParams({ userId });
       if (options?.force) {
         params.set("force", "1");
-      }
-      if (options?.conceptKey) {
-        params.set("conceptKey", options.conceptKey);
       }
       const res = await fetch(`/api/daily-habits?${params.toString()}`, {
         method: "GET",
@@ -864,76 +769,19 @@ export default function AssessmentChatBox({
       }
       const data = (text ? (JSON.parse(text) as DailyHabitPlanResponse) : {}) as DailyHabitPlanResponse;
       setDailyHabitPlan(data);
-      if (!options?.force && !options?.conceptKey) {
-        setDailyHabitActiveTag(resolveDailyHabitDefaultTag(data));
-      }
     } catch (error) {
       setDailyHabitPlanError(error instanceof Error ? error.message : String(error));
     } finally {
       setDailyHabitPlanLoading(false);
     }
   }, [userId]);
-
-  const saveDailyHabitPlanSelection = useCallback(
-    async (conceptKey: string, selectedOptionIds: string[]) => {
-      setDailyHabitPlanSaving(true);
-      setDailyHabitPlanError(null);
-      try {
-        const res = await fetch("/api/daily-habits", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId,
-            conceptKey,
-            selectedOptionIds,
-          }),
-        });
-        const text = await res.text().catch(() => "");
-        if (!res.ok) {
-          throw new Error(parseApiError(text, "Failed to update habit steps."));
-        }
-        const data = (text ? (JSON.parse(text) as DailyHabitPlanResponse) : {}) as DailyHabitPlanResponse;
-        setDailyHabitPlan(data);
-      } catch (error) {
-        setDailyHabitPlanError(error instanceof Error ? error.message : String(error));
-      } finally {
-        setDailyHabitPlanSaving(false);
-      }
-    },
-    [userId],
-  );
-
-  const toggleDailyHabitSelection = useCallback(
-    (habitId: string, conceptKey: string) => {
-      const normalizedHabitId = String(habitId || "").trim();
-      const normalizedConceptKey = String(conceptKey || "").trim();
-      if (!normalizedHabitId || !normalizedConceptKey || dailyHabitBusy) {
-        return;
-      }
-      const currentSelectedIds = dailyHabitSelected
-        .filter((item) => String(item?.concept_key || "").trim() === normalizedConceptKey)
-        .map((item) => String(item?.id || "").trim())
-        .filter((itemId) => Boolean(itemId));
-      const alreadySelected = currentSelectedIds.includes(normalizedHabitId);
-      const nextSelectedIds = alreadySelected
-        ? currentSelectedIds.filter((itemId) => itemId !== normalizedHabitId)
-        : [...currentSelectedIds, normalizedHabitId];
-      void saveDailyHabitPlanSelection(normalizedConceptKey, nextSelectedIds);
-    },
-    [dailyHabitBusy, dailyHabitSelected, saveDailyHabitPlanSelection],
-  );
-
-  const loadCoachInsight = useCallback(async (options?: { conceptKey?: string }) => {
-    const normalizedConceptKey = String(options?.conceptKey || "").trim();
+  const loadCoachInsight = useCallback(async () => {
     const requestId = insightRequestIdRef.current + 1;
     insightRequestIdRef.current = requestId;
     setCoachInsightLoading(true);
     setCoachInsightError(null);
     try {
       const params = new URLSearchParams({ userId });
-      if (normalizedConceptKey) {
-        params.set("conceptKey", normalizedConceptKey);
-      }
       const res = await fetch(`/api/coach-insight?${params.toString()}`, {
         method: "GET",
         cache: "no-store",
@@ -959,6 +807,38 @@ export default function AssessmentChatBox({
     }
   }, [userId]);
 
+  const refreshChatState = useCallback(
+    async (options?: { showLoading?: boolean; clearStatus?: boolean }) => {
+      const showLoading = Boolean(options?.showLoading);
+      const clearStatus = Boolean(options?.clearStatus);
+      if (showLoading) {
+        setLoading(true);
+      }
+      if (clearStatus) {
+        setStatus(null);
+      }
+      const res = await fetch(`/api/assessment/chat/state?userId=${encodeURIComponent(userId)}${leadTokenQuery}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        throw new Error(parseApiError(text, "Failed to load My Coach Gia."));
+      }
+      let data: ChatResponse = {};
+      if (text) {
+        try {
+          data = JSON.parse(text) as ChatResponse;
+        } catch {
+          throw new Error("My Coach Gia returned invalid JSON.");
+        }
+      }
+      applyChatPayload(data);
+      return data;
+    },
+    [userId, leadTokenQuery, applyChatPayload],
+  );
+
   useEffect(() => {
     if (!showHomeChatPanel) {
       setHomeSurface("ask");
@@ -975,11 +855,9 @@ export default function AssessmentChatBox({
     setDailyHabitPlan(null);
     setDailyHabitPlanError(null);
     setDailyHabitPlanLoading(false);
-    setDailyHabitPlanSaving(false);
     setCoachInsight(null);
     setCoachInsightError(null);
     setCoachInsightLoading(false);
-    setInsightActiveConceptKey("");
     setAskPromptTagsHidden(false);
     setPendingAskMessage("");
   }, [userId]);
@@ -1020,54 +898,35 @@ export default function AssessmentChatBox({
 
   useEffect(() => {
     if (!showHomeChatPanel || homeSurface !== "insight") return;
-    if (coachInsight && insightActiveConceptKey && insightActiveConceptKey === insightSelectedConceptKey) return;
-    void loadCoachInsight(insightActiveConceptKey ? { conceptKey: insightActiveConceptKey } : undefined);
-  }, [showHomeChatPanel, homeSurface, loadCoachInsight, insightActiveConceptKey, coachInsight, insightSelectedConceptKey]);
+    if (coachInsight) return;
+    void loadCoachInsight();
+  }, [showHomeChatPanel, homeSurface, loadCoachInsight, coachInsight]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onTrackerUpdated = () => {
+      setHomeSurface("ask");
       setDailyHabitPlan(null);
       setDailyHabitPlanError(null);
       setCoachInsight(null);
       setCoachInsightError(null);
-      if (showHomeChatPanel && homeSurface === "habits") {
+      if (showHomeChatPanel) {
         void loadDailyHabitPlan();
-      }
-      if (showHomeChatPanel && homeSurface === "insight") {
-        void loadCoachInsight(insightActiveConceptKey ? { conceptKey: insightActiveConceptKey } : undefined);
+        void refreshChatState().catch(() => undefined);
       }
     };
     window.addEventListener("healthsense-tracker-updated", onTrackerUpdated as EventListener);
     return () => {
       window.removeEventListener("healthsense-tracker-updated", onTrackerUpdated as EventListener);
     };
-  }, [showHomeChatPanel, homeSurface, loadCoachInsight, loadDailyHabitPlan, insightActiveConceptKey]);
+  }, [showHomeChatPanel, loadDailyHabitPlan, refreshChatState]);
 
   useEffect(() => {
     let cancelled = false;
     const run = async () => {
-      setLoading(true);
-      setStatus(null);
       try {
-        const res = await fetch(`/api/assessment/chat/state?userId=${encodeURIComponent(userId)}${leadTokenQuery}`, {
-          method: "GET",
-          cache: "no-store",
-        });
-        const text = await res.text().catch(() => "");
-        if (!res.ok) {
-          throw new Error(parseApiError(text, "Failed to load My Coach Gia."));
-        }
-        let data: ChatResponse = {};
-        if (text) {
-          try {
-            data = JSON.parse(text) as ChatResponse;
-          } catch {
-            throw new Error("My Coach Gia returned invalid JSON.");
-          }
-        }
+        const data = await refreshChatState({ showLoading: true, clearStatus: true });
         if (cancelled) return;
-        applyChatPayload(data);
         const shouldAutoStart =
           !isLeadGuest &&
           !Boolean(data.has_active_session) &&
@@ -1089,27 +948,15 @@ export default function AssessmentChatBox({
     return () => {
       cancelled = true;
     };
-  }, [userId, autoStart, leadFlow, assessmentCompleted, startAssessment, applyChatPayload, isLeadGuest, leadTokenQuery]);
+  }, [userId, autoStart, leadFlow, assessmentCompleted, startAssessment, refreshChatState, isLeadGuest]);
 
   useEffect(() => {
     let cancelled = false;
     const poll = async () => {
       try {
-        const res = await fetch(`/api/assessment/chat/state?userId=${encodeURIComponent(userId)}${leadTokenQuery}`, {
-          method: "GET",
-          cache: "no-store",
-        });
-        if (!res.ok) return;
-        const text = await res.text().catch(() => "");
-        if (!text) return;
-        let data: ChatResponse = {};
-        try {
-          data = JSON.parse(text) as ChatResponse;
-        } catch {
-          return;
-        }
+        const data = await refreshChatState();
         if (cancelled) return;
-        applyChatPayload(data);
+        if (!data) return;
       } catch {
         // Silent polling failures; next cycle retries.
       }
@@ -1124,7 +971,7 @@ export default function AssessmentChatBox({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [userId, applyChatPayload, leadTokenQuery]);
+  }, [refreshChatState]);
 
   useEffect(() => {
     setShowCoachingPlan(false);
@@ -1805,6 +1652,13 @@ export default function AssessmentChatBox({
   const homeChatPanel = showHomeChatPanel ? (
     <section className="overflow-hidden rounded-[28px] border border-[#e7e1d6] bg-white shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]">
       <div className={`flex ${homePanelHeightClass} flex-col`}>
+        <div className="shrink-0 border-b border-[#efe7db] bg-[#fffaf3] px-4 py-4 sm:px-5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6b6257]">
+            {homeSurfaceMeta.eyebrow}
+          </p>
+          <p className="mt-1 text-lg font-semibold text-[#1e1b16]">{homeSurfaceMeta.title}</p>
+          <p className="mt-1 text-sm text-[#6b6257]">{homeSurfaceMeta.description}</p>
+        </div>
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 sm:px-5">
           {homeSurface === "insight" ? (
             coachInsightLoading && !coachInsight ? (
@@ -1813,105 +1667,22 @@ export default function AssessmentChatBox({
                   Reviewing your latest tracker and loading today&apos;s concept insight…
                 </p>
               </div>
-            ) : insightHasVideo || insightHasAudio || insightHasRead || insightConcepts.length ? (
+            ) : coachInsight ? (
               <div className="space-y-3">
-                {visibleInsightConcepts.length ? (
-                  <div className="flex flex-wrap gap-2">
-                    {visibleInsightConcepts.map((concept, index) => {
-                      const conceptKey = String(concept?.concept_key || "").trim();
-                      const label = String(concept?.label || conceptKey || "").trim();
-                      const active =
-                        conceptKey &&
-                        conceptKey === (insightActiveConceptKey || insightSelectedConceptKey);
-                      if (!conceptKey || !label) return null;
-                      return (
-                        <button
-                          key={`${conceptKey}-${index}`}
-                          type="button"
-                          onClick={() => {
-                            setInsightActiveConceptKey(conceptKey);
-                          }}
-                          disabled={coachInsightLoading}
-                          className={`rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] ${
-                            active
-                              ? "border-[var(--accent)] bg-white text-[var(--accent)]"
-                              : "border-[#d9cdbb] bg-white text-[#5d5348]"
-                          } disabled:cursor-not-allowed disabled:opacity-50`}
-                        >
-                          {label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : null}
-                {coachInsightLoading && (coachInsight || insightActiveConceptKey) ? (
+                {coachInsightLoading && coachInsight ? (
                   <p className="text-sm text-[#6b6257]">Loading concept insight…</p>
                 ) : null}
-                {!insightIsSwitchingConcept && (insightHasVideo || insightHasAudio || insightHasRead) ? (
-                  <>
-                    {insightMode === "video" && insightHasVideo ? (
-                      <video
-                        key={`video-${insightMediaKey}`}
-                        controls
-                        preload="metadata"
-                        playsInline
-                        poster={insightVideoPosterUrl || undefined}
-                        className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
-                      >
-                        <source src={insightVideoUrl} />
-                      </video>
-                    ) : null}
-                    {insightMode === "listen" && insightHasAudio ? (
-                      <div key={`audio-${insightMediaKey}`} className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
-                        <audio className="w-full" controls preload="metadata">
-                          <source src={insightAudioUrl} />
-                        </audio>
-                      </div>
-                    ) : null}
-                    {insightMode === "read" && insightHasRead ? (
-                      <div key={`read-${insightMediaKey}`} className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
-                        <p className="whitespace-pre-wrap text-sm leading-6 text-[#6b6257]">{insightReadBody}</p>
-                      </div>
-                    ) : null}
-                    <div className="grid grid-cols-3 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setInsightMode("video")}
-                        disabled={!insightHasVideo}
-                        className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
-                          insightMode === "video"
-                            ? "border-[var(--accent)] text-[var(--accent)]"
-                            : "border-[#d9cdbb] text-[#5d5348]"
-                        } bg-white disabled:cursor-not-allowed disabled:opacity-40`}
-                      >
-                        Video
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setInsightMode("listen")}
-                        disabled={!insightHasAudio}
-                        className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
-                          insightMode === "listen"
-                            ? "border-[var(--accent)] text-[var(--accent)]"
-                            : "border-[#d9cdbb] text-[#5d5348]"
-                        } bg-white disabled:cursor-not-allowed disabled:opacity-40`}
-                      >
-                        Listen
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setInsightMode("read")}
-                        disabled={!insightHasRead}
-                        className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
-                          insightMode === "read"
-                            ? "border-[var(--accent)] text-[var(--accent)]"
-                            : "border-[#d9cdbb] text-[#5d5348]"
-                        } bg-white disabled:cursor-not-allowed disabled:opacity-40`}
-                      >
-                        Read
-                      </button>
-                    </div>
-                  </>
+                {insightHasVideo ? (
+                  <video
+                    key={`video-${insightMediaKey}`}
+                    controls
+                    preload="metadata"
+                    playsInline
+                    poster={insightVideoPosterUrl || undefined}
+                    className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
+                  >
+                    <source src={insightVideoUrl} />
+                  </video>
                 ) : (
                   <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
                     <p className="text-sm text-[#6b6257]">
@@ -1936,146 +1707,39 @@ export default function AssessmentChatBox({
               ) : dailyHabitPlanError && !dailyHabitPlan ? (
                 <p className="text-sm text-[#8a3e1a]">{dailyHabitPlanError}</p>
               ) : (
-                <>
-                  <div>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setDailyHabitActiveTag(SELECTED_HABITS_TAG)}
-                        disabled={dailyHabitBusy}
-                        className={`rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] ${
-                          dailyHabitActiveTag === SELECTED_HABITS_TAG
-                            ? "border-[#1e1b16] bg-white text-[#1e1b16]"
-                            : "border-[#d9cdbb] bg-white text-[#5d5348]"
-                        } disabled:cursor-not-allowed disabled:opacity-50`}
-                      >
-                        Selected habits
-                      </button>
-                      {visibleDailyHabitConcepts.map((concept, index) => {
-                        const conceptKey = String(concept?.concept_key || "").trim();
-                        const label = String(concept?.label || conceptKey || "").trim();
-                        const active = conceptKey === dailyHabitActiveTag;
-                        if (!conceptKey || !label) return null;
+                <div className="space-y-3">
+                  {dailyHabitPlan?.title ? <p className="text-sm font-semibold text-[#1e1b16]">{dailyHabitPlan.title}</p> : null}
+                  {dailyHabitPlan?.summary ? <p className="text-sm text-[#6b6257]">{dailyHabitPlan.summary}</p> : null}
+                  {dailyHabitPlanLoading && dailyHabitPlan ? (
+                    <p className="text-sm text-[#6b6257]">Refreshing today&apos;s habits…</p>
+                  ) : null}
+                  {dailyHabits.length ? (
+                    <div className="space-y-2">
+                      {dailyHabits.map((habit, index) => {
+                        const title = String(habit?.title || "").trim();
+                        const detail = String(habit?.detail || "").trim();
+                        if (!title && !detail) return null;
                         return (
-                          <button
-                            key={`${conceptKey}-${index}`}
-                            type="button"
-                            onClick={() => {
-                              setDailyHabitActiveTag(conceptKey);
-                              void loadDailyHabitPlan({ conceptKey });
-                            }}
-                            disabled={dailyHabitBusy}
-                            className={`rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] ${
-                              active
-                                ? "border-[var(--accent)] bg-white text-[var(--accent)]"
-                                : "border-[#d9cdbb] bg-white text-[#5d5348]"
-                            } disabled:cursor-not-allowed disabled:opacity-50`}
+                          <div
+                            key={`${String(habit?.id || "").trim() || `${title || detail}-${index}`}`}
+                            className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3"
                           >
-                            {label}
-                          </button>
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
+                              Habit {index + 1}
+                            </p>
+                            {title ? <p className="mt-2 text-sm font-semibold text-[#1e1b16]">{title}</p> : null}
+                            {detail ? <p className="mt-1 text-sm text-[#6b6257]">{detail}</p> : null}
+                          </div>
                         );
                       })}
                     </div>
-                    {dailyHabitPlanLoading && dailyHabitPlan ? (
-                      <p className="mt-3 text-sm text-[#6b6257]">Loading habits…</p>
-                    ) : null}
-                  </div>
-
-                  <div className="mt-4">
-                    <div className="space-y-2">
-                      {dailyHabitActiveTag === SELECTED_HABITS_TAG ? (
-                        dailyHabitSelected.length ? (
-                          dailyHabitSelected.map((habit, index) => {
-                            const habitId = String(habit?.id || "").trim();
-                            const title = String(habit?.title || "").trim();
-                            const detail = String(habit?.detail || "").trim();
-                            const conceptKey = String(habit?.concept_key || "").trim();
-                            const conceptLabel =
-                              String(habit?.concept_label || "").trim() ||
-                              dailyHabitConceptLookup.get(conceptKey)?.label ||
-                              "";
-                            if (!title && !detail) return null;
-                            return (
-                              <button
-                                key={habitId || `${title || detail}-${index}`}
-                                type="button"
-                                onClick={() => toggleDailyHabitSelection(habitId, conceptKey)}
-                                disabled={!habitId || !conceptKey || dailyHabitBusy}
-                                className="w-full rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-left text-[#1e1b16] transition hover:border-[#d9cdbb] hover:bg-[#fffdf8] disabled:cursor-not-allowed disabled:opacity-60"
-                              >
-                                {title ? <p className="text-sm font-semibold">{title}</p> : null}
-                                {detail ? <p className="mt-1 text-sm text-[#6b6257]">{detail}</p> : null}
-                                {conceptLabel ? (
-                                  <p className="mt-2 text-[10px] uppercase tracking-[0.12em] text-[#8c7f70]">
-                                    {conceptLabel}
-                                  </p>
-                                ) : null}
-                              </button>
-                            );
-                          })
-                        ) : (
-                          <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm text-[#6b6257]">
-                            Tap a habit from any concept to add it here.
-                          </div>
-                        )
-                      ) : dailyHabitOptions.length ? (
-                        dailyHabitOptions.map((habit, index) => {
-                          const optionId = String(habit?.id || "").trim();
-                          const title = String(habit?.title || "").trim();
-                          const detail = String(habit?.detail || "").trim();
-                          const selected = Boolean(habit?.selected);
-                          if (!title && !detail) return null;
-                          return (
-                            <button
-                              key={optionId || `${title || detail}-${index}`}
-                              type="button"
-                              onClick={() => toggleDailyHabitSelection(optionId, dailyHabitActiveConceptKey)}
-                              disabled={!dailyHabitActiveConceptKey || !optionId || dailyHabitBusy}
-                              className={`w-full rounded-2xl border px-4 py-3 text-left transition disabled:cursor-not-allowed disabled:opacity-60 ${
-                                selected
-                                  ? "border-[#87b17a] bg-[#eef7e7] text-[#2f5b2f] hover:border-[#709b65] hover:bg-[#e6f3dc]"
-                                  : "border-[#efe7db] bg-white text-[#3c332b] hover:border-[#d9cdbb] hover:bg-[#fffdf8]"
-                              }`}
-                            >
-                              {title ? <p className="text-sm font-semibold">{title}</p> : null}
-                              {detail ? (
-                                <p className={`mt-1 text-sm ${selected ? "text-[#476a43]" : "text-[#6b6257]"}`}>
-                                  {detail}
-                                </p>
-                              ) : null}
-                            </button>
-                          );
-                        })
-                      ) : (
-                        <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm text-[#6b6257]">
-                          Choose a concept tag to see more habit steps.
-                        </div>
-                      )}
+                  ) : (
+                    <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm text-[#6b6257]">
+                      Today&apos;s habits are not available right now.
                     </div>
-                  </div>
-
-                  {dailyHabitActiveConceptKey ? (
-                    <div className="mt-4">
-                      <button
-                        type="button"
-                        onClick={() => void loadDailyHabitPlan({ force: true, conceptKey: dailyHabitActiveConceptKey })}
-                        disabled={dailyHabitBusy}
-                        className="w-full rounded-full border border-[#d9cdbb] bg-white px-3 py-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348] disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {dailyHabitPlanLoading
-                          ? "Refreshing habits..."
-                          : `Refresh ${dailyHabitActiveConceptLabel || "habit"} habits`}
-                      </button>
-                      {dailyHabitSelectedItemsForActiveConcept.length ? (
-                        <p className="mt-2 text-xs text-[#6b6257]">
-                          {dailyHabitSelectedItemsForActiveConcept.length} selected for {dailyHabitActiveConceptLabel || "this concept"}.
-                        </p>
-                      ) : null}
-                    </div>
-                  ) : null}
-
-                  {dailyHabitPlanError ? <p className="mt-3 text-sm text-[#8a3e1a]">{dailyHabitPlanError}</p> : null}
-                </>
+                  )}
+                  {dailyHabitPlanError ? <p className="text-sm text-[#8a3e1a]">{dailyHabitPlanError}</p> : null}
+                </div>
               )}
             </div>
           ) : (
@@ -2123,6 +1787,16 @@ export default function AssessmentChatBox({
                     disabled={busy}
                   />
                 </form>
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => askComposerFormRef.current?.requestSubmit()}
+                    disabled={busy || !draft.trim()}
+                    className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {sending ? "Sending…" : "Send to Gia"}
+                  </button>
+                </div>
                 {status ? <p className="mt-3 text-sm text-[#6b6257]">{status}</p> : null}
                 {askPromptSuggestions.length && !askPromptTagsHidden ? (
                   <div className="mt-3 rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-2.5 py-2.5">
@@ -2155,38 +1829,30 @@ export default function AssessmentChatBox({
           )}
         </div>
         <div className="border-t border-[#efe7db] px-4 py-3 sm:px-5">
-          <div className="grid grid-cols-3 gap-2">
-            {homeSurfaceOptions.map((item) => {
-              const active = homeSurface === item.key;
-              return (
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[11px] uppercase tracking-[0.16em] text-[#8c7f70]">
+              {`${currentHomeSurfaceIndex + 1} of ${HOME_SURFACE_SEQUENCE.length}`}
+            </div>
+            <div className="flex gap-2">
+              {previousHomeSurface ? (
                 <button
-                  key={item.key}
                   type="button"
-                  onClick={() => {
-                    if (item.key === "ask" && homeSurface === "ask") {
-                      if (draft.trim() && !busy) {
-                        askComposerFormRef.current?.requestSubmit();
-                      }
-                      return;
-                    }
-                    setHomeSurface(item.key);
-                    if (item.key === "habits" && homeSurface === "habits") {
-                      void loadDailyHabitPlan();
-                    }
-                    if (item.key === "insight" && homeSurface === "insight") {
-                      void loadCoachInsight();
-                    }
-                  }}
-                  className={`rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] transition ${
-                    active
-                      ? "border border-[var(--accent)] bg-[var(--accent)] text-white"
-                      : "border border-[#d9cdbb] bg-white text-[#5d5348]"
-                  }`}
+                  onClick={() => setHomeSurface(previousHomeSurface)}
+                  className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
                 >
-                  {item.label}
+                  Back
                 </button>
-              );
-            })}
+              ) : null}
+              {nextHomeSurface && homeSurfaceMeta.nextLabel ? (
+                <button
+                  type="button"
+                  onClick={() => setHomeSurface(nextHomeSurface)}
+                  className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white"
+                >
+                  {homeSurfaceMeta.nextLabel}
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
       </div>
