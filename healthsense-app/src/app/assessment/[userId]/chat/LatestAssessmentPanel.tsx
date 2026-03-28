@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   // Keep tracker responses local to this panel.
   PillarTrackerDetailResponse,
@@ -156,6 +156,7 @@ export default function LatestAssessmentPanel({
   const [draft, setDraft] = useState<Record<string, number>>({});
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [guidedTrackingActive, setGuidedTrackingActive] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [setupOpen, setSetupOpen] = useState(false);
@@ -167,6 +168,17 @@ export default function LatestAssessmentPanel({
   const introVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
+  const orderedPillarKeys = pillars
+    .map((pillar) => String(pillar.pillar_key || "").trim().toLowerCase())
+    .filter((pillarKey) => Boolean(pillarKey));
+  const resolveNextPillarKey = (pillarKey: string): string | null => {
+    const normalizedPillarKey = String(pillarKey || "").trim().toLowerCase();
+    const currentIndex = orderedPillarKeys.indexOf(normalizedPillarKey);
+    if (currentIndex < 0) {
+      return orderedPillarKeys[0] || null;
+    }
+    return orderedPillarKeys[currentIndex + 1] || null;
+  };
   const hasTrackerScores = pillars.some((pillar) => resolvePillarSource(pillar) === "tracker");
   const combinedScore = (() => {
     if (!hasTrackerScores) {
@@ -272,7 +284,7 @@ export default function LatestAssessmentPanel({
     setSummary(payload);
   };
 
-  const loadTrackerDetail = async (pillarKey: string, anchorDate?: string) => {
+  const loadTrackerDetail = useCallback(async (pillarKey: string, anchorDate?: string) => {
     setLoadingDetail(true);
     setDetailError(null);
     setSaveError(null);
@@ -305,20 +317,33 @@ export default function LatestAssessmentPanel({
     } finally {
       setLoadingDetail(false);
     }
-  };
+  }, [userId]);
 
-  const openTracker = async (pillarKey: string, anchorDate?: string) => {
+  const openTracker = useCallback(async (pillarKey: string, anchorDate?: string, options?: { guided?: boolean }) => {
+    const normalizedPillarKey = String(pillarKey || "").trim().toLowerCase();
+    if (!normalizedPillarKey) return;
     setScoreCardOpen(false);
-    setSelectedPillarKey(pillarKey);
+    setGuidedTrackingActive(Boolean(options?.guided));
+    setSelectedPillarKey(normalizedPillarKey);
     setDetail(null);
     setDraft({});
     setDetailError(null);
     setSaveError(null);
-    await loadTrackerDetail(pillarKey, anchorDate);
-  };
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("healthsense-home-surface", {
+          detail: {
+            surface: "tracking",
+          },
+        }),
+      );
+    }
+    await loadTrackerDetail(normalizedPillarKey, anchorDate);
+  }, [loadTrackerDetail]);
 
   const closeTracker = () => {
     setSelectedPillarKey(null);
+    setGuidedTrackingActive(false);
     setDetail(null);
     setDraft({});
     setDetailError(null);
@@ -358,16 +383,24 @@ export default function LatestAssessmentPanel({
             },
           }),
         );
+      }
+      await refreshSummary().catch(() => undefined);
+      const currentPillarKey = String(detail.pillar.pillar_key || "").trim().toLowerCase();
+      const nextPillarKey = guidedTrackingActive ? resolveNextPillarKey(currentPillarKey) : null;
+      if (nextPillarKey) {
+        await openTracker(nextPillarKey, undefined, { guided: true });
+        return;
+      }
+      if (typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("healthsense-home-surface", {
             detail: {
-              surface: "ask",
+              surface: "habits",
             },
           }),
         );
       }
       closeTracker();
-      void refreshSummary().catch(() => {});
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -384,6 +417,23 @@ export default function LatestAssessmentPanel({
   const selectIntroVideo = (nextKey: IntroVideoKey) => {
     setSelectedIntroVideoKey(nextKey);
   };
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onOpenTracker = (event: Event) => {
+      const detail = (event as CustomEvent<{ pillarKey?: string; guided?: boolean }>).detail;
+      const requestedPillarKey = String(detail?.pillarKey || "").trim().toLowerCase();
+      const nextPillarKey = requestedPillarKey || orderedPillarKeys[0] || "";
+      if (!nextPillarKey) return;
+      void openTracker(nextPillarKey, undefined, {
+        guided: detail?.guided !== false,
+      });
+    };
+    window.addEventListener("healthsense-open-tracker", onOpenTracker as EventListener);
+    return () => {
+      window.removeEventListener("healthsense-open-tracker", onOpenTracker as EventListener);
+    };
+  }, [orderedPillarKeys, openTracker]);
 
   const saveThemePreference = async (nextThemeInput: string) => {
     const nextTheme = normalizeThemePreference(nextThemeInput);
@@ -638,7 +688,13 @@ export default function LatestAssessmentPanel({
                             key={itemDate}
                             type="button"
                             disabled={!itemDate || active || saving}
-                            onClick={() => void openTracker(String(detail.pillar?.pillar_key || selectedPillarKey || ""), itemDate)}
+                            onClick={() =>
+                              void openTracker(
+                                String(detail.pillar?.pillar_key || selectedPillarKey || ""),
+                                itemDate,
+                                { guided: guidedTrackingActive },
+                              )
+                            }
                             className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
                               active
                                 ? "border-[#d6c3ab] bg-[#f6ede3] text-[#5d472d]"

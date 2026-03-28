@@ -92,9 +92,10 @@ type AssessmentCompletionSummaryMedia = {
   realtimeMaxReplays: number | null;
 };
 
-type HomeSurface = "ask" | "habits" | "insight";
+type HomeSurface = "tracking" | "habits" | "insight" | "ask";
 
-const HOME_SURFACE_SEQUENCE: HomeSurface[] = ["ask", "habits", "insight"];
+const HOME_SURFACE_SEQUENCE: HomeSurface[] = ["tracking", "habits", "insight", "ask"];
+const TRACKING_STEP_PILLARS = ["Nutrition", "Training", "Resilience", "Recovery"];
 
 const HOME_SURFACE_COPY: Record<
   HomeSurface,
@@ -105,22 +106,28 @@ const HOME_SURFACE_COPY: Record<
     nextLabel: string | null;
   }
 > = {
-  ask: {
-    eyebrow: "Step 1 of 3",
-    title: "Today's coaching",
-    description: "Start with Gia's message about your progress today, then continue to today's habits.",
-    nextLabel: "Review habits",
+  tracking: {
+    eyebrow: "Step 1 of 4",
+    title: "Track progress",
+    description: "Start by completing today's tracking. We will take you through each pillar one at a time.",
+    nextLabel: null,
   },
   habits: {
-    eyebrow: "Step 2 of 3",
+    eyebrow: "Step 2 of 4",
     title: "Today's habits",
     description: "Review the three habits set for today, then continue to today's insight.",
     nextLabel: "Watch insight",
   },
   insight: {
-    eyebrow: "Step 3 of 3",
+    eyebrow: "Step 3 of 4",
     title: "Today's insight",
-    description: "Finish with today's avatar insight.",
+    description: "Watch today's avatar insight, then continue to Gia's coaching message.",
+    nextLabel: "Read Gia's coaching",
+  },
+  ask: {
+    eyebrow: "Step 4 of 4",
+    title: "Gia's coaching",
+    description: "Finish with Gia's message about your progress today, then ask a follow-up if you need one.",
     nextLabel: null,
   },
 };
@@ -552,7 +559,7 @@ export default function AssessmentChatBox({
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
-  const [homeSurface, setHomeSurface] = useState<HomeSurface>("ask");
+  const [homeSurface, setHomeSurface] = useState<HomeSurface>("tracking");
   const [askPromptTagsHidden, setAskPromptTagsHidden] = useState(false);
   const [pendingAskMessage, setPendingAskMessage] = useState("");
   const [dailyHabitPlan, setDailyHabitPlan] = useState<DailyHabitPlanResponse | null>(null);
@@ -699,9 +706,11 @@ export default function AssessmentChatBox({
       ? HOME_SURFACE_SEQUENCE[currentHomeSurfaceIndex + 1]
       : null;
   const homePanelHeightClass =
-    homeSurface === "ask"
-      ? "h-[48vh] min-h-[18rem] max-h-[29rem]"
-      : "h-[56vh] min-h-[22rem] max-h-[34rem]";
+    homeSurface === "tracking"
+      ? "h-[44vh] min-h-[20rem] max-h-[28rem]"
+      : homeSurface === "ask"
+        ? "h-[58vh] min-h-[22rem] max-h-[38rem]"
+        : "h-[78vh] min-h-[32rem] max-h-[56rem]";
 
   const markCompletionSummaryVideoSeen = useCallback(() => {
     if (!completionSummaryVideoStorageKey || typeof window === "undefined") {
@@ -841,7 +850,7 @@ export default function AssessmentChatBox({
 
   useEffect(() => {
     if (!showHomeChatPanel) {
-      setHomeSurface("ask");
+      setHomeSurface("tracking");
     }
   }, [showHomeChatPanel, userId]);
 
@@ -867,6 +876,10 @@ export default function AssessmentChatBox({
     const onSurfaceChange = (event: Event) => {
       const detail = (event as CustomEvent<{ surface?: string }>).detail;
       const surface = String(detail?.surface || "").trim().toLowerCase();
+      if (surface === "tracking") {
+        setHomeSurface("tracking");
+        return;
+      }
       if (surface === "insight") {
         setHomeSurface("insight");
         return;
@@ -905,7 +918,6 @@ export default function AssessmentChatBox({
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onTrackerUpdated = () => {
-      setHomeSurface("ask");
       setDailyHabitPlan(null);
       setDailyHabitPlanError(null);
       setCoachInsight(null);
@@ -1660,15 +1672,59 @@ export default function AssessmentChatBox({
           <p className="mt-1 text-sm text-[#6b6257]">{homeSurfaceMeta.description}</p>
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 sm:px-5">
-          {homeSurface === "insight" ? (
+          {homeSurface === "tracking" ? (
+            <div className="flex h-full flex-col justify-between gap-4">
+              <div className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-4 sm:px-5 sm:py-5">
+                <p className="text-sm text-[#6b6257]">
+                  Complete your daily check-in first. We will move through each pillar in order so the next step only appears once tracking is done.
+                </p>
+                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {TRACKING_STEP_PILLARS.map((pillar, index) => (
+                    <div
+                      key={pillar}
+                      className="rounded-2xl border border-[#efe7db] bg-white px-3 py-3 text-left"
+                    >
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
+                        Pillar {index + 1}
+                      </p>
+                      <p className="mt-2 text-sm font-semibold text-[#1e1b16]">{pillar}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4 sm:px-5">
+                <p className="text-sm text-[#6b6257]">
+                  Start the tracker and we will take you through all four pillars one at a time.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof window !== "undefined") {
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                      window.dispatchEvent(
+                        new CustomEvent("healthsense-open-tracker", {
+                          detail: {
+                            guided: true,
+                          },
+                        }),
+                      );
+                    }
+                  }}
+                  className="mt-4 w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-white"
+                >
+                  Start daily check-in
+                </button>
+              </div>
+            </div>
+          ) : homeSurface === "insight" ? (
             coachInsightLoading && !coachInsight ? (
-              <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
+              <div className="flex h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
                 <p className="text-sm text-[#6b6257]">
                   Reviewing your latest tracker and loading today&apos;s concept insight…
                 </p>
               </div>
             ) : coachInsight ? (
-              <div className="space-y-3">
+              <div className="flex h-full flex-col gap-3">
                 {coachInsightLoading && coachInsight ? (
                   <p className="text-sm text-[#6b6257]">Loading concept insight…</p>
                 ) : null}
@@ -1679,12 +1735,12 @@ export default function AssessmentChatBox({
                     preload="metadata"
                     playsInline
                     poster={insightVideoPosterUrl || undefined}
-                    className="w-full rounded-2xl border border-[#efe7db] bg-[#f7f4ee]"
+                    className="h-full min-h-0 w-full rounded-[24px] border border-[#efe7db] bg-[#f7f4ee] object-contain"
                   >
                     <source src={insightVideoUrl} />
                   </video>
                 ) : (
-                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
+                  <div className="flex h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
                     <p className="text-sm text-[#6b6257]">
                       {coachInsightError || "A concept insight is not available right now."}
                     </p>
@@ -1692,29 +1748,33 @@ export default function AssessmentChatBox({
                 )}
               </div>
             ) : (
-              <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
+              <div className="flex h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
                 <p className="text-sm text-[#6b6257]">
                   {coachInsightError || "A concept insight is not available right now."}
                 </p>
               </div>
             )
           ) : homeSurface === "habits" ? (
-            <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+            <div className="flex h-full flex-col">
               {dailyHabitPlanLoading && !dailyHabitPlan ? (
-                <p className="text-sm text-[#6b6257]">
-                  Reviewing your tracker and preparing today&apos;s habit steps…
-                </p>
+                <div className="flex h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
+                  <p className="text-sm text-[#6b6257]">
+                    Reviewing your tracker and preparing today&apos;s habit steps…
+                  </p>
+                </div>
               ) : dailyHabitPlanError && !dailyHabitPlan ? (
-                <p className="text-sm text-[#8a3e1a]">{dailyHabitPlanError}</p>
+                <div className="flex h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
+                  <p className="text-sm text-[#8a3e1a]">{dailyHabitPlanError}</p>
+                </div>
               ) : (
-                <div className="space-y-3">
+                <div className="flex h-full flex-col">
                   {dailyHabitPlan?.title ? <p className="text-sm font-semibold text-[#1e1b16]">{dailyHabitPlan.title}</p> : null}
                   {dailyHabitPlan?.summary ? <p className="text-sm text-[#6b6257]">{dailyHabitPlan.summary}</p> : null}
                   {dailyHabitPlanLoading && dailyHabitPlan ? (
                     <p className="text-sm text-[#6b6257]">Refreshing today&apos;s habits…</p>
                   ) : null}
                   {dailyHabits.length ? (
-                    <div className="space-y-2">
+                    <div className="mt-4 grid flex-1 auto-rows-fr gap-3 md:grid-cols-3">
                       {dailyHabits.map((habit, index) => {
                         const title = String(habit?.title || "").trim();
                         const detail = String(habit?.detail || "").trim();
@@ -1722,19 +1782,19 @@ export default function AssessmentChatBox({
                         return (
                           <div
                             key={`${String(habit?.id || "").trim() || `${title || detail}-${index}`}`}
-                            className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3"
+                            className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-4"
                           >
                             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
                               Habit {index + 1}
                             </p>
                             {title ? <p className="mt-2 text-sm font-semibold text-[#1e1b16]">{title}</p> : null}
-                            {detail ? <p className="mt-1 text-sm text-[#6b6257]">{detail}</p> : null}
+                            {detail ? <p className="mt-2 text-sm leading-6 text-[#6b6257]">{detail}</p> : null}
                           </div>
                         );
                       })}
                     </div>
                   ) : (
-                    <div className="rounded-2xl border border-[#efe7db] bg-white px-4 py-3 text-sm text-[#6b6257]">
+                    <div className="flex h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5 text-sm text-[#6b6257]">
                       Today&apos;s habits are not available right now.
                     </div>
                   )}
@@ -1770,7 +1830,9 @@ export default function AssessmentChatBox({
                   </div>
                 ) : (
                   <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
-                    <p className="text-sm text-[#6b6257]">Ask Gia a question and the latest reply will appear here.</p>
+                    <p className="text-sm text-[#6b6257]">
+                      Gia&apos;s latest coaching message will appear here. Ask a follow-up question if you need one.
+                    </p>
                   </div>
                 )}
                 {sending ? <p className="mt-3 text-sm text-[#6b6257]">Gia is replying…</p> : null}
