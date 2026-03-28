@@ -284,7 +284,6 @@ export default async function AssessmentChatPage(props: PageProps) {
     Boolean(onboarding.assessment_completed_at) ||
     Boolean(status.latest_run?.finished_at);
   const assessmentInProgress = status.status === "in_progress";
-  const autoOpenResults = Boolean(assessmentCompleted && onboarding.first_app_login_at && !onboarding.assessment_reviewed_at);
   const chatIntroText = assessmentCompleted
     ? ""
     : assessmentInProgress
@@ -346,8 +345,6 @@ export default async function AssessmentChatPage(props: PageProps) {
             initialSummary={pillarTrackerSummary}
             initialAssessmentCombinedScore={status.latest_run?.combined_overall ?? null}
             initialAssessmentReviewed={Boolean(onboarding.assessment_reviewed_at)}
-            autoOpenResults={autoOpenResults}
-            initialTheme={themePreference}
           />
         ) : null}
       </section>
