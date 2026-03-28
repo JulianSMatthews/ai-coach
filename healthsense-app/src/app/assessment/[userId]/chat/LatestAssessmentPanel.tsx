@@ -9,7 +9,6 @@ import type {
 } from "@/lib/api";
 import { getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
-import { applyThemePreference, normalizeThemePreference, type ThemePreference } from "@/lib/theme";
 import LeadAssessmentBranding from "./LeadAssessmentBranding";
 
 type LatestAssessmentPanelProps = {
@@ -17,8 +16,6 @@ type LatestAssessmentPanelProps = {
   initialSummary: PillarTrackerSummaryResponse;
   initialAssessmentCombinedScore?: number | null;
   initialAssessmentReviewed?: boolean;
-  autoOpenResults?: boolean;
-  initialTheme?: string;
 };
 
 const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
@@ -139,12 +136,9 @@ export default function LatestAssessmentPanel({
   initialSummary,
   initialAssessmentCombinedScore = null,
   initialAssessmentReviewed = false,
-  autoOpenResults = false,
-  initialTheme = "dark",
 }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
   const [summaryPanelVisible, setSummaryPanelVisible] = useState(false);
-  const [scoreCardOpen, setScoreCardOpen] = useState(false);
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<PillarTrackerDetailResponse | null>(null);
   const [draft, setDraft] = useState<Record<string, number>>({});
@@ -153,10 +147,6 @@ export default function LatestAssessmentPanel({
   const [guidedTrackingActive, setGuidedTrackingActive] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [setupOpen, setSetupOpen] = useState(false);
-  const [themePreference, setThemePreference] = useState<ThemePreference>(normalizeThemePreference(initialTheme));
-  const [themeSaving, setThemeSaving] = useState(false);
-  const [themeError, setThemeError] = useState<string | null>(null);
   const [assessmentReviewed, setAssessmentReviewed] = useState(initialAssessmentReviewed);
   const [assessmentReviewSyncStarted, setAssessmentReviewSyncStarted] = useState(initialAssessmentReviewed);
   const summaryPanelRef = useRef<HTMLElement | null>(null);
@@ -211,16 +201,6 @@ export default function LatestAssessmentPanel({
         : "No completed tracker days last week";
 
   useEffect(() => {
-    if (!autoOpenResults || !summaryPanelVisible) return;
-    setScoreCardOpen(true);
-  }, [autoOpenResults, summaryPanelVisible]);
-
-  useEffect(() => {
-    if (summaryPanelVisible) return;
-    setScoreCardOpen(false);
-  }, [summaryPanelVisible]);
-
-  useEffect(() => {
     if (typeof window === "undefined") return;
     const onSummaryVisibilityChange = (event: Event) => {
       const detail = (event as CustomEvent<{ visible?: boolean }>).detail;
@@ -245,7 +225,7 @@ export default function LatestAssessmentPanel({
   }, [summaryPanelVisible]);
 
   useEffect(() => {
-    if (!scoreCardOpen || assessmentReviewed || assessmentReviewSyncStarted) return;
+    if (!summaryPanelVisible || assessmentReviewed || assessmentReviewSyncStarted) return;
     let cancelled = false;
     setAssessmentReviewSyncStarted(true);
     const syncAssessmentReview = async () => {
@@ -266,7 +246,7 @@ export default function LatestAssessmentPanel({
     return () => {
       cancelled = true;
     };
-  }, [assessmentReviewed, assessmentReviewSyncStarted, scoreCardOpen, userId]);
+  }, [assessmentReviewed, assessmentReviewSyncStarted, summaryPanelVisible, userId]);
 
   const refreshSummary = async () => {
     const res = await fetch(`/api/pillar-tracker/summary?userId=${encodeURIComponent(userId)}`, {
@@ -319,7 +299,6 @@ export default function LatestAssessmentPanel({
   const openTracker = useCallback(async (pillarKey: string, anchorDate?: string, options?: { guided?: boolean }) => {
     const normalizedPillarKey = String(pillarKey || "").trim().toLowerCase();
     if (!normalizedPillarKey) return;
-    setScoreCardOpen(false);
     setGuidedTrackingActive(Boolean(options?.guided));
     setSelectedPillarKey(normalizedPillarKey);
     setDetail(null);
@@ -405,23 +384,18 @@ export default function LatestAssessmentPanel({
     }
   };
 
-  const openScoreCard = () => {
-    setSetupOpen(false);
-    setScoreCardOpen(true);
-  };
-
   const openDailyMenuSurface = (surface: "habits" | "insight" | "ask") => {
     if (typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent("healthsense-home-surface", {
           detail: {
             surface,
+            source: "summary",
           },
         }),
       );
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
-    setScoreCardOpen(false);
   };
 
   useEffect(() => {
@@ -440,35 +414,6 @@ export default function LatestAssessmentPanel({
       window.removeEventListener("healthsense-open-tracker", onOpenTracker as EventListener);
     };
   }, [orderedPillarKeys, openTracker]);
-
-  const saveThemePreference = async (nextThemeInput: string) => {
-    const nextTheme = normalizeThemePreference(nextThemeInput);
-    const previousTheme = themePreference;
-    setThemePreference(nextTheme);
-    setThemeSaving(true);
-    setThemeError(null);
-    applyThemePreference(nextTheme, true);
-    try {
-      const res = await fetch("/api/preferences", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          theme: nextTheme,
-        }),
-      });
-      if (!res.ok) {
-        const text = await res.text().catch(() => "");
-        throw new Error(normalizeError(text, "Failed to update appearance."));
-      }
-    } catch (error) {
-      setThemePreference(previousTheme);
-      applyThemePreference(previousTheme, true);
-      setThemeError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setThemeSaving(false);
-    }
-  };
 
   return (
     <>
@@ -500,142 +445,40 @@ export default function LatestAssessmentPanel({
             </div>
 
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <button
-                type="button"
-                onClick={openScoreCard}
-                className="pointer-events-auto rounded-full"
-                aria-label="Open HealthSense menu"
-              >
+              <div className="rounded-full" aria-hidden="true">
                 <div className="relative">
                   <CombinedLogoRing value={combinedScore} />
                 </div>
-              </button>
+              </div>
             </div>
+          </div>
+          <div className="mt-5 space-y-3">
+            <button
+              type="button"
+              onClick={() => openDailyMenuSurface("habits")}
+              className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-white px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
+            >
+              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Option 1</span>
+              <span className="mt-2 text-base font-semibold text-[#1e1b16]">Habits for the day</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openDailyMenuSurface("insight")}
+              className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-white px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
+            >
+              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Option 2</span>
+              <span className="mt-2 text-base font-semibold text-[#1e1b16]">Insight of the day</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openDailyMenuSurface("ask")}
+              className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-white px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
+            >
+              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Option 3</span>
+              <span className="mt-2 text-base font-semibold text-[#1e1b16]">Gia&apos;s message of the day</span>
+            </button>
           </div>
         </section>
-      ) : null}
-
-      {scoreCardOpen ? (
-        <div className="fixed inset-0 z-40 flex items-stretch justify-center bg-black/30 sm:items-center sm:px-3 sm:py-3">
-          <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-sm flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
-            <div className="shrink-0 border-b border-[#efe7db] bg-white px-3 py-3 sm:px-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="flex items-center gap-1.5 text-base font-semibold text-[#1e1b16]">
-                    <LeadAssessmentBranding titleLines={[]} logoClassName="h-4 w-4" />
-                    <p>{`HealthSense score ${combinedScore}/100`}</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setScoreCardOpen(false)}
-                  className="shrink-0 rounded-full border border-[#e7e1d6] bg-white px-2.5 py-1.5 text-[10px] uppercase tracking-[0.16em] text-[#5d5348]"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-y-auto px-3 py-3 sm:px-5">
-              <div className="flex min-h-full flex-col">
-                <div className="pb-3 text-center">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">View today</p>
-                </div>
-                <div className="grid flex-1 content-center gap-3 sm:gap-4">
-                  <button
-                    type="button"
-                    onClick={() => openDailyMenuSurface("habits")}
-                    className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-[#fffaf3] px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
-                  >
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Option 1</span>
-                    <span className="mt-2 text-base font-semibold text-[#1e1b16]">Habits for the day</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openDailyMenuSurface("insight")}
-                    className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-[#fffaf3] px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
-                  >
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Option 2</span>
-                    <span className="mt-2 text-base font-semibold text-[#1e1b16]">Insight of the day</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => openDailyMenuSurface("ask")}
-                    className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-[#fffaf3] px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
-                  >
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Option 3</span>
-                    <span className="mt-2 text-base font-semibold text-[#1e1b16]">Gia&apos;s message of the day</span>
-                  </button>
-                </div>
-                {setupOpen ? (
-                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3">
-                    <p className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">Mode</p>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {[
-                        { key: "system", label: "Match device" },
-                        { key: "light", label: "Light" },
-                        { key: "dark", label: "Dark" },
-                      ].map((option) => {
-                        const active = themePreference === option.key;
-                        return (
-                          <button
-                            key={option.key}
-                            type="button"
-                            disabled={themeSaving}
-                            onClick={() => void saveThemePreference(option.key)}
-                            className={`rounded-full border px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.12em] ${
-                              active
-                                ? "border-[var(--accent)] bg-[var(--accent)] text-white"
-                                : "border-[#d9cdbb] bg-white text-[#5d5348]"
-                            } disabled:cursor-not-allowed disabled:opacity-60`}
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {themeError ? <p className="mt-2 text-xs text-[#8a3e1a]">{themeError}</p> : null}
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            <div className="shrink-0 border-t border-[#efe7db] px-3 py-3 sm:px-5">
-              {themeSaving ? <p className="mb-2 text-center text-[11px] text-[#6b6257]">Saving…</p> : null}
-              {themeError && !setupOpen ? <p className="mb-2 text-center text-xs text-[#8a3e1a]">{themeError}</p> : null}
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setSetupOpen((current) => !current)}
-                  className={`inline-flex items-center justify-center gap-2 rounded-full border px-4 py-2.5 text-center text-[11px] font-semibold uppercase tracking-[0.16em] ${
-                    setupOpen
-                      ? "border-[#d6c3ab] bg-[#f6ede3] text-[#5d472d]"
-                      : "border-[#d9cdbb] bg-white text-[#5d5348]"
-                  }`}
-                >
-                  <svg viewBox="0 0 24 24" className="h-3.5 w-3.5" aria-hidden="true">
-                    <path
-                      d="M12 8.5a3.5 3.5 0 1 0 0 7a3.5 3.5 0 0 0 0-7Zm8 3.5l-1.71-.57a6.76 6.76 0 0 0-.46-1.1l.82-1.6l-1.73-1.73l-1.6.82c-.35-.18-.72-.33-1.1-.46L13 4h-2l-.57 1.71c-.38.13-.75.28-1.1.46l-1.6-.82L5 7.08l.82 1.6c-.18.35-.33.72-.46 1.1L3.65 10v2l1.71.57c.13.38.28.75.46 1.1L5 15.27L6.73 17l1.6-.82c.35.18.72.33 1.1.46L11 18.35h2l.57-1.71c.38-.13.75-.28 1.1-.46l1.6.82l1.73-1.73l-.82-1.6c.18-.35.33-.72.46-1.1L20 14v-2Z"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.35"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                  Setup
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setScoreCardOpen(false)}
-                  className="w-full rounded-full border border-[#d9cdbb] bg-white px-4 py-2.5 text-center text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
       ) : null}
 
       {selectedPillarKey ? (

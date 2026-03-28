@@ -93,6 +93,7 @@ type AssessmentCompletionSummaryMedia = {
 };
 
 type HomeSurface = "tracking" | "habits" | "insight" | "ask";
+type HomeSurfaceEntryMode = "guided" | "summary";
 
 const HOME_SURFACE_SEQUENCE: HomeSurface[] = ["tracking", "habits", "insight", "ask"];
 const TRACKING_STEP_PILLARS = ["Nutrition", "Training", "Resilience", "Recovery"];
@@ -560,6 +561,7 @@ export default function AssessmentChatBox({
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
   const [homeSurface, setHomeSurface] = useState<HomeSurface>("tracking");
+  const [homeSurfaceEntryMode, setHomeSurfaceEntryMode] = useState<HomeSurfaceEntryMode>("guided");
   const [journeyCompleted, setJourneyCompleted] = useState(false);
   const [finalGiaMessage, setFinalGiaMessage] = useState<string | null>(null);
   const [finalGiaMessageLoading, setFinalGiaMessageLoading] = useState(false);
@@ -663,6 +665,11 @@ export default function AssessmentChatBox({
   }, [dailyHabitPlan?.habits, dailyHabitPlan?.options]);
   const currentHomeSurfaceIndex = HOME_SURFACE_SEQUENCE.indexOf(homeSurface);
   const homeSurfaceMeta = HOME_SURFACE_COPY[homeSurface];
+  const viewingHomeSurfaceFromSummary = homeSurfaceEntryMode === "summary";
+  const homeSurfaceEyebrow = viewingHomeSurfaceFromSummary ? "Daily view" : homeSurfaceMeta.eyebrow;
+  const homeSurfaceDescription = viewingHomeSurfaceFromSummary
+    ? "Review this, then return to your score screen when you are ready."
+    : homeSurfaceMeta.description;
   const previousHomeSurface =
     currentHomeSurfaceIndex > 0 ? HOME_SURFACE_SEQUENCE[currentHomeSurfaceIndex - 1] : null;
   const nextHomeSurface =
@@ -854,6 +861,7 @@ export default function AssessmentChatBox({
   useEffect(() => {
     if (!showGuidedHomeChatPanel) {
       setHomeSurface("tracking");
+      setHomeSurfaceEntryMode("guided");
     }
   }, [showGuidedHomeChatPanel, userId]);
 
@@ -884,22 +892,28 @@ export default function AssessmentChatBox({
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onSurfaceChange = (event: Event) => {
-      const detail = (event as CustomEvent<{ surface?: string }>).detail;
+      const detail = (event as CustomEvent<{ surface?: string; source?: string }>).detail;
       const surface = String(detail?.surface || "").trim().toLowerCase();
+      const source = String(detail?.source || "").trim().toLowerCase();
+      const entryMode: HomeSurfaceEntryMode = source === "summary" ? "summary" : "guided";
       setJourneyCompleted(false);
       if (surface === "tracking") {
+        setHomeSurfaceEntryMode(entryMode);
         setHomeSurface("tracking");
         return;
       }
       if (surface === "insight") {
+        setHomeSurfaceEntryMode(entryMode);
         setHomeSurface("insight");
         return;
       }
       if (surface === "habits") {
+        setHomeSurfaceEntryMode(entryMode);
         setHomeSurface("habits");
         return;
       }
       if (surface === "ask") {
+        setHomeSurfaceEntryMode(entryMode);
         setHomeSurface("ask");
       }
     };
@@ -1682,10 +1696,10 @@ export default function AssessmentChatBox({
       <div className={`flex ${homePanelHeightClass} flex-col`}>
         <div className="shrink-0 border-b border-[#efe7db] bg-[#fffaf3] px-4 py-4 sm:px-5">
           <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6b6257]">
-            {homeSurfaceMeta.eyebrow}
+            {homeSurfaceEyebrow}
           </p>
           <p className="mt-1 text-lg font-semibold text-[#1e1b16]">{homeSurfaceMeta.title}</p>
-          <p className="mt-1 text-sm text-[#6b6257]">{homeSurfaceMeta.description}</p>
+          <p className="mt-1 text-sm text-[#6b6257]">{homeSurfaceDescription}</p>
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 sm:px-5">
           {homeSurface === "tracking" ? (
@@ -1857,40 +1871,52 @@ export default function AssessmentChatBox({
           )}
         </div>
         <div className="border-t border-[#efe7db] px-4 py-3 sm:px-5">
-          <div className="flex items-center justify-between gap-2">
-            <div className="text-[11px] uppercase tracking-[0.16em] text-[#8c7f70]">
-              {`${currentHomeSurfaceIndex + 1} of ${HOME_SURFACE_SEQUENCE.length}`}
+          {viewingHomeSurfaceFromSummary ? (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setJourneyCompleted(true)}
+                className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
+              >
+                Back to scores
+              </button>
             </div>
-            <div className="flex gap-2">
-              {previousHomeSurface ? (
-                <button
-                  type="button"
-                  onClick={() => setHomeSurface(previousHomeSurface)}
-                  className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
-                >
-                  Back
-                </button>
-              ) : null}
-              {nextHomeSurface && homeSurfaceMeta.nextLabel ? (
-                <button
-                  type="button"
-                  onClick={() => setHomeSurface(nextHomeSurface)}
-                  className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white"
-                >
-                  {homeSurfaceMeta.nextLabel}
-                </button>
-              ) : homeSurface === "ask" ? (
-                <button
-                  type="button"
-                  onClick={() => setJourneyCompleted(true)}
-                  disabled={finalGiaMessageLoading || !finalGiaMessage}
-                  className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  Completed
-                </button>
-              ) : null}
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-[#8c7f70]">
+                {`${currentHomeSurfaceIndex + 1} of ${HOME_SURFACE_SEQUENCE.length}`}
+              </div>
+              <div className="flex gap-2">
+                {previousHomeSurface ? (
+                  <button
+                    type="button"
+                    onClick={() => setHomeSurface(previousHomeSurface)}
+                    className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
+                  >
+                    Back
+                  </button>
+                ) : null}
+                {nextHomeSurface && homeSurfaceMeta.nextLabel ? (
+                  <button
+                    type="button"
+                    onClick={() => setHomeSurface(nextHomeSurface)}
+                    className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white"
+                  >
+                    {homeSurfaceMeta.nextLabel}
+                  </button>
+                ) : homeSurface === "ask" ? (
+                  <button
+                    type="button"
+                    onClick={() => setJourneyCompleted(true)}
+                    disabled={finalGiaMessageLoading || !finalGiaMessage}
+                    className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    Completed
+                  </button>
+                ) : null}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
     </section>
