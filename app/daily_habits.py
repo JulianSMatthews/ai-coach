@@ -373,6 +373,14 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
     }
 
 
+def build_daily_tracker_generation_context(
+    user_id: int,
+    *,
+    selected_concept_key: str | None = None,
+) -> dict[str, Any]:
+    return _build_generation_context(user_id, selected_concept_key=selected_concept_key)
+
+
 def _context_hash(context: dict[str, Any]) -> str:
     payload = json.dumps(context, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()

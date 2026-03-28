@@ -11,6 +11,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
+from .daily_habits import build_daily_tracker_generation_context
 from .models import User, UserPreference, WeeklyFocus, AssessmentRun
 from .coaching_delivery import send_coaching_text
 from .programme_timeline import week_no_for_focus_start
@@ -165,6 +166,83 @@ def _resolve_week_no(session: Session, user_id: int, state_week_no: int | None) 
     return _infer_week_no(session, user_id, wf)
 
 
+def _safe_int(value) -> int | None:
+    try:
+        if value is None:
+            return None
+        return int(round(float(value)))
+    except Exception:
+        return None
+
+
+def _combined_score(pillar_scores: list[dict]) -> int | None:
+    values = [
+        _safe_int(item.get("score"))
+        for item in (pillar_scores or [])
+        if isinstance(item, dict)
+    ]
+    values = [value for value in values if value is not None]
+    if not values:
+        return None
+    return int(round(sum(values) / max(len(values), 1)))
+
+
+def _tracker_history_lines(tracker_context: dict) -> list[str]:
+    lines: list[str] = []
+    selected_focus = tracker_context.get("selected_focus_concept") or {}
+    focus_concepts = tracker_context.get("focus_concepts") or []
+    okr_context = tracker_context.get("okr_context") or {}
+    if selected_focus:
+        label = str(selected_focus.get("label") or selected_focus.get("concept_key") or "").strip()
+        signal = str(selected_focus.get("signal") or "").strip()
+        latest = str(selected_focus.get("latest_value") or "").strip()
+        target = str(selected_focus.get("target_label") or "").strip()
+        pillar = str(selected_focus.get("pillar_label") or selected_focus.get("pillar_key") or "").strip()
+        score = _safe_int(selected_focus.get("score"))
+        if label:
+            bits = []
+            if pillar:
+                bits.append(f"pillar={pillar}")
+            if signal:
+                bits.append(f"signal={signal}")
+            if latest:
+                bits.append(f"latest={latest}")
+            if target:
+                bits.append(f"target={target}")
+            if score is not None:
+                bits.append(f"score={score}/100")
+            suffix = f" ({'; '.join(bits)})" if bits else ""
+            lines.append(f"Selected tracker focus: {label}{suffix}")
+    if focus_concepts:
+        lines.append("Recent tracker focus:")
+        for item in focus_concepts[:4]:
+            if not isinstance(item, dict):
+                continue
+            label = str(item.get("label") or item.get("concept_key") or "").strip()
+            if not label:
+                continue
+            signal = str(item.get("signal") or "").strip()
+            latest = str(item.get("latest_value") or "").strip()
+            target = str(item.get("target_label") or "").strip()
+            score = _safe_int(item.get("score"))
+            bits = [signal] if signal else []
+            if latest:
+                bits.append(f"latest={latest}")
+            if target:
+                bits.append(target)
+            if score is not None:
+                bits.append(f"score={score}/100")
+            suffix = f" ({'; '.join(bits)})" if bits else ""
+            lines.append(f"- {label}{suffix}")
+    if (okr_context or {}).get("habit_steps"):
+        lines.append("Active KR habit steps:")
+        for step in (okr_context.get("habit_steps") or [])[:5]:
+            step_text = str(step or "").strip()
+            if step_text:
+                lines.append(f"- {step_text}")
+    return lines
+
+
 def _support_prompt(
     user: User,
     history: list[dict],
@@ -186,6 +264,20 @@ def _support_prompt(
         extras_parts.append(f"flow={source}")
     if week_no:
         extras_parts.append(f"week_no={week_no}")
+    tracker_context = build_daily_tracker_generation_context(int(user.id))
+    pillar_scores = tracker_context.get("pillar_scores") or []
+    combined_score = _combined_score(pillar_scores)
+    plan_date = str(tracker_context.get("plan_date") or "").strip()
+    if plan_date:
+        extras_parts.append(f"tracker_date={plan_date}")
+    selected_focus = tracker_context.get("selected_focus_concept") or {}
+    if selected_focus:
+        focus_label = str(selected_focus.get("label") or selected_focus.get("concept_key") or "").strip()
+        focus_signal = str(selected_focus.get("signal") or "").strip()
+        if focus_label:
+            extras_parts.append(f"tracker_focus={focus_label}")
+        if focus_signal:
+            extras_parts.append(f"tracker_signal={focus_signal}")
     extras = "; ".join(extras_parts)
     timeframe = f"Week {week_no}" if week_no else "current week"
 
@@ -199,6 +291,11 @@ def _support_prompt(
         week_no=week_no,
         timeframe=timeframe,
         extras=extras,
+        source=source,
+        scores=pillar_scores,
+        combined_score=combined_score,
+        tracker_context=tracker_context,
+        tracker_history=_tracker_history_lines(tracker_context),
     )
 
 

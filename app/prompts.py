@@ -1433,6 +1433,7 @@ def build_prompt(
         history = "\n".join(data.get("history", []))
         scores_payload = data.get("scores") or []
         psych_payload = data.get("psych_payload") or {}
+        tracker_history = data.get("tracker_history") or []
         okr_scope = (template or {}).get("okr_scope") or "week"
         payload = kr_payload_list(user_id, max_krs=3)
         primary = payload[0] if payload else None
@@ -1446,20 +1447,40 @@ def build_prompt(
         okr_txt, okr_meta = okr_block_with_scope(okr_scope, krs)
         timeframe = data.get("timeframe", "")
         extras = data.get("extras", "")
+        source = str(data.get("source") or "").strip().lower()
+        history_lines: List[str] = []
+        if tracker_history:
+            history_lines.extend(str(item or "").strip() for item in tracker_history if str(item or "").strip())
+        if history:
+            history_lines.extend(history.splitlines())
         parts: List[tuple[str, str]] = [
             ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
             ("locale", settings.get("locale_block") or locale_block(locale)),
-            ("context", context_block("general_support", "open coaching support", timeframe=timeframe, extras=extras)),
+            (
+                "context",
+                context_block(
+                    "general_support",
+                    "open coaching support based on the latest daily tracker results",
+                    timeframe=timeframe,
+                    channel="App" if source.startswith("app") else "WhatsApp",
+                    extras=extras,
+                ),
+            ),
             ("okr", okr_txt),
-            ("scores", scores_block(scores_payload) if scores_payload else ""),
+            ("scores", scores_block(scores_payload, combined=data.get("combined_score")) if scores_payload else ""),
             ("habit", habit_readiness_block(psych_payload) if psych_payload else ""),
-            ("history", history_block("conversation", history.splitlines()) if history else ""),
+            ("history", history_block("latest tracker context and conversation", history_lines) if history_lines else ""),
             (
                 "task",
                 task_block(
-                    "Reply with a brief acknowledgement, one practical next step tied to their current habits or goals, "
-                    "and one short follow-up question.",
-                    constraints="Keep it concise (2-4 short sentences), warm, calm, supportive. Avoid OKR/KR jargon; do not introduce new goals unless asked.",
+                    "Reply with a brief coaching message grounded in the latest daily tracker results. "
+                    "Reference the most relevant tracker pattern for today or yesterday, give one practical next step tied to that result, "
+                    "and end with one short follow-up question.",
+                    constraints=(
+                        "Keep it concise (2-4 short sentences), warm, calm, supportive. "
+                        "Base the reply on the tracker context when it is available; do not give a generic encouragement message. "
+                        "Use plain language, avoid OKR/KR jargon, and do not introduce new goals unless asked."
+                    ),
                 ),
             ),
         ]
