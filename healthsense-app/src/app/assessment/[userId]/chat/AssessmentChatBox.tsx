@@ -564,9 +564,6 @@ export default function AssessmentChatBox({
   const [finalGiaMessage, setFinalGiaMessage] = useState<string | null>(null);
   const [finalGiaMessageLoading, setFinalGiaMessageLoading] = useState(false);
   const [finalGiaMessageError, setFinalGiaMessageError] = useState<string | null>(null);
-  const [finalGiaVideoPhase, setFinalGiaVideoPhase] = useState<
-    "idle" | "preparing" | "playing" | "completed" | "failed" | "stopped" | "timeout"
-  >("idle");
   const [dailyHabitPlan, setDailyHabitPlan] = useState<DailyHabitPlanResponse | null>(null);
   const [dailyHabitPlanLoading, setDailyHabitPlanLoading] = useState(false);
   const [dailyHabitPlanError, setDailyHabitPlanError] = useState<string | null>(null);
@@ -820,7 +817,6 @@ export default function AssessmentChatBox({
     finalGiaRequestIdRef.current = requestId;
     setFinalGiaMessageLoading(true);
     setFinalGiaMessageError(null);
-    setFinalGiaVideoPhase("idle");
     setStatus(null);
     try {
       const res = await fetch("/api/assessment/chat/tracker-summary", {
@@ -877,7 +873,6 @@ export default function AssessmentChatBox({
     setFinalGiaMessage(null);
     setFinalGiaMessageError(null);
     setFinalGiaMessageLoading(false);
-    setFinalGiaVideoPhase("idle");
     setDailyHabitPlan(null);
     setDailyHabitPlanError(null);
     setDailyHabitPlanLoading(false);
@@ -949,7 +944,6 @@ export default function AssessmentChatBox({
       setFinalGiaMessage(null);
       setFinalGiaMessageError(null);
       setFinalGiaMessageLoading(false);
-      setFinalGiaVideoPhase("idle");
       setJourneyCompleted(false);
       if (showGuidedHomeChatPanel) {
         void loadDailyHabitPlan();
@@ -1835,31 +1829,11 @@ export default function AssessmentChatBox({
                     </p>
                   </div>
                 ) : finalGiaMessage ? (
-                  <div className="space-y-4">
-                    <RealtimeSummaryAvatar
-                      userId={userId}
-                      text={finalGiaMessage}
-                      audioUrl={null}
-                      autoStart
-                      introMessage="Gia is turning today's message into a live video..."
-                      sessionRequestPath="/api/assessment/gia-message-avatar/realtime-session"
-                      completeRequestPath="/api/assessment/gia-message-avatar/realtime-complete"
-                      sessionRequestBody={{ userId, text: finalGiaMessage }}
-                      completeRequestBody={{ userId }}
-                      persistPlayback={false}
-                      showReadAction={false}
-                      showListenAction={false}
-                      showStopAction={false}
-                      onPhaseChange={setFinalGiaVideoPhase}
-                    />
-                    {(finalGiaVideoPhase === "failed" || finalGiaVideoPhase === "timeout") && finalGiaMessage ? (
-                      <div className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5 sm:px-5 sm:py-6">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--accent)]">Gia</p>
-                        <p className="mt-3 whitespace-pre-wrap text-[21px] leading-8 text-[#3c332b] sm:text-[24px] sm:leading-9">
-                          {finalGiaMessage}
-                        </p>
-                      </div>
-                    ) : null}
+                  <div className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5 sm:px-5 sm:py-6">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--accent)]">Gia</p>
+                    <p className="mt-3 whitespace-pre-wrap text-[21px] leading-8 text-[#3c332b] sm:text-[24px] sm:leading-9">
+                      {finalGiaMessage}
+                    </p>
                   </div>
                 ) : (
                   <div className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
