@@ -38,6 +38,15 @@ def _has_coach_prefix(text: str | None) -> bool:
     return any(raw.startswith(prefix) for prefix in _coach_message_prefixes())
 
 
+def _strip_coach_prefix(text: str | None) -> str:
+    raw = (text or "").strip()
+    lowered = raw.lower()
+    for prefix in _coach_message_prefixes():
+        if lowered.startswith(prefix):
+            return raw[len(prefix):].lstrip(" \n\t:-").strip()
+    return raw
+
+
 def _get_state(session: Session, user_id: int) -> Optional[dict]:
     pref = (
         session.query(UserPreference)
@@ -299,6 +308,63 @@ def _support_prompt(
     )
 
 
+def _generate_support_reply(
+    user: User,
+    *,
+    history: list[dict],
+    user_message: str | None,
+    week_no: int | None,
+    source: str | None,
+    include_prefix: bool = True,
+) -> str:
+    prompt_assembly = _support_prompt(user, history, user_message, week_no, source)
+
+    print(f"[prompts] logging LLM prompt touchpoint=general_support user_id={user.id}")
+    candidate = run_llm_prompt(
+        prompt_assembly.text,
+        user_id=user.id,
+        touchpoint="general_support",
+        context_meta={"source": source, "week_no": week_no},
+        prompt_variant=prompt_assembly.variant,
+        task_label=prompt_assembly.task_label,
+        prompt_blocks={**prompt_assembly.blocks, **(prompt_assembly.meta or {})},
+        block_order=prompt_assembly.block_order,
+        log=True,
+    )
+
+    text_out = candidate.strip() if candidate else ""
+    if not text_out:
+        text_out = "Sorry - I couldn't pull that response just now. Please try again."
+    if include_prefix:
+        if not _has_coach_prefix(text_out):
+            text_out = f"{_coach_message_prefix()} {text_out}"
+    else:
+        text_out = _strip_coach_prefix(text_out)
+    return text_out
+
+
+def generate_tracker_summary_message(
+    user: User,
+    *,
+    source: str = "app_tracker_summary",
+    include_prefix: bool = False,
+    user_message: str | None = None,
+) -> str:
+    with SessionLocal() as s:
+        state = _get_state(s, int(user.id)) or {}
+        history = list(state.get("history") or [])[-12:]
+        week_no = _resolve_week_no(s, int(user.id), state.get("week_no"))
+        resolved_source = str(source or state.get("source") or "app_tracker_summary").strip() or "app_tracker_summary"
+    return _generate_support_reply(
+        user,
+        history=history,
+        user_message=user_message or "Please give me today's coaching message based on my latest tracker results.",
+        week_no=week_no,
+        source=resolved_source,
+        include_prefix=include_prefix,
+    )
+
+
 def handle_message(user: User, text: str) -> None:
     msg = (text or "").strip()
     if not msg:
@@ -323,28 +389,14 @@ def handle_message(user: User, text: str) -> None:
             s.commit()
             return
 
-    prompt_assembly = _support_prompt(user, history, msg, week_no, source)
-
-    print(f"[prompts] logging LLM prompt touchpoint=general_support user_id={user.id}")
-    candidate = run_llm_prompt(
-        prompt_assembly.text,
-        user_id=user.id,
-        touchpoint="general_support",
-        context_meta={"source": source, "week_no": week_no},
-        prompt_variant=prompt_assembly.variant,
-        task_label=prompt_assembly.task_label,
-        prompt_blocks={**prompt_assembly.blocks, **(prompt_assembly.meta or {})},
-        block_order=prompt_assembly.block_order,
-        log=True,
+    text_out = _generate_support_reply(
+        user,
+        history=history,
+        user_message=msg,
+        week_no=week_no,
+        source=source,
+        include_prefix=True,
     )
-
-    text_out = None
-    if candidate:
-        text_out = candidate.strip()
-    if not text_out:
-        text_out = "Sorry - I couldn't pull that response just now. Please try again."
-    if not _has_coach_prefix(text_out):
-        text_out = f"{_coach_message_prefix()} {text_out}"
 
     new_history = list(history)
     new_history.append({"role": "user", "content": msg})

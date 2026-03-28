@@ -6744,6 +6744,35 @@ def api_user_assessment_chat_send(
     }
 
 
+@api_v1.post("/users/{user_id}/assessment/chat/tracker-summary")
+def api_user_assessment_chat_tracker_summary(
+    user_id: int,
+    request: Request,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    user = _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    if not _general_support_ready_for_user(user):
+        raise HTTPException(status_code=409, detail="Gia's coaching message is not available yet.")
+    try:
+        text_out = general_support.generate_tracker_summary_message(
+            user,
+            source="app_tracker_summary",
+            include_prefix=False,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    if not text_out:
+        raise HTTPException(status_code=502, detail="Gia's coaching message is not available right now.")
+    return {
+        "ok": True,
+        "user_id": int(user.id),
+        "text": text_out,
+    }
+
+
 @api_v1.post("/users/{user_id}/assessment/chat/claim-identity")
 def api_user_assessment_chat_claim_identity(
     user_id: int,
@@ -7137,6 +7166,81 @@ def _build_assessment_summary_realtime_session_payload(user_id: int, run_id: int
     }
 
 
+def _build_realtime_avatar_session_payload(
+    *,
+    script: str,
+    session_id_prefix: str,
+    character: str | None = None,
+    style: str | None = None,
+    voice: str | None = None,
+    payload_extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    if not azure_summary_realtime_enabled():
+        raise HTTPException(status_code=503, detail="Realtime summary avatar is not enabled.")
+    summary_text = str(script or "").strip()
+    if not summary_text:
+        raise HTTPException(status_code=409, detail="Gia's coaching message is not available right now.")
+    try:
+        bootstrap = build_realtime_avatar_session_bootstrap(
+            script=summary_text,
+            character=character,
+            style=style,
+            voice=voice,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+    payload = {
+        "ok": True,
+        "session_id": f"{session_id_prefix}-{secrets.token_hex(6)}",
+        "summary_text": summary_text,
+        "audio_url": None,
+        **bootstrap,
+    }
+    if isinstance(payload_extra, dict):
+        payload.update(payload_extra)
+    return payload
+
+
+def _build_daily_tracker_summary_realtime_session_payload(
+    user_id: int,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    body = dict(payload or {})
+    with SessionLocal() as s:
+        user = s.execute(select(User).where(User.id == int(user_id))).scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="user not found")
+    if not _general_support_ready_for_user(user):
+        raise HTTPException(status_code=409, detail="Gia's coaching message is not available yet.")
+    requested_text = str(body.get("text") or "").strip()
+    summary_text = requested_text
+    if not summary_text:
+        try:
+            summary_text = general_support.generate_tracker_summary_message(
+                user,
+                source="app_tracker_summary",
+                include_prefix=False,
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=str(exc))
+    defaults = azure_avatar_defaults()
+    return _build_realtime_avatar_session_payload(
+        script=summary_text,
+        session_id_prefix=f"gia-daily-rt-{int(user_id)}",
+        character=str(defaults.get("character") or "lisa"),
+        style=str(defaults.get("style") or "graceful-sitting"),
+        voice=str(defaults.get("voice") or "en-GB-SoniaNeural"),
+        payload_extra={
+            "user_id": int(user_id),
+            "message_text": summary_text,
+        },
+    )
+
+
 def _record_assessment_summary_realtime_completion(
     user_id: int,
     payload: dict[str, Any] | None = None,
@@ -7228,6 +7332,69 @@ def _record_assessment_summary_realtime_completion(
     }
 
 
+def _record_daily_tracker_summary_realtime_completion(
+    user_id: int,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    body = dict(payload or {})
+    session_id = str(body.get("session_id") or "").strip()
+    if not session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+    try:
+        duration_ms = int(float(body.get("duration_ms") or 0))
+    except Exception:
+        duration_ms = 0
+    settings = azure_summary_realtime_settings()
+    max_duration_ms = max(1, int(settings.get("max_session_seconds") or 70)) * 1000
+    duration_ms = max(0, min(duration_ms, max_duration_ms))
+    status_value = str(body.get("status") or "completed").strip().lower() or "completed"
+    if status_value not in {"completed", "failed", "stopped", "timeout"}:
+        status_value = "completed"
+    error_value = str(body.get("error") or "").strip() or None
+    seconds_used = duration_ms / 1000.0
+    cost_estimate, _rate_per_minute, _rate_source = estimate_avatar_cost_from_seconds(seconds_used)
+
+    with SessionLocal() as s:
+        existing = (
+            s.execute(
+                select(UsageEvent).where(
+                    UsageEvent.product == "avatar",
+                    UsageEvent.request_id == session_id,
+                )
+            ).scalar_one_or_none()
+        )
+        if not existing:
+            log_usage_event(
+                user_id=user_id,
+                provider="azure",
+                product="avatar",
+                model="realtime_tracker_summary",
+                units=seconds_used,
+                unit_type="avatar_seconds",
+                cost_estimate=cost_estimate,
+                request_id=session_id,
+                duration_ms=duration_ms,
+                tag="daily_tracker_summary",
+                meta={
+                    "mode": "realtime_tracker_summary",
+                    "status": status_value,
+                    "error": error_value,
+                },
+                session=s,
+                commit=False,
+            )
+            s.commit()
+
+    return {
+        "ok": True,
+        "user_id": int(user_id),
+        "session_id": session_id,
+        "duration_ms": duration_ms,
+        "cost_estimate_gbp": round(float(cost_estimate or 0.0), 4),
+        "status": status_value.title(),
+    }
+
+
 @api_v1.post("/users/{user_id}/assessment/summary-avatar/realtime-session")
 def api_user_assessment_summary_realtime_session(
     user_id: int,
@@ -7278,6 +7445,30 @@ def api_public_user_assessment_summary_realtime_complete(
     body: dict[str, Any] | None = Body(default=None),
 ):
     return _record_assessment_summary_realtime_completion(user_id, body or {})
+
+
+@api_v1.post("/users/{user_id}/assessment/gia-message-avatar/realtime-session")
+def api_user_assessment_gia_message_realtime_session(
+    user_id: int,
+    request: Request,
+    body: dict[str, Any] | None = Body(default=None),
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    return _build_daily_tracker_summary_realtime_session_payload(user_id, body or {})
+
+
+@api_v1.post("/users/{user_id}/assessment/gia-message-avatar/realtime-complete")
+def api_user_assessment_gia_message_realtime_complete(
+    user_id: int,
+    request: Request,
+    body: dict[str, Any] | None = Body(default=None),
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    return _record_daily_tracker_summary_realtime_completion(user_id, body or {})
 
 
 @api_v1.get("/users/{user_id}/progress")

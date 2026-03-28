@@ -7,6 +7,8 @@ type RealtimeSessionResponse = {
   speech_token?: string;
   speech_region?: string;
   ssml?: string;
+  summary_text?: string;
+  audio_url?: string;
   relay?: {
     urls?: string[];
     username?: string;
@@ -27,13 +29,22 @@ type RealtimeSessionResponse = {
 
 type RealtimeSummaryAvatarProps = {
   userId: string;
-  runId: number;
+  runId?: number | null;
   text: string | null;
   audioUrl: string | null;
   maxSessionSeconds?: number | null;
   maxReplays?: number | null;
   autoStart?: boolean;
   introMessage?: string | null;
+  sessionRequestPath?: string;
+  completeRequestPath?: string;
+  sessionRequestBody?: Record<string, unknown>;
+  completeRequestBody?: Record<string, unknown>;
+  playbackStorageKey?: string | null;
+  persistPlayback?: boolean;
+  showReadAction?: boolean;
+  showListenAction?: boolean;
+  showStopAction?: boolean;
   onPhaseChange?: (phase: "idle" | "preparing" | "playing" | "completed" | "failed" | "stopped" | "timeout") => void;
 };
 
@@ -50,12 +61,21 @@ function parseApiError(text: string, fallback: string) {
 
 export default function RealtimeSummaryAvatar({
   userId,
-  runId,
+  runId = null,
   text,
   audioUrl,
   maxSessionSeconds,
   autoStart = false,
   introMessage = null,
+  sessionRequestPath = "/api/assessment/summary-avatar/realtime-session",
+  completeRequestPath = "/api/assessment/summary-avatar/realtime-complete",
+  sessionRequestBody,
+  completeRequestBody,
+  playbackStorageKey = null,
+  persistPlayback = true,
+  showReadAction = true,
+  showListenAction = true,
+  showStopAction = true,
   onPhaseChange,
 }: RealtimeSummaryAvatarProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -67,7 +87,9 @@ export default function RealtimeSummaryAvatar({
   const startedAtRef = useRef<number | null>(null);
   const finalizingRef = useRef(false);
   const autoStartedRef = useRef(false);
-  const playbackStorageKeyRef = useRef<string>(`hs:assessment-summary-video:${userId}:${runId}`);
+  const playbackStorageKeyRef = useRef<string | null>(
+    playbackStorageKey ?? (runId ? `hs:assessment-summary-video:${userId}:${runId}` : null),
+  );
 
   const [starting, setStarting] = useState(false);
   const [playing, setPlaying] = useState(false);
@@ -75,11 +97,15 @@ export default function RealtimeSummaryAvatar({
   const [error, setError] = useState<string | null>(null);
   const [alreadyPlayed, setAlreadyPlayed] = useState(false);
   const [detailMode, setDetailMode] = useState<"read" | "listen" | null>(null);
+  const [resolvedText, setResolvedText] = useState<string | null>(text);
+  const [resolvedAudioUrl, setResolvedAudioUrl] = useState<string | null>(audioUrl);
   const [phase, setPhase] = useState<"idle" | "preparing" | "playing" | "completed" | "failed" | "stopped" | "timeout">(
     "idle",
   );
 
-  const canStart = Boolean(text) && !starting && !playing && !alreadyPlayed;
+  const effectiveText = resolvedText ?? text;
+  const effectiveAudioUrl = resolvedAudioUrl ?? audioUrl;
+  const canStart = !starting && !playing && !alreadyPlayed;
 
   useEffect(() => {
     onPhaseChange?.(phase);
@@ -164,12 +190,14 @@ export default function RealtimeSummaryAvatar({
         await cleanupMedia();
       } finally {
         if (sessionId) {
-          void fetch("/api/assessment/summary-avatar/realtime-complete", {
+          void fetch(completeRequestPath, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              userId,
-              run_id: runId,
+              ...(completeRequestBody ?? {
+                userId,
+                run_id: runId,
+              }),
               session_id: sessionId,
               duration_ms: durationMs,
               status: finalStatus,
@@ -181,7 +209,7 @@ export default function RealtimeSummaryAvatar({
         finalizingRef.current = false;
       }
     },
-    [cleanupMedia, runId, userId],
+    [cleanupMedia, completeRequestBody, completeRequestPath, runId, userId],
   );
 
   useEffect(() => {
@@ -191,9 +219,10 @@ export default function RealtimeSummaryAvatar({
   }, [finalizeSession]);
 
   const startRealtimeAvatar = useCallback(async () => {
-    if (!text || !canStart) return;
+    if (!canStart) return;
     if (typeof window === "undefined" || typeof window.RTCPeerConnection === "undefined") {
       setError("Realtime video is not supported in this browser.");
+      setPhase("failed");
       return;
     }
 
@@ -203,10 +232,15 @@ export default function RealtimeSummaryAvatar({
       setStatusText(introMessage ? introMessage : null);
 
     try {
-      const response = await fetch("/api/assessment/summary-avatar/realtime-session", {
+      const response = await fetch(sessionRequestPath, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, runId }),
+        body: JSON.stringify(
+          sessionRequestBody ?? {
+            userId,
+            runId,
+          },
+        ),
       });
       const rawText = await response.text().catch(() => "");
       if (!response.ok) {
@@ -216,6 +250,8 @@ export default function RealtimeSummaryAvatar({
       const speechToken = String(payload.speech_token || "").trim();
       const speechRegion = String(payload.speech_region || "").trim();
       const ssml = String(payload.ssml || "").trim();
+      const nextSummaryText = String(payload.summary_text || "").trim();
+      const nextAudioUrl = String(payload.audio_url || "").trim();
       const relayUrls = Array.isArray(payload.relay?.urls)
         ? payload.relay?.urls.filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
         : [];
@@ -229,6 +265,12 @@ export default function RealtimeSummaryAvatar({
         15,
         Number(payload.session?.max_session_seconds || maxSessionSeconds || 70),
       );
+      if (nextSummaryText) {
+        setResolvedText(nextSummaryText);
+      }
+      if (nextAudioUrl) {
+        setResolvedAudioUrl(nextAudioUrl);
+      }
 
       if (!speechToken || !speechRegion || !ssml || !relayUrls.length || !relayUsername || !relayPassword) {
         throw new Error("Realtime summary video returned incomplete Azure session details.");
@@ -279,7 +321,7 @@ export default function RealtimeSummaryAvatar({
         throw new Error(startResult.errorDetails || "Azure realtime avatar connection failed.");
       }
 
-      if (typeof window !== "undefined") {
+      if (persistPlayback && typeof window !== "undefined" && playbackStorageKeyRef.current) {
         try {
           window.localStorage.setItem(playbackStorageKeyRef.current, "1");
         } catch {
@@ -308,18 +350,29 @@ export default function RealtimeSummaryAvatar({
       setStatusText(null);
       await finalizeSession("failed", message);
     }
-  }, [canStart, finalizeSession, introMessage, maxSessionSeconds, runId, syncVideoElement, text, userId]);
+  }, [
+    canStart,
+    finalizeSession,
+    introMessage,
+    maxSessionSeconds,
+    persistPlayback,
+    runId,
+    sessionRequestBody,
+    sessionRequestPath,
+    syncVideoElement,
+    userId,
+  ]);
 
   useEffect(() => {
-    if (!autoStart || autoStartedRef.current || !text || !canStart) return;
+    if (!autoStart || autoStartedRef.current || !canStart) return;
     autoStartedRef.current = true;
     void startRealtimeAvatar();
-  }, [autoStart, canStart, startRealtimeAvatar, text]);
+  }, [autoStart, canStart, startRealtimeAvatar]);
 
   useEffect(() => {
-    playbackStorageKeyRef.current = `hs:assessment-summary-video:${userId}:${runId}`;
+    playbackStorageKeyRef.current = playbackStorageKey ?? (runId ? `hs:assessment-summary-video:${userId}:${runId}` : null);
     let played = false;
-    if (typeof window !== "undefined") {
+    if (persistPlayback && playbackStorageKeyRef.current && typeof window !== "undefined") {
       try {
         played = window.localStorage.getItem(playbackStorageKeyRef.current) === "1";
       } catch {
@@ -334,10 +387,14 @@ export default function RealtimeSummaryAvatar({
     setStarting(false);
     setAlreadyPlayed(played);
     setDetailMode(null);
-  }, [runId, userId]);
+    setResolvedText(text);
+    setResolvedAudioUrl(audioUrl);
+  }, [audioUrl, persistPlayback, playbackStorageKey, runId, text, userId]);
 
   const showVideoSurface = playing;
-  const showSummaryActions = phase !== "preparing" && (Boolean(audioUrl) || Boolean(text));
+  const showSummaryActions =
+    phase !== "preparing" &&
+    ((showReadAction && Boolean(effectiveText)) || (showListenAction && Boolean(effectiveAudioUrl)));
 
   useEffect(() => {
     if (!showVideoSurface) return;
@@ -353,7 +410,7 @@ export default function RealtimeSummaryAvatar({
           </div>
         ) : null}
         <div className="flex flex-wrap items-center gap-2">
-          {playing ? (
+          {showStopAction && playing ? (
             <button
               type="button"
               onClick={() => void finalizeSession("stopped")}
@@ -362,7 +419,7 @@ export default function RealtimeSummaryAvatar({
               Stop video
             </button>
           ) : null}
-          {showSummaryActions && text ? (
+          {showSummaryActions && showReadAction && effectiveText ? (
             <button
               type="button"
               onClick={() => setDetailMode((current) => (current === "read" ? null : "read"))}
@@ -371,7 +428,7 @@ export default function RealtimeSummaryAvatar({
               {detailMode === "read" ? "Hide read" : "Read"}
             </button>
           ) : null}
-          {showSummaryActions && audioUrl ? (
+          {showSummaryActions && showListenAction && effectiveAudioUrl ? (
             <button
               type="button"
               onClick={() => setDetailMode((current) => (current === "listen" ? null : "listen"))}
@@ -388,15 +445,15 @@ export default function RealtimeSummaryAvatar({
 
       {showSummaryActions ? (
         <div className="space-y-2">
-          {detailMode === "listen" && audioUrl ? (
+          {detailMode === "listen" && effectiveAudioUrl ? (
             <audio className="w-full" controls preload="metadata">
-              <source src={audioUrl} type="audio/mpeg" />
+              <source src={effectiveAudioUrl} type="audio/mpeg" />
             </audio>
           ) : null}
 
-          {detailMode === "read" && text ? (
+          {detailMode === "read" && effectiveText ? (
             <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3">
-              <p className="text-sm leading-6 text-[#3c332b]">{text}</p>
+              <p className="text-sm leading-6 text-[#3c332b]">{effectiveText}</p>
             </div>
           ) : null}
         </div>

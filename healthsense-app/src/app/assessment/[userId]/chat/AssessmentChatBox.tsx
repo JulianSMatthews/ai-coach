@@ -564,6 +564,9 @@ export default function AssessmentChatBox({
   const [finalGiaMessage, setFinalGiaMessage] = useState<string | null>(null);
   const [finalGiaMessageLoading, setFinalGiaMessageLoading] = useState(false);
   const [finalGiaMessageError, setFinalGiaMessageError] = useState<string | null>(null);
+  const [finalGiaVideoPhase, setFinalGiaVideoPhase] = useState<
+    "idle" | "preparing" | "playing" | "completed" | "failed" | "stopped" | "timeout"
+  >("idle");
   const [dailyHabitPlan, setDailyHabitPlan] = useState<DailyHabitPlanResponse | null>(null);
   const [dailyHabitPlanLoading, setDailyHabitPlanLoading] = useState(false);
   const [dailyHabitPlanError, setDailyHabitPlanError] = useState<string | null>(null);
@@ -815,52 +818,29 @@ export default function AssessmentChatBox({
   const requestFinalGiaMessage = useCallback(async () => {
     const requestId = finalGiaRequestIdRef.current + 1;
     finalGiaRequestIdRef.current = requestId;
-    const previousLatestOutboundId =
-      [...messages]
-        .reverse()
-        .find((message) => String(message.direction || "").trim().toLowerCase() === "outbound")?.id ?? null;
     setFinalGiaMessageLoading(true);
     setFinalGiaMessageError(null);
+    setFinalGiaVideoPhase("idle");
     setStatus(null);
     try {
-      const res = await fetch("/api/assessment/chat/send", {
+      const res = await fetch("/api/assessment/chat/tracker-summary", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId,
-          text: "Please give me today's coaching message based on my latest tracker results.",
-          chat_mode: "tracker_summary",
           lead_token: leadToken || undefined,
-          quick_reply: {
-            used: true,
-            hide_in_chat: true,
-            label: "Daily coaching summary",
-          },
         }),
       });
       const text = await res.text().catch(() => "");
       if (!res.ok) {
         throw new Error(parseApiError(text, "Failed to load Gia's message."));
       }
-      const data = (text ? (JSON.parse(text) as ChatResponse) : {}) as ChatResponse;
-      applyChatPayload(data);
+      const data = (text ? (JSON.parse(text) as { text?: string; error?: string }) : {}) as {
+        text?: string;
+        error?: string;
+      };
       if (requestId !== finalGiaRequestIdRef.current) return;
-      const resolvedMessages = normalizeMessages(data.messages);
-      const fallbackOutboxMessages = normalizeMessages(data.outbox);
-      const nextMessages = resolvedMessages.length > 0 ? resolvedMessages : fallbackOutboxMessages;
-      const freshOutbound =
-        [...nextMessages]
-          .reverse()
-          .find((message) => {
-            const direction = String(message.direction || "").trim().toLowerCase();
-            if (direction !== "outbound") return false;
-            if (!String(message.text || "").trim()) return false;
-            return message.id !== previousLatestOutboundId;
-          }) ||
-        [...nextMessages]
-          .reverse()
-          .find((message) => String(message.direction || "").trim().toLowerCase() === "outbound" && String(message.text || "").trim());
-      const nextText = String(freshOutbound?.text || "").trim();
+      const nextText = String(data.text || "").trim();
       if (!nextText) {
         throw new Error("Gia's message is not available right now.");
       }
@@ -873,7 +853,7 @@ export default function AssessmentChatBox({
         setFinalGiaMessageLoading(false);
       }
     }
-  }, [messages, userId, leadToken, applyChatPayload]);
+  }, [userId, leadToken]);
 
   useEffect(() => {
     if (!showGuidedHomeChatPanel) {
@@ -897,6 +877,7 @@ export default function AssessmentChatBox({
     setFinalGiaMessage(null);
     setFinalGiaMessageError(null);
     setFinalGiaMessageLoading(false);
+    setFinalGiaVideoPhase("idle");
     setDailyHabitPlan(null);
     setDailyHabitPlanError(null);
     setDailyHabitPlanLoading(false);
@@ -910,6 +891,7 @@ export default function AssessmentChatBox({
     const onSurfaceChange = (event: Event) => {
       const detail = (event as CustomEvent<{ surface?: string }>).detail;
       const surface = String(detail?.surface || "").trim().toLowerCase();
+      setJourneyCompleted(false);
       if (surface === "tracking") {
         setHomeSurface("tracking");
         return;
@@ -967,6 +949,7 @@ export default function AssessmentChatBox({
       setFinalGiaMessage(null);
       setFinalGiaMessageError(null);
       setFinalGiaMessageLoading(false);
+      setFinalGiaVideoPhase("idle");
       setJourneyCompleted(false);
       if (showGuidedHomeChatPanel) {
         void loadDailyHabitPlan();
@@ -1852,11 +1835,31 @@ export default function AssessmentChatBox({
                     </p>
                   </div>
                 ) : finalGiaMessage ? (
-                  <div className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5 sm:px-5 sm:py-6">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--accent)]">Gia</p>
-                    <p className="mt-3 whitespace-pre-wrap text-[17px] leading-7 text-[#3c332b]">
-                      {finalGiaMessage}
-                    </p>
+                  <div className="space-y-4">
+                    <RealtimeSummaryAvatar
+                      userId={userId}
+                      text={finalGiaMessage}
+                      audioUrl={null}
+                      autoStart
+                      introMessage="Gia is turning today's message into a live video..."
+                      sessionRequestPath="/api/assessment/gia-message-avatar/realtime-session"
+                      completeRequestPath="/api/assessment/gia-message-avatar/realtime-complete"
+                      sessionRequestBody={{ userId, text: finalGiaMessage }}
+                      completeRequestBody={{ userId }}
+                      persistPlayback={false}
+                      showReadAction={false}
+                      showListenAction={false}
+                      showStopAction={false}
+                      onPhaseChange={setFinalGiaVideoPhase}
+                    />
+                    {(finalGiaVideoPhase === "failed" || finalGiaVideoPhase === "timeout") && finalGiaMessage ? (
+                      <div className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5 sm:px-5 sm:py-6">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--accent)]">Gia</p>
+                        <p className="mt-3 whitespace-pre-wrap text-[21px] leading-8 text-[#3c332b] sm:text-[24px] sm:leading-9">
+                          {finalGiaMessage}
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
                 ) : (
                   <div className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
