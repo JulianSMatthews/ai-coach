@@ -210,10 +210,10 @@ export default function LatestAssessmentPanel({
           : "Complete today to start this week's score"
         : "No completed tracker days last week";
   const pillarPositionClasses: Record<string, string> = {
-    nutrition: "col-start-1 row-start-1",
-    training: "col-start-3 row-start-1",
-    resilience: "col-start-1 row-start-3",
-    recovery: "col-start-3 row-start-3",
+    nutrition: "left-0 top-0",
+    training: "right-0 top-0",
+    resilience: "left-0 bottom-0",
+    recovery: "right-0 bottom-0",
   };
 
   useEffect(() => {
@@ -484,20 +484,20 @@ export default function LatestAssessmentPanel({
           className="-mx-3 flex min-h-[calc(100dvh-4rem)] flex-col justify-center border-y border-[#e7e1d6] bg-[#fffaf3] px-3 py-5 sm:mx-0 sm:min-h-0 sm:rounded-[28px] sm:border sm:px-5 sm:py-6 sm:shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]"
         >
           <div className="mx-auto flex w-full max-w-[24rem] flex-1 items-center justify-center">
-            <div className="grid aspect-square w-full max-w-[22rem] grid-cols-3 grid-rows-3 place-items-center sm:max-w-[24rem]">
+            <div className="relative aspect-square w-full max-w-[22rem] sm:max-w-[24rem]">
               {pillars.map((pillar) => {
                 const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
                 const palette = getPillarPalette(pillarKey);
                 const score = resolvePillarDisplayScore(pillar);
-                const positionClass = pillarPositionClasses[pillarKey] || "col-start-1 row-start-1";
+                const positionClass = pillarPositionClasses[pillarKey] || "left-0 top-0";
                 return (
                   <button
                     key={pillarKey}
                     type="button"
                     onClick={() => void openTracker(pillarKey)}
-                    className={`${positionClass} flex h-[8.4rem] w-[8.4rem] flex-col items-center justify-center rounded-full bg-white/94 px-2 py-3 text-center shadow-[0_24px_40px_-36px_rgba(30,27,22,0.5)] transition hover:bg-white hover:shadow-[0_28px_48px_-34px_rgba(30,27,22,0.5)] sm:h-[9.5rem] sm:w-[9.5rem]`}
+                    className={`absolute ${positionClass} flex h-[8.9rem] w-[8.9rem] flex-col items-center justify-center rounded-full bg-white/94 px-2 py-3 text-center shadow-[0_24px_40px_-36px_rgba(30,27,22,0.5)] transition hover:bg-white hover:shadow-[0_28px_48px_-34px_rgba(30,27,22,0.5)] sm:h-[10rem] sm:w-[10rem]`}
                   >
-                    <div className="origin-center scale-[0.62] sm:scale-[0.74]">
+                    <div className="origin-center scale-[0.68] sm:scale-[0.8]">
                       <WeeklyScoreRing value={score} tone={palette.accent} />
                     </div>
                     <p className="mt-1 text-[10px] font-semibold leading-4 text-[#1e1b16] sm:mt-2 sm:text-xs sm:leading-4">
@@ -509,7 +509,7 @@ export default function LatestAssessmentPanel({
               <button
                 type="button"
                 onClick={openScoreCard}
-                className="col-start-2 row-start-2 flex flex-col items-center rounded-full border border-[#efe7db] bg-white px-3 py-3 text-center shadow-[0_28px_48px_-30px_rgba(30,27,22,0.45)] sm:px-4 sm:py-4"
+                className="absolute left-1/2 top-1/2 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center rounded-full border border-[#efe7db] bg-white px-3 py-3 text-center shadow-[0_28px_48px_-30px_rgba(30,27,22,0.45)] sm:px-4 sm:py-4"
                 aria-label="Open HealthSense menu"
               >
                 <div className="relative origin-center scale-[1.08] sm:scale-[1.18]">
@@ -547,32 +547,35 @@ export default function LatestAssessmentPanel({
             </div>
 
             <div className="flex-1 overflow-y-auto px-3 py-3 sm:px-5">
-              <div className="space-y-3">
-                <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3">
+              <div className="flex min-h-full flex-col">
+                <div className="pb-3 text-center">
                   <p className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">View today</p>
-                  <div className="mt-3 grid gap-2">
-                    <button
-                      type="button"
-                      onClick={() => openDailyMenuSurface("habits")}
-                      className="rounded-full border border-[#d9cdbb] bg-white px-3 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#5d5348]"
-                    >
-                      Habits for the day
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openDailyMenuSurface("insight")}
-                      className="rounded-full border border-[#d9cdbb] bg-white px-3 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#5d5348]"
-                    >
-                      Insight of the day
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => openDailyMenuSurface("ask")}
-                      className="rounded-full border border-[#d9cdbb] bg-white px-3 py-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#5d5348]"
-                    >
-                      Gia&apos;s message of the day
-                    </button>
-                  </div>
+                </div>
+                <div className="grid flex-1 content-center gap-3 sm:gap-4">
+                  <button
+                    type="button"
+                    onClick={() => openDailyMenuSurface("habits")}
+                    className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-[#fffaf3] px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
+                  >
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Option 1</span>
+                    <span className="mt-2 text-base font-semibold text-[#1e1b16]">Habits for the day</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openDailyMenuSurface("insight")}
+                    className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-[#fffaf3] px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
+                  >
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Option 2</span>
+                    <span className="mt-2 text-base font-semibold text-[#1e1b16]">Insight of the day</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openDailyMenuSurface("ask")}
+                    className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-[#fffaf3] px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
+                  >
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Option 3</span>
+                    <span className="mt-2 text-base font-semibold text-[#1e1b16]">Gia&apos;s message of the day</span>
+                  </button>
                 </div>
                 {setupOpen ? (
                   <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-3 py-3">
