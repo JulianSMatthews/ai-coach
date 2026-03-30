@@ -486,24 +486,21 @@ export default function LatestAssessmentPanel({
               onClick={() => openDailyMenuSurface("habits")}
               className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-white px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
             >
-              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Option 1</span>
-              <span className="mt-2 text-base font-semibold text-[#1e1b16]">Habits for the day</span>
+              <span className="text-base font-semibold text-[#1e1b16]">Habit steps for the day</span>
             </button>
             <button
               type="button"
               onClick={() => openDailyMenuSurface("insight")}
               className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-white px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
             >
-              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Option 2</span>
-              <span className="mt-2 text-base font-semibold text-[#1e1b16]">Insight of the day</span>
+              <span className="text-base font-semibold text-[#1e1b16]">Insight of the day</span>
             </button>
             <button
               type="button"
               onClick={() => openDailyMenuSurface("ask")}
               className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-white px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
             >
-              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Option 3</span>
-              <span className="mt-2 text-base font-semibold text-[#1e1b16]">Gia&apos;s message of the day</span>
+              <span className="text-base font-semibold text-[#1e1b16]">Gia&apos;s message of the day</span>
             </button>
           </div>
         </section>

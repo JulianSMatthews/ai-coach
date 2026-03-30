@@ -955,9 +955,6 @@ export default function AssessmentChatBox({
     if (typeof window === "undefined") return;
     const onTrackerUpdated = (event: Event) => {
       const detail = (event as CustomEvent<{ guided?: boolean }>).detail;
-      if (detail?.guided !== true) {
-        return;
-      }
       setDailyHabitPlan(null);
       setDailyHabitPlanError(null);
       setCoachInsight(null);
@@ -965,6 +962,9 @@ export default function AssessmentChatBox({
       setFinalGiaMessage(null);
       setFinalGiaMessageError(null);
       setFinalGiaMessageLoading(false);
+      if (detail?.guided !== true) {
+        return;
+      }
       setJourneyCompleted(false);
       if (showGuidedHomeChatPanel) {
         void loadDailyHabitPlan();
