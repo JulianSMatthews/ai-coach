@@ -293,6 +293,69 @@ def probe_graph_sendmail(config: dict[str, Any], *, access_token: str) -> dict[s
     }
 
 
+def probe_graph_sender_user(config: dict[str, Any], *, access_token: str) -> dict[str, Any]:
+    sender = str(config["sender"])
+    user_url = f"{str(config['api_base_url'])}/users/{quote(sender, safe='')}?$select=id,userPrincipalName,mail,accountEnabled"
+    request = urllib.request.Request(
+        user_url,
+        headers={
+            "Authorization": f"Bearer {access_token}",
+            "Accept": "application/json",
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=float(config["timeout"])) as response:
+            raw = response.read().decode("utf-8", errors="replace")
+            status = int(getattr(response, "status", 200) or 200)
+    except urllib.error.HTTPError as exc:
+        summary = _http_error_summary(exc, url=user_url)
+        status = int(summary.get("status") or 0)
+        classification = "unknown"
+        if status == 401:
+            classification = "authentication_failed"
+        elif status == 403:
+            classification = "sender_lookup_forbidden"
+        elif status == 404:
+            classification = "sender_not_found"
+        summary["ok"] = False
+        summary["classification"] = classification
+        return summary
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": None,
+            "url": _public_url(user_url),
+            "detail": str(exc),
+            "headers": {},
+            "classification": "request_failed",
+        }
+
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        payload = {}
+
+    if not isinstance(payload, dict):
+        payload = {}
+
+    user_summary = {
+        "id": payload.get("id"),
+        "userPrincipalName": payload.get("userPrincipalName"),
+        "mail": payload.get("mail"),
+        "accountEnabled": payload.get("accountEnabled"),
+    }
+    return {
+        "ok": True,
+        "status": status,
+        "url": _public_url(user_url),
+        "detail": "sender resolved",
+        "headers": {},
+        "classification": "sender_resolved",
+        "user": user_summary,
+    }
+
+
 def run_auth_email_diagnostics(*, probe: str = "sendmail") -> dict[str, Any]:
     config = _graph_config_from_env()
     result: dict[str, Any] = {
@@ -310,6 +373,7 @@ def run_auth_email_diagnostics(*, probe: str = "sendmail") -> dict[str, Any]:
         },
         "probe": probe,
         "token": None,
+        "sender_probe": None,
         "sendmail_probe": None,
         "ok": False,
     }
@@ -330,6 +394,9 @@ def run_auth_email_diagnostics(*, probe: str = "sendmail") -> dict[str, Any]:
         result["ok"] = True
         result["detail"] = "Token request succeeded."
         return result
+
+    sender_probe = probe_graph_sender_user(config, access_token=str(token_result["token"]))
+    result["sender_probe"] = sender_probe
 
     sendmail_result = probe_graph_sendmail(config, access_token=str(token_result["token"]))
     result["sendmail_probe"] = sendmail_result
@@ -371,6 +438,27 @@ def format_auth_email_diagnostic_report(result: dict[str, Any]) -> list[str]:
         lines.append(
             f"token status={token.get('status')} detail={token.get('detail') or 'ok'}"
             + (f" {' '.join(claims_bits)}" if claims_bits else "")
+        )
+    sender_probe = result.get("sender_probe") or {}
+    if sender_probe:
+        sender_bits = []
+        user = sender_probe.get("user") or {}
+        for key in ("id", "userPrincipalName", "mail", "accountEnabled"):
+            value = user.get(key)
+            if value not in (None, "", []):
+                sender_bits.append(f"{key}={value}")
+        header_bits = []
+        headers = sender_probe.get("headers") or {}
+        for key in ("WWW-Authenticate", "request-id", "client-request-id", "x-ms-request-id", "Date"):
+            value = headers.get(key)
+            if value:
+                header_bits.append(f"{key}={value}")
+        lines.append(
+            f"sender_probe status={sender_probe.get('status')} "
+            f"classification={sender_probe.get('classification')} "
+            f"detail={sender_probe.get('detail')}"
+            + (f" {' '.join(sender_bits)}" if sender_bits else "")
+            + (f" {' '.join(header_bits)}" if header_bits else "")
         )
     sendmail_probe = result.get("sendmail_probe") or {}
     if sendmail_probe:
