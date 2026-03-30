@@ -181,6 +181,7 @@ export type PillarTrackerPillar = {
   source?: string | null;
   completed_days_count?: number | null;
   streak_days?: number | null;
+  today_complete?: boolean;
   week_start?: string | null;
   week_end?: string | null;
   today?: string | null;
@@ -198,6 +199,10 @@ export type PillarTrackerSummaryResponse = {
     start?: string;
     end?: string;
   };
+  today?: string | null;
+  today_complete?: boolean;
+  today_completed_pillars_count?: number | null;
+  total_pillars?: number | null;
   pillars?: PillarTrackerPillar[];
 };
 

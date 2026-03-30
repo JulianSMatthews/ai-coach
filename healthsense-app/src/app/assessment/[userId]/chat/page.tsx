@@ -338,6 +338,7 @@ export default async function AssessmentChatPage(props: PageProps) {
           introAvatar={assessmentIntroAvatar}
           coachProductAvatar={coachProductAvatar}
           introAvatarEnabledOverride={introAvatarOverride}
+          initialTrackerSummary={pillarTrackerSummary}
         />
         {pillarTrackerSummary ? (
           <LatestAssessmentPanel

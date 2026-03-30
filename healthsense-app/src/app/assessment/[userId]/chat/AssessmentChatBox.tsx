@@ -2,7 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CoachInsightResponse, DailyHabitPlanResponse } from "@/lib/api";
+import type { CoachInsightResponse, DailyHabitPlanResponse, PillarTrackerSummaryResponse } from "@/lib/api";
 import { getPillarPalette } from "@/lib/pillars";
 import { ProgressBar, ScoreRing } from "@/components/ui";
 import AssessmentPromptCard, {
@@ -78,6 +78,7 @@ type AssessmentChatBoxProps = {
   introAvatar?: AssessmentIntroAvatar | null;
   coachProductAvatar?: AssessmentIntroAvatar | null;
   introAvatarEnabledOverride?: boolean | null;
+  initialTrackerSummary?: PillarTrackerSummaryResponse | null;
 };
 
 type AssessmentCompletionSummaryMedia = {
@@ -189,6 +190,18 @@ function parseApiError(text: string, fallback: string) {
     }
     return text;
   }
+}
+
+function isDailyCheckInComplete(summary?: PillarTrackerSummaryResponse | null): boolean {
+  if (!summary) return false;
+  if (summary.today_complete === true) return true;
+  const totalPillars = Number(summary.total_pillars);
+  const completedPillars = Number(summary.today_completed_pillars_count);
+  if (Number.isFinite(totalPillars) && totalPillars > 0 && Number.isFinite(completedPillars)) {
+    return completedPillars >= totalPillars;
+  }
+  const pillars = Array.isArray(summary.pillars) ? summary.pillars : [];
+  return pillars.length > 0 && pillars.every((pillar) => pillar?.today_complete === true);
 }
 
 function normalizeMessages(raw: unknown): ChatMessage[] {
@@ -529,6 +542,7 @@ export default function AssessmentChatBox({
   introAvatar = null,
   coachProductAvatar = null,
   introAvatarEnabledOverride = null,
+  initialTrackerSummary = null,
 }: AssessmentChatBoxProps) {
   const searchParams = useSearchParams();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -565,7 +579,9 @@ export default function AssessmentChatBox({
   const [sending, setSending] = useState(false);
   const [homeSurface, setHomeSurface] = useState<HomeSurface>("tracking");
   const [homeSurfaceEntryMode, setHomeSurfaceEntryMode] = useState<HomeSurfaceEntryMode>("guided");
-  const [journeyCompleted, setJourneyCompleted] = useState(false);
+  const [journeyCompleted, setJourneyCompleted] = useState(
+    () => assessmentCompleted && isDailyCheckInComplete(initialTrackerSummary),
+  );
   const [finalGiaMessage, setFinalGiaMessage] = useState<string | null>(null);
   const [finalGiaMessageLoading, setFinalGiaMessageLoading] = useState(false);
   const [finalGiaMessageError, setFinalGiaMessageError] = useState<string | null>(null);
@@ -584,6 +600,7 @@ export default function AssessmentChatBox({
     const token = String(leadToken || "").trim();
     return token ? `&lt=${encodeURIComponent(token)}` : "";
   }, [leadToken]);
+  const initialJourneyCompleted = assessmentCompleted && isDailyCheckInComplete(initialTrackerSummary);
   const allowResultSummaryInChat = leadFlow || isLeadGuest;
   const busy = loading || starting || sending || claiming;
   const chatReady = hasActiveSession || assessmentCompleted || messages.length > 0;
@@ -861,6 +878,22 @@ export default function AssessmentChatBox({
     }
   }, [userId, leadToken]);
 
+  const refreshDailyCheckInStatus = useCallback(async () => {
+    if (!assessmentCompleted || leadFlow || isLeadGuest) {
+      return false;
+    }
+    const res = await fetch(`/api/pillar-tracker/summary?userId=${encodeURIComponent(userId)}`, {
+      method: "GET",
+      cache: "no-store",
+    });
+    const text = await res.text().catch(() => "");
+    if (!res.ok) {
+      throw new Error(parseApiError(text, "Failed to load today's tracking status."));
+    }
+    const data = (text ? (JSON.parse(text) as PillarTrackerSummaryResponse) : {}) as PillarTrackerSummaryResponse;
+    return isDailyCheckInComplete(data);
+  }, [assessmentCompleted, isLeadGuest, leadFlow, userId]);
+
   useEffect(() => {
     if (!showGuidedHomeChatPanel) {
       setHomeSurface("tracking");
@@ -880,7 +913,7 @@ export default function AssessmentChatBox({
   }, [journeyCompleted]);
 
   useEffect(() => {
-    setJourneyCompleted(false);
+    setJourneyCompleted(initialJourneyCompleted);
     setFinalGiaMessage(null);
     setFinalGiaMessageError(null);
     setFinalGiaMessageLoading(false);
@@ -890,7 +923,42 @@ export default function AssessmentChatBox({
     setCoachInsight(null);
     setCoachInsightError(null);
     setCoachInsightLoading(false);
-  }, [userId]);
+  }, [initialJourneyCompleted, userId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !assessmentCompleted || leadFlow || isLeadGuest) {
+      return;
+    }
+    let cancelled = false;
+    const syncDailyCheckInStatus = async () => {
+      try {
+        const nextCompleted = await refreshDailyCheckInStatus();
+        if (!cancelled) {
+          setJourneyCompleted(nextCompleted);
+        }
+      } catch {
+        // Keep the current local state if the refresh fails.
+      }
+    };
+    if (!initialTrackerSummary) {
+      void syncDailyCheckInStatus();
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      void syncDailyCheckInStatus();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [
+    assessmentCompleted,
+    initialTrackerSummary,
+    isLeadGuest,
+    leadFlow,
+    refreshDailyCheckInStatus,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

@@ -1136,6 +1136,7 @@ def _summary_pillar_payload(
     evaluations_by_concept: dict[str, dict[date, dict[str, Any]]],
     week_days: list[date],
     anchor: date,
+    current_day: date,
     baseline_score: int | None,
 ) -> dict[str, Any]:
     tracker_score = _week_score(entries_by_day, required_concepts, evaluations_by_concept, week_days)
@@ -1149,12 +1150,14 @@ def _summary_pillar_payload(
         "source": "tracker" if tracker_score is not None else "assessment",
         "completed_days_count": len(completed_days),
         "streak_days": _completion_streak_days(entries_by_day, required_concepts, anchor),
+        "today_complete": _day_complete(entries_by_day.get(current_day, {}), required_concepts),
     }
 
 
 def get_pillar_tracker_summary(user_id: int, anchor: date | None = None) -> dict[str, Any]:
     ensure_pillar_tracker_schema()
     resolved_anchor = anchor or tracker_today()
+    current_day = tracker_today()
     baseline_scores = _latest_assessment_scores_for_user(user_id)
     week_days = _week_days(resolved_anchor)
     pillars = []
@@ -1171,15 +1174,22 @@ def get_pillar_tracker_summary(user_id: int, anchor: date | None = None) -> dict
                 evaluations_by_concept=evaluations_by_concept,
                 week_days=week_days,
                 anchor=resolved_anchor,
+                current_day=current_day,
                 baseline_score=baseline_scores.get(pillar_key),
             )
         )
+    total_pillars = len(PILLAR_TRACKER_CONFIG)
+    today_completed_pillars_count = sum(1 for pillar in pillars if pillar.get("today_complete") is True)
     return {
         "week": {
             "anchor_date": resolved_anchor.isoformat(),
             "start": week_days[0].isoformat(),
             "end": week_days[-1].isoformat(),
         },
+        "today": current_day.isoformat(),
+        "today_complete": bool(total_pillars and today_completed_pillars_count >= total_pillars),
+        "today_completed_pillars_count": today_completed_pillars_count,
+        "total_pillars": total_pillars,
         "pillars": pillars,
     }
 
@@ -1208,6 +1218,7 @@ def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None
         evaluations_by_concept=evaluations_by_concept,
         week_days=week_days,
         anchor=resolved_anchor,
+        current_day=current_day,
         baseline_score=baseline_scores.get(key),
     )
     concepts_payload = []
