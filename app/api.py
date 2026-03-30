@@ -2999,6 +2999,57 @@ def _parse_auth_delivery_error(raw: str) -> str:
     return text
 
 
+def _format_auth_http_error(
+    exc: urllib.error.HTTPError,
+    *,
+    provider: str,
+    request_url: str | None = None,
+    extra: dict[str, object] | None = None,
+) -> str:
+    try:
+        body = exc.read().decode("utf-8", errors="replace")
+    except Exception:
+        body = ""
+    detail = _parse_auth_delivery_error(body) or str(exc)
+    parts: list[str] = [f"{provider} status={getattr(exc, 'code', 'unknown')}"]
+
+    if request_url:
+        try:
+            parsed = urlparse(request_url)
+            if parsed.scheme and parsed.netloc:
+                parts.append(f"url={parsed.scheme}://{parsed.netloc}{parsed.path}")
+        except Exception:
+            pass
+
+    headers = getattr(exc, "headers", None)
+    if headers is not None:
+        for header_name, label in (
+            ("WWW-Authenticate", "www_authenticate"),
+            ("request-id", "request_id"),
+            ("client-request-id", "client_request_id"),
+            ("x-ms-request-id", "x_ms_request_id"),
+            ("Date", "date"),
+        ):
+            try:
+                raw_value = headers.get(header_name)
+            except Exception:
+                raw_value = None
+            value = " ".join(str(raw_value or "").split()).strip()
+            if value:
+                if len(value) > 240:
+                    value = value[:237] + "..."
+                parts.append(f"{label}={value}")
+
+    if extra:
+        for key, raw_value in extra.items():
+            value = " ".join(str(raw_value or "").split()).strip()
+            if value:
+                parts.append(f"{key}={value}")
+
+    parts.append(f"detail={detail}")
+    return " | ".join(parts)
+
+
 def _auth_email_transport() -> str:
     transport = (os.getenv("AUTH_EMAIL_TRANSPORT") or "auto").strip().lower()
     if transport not in {"auto", "smtp", "microsoft_graph"}:
@@ -3100,9 +3151,13 @@ def _get_auth_ms_graph_access_token(config: dict[str, object]) -> str:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             response_text = response.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
-        error_text = exc.read().decode("utf-8", errors="replace")
-        detail = _parse_auth_delivery_error(error_text) or str(exc)
-        raise RuntimeError(f"Microsoft Graph token request failed: {detail}")
+        detail = _format_auth_http_error(
+            exc,
+            provider="Microsoft Graph token request failed",
+            request_url=token_url,
+            extra={"scope": scope},
+        )
+        raise RuntimeError(detail)
     except Exception as exc:
         raise RuntimeError(f"Microsoft Graph token request failed: {exc}")
 
@@ -3183,9 +3238,13 @@ def _send_auth_email_via_ms_graph(
         with urllib.request.urlopen(request, timeout=timeout) as response:
             response.read()
     except urllib.error.HTTPError as exc:
-        error_text = exc.read().decode("utf-8", errors="replace")
-        detail = _parse_auth_delivery_error(error_text) or str(exc)
-        raise RuntimeError(f"Microsoft Graph sendMail failed: {detail}")
+        detail = _format_auth_http_error(
+            exc,
+            provider="Microsoft Graph sendMail failed",
+            request_url=send_url,
+            extra={"sender": sender_email},
+        )
+        raise RuntimeError(detail)
     except Exception as exc:
         raise RuntimeError(f"Microsoft Graph sendMail failed: {exc}")
     return "email"
