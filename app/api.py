@@ -33,6 +33,7 @@ from fastapi import FastAPI, APIRouter, Request, Response, Depends, Header, HTTP
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text, select, desc, func, or_, update, false
+from sqlalchemy.exc import IntegrityError
 from pathlib import Path 
 from typing import Any, Optional
 
@@ -15276,6 +15277,7 @@ def admin_prompt_template_promote(
     if to_state not in {"beta", "live"}:
         raise HTTPException(status_code=400, detail="to_state must be beta or live")
     note = (payload.get("note") or "").strip() or None
+    response_payload: dict[str, Any] | None = None
     with SessionLocal() as s:
         row = s.get(PromptTemplate, template_id)
         if not row:
@@ -15312,12 +15314,25 @@ def admin_prompt_template_promote(
         )
         s.add(new_row)
         s.flush()
+        response_payload = {
+            "ok": True,
+            "id": int(new_row.id),
+            "state": to_state,
+            "version": int(new_row.version or 0),
+        }
         try:
             admin_routes._enforce_single_active_states(s, {to_state})  # type: ignore[attr-defined]
         except Exception:
             pass
-        s.commit()
-    return {"ok": True, "id": new_row.id, "state": to_state, "version": new_row.version}
+        try:
+            s.commit()
+        except IntegrityError as exc:
+            s.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="Prompt template promotion conflicted with an existing version. Refresh and try again.",
+            ) from exc
+    return response_payload or {"ok": True}
 
 
 @admin.post("/prompts/templates/promote-all")
@@ -17431,6 +17446,7 @@ def admin_content_prompt_template_promote(
     if to_state not in {"beta", "live"}:
         raise HTTPException(status_code=400, detail="to_state must be beta or live")
     note = (payload.get("note") or "").strip() or None
+    response_payload: dict[str, Any] | None = None
     with SessionLocal() as s:
         row = s.get(ContentPromptTemplate, template_id)
         if not row:
@@ -17460,8 +17476,22 @@ def admin_content_prompt_template_promote(
             parent_id=row.id,
         )
         s.add(new_row)
-        s.commit()
-    return {"ok": True, "id": new_row.id, "state": to_state, "version": new_row.version}
+        s.flush()
+        response_payload = {
+            "ok": True,
+            "id": int(new_row.id),
+            "state": to_state,
+            "version": int(new_row.version or 0),
+        }
+        try:
+            s.commit()
+        except IntegrityError as exc:
+            s.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="Content prompt promotion conflicted with an existing version. Refresh and try again.",
+            ) from exc
+    return response_payload or {"ok": True}
 
 
 def _build_prompt_test_payload(
