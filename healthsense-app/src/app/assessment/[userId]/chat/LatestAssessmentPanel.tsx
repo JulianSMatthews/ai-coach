@@ -133,6 +133,66 @@ function WeeklyScoreRing({ value, tone, compact = false }: { value?: number | nu
   );
 }
 
+function HabitStepsIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-5 w-5 text-[var(--accent)]"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M9 6h10" />
+      <path d="M9 12h10" />
+      <path d="M9 18h10" />
+      <path d="M4 6l1.5 1.5L7.5 5" />
+      <path d="M4 12l1.5 1.5L7.5 11" />
+      <path d="M4 18l1.5 1.5L7.5 17" />
+    </svg>
+  );
+}
+
+function InsightIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-5 w-5 text-[var(--accent)]"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 3a7 7 0 0 0-4 12.7c.6.4 1 1 1.2 1.7h5.6c.2-.7.6-1.3 1.2-1.7A7 7 0 0 0 12 3Z" />
+      <path d="M9.5 21h5" />
+      <path d="M10 18.5h4" />
+    </svg>
+  );
+}
+
+function GiaMessageIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-5 w-5 text-[var(--accent)]"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M6 18l-3 3V7a3 3 0 0 1 3-3h12a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3H6Z" />
+      <path d="M8 9h8" />
+      <path d="M8 13h5" />
+    </svg>
+  );
+}
+
 export default function LatestAssessmentPanel({
   userId,
   initialSummary,
@@ -486,21 +546,30 @@ export default function LatestAssessmentPanel({
               onClick={() => openDailyMenuSurface("habits")}
               className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-white px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
             >
-              <span className="text-base font-semibold text-[#1e1b16]">Habit steps for the day</span>
+              <div className="flex items-center gap-3">
+                <HabitStepsIcon />
+                <span className="text-base font-semibold text-[#1e1b16]">Habit steps for the day</span>
+              </div>
             </button>
             <button
               type="button"
               onClick={() => openDailyMenuSurface("insight")}
               className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-white px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
             >
-              <span className="text-base font-semibold text-[#1e1b16]">Insight of the day</span>
+              <div className="flex items-center gap-3">
+                <InsightIcon />
+                <span className="text-base font-semibold text-[#1e1b16]">Insight of the day</span>
+              </div>
             </button>
             <button
               type="button"
               onClick={() => openDailyMenuSurface("ask")}
               className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-white px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
             >
-              <span className="text-base font-semibold text-[#1e1b16]">Gia&apos;s message of the day</span>
+              <div className="flex items-center gap-3">
+                <GiaMessageIcon />
+                <span className="text-base font-semibold text-[#1e1b16]">Gia&apos;s message of the day</span>
+              </div>
             </button>
           </div>
         </section>
