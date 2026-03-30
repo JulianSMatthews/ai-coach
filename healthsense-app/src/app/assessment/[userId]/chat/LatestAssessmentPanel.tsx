@@ -370,6 +370,7 @@ export default function LatestAssessmentPanel({
             detail: {
               pillarKey: String(detail.pillar.pillar_key || "").trim().toLowerCase(),
               scoreDate: activeDate || detail.pillar.today || null,
+              guided: guidedTrackingActive,
             },
           }),
         );

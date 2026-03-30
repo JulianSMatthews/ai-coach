@@ -953,7 +953,11 @@ export default function AssessmentChatBox({
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const onTrackerUpdated = () => {
+    const onTrackerUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ guided?: boolean }>).detail;
+      if (detail?.guided !== true) {
+        return;
+      }
       setDailyHabitPlan(null);
       setDailyHabitPlanError(null);
       setCoachInsight(null);
