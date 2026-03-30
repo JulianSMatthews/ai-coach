@@ -152,7 +152,13 @@ function parseApiError(text: string, fallback: string) {
       return "Add a mobile number if you want it saved on your account.";
     }
     if (normalized.includes("mobile number required")) {
-      return "Add a mobile number if you want it saved on your account.";
+      return "Enter your mobile number, ideally with country code.";
+    }
+    if (normalized.includes("phone required")) {
+      return "Enter your mobile number, ideally with country code.";
+    }
+    if (normalized.includes("phone must be a valid international number")) {
+      return "Enter a valid mobile number, ideally with country code.";
     }
     if (normalized.includes("password is required")) {
       return "Create a password to finish setting up your app login.";
@@ -173,7 +179,13 @@ function parseApiError(text: string, fallback: string) {
       return "Add a mobile number if you want it saved on your account.";
     }
     if (normalized.includes("mobile number required")) {
-      return "Add a mobile number if you want it saved on your account.";
+      return "Enter your mobile number, ideally with country code.";
+    }
+    if (normalized.includes("phone required")) {
+      return "Enter your mobile number, ideally with country code.";
+    }
+    if (normalized.includes("phone must be a valid international number")) {
+      return "Enter a valid mobile number, ideally with country code.";
     }
     return text;
   }
@@ -495,14 +507,6 @@ function parsePositiveUserId(value: unknown): number | null {
   return token;
 }
 
-function looksLikeEmail(value: string): boolean {
-  const token = String(value || "").trim().toLowerCase();
-  if (!token) return false;
-  if (!token.includes("@")) return false;
-  const domain = token.split("@")[1] || "";
-  return domain.includes(".");
-}
-
 function looksLikePhone(value: string): boolean {
   const token = String(value || "").trim();
   if (!token) return false;
@@ -537,7 +541,6 @@ export default function AssessmentChatBox({
   const [selectedPromptValue, setSelectedPromptValue] = useState<string | null>(null);
   const [claimFirstName, setClaimFirstName] = useState("");
   const [claimSurname, setClaimSurname] = useState("");
-  const [claimEmail, setClaimEmail] = useState("");
   const [claimPhone, setClaimPhone] = useState("");
   const [claimPassword, setClaimPassword] = useState("");
   const [claimConfirmPassword, setClaimConfirmPassword] = useState("");
@@ -1244,7 +1247,6 @@ export default function AssessmentChatBox({
     event.preventDefault();
     const firstName = claimFirstName.trim();
     const surname = claimSurname.trim();
-    const email = claimEmail.trim().toLowerCase();
     const phone = claimPhone.trim();
     const password = claimPassword;
     const confirmPassword = claimConfirmPassword;
@@ -1255,15 +1257,11 @@ export default function AssessmentChatBox({
       setClaimError("First name and surname are required.");
       return;
     }
-    if (!email) {
-      setClaimError("Email address is required.");
+    if (!phone) {
+      setClaimError("Enter your mobile number, ideally with country code.");
       return;
     }
-    if (!looksLikeEmail(email)) {
-      setClaimError("That email doesn’t look right. Please check it.");
-      return;
-    }
-    if (phone && !looksLikePhone(phone)) {
+    if (!looksLikePhone(phone)) {
       setClaimError("Enter a valid mobile number, ideally with country code.");
       return;
     }
@@ -1288,7 +1286,6 @@ export default function AssessmentChatBox({
           first_name: firstName,
           surname,
           phone,
-          email,
           password,
           create_app_session: true,
           lead_token: leadToken || undefined,
@@ -1562,7 +1559,7 @@ export default function AssessmentChatBox({
       <div className="border-b border-[#efe7db] px-4 py-4 sm:px-6">
         <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Early access</p>
         <p className="mt-1 text-sm text-[#3c332b]">
-          Watch the explainer below, then create your HealthSense login and keep this assessment linked to your app account.
+          Watch the explainer below, then create your HealthSense mobile login and keep this assessment linked to your app account.
         </p>
       </div>
       {String(coachProductAvatar?.url || "").trim() ? (
@@ -1580,11 +1577,11 @@ export default function AssessmentChatBox({
       ) : null}
       <div className="space-y-4 px-4 py-5 sm:px-6 sm:py-6">
         <div className="space-y-2">
-          <h2 className="text-2xl text-[#1e1b16]">Create your early access login</h2>
+          <h2 className="text-2xl text-[#1e1b16]">Create your early access mobile login</h2>
           <p className="text-sm text-[#6b6257]">
             {identityRequired
-              ? "Add your details below to create your app login, link this assessment to your account, and unlock early access."
-              : "Confirm your details below to create your app login, link this assessment to your account, and unlock early access."}
+              ? "Add your details below to create your HealthSense login. You will log in with your mobile number, and this assessment will stay linked to your account."
+              : "Confirm your details below to finish your HealthSense login. You will log in with your mobile number, and this assessment will stay linked to your account."}
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -1610,23 +1607,14 @@ export default function AssessmentChatBox({
           />
           <input
             className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm sm:col-span-2"
-            type="email"
-            placeholder="Email address"
-            autoComplete="email"
-            value={claimEmail}
-            onChange={(event) => setClaimEmail(event.target.value)}
-            disabled={claiming || claimSuccess}
-            required
-          />
-          <input
-            className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm sm:col-span-2"
             type="tel"
-            placeholder="Mobile number (optional)"
+            placeholder="Mobile number"
             autoComplete="tel"
             inputMode="tel"
             value={claimPhone}
             onChange={(event) => setClaimPhone(event.target.value)}
             disabled={claiming || claimSuccess}
+            required
           />
           <input
             className="rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
@@ -1650,7 +1638,7 @@ export default function AssessmentChatBox({
           />
         </div>
         <p className="text-xs text-[#6b6257]">
-          Email is used for login verification. Add a mobile number if you want it on your account.
+          Your mobile number is required and will be used for future login codes by WhatsApp or SMS.
         </p>
 
         <div>
@@ -1663,12 +1651,12 @@ export default function AssessmentChatBox({
               ? "Your account is ready."
               : claiming
                 ? "Creating your login…"
-                : "Create my app access"}
+                : "Create my mobile login"}
           </button>
           {claimSuccess ? (
             <div className="mt-3 space-y-2">
               <p className="text-sm text-[#3c332b]">
-                Your HealthSense account is ready and this assessment is now linked to it.
+                Your HealthSense account is ready. This assessment is linked to it, and you will log in with your mobile number.
               </p>
               {claimNextPath ? (
                 <button

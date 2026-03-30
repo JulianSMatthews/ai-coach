@@ -6944,8 +6944,8 @@ def api_user_assessment_chat_claim_identity(
         raise HTTPException(status_code=400, detail="first_name and surname are required")
     if len(first_name) > 120 or len(surname) > 120:
         raise HTTPException(status_code=400, detail="name is too long")
-    if not email_val:
-        raise HTTPException(status_code=400, detail="email is required")
+    if not phone_raw:
+        raise HTTPException(status_code=400, detail="phone required")
     if create_app_session and not password_val:
         raise HTTPException(status_code=400, detail="password is required")
     if password_val and len(password_val) < 8:
