@@ -202,6 +202,12 @@ export default function LatestAssessmentPanel({
           ? `Complete ${activeLabel || "yesterday"} to update this week's score`
           : "Complete today to start this week's score"
         : "No completed tracker days last week";
+  const closeTrackerLabel =
+    trackerReturnSurface === "tracking"
+      ? "Back to daily check-in"
+      : !guidedTrackingActive
+        ? "Back to previous screen"
+        : "Close";
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -306,14 +312,15 @@ export default function LatestAssessmentPanel({
   ) => {
     const normalizedPillarKey = String(pillarKey || "").trim().toLowerCase();
     if (!normalizedPillarKey) return;
-    setGuidedTrackingActive(Boolean(options?.guided));
+    const guided = Boolean(options?.guided);
+    setGuidedTrackingActive(guided);
     setTrackerReturnSurface(options?.returnSurface ?? null);
     setSelectedPillarKey(normalizedPillarKey);
     setDetail(null);
     setDraft({});
     setDetailError(null);
     setSaveError(null);
-    if (typeof window !== "undefined") {
+    if (guided && typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent("healthsense-home-surface", {
           detail: {
@@ -376,11 +383,19 @@ export default function LatestAssessmentPanel({
         await openTracker(nextPillarKey, undefined, { guided: true });
         return;
       }
-      if (typeof window !== "undefined") {
+      if (guidedTrackingActive && typeof window !== "undefined") {
         window.dispatchEvent(
           new CustomEvent("healthsense-home-surface", {
             detail: {
-              surface: trackerReturnSurface || "habits",
+              surface: "habits",
+            },
+          }),
+        );
+      } else if (trackerReturnSurface && typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("healthsense-home-surface", {
+            detail: {
+              surface: trackerReturnSurface,
             },
           }),
         );
@@ -663,7 +678,7 @@ export default function LatestAssessmentPanel({
                     onClick={closeTracker}
                     className="rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
                   >
-                    {trackerReturnSurface === "tracking" ? "Back to daily check-in" : "Close"}
+                    {closeTrackerLabel}
                   </button>
                   <button
                     type="button"
@@ -682,7 +697,7 @@ export default function LatestAssessmentPanel({
                   onClick={closeTracker}
                   className="w-full rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
                 >
-                  {trackerReturnSurface === "tracking" ? "Back to daily check-in" : "Close"}
+                  {closeTrackerLabel}
                 </button>
               )}
             </div>
