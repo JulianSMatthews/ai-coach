@@ -18,6 +18,8 @@ type LatestAssessmentPanelProps = {
   initialAssessmentReviewed?: boolean;
 };
 
+type TrackerReturnSurface = "tracking" | "habits" | "insight" | "ask";
+
 const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
 const HEALTHSENSE_ORANGE = "#c54817";
 
@@ -145,6 +147,7 @@ export default function LatestAssessmentPanel({
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [saving, setSaving] = useState(false);
   const [guidedTrackingActive, setGuidedTrackingActive] = useState(false);
+  const [trackerReturnSurface, setTrackerReturnSurface] = useState<TrackerReturnSurface | null>(null);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [assessmentReviewed, setAssessmentReviewed] = useState(initialAssessmentReviewed);
@@ -296,10 +299,15 @@ export default function LatestAssessmentPanel({
     }
   }, [userId]);
 
-  const openTracker = useCallback(async (pillarKey: string, anchorDate?: string, options?: { guided?: boolean }) => {
+  const openTracker = useCallback(async (
+    pillarKey: string,
+    anchorDate?: string,
+    options?: { guided?: boolean; returnSurface?: TrackerReturnSurface | null },
+  ) => {
     const normalizedPillarKey = String(pillarKey || "").trim().toLowerCase();
     if (!normalizedPillarKey) return;
     setGuidedTrackingActive(Boolean(options?.guided));
+    setTrackerReturnSurface(options?.returnSurface ?? null);
     setSelectedPillarKey(normalizedPillarKey);
     setDetail(null);
     setDraft({});
@@ -320,6 +328,7 @@ export default function LatestAssessmentPanel({
   const closeTracker = () => {
     setSelectedPillarKey(null);
     setGuidedTrackingActive(false);
+    setTrackerReturnSurface(null);
     setDetail(null);
     setDraft({});
     setDetailError(null);
@@ -371,7 +380,7 @@ export default function LatestAssessmentPanel({
         window.dispatchEvent(
           new CustomEvent("healthsense-home-surface", {
             detail: {
-              surface: "habits",
+              surface: trackerReturnSurface || "habits",
             },
           }),
         );
@@ -401,12 +410,17 @@ export default function LatestAssessmentPanel({
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onOpenTracker = (event: Event) => {
-      const detail = (event as CustomEvent<{ pillarKey?: string; guided?: boolean }>).detail;
+      const detail = (event as CustomEvent<{
+        pillarKey?: string;
+        guided?: boolean;
+        returnSurface?: TrackerReturnSurface | null;
+      }>).detail;
       const requestedPillarKey = String(detail?.pillarKey || "").trim().toLowerCase();
       const nextPillarKey = requestedPillarKey || orderedPillarKeys[0] || "";
       if (!nextPillarKey) return;
       void openTracker(nextPillarKey, undefined, {
         guided: detail?.guided !== false,
+        returnSurface: detail?.returnSurface ?? null,
       });
     };
     window.addEventListener("healthsense-open-tracker", onOpenTracker as EventListener);
@@ -523,7 +537,10 @@ export default function LatestAssessmentPanel({
                               void openTracker(
                                 String(detail.pillar?.pillar_key || selectedPillarKey || ""),
                                 itemDate,
-                                { guided: guidedTrackingActive },
+                                {
+                                  guided: guidedTrackingActive,
+                                  returnSurface: trackerReturnSurface,
+                                },
                               )
                             }
                             className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
@@ -646,7 +663,7 @@ export default function LatestAssessmentPanel({
                     onClick={closeTracker}
                     className="rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
                   >
-                    Close
+                    {trackerReturnSurface === "tracking" ? "Back to daily check-in" : "Close"}
                   </button>
                   <button
                     type="button"
@@ -665,7 +682,7 @@ export default function LatestAssessmentPanel({
                   onClick={closeTracker}
                   className="w-full rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
                 >
-                  Close
+                  {trackerReturnSurface === "tracking" ? "Back to daily check-in" : "Close"}
                 </button>
               )}
             </div>

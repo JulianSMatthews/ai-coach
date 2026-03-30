@@ -1706,19 +1706,33 @@ export default function AssessmentChatBox({
             <div className="flex h-full flex-col justify-between gap-4">
               <div className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-4 sm:px-5 sm:py-5">
                 <p className="text-sm text-[#6b6257]">
-                  Complete your daily check-in first. We will move through each pillar in order so the next step only appears once tracking is done.
+                  Tap a pillar to open just that daily check-in, or start the guided flow below to move through each pillar in order.
                 </p>
                 <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {TRACKING_STEP_PILLARS.map((pillar, index) => (
-                    <div
+                    <button
                       key={pillar}
-                      className="rounded-2xl border border-[#efe7db] bg-white px-3 py-3 text-left"
+                      type="button"
+                      onClick={() => {
+                        if (typeof window !== "undefined") {
+                          window.dispatchEvent(
+                            new CustomEvent("healthsense-open-tracker", {
+                              detail: {
+                                pillarKey: pillar.toLowerCase(),
+                                guided: false,
+                                returnSurface: "tracking",
+                              },
+                            }),
+                          );
+                        }
+                      }}
+                      className="rounded-2xl border border-[#efe7db] bg-white px-3 py-3 text-left transition hover:border-[#dccfbe]"
                     >
                       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
                         Pillar {index + 1}
                       </p>
                       <p className="mt-2 text-sm font-semibold text-[#1e1b16]">{pillar}</p>
-                    </div>
+                    </button>
                   ))}
                 </div>
               </div>
