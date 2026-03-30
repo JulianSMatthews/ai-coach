@@ -594,6 +594,20 @@ def _cleanup_reports_on_reset(*, keep_content: bool) -> None:
 
 @app.on_event("startup")
 def on_startup():
+    def _run_auth_email_startup_diagnostic() -> None:
+        probe = (os.getenv("AUTH_EMAIL_DIAGNOSTIC_PROBE") or "sendmail").strip().lower() or "sendmail"
+        if probe not in {"token", "sendmail"}:
+            print(f"[startup][auth-email] invalid probe '{probe}', defaulting to sendmail")
+            probe = "sendmail"
+        try:
+            from .auth_email_diag import format_auth_email_diagnostic_report, run_auth_email_diagnostics
+
+            result = run_auth_email_diagnostics(probe=probe)
+            for line in format_auth_email_diagnostic_report(result):
+                print(f"[startup][auth-email] {line}")
+        except Exception as e:
+            print(f"[startup][auth-email] diagnostic failed: {e!r}")
+
     def _parse_bool_env(raw: str | None) -> bool | None:
         val = (raw or "").strip().lower()
         if val == "":
@@ -756,6 +770,11 @@ def on_startup():
 
             _maybe_set_public_base_via_ngrok()
             _print_env_banner()
+            try:
+                if _is_truthy_token(os.getenv("AUTH_EMAIL_DIAGNOSTIC_ON_STARTUP") or ""):
+                    threading.Thread(target=_run_auth_email_startup_diagnostic, daemon=True).start()
+            except Exception as e:
+                print(f"⚠️  Could not start auth email diagnostic: {e!r}")
             try:
                 scheduler.ensure_global_schedule_defaults()
             except Exception as e:
@@ -3050,6 +3069,60 @@ def _format_auth_http_error(
     return " | ".join(parts)
 
 
+def _decode_jwt_claims_without_verification(token: str) -> dict[str, object]:
+    raw = str(token or "").strip()
+    parts = raw.split(".")
+    if len(parts) < 2:
+        return {}
+    payload_b64 = parts[1]
+    padding = "=" * (-len(payload_b64) % 4)
+    try:
+        decoded = base64.urlsafe_b64decode(payload_b64 + padding)
+        payload = json.loads(decoded.decode("utf-8", errors="replace"))
+    except Exception:
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _summarize_ms_graph_token_claims(token: str) -> str:
+    claims = _decode_jwt_claims_without_verification(token)
+    if not claims:
+        return ""
+
+    def _clean(value: object) -> str:
+        text = " ".join(str(value or "").split()).strip()
+        return text[:237] + "..." if len(text) > 240 else text
+
+    parts: list[str] = []
+    for key in ("aud", "iss", "tid", "appid", "azp", "sub"):
+        value = _clean(claims.get(key))
+        if value:
+            parts.append(f"{key}={value}")
+
+    roles = claims.get("roles")
+    if isinstance(roles, list):
+        cleaned_roles = [str(role).strip() for role in roles if str(role or "").strip()]
+        if cleaned_roles:
+            joined = ",".join(cleaned_roles)
+            parts.append(f"roles={_clean(joined)}")
+    elif isinstance(roles, str) and roles.strip():
+        parts.append(f"roles={_clean(roles)}")
+
+    scp = _clean(claims.get("scp"))
+    if scp:
+        parts.append(f"scp={scp}")
+
+    exp = claims.get("exp")
+    try:
+        if exp is not None:
+            exp_dt = datetime.utcfromtimestamp(int(exp)).replace(microsecond=0)
+            parts.append(f"exp_utc={exp_dt.isoformat()}Z")
+    except Exception:
+        pass
+
+    return " | ".join(parts)
+
+
 def _auth_email_transport() -> str:
     transport = (os.getenv("AUTH_EMAIL_TRANSPORT") or "auto").strip().lower()
     if transport not in {"auto", "smtp", "microsoft_graph"}:
@@ -3238,11 +3311,15 @@ def _send_auth_email_via_ms_graph(
         with urllib.request.urlopen(request, timeout=timeout) as response:
             response.read()
     except urllib.error.HTTPError as exc:
+        token_summary = _summarize_ms_graph_token_claims(token)
         detail = _format_auth_http_error(
             exc,
             provider="Microsoft Graph sendMail failed",
             request_url=send_url,
-            extra={"sender": sender_email},
+            extra={
+                "sender": sender_email,
+                "token_claims": token_summary,
+            },
         )
         raise RuntimeError(detail)
     except Exception as exc:
