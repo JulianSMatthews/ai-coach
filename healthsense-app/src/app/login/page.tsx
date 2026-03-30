@@ -4,13 +4,6 @@ import { useEffect, useState } from "react";
 import { friendlyAuthError } from "@/lib/authErrors";
 import HealthSenseMark from "@/components/HealthSenseMark";
 
-type LoginMethod = "email" | "phone";
-
-function looksLikeEmail(value: string) {
-  const trimmed = value.trim();
-  return /\S+@\S+\.\S+/.test(trimmed);
-}
-
 function looksLikePhone(value: string) {
   const trimmed = value.trim();
   const digits = trimmed.replace(/[^\d]/g, "");
@@ -18,8 +11,6 @@ function looksLikePhone(value: string) {
 }
 
 export default function LoginPage() {
-  const [method, setMethod] = useState<LoginMethod>("email");
-  const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [otpId, setOtpId] = useState<number | null>(null);
@@ -30,14 +21,10 @@ export default function LoginPage() {
   const [rememberMe, setRememberMe] = useState(true);
   const [restoringSession, setRestoringSession] = useState(false);
 
-  const usingEmail = method === "email";
-
   const clearStoredLoginState = () => {
     if (typeof window === "undefined") return;
     try {
       window.sessionStorage.removeItem("hs_login_otp_id");
-      window.sessionStorage.removeItem("hs_login_method");
-      window.sessionStorage.removeItem("hs_login_email");
       window.sessionStorage.removeItem("hs_login_phone");
       window.sessionStorage.removeItem("hs_login_setup");
     } catch {}
@@ -54,16 +41,10 @@ export default function LoginPage() {
     if (typeof window === "undefined") return;
     try {
       const savedOtpId = window.sessionStorage.getItem("hs_login_otp_id");
-      const savedMethod = window.sessionStorage.getItem("hs_login_method");
-      const savedEmail = window.sessionStorage.getItem("hs_login_email");
       const savedPhone = window.sessionStorage.getItem("hs_login_phone");
       const savedSetup = window.sessionStorage.getItem("hs_login_setup");
-      if (savedEmail) setEmail(savedEmail);
       if (savedPhone) setPhone(savedPhone);
-      if (savedMethod === "phone" || (!savedMethod && savedPhone && !savedEmail)) {
-        setMethod("phone");
-      }
-      if (savedOtpId && (savedEmail || savedPhone)) {
+      if (savedOtpId && savedPhone) {
         setOtpId(Number(savedOtpId));
         setSetupRequired(savedSetup === "true");
       }
@@ -142,37 +123,24 @@ export default function LoginPage() {
     };
   }, []);
 
-  const requestOtp = async (event: React.FormEvent | null, channel: "auto" | "whatsapp" | "sms" | "email" = "auto") => {
+  const requestOtp = async (event: React.FormEvent | null, channel: "auto" | "whatsapp" | "sms" = "auto") => {
     if (event) event.preventDefault();
-    if (usingEmail) {
-      if (!email.trim()) {
-        setStatus("Please enter your email to continue.");
-        return;
-      }
-      if (!looksLikeEmail(email)) {
-        setStatus("That email doesn’t look right. Please check it.");
-        return;
-      }
-    } else {
-      if (!phone.trim()) {
-        setStatus("Please enter your phone number to continue.");
-        return;
-      }
-      if (!looksLikePhone(phone)) {
-        setStatus("Enter a valid mobile number, ideally with country code.");
-        return;
-      }
+    if (!phone.trim()) {
+      setStatus("Please enter your phone number to continue.");
+      return;
     }
+    if (!looksLikePhone(phone)) {
+      setStatus("Enter a valid mobile number, ideally with country code.");
+      return;
+    }
+
     setLoading(true);
     setStatus(null);
     try {
-      const payload = usingEmail
-        ? { email, password: password || undefined, channel }
-        : { phone, password: password || undefined, channel };
       const res = await fetch("/api/auth/login/request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ phone, password: password || undefined, channel }),
       });
       if (!res.ok) {
         const fallback = `Failed to request code (HTTP ${res.status}).`;
@@ -190,22 +158,10 @@ export default function LoginPage() {
       setOtpId(Number(data.otp_id));
       setSetupRequired(Boolean(data.setup_required));
       const channelUsed = data.channel || channel;
-      if (channelUsed === "email") {
-        setStatus("We sent a login code to your email address.");
-      } else if (channelUsed === "sms") {
-        setStatus(usingEmail ? "We sent a login code to the mobile number on your account by SMS." : "We sent a login code by SMS.");
-      } else {
-        setStatus(
-          usingEmail
-            ? "We sent a login code to the mobile number on your account via WhatsApp."
-            : "We sent a login code to your WhatsApp.",
-        );
-      }
+      setStatus(channelUsed === "sms" ? "We sent a login code by SMS." : "We sent a login code to your WhatsApp.");
       if (typeof window !== "undefined") {
         try {
           window.sessionStorage.setItem("hs_login_otp_id", String(data.otp_id));
-          window.sessionStorage.setItem("hs_login_method", method);
-          window.sessionStorage.setItem("hs_login_email", email);
           window.sessionStorage.setItem("hs_login_phone", phone);
           window.sessionStorage.setItem("hs_login_setup", String(Boolean(data.setup_required)));
         } catch {}
@@ -223,13 +179,10 @@ export default function LoginPage() {
     setLoading(true);
     setStatus(null);
     try {
-      const payload = usingEmail
-        ? { email, otp_id: otpId, code, remember_me: rememberMe }
-        : { phone, otp_id: otpId, code, remember_me: rememberMe };
       const res = await fetch("/api/auth/login/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ phone, otp_id: otpId, code, remember_me: rememberMe }),
       });
       if (!res.ok) {
         const fallback = `Failed to verify code (HTTP ${res.status}).`;
@@ -278,13 +231,6 @@ export default function LoginPage() {
     }
   };
 
-  const switchMethod = (nextMethod: LoginMethod) => {
-    if (nextMethod === method) return;
-    setMethod(nextMethod);
-    setStatus(null);
-    resetOtpState();
-  };
-
   return (
     <main className="min-h-screen bg-white px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto flex w-full max-w-md flex-col gap-6 rounded-3xl border border-[#e7e1d6] bg-white p-8 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.5)]">
@@ -294,36 +240,24 @@ export default function LoginPage() {
           </div>
           <h1 className="mt-4 text-3xl">Sign in</h1>
           <p className="mt-2 text-sm text-[#6b6257]">
-            {usingEmail
-              ? "Enter your email. We’ll send a code to your email address."
-              : "Enter your mobile number. We’ll send a code via WhatsApp or SMS."}
+            Enter your mobile number. We&apos;ll send a code via WhatsApp or SMS.
           </p>
         </div>
 
         {!otpId ? (
           <form onSubmit={(e) => requestOtp(e, "auto")} className="space-y-4" autoComplete="off">
             <div>
-              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                {usingEmail ? "Email address" : "Mobile number"}
-              </label>
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Mobile number</label>
               <input
                 className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-                type={usingEmail ? "email" : "text"}
-                autoComplete={usingEmail ? "email" : "tel"}
-                inputMode={usingEmail ? "email" : "tel"}
-                value={usingEmail ? email : phone}
-                onChange={(e) => (usingEmail ? setEmail(e.target.value) : setPhone(e.target.value))}
-                placeholder={usingEmail ? "name@example.com" : "+44 7700 900000"}
+                type="text"
+                autoComplete="tel"
+                inputMode="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+44 7700 900000"
               />
             </div>
-            <button
-              type="button"
-              className="text-sm text-[var(--accent)] underline"
-              onClick={() => switchMethod(usingEmail ? "phone" : "email")}
-              disabled={loading || restoringSession}
-            >
-              {usingEmail ? "Use mobile instead" : "Use email instead"}
-            </button>
             <div>
               <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Password</label>
               <input
@@ -370,11 +304,7 @@ export default function LoginPage() {
                 placeholder="123456"
               />
             </div>
-            <p className="text-sm text-[#6b6257]">
-              {usingEmail
-                ? "Use the code sent to your email address."
-                : "Use the code sent to your mobile number."}
-            </p>
+            <p className="text-sm text-[#6b6257]">Use the code sent to your mobile number.</p>
             {setupRequired ? (
               <p className="text-sm text-[#6b6257]">First time login — you’ll be prompted to set your security after this step.</p>
             ) : null}
@@ -385,41 +315,28 @@ export default function LoginPage() {
             >
               {loading ? "Verifying…" : "Verify & continue"}
             </button>
-            {usingEmail ? (
-              <button
-                type="button"
-                className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
-                onClick={() => requestOtp(null, "email")}
-                disabled={loading || restoringSession}
-              >
-                {loading ? "Sending…" : "Resend email"}
-              </button>
-            ) : (
-              <>
-                <button
-                  type="button"
-                  className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
-                  onClick={() => requestOtp(null, "whatsapp")}
-                  disabled={loading || restoringSession}
-                >
-                  {loading ? "Sending…" : "Resend via WhatsApp"}
-                </button>
-                <button
-                  type="button"
-                  className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
-                  onClick={() => requestOtp(null, "sms")}
-                  disabled={loading || restoringSession}
-                >
-                  {loading ? "Sending…" : "Send via SMS"}
-                </button>
-              </>
-            )}
+            <button
+              type="button"
+              className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
+              onClick={() => requestOtp(null, "whatsapp")}
+              disabled={loading || restoringSession}
+            >
+              {loading ? "Sending…" : "Resend via WhatsApp"}
+            </button>
+            <button
+              type="button"
+              className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
+              onClick={() => requestOtp(null, "sms")}
+              disabled={loading || restoringSession}
+            >
+              {loading ? "Sending…" : "Send via SMS"}
+            </button>
             <button
               type="button"
               className="w-full rounded-full border border-[#efe7db] px-5 py-2 text-sm"
               onClick={resetOtpState}
             >
-              {usingEmail ? "Use a different email" : "Use a different number"}
+              Use a different number
             </button>
           </form>
         )}

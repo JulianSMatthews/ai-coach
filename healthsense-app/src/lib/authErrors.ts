@@ -38,19 +38,19 @@ export function friendlyAuthError(raw: unknown): string {
   if (lower.includes("upstream returned invalid response")) {
     return "We’re having trouble connecting. Please try again.";
   }
-  if (lower.includes("email or phone required")) return "Enter your email to continue.";
+  if (lower.includes("email or phone required")) return "Enter your phone number to continue.";
   if (lower.includes("phone required")) return "Enter your phone number to continue.";
-  if (lower.includes("user not found")) return "We couldn’t find an account for that email or mobile number.";
+  if (lower.includes("user not found")) return "We couldn’t find an account for that mobile number.";
   if (lower.includes("email address required")) {
-    return "This account does not have an email address on file. Use mobile instead or contact support.";
+    return "Email sign-in is unavailable right now. Use your mobile number instead.";
   }
   if (lower.includes("mobile number required")) {
-    return "This account does not have a mobile number on file. Use email instead or contact support.";
+    return "This account does not have a mobile number on file. Contact support.";
   }
   if (lower.includes("invalid credentials")) {
     return "That password didn’t match. Try again, or leave it blank if this is your first login.";
   }
-  if (lower.includes("channel must be")) return "Choose email, WhatsApp, or SMS.";
+  if (lower.includes("channel must be")) return "Choose WhatsApp or SMS.";
   if (lower.includes("failed to send otp")) {
     if (
       lower.includes("auth email is not configured") ||
@@ -113,8 +113,8 @@ export function friendlyAuthError(raw: unknown): string {
   if (lower.includes("userId is required") || lower.includes("missing user id")) {
     return "We couldn’t identify your account. Please sign in again.";
   }
-  if (lower.includes("email is required")) return "Please enter your email to continue.";
-  if (lower.includes("invalid email")) return "That email doesn’t look right. Please check it.";
+  if (lower.includes("email is required")) return "Please enter your phone number to continue.";
+  if (lower.includes("invalid email")) return "Email sign-in is unavailable right now. Use your mobile number instead.";
   if (lower.includes("password must be at least")) return "Password must be at least 8 characters.";
   if (lower.includes("session required")) return "Your session expired. Please sign in again.";
   if (lower.includes("internal server error")) return "Something went wrong. Please try again.";
