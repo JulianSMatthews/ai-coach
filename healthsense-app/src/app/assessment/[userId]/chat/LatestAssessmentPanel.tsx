@@ -200,7 +200,9 @@ export default function LatestAssessmentPanel({
   initialAssessmentReviewed = false,
 }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
-  const [summaryPanelVisible, setSummaryPanelVisible] = useState(false);
+  const [summaryPanelVisible, setSummaryPanelVisible] = useState(
+    () => initialSummary.today_complete === true,
+  );
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<PillarTrackerDetailResponse | null>(null);
   const [draft, setDraft] = useState<Record<string, number>>({});
@@ -266,6 +268,12 @@ export default function LatestAssessmentPanel({
     trackerReturnSurface === "tracking"
       ? "Back to daily check-in"
       : "Close";
+
+  useEffect(() => {
+    if (summary.today_complete === true) {
+      setSummaryPanelVisible(true);
+    }
+  }, [summary.today_complete]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
