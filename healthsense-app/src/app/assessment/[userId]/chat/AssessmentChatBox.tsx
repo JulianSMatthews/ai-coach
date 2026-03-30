@@ -128,7 +128,7 @@ const HOME_SURFACE_COPY: Record<
   ask: {
     eyebrow: "Step 4 of 4",
     title: "Gia's message",
-    description: "Finish with Gia's message based on the latest results you entered, then mark this check-in complete.",
+    description: "",
     nextLabel: null,
   },
 };
@@ -671,7 +671,7 @@ export default function AssessmentChatBox({
   const viewingHomeSurfaceFromSummary = homeSurfaceEntryMode === "summary";
   const homeSurfaceEyebrow = viewingHomeSurfaceFromSummary ? "Daily view" : homeSurfaceMeta.eyebrow;
   const homeSurfaceDescription = viewingHomeSurfaceFromSummary
-    ? "Review this, then return to your score screen when you are ready."
+    ? "Review this and close when you are ready."
     : homeSurfaceMeta.description;
   const previousHomeSurface =
     currentHomeSurfaceIndex > 0 ? HOME_SURFACE_SEQUENCE[currentHomeSurfaceIndex - 1] : null;
@@ -1687,7 +1687,9 @@ export default function AssessmentChatBox({
             {homeSurfaceEyebrow}
           </p>
           <p className="mt-1 text-lg font-semibold text-[#1e1b16]">{homeSurfaceMeta.title}</p>
-          <p className="mt-1 text-sm text-[#6b6257]">{homeSurfaceDescription}</p>
+          {homeSurfaceDescription ? (
+            <p className="mt-1 text-sm text-[#6b6257]">{homeSurfaceDescription}</p>
+          ) : null}
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 sm:px-5">
           {homeSurface === "tracking" ? (
@@ -1880,7 +1882,7 @@ export default function AssessmentChatBox({
                 onClick={() => setJourneyCompleted(true)}
                 className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
               >
-                Back to scores
+                Close
               </button>
             </div>
           ) : (

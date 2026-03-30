@@ -205,9 +205,7 @@ export default function LatestAssessmentPanel({
   const closeTrackerLabel =
     trackerReturnSurface === "tracking"
       ? "Back to daily check-in"
-      : !guidedTrackingActive
-        ? "Back to previous screen"
-        : "Close";
+      : "Close";
 
   useEffect(() => {
     if (typeof window === "undefined") return;
