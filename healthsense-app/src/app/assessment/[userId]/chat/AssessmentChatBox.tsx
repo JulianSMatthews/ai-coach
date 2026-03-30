@@ -1936,7 +1936,7 @@ export default function AssessmentChatBox({
           </button>
           <button
             type="button"
-            className="rounded-full border border-[#efe7db] bg-white px-4 py-2 text-xs uppercase tracking-[0.2em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-[var(--text-primary)] transition-colors disabled:cursor-not-allowed disabled:opacity-60"
             disabled={busy}
             onClick={() => void startAssessment(true)}
           >

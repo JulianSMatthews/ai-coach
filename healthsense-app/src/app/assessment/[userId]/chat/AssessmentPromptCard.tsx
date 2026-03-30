@@ -465,7 +465,7 @@ export default function AssessmentPromptCard({
                 type="button"
                 onClick={onRedo}
                 disabled={busy}
-                className="rounded-full border border-[#e0d4c3] bg-[#fff3dc] px-4 py-2 text-xs uppercase tracking-[0.18em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-2 text-xs uppercase tracking-[0.18em] text-[var(--text-primary)] transition-colors disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Redo question
               </button>
@@ -475,7 +475,7 @@ export default function AssessmentPromptCard({
                 type="button"
                 onClick={onRestart}
                 disabled={busy}
-                className="rounded-full border border-[#e0d4c3] bg-[#fff3dc] px-4 py-2 text-xs uppercase tracking-[0.18em] text-[#3c332b] disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-full border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-2 text-xs uppercase tracking-[0.18em] text-[var(--text-primary)] transition-colors disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Restart
               </button>
