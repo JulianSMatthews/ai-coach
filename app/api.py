@@ -596,10 +596,10 @@ def _cleanup_reports_on_reset(*, keep_content: bool) -> None:
 @app.on_event("startup")
 def on_startup():
     def _run_auth_email_startup_diagnostic() -> None:
-        probe = (os.getenv("AUTH_EMAIL_DIAGNOSTIC_PROBE") or "sendmail").strip().lower() or "sendmail"
-        if probe not in {"token", "sendmail"}:
-            print(f"[startup][auth-email] invalid probe '{probe}', defaulting to sendmail")
-            probe = "sendmail"
+        probe = (os.getenv("AUTH_EMAIL_DIAGNOSTIC_PROBE") or "auto").strip().lower() or "auto"
+        if probe not in {"auto", "token", "sendmail", "smtp_login"}:
+            print(f"[startup][auth-email] invalid probe '{probe}', defaulting to auto")
+            probe = "auto"
         try:
             from .auth_email_diag import format_auth_email_diagnostic_report, run_auth_email_diagnostics
 
@@ -618,6 +618,28 @@ def on_startup():
         if val in {"0", "false", "no", "off"}:
             return False
         return None
+
+    def _should_run_auth_email_startup_diagnostic() -> bool:
+        configured = _parse_bool_env(os.getenv("AUTH_EMAIL_DIAGNOSTIC_ON_STARTUP"))
+        if configured is not None:
+            return configured
+        transport = (os.getenv("AUTH_EMAIL_TRANSPORT") or "auto").strip().lower() or "auto"
+        if transport in {"smtp", "microsoft_graph"}:
+            return True
+        return any(
+            bool((os.getenv(name) or "").strip())
+            for name in (
+                "AUTH_EMAIL_FROM",
+                "AUTH_SMTP_HOST",
+                "AUTH_SMTP_PORT",
+                "AUTH_SMTP_USERNAME",
+                "AUTH_SMTP_PASSWORD",
+                "AUTH_MS_GRAPH_TENANT_ID",
+                "AUTH_MS_GRAPH_CLIENT_ID",
+                "AUTH_MS_GRAPH_CLIENT_SECRET",
+                "AUTH_MS_GRAPH_SENDER",
+            )
+        )
 
     def _resolve_reset_requested() -> tuple[bool, str, dict[str, str]]:
         """
@@ -772,8 +794,8 @@ def on_startup():
             _maybe_set_public_base_via_ngrok()
             _print_env_banner()
             try:
-                if _is_truthy_token(os.getenv("AUTH_EMAIL_DIAGNOSTIC_ON_STARTUP") or ""):
-                    threading.Thread(target=_run_auth_email_startup_diagnostic, daemon=True).start()
+                if _should_run_auth_email_startup_diagnostic():
+                    _run_auth_email_startup_diagnostic()
             except Exception as e:
                 print(f"⚠️  Could not start auth email diagnostic: {e!r}")
             try:
@@ -3132,8 +3154,11 @@ def _auth_email_transport() -> str:
 
 
 def _auth_ms_graph_enabled() -> bool:
-    if _auth_email_transport() == "microsoft_graph":
+    transport = _auth_email_transport()
+    if transport == "microsoft_graph":
         return True
+    if transport == "smtp":
+        return False
     return any(
         bool((os.getenv(name) or "").strip())
         for name in (

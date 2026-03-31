@@ -5,6 +5,7 @@ Auth email diagnostics.
 Examples:
   python scripts/check_auth_email.py
   python scripts/check_auth_email.py --probe token
+  python scripts/check_auth_email.py --probe smtp_login
   python scripts/check_auth_email.py --json
 """
 from __future__ import annotations
@@ -30,9 +31,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Diagnose auth email delivery configuration.")
     parser.add_argument(
         "--probe",
-        choices=["token", "sendmail"],
-        default="sendmail",
-        help="Run token-only validation or a sendMail auth probe with an intentionally invalid body.",
+        choices=["auto", "token", "sendmail", "smtp_login"],
+        default="auto",
+        help="Run the transport-appropriate auth probe. Graph uses token/sendmail; SMTP uses smtp_login.",
     )
     parser.add_argument(
         "--json",

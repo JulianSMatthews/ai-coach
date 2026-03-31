@@ -68,8 +68,15 @@ def _warn_auth_email_config() -> None:
         "AUTH_SMTP_USE_TLS",
         "AUTH_SMTP_USE_SSL",
     )
-    using_graph = transport == "microsoft_graph" or any(_is_set(k) for k in graph_keys)
-    using_smtp = transport == "smtp" or any(_is_set(k) for k in smtp_keys)
+    if transport == "microsoft_graph":
+        using_graph = True
+        using_smtp = False
+    elif transport == "smtp":
+        using_graph = False
+        using_smtp = True
+    else:
+        using_graph = any(_is_set(k) for k in graph_keys)
+        using_smtp = not using_graph and any(_is_set(k) for k in smtp_keys)
 
     if transport not in {"auto", "smtp", "microsoft_graph"}:
         print("[env-check] Auth email config warning:")

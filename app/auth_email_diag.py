@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import smtplib
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -49,61 +50,64 @@ def _normalize_url(value: str, *, default: str) -> str:
     return raw or default
 
 
-def _token_url_from_env(tenant_id: str) -> str:
-    token_base = _normalize_url(
-        os.getenv("AUTH_MS_GRAPH_TOKEN_BASE_URL") or "",
-        default="https://login.microsoftonline.com",
-    )
-    return f"{token_base}/{tenant_id}/oauth2/v2.0/token"
+def _parse_bool(value: str | None) -> bool | None:
+    token = str(value or "").strip().lower()
+    if token == "":
+        return None
+    if token in {"1", "true", "yes", "on"}:
+        return True
+    if token in {"0", "false", "no", "off"}:
+        return False
+    return None
 
 
-def _graph_config_from_env() -> dict[str, Any]:
+def _requested_transport() -> str:
     transport = (os.getenv("AUTH_EMAIL_TRANSPORT") or "auto").strip().lower() or "auto"
-    sender = _normalize_email(os.getenv("AUTH_MS_GRAPH_SENDER") or os.getenv("AUTH_EMAIL_FROM") or "")
-    tenant_id = str(os.getenv("AUTH_MS_GRAPH_TENANT_ID") or "").strip()
-    client_id = str(os.getenv("AUTH_MS_GRAPH_CLIENT_ID") or "").strip()
-    client_secret = os.getenv("AUTH_MS_GRAPH_CLIENT_SECRET") or ""
-    scope = str(os.getenv("AUTH_MS_GRAPH_SCOPE") or "https://graph.microsoft.com/.default").strip()
-    api_base_url = _normalize_url(
-        os.getenv("AUTH_MS_GRAPH_API_BASE_URL") or "",
-        default="https://graph.microsoft.com/v1.0",
+    if transport not in {"auto", "smtp", "microsoft_graph"}:
+        return "invalid"
+    return transport
+
+
+def _graph_env_present() -> bool:
+    return any(
+        bool((os.getenv(name) or "").strip())
+        for name in (
+            "AUTH_MS_GRAPH_TENANT_ID",
+            "AUTH_MS_GRAPH_CLIENT_ID",
+            "AUTH_MS_GRAPH_CLIENT_SECRET",
+            "AUTH_MS_GRAPH_SENDER",
+        )
     )
-    timeout_raw = str(
-        os.getenv("AUTH_MS_GRAPH_TIMEOUT_SECONDS")
-        or os.getenv("AUTH_SMTP_TIMEOUT_SECONDS")
-        or "20"
-    ).strip()
-    try:
-        timeout = max(1.0, float(timeout_raw))
-    except Exception:
-        timeout = 20.0
-    graph_keys = (tenant_id, client_id, client_secret, sender)
-    using_graph = transport == "microsoft_graph" or any(bool(v) for v in graph_keys)
-    missing = []
-    if using_graph:
-        if not tenant_id:
-            missing.append("AUTH_MS_GRAPH_TENANT_ID")
-        if not client_id:
-            missing.append("AUTH_MS_GRAPH_CLIENT_ID")
-        if not client_secret:
-            missing.append("AUTH_MS_GRAPH_CLIENT_SECRET")
-        if not sender:
-            missing.append("AUTH_MS_GRAPH_SENDER or AUTH_EMAIL_FROM")
-    token_url = _token_url_from_env(tenant_id or "<missing-tenant>")
-    return {
-        "transport": transport,
-        "using_graph": using_graph,
-        "tenant_id": tenant_id,
-        "client_id": client_id,
-        "client_secret_present": bool(client_secret),
-        "client_secret": client_secret,
-        "sender": sender,
-        "scope": scope,
-        "api_base_url": api_base_url,
-        "token_url": token_url,
-        "timeout": timeout,
-        "missing": missing,
-    }
+
+
+def _smtp_env_present() -> bool:
+    return any(
+        bool((os.getenv(name) or "").strip())
+        for name in (
+            "AUTH_EMAIL_FROM",
+            "AUTH_SMTP_HOST",
+            "AUTH_SMTP_PORT",
+            "AUTH_SMTP_USERNAME",
+            "AUTH_SMTP_PASSWORD",
+            "AUTH_SMTP_USE_TLS",
+            "AUTH_SMTP_USE_SSL",
+            "AUTH_SMTP_TIMEOUT_SECONDS",
+        )
+    )
+
+
+def _selected_transport(transport_setting: str) -> str:
+    if transport_setting == "smtp":
+        return "smtp"
+    if transport_setting == "microsoft_graph":
+        return "microsoft_graph"
+    if transport_setting == "invalid":
+        return "invalid"
+    if _graph_env_present():
+        return "microsoft_graph"
+    if _smtp_env_present():
+        return "smtp"
+    return "none"
 
 
 def _public_url(url: str) -> str:
@@ -144,6 +148,139 @@ def _http_error_summary(exc: urllib.error.HTTPError, *, url: str) -> dict[str, A
         "detail": _parse_error(body) or str(exc),
         "headers": picked_headers,
         "raw_body": body,
+    }
+
+
+def _smtp_error_detail(exc: BaseException) -> str:
+    for attr in ("smtp_error",):
+        raw = getattr(exc, attr, None)
+        if isinstance(raw, bytes):
+            token = raw.decode("utf-8", errors="replace").strip()
+            if token:
+                return token
+        token = str(raw or "").strip()
+        if token:
+            return token
+    token = str(exc).strip()
+    if token:
+        return token
+    return exc.__class__.__name__
+
+
+def _smtp_error_status(exc: BaseException) -> int | None:
+    for attr in ("smtp_code", "code"):
+        raw = getattr(exc, attr, None)
+        try:
+            if raw is not None:
+                return int(raw)
+        except Exception:
+            continue
+    return None
+
+
+def _smtp_config_from_env(*, transport_setting: str, selected_transport: str) -> dict[str, Any]:
+    host = str(os.getenv("AUTH_SMTP_HOST") or "").strip()
+    from_email = _normalize_email(os.getenv("AUTH_EMAIL_FROM") or "")
+    username = str(os.getenv("AUTH_SMTP_USERNAME") or "").strip()
+    password = os.getenv("AUTH_SMTP_PASSWORD") or ""
+    use_ssl = bool(_parse_bool(os.getenv("AUTH_SMTP_USE_SSL") or "") or False)
+    default_tls = "0" if use_ssl else "1"
+    use_tls_raw = _parse_bool(os.getenv("AUTH_SMTP_USE_TLS") or default_tls)
+    use_tls = (not use_ssl) if use_tls_raw is None else bool(use_tls_raw)
+    default_port = 465 if use_ssl else 587 if use_tls else 25
+    port_raw = str(os.getenv("AUTH_SMTP_PORT") or default_port).strip()
+    timeout_raw = str(os.getenv("AUTH_SMTP_TIMEOUT_SECONDS") or "20").strip()
+
+    missing: list[str] = []
+    if selected_transport == "smtp":
+        if not host:
+            missing.append("AUTH_SMTP_HOST")
+        if not from_email:
+            missing.append("AUTH_EMAIL_FROM")
+        if bool(username) != bool(password):
+            missing.append("AUTH_SMTP_USERNAME and AUTH_SMTP_PASSWORD must both be set")
+
+    try:
+        port = int(port_raw)
+    except Exception:
+        port = default_port
+        if selected_transport == "smtp":
+            missing.append("AUTH_SMTP_PORT must be an integer")
+
+    try:
+        timeout = max(1.0, float(timeout_raw))
+    except Exception:
+        timeout = 20.0
+
+    return {
+        "transport_setting": transport_setting,
+        "selected_transport": selected_transport,
+        "host": host,
+        "port": port,
+        "from_email": from_email,
+        "username": username,
+        "username_present": bool(username),
+        "password_present": bool(password),
+        "use_ssl": use_ssl,
+        "use_tls": use_tls,
+        "timeout": timeout,
+        "missing": missing,
+    }
+
+
+def _token_url_from_env(tenant_id: str) -> str:
+    token_base = _normalize_url(
+        os.getenv("AUTH_MS_GRAPH_TOKEN_BASE_URL") or "",
+        default="https://login.microsoftonline.com",
+    )
+    return f"{token_base}/{tenant_id}/oauth2/v2.0/token"
+
+
+def _graph_config_from_env(*, transport_setting: str, selected_transport: str) -> dict[str, Any]:
+    sender = _normalize_email(os.getenv("AUTH_MS_GRAPH_SENDER") or os.getenv("AUTH_EMAIL_FROM") or "")
+    tenant_id = str(os.getenv("AUTH_MS_GRAPH_TENANT_ID") or "").strip()
+    client_id = str(os.getenv("AUTH_MS_GRAPH_CLIENT_ID") or "").strip()
+    client_secret = os.getenv("AUTH_MS_GRAPH_CLIENT_SECRET") or ""
+    scope = str(os.getenv("AUTH_MS_GRAPH_SCOPE") or "https://graph.microsoft.com/.default").strip()
+    api_base_url = _normalize_url(
+        os.getenv("AUTH_MS_GRAPH_API_BASE_URL") or "",
+        default="https://graph.microsoft.com/v1.0",
+    )
+    timeout_raw = str(
+        os.getenv("AUTH_MS_GRAPH_TIMEOUT_SECONDS")
+        or os.getenv("AUTH_SMTP_TIMEOUT_SECONDS")
+        or "20"
+    ).strip()
+    try:
+        timeout = max(1.0, float(timeout_raw))
+    except Exception:
+        timeout = 20.0
+
+    missing: list[str] = []
+    if selected_transport == "microsoft_graph":
+        if not tenant_id:
+            missing.append("AUTH_MS_GRAPH_TENANT_ID")
+        if not client_id:
+            missing.append("AUTH_MS_GRAPH_CLIENT_ID")
+        if not client_secret:
+            missing.append("AUTH_MS_GRAPH_CLIENT_SECRET")
+        if not sender:
+            missing.append("AUTH_MS_GRAPH_SENDER or AUTH_EMAIL_FROM")
+
+    token_url = _token_url_from_env(tenant_id or "<missing-tenant>")
+    return {
+        "transport_setting": transport_setting,
+        "selected_transport": selected_transport,
+        "tenant_id": tenant_id,
+        "client_id": client_id,
+        "client_secret_present": bool(client_secret),
+        "client_secret": client_secret,
+        "sender": sender,
+        "scope": scope,
+        "api_base_url": api_base_url,
+        "token_url": token_url,
+        "timeout": timeout,
+        "missing": missing,
     }
 
 
@@ -356,30 +493,197 @@ def probe_graph_sender_user(config: dict[str, Any], *, access_token: str) -> dic
     }
 
 
-def run_auth_email_diagnostics(*, probe: str = "sendmail") -> dict[str, Any]:
-    config = _graph_config_from_env()
+def probe_smtp_login(config: dict[str, Any]) -> dict[str, Any]:
+    host = str(config["host"])
+    port = int(config["port"])
+    timeout = float(config["timeout"])
+    use_ssl = bool(config["use_ssl"])
+    use_tls = bool(config["use_tls"])
+    username = str(config["username"])
+    auth_used = False
+    ehlo_code: int | None = None
+    noop_code: int | None = None
+    starttls_available = False
+    auth_mechanisms: list[str] = []
+
+    smtp_cls = smtplib.SMTP_SSL if use_ssl else smtplib.SMTP
+    try:
+        with smtp_cls(host, port, timeout=timeout) as smtp:
+            ehlo_code_raw, _ = smtp.ehlo()
+            try:
+                ehlo_code = int(ehlo_code_raw)
+            except Exception:
+                ehlo_code = None
+            starttls_available = bool(smtp.has_extn("starttls"))
+
+            if not use_ssl and use_tls:
+                if not starttls_available:
+                    return {
+                        "ok": False,
+                        "status": ehlo_code,
+                        "detail": "SMTP server does not advertise STARTTLS",
+                        "classification": "starttls_not_supported",
+                        "starttls_available": starttls_available,
+                        "auth_mechanisms": [],
+                    }
+                smtp.starttls()
+                ehlo_code_raw, _ = smtp.ehlo()
+                try:
+                    ehlo_code = int(ehlo_code_raw)
+                except Exception:
+                    ehlo_code = None
+
+            auth_line = str((getattr(smtp, "esmtp_features", {}) or {}).get("auth") or "").strip()
+            auth_mechanisms = [item for item in auth_line.split() if item]
+
+            if username:
+                smtp.login(username, str(os.getenv("AUTH_SMTP_PASSWORD") or ""))
+                auth_used = True
+
+            noop_code_raw, noop_message_raw = smtp.noop()
+            try:
+                noop_code = int(noop_code_raw)
+            except Exception:
+                noop_code = None
+            if isinstance(noop_message_raw, bytes):
+                noop_message = noop_message_raw.decode("utf-8", errors="replace").strip()
+            else:
+                noop_message = str(noop_message_raw or "").strip()
+
+        ok = noop_code is not None and 200 <= noop_code < 300
+        return {
+            "ok": ok,
+            "status": noop_code or ehlo_code,
+            "detail": noop_message or "SMTP connection verified",
+            "classification": "smtp_authenticated" if ok and auth_used else "smtp_connected" if ok else "smtp_noop_failed",
+            "starttls_available": starttls_available,
+            "auth_mechanisms": auth_mechanisms,
+            "auth_used": auth_used,
+        }
+    except smtplib.SMTPAuthenticationError as exc:
+        return {
+            "ok": False,
+            "status": _smtp_error_status(exc),
+            "detail": _smtp_error_detail(exc),
+            "classification": "authentication_failed",
+            "starttls_available": starttls_available,
+            "auth_mechanisms": auth_mechanisms,
+            "auth_used": True,
+        }
+    except smtplib.SMTPNotSupportedError as exc:
+        classification = "authentication_not_supported" if username else "smtp_not_supported"
+        if use_tls and not starttls_available:
+            classification = "starttls_not_supported"
+        return {
+            "ok": False,
+            "status": _smtp_error_status(exc),
+            "detail": _smtp_error_detail(exc),
+            "classification": classification,
+            "starttls_available": starttls_available,
+            "auth_mechanisms": auth_mechanisms,
+            "auth_used": auth_used,
+        }
+    except smtplib.SMTPConnectError as exc:
+        return {
+            "ok": False,
+            "status": _smtp_error_status(exc),
+            "detail": _smtp_error_detail(exc),
+            "classification": "connect_failed",
+            "starttls_available": starttls_available,
+            "auth_mechanisms": auth_mechanisms,
+            "auth_used": auth_used,
+        }
+    except smtplib.SMTPServerDisconnected as exc:
+        return {
+            "ok": False,
+            "status": None,
+            "detail": _smtp_error_detail(exc),
+            "classification": "server_disconnected",
+            "starttls_available": starttls_available,
+            "auth_mechanisms": auth_mechanisms,
+            "auth_used": auth_used,
+        }
+    except smtplib.SMTPException as exc:
+        return {
+            "ok": False,
+            "status": _smtp_error_status(exc),
+            "detail": _smtp_error_detail(exc),
+            "classification": "smtp_error",
+            "starttls_available": starttls_available,
+            "auth_mechanisms": auth_mechanisms,
+            "auth_used": auth_used,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "status": None,
+            "detail": str(exc),
+            "classification": "request_failed",
+            "starttls_available": starttls_available,
+            "auth_mechanisms": auth_mechanisms,
+            "auth_used": auth_used,
+        }
+
+
+def run_auth_email_diagnostics(*, probe: str = "auto") -> dict[str, Any]:
+    normalized_probe = str(probe or "auto").strip().lower() or "auto"
+    transport_setting = _requested_transport()
+    selected_transport = _selected_transport(transport_setting)
     result: dict[str, Any] = {
-        "transport": config["transport"],
-        "using_graph": bool(config["using_graph"]),
-        "config": {
-            "sender": config["sender"],
-            "scope": config["scope"],
-            "token_url": _public_url(str(config["token_url"])),
-            "api_base_url": _public_url(str(config["api_base_url"])),
-            "client_id_present": bool(config["client_id"]),
-            "client_secret_present": bool(config["client_secret_present"]),
-            "tenant_id_present": bool(config["tenant_id"]),
-            "missing": list(config["missing"]),
-        },
-        "probe": probe,
-        "token": None,
-        "sender_probe": None,
-        "sendmail_probe": None,
+        "transport": selected_transport,
+        "transport_setting": transport_setting,
+        "probe": normalized_probe,
         "ok": False,
+        "config": {},
     }
-    if not config["using_graph"]:
-        result["detail"] = "Microsoft Graph auth email is not enabled by current env."
+
+    if transport_setting == "invalid":
+        result["detail"] = "AUTH_EMAIL_TRANSPORT must be auto, smtp, or microsoft_graph."
         return result
+
+    if selected_transport == "none":
+        result["detail"] = "No auth email transport is enabled by current env."
+        return result
+
+    if selected_transport == "smtp":
+        config = _smtp_config_from_env(
+            transport_setting=transport_setting,
+            selected_transport=selected_transport,
+        )
+        result["config"] = {
+            "host": config["host"],
+            "port": config["port"],
+            "from_email": config["from_email"],
+            "use_tls": config["use_tls"],
+            "use_ssl": config["use_ssl"],
+            "username_present": config["username_present"],
+            "password_present": config["password_present"],
+            "missing": list(config["missing"]),
+        }
+        if config["missing"]:
+            result["detail"] = "Missing SMTP auth email config."
+            return result
+
+        smtp_probe = probe_smtp_login(config)
+        result["smtp_probe"] = smtp_probe
+        result["ok"] = bool(smtp_probe.get("ok"))
+        result["detail"] = "SMTP login probe succeeded." if result["ok"] else "SMTP login probe failed."
+        return result
+
+    config = _graph_config_from_env(
+        transport_setting=transport_setting,
+        selected_transport=selected_transport,
+    )
+    result["config"] = {
+        "sender": config["sender"],
+        "scope": config["scope"],
+        "token_url": _public_url(str(config["token_url"])),
+        "api_base_url": _public_url(str(config["api_base_url"])),
+        "client_id_present": bool(config["client_id"]),
+        "client_secret_present": bool(config["client_secret_present"]),
+        "tenant_id_present": bool(config["tenant_id"]),
+        "missing": list(config["missing"]),
+    }
     if config["missing"]:
         result["detail"] = "Missing Microsoft Graph auth email config."
         return result
@@ -390,7 +694,7 @@ def run_auth_email_diagnostics(*, probe: str = "sendmail") -> dict[str, Any]:
         result["detail"] = "Token request failed."
         return result
 
-    if probe == "token":
+    if normalized_probe == "token":
         result["ok"] = True
         result["detail"] = "Token request succeeded."
         return result
@@ -408,25 +712,63 @@ def run_auth_email_diagnostics(*, probe: str = "sendmail") -> dict[str, Any]:
 def format_auth_email_diagnostic_report(result: dict[str, Any]) -> list[str]:
     lines = [
         (
-            f"transport={result.get('transport')} using_graph={result.get('using_graph')} "
+            f"transport={result.get('transport')} "
+            f"transport_setting={result.get('transport_setting')} "
             f"probe={result.get('probe')} ok={result.get('ok')}"
         )
     ]
     config = result.get("config") or {}
-    lines.append(
-        "config "
-        + " ".join(
-            [
-                f"sender={config.get('sender') or '<missing>'}",
-                f"scope={config.get('scope') or '<missing>'}",
-                f"token_url={config.get('token_url') or '<missing>'}",
-                f"api_base_url={config.get('api_base_url') or '<missing>'}",
-            ]
+    transport = str(result.get("transport") or "").strip().lower()
+
+    if transport == "smtp":
+        lines.append(
+            "config "
+            + " ".join(
+                [
+                    f"host={config.get('host') or '<missing>'}",
+                    f"port={config.get('port') or '<missing>'}",
+                    f"from_email={config.get('from_email') or '<missing>'}",
+                    f"use_tls={config.get('use_tls')}",
+                    f"use_ssl={config.get('use_ssl')}",
+                    f"username_present={config.get('username_present')}",
+                    f"password_present={config.get('password_present')}",
+                ]
+            )
         )
-    )
+    elif transport == "microsoft_graph":
+        lines.append(
+            "config "
+            + " ".join(
+                [
+                    f"sender={config.get('sender') or '<missing>'}",
+                    f"scope={config.get('scope') or '<missing>'}",
+                    f"token_url={config.get('token_url') or '<missing>'}",
+                    f"api_base_url={config.get('api_base_url') or '<missing>'}",
+                ]
+            )
+        )
+
     missing = config.get("missing") or []
     if missing:
         lines.append("missing " + ", ".join(str(item) for item in missing))
+
+    smtp_probe = result.get("smtp_probe") or {}
+    if smtp_probe:
+        auth_mechanisms = smtp_probe.get("auth_mechanisms") or []
+        extra_bits: list[str] = []
+        if auth_mechanisms:
+            extra_bits.append("auth=" + ",".join(str(item) for item in auth_mechanisms))
+        if smtp_probe.get("starttls_available") is not None:
+            extra_bits.append(f"starttls_available={smtp_probe.get('starttls_available')}")
+        if smtp_probe.get("auth_used") is not None:
+            extra_bits.append(f"auth_used={smtp_probe.get('auth_used')}")
+        lines.append(
+            f"smtp_probe status={smtp_probe.get('status')} "
+            f"classification={smtp_probe.get('classification')} "
+            f"detail={smtp_probe.get('detail')}"
+            + (f" {' '.join(extra_bits)}" if extra_bits else "")
+        )
+
     token = result.get("token") or {}
     if token:
         claims = token.get("claims") or {}
@@ -439,6 +781,7 @@ def format_auth_email_diagnostic_report(result: dict[str, Any]) -> list[str]:
             f"token status={token.get('status')} detail={token.get('detail') or 'ok'}"
             + (f" {' '.join(claims_bits)}" if claims_bits else "")
         )
+
     sender_probe = result.get("sender_probe") or {}
     if sender_probe:
         sender_bits = []
@@ -460,6 +803,7 @@ def format_auth_email_diagnostic_report(result: dict[str, Any]) -> list[str]:
             + (f" {' '.join(sender_bits)}" if sender_bits else "")
             + (f" {' '.join(header_bits)}" if header_bits else "")
         )
+
     sendmail_probe = result.get("sendmail_probe") or {}
     if sendmail_probe:
         header_bits = []
@@ -474,6 +818,7 @@ def format_auth_email_diagnostic_report(result: dict[str, Any]) -> list[str]:
             f"detail={sendmail_probe.get('detail')}"
             + (f" {' '.join(header_bits)}" if header_bits else "")
         )
+
     detail = str(result.get("detail") or "").strip()
     if detail:
         lines.append(f"summary {detail}")
