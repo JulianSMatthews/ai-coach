@@ -636,17 +636,25 @@ def _concept_okr_actual_achieved(
     anchor: date,
     week_days: list[date],
 ) -> dict[str, Any]:
+    effective_start = _effective_okr_window_start(resolved_target, week_days, anchor)
     logged_values = [
         _safe_float((evaluations_for_concept.get(day) or {}).get("value"))
         for day in week_days
-        if _effective_okr_window_start(resolved_target, week_days, anchor) <= day <= anchor
+        if effective_start <= day <= anchor
     ]
-    return _okr_actual_achieved_from_logged_values(logged_values, resolved_target)
+    elapsed_days = max(0, (anchor - effective_start).days + 1)
+    return _okr_actual_achieved_from_logged_values(
+        logged_values,
+        resolved_target,
+        elapsed_days=elapsed_days,
+    )
 
 
 def _okr_actual_achieved_from_logged_values(
     logged_values: list[float | None],
     resolved_target: PillarTrackerResolvedTarget,
+    *,
+    elapsed_days: int | None = None,
 ) -> dict[str, Any]:
     target_value = _safe_float(resolved_target.target_value)
     if target_value is None or resolved_target.target_period not in {"day", "week"}:
@@ -665,15 +673,20 @@ def _okr_actual_achieved_from_logged_values(
             "logged_days": 0,
         }
     average_value_per_logged_day = sum(logged_values) / float(len(logged_values))
-    actual_value = (
-        average_value_per_logged_day * 7.0
-        if resolved_target.target_period == "week"
-        else average_value_per_logged_day
-    )
+    if resolved_target.target_period == "week":
+        actual_value = sum(logged_values)
+        expected_value = target_value
+        if elapsed_days is not None and elapsed_days > 0:
+            expected_value = (target_value * min(max(int(elapsed_days), 0), 7)) / 7.0
+        detail_label = _format_progress_label("Recorded", actual_value, resolved_target.target_unit)
+    else:
+        actual_value = average_value_per_logged_day
+        expected_value = target_value
+        detail_label = _format_progress_label("Actual", actual_value, resolved_target.target_unit)
     return {
-        "on_track": _value_meets_threshold(resolved_target.target_direction, target_value, actual_value),
+        "on_track": _value_meets_threshold(resolved_target.target_direction, expected_value, actual_value),
         "actual_value": actual_value,
-        "detail_label": _format_progress_label("Actual", actual_value, resolved_target.target_unit),
+        "detail_label": detail_label,
         "logged_days": len(logged_values),
     }
 
@@ -760,6 +773,7 @@ def _sync_pillar_tracker_actuals_to_okrs(
     if not best_by_concept:
         return
     concept_defs = {item.concept_key: item for item in required_concepts}
+    week_days = _week_days(anchor_date)
     tracker_rows = (
         s.execute(
             select(DailyPillarTrackerEntry)
@@ -784,7 +798,7 @@ def _sync_pillar_tracker_actuals_to_okrs(
         concept_def = concept_defs.get(concept_key)
         if resolved_target is None or concept_def is None:
             continue
-        effective_start = resolved_target.start_date
+        effective_start = _effective_okr_window_start(resolved_target, week_days, anchor_date)
         logged_values: list[float | None] = []
         for row in rows_by_concept.get(concept_key, []):
             row_date = getattr(row, "score_date", None)
@@ -792,11 +806,16 @@ def _sync_pillar_tracker_actuals_to_okrs(
                 continue
             if row_date > anchor_date:
                 continue
-            if effective_start is not None and row_date < effective_start:
+            if row_date < effective_start:
                 continue
             value = _normalize_option_value(concept_def, getattr(row, "value_num", None))
             logged_values.append(value)
-        actual_progress = _okr_actual_achieved_from_logged_values(logged_values, resolved_target)
+        elapsed_days = max(0, (anchor_date - effective_start).days + 1)
+        actual_progress = _okr_actual_achieved_from_logged_values(
+            logged_values,
+            resolved_target,
+            elapsed_days=elapsed_days,
+        )
         actual_value = _safe_float(actual_progress.get("actual_value"))
         kr.actual_num = actual_value
         kr.updated_at = sync_time
@@ -1059,9 +1078,10 @@ def _build_concept_week_evaluations(
     for concept_def in required_concepts:
         concept_key = concept_def.concept_key
         resolved_target = resolved_targets.get(concept_key) or _default_resolved_target("", concept_def)
+        effective_start = _effective_okr_window_start(resolved_target, week_days, week_days[-1])
         concept_rows: dict[date, dict[str, Any]] = {}
         success_count = 0
-        for index, day in enumerate(week_days, start=1):
+        for day in week_days:
             row = (entries_by_day.get(day) or {}).get(concept_key)
             if row is None or getattr(row, "value_num", None) is None:
                 concept_rows[day] = {
@@ -1099,9 +1119,10 @@ def _build_concept_week_evaluations(
             daily_status = _daily_display_status_for_value(concept_def, value, resolved_target)
             daily_positive = daily_status == "success"
             if resolved_target.target_period == "week" and resolved_target.target_value is not None:
-                if target_reached:
+                elapsed_days = max(0, (day - effective_start).days + 1) if day >= effective_start else 0
+                if day >= effective_start and target_reached:
                     success_count += 1
-                expected = _week_target_expected(resolved_target.target_value, index)
+                expected = _week_target_expected(resolved_target.target_value, elapsed_days)
                 score = 100 if expected <= 0 else int(round(max(0.0, min(1.0, success_count / expected)) * 100))
                 target_met = success_count >= expected if expected > 0 else True
             else:
