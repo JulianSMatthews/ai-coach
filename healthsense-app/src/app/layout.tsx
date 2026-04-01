@@ -31,7 +31,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html
+      lang="en"
+      suppressHydrationWarning
+      data-theme="dark"
+      data-theme-preference="dark"
+      style={{ colorScheme: "dark" }}
+    >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript() }} />
       </head>

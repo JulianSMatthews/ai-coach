@@ -15,12 +15,13 @@ export default function ThemeBootstrap({ defaultTheme }: ThemeBootstrapProps) {
   useEffect(() => {
     const stored = readStoredThemePreference();
     const fallback = normalizeThemePreference(defaultTheme);
-    const preference = stored || fallback;
+    const hasExplicitDefault = typeof defaultTheme === "string" && defaultTheme.trim().length > 0;
+    const preference = hasExplicitDefault ? fallback : stored || fallback;
     applyThemePreference(preference, true);
 
     const media = window.matchMedia("(prefers-color-scheme: dark)");
     const handleChange = () => {
-      const current = readStoredThemePreference() || fallback;
+      const current = hasExplicitDefault ? fallback : readStoredThemePreference() || fallback;
       if (current === "system") {
         applyThemePreference("system", false);
       }

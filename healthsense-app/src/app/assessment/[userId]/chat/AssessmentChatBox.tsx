@@ -98,6 +98,8 @@ type HomeSurfaceEntryMode = "guided" | "summary";
 
 const HOME_SURFACE_SEQUENCE: HomeSurface[] = ["tracking", "habits", "insight", "ask"];
 const TRACKING_STEP_PILLARS = ["Nutrition", "Training", "Resilience", "Recovery"];
+const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
+type MorningSequenceState = "idle" | "in_progress" | "completed";
 
 const HOME_SURFACE_COPY: Record<
   HomeSurface,
@@ -533,6 +535,67 @@ function isLikelyVideoUrl(value: string): boolean {
   return /\.(mp4|m4v|mov|webm)(?:$|[?#])/i.test(token);
 }
 
+function fallbackLocalIsoDate(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function resolveMorningSequenceDay(summary?: PillarTrackerSummaryResponse | null): string {
+  const token = String(summary?.today || "").trim();
+  return token || fallbackLocalIsoDate();
+}
+
+function morningSequenceStorageKey(userId: string, dayToken: string): string | null {
+  const normalizedUserId = String(userId || "").trim();
+  const normalizedDayToken = String(dayToken || "").trim();
+  if (!normalizedUserId || !normalizedDayToken) return null;
+  return `${MORNING_SEQUENCE_STORAGE_PREFIX}:${normalizedUserId}:${normalizedDayToken}`;
+}
+
+function readMorningSequenceState(userId: string, dayToken: string): MorningSequenceState {
+  if (typeof window === "undefined") return "idle";
+  const key = morningSequenceStorageKey(userId, dayToken);
+  if (!key) return "idle";
+  try {
+    const raw = String(window.localStorage.getItem(key) || "").trim().toLowerCase();
+    if (raw === "completed" || raw === "1") return "completed";
+    if (raw === "in_progress") return "in_progress";
+    return "idle";
+  } catch {
+    return "idle";
+  }
+}
+
+function writeMorningSequenceState(userId: string, dayToken: string, state: MorningSequenceState): void {
+  if (typeof window === "undefined") return;
+  const key = morningSequenceStorageKey(userId, dayToken);
+  if (!key) return;
+  try {
+    if (state !== "idle") {
+      window.localStorage.setItem(key, state);
+      return;
+    }
+    window.localStorage.removeItem(key);
+  } catch {
+    // Ignore storage failures and fall back to the in-memory state.
+  }
+}
+
+function resolveJourneyCompleted(options: {
+  assessmentCompleted: boolean;
+  summary: PillarTrackerSummaryResponse | null | undefined;
+  sequenceState: MorningSequenceState;
+}): boolean {
+  const { assessmentCompleted, summary, sequenceState } = options;
+  if (!assessmentCompleted) return false;
+  if (sequenceState === "completed") return true;
+  if (sequenceState === "in_progress") return false;
+  return isDailyCheckInComplete(summary);
+}
+
 export default function AssessmentChatBox({
   userId,
   assessmentCompleted = false,
@@ -579,8 +642,18 @@ export default function AssessmentChatBox({
   const [sending, setSending] = useState(false);
   const [homeSurface, setHomeSurface] = useState<HomeSurface>("tracking");
   const [homeSurfaceEntryMode, setHomeSurfaceEntryMode] = useState<HomeSurfaceEntryMode>("guided");
+  const [morningSequenceDay, setMorningSequenceDay] = useState(() =>
+    resolveMorningSequenceDay(initialTrackerSummary),
+  );
   const [journeyCompleted, setJourneyCompleted] = useState(
-    () => assessmentCompleted && isDailyCheckInComplete(initialTrackerSummary),
+    () => {
+      const initialState = readMorningSequenceState(userId, resolveMorningSequenceDay(initialTrackerSummary));
+      return resolveJourneyCompleted({
+        assessmentCompleted,
+        summary: initialTrackerSummary,
+        sequenceState: initialState,
+      });
+    },
   );
   const [finalGiaMessage, setFinalGiaMessage] = useState<string | null>(null);
   const [finalGiaMessageLoading, setFinalGiaMessageLoading] = useState(false);
@@ -600,7 +673,7 @@ export default function AssessmentChatBox({
     const token = String(leadToken || "").trim();
     return token ? `&lt=${encodeURIComponent(token)}` : "";
   }, [leadToken]);
-  const initialJourneyCompleted = assessmentCompleted && isDailyCheckInComplete(initialTrackerSummary);
+  const initialMorningSequenceDay = resolveMorningSequenceDay(initialTrackerSummary);
   const allowResultSummaryInChat = leadFlow || isLeadGuest;
   const busy = loading || starting || sending || claiming;
   const chatReady = hasActiveSession || assessmentCompleted || messages.length > 0;
@@ -713,6 +786,11 @@ export default function AssessmentChatBox({
       // Ignore storage failures and keep the current render path active.
     }
   }, [completionSummaryVideoStorageKey]);
+
+  const completeMorningSequence = useCallback(() => {
+    writeMorningSequenceState(userId, morningSequenceDay, "completed");
+    setJourneyCompleted(true);
+  }, [morningSequenceDay, userId]);
 
   const applyChatPayload = useCallback((data: ChatResponse) => {
     const nextPrompt = normalizeCurrentPrompt(data.current_prompt);
@@ -880,7 +958,7 @@ export default function AssessmentChatBox({
 
   const refreshDailyCheckInStatus = useCallback(async () => {
     if (!assessmentCompleted || leadFlow || isLeadGuest) {
-      return false;
+      return null;
     }
     const res = await fetch(`/api/pillar-tracker/summary?userId=${encodeURIComponent(userId)}`, {
       method: "GET",
@@ -891,7 +969,7 @@ export default function AssessmentChatBox({
       throw new Error(parseApiError(text, "Failed to load today's tracking status."));
     }
     const data = (text ? (JSON.parse(text) as PillarTrackerSummaryResponse) : {}) as PillarTrackerSummaryResponse;
-    return isDailyCheckInComplete(data);
+    return data;
   }, [assessmentCompleted, isLeadGuest, leadFlow, userId]);
 
   useEffect(() => {
@@ -913,7 +991,16 @@ export default function AssessmentChatBox({
   }, [journeyCompleted]);
 
   useEffect(() => {
-    setJourneyCompleted(initialJourneyCompleted);
+    const storedSequenceState =
+      assessmentCompleted ? readMorningSequenceState(userId, initialMorningSequenceDay) : "idle";
+    setMorningSequenceDay(initialMorningSequenceDay);
+    setJourneyCompleted(
+      resolveJourneyCompleted({
+        assessmentCompleted,
+        summary: initialTrackerSummary,
+        sequenceState: storedSequenceState,
+      }),
+    );
     setFinalGiaMessage(null);
     setFinalGiaMessageError(null);
     setFinalGiaMessageLoading(false);
@@ -923,7 +1010,7 @@ export default function AssessmentChatBox({
     setCoachInsight(null);
     setCoachInsightError(null);
     setCoachInsightLoading(false);
-  }, [initialJourneyCompleted, userId]);
+  }, [assessmentCompleted, initialMorningSequenceDay, initialTrackerSummary, userId]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !assessmentCompleted || leadFlow || isLeadGuest) {
@@ -932,9 +1019,19 @@ export default function AssessmentChatBox({
     let cancelled = false;
     const syncDailyCheckInStatus = async () => {
       try {
-        const nextCompleted = await refreshDailyCheckInStatus();
+        const nextSummary = await refreshDailyCheckInStatus();
+        if (!nextSummary) return;
+        const nextDay = resolveMorningSequenceDay(nextSummary);
+        const storedSequenceState = readMorningSequenceState(userId, nextDay);
         if (!cancelled) {
-          setJourneyCompleted(nextCompleted);
+          setMorningSequenceDay(nextDay);
+          setJourneyCompleted(
+            resolveJourneyCompleted({
+              assessmentCompleted,
+              summary: nextSummary,
+              sequenceState: storedSequenceState,
+            }),
+          );
         }
       } catch {
         // Keep the current local state if the refresh fails.
@@ -958,6 +1055,7 @@ export default function AssessmentChatBox({
     isLeadGuest,
     leadFlow,
     refreshDailyCheckInStatus,
+    userId,
   ]);
 
   useEffect(() => {
@@ -967,6 +1065,9 @@ export default function AssessmentChatBox({
       const surface = String(detail?.surface || "").trim().toLowerCase();
       const source = String(detail?.source || "").trim().toLowerCase();
       const entryMode: HomeSurfaceEntryMode = source === "summary" ? "summary" : "guided";
+      if (entryMode === "guided") {
+        writeMorningSequenceState(userId, morningSequenceDay, "in_progress");
+      }
       setJourneyCompleted(false);
       if (surface === "tracking") {
         setHomeSurfaceEntryMode(entryMode);
@@ -992,7 +1093,7 @@ export default function AssessmentChatBox({
     return () => {
       window.removeEventListener("healthsense-home-surface", onSurfaceChange as EventListener);
     };
-  }, []);
+  }, [morningSequenceDay, userId]);
 
   useEffect(() => {
     if (!showGuidedHomeChatPanel || homeSurface !== "habits") return;
@@ -1033,6 +1134,7 @@ export default function AssessmentChatBox({
       if (detail?.guided !== true) {
         return;
       }
+      writeMorningSequenceState(userId, morningSequenceDay, "in_progress");
       setJourneyCompleted(false);
       if (showGuidedHomeChatPanel) {
         void loadDailyHabitPlan();
@@ -1043,7 +1145,7 @@ export default function AssessmentChatBox({
     return () => {
       window.removeEventListener("healthsense-tracker-updated", onTrackerUpdated as EventListener);
     };
-  }, [showGuidedHomeChatPanel, loadDailyHabitPlan, refreshChatState]);
+  }, [morningSequenceDay, refreshChatState, showGuidedHomeChatPanel, loadDailyHabitPlan, userId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1983,7 +2085,7 @@ export default function AssessmentChatBox({
                 ) : homeSurface === "ask" ? (
                   <button
                     type="button"
-                    onClick={() => setJourneyCompleted(true)}
+                    onClick={() => completeMorningSequence()}
                     disabled={finalGiaMessageLoading || !finalGiaMessage}
                     className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-60"
                   >

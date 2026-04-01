@@ -7,6 +7,7 @@ import type {
   PillarTrackerPillar,
   PillarTrackerSummaryResponse,
 } from "@/lib/api";
+import { applyThemePreference, readStoredThemePreference } from "@/lib/theme";
 import { getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
 import LeadAssessmentBranding from "./LeadAssessmentBranding";
@@ -19,9 +20,68 @@ type LatestAssessmentPanelProps = {
 };
 
 type TrackerReturnSurface = "tracking" | "habits" | "insight" | "ask";
+type MorningSequenceState = "idle" | "in_progress" | "completed";
+type DisplayTheme = "light" | "dark";
 
 const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
 const HEALTHSENSE_ORANGE = "#c54817";
+const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
+
+function isDailyCheckInComplete(summary?: PillarTrackerSummaryResponse | null): boolean {
+  if (!summary) return false;
+  if (summary.today_complete === true) return true;
+  const totalPillars = Number(summary.total_pillars);
+  const completedPillars = Number(summary.today_completed_pillars_count);
+  if (Number.isFinite(totalPillars) && totalPillars > 0 && Number.isFinite(completedPillars)) {
+    return completedPillars >= totalPillars;
+  }
+  const pillars = Array.isArray(summary.pillars) ? summary.pillars : [];
+  return pillars.length > 0 && pillars.every((pillar) => pillar?.today_complete === true);
+}
+
+function readMorningSequenceState(
+  userId: string,
+  dayToken: string | null | undefined,
+): MorningSequenceState {
+  if (typeof window === "undefined") return "idle";
+  const normalizedUserId = String(userId || "").trim();
+  const normalizedDayToken = String(dayToken || "").trim();
+  if (!normalizedUserId || !normalizedDayToken) return "idle";
+  try {
+    const raw = String(
+      window.localStorage.getItem(
+        `${MORNING_SEQUENCE_STORAGE_PREFIX}:${normalizedUserId}:${normalizedDayToken}`,
+      ) || "",
+    )
+      .trim()
+      .toLowerCase();
+    if (raw === "completed" || raw === "1") return "completed";
+    if (raw === "in_progress") return "in_progress";
+    return "idle";
+  } catch {
+    return "idle";
+  }
+}
+
+function resolveSummaryPanelVisible(
+  summary: PillarTrackerSummaryResponse,
+  sequenceState: MorningSequenceState,
+): boolean {
+  if (sequenceState === "completed") return true;
+  if (sequenceState === "in_progress") return false;
+  return isDailyCheckInComplete(summary);
+}
+
+function resolveCurrentDisplayTheme(): DisplayTheme {
+  if (typeof document !== "undefined") {
+    const resolved = String(document.documentElement.dataset.theme || "").trim().toLowerCase();
+    if (resolved === "light" || resolved === "dark") {
+      return resolved;
+    }
+  }
+  const stored = readStoredThemePreference();
+  return stored === "light" ? "light" : "dark";
+}
 
 function sortPillars(pillars: PillarTrackerPillar[]): PillarTrackerPillar[] {
   return [...pillars].sort((a, b) => {
@@ -201,8 +261,10 @@ export default function LatestAssessmentPanel({
 }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
   const [summaryPanelVisible, setSummaryPanelVisible] = useState(
-    () => initialSummary.today_complete === true,
+    () => resolveSummaryPanelVisible(initialSummary, readMorningSequenceState(userId, initialSummary.today)),
   );
+  const [displayTheme, setDisplayTheme] = useState<DisplayTheme>("dark");
+  const [togglingDisplay, setTogglingDisplay] = useState(false);
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<PillarTrackerDetailResponse | null>(null);
   const [draft, setDraft] = useState<Record<string, number>>({});
@@ -268,12 +330,44 @@ export default function LatestAssessmentPanel({
     trackerReturnSurface === "tracking"
       ? "Back to daily check-in"
       : "Close";
+  const displayLabel = displayTheme === "dark" ? "Dark" : "Light";
+
+  const toggleDisplayTheme = useCallback(async () => {
+    if (togglingDisplay) return;
+    const currentTheme = resolveCurrentDisplayTheme();
+    const nextTheme: DisplayTheme = currentTheme === "dark" ? "light" : "dark";
+    setTogglingDisplay(true);
+    setDisplayTheme(nextTheme);
+    applyThemePreference(nextTheme, true);
+    try {
+      const res = await fetch("/api/preferences", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          theme: nextTheme,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error("Failed to save display preference.");
+      }
+    } catch {
+      setDisplayTheme(currentTheme);
+      applyThemePreference(currentTheme, true);
+    } finally {
+      setTogglingDisplay(false);
+    }
+  }, [togglingDisplay, userId]);
 
   useEffect(() => {
-    if (summary.today_complete === true) {
-      setSummaryPanelVisible(true);
-    }
-  }, [summary.today_complete]);
+    setSummaryPanelVisible(
+      resolveSummaryPanelVisible(summary, readMorningSequenceState(userId, summary.today)),
+    );
+  }, [summary, userId]);
+
+  useEffect(() => {
+    setDisplayTheme(resolveCurrentDisplayTheme());
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -518,6 +612,16 @@ export default function LatestAssessmentPanel({
           ref={summaryPanelRef}
           className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-5 sm:py-6"
         >
+          <div className="mb-4 flex justify-end">
+            <button
+              type="button"
+              onClick={() => void toggleDisplayTheme()}
+              disabled={togglingDisplay}
+              className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#5d5348] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {togglingDisplay ? "Updating..." : `Display · ${displayLabel}`}
+            </button>
+          </div>
           <div className="relative">
             <div className="grid grid-cols-2 gap-3">
               {pillars.map((pillar) => {
