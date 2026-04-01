@@ -21,7 +21,12 @@ from .prompts import build_prompt, ensure_builtin_prompt_templates, run_llm_prom
 
 _DAILY_HABITS_SCHEMA_READY = False
 _PILLAR_ORDER = ("nutrition", "training", "resilience", "recovery")
-_CURRENT_HABIT_PLAN_VERSION = 4
+_CURRENT_HABIT_PLAN_VERSION = 5
+_DAY_MOMENT_SEQUENCE = (
+    ("morning", "Morning"),
+    ("pre_training", "Pre-training"),
+    ("evening", "Evening"),
+)
 
 
 def ensure_daily_habit_plan_schema() -> None:
@@ -75,6 +80,7 @@ def _habit_item_id(
     detail: str,
     concept_key: str | None,
     pillar_key: str | None,
+    moment_key: str | None = None,
 ) -> str:
     payload = json.dumps(
         {
@@ -82,6 +88,7 @@ def _habit_item_id(
             "detail": str(detail or "").strip(),
             "concept_key": str(concept_key or "").strip().lower() or None,
             "pillar_key": str(pillar_key or "").strip().lower() or None,
+            "moment_key": str(moment_key or "").strip().lower() or None,
         },
         sort_keys=True,
         separators=(",", ":"),
@@ -347,6 +354,265 @@ def _select_focus_concepts(
     return visible, selected
 
 
+def _score_state(score: int | None) -> str:
+    if score is None:
+        return "unknown"
+    if score >= 80:
+        return "strong"
+    if score >= 60:
+        return "fair"
+    return "weak"
+
+
+def _signal_rank(signal: str) -> int:
+    token = str(signal or "").strip().lower()
+    if token == "missed_today":
+        return 0
+    if token == "missed_yesterday":
+        return 1
+    if token == "needs_support":
+        return 2
+    if token == "not_logged_today":
+        return 3
+    return 4
+
+
+def _pillar_day_snapshot(user_id: int, pillar_row: dict[str, Any], today: date) -> dict[str, Any]:
+    pillar_key = str(pillar_row.get("pillar_key") or "").strip().lower()
+    pillar_label = str(pillar_row.get("label") or "").strip() or pillar_key.title()
+    detail = get_pillar_tracker_detail(user_id, pillar_key, anchor=today)
+    focus_rows = _recent_concept_focuses(detail, today, pillar_key=pillar_key, pillar_label=pillar_label)
+    focus_rows.sort(
+        key=lambda item: (
+            _signal_rank(str(item.get("signal") or "")),
+            item.get("score") if item.get("score") is not None else 999,
+            str(item.get("label") or ""),
+        )
+    )
+    primary_focus = focus_rows[0] if focus_rows else None
+    score = _safe_int(pillar_row.get("score"))
+    return {
+        "pillar_key": pillar_key,
+        "label": pillar_label,
+        "score": score,
+        "state": _score_state(score),
+        "primary_focus": primary_focus,
+    }
+
+
+def _focus_issue_text(focus: dict[str, Any] | None, *, fallback_label: str) -> str:
+    focus = focus or {}
+    label = str(focus.get("label") or fallback_label or "this area").strip() or "this area"
+    signal = str(focus.get("signal") or "").strip().lower()
+    if signal == "missed_today":
+        return f"{label} has already slipped today and needs tightening."
+    if signal == "missed_yesterday":
+        return f"{label} slipped yesterday and still needs protecting today."
+    if signal == "not_logged_today":
+        return f"{label} still needs an intentional check today."
+    if signal == "needs_support":
+        return f"{label} needs more support today."
+    return f"{label} is the area to keep the closest eye on today."
+
+
+def _best_pillar_strength(summary: dict[str, Any]) -> dict[str, Any] | None:
+    pillars = [item for item in (summary.get("pillars") or []) if isinstance(item, dict)]
+    if not pillars:
+        return None
+    ordered = sorted(
+        pillars,
+        key=lambda item: (
+            -(_safe_int(item.get("score")) or -1),
+            _pillar_rank(str(item.get("pillar_key") or "")),
+        ),
+    )
+    return ordered[0] if ordered else None
+
+
+def _exercise_readiness(
+    *,
+    nutrition_snapshot: dict[str, Any],
+    recovery_snapshot: dict[str, Any],
+    resilience_snapshot: dict[str, Any],
+) -> dict[str, str]:
+    nutrition_state = str(nutrition_snapshot.get("state") or "unknown").strip().lower()
+    recovery_state = str(recovery_snapshot.get("state") or "unknown").strip().lower()
+    resilience_state = str(resilience_snapshot.get("state") or "unknown").strip().lower()
+    if nutrition_state == "weak" and recovery_state == "weak":
+        exercise_state = "recover"
+        reason = "Recovery and nutrition are both off, so today should stay recovery-first."
+    elif nutrition_state == "weak" or recovery_state == "weak":
+        exercise_state = "light"
+        reason = "One of the key support areas is low, so keep movement in but reduce the intensity."
+    elif nutrition_state == "strong" and recovery_state == "strong":
+        if resilience_state == "weak":
+            exercise_state = "steady"
+            reason = "Recovery and nutrition are strong, but keep training controlled while mental load is higher."
+        else:
+            exercise_state = "push"
+            reason = "Recovery and nutrition are both strong, so a solid planned training day makes sense."
+    else:
+        exercise_state = "steady"
+        reason = "The basics are mixed rather than poor, so today suits a controlled session rather than a big push."
+    return {
+        "nutrition_state": nutrition_state,
+        "recovery_state": recovery_state,
+        "resilience_state": resilience_state,
+        "exercise_state": exercise_state,
+        "exercise_reason": reason,
+    }
+
+
+def _moment_focus_addendum(selected_focus: dict[str, Any], *, signal: str) -> str:
+    label = str(selected_focus.get("label") or "").strip()
+    if not label:
+        return ""
+    label_lower = label.lower()
+    if signal == "not_logged_today":
+        return f"Make {label_lower} one of the things you lock in rather than leave until later."
+    if signal == "missed_today":
+        return f"Use it to get {label_lower} back under control quickly."
+    if signal == "missed_yesterday":
+        return f"Use it to stop {label_lower} drifting for a second day."
+    if signal == "needs_support":
+        return f"Keep {label_lower} steadier than it has been recently."
+    return f"Let it help keep {label_lower} moving in the right direction."
+
+
+def _build_key_moments(
+    *,
+    selected_pillar: dict[str, Any],
+    selected_focus: dict[str, Any],
+    readiness: dict[str, str],
+) -> list[dict[str, str]]:
+    pillar_key = str(
+        selected_focus.get("pillar_key") or selected_pillar.get("pillar_key") or "nutrition"
+    ).strip().lower()
+    signal = str(selected_focus.get("signal") or "").strip().lower()
+    morning_title = {
+        "nutrition": "Set the basics early",
+        "training": "Define the session",
+        "resilience": "Set your response",
+        "recovery": "Protect your energy",
+    }.get(pillar_key, "Set the day early")
+    morning_detail = {
+        "nutrition": "Get food and fluids started early so the rest of the day is easier to manage.",
+        "training": "Decide what a good session looks like before the day starts to pull you around.",
+        "resilience": "Take two minutes to decide how you want to respond when pressure picks up.",
+        "recovery": "Keep the pace controlled early so you do not spend the rest of the day catching up.",
+    }.get(pillar_key, "Get the basics in place early so the rest of the day feels easier.")
+    morning_detail = f"{morning_detail} {_moment_focus_addendum(selected_focus, signal=signal)}".strip()
+
+    exercise_state = str(readiness.get("exercise_state") or "steady").strip().lower()
+    if exercise_state == "push":
+        midday_title = "Train with intent"
+        midday_detail = "Run the planned session properly today, but stick to the session rather than adding extra volume."
+    elif exercise_state == "steady":
+        midday_title = "Keep the session controlled"
+        midday_detail = "Train today if planned, but keep the effort measured and stop while the quality is still good."
+    elif exercise_state == "light":
+        midday_title = "Keep movement supportive"
+        midday_detail = "Use lighter movement today and let fuelling and recovery catch up before you ask for more."
+    else:
+        midday_title = "Make recovery the session"
+        midday_detail = "Skip the hard training today and put the effort into walking, mobility, and a calmer reset."
+
+    evening_title = {
+        "recovery": "Close the day properly",
+        "resilience": "Reset before bed",
+    }.get(pillar_key, "Close the loop")
+    evening_detail = {
+        "recovery": "Protect sleep tonight and keep the final part of the day genuinely low-stimulation.",
+        "resilience": "Finish with a short reflection on what went well and what you handled better than expected.",
+    }.get(
+        pillar_key,
+        "Keep the evening simple and finish with a short reset so tomorrow starts cleaner.",
+    )
+
+    return [
+        {"moment_key": "morning", "moment_label": "Morning", "title": morning_title, "detail": morning_detail[:180]},
+        {"moment_key": "pre_training", "moment_label": "Pre-training", "title": midday_title, "detail": midday_detail[:180]},
+        {"moment_key": "evening", "moment_label": "Evening", "title": evening_title, "detail": evening_detail[:180]},
+    ]
+
+
+def _day_plan_title(readiness: dict[str, str]) -> str:
+    exercise_state = str(readiness.get("exercise_state") or "steady").strip().lower()
+    return {
+        "push": "Strong training day",
+        "steady": "Controlled training day",
+        "light": "Light movement day",
+        "recover": "Recovery-first day",
+    }.get(exercise_state, "Today's plan")
+
+
+def _build_day_brief(
+    *,
+    user_id: int,
+    summary: dict[str, Any],
+    today: date,
+    selected_pillar: dict[str, Any],
+    selected_focus: dict[str, Any] | None,
+) -> dict[str, Any]:
+    snapshots: dict[str, dict[str, Any]] = {}
+    for pillar_row in (summary.get("pillars") or []):
+        if not isinstance(pillar_row, dict):
+            continue
+        pillar_key = str(pillar_row.get("pillar_key") or "").strip().lower()
+        if not pillar_key:
+            continue
+        snapshots[pillar_key] = _pillar_day_snapshot(user_id, pillar_row, today)
+    nutrition_snapshot = snapshots.get("nutrition") or {"state": "unknown", "label": "Nutrition"}
+    recovery_snapshot = snapshots.get("recovery") or {"state": "unknown", "label": "Recovery"}
+    resilience_snapshot = snapshots.get("resilience") or {"state": "unknown", "label": "Resilience"}
+    readiness = _exercise_readiness(
+        nutrition_snapshot=nutrition_snapshot,
+        recovery_snapshot=recovery_snapshot,
+        resilience_snapshot=resilience_snapshot,
+    )
+    strength_row = _best_pillar_strength(summary) or {}
+    strength_label = str(strength_row.get("label") or "The basics").strip() or "The basics"
+    strength_score = _safe_int(strength_row.get("score"))
+    if strength_score is not None and strength_score >= 80:
+        strength_text = f"{strength_label} is giving you a strong base."
+    elif strength_score is not None and strength_score >= 60:
+        strength_text = f"{strength_label} is holding reasonably steady."
+    else:
+        strength_text = f"{strength_label} is the most stable part of the day right now."
+    selected_focus = selected_focus or {}
+    carry_over_issue = _focus_issue_text(
+        selected_focus or (snapshots.get(str(selected_pillar.get("pillar_key") or "").strip().lower()) or {}).get("primary_focus"),
+        fallback_label=str(selected_pillar.get("label") or "today's focus").strip(),
+    )
+    focus_label = str(selected_focus.get("label") or selected_pillar.get("label") or "today's focus").strip() or "today's focus"
+    exercise_state = str(readiness.get("exercise_state") or "steady").strip().lower()
+    if exercise_state == "push":
+        today_aim = f"Use the good base you have and put one solid session in without overshooting, while keeping {focus_label.lower()} tidy."
+    elif exercise_state == "steady":
+        today_aim = f"Keep the day controlled, train with intent if planned, and keep {focus_label.lower()} from slipping."
+    elif exercise_state == "light":
+        today_aim = f"Keep movement light, restore the basics, and stabilise {focus_label.lower()} before asking for more."
+    else:
+        today_aim = f"Keep the day simple, recover properly, and take the pressure off while you steady {focus_label.lower()}."
+    key_moments = _build_key_moments(
+        selected_pillar=selected_pillar,
+        selected_focus=selected_focus,
+        readiness=readiness,
+    )
+    return {
+        "two_day_read": {
+            "strength": strength_text,
+            "carry_over_issue": carry_over_issue,
+            "today_priority": f"{focus_label} is the main thing to protect today.",
+        },
+        "readiness": readiness,
+        "key_moments": key_moments,
+        "today_aim": today_aim,
+        "plan_title": _day_plan_title(readiness),
+        "plan_summary": f"{readiness.get('exercise_reason')} {today_aim}".strip(),
+    }
+
+
 def _build_generation_context(user_id: int, *, selected_concept_key: str | None = None) -> dict[str, Any]:
     today = tracker_today()
     summary = get_pillar_tracker_summary(user_id, anchor=today)
@@ -379,6 +645,17 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
         user_id,
         selected_pillar_key,
         concept_key=(selected_focus or {}).get("concept_key"),
+    )
+    selected_pillar_payload = {
+        "pillar_key": selected_pillar_key,
+        "label": selected_pillar_label or selected_pillar_key.title(),
+    }
+    day_brief = _build_day_brief(
+        user_id=user_id,
+        summary=summary,
+        today=today,
+        selected_pillar=selected_pillar_payload,
+        selected_focus=selected_focus,
     )
     pillars_payload = [
         {
@@ -415,13 +692,13 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
             "baseline_score": _safe_int(weakest.get("baseline_score")),
         },
         "selected_pillar": {
-            "pillar_key": selected_pillar_key,
-            "label": selected_pillar_label or selected_pillar_key.title(),
+            **selected_pillar_payload,
         },
         "pillar_scores": pillars_payload,
         "focus_concepts": focus_concepts,
         "selected_focus_concept": selected_focus,
         "okr_context": okr_context,
+        "day_brief": day_brief,
     }
 
 
@@ -486,6 +763,32 @@ def _normalize_habit_item(raw: Any) -> dict[str, str] | None:
     return {"title": title[:90], "detail": detail[:180]}
 
 
+def _normalize_moment_key(value: Any) -> str | None:
+    token = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    mapping = {
+        "morning": "morning",
+        "am": "morning",
+        "start_of_day": "morning",
+        "pretraining": "pre_training",
+        "pre_training": "pre_training",
+        "midday": "pre_training",
+        "mid_day": "pre_training",
+        "afternoon": "pre_training",
+        "training": "pre_training",
+        "evening": "evening",
+        "pm": "evening",
+        "night": "evening",
+        "close_of_day": "evening",
+    }
+    return mapping.get(token) or None
+
+
+def _moment_label_for_key(moment_key: Any) -> str | None:
+    normalized = _normalize_moment_key(moment_key)
+    lookup = {key: label for key, label in _DAY_MOMENT_SEQUENCE}
+    return lookup.get(normalized) if normalized else None
+
+
 def _normalize_ask_suggestion(raw: Any) -> dict[str, str] | None:
     if not isinstance(raw, dict):
         return None
@@ -536,6 +839,20 @@ def _normalize_habit_plan_item(
         or (default_concept or {}).get("pillar_label")
         or ""
     ).strip() or None
+    moment_key = (
+        _normalize_moment_key(raw_dict.get("moment_key"))
+        or _normalize_moment_key(raw_dict.get("moment"))
+        or _normalize_moment_key(raw_dict.get("when"))
+        or _normalize_moment_key(raw_dict.get("time_of_day"))
+    )
+    title_token = _normalize_moment_key(normalized.get("title"))
+    if moment_key is None and title_token:
+        moment_key = title_token
+    moment_label = str(
+        (raw_dict.get("moment_label") if isinstance(raw_dict, dict) else None)
+        or _moment_label_for_key(moment_key)
+        or ""
+    ).strip() or None
     item_id = str((raw_dict.get("id") if isinstance(raw_dict, dict) else None) or "").strip()
     if not item_id:
         item_id = _habit_item_id(
@@ -543,6 +860,7 @@ def _normalize_habit_plan_item(
             detail=normalized["detail"],
             concept_key=concept_key,
             pillar_key=pillar_key,
+            moment_key=moment_key,
         )
     return {
         "id": item_id,
@@ -552,7 +870,33 @@ def _normalize_habit_plan_item(
         "concept_label": concept_label,
         "pillar_key": pillar_key,
         "pillar_label": pillar_label,
+        "moment_key": moment_key,
+        "moment_label": moment_label,
     }
+
+
+def _items_with_day_moments(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    output: list[dict[str, Any]] = []
+    used: set[str] = set()
+    sequence = list(_DAY_MOMENT_SEQUENCE)
+    for index, item in enumerate(items):
+        row = dict(item)
+        moment_key = _normalize_moment_key(row.get("moment_key"))
+        if not moment_key:
+            if index < len(sequence):
+                moment_key = sequence[index][0]
+            else:
+                moment_key = f"step_{index + 1}"
+        if moment_key in used:
+            for candidate_key, _candidate_label in sequence:
+                if candidate_key not in used:
+                    moment_key = candidate_key
+                    break
+        used.add(moment_key)
+        row["moment_key"] = moment_key
+        row["moment_label"] = str(row.get("moment_label") or _moment_label_for_key(moment_key) or f"Step {index + 1}").strip()
+        output.append(row)
+    return output
 
 
 def _dedupe_habit_plan_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -665,7 +1009,7 @@ def _selected_habits_from_row(
         normalized = _normalize_habit_plan_item(raw_item, default_concept=default_concept)
         if normalized:
             items.append(normalized)
-    return _dedupe_habit_plan_items(items)
+    return _items_with_day_moments(_dedupe_habit_plan_items(items))
 
 
 def _normalize_selected_ids_map(payload: dict[str, Any]) -> dict[str, list[str]]:
@@ -764,7 +1108,7 @@ def _selected_habits_from_option_sets(
             item = option_lookup.get(item_id)
             if item:
                 items.append(item)
-    return _dedupe_habit_plan_items(items)
+    return _items_with_day_moments(_dedupe_habit_plan_items(items))
 
 
 def _merge_concept_option_set(
@@ -892,46 +1236,51 @@ def _fallback_habit_options_for_concept(concept: dict[str, Any], pillar_key: str
 def _fallback_plan(context: dict[str, Any]) -> dict[str, Any]:
     selected_concept = context.get("selected_focus_concept") or {}
     selected_pillar = context.get("selected_pillar") or {}
-    pillar_key = str(
-        selected_concept.get("pillar_key") or selected_pillar.get("pillar_key") or "nutrition"
-    ).strip().lower()
-    pillar_label = str(
-        selected_concept.get("pillar_label") or selected_pillar.get("label") or pillar_key.title()
-    ).strip() or pillar_key.title()
-    concept_label = str(selected_concept.get("label") or "Habit focus").strip() or "Habit focus"
-    habits: list[dict[str, str]] = []
-    seen_titles: set[str] = set()
-    for step in (context.get("okr_context") or {}).get("habit_steps") or []:
-        text = str(step or "").strip()
-        if not text:
-            continue
-        title = text[:90]
-        key = title.lower()
-        if key in seen_titles:
-            continue
-        seen_titles.add(key)
-        habits.append({"title": title, "detail": "Keep this practical and doable today."})
-        if len(habits) >= 2:
-            break
-    for item in _fallback_habit_options_for_concept(selected_concept, pillar_key):
-        key = str(item.get("title") or "").strip().lower()
-        if not key or key in seen_titles:
-            continue
-        seen_titles.add(key)
-        habits.append(item)
-        if len(habits) >= 5:
-            break
-    if not habits:
-        habits = [
-            {
-                "title": f"Take one {pillar_label.lower()} step today",
-                "detail": "Choose a small action you can complete before the day ends.",
-            }
+    day_brief = context.get("day_brief") or {}
+    moments = [
+        item
+        for item in (
+            _normalize_habit_plan_item(raw_item, default_concept=selected_concept)
+            for raw_item in (day_brief.get("key_moments") or [])
+        )
+        if item
+    ]
+    moments = _items_with_day_moments(moments)
+    if not moments:
+        pillar_key = str(
+            selected_concept.get("pillar_key") or selected_pillar.get("pillar_key") or "nutrition"
+        ).strip().lower()
+        fallback_items = [
+            _normalize_habit_plan_item(
+                {
+                    "title": "Set the day early",
+                    "detail": "Choose one simple action that makes the rest of the day easier to manage.",
+                    "moment_key": "morning",
+                },
+                default_concept=selected_concept,
+            ),
+            _normalize_habit_plan_item(
+                {
+                    "title": "Keep the middle of the day controlled",
+                    "detail": _fallback_habit_for_concept(selected_concept, pillar_key).get("detail") or "Use the middle of the day to stay on top of the basics.",
+                    "moment_key": "pre_training",
+                },
+                default_concept=selected_concept,
+            ),
+            _normalize_habit_plan_item(
+                {
+                    "title": "Close the day cleanly",
+                    "detail": "Finish with a short reset so tomorrow starts cleaner than today.",
+                    "moment_key": "evening",
+                },
+                default_concept=selected_concept,
+            ),
         ]
+        moments = _items_with_day_moments([item for item in fallback_items if item])
     return {
-        "title": f"{concept_label} habit ideas",
-        "summary": f"Choose one to three practical steps to support your {concept_label.lower()} today.",
-        "habits": habits[:5],
+        "title": str(day_brief.get("plan_title") or "Today's plan").strip() or "Today's plan",
+        "summary": str(day_brief.get("plan_summary") or "Use these key moments to keep the day steady and practical.").strip()[:500],
+        "habits": moments[:5],
         "source": "fallback",
     }
 
@@ -962,7 +1311,7 @@ def _fallback_ask_suggestions(context: dict[str, Any]) -> list[dict[str, str]]:
     if "needs_support" in signals:
         push("Why is this slipping", "Why does this keep slipping for me and what should I change?")
     if selected_habits:
-        push("Stick to my plan", "How can I stay consistent with the habits I've chosen today?")
+        push("Stick to today's plan", "How do I stay consistent with the key moments I've set for today?")
 
     push("Best next step", "Based on my tracking, what's the most useful next step for me today?")
     push("Recover today", "What would help me recover well today without overcomplicating it?")
@@ -989,6 +1338,7 @@ def _generate_plan_from_llm(user_id: int, context: dict[str, Any]) -> dict[str, 
         selected_focus_concept=selected_concept,
         selected_pillar=selected_pillar,
         okr_context=context.get("okr_context") or {},
+        day_brief=context.get("day_brief") or {},
     )
     prompt = assembly.text
     raw = run_llm_prompt(
@@ -1009,16 +1359,24 @@ def _generate_plan_from_llm(user_id: int, context: dict[str, Any]) -> dict[str, 
     parsed = _extract_json_object(raw)
     if not parsed:
         return None
+    raw_items = parsed.get("moments") if isinstance(parsed.get("moments"), list) else parsed.get("habits")
     habits = [
         item
-        for item in (_normalize_habit_item(row) for row in (parsed.get("habits") or []))
+        for item in (
+            _normalize_habit_plan_item(row, default_concept=selected_concept)
+            for row in (raw_items or [])
+        )
         if item
     ][:5]
+    habits = _items_with_day_moments(habits)
     if len(habits) < 3:
         return None
     concept_label = str(selected_concept.get("label") or "").strip() or "habit focus"
-    title = str(parsed.get("title") or "").strip() or f"{concept_label} habit ideas"
-    summary = str(parsed.get("summary") or "").strip() or f"Choose one to three practical steps to support your {concept_label.lower()} today."
+    day_brief = context.get("day_brief") or {}
+    title = str(parsed.get("title") or "").strip() or str(day_brief.get("plan_title") or f"{concept_label} day plan").strip()
+    summary = str(parsed.get("summary") or "").strip() or str(
+        day_brief.get("plan_summary") or f"Use these key moments to support your {concept_label.lower()} today."
+    ).strip()
     return {
         "title": title[:200],
         "summary": summary[:500],
@@ -1052,12 +1410,13 @@ def _serialize_plan(
         available_concepts=available_concepts,
         option_sets=option_sets,
     )
-    selected_habits = _selected_habits_from_option_sets(option_sets, selected_ids_by_concept)
+    selected_habits = _items_with_day_moments(_selected_habits_from_option_sets(option_sets, selected_ids_by_concept))
     ask_suggestions = _normalized_ask_suggestions(payload.get("ask_suggestions") or [])
     selected_ids = {str(item.get("id") or "").strip() for item in selected_habits}
     selected_concept_key = _normalize_concept_token((selected_concept or {}).get("concept_key"))
+    raw_current_options = [dict(item) for item in option_sets.get(selected_concept_key or "", [])]
     current_options = []
-    for item in option_sets.get(selected_concept_key or "", []):
+    for item in _items_with_day_moments(raw_current_options):
         current_options.append({**item, "selected": str(item.get("id") or "").strip() in selected_ids})
     concepts_payload = []
     for concept in available_concepts:

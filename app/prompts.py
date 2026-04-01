@@ -83,14 +83,14 @@ BUILTIN_PROMPT_TEMPLATE_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "block_order": ["system", "locale", "context", "scores", "okr", "history", "task"],
         "include_blocks": ["system", "locale", "context", "scores", "okr", "history", "task"],
         "task_block": (
-            "Create a coach-home daily habit plan. Return STRICT JSON only with this shape: "
-            "{\"title\":\"...\",\"summary\":\"...\",\"habits\":[{\"title\":\"...\",\"detail\":\"...\"}]}. "
-            "Return 3 to 5 habits. Focus only on the selected concept and its current KR context. "
-            "Use active KR habit steps when they help. Keep every habit practical for today, specific, brief, and low-friction. "
-            "Each habit title should be short. Each detail should be one sentence and under 18 words. "
+            "Create a coach-home day plan. Return STRICT JSON only with this shape: "
+            "{\"title\":\"...\",\"summary\":\"...\",\"moments\":[{\"moment\":\"morning|pre_training|evening\",\"title\":\"...\",\"detail\":\"...\"}]}. "
+            "Return exactly 3 moments for the day: morning, pre-training, and evening. "
+            "Use the provided two-day tracker read, exercise readiness, and key moments framework to make this feel like a practical schedule for today. "
+            "Keep every moment specific, brief, and low-friction. Each title should be short. Each detail should be one sentence and under 18 words. "
             "Use British English. Do not mention JSON, scores, data tables, or being an AI."
         ),
-        "note": "Runtime builtin template for coach-home daily habits generated from tracker context.",
+        "note": "Runtime builtin template for coach-home daily plan generated from tracker context.",
     },
 }
 
@@ -1506,18 +1506,26 @@ def build_prompt(
                 "task",
                 task_block(
                     (
-                        "Write a brief one-way coaching message grounded in the latest daily tracker results. "
-                        "Reference the most relevant tracker pattern for today or yesterday and give one practical next step tied to that result."
+                        "Write a precise one-way daily coaching message for the member based on their daily tracking from today and yesterday. "
+                        "Review both days together, identify the clearest overall pattern, explain what level of exercise makes sense today based on recovery and nutrition, "
+                        "and turn that into the key moments the member needs to get right across the day."
                         if tracker_summary_mode
                         else "Reply with a brief coaching message grounded in the latest daily tracker results. "
                         "Reference the most relevant tracker pattern for today or yesterday, give one practical next step tied to that result, "
                         "and end with one short follow-up question."
                     ),
                     constraints=(
-                        "Keep it concise (2-4 short sentences), warm, calm, supportive. "
-                        "Base the reply on the tracker context when it is available; do not give a generic encouragement message. "
-                        "Use plain language, avoid OKR/KR jargon, and do not introduce new goals unless asked. "
-                        + ("Do not ask a question and do not invite a reply." if tracker_summary_mode else "")
+                        (
+                            "Keep it to 2-3 short paragraphs, warm, calm, and practical. "
+                            "Base the reply on the tracker context when it is available; do not give a generic encouragement message. "
+                            "Use plain language, avoid OKR/KR jargon, and avoid system terms like pillar, drill, or resilience work. "
+                            "Include the key moments for the day in the message, make the exercise guidance proportionate to recovery and nutrition, "
+                            "and end with a clear practical aim for today. Do not ask a question and do not invite a reply."
+                            if tracker_summary_mode
+                            else "Keep it concise (2-4 short sentences), warm, calm, supportive. "
+                            "Base the reply on the tracker context when it is available; do not give a generic encouragement message. "
+                            "Use plain language, avoid OKR/KR jargon, and do not introduce new goals unless asked."
+                        )
                     ),
                 ),
             ),
@@ -1536,6 +1544,7 @@ def build_prompt(
         selected_focus_concept = data.get("selected_focus_concept") or {}
         selected_pillar = data.get("selected_pillar") or {}
         okr_context = data.get("okr_context") or {}
+        day_brief = data.get("day_brief") or {}
         selected_concept_label = (
             str(selected_focus_concept.get("label") or selected_focus_concept.get("concept_key") or "").strip()
             or "selected concept"
@@ -1569,22 +1578,69 @@ def build_prompt(
                 step_text = str(step or "").strip()
                 if step_text:
                     history_lines.append(f"- {step_text}")
+        two_day_read = day_brief.get("two_day_read") if isinstance(day_brief, dict) else {}
+        if isinstance(two_day_read, dict):
+            strength = str(two_day_read.get("strength") or "").strip()
+            carry = str(two_day_read.get("carry_over_issue") or "").strip()
+            priority = str(two_day_read.get("today_priority") or "").strip()
+            if strength or carry or priority:
+                history_lines.append("Two-day read:")
+                if strength:
+                    history_lines.append(f"- strength: {strength}")
+                if carry:
+                    history_lines.append(f"- carry-over issue: {carry}")
+                if priority:
+                    history_lines.append(f"- today priority: {priority}")
+        readiness = day_brief.get("readiness") if isinstance(day_brief, dict) else {}
+        if isinstance(readiness, dict):
+            exercise_state = str(readiness.get("exercise_state") or "").strip()
+            exercise_reason = str(readiness.get("exercise_reason") or "").strip()
+            if exercise_state or exercise_reason:
+                line = "Exercise readiness"
+                bits: List[str] = []
+                if str(readiness.get("nutrition_state") or "").strip():
+                    bits.append(f"nutrition={readiness.get('nutrition_state')}")
+                if str(readiness.get("recovery_state") or "").strip():
+                    bits.append(f"recovery={readiness.get('recovery_state')}")
+                if exercise_state:
+                    bits.append(f"state={exercise_state}")
+                if exercise_reason:
+                    bits.append(f"reason={exercise_reason}")
+                history_lines.append(f"{line}: {'; '.join(bits)}")
+        key_moments = day_brief.get("key_moments") if isinstance(day_brief, dict) else None
+        if isinstance(key_moments, list) and key_moments:
+            history_lines.append("Key moments for today:")
+            for item in key_moments[:3]:
+                if not isinstance(item, dict):
+                    continue
+                moment_label = str(item.get("moment_label") or item.get("moment") or "").strip()
+                title = str(item.get("title") or "").strip()
+                detail = str(item.get("detail") or "").strip()
+                if not (moment_label or title or detail):
+                    continue
+                prefix = moment_label or "Moment"
+                payload = " ".join(part for part in [title, detail] if part).strip()
+                history_lines.append(f"- {prefix}: {payload}".strip())
+        today_aim = str(day_brief.get("today_aim") or "").strip() if isinstance(day_brief, dict) else ""
+        if today_aim:
+            history_lines.append(f"Today aim: {today_aim}")
         parts: List[tuple[str, str]] = [
             ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
             ("locale", settings.get("locale_block") or locale_block(locale)),
-            ("context", context_block("daily_habit_plan", "coach home daily habits", timeframe=str(timeframe), channel="App", extras=context_extras)),
+            ("context", context_block("daily_habit_plan", "coach home day plan", timeframe=str(timeframe), channel="App", extras=context_extras)),
             ("scores", scores_block(pillar_scores) if pillar_scores else ""),
             ("okr", tracker_summary_okr_block(okr_context) if okr_context else ""),
             ("history", history_block("selected concept and current habit focus", history_lines, channel="App") if history_lines else ""),
             (
                 "task",
                 task_block(
-                    f"Create a daily habit plan for the coach home screen in strict JSON, focused only on {selected_concept_label} within {selected_pillar_label}.",
+                    f"Create a daily day-plan for the coach home screen in strict JSON, focused only on {selected_concept_label} within {selected_pillar_label}.",
                     constraints=(
-                        "Return only {title, summary, habits}. "
-                        "Provide 3 to 5 habits focused on today's practical next steps. "
-                        "Every habit must directly support the selected concept only. "
+                        "Return only {title, summary, moments} or {title, summary, habits}. "
+                        "Provide exactly 3 time-anchored moments for today: morning, pre-training, and evening. "
+                        "Every moment must directly support the selected concept only. "
                         "Do not include actions for the weakest pillar or any other concept unless it is the same selected concept. "
+                        "Use the supplied two-day read, exercise readiness, and key moments framework so this feels like a practical daily schedule. "
                         "Keep the title and summary aligned to the selected concept only."
                     ),
                 ),

@@ -118,8 +118,8 @@ const HOME_SURFACE_COPY: Record<
   },
   habits: {
     eyebrow: "Step 2 of 4",
-    title: "Today's habits",
-    description: "Review the three habits set for today, then continue to today's insight.",
+    title: "Today's plan",
+    description: "Review the key moments for today, then continue to today's insight.",
     nextLabel: "Watch insight",
   },
   insight: {
@@ -846,7 +846,7 @@ export default function AssessmentChatBox({
       });
       const text = await res.text().catch(() => "");
       if (!res.ok) {
-        throw new Error(parseApiError(text, "Failed to load today's habits."));
+        throw new Error(parseApiError(text, "Failed to load today's plan."));
       }
       const data = (text ? (JSON.parse(text) as DailyHabitPlanResponse) : {}) as DailyHabitPlanResponse;
       setDailyHabitPlan(data);
@@ -1980,7 +1980,7 @@ export default function AssessmentChatBox({
               {dailyHabitPlanLoading && !dailyHabitPlan ? (
                 <div className="flex h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
                   <p className="text-sm text-[#6b6257]">
-                    Reviewing your tracker and preparing today&apos;s habit steps…
+                    Reviewing your tracker and preparing today&apos;s plan…
                   </p>
                 </div>
               ) : dailyHabitPlanError && !dailyHabitPlan ? (
@@ -1992,11 +1992,12 @@ export default function AssessmentChatBox({
                   {dailyHabitPlan?.title ? <p className="text-sm font-semibold text-[#1e1b16]">{dailyHabitPlan.title}</p> : null}
                   {dailyHabitPlan?.summary ? <p className="text-sm text-[#6b6257]">{dailyHabitPlan.summary}</p> : null}
                   {dailyHabitPlanLoading && dailyHabitPlan ? (
-                    <p className="text-sm text-[#6b6257]">Refreshing today&apos;s habits…</p>
+                    <p className="text-sm text-[#6b6257]">Refreshing today&apos;s plan…</p>
                   ) : null}
                   {dailyHabits.length ? (
                     <div className="mt-4 grid flex-1 auto-rows-fr gap-3 md:grid-cols-3">
                       {dailyHabits.map((habit, index) => {
+                        const momentLabel = String(habit?.moment_label || "").trim();
                         const title = String(habit?.title || "").trim();
                         const detail = String(habit?.detail || "").trim();
                         if (!title && !detail) return null;
@@ -2006,7 +2007,7 @@ export default function AssessmentChatBox({
                             className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-4"
                           >
                             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                              Habit {index + 1}
+                              {momentLabel || `Moment ${index + 1}`}
                             </p>
                             {title ? <p className="mt-2 text-sm font-semibold text-[#1e1b16]">{title}</p> : null}
                             {detail ? <p className="mt-2 text-sm leading-6 text-[#6b6257]">{detail}</p> : null}
@@ -2016,7 +2017,7 @@ export default function AssessmentChatBox({
                     </div>
                   ) : (
                     <div className="flex h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5 text-sm text-[#6b6257]">
-                      Today&apos;s habits are not available right now.
+                      Today&apos;s plan is not available right now.
                     </div>
                   )}
                   {dailyHabitPlanError ? <p className="text-sm text-[#8a3e1a]">{dailyHabitPlanError}</p> : null}

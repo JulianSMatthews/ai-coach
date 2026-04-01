@@ -308,6 +308,7 @@ def _tracker_history_lines(tracker_context: dict) -> list[str]:
     selected_focus = tracker_context.get("selected_focus_concept") or {}
     focus_concepts = tracker_context.get("focus_concepts") or []
     okr_context = tracker_context.get("okr_context") or {}
+    day_brief = tracker_context.get("day_brief") or {}
     focus_source = str(tracker_context.get("tracker_focus_source") or "").strip().lower()
     if selected_focus:
         label = str(selected_focus.get("label") or selected_focus.get("concept_key") or "").strip()
@@ -354,6 +355,48 @@ def _tracker_history_lines(tracker_context: dict) -> list[str]:
                 bits.append(f"score={score}/100")
             suffix = f" ({'; '.join(bits)})" if bits else ""
             lines.append(f"- {label}{suffix}")
+    if isinstance(day_brief, dict):
+        two_day_read = day_brief.get("two_day_read") if isinstance(day_brief.get("two_day_read"), dict) else {}
+        if two_day_read:
+            lines.append("Two-day read:")
+            strength = str(two_day_read.get("strength") or "").strip()
+            carry = str(two_day_read.get("carry_over_issue") or "").strip()
+            priority = str(two_day_read.get("today_priority") or "").strip()
+            if strength:
+                lines.append(f"- strength: {strength}")
+            if carry:
+                lines.append(f"- carry-over issue: {carry}")
+            if priority:
+                lines.append(f"- today priority: {priority}")
+        readiness = day_brief.get("readiness") if isinstance(day_brief.get("readiness"), dict) else {}
+        if readiness:
+            bits = []
+            for key in ("nutrition_state", "recovery_state", "resilience_state", "exercise_state"):
+                value = str(readiness.get(key) or "").strip()
+                if value:
+                    bits.append(f"{key}={value}")
+            reason = str(readiness.get("exercise_reason") or "").strip()
+            if reason:
+                bits.append(f"reason={reason}")
+            if bits:
+                lines.append("Exercise readiness: " + "; ".join(bits))
+        key_moments = day_brief.get("key_moments") if isinstance(day_brief.get("key_moments"), list) else []
+        if key_moments:
+            lines.append("Key moments for today:")
+            for item in key_moments[:3]:
+                if not isinstance(item, dict):
+                    continue
+                moment_label = str(item.get("moment_label") or item.get("moment") or "").strip()
+                title = str(item.get("title") or "").strip()
+                detail = str(item.get("detail") or "").strip()
+                if not (moment_label or title or detail):
+                    continue
+                prefix = moment_label or "Moment"
+                payload = " ".join(part for part in [title, detail] if part).strip()
+                lines.append(f"- {prefix}: {payload}".strip())
+        today_aim = str(day_brief.get("today_aim") or "").strip()
+        if today_aim:
+            lines.append(f"Today aim: {today_aim}")
     if (okr_context or {}).get("habit_steps"):
         lines.append("Active KR habit steps:")
         for step in (okr_context.get("habit_steps") or [])[:5]:

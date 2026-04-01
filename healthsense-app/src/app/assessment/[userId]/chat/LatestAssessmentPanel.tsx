@@ -817,7 +817,7 @@ export default function LatestAssessmentPanel({
             >
               <div className="flex items-center gap-3">
                 <HabitStepsIcon />
-                <span className="text-base font-semibold text-[#1e1b16]">Habit steps for the day</span>
+                <span className="text-base font-semibold text-[#1e1b16]">Plan for the day</span>
               </div>
             </button>
             <button

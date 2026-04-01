@@ -279,6 +279,8 @@ export type WeeklyObjectivesResponse = {
 
 export type DailyHabitPlanItem = {
   id?: string | null;
+  moment_key?: string | null;
+  moment_label?: string | null;
   title?: string | null;
   detail?: string | null;
   concept_key?: string | null;
