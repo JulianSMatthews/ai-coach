@@ -11,10 +11,12 @@ from typing import Any
 from sqlalchemy import desc, select
 
 from .db import SessionLocal, engine
-from .models import AssessmentRun, DailyPillarTrackerEntry, PillarResult, OKRObjective, OKRKeyResult, OKRKrEntry, User
+from .models import AssessmentRun, DailyPillarTrackerEntry, PillarResult, OKRObjective, OKRKeyResult, OKRKrEntry, User, UserPreference
 from .okr import _GUIDE, _guess_concept_from_description, _normalize_concept_key
 _TRACKER_SCHEMA_READY = False
 _TRACKER_TIMEZONE = (os.getenv("PILLAR_TRACKER_TIMEZONE") or "Europe/London").strip() or "Europe/London"
+_FASTING_MODE_PREF_KEY = "weekly_objectives_fasting_mode"
+_ALCOHOL_TRACKING_PREF_KEY = "weekly_objectives_alcohol_tracking"
 try:
     _TRACKER_YESTERDAY_GRACE_HOUR = int((os.getenv("PILLAR_TRACKER_YESTERDAY_GRACE_HOUR") or "12").strip() or "12")
 except Exception:
@@ -291,7 +293,7 @@ def _is_last_week_anchor(target_day: date, current_day: date) -> bool:
 
 
 def _week_has_completed_tracker_days(user_id: int, pillar_key: str, anchor: date) -> bool:
-    required_concepts = tracker_concepts_for_pillar(pillar_key)
+    required_concepts = tracker_concepts_for_pillar(pillar_key, user_id=int(user_id))
     entries_by_day = _load_week_entries(user_id, pillar_key, anchor)
     return bool(_completed_days(entries_by_day, required_concepts))
 
@@ -350,11 +352,67 @@ def _pillar_label(pillar_key: str) -> str:
     return labels.get(key, key.replace("_", " ").title())
 
 
-def tracker_concepts_for_pillar(pillar_key: str) -> tuple[PillarTrackerConceptDefinition, ...]:
+def _user_pref_value(session, user_id: int, key: str) -> str | None:
+    row = (
+        session.query(UserPreference)
+        .filter(UserPreference.user_id == int(user_id), UserPreference.key == str(key))
+        .one_or_none()
+    )
+    return str(getattr(row, "value", "") or "").strip() or None
+
+
+def _wellbeing_tracking_settings(user_id: int) -> tuple[str, str]:
+    with SessionLocal() as s:
+        fasting_mode = (_user_pref_value(s, int(user_id), _FASTING_MODE_PREF_KEY) or "off").strip().lower()
+        alcohol_tracking = (_user_pref_value(s, int(user_id), _ALCOHOL_TRACKING_PREF_KEY) or "off").strip().lower()
+    if fasting_mode not in {"off", "12:12", "14:10", "16:8", "18:6"}:
+        fasting_mode = "off"
+    if alcohol_tracking not in {"on", "off"}:
+        alcohol_tracking = "off"
+    return fasting_mode, alcohol_tracking
+
+
+def _optional_nutrition_tracker_concepts(user_id: int) -> tuple[PillarTrackerConceptDefinition, ...]:
+    fasting_mode, alcohol_tracking = _wellbeing_tracking_settings(int(user_id))
+    concepts: list[PillarTrackerConceptDefinition] = []
+    if alcohol_tracking == "on":
+        concepts.append(
+            PillarTrackerConceptDefinition(
+                concept_key="alcohol_units",
+                label="Alcohol",
+                helper="units today",
+                options=tuple(
+                    PillarTrackerOption(float(v), label)
+                    for v, label in ((0, "0"), (1, "1"), (2, "2"), (3, "3"), (4, "4"), (5, "5"), (6, "6+"))
+                ),
+                target_value=0,
+                target_direction="lte",
+                score_mode="reverse_scale",
+                score_ceiling=6,
+            )
+        )
+    if fasting_mode != "off":
+        concepts.append(
+            PillarTrackerConceptDefinition(
+                concept_key="fasting_adherence",
+                label="Fasting",
+                helper=f"Follow your {fasting_mode} plan today?",
+                options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
+                target_value=1,
+                target_direction="gte",
+                score_mode="binary",
+            )
+        )
+    return tuple(concepts)
+
+
+def tracker_concepts_for_pillar(pillar_key: str, user_id: int | None = None) -> tuple[PillarTrackerConceptDefinition, ...]:
     key = str(pillar_key or "").strip().lower()
     concepts = PILLAR_TRACKER_CONFIG.get(key)
     if not concepts:
         raise ValueError(f"Unknown pillar: {pillar_key}")
+    if key == "nutrition" and user_id is not None:
+        return concepts + _optional_nutrition_tracker_concepts(int(user_id))
     return concepts
 
 
@@ -532,7 +590,7 @@ def _resolve_pillar_targets_for_user_with_session(
 ) -> tuple[dict[str, PillarTrackerResolvedTarget], dict[str, OKRKeyResult]]:
     key = str(pillar_key or "").strip().lower()
     resolved = {
-        item.concept_key: _default_resolved_target(key, item)
+        item.concept_key: _default_resolved_target_for_user(int(user_id), key, item)
         for item in required_concepts
     }
     user = s.get(User, int(user_id))
@@ -746,6 +804,45 @@ def _default_resolved_target(pillar_key: str, defn: PillarTrackerConceptDefiniti
     )
 
 
+def _default_resolved_target_for_user(
+    user_id: int,
+    pillar_key: str,
+    defn: PillarTrackerConceptDefinition,
+) -> PillarTrackerResolvedTarget:
+    key = str(pillar_key or "").strip().lower()
+    if key == "nutrition" and defn.concept_key == "alcohol_units":
+        return PillarTrackerResolvedTarget(
+            source="default",
+            target_value=0.0,
+            target_direction="lte",
+            target_unit="units/day",
+            target_period="day",
+            target_label="Keep alcohol at 0 units today",
+            metric_label="alcohol units",
+            success_value=0.0,
+            success_direction="lte",
+            start_date=None,
+        )
+    if key == "nutrition" and defn.concept_key == "fasting_adherence":
+        fasting_mode, _alcohol_tracking = _wellbeing_tracking_settings(int(user_id))
+        label = "Follow your fasting plan today"
+        if fasting_mode and fasting_mode != "off":
+            label = f"Follow your {fasting_mode} fasting plan today"
+        return PillarTrackerResolvedTarget(
+            source="default",
+            target_value=1.0,
+            target_direction="gte",
+            target_unit=None,
+            target_period="day",
+            target_label=label,
+            metric_label="fasting adherence",
+            success_value=1.0,
+            success_direction="gte",
+            start_date=None,
+        )
+    return _default_resolved_target(key, defn)
+
+
 def _resolve_pillar_targets_for_user(
     user_id: int,
     pillar_key: str,
@@ -753,7 +850,7 @@ def _resolve_pillar_targets_for_user(
 ) -> dict[str, PillarTrackerResolvedTarget]:
     key = str(pillar_key or "").strip().lower()
     resolved = {
-        item.concept_key: _default_resolved_target(key, item)
+        item.concept_key: _default_resolved_target_for_user(int(user_id), key, item)
         for item in required_concepts
     }
     with SessionLocal() as s:
@@ -995,7 +1092,7 @@ def _resolve_tracker_detail_anchor(user_id: int, pillar_key: str, requested_anch
     default_anchor = current_day
     if len(editable_dates) > 1:
         yesterday = editable_dates[0]
-        required_concepts = tracker_concepts_for_pillar(pillar_key)
+        required_concepts = tracker_concepts_for_pillar(pillar_key, user_id=int(user_id))
         yesterday_rows = _load_week_entries(user_id, pillar_key, yesterday).get(yesterday, {})
         if not _day_complete(yesterday_rows, required_concepts):
             default_anchor = yesterday
@@ -1162,7 +1259,7 @@ def get_pillar_tracker_summary(user_id: int, anchor: date | None = None) -> dict
     week_days = _week_days(resolved_anchor)
     pillars = []
     for pillar_key in PILLAR_TRACKER_CONFIG.keys():
-        required_concepts = tracker_concepts_for_pillar(pillar_key)
+        required_concepts = tracker_concepts_for_pillar(pillar_key, user_id=int(user_id))
         entries_by_day = _load_week_entries(user_id, pillar_key, resolved_anchor)
         resolved_targets = _resolve_pillar_targets_for_user(user_id, pillar_key, required_concepts)
         evaluations_by_concept = _build_concept_week_evaluations(entries_by_day, required_concepts, resolved_targets, week_days)
@@ -1199,7 +1296,7 @@ def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None
     key = str(pillar_key or "").strip().lower()
     current_day = tracker_today()
     resolved_anchor = _resolve_tracker_detail_anchor(user_id, key, anchor, current_day)
-    required_concepts = tracker_concepts_for_pillar(key)
+    required_concepts = tracker_concepts_for_pillar(key, user_id=int(user_id))
     entries_by_day = _load_week_entries(user_id, key, resolved_anchor)
     baseline_scores = _latest_assessment_scores_for_user(user_id)
     week_days = _week_days(resolved_anchor)
@@ -1225,7 +1322,10 @@ def get_pillar_tracker_detail(user_id: int, pillar_key: str, anchor: date | None
     today_rows = entries_by_day.get(resolved_anchor, {})
     for concept_def in required_concepts:
         current_row = today_rows.get(concept_def.concept_key)
-        resolved_target = resolved_targets.get(concept_def.concept_key) or _default_resolved_target(key, concept_def)
+        resolved_target = (
+            resolved_targets.get(concept_def.concept_key)
+            or _default_resolved_target_for_user(int(user_id), key, concept_def)
+        )
         evaluations_for_concept = evaluations_by_concept.get(concept_def.concept_key, {})
         today_eval = evaluations_for_concept.get(resolved_anchor, {})
         okr_status = _concept_okr_status(concept_def, evaluations_for_concept, resolved_target, resolved_anchor, week_days)
@@ -1371,7 +1471,7 @@ def save_pillar_tracker_day(
                 f"You can save {key} for today, or for yesterday before {_TRACKER_YESTERDAY_GRACE_HOUR}:00 local time."
             )
         raise ValueError("This pillar can only be saved for today.")
-    required_concepts = tracker_concepts_for_pillar(key)
+    required_concepts = tracker_concepts_for_pillar(key, user_id=int(user_id))
     resolved_targets = _resolve_pillar_targets_for_user(user_id, key, required_concepts)
     entries = entries or []
     if len(entries) != len(required_concepts):
@@ -1394,8 +1494,16 @@ def save_pillar_tracker_day(
         normalized_rows[concept_key] = {
             "value_num": value,
             "value_label": _to_value_label(concept_def, value),
-            "score": _score_for_value(concept_def, value, resolved_targets.get(concept_key) or _default_resolved_target(key, concept_def)),
-            "target_met": _target_met_for_value(concept_def, value, resolved_targets.get(concept_key) or _default_resolved_target(key, concept_def)),
+            "score": _score_for_value(
+                concept_def,
+                value,
+                resolved_targets.get(concept_key) or _default_resolved_target_for_user(int(user_id), key, concept_def),
+            ),
+            "target_met": _target_met_for_value(
+                concept_def,
+                value,
+                resolved_targets.get(concept_key) or _default_resolved_target_for_user(int(user_id), key, concept_def),
+            ),
         }
     if set(normalized_rows.keys()) != set(config_by_key.keys()):
         raise ValueError("Each pillar tracker save must include every concept.")
