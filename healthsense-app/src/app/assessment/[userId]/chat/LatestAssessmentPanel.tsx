@@ -330,7 +330,11 @@ export default function LatestAssessmentPanel({
     trackerReturnSurface === "tracking"
       ? "Back to daily check-in"
       : "Close";
-  const displayLabel = displayTheme === "dark" ? "Dark" : "Light";
+  const displayLabel = displayTheme === "dark" ? "light" : "dark";
+  const displayButtonClassName =
+    displayLabel === "dark"
+      ? "rounded-full border border-[#2f3542] bg-[#1c2230] px-4 py-2 text-xs font-semibold text-white shadow-[0_10px_24px_-18px_rgba(12,18,28,0.9)] disabled:cursor-not-allowed disabled:opacity-60"
+      : "rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold text-[#5d5348] shadow-[0_10px_24px_-18px_rgba(93,83,72,0.45)] disabled:cursor-not-allowed disabled:opacity-60";
 
   const toggleDisplayTheme = useCallback(async () => {
     if (togglingDisplay) return;
@@ -617,9 +621,9 @@ export default function LatestAssessmentPanel({
               type="button"
               onClick={() => void toggleDisplayTheme()}
               disabled={togglingDisplay}
-              className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#5d5348] disabled:cursor-not-allowed disabled:opacity-60"
+              className={displayButtonClassName}
             >
-              {togglingDisplay ? "Updating..." : `Display · ${displayLabel}`}
+              {displayLabel}
             </button>
           </div>
           <div className="relative">
