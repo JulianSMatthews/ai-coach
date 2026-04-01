@@ -31,6 +31,7 @@ from app.reporting import (
     set_completion_summary_worker_state,
 )
 from app.db import SessionLocal, _table_exists, engine
+from app.coach_home_refresh import run_coach_home_tracker_refresh
 from app.models import User, AssessSession, PillarResult
 from app.okr import generate_and_update_okrs_for_pillar
 from app.wearables import ensure_wearables_schema, process_sync_run as process_wearable_sync_run
@@ -302,6 +303,17 @@ def _process_wearable_sync(payload: dict) -> dict:
         )
 
 
+def _process_coach_home_tracker_refresh(payload: dict) -> dict:
+    user_id = payload.get("user_id")
+    if not user_id:
+        raise ValueError("coach_home_tracker_refresh requires user_id")
+    return run_coach_home_tracker_refresh(
+        int(user_id),
+        trigger=payload.get("trigger"),
+        job_id=int(payload.get("job_id")) if payload.get("job_id") is not None else None,
+    )
+
+
 def process_job(kind: str, payload: dict) -> dict:
     if kind == "day_prompt":
         _process_day_prompt(payload)
@@ -340,6 +352,8 @@ def process_job(kind: str, payload: dict) -> dict:
         return {"ok": True}
     if kind == "wearable_sync":
         return _process_wearable_sync(payload)
+    if kind == "coach_home_tracker_refresh":
+        return _process_coach_home_tracker_refresh(payload)
     raise ValueError(f"Unknown job kind: {kind}")
 
 

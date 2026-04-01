@@ -1,17 +1,20 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+import json
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import and_, desc, or_, select
 
 from .db import SessionLocal
-from .models import ContentLibraryItem
+from .daily_habits import build_daily_tracker_generation_context_snapshot
+from .models import ContentLibraryItem, UserPreference
 from .okr import _normalize_concept_key
 from .pillar_tracker import get_pillar_tracker_detail, get_pillar_tracker_summary, tracker_today
 
 _PILLAR_ORDER = ("nutrition", "training", "resilience", "recovery")
 _INTRO_SOURCE_TYPES = ("app_intro", "assessment_intro")
+_INSIGHT_CACHE_KEY = "coach_home_insight_cache"
 
 
 def _safe_int(value: Any) -> int | None:
@@ -342,3 +345,98 @@ def get_coach_insight(
             else None
         ),
     }
+
+
+def _get_json_pref(user_id: int, key: str) -> dict[str, Any] | None:
+    with SessionLocal() as s:
+        pref = (
+            s.query(UserPreference)
+            .filter(UserPreference.user_id == int(user_id), UserPreference.key == str(key))
+            .one_or_none()
+        )
+        if not pref or not pref.value:
+            return None
+        try:
+            data = json.loads(pref.value)
+            return data if isinstance(data, dict) else None
+        except Exception:
+            return None
+
+
+def _set_json_pref(user_id: int, key: str, payload: dict[str, Any]) -> None:
+    with SessionLocal() as s:
+        pref = (
+            s.query(UserPreference)
+            .filter(UserPreference.user_id == int(user_id), UserPreference.key == str(key))
+            .one_or_none()
+        )
+        raw = json.dumps(payload, default=str)
+        if pref:
+            pref.value = raw
+        else:
+            s.add(UserPreference(user_id=int(user_id), key=str(key), value=raw))
+        s.commit()
+
+
+def _insight_cache_signature(user_id: int) -> tuple[str, str | None]:
+    snapshot = build_daily_tracker_generation_context_snapshot(int(user_id))
+    context = snapshot.get("context") if isinstance(snapshot.get("context"), dict) else {}
+    return (
+        str(snapshot.get("context_hash") or "").strip(),
+        str(context.get("plan_date") or "").strip() or None,
+    )
+
+
+def cache_coach_insight(
+    user_id: int,
+    result: dict[str, Any],
+    *,
+    context_hash: str | None = None,
+    plan_date: str | None = None,
+) -> None:
+    if not isinstance(result, dict) or not result:
+        return
+    resolved_hash = str(context_hash or "").strip()
+    resolved_plan_date = str(plan_date or "").strip() or None
+    if not resolved_hash or not resolved_plan_date:
+        resolved_hash, resolved_plan_date = _insight_cache_signature(int(user_id))
+    if not resolved_hash or not resolved_plan_date:
+        return
+    _set_json_pref(
+        int(user_id),
+        _INSIGHT_CACHE_KEY,
+        {
+            "context_hash": resolved_hash,
+            "plan_date": resolved_plan_date,
+            "generated_at": datetime.utcnow().replace(microsecond=0).isoformat(),
+            "result": result,
+        },
+    )
+
+
+def get_or_generate_cached_coach_insight(
+    user_id: int,
+    *,
+    anchor: date | None = None,
+    concept_key: str | None = None,
+    force: bool = False,
+) -> dict[str, Any]:
+    if anchor is not None or str(concept_key or "").strip():
+        return get_coach_insight(user_id, anchor=anchor, concept_key=concept_key)
+    context_hash, plan_date = _insight_cache_signature(int(user_id))
+    if not force and context_hash and plan_date:
+        cached = _get_json_pref(int(user_id), _INSIGHT_CACHE_KEY) or {}
+        if (
+            str(cached.get("context_hash") or "").strip() == context_hash
+            and str(cached.get("plan_date") or "").strip() == plan_date
+            and isinstance(cached.get("result"), dict)
+        ):
+            return dict(cached.get("result") or {})
+    result = get_coach_insight(user_id, anchor=anchor, concept_key=concept_key)
+    cache_coach_insight(
+        int(user_id),
+        result,
+        context_hash=context_hash,
+        plan_date=plan_date,
+    )
+    return result

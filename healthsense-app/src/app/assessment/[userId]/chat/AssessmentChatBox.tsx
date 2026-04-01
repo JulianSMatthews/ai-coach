@@ -744,6 +744,9 @@ export default function AssessmentChatBox({
   ).trim();
   const insightHasVideo = Boolean(insightVideoUrl);
   const insightMediaKey = `${insightSelectedConceptKey || "insight"}:${insightVideoUrl}`;
+  const insightConceptTitle = String(
+    coachInsight?.concept_label || insightContent?.title || coachInsight?.pillar_label || "",
+  ).trim();
   const dailyHabits = useMemo(() => {
     const selected = Array.isArray(dailyHabitPlan?.habits) ? dailyHabitPlan.habits : [];
     const fallback = Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : [];
@@ -1937,16 +1940,26 @@ export default function AssessmentChatBox({
                   <p className="text-sm text-[#6b6257]">Loading concept insight…</p>
                 ) : null}
                 {insightHasVideo ? (
-                  <video
-                    key={`video-${insightMediaKey}`}
-                    controls
-                    preload="metadata"
-                    playsInline
-                    poster={insightVideoPosterUrl || undefined}
-                    className="h-full min-h-0 w-full rounded-[24px] border border-[#efe7db] bg-[#f7f4ee] object-contain"
-                  >
-                    <source src={insightVideoUrl} />
-                  </video>
+                  <>
+                    {insightConceptTitle ? (
+                      <div className="rounded-[20px] border border-[#efe7db] bg-white px-4 py-3">
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
+                          Concept
+                        </p>
+                        <p className="mt-2 text-sm font-semibold text-[#1e1b16]">{insightConceptTitle}</p>
+                      </div>
+                    ) : null}
+                    <video
+                      key={`video-${insightMediaKey}`}
+                      controls
+                      preload="metadata"
+                      playsInline
+                      poster={insightVideoPosterUrl || undefined}
+                      className="h-full min-h-0 w-full rounded-[24px] border border-[#efe7db] bg-[#f7f4ee] object-contain"
+                    >
+                      <source src={insightVideoUrl} />
+                    </video>
+                  </>
                 ) : (
                   <div className="flex h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
                     <p className="text-sm text-[#6b6257]">

@@ -29,7 +29,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, quote
 from datetime import datetime, timedelta, date
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
-from fastapi import FastAPI, APIRouter, Request, Response, Depends, Header, HTTPException, status, Body
+from fastapi import FastAPI, APIRouter, Request, Response, Depends, Header, HTTPException, status, Body, BackgroundTasks
 from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text, select, desc, func, or_, update, false
@@ -209,7 +209,8 @@ from .daily_habits import (
     get_or_generate_daily_habit_plan,
     update_daily_habit_plan_selection,
 )
-from .coach_insight import get_coach_insight
+from .coach_home_refresh import queue_coach_home_tracker_refresh
+from .coach_insight import get_or_generate_cached_coach_insight
 
 # Lazy import holder to avoid startup/reload ImportError if symbol is added later
 _gen_okr_summary_report = None
@@ -6917,7 +6918,7 @@ def api_user_assessment_chat_tracker_summary(
     if not _general_support_ready_for_user(user):
         raise HTTPException(status_code=409, detail="Gia's coaching message is not available yet.")
     try:
-        text_out = general_support.generate_tracker_summary_message(
+        text_out = general_support.get_or_generate_cached_tracker_summary_message(
             user,
             source="app_tracker_summary",
             include_prefix=False,
@@ -7731,6 +7732,7 @@ def api_user_pillar_tracker_save(
     user_id: int,
     pillar_key: str,
     request: Request,
+    background_tasks: BackgroundTasks,
     body: dict[str, Any] | None = Body(default=None),
     x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
@@ -7766,6 +7768,15 @@ def api_user_pillar_tracker_save(
             "score_date": raw_date or result.get("pillar", {}).get("today"),
         },
     )
+    refresh_job = queue_coach_home_tracker_refresh(
+        int(user_id),
+        trigger="pillar_tracker_update",
+        pillar_key=str(pillar_key or "").strip().lower() or None,
+        score_date=raw_date or result.get("pillar", {}).get("today"),
+        background_tasks=background_tasks,
+    )
+    if isinstance(result, dict):
+        result["coach_home_refresh"] = refresh_job
     return result
 
 
@@ -7859,7 +7870,7 @@ def api_user_coach_insight(
             raise HTTPException(status_code=400, detail="anchor_date must be YYYY-MM-DD")
     else:
         anchor = None
-    result = get_coach_insight(user_id, anchor=anchor, concept_key=concept_key)
+    result = get_or_generate_cached_coach_insight(user_id, anchor=anchor, concept_key=concept_key)
     content = result.get("content")
     if isinstance(content, dict):
         content["podcast_url"] = _normalize_reports_url(content.get("podcast_url"))

@@ -381,6 +381,18 @@ def build_daily_tracker_generation_context(
     return _build_generation_context(user_id, selected_concept_key=selected_concept_key)
 
 
+def build_daily_tracker_generation_context_snapshot(
+    user_id: int,
+    *,
+    selected_concept_key: str | None = None,
+) -> dict[str, Any]:
+    context = _build_generation_context(user_id, selected_concept_key=selected_concept_key)
+    return {
+        "context": context,
+        "context_hash": _context_hash(context),
+    }
+
+
 def _context_hash(context: dict[str, Any]) -> str:
     payload = json.dumps(context, sort_keys=True, separators=(",", ":"), default=str)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -1098,6 +1110,7 @@ def get_or_generate_daily_habit_plan(
             existing
             and not force
             and _habit_plan_version(existing_payload) >= _CURRENT_HABIT_PLAN_VERSION
+            and str(getattr(existing, "context_hash", "") or "").strip() == hash_value
             and selected_concept_key
             and existing_options_for_concept
         ):

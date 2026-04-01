@@ -11,7 +11,10 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal
-from .daily_habits import build_daily_tracker_generation_context
+from .daily_habits import (
+    build_daily_tracker_generation_context,
+    build_daily_tracker_generation_context_snapshot,
+)
 from .models import User, UserPreference, WeeklyFocus, AssessmentRun
 from .coaching_delivery import send_coaching_text
 from .programme_timeline import week_no_for_focus_start
@@ -19,6 +22,7 @@ from .prompts import build_prompt, run_llm_prompt
 COACH_NAME = os.getenv("COACH_NAME", "Gia")
 
 STATE_KEY = "general_support_state"
+TRACKER_SUMMARY_CACHE_KEY = "coach_home_tracker_summary_cache"
 
 
 def _coach_message_prefix() -> str:
@@ -47,10 +51,10 @@ def _strip_coach_prefix(text: str | None) -> str:
     return raw
 
 
-def _get_state(session: Session, user_id: int) -> Optional[dict]:
+def _get_json_pref(session: Session, user_id: int, key: str) -> Optional[dict]:
     pref = (
         session.query(UserPreference)
-        .filter(UserPreference.user_id == user_id, UserPreference.key == STATE_KEY)
+        .filter(UserPreference.user_id == user_id, UserPreference.key == key)
         .one_or_none()
     )
     if not pref or not pref.value:
@@ -61,21 +65,29 @@ def _get_state(session: Session, user_id: int) -> Optional[dict]:
         return None
 
 
-def _set_state(session: Session, user_id: int, state: Optional[dict]) -> None:
+def _set_json_pref(session: Session, user_id: int, key: str, payload: Optional[dict]) -> None:
     pref = (
         session.query(UserPreference)
-        .filter(UserPreference.user_id == user_id, UserPreference.key == STATE_KEY)
+        .filter(UserPreference.user_id == user_id, UserPreference.key == key)
         .one_or_none()
     )
-    if state is None:
+    if payload is None:
         if pref:
             session.delete(pref)
         return
-    data = json.dumps(state)
+    data = json.dumps(payload, default=str)
     if pref:
         pref.value = data
     else:
-        session.add(UserPreference(user_id=user_id, key=STATE_KEY, value=data))
+        session.add(UserPreference(user_id=user_id, key=key, value=data))
+
+
+def _get_state(session: Session, user_id: int) -> Optional[dict]:
+    return _get_json_pref(session, user_id, STATE_KEY)
+
+
+def _set_state(session: Session, user_id: int, state: Optional[dict]) -> None:
+    _set_json_pref(session, user_id, STATE_KEY, state)
 
 
 def has_active_state(user_id: int) -> bool:
@@ -87,6 +99,101 @@ def clear(user_id: int) -> None:
     with SessionLocal() as s:
         _set_state(s, user_id, None)
         s.commit()
+
+
+def _apply_prefix_preference(text: str | None, *, include_prefix: bool) -> str:
+    normalized = _strip_coach_prefix(text)
+    if include_prefix and normalized:
+        return normalized if _has_coach_prefix(normalized) else f"{_coach_message_prefix()} {normalized}"
+    return normalized
+
+
+def _tracker_summary_cache_signature(user_id: int) -> tuple[str, str | None]:
+    snapshot = build_daily_tracker_generation_context_snapshot(int(user_id))
+    context = snapshot.get("context") if isinstance(snapshot.get("context"), dict) else {}
+    return (
+        str(snapshot.get("context_hash") or "").strip(),
+        str(context.get("plan_date") or "").strip() or None,
+    )
+
+
+def get_cached_tracker_summary_message(
+    user_id: int,
+    *,
+    include_prefix: bool = False,
+) -> str | None:
+    context_hash, plan_date = _tracker_summary_cache_signature(int(user_id))
+    if not context_hash or not plan_date:
+        return None
+    with SessionLocal() as s:
+        cached = _get_json_pref(s, int(user_id), TRACKER_SUMMARY_CACHE_KEY) or {}
+    if (
+        str(cached.get("context_hash") or "").strip() != context_hash
+        or str(cached.get("plan_date") or "").strip() != plan_date
+    ):
+        return None
+    text = str(cached.get("text") or "").strip()
+    if not text:
+        return None
+    return _apply_prefix_preference(text, include_prefix=include_prefix)
+
+
+def cache_tracker_summary_message(
+    user_id: int,
+    text: str,
+    *,
+    context_hash: str | None = None,
+    plan_date: str | None = None,
+    source: str = "app_tracker_summary",
+) -> None:
+    clean_text = _strip_coach_prefix(text)
+    if not clean_text:
+        return
+    resolved_hash = str(context_hash or "").strip()
+    resolved_plan_date = str(plan_date or "").strip() or None
+    if not resolved_hash or not resolved_plan_date:
+        resolved_hash, resolved_plan_date = _tracker_summary_cache_signature(int(user_id))
+    if not resolved_hash or not resolved_plan_date:
+        return
+    payload = {
+        "text": clean_text,
+        "context_hash": resolved_hash,
+        "plan_date": resolved_plan_date,
+        "generated_at": datetime.utcnow().replace(microsecond=0).isoformat(),
+        "source": str(source or "app_tracker_summary").strip() or "app_tracker_summary",
+    }
+    with SessionLocal() as s:
+        _set_json_pref(s, int(user_id), TRACKER_SUMMARY_CACHE_KEY, payload)
+        s.commit()
+
+
+def get_or_generate_cached_tracker_summary_message(
+    user: User,
+    *,
+    source: str = "app_tracker_summary",
+    include_prefix: bool = False,
+    user_message: str | None = None,
+    force: bool = False,
+) -> str:
+    resolved_source = str(source or "app_tracker_summary").strip() or "app_tracker_summary"
+    use_cache = resolved_source == "app_tracker_summary" and not str(user_message or "").strip()
+    if use_cache and not force:
+        cached = get_cached_tracker_summary_message(int(user.id), include_prefix=include_prefix)
+        if cached:
+            return cached
+    text_out = generate_tracker_summary_message(
+        user,
+        source=resolved_source,
+        include_prefix=False,
+        user_message=user_message,
+    )
+    if use_cache and text_out:
+        cache_tracker_summary_message(
+            int(user.id),
+            text_out,
+            source=resolved_source,
+        )
+    return _apply_prefix_preference(text_out, include_prefix=include_prefix)
 
 
 def activate(
