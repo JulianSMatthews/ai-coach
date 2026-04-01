@@ -259,13 +259,15 @@ def _support_prompt(
     week_no: int | None,
     source: str | None,
 ):
+    tracker_summary_mode = str(source or "").strip().lower() == "app_tracker_summary"
     transcript = []
-    for turn in history:
-        role = (turn.get("role") or "").strip()
-        content = (turn.get("content") or "").strip()
-        if role and content:
-            transcript.append(f"{role.upper()}: {content}")
-    if user_message:
+    if not tracker_summary_mode:
+        for turn in history:
+            role = (turn.get("role") or "").strip()
+            content = (turn.get("content") or "").strip()
+            if role and content:
+                transcript.append(f"{role.upper()}: {content}")
+    if user_message and not tracker_summary_mode:
         transcript.append(f"USER: {user_message}")
 
     extras_parts = []
@@ -279,6 +281,8 @@ def _support_prompt(
     plan_date = str(tracker_context.get("plan_date") or "").strip()
     if plan_date:
         extras_parts.append(f"tracker_date={plan_date}")
+    if tracker_summary_mode:
+        extras_parts.append("tracker_priority=today_first_then_yesterday")
     selected_focus = tracker_context.get("selected_focus_concept") or {}
     if selected_focus:
         focus_label = str(selected_focus.get("label") or selected_focus.get("concept_key") or "").strip()
@@ -305,6 +309,7 @@ def _support_prompt(
         combined_score=combined_score,
         tracker_context=tracker_context,
         tracker_history=_tracker_history_lines(tracker_context),
+        okr_context=tracker_context.get("okr_context") or {},
     )
 
 
@@ -352,13 +357,13 @@ def generate_tracker_summary_message(
 ) -> str:
     with SessionLocal() as s:
         state = _get_state(s, int(user.id)) or {}
-        history = list(state.get("history") or [])[-12:]
         week_no = _resolve_week_no(s, int(user.id), state.get("week_no"))
         resolved_source = str(source or state.get("source") or "app_tracker_summary").strip() or "app_tracker_summary"
+        history = [] if resolved_source == "app_tracker_summary" else list(state.get("history") or [])[-12:]
     return _generate_support_reply(
         user,
         history=history,
-        user_message=user_message or "Please give me today's coaching message based on my latest tracker results.",
+        user_message=user_message or None,
         week_no=week_no,
         source=resolved_source,
         include_prefix=include_prefix,

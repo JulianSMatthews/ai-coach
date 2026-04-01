@@ -19,7 +19,6 @@ Index (helper → purpose → used by):
 - assessment_scores_prompt: assessment score narrative → reporting.py (_score_narrative_from_llm)
 - assessment_completion_summary_prompt: short end-of-assessment spoken summary → pending audio/avatar flow
 - daily_habit_plan: daily coach-home habits generated from tracker + OKR context → coach home habits panel
-- daily_ask_suggestions: daily coach-home ask suggestions generated from tracker + OKR context → coach home ask panel
 - okr_narrative_prompt: OKR narrative → reporting.py (_okr_narrative_from_llm)
 - assessment_narrative_prompt: assessment narrative → assessor.py
 - assessor_system_prompt: assessor system message → assessor.py
@@ -86,33 +85,12 @@ BUILTIN_PROMPT_TEMPLATE_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "task_block": (
             "Create a coach-home daily habit plan. Return STRICT JSON only with this shape: "
             "{\"title\":\"...\",\"summary\":\"...\",\"habits\":[{\"title\":\"...\",\"detail\":\"...\"}]}. "
-            "Return 3 to 5 habits. Focus on the weakest current pillar and the most recently missed or unlogged concepts. "
+            "Return 3 to 5 habits. Focus only on the selected concept and its current KR context. "
             "Use active KR habit steps when they help. Keep every habit practical for today, specific, brief, and low-friction. "
             "Each habit title should be short. Each detail should be one sentence and under 18 words. "
             "Use British English. Do not mention JSON, scores, data tables, or being an AI."
         ),
         "note": "Runtime builtin template for coach-home daily habits generated from tracker context.",
-    },
-    "daily_ask_suggestions": {
-        "touchpoint": "daily_ask_suggestions",
-        "okr_scope": "pillar",
-        "programme_scope": "none",
-        "response_format": "json",
-        "model_override": None,
-        "is_active": True,
-        "block_order": ["system", "locale", "context", "scores", "okr", "history", "task"],
-        "include_blocks": ["system", "locale", "context", "scores", "okr", "history", "task"],
-        "task_block": (
-            "Create coach-home Ask suggestions. Return STRICT JSON only with this shape: "
-            "{\"suggestions\":[{\"label\":\"...\",\"text\":\"...\"}]}. "
-            "Return 3 to 4 suggestions. Base them on how the user has been tracking recently, what looks off track, "
-            "what they may want to understand better, and where they may need help today. "
-            "Do not simply repeat concept names as labels. Each label should be short, natural, and under 4 words. "
-            "Each text should be a single question the user could send to their coach, in natural British English, under 18 words. "
-            "Focus on likely user intent: what to do next, why something is slipping, how to recover today, how to stay consistent. "
-            "Do not mention JSON, scores, data tables, or being an AI."
-        ),
-        "note": "Runtime builtin template for coach-home Ask suggestions generated from tracker context.",
     },
 }
 
@@ -207,32 +185,34 @@ def context_block(
     return "Context: " + "; ".join(bits)
 
 
+def _format_okr_dict_entry(d: Dict[str, Any]) -> str:
+    desc = d.get("description") or d.get("title") or ""
+    tgt = d.get("target") or d.get("target_num") or d.get("target_text")
+    actual = d.get("actual") or d.get("actual_num") or d.get("actual_text")
+    bits = []
+    if tgt is not None:
+        bits.append(f"target {tgt}")
+    if actual is not None:
+        bits.append(f"now {actual}")
+    steps = d.get("habit_steps") or []
+    step_bits: List[str] = []
+    if isinstance(steps, list):
+        for step in steps:
+            if isinstance(step, dict):
+                text_val = step.get("text") or step.get("step") or ""
+            else:
+                text_val = str(step)
+            text_val = text_val.strip()
+            if text_val:
+                step_bits.append(text_val)
+    if step_bits:
+        bits.append("steps: " + "; ".join(step_bits))
+    suffix = f" ({'; '.join(bits)})" if bits else ""
+    return f"{desc}{suffix}".strip()
+
+
 def okr_block(okrs_by_pillar: Dict[str, List[str]] | List[Dict[str, Any]], targets: Optional[Dict[str, Any]] = None) -> str:
     """OKR/KR snapshot: objectives/KRs and optional targets."""
-    def _format_dict_entry(d: Dict[str, Any]) -> str:
-        desc = d.get("description") or d.get("title") or ""
-        tgt = d.get("target") or d.get("target_num") or d.get("target_text")
-        actual = d.get("actual") or d.get("actual_num") or d.get("actual_text")
-        bits = []
-        if tgt is not None:
-            bits.append(f"target {tgt}")
-        if actual is not None:
-            bits.append(f"now {actual}")
-        steps = d.get("habit_steps") or []
-        step_bits: List[str] = []
-        if isinstance(steps, list):
-            for step in steps:
-                if isinstance(step, dict):
-                    text_val = step.get("text") or step.get("step") or ""
-                else:
-                    text_val = str(step)
-                text_val = text_val.strip()
-                if text_val:
-                    step_bits.append(text_val)
-        if step_bits:
-            bits.append("steps: " + "; ".join(step_bits))
-        suffix = f" ({'; '.join(bits)})" if bits else ""
-        return f"{desc}{suffix}".strip()
 
     formatted = ""
     if isinstance(okrs_by_pillar, dict):
@@ -242,7 +222,7 @@ def okr_block(okrs_by_pillar: Dict[str, List[str]] | List[Dict[str, Any]], targe
                 rendered = []
                 for item in items:
                     if isinstance(item, dict):
-                        rendered.append(_format_dict_entry(item))
+                        rendered.append(_format_okr_dict_entry(item))
                     else:
                         rendered.append(str(item))
                 parts.append(f"{pillar}: " + "; ".join(rendered))
@@ -253,12 +233,15 @@ def okr_block(okrs_by_pillar: Dict[str, List[str]] | List[Dict[str, Any]], targe
         rendered = []
         for item in okrs_by_pillar:
             if isinstance(item, dict):
-                rendered.append(_format_dict_entry(item))
+                rendered.append(_format_okr_dict_entry(item))
             else:
                 rendered.append(str(item))
         formatted = "; ".join(rendered)
     else:
         formatted = str(okrs_by_pillar)
+    formatted = str(formatted or "").strip()
+    if not formatted:
+        return ""
 
     tgt_txt = ""
     if targets:
@@ -267,6 +250,31 @@ def okr_block(okrs_by_pillar: Dict[str, List[str]] | List[Dict[str, Any]], targe
         except Exception:
             tgt_txt = ""
     return f"OKRs/KRs: {formatted}{tgt_txt}"
+
+
+def tracker_summary_okr_block(okr_context: Dict[str, Any]) -> str:
+    """Render the selected pillar's objective/KRs/habit steps for app tracker-summary prompts."""
+    if not isinstance(okr_context, dict) or not okr_context:
+        return ""
+    objective = str(okr_context.get("objective") or "").strip()
+    krs = [item for item in (okr_context.get("krs") or []) if isinstance(item, dict)]
+    habit_steps = [
+        str(step or "").strip()
+        for step in (okr_context.get("habit_steps") or [])
+        if str(step or "").strip()
+    ]
+    parts: List[str] = []
+    if objective:
+        parts.append(f"Objective: {objective}")
+    if krs:
+        rendered = [_format_okr_dict_entry(item) for item in krs if _format_okr_dict_entry(item)]
+        if rendered:
+            parts.append("Focused KRs: " + "; ".join(rendered))
+    if habit_steps:
+        parts.append("Active habit steps: " + "; ".join(habit_steps))
+    if not parts:
+        return ""
+    return "OKRs/KRs: " + " | ".join(parts)
 
 
 def okr_block_with_scope(scope: str, okrs: Any, targets: Optional[Dict[str, Any]] = None) -> tuple[str, Dict[str, Any]]:
@@ -323,11 +331,11 @@ def assemble_prompt(blocks: List[str]) -> str:
     return "\n".join([b for b in blocks if b])
 
 
-def history_block(label: str, entries: List[str]) -> str:
+def history_block(label: str, entries: List[str], channel: str = "WhatsApp") -> str:
     """Render conversation or check-in history as a labeled block."""
     if not entries:
         return ""
-    return context_block("history", label, extras="\n".join(entries))
+    return context_block("history", label, channel=channel, extras="\n".join(entries))
 
 
 # ---------------------------------------------------------------------------
@@ -1184,7 +1192,6 @@ def build_prompt(
     - initial_habit_steps_generator
     - assessment_okr_structured
     - daily_habit_plan
-    - daily_ask_suggestions
     - sunday_daily
     - sunday_actions (legacy alias)
     - tuesday
@@ -1434,26 +1441,48 @@ def build_prompt(
         scores_payload = data.get("scores") or []
         psych_payload = data.get("psych_payload") or {}
         tracker_history = data.get("tracker_history") or []
-        okr_scope = (template or {}).get("okr_scope") or "week"
-        payload = kr_payload_list(user_id, max_krs=3)
-        primary = payload[0] if payload else None
-        krs = _krs_for_okr_scope(
-            okr_scope=okr_scope,
-            user_id=user_id,
-            week_no=data.get("week_no"),
-            primary=primary,
-            fallback_krs=payload,
-        )
-        okr_txt, okr_meta = okr_block_with_scope(okr_scope, krs)
         timeframe = data.get("timeframe", "")
         extras = data.get("extras", "")
         source = str(data.get("source") or "").strip().lower()
+        tracker_summary_mode = source == "app_tracker_summary"
+        okr_context = data.get("okr_context") or {}
+        if tracker_summary_mode:
+            okr_txt = tracker_summary_okr_block(okr_context)
+            okr_meta = {"okr_scope": "pillar"} if okr_txt else {}
+            if not okr_txt:
+                payload = kr_payload_list(user_id, max_krs=3)
+                primary = payload[0] if payload else None
+                krs = _krs_for_okr_scope(
+                    okr_scope="week",
+                    user_id=user_id,
+                    week_no=data.get("week_no"),
+                    primary=primary,
+                    fallback_krs=payload,
+                )
+                okr_txt, okr_meta = okr_block_with_scope("week", krs)
+        else:
+            okr_scope = (template or {}).get("okr_scope") or "week"
+            payload = kr_payload_list(user_id, max_krs=3)
+            primary = payload[0] if payload else None
+            krs = _krs_for_okr_scope(
+                okr_scope=okr_scope,
+                user_id=user_id,
+                week_no=data.get("week_no"),
+                primary=primary,
+                fallback_krs=payload,
+            )
+            okr_txt, okr_meta = okr_block_with_scope(okr_scope, krs)
         history_lines: List[str] = []
         if tracker_history:
             history_lines.extend(str(item or "").strip() for item in tracker_history if str(item or "").strip())
-        if history:
+        if history and not tracker_summary_mode:
             history_lines.extend(history.splitlines())
-        tracker_summary_mode = source == "app_tracker_summary"
+        history_label = (
+            "latest tracker context for today first, then yesterday when needed"
+            if tracker_summary_mode
+            else "latest tracker context and conversation"
+        )
+        history_channel = "App" if source.startswith("app") else "WhatsApp"
         parts: List[tuple[str, str]] = [
             ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
             ("locale", settings.get("locale_block") or locale_block(locale)),
@@ -1472,7 +1501,7 @@ def build_prompt(
             ("okr", okr_txt),
             ("scores", scores_block(scores_payload, combined=data.get("combined_score")) if scores_payload else ""),
             ("habit", habit_readiness_block(psych_payload) if psych_payload else ""),
-            ("history", history_block("latest tracker context and conversation", history_lines) if history_lines else ""),
+            ("history", history_block(history_label, history_lines, channel=history_channel) if history_lines else ""),
             (
                 "task",
                 task_block(
@@ -1504,13 +1533,18 @@ def build_prompt(
     if tp == "daily_habit_plan":
         timeframe = data.get("timeframe") or "today"
         pillar_scores = data.get("scores") or []
-        weakest_pillar = data.get("weakest_pillar") or {}
-        focus_concepts = data.get("focus_concepts") or []
         selected_focus_concept = data.get("selected_focus_concept") or {}
         selected_pillar = data.get("selected_pillar") or {}
         okr_context = data.get("okr_context") or {}
+        selected_concept_label = (
+            str(selected_focus_concept.get("label") or selected_focus_concept.get("concept_key") or "").strip()
+            or "selected concept"
+        )
+        selected_pillar_label = (
+            str(selected_pillar.get("label") or selected_pillar.get("pillar_key") or "").strip()
+            or "selected pillar"
+        )
         context_extras = (
-            f"Weakest pillar={json.dumps(weakest_pillar, ensure_ascii=False)}; "
             f"Selected pillar={json.dumps(selected_pillar, ensure_ascii=False)}; "
             f"Selected concept={json.dumps(selected_focus_concept, ensure_ascii=False)}; "
             f"Plan date={data.get('plan_date') or ''}"
@@ -1540,18 +1574,18 @@ def build_prompt(
             ("locale", settings.get("locale_block") or locale_block(locale)),
             ("context", context_block("daily_habit_plan", "coach home daily habits", timeframe=str(timeframe), channel="App", extras=context_extras)),
             ("scores", scores_block(pillar_scores) if pillar_scores else ""),
-            ("okr", okr_block(okr_context) if okr_context else ""),
-            ("history", history_block("daily tracker and current habit focus", history_lines) if history_lines else ""),
+            ("okr", tracker_summary_okr_block(okr_context) if okr_context else ""),
+            ("history", history_block("selected concept and current habit focus", history_lines, channel="App") if history_lines else ""),
             (
                 "task",
-                (template or {}).get("task_block")
-                or task_block(
-                    "Create a daily habit plan for the coach home screen in strict JSON.",
+                task_block(
+                    f"Create a daily habit plan for the coach home screen in strict JSON, focused only on {selected_concept_label} within {selected_pillar_label}.",
                     constraints=(
                         "Return only {title, summary, habits}. "
                         "Provide 3 to 5 habits focused on today's practical next steps. "
                         "Every habit must directly support the selected concept only. "
-                        "Do not include habits for any other concept or pillar, even if other tracker context is visible."
+                        "Do not include actions for the weakest pillar or any other concept unless it is the same selected concept. "
+                        "Keep the title and summary aligned to the selected concept only."
                     ),
                 ),
             ),
@@ -1560,82 +1594,6 @@ def build_prompt(
         return _prompt_assembly(
             "daily_habit_plan",
             "daily_habit_plan",
-            parts,
-            meta=_merge_template_meta({}, template),
-            block_order_override=order_override or settings.get("default_block_order"),
-        )
-    if tp == "daily_ask_suggestions":
-        timeframe = data.get("timeframe") or "today"
-        pillar_scores = data.get("scores") or []
-        weakest_pillar = data.get("weakest_pillar") or {}
-        focus_concepts = data.get("focus_concepts") or []
-        selected_focus_concept = data.get("selected_focus_concept") or {}
-        selected_pillar = data.get("selected_pillar") or {}
-        okr_context = data.get("okr_context") or {}
-        selected_habits = data.get("selected_habits") or []
-        context_extras = (
-            f"Weakest pillar={json.dumps(weakest_pillar, ensure_ascii=False)}; "
-            f"Selected pillar={json.dumps(selected_pillar, ensure_ascii=False)}; "
-            f"Selected concept={json.dumps(selected_focus_concept, ensure_ascii=False)}; "
-            f"Plan date={data.get('plan_date') or ''}"
-        )
-        history_lines: List[str] = []
-        if focus_concepts:
-            history_lines.append("Recent tracker focus:")
-            for item in focus_concepts:
-                if not isinstance(item, dict):
-                    continue
-                label = str(item.get("label") or item.get("concept_key") or "").strip()
-                signal = str(item.get("signal") or "").strip()
-                target = str(item.get("target_label") or "").strip()
-                latest = str(item.get("latest_value") or "").strip()
-                if not label:
-                    continue
-                bits = [signal] if signal else []
-                if latest:
-                    bits.append(f"latest={latest}")
-                if target:
-                    bits.append(target)
-                suffix = f" ({'; '.join(bits)})" if bits else ""
-                history_lines.append(f"- {label}{suffix}")
-        if selected_habits:
-            history_lines.append("Currently selected habits:")
-            for item in selected_habits[:5]:
-                if isinstance(item, dict):
-                    title = str(item.get("title") or "").strip()
-                else:
-                    title = str(item or "").strip()
-                if title:
-                    history_lines.append(f"- {title}")
-        if (okr_context or {}).get("habit_steps"):
-            history_lines.append("Active KR habit steps:")
-            for step in (okr_context.get("habit_steps") or [])[:5]:
-                step_text = str(step or "").strip()
-                if step_text:
-                    history_lines.append(f"- {step_text}")
-        parts: List[tuple[str, str]] = [
-            ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
-            ("locale", settings.get("locale_block") or locale_block(locale)),
-            ("context", context_block("daily_ask_suggestions", "coach home ask suggestions", timeframe=str(timeframe), channel="App", extras=context_extras)),
-            ("scores", scores_block(pillar_scores) if pillar_scores else ""),
-            ("okr", okr_block(okr_context) if okr_context else ""),
-            ("history", history_block("daily tracker, current habit focus, and selected habits", history_lines) if history_lines else ""),
-            (
-                "task",
-                (template or {}).get("task_block")
-                or task_block(
-                    "Create ask suggestions for the coach home screen in strict JSON.",
-                    constraints=(
-                        "Return only {suggestions}. "
-                        "Provide 3 to 4 short, useful suggestion questions the user might want to ask today."
-                    ),
-                ),
-            ),
-        ]
-        parts, order_override = _apply_prompt_template(parts, template)
-        return _prompt_assembly(
-            "daily_ask_suggestions",
-            "daily_ask_suggestions",
             parts,
             meta=_merge_template_meta({}, template),
             block_order_override=order_override or settings.get("default_block_order"),

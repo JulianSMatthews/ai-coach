@@ -963,59 +963,6 @@ def _generate_plan_from_llm(user_id: int, context: dict[str, Any]) -> dict[str, 
     }
 
 
-def _generate_ask_suggestions_from_llm(
-    user_id: int,
-    context: dict[str, Any],
-    selected_habits: list[dict[str, Any]],
-) -> list[dict[str, str]] | None:
-    selected_pillar = context.get("selected_pillar") or {}
-    selected_concept = context.get("selected_focus_concept") or {}
-    user_name = str(context.get("user_name") or "User").strip() or "User"
-    ensure_builtin_prompt_templates(["daily_ask_suggestions"])
-    assembly = build_prompt(
-        "daily_ask_suggestions",
-        user_id=user_id,
-        coach_name="HealthSense",
-        user_name=user_name,
-        locale="UK",
-        timeframe="today",
-        plan_date=context.get("plan_date"),
-        scores=context.get("pillar_scores") or [],
-        weakest_pillar=context.get("weakest_pillar") or {},
-        focus_concepts=context.get("focus_concepts") or [],
-        selected_focus_concept=selected_concept,
-        selected_pillar=selected_pillar,
-        okr_context=context.get("okr_context") or {},
-        selected_habits=selected_habits,
-    )
-    raw = run_llm_prompt(
-        assembly.text,
-        user_id=user_id,
-        touchpoint="daily_ask_suggestions",
-        prompt_variant=assembly.variant,
-        task_label=assembly.task_label,
-        context_meta={
-            "page": "coach_home",
-            "pillar_key": str(selected_pillar.get("pillar_key") or "").strip().lower(),
-            "concept_key": str(selected_concept.get("concept_key") or "").strip().lower(),
-            "plan_date": _today_iso(),
-        },
-        prompt_blocks=assembly.blocks,
-        block_order=assembly.block_order,
-    )
-    parsed = _extract_json_object(raw)
-    if not parsed:
-        return None
-    suggestions = [
-        item
-        for item in (_normalize_ask_suggestion(row) for row in (parsed.get("suggestions") or []))
-        if item
-    ]
-    if len(suggestions) < 2:
-        return None
-    return suggestions[:4]
-
-
 def _serialize_plan(
     row: DailyCoachHabitPlan,
     *,
@@ -1104,7 +1051,7 @@ def get_or_generate_daily_habit_plan(
     concept_key: str | None = None,
 ) -> dict[str, Any]:
     ensure_daily_habit_plan_schema()
-    ensure_builtin_prompt_templates(["daily_habit_plan", "daily_ask_suggestions"])
+    ensure_builtin_prompt_templates(["daily_habit_plan"])
     today = tracker_today()
     with SessionLocal() as s:
         existing = (
@@ -1156,9 +1103,7 @@ def get_or_generate_daily_habit_plan(
         ):
             ask_suggestions = _normalized_ask_suggestions(existing_payload.get("ask_suggestions") or [])
             if not ask_suggestions:
-                ask_suggestions = _generate_ask_suggestions_from_llm(user_id, context, selected_habits) or _fallback_ask_suggestions(
-                    {**context, "selected_habits": selected_habits}
-                )
+                ask_suggestions = _fallback_ask_suggestions({**context, "selected_habits": selected_habits})
             existing.context_payload = {
                 **context,
                 "habit_plan_version": _CURRENT_HABIT_PLAN_VERSION,
@@ -1206,9 +1151,7 @@ def get_or_generate_daily_habit_plan(
         row.habits = selected_habits
         row.source = str(generated.get("source") or "fallback").strip() or "fallback"
         row.context_hash = hash_value
-        ask_suggestions = _generate_ask_suggestions_from_llm(user_id, context, selected_habits) or _fallback_ask_suggestions(
-            {**context, "selected_habits": selected_habits}
-        )
+        ask_suggestions = _fallback_ask_suggestions({**context, "selected_habits": selected_habits})
         row.context_payload = {
             **context,
             "habit_plan_version": _CURRENT_HABIT_PLAN_VERSION,
@@ -1294,11 +1237,7 @@ def update_daily_habit_plan_selection(
             "selected_focus_concept": selected_concept,
             "selected_concept_key": selected_concept_key,
         }
-        ask_suggestions = _generate_ask_suggestions_from_llm(
-            user_id,
-            ask_context,
-            row.habits,
-        ) or _fallback_ask_suggestions({**ask_context, "selected_habits": row.habits})
+        ask_suggestions = _fallback_ask_suggestions({**ask_context, "selected_habits": row.habits})
         row.context_payload = {
             **payload,
             "habit_plan_version": _CURRENT_HABIT_PLAN_VERSION,
