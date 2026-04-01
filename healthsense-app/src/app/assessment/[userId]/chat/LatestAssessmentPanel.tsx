@@ -1,11 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   // Keep tracker responses local to this panel.
   PillarTrackerDetailResponse,
   PillarTrackerPillar,
   PillarTrackerSummaryResponse,
+  WeeklyObjectivePillarConfig,
+  WeeklyObjectivesResponse,
 } from "@/lib/api";
 import { applyThemePreference, readStoredThemePreference } from "@/lib/theme";
 import { getPillarPalette } from "@/lib/pillars";
@@ -22,6 +24,7 @@ type LatestAssessmentPanelProps = {
 type TrackerReturnSurface = "tracking" | "habits" | "insight" | "ask";
 type MorningSequenceState = "idle" | "in_progress" | "completed";
 type DisplayTheme = "light" | "dark";
+type ObjectivesSectionKey = "nutrition" | "training" | "resilience" | "recovery" | "wellbeing";
 
 const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
 const HEALTHSENSE_ORANGE = "#c54817";
@@ -276,6 +279,14 @@ export default function LatestAssessmentPanel({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [assessmentReviewed, setAssessmentReviewed] = useState(initialAssessmentReviewed);
   const [assessmentReviewSyncStarted, setAssessmentReviewSyncStarted] = useState(initialAssessmentReviewed);
+  const [objectivesModalOpen, setObjectivesModalOpen] = useState(false);
+  const [weeklyObjectives, setWeeklyObjectives] = useState<WeeklyObjectivesResponse | null>(null);
+  const [weeklyObjectivesLoading, setWeeklyObjectivesLoading] = useState(false);
+  const [weeklyObjectivesError, setWeeklyObjectivesError] = useState<string | null>(null);
+  const [weeklyObjectivesSaving, setWeeklyObjectivesSaving] = useState(false);
+  const [selectedObjectivesSection, setSelectedObjectivesSection] = useState<ObjectivesSectionKey | null>(null);
+  const [pillarObjectiveDrafts, setPillarObjectiveDrafts] = useState<Record<string, Record<string, number | null>>>({});
+  const [wellbeingObjectiveDraft, setWellbeingObjectiveDraft] = useState<Record<string, string>>({});
   const summaryPanelRef = useRef<HTMLElement | null>(null);
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
@@ -335,6 +346,43 @@ export default function LatestAssessmentPanel({
     displayLabel === "dark"
       ? "rounded-full border border-[#2f3542] bg-[#1c2230] px-4 py-2 text-xs font-semibold text-white shadow-[0_10px_24px_-18px_rgba(12,18,28,0.9)] disabled:cursor-not-allowed disabled:opacity-60"
       : "rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold text-[#5d5348] shadow-[0_10px_24px_-18px_rgba(93,83,72,0.45)] disabled:cursor-not-allowed disabled:opacity-60";
+  const objectivesSections = useMemo(
+    () => (Array.isArray(weeklyObjectives?.sections) ? weeklyObjectives.sections : []),
+    [weeklyObjectives],
+  );
+  const selectedObjectivesPillar = useMemo(
+    () =>
+      Array.isArray(weeklyObjectives?.pillars) && selectedObjectivesSection && selectedObjectivesSection !== "wellbeing"
+        ? (weeklyObjectives.pillars.find(
+            (pillar) => String(pillar.pillar_key || "").trim().toLowerCase() === selectedObjectivesSection,
+          ) as WeeklyObjectivePillarConfig | undefined)
+        : undefined,
+    [selectedObjectivesSection, weeklyObjectives],
+  );
+  const selectedPillarObjectiveDraft = useMemo(
+    () =>
+      selectedObjectivesSection && selectedObjectivesSection !== "wellbeing"
+        ? pillarObjectiveDrafts[selectedObjectivesSection] || {}
+        : {},
+    [pillarObjectiveDrafts, selectedObjectivesSection],
+  );
+  const wellbeingObjectiveItems = useMemo(
+    () => (Array.isArray(weeklyObjectives?.wellbeing?.items) ? weeklyObjectives.wellbeing.items : []),
+    [weeklyObjectives],
+  );
+
+  const refreshSummary = useCallback(async () => {
+    const res = await fetch(`/api/pillar-tracker/summary?userId=${encodeURIComponent(userId)}`, {
+      method: "GET",
+      cache: "no-store",
+    });
+    const text = await res.text().catch(() => "");
+    if (!res.ok) {
+      throw new Error(normalizeError(text, "Failed to refresh the pillar tracker summary."));
+    }
+    const payload = (text ? (JSON.parse(text) as PillarTrackerSummaryResponse) : {}) as PillarTrackerSummaryResponse;
+    setSummary(payload);
+  }, [userId]);
 
   const toggleDisplayTheme = useCallback(async () => {
     if (togglingDisplay) return;
@@ -362,6 +410,119 @@ export default function LatestAssessmentPanel({
       setTogglingDisplay(false);
     }
   }, [togglingDisplay, userId]);
+
+  const applyWeeklyObjectivesPayload = useCallback((payload: WeeklyObjectivesResponse | null) => {
+    setWeeklyObjectives(payload);
+    const nextPillarDrafts: Record<string, Record<string, number | null>> = {};
+    (payload?.pillars || []).forEach((pillar) => {
+      const pillarKey = String(pillar?.pillar_key || "").trim().toLowerCase();
+      if (!pillarKey) return;
+      const conceptDraft: Record<string, number | null> = {};
+      (pillar?.concepts || []).forEach((concept) => {
+        const conceptKey = String(concept?.concept_key || "").trim();
+        if (!conceptKey) return;
+        const selectedValue = Number(concept?.selected_value);
+        conceptDraft[conceptKey] = Number.isFinite(selectedValue) ? selectedValue : null;
+      });
+      nextPillarDrafts[pillarKey] = conceptDraft;
+    });
+    setPillarObjectiveDrafts(nextPillarDrafts);
+    const nextWellbeingDraft: Record<string, string> = {};
+    (payload?.wellbeing?.items || []).forEach((item) => {
+      const itemKey = String(item?.key || "").trim();
+      if (!itemKey) return;
+      nextWellbeingDraft[itemKey] = String(item?.value || "").trim() || "off";
+    });
+    setWellbeingObjectiveDraft(nextWellbeingDraft);
+  }, []);
+
+  const loadWeeklyObjectives = useCallback(async () => {
+    setWeeklyObjectivesLoading(true);
+    setWeeklyObjectivesError(null);
+    try {
+      const res = await fetch(`/api/weekly-objectives?userId=${encodeURIComponent(userId)}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        throw new Error(normalizeError(text, "Failed to load weekly objectives."));
+      }
+      const payload = (text ? (JSON.parse(text) as WeeklyObjectivesResponse) : {}) as WeeklyObjectivesResponse;
+      applyWeeklyObjectivesPayload(payload);
+    } catch (error) {
+      setWeeklyObjectivesError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setWeeklyObjectivesLoading(false);
+    }
+  }, [applyWeeklyObjectivesPayload, userId]);
+
+  const openObjectivesModal = useCallback(async () => {
+    setObjectivesModalOpen(true);
+    setSelectedObjectivesSection(null);
+    await loadWeeklyObjectives();
+  }, [loadWeeklyObjectives]);
+
+  const closeObjectivesModal = useCallback(() => {
+    setObjectivesModalOpen(false);
+    setSelectedObjectivesSection(null);
+    setWeeklyObjectivesError(null);
+    setWeeklyObjectivesSaving(false);
+  }, []);
+
+  const saveObjectivesSection = useCallback(async () => {
+    if (!selectedObjectivesSection) return;
+    setWeeklyObjectivesSaving(true);
+    setWeeklyObjectivesError(null);
+    try {
+      const body =
+        selectedObjectivesSection === "wellbeing"
+          ? {
+              userId,
+              sectionKey: "wellbeing",
+              wellbeing: wellbeingObjectiveDraft,
+            }
+          : {
+              userId,
+              sectionKey: selectedObjectivesSection,
+              conceptTargets: selectedPillarObjectiveDraft,
+            };
+      const res = await fetch("/api/weekly-objectives", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        throw new Error(normalizeError(text, "Failed to save weekly objectives."));
+      }
+      const payload = (text ? (JSON.parse(text) as WeeklyObjectivesResponse) : {}) as WeeklyObjectivesResponse;
+      applyWeeklyObjectivesPayload(payload);
+      await refreshSummary().catch(() => undefined);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("healthsense-tracker-updated", {
+            detail: {
+              guided: false,
+              objectivesUpdated: true,
+            },
+          }),
+        );
+      }
+      setSelectedObjectivesSection(null);
+    } catch (error) {
+      setWeeklyObjectivesError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setWeeklyObjectivesSaving(false);
+    }
+  }, [
+    applyWeeklyObjectivesPayload,
+    refreshSummary,
+    selectedObjectivesSection,
+    selectedPillarObjectiveDraft,
+    userId,
+    wellbeingObjectiveDraft,
+  ]);
 
   useEffect(() => {
     setSummaryPanelVisible(
@@ -420,19 +581,6 @@ export default function LatestAssessmentPanel({
       cancelled = true;
     };
   }, [assessmentReviewed, assessmentReviewSyncStarted, summaryPanelVisible, userId]);
-
-  const refreshSummary = async () => {
-    const res = await fetch(`/api/pillar-tracker/summary?userId=${encodeURIComponent(userId)}`, {
-      method: "GET",
-      cache: "no-store",
-    });
-    const text = await res.text().catch(() => "");
-    if (!res.ok) {
-      throw new Error(normalizeError(text, "Failed to refresh the pillar tracker summary."));
-    }
-    const payload = (text ? (JSON.parse(text) as PillarTrackerSummaryResponse) : {}) as PillarTrackerSummaryResponse;
-    setSummary(payload);
-  };
 
   const loadTrackerDetail = useCallback(async (pillarKey: string, anchorDate?: string) => {
     setLoadingDetail(true);
@@ -649,11 +797,16 @@ export default function LatestAssessmentPanel({
             </div>
 
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <div className="rounded-full" aria-hidden="true">
+              <button
+                type="button"
+                onClick={() => void openObjectivesModal()}
+                className="pointer-events-auto rounded-full transition hover:scale-[1.01] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-4"
+                aria-label="Open weekly objectives"
+              >
                 <div className="relative">
                   <CombinedLogoRing value={combinedScore} />
                 </div>
-              </div>
+              </button>
             </div>
           </div>
           <div className="mt-5 space-y-3">
@@ -689,6 +842,210 @@ export default function LatestAssessmentPanel({
             </button>
           </div>
         </section>
+      ) : null}
+
+      {objectivesModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 sm:items-center sm:px-3 sm:py-3">
+          <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-2xl flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
+            <div className="shrink-0 border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0 space-y-1">
+                  <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
+                    {selectedObjectivesSection
+                      ? selectedObjectivesSection === "wellbeing"
+                        ? "Wellbeing objectives"
+                        : selectedObjectivesPillar?.label || "Weekly objectives"
+                      : "Weekly objectives"}
+                  </p>
+                  <p className="text-sm text-[#6b6257]">
+                    {selectedObjectivesSection
+                      ? selectedObjectivesSection === "wellbeing"
+                        ? "Set optional wellbeing tracking preferences."
+                        : "Choose your target for each concept this week."
+                      : "Select a pillar to set or adjust this week's targets."}
+                  </p>
+                </div>
+                {selectedObjectivesSection ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedObjectivesSection(null);
+                      setWeeklyObjectivesError(null);
+                    }}
+                    className="rounded-full border border-[#d9cdbb] bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
+                  >
+                    Back
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+              {weeklyObjectivesLoading ? <p className="text-sm text-[#6b6257]">Loading weekly objectives…</p> : null}
+              {weeklyObjectivesError ? <p className="text-sm text-[#8a3e1a]">{weeklyObjectivesError}</p> : null}
+
+              {!weeklyObjectivesLoading && !selectedObjectivesSection ? (
+                <div className="space-y-3">
+                  {objectivesSections.map((section) => {
+                    const sectionKey = String(section?.key || "").trim().toLowerCase();
+                    const configuredCount = Number(section?.configured_count);
+                    const totalCount = Number(section?.total_count);
+                    const countLabel =
+                      Number.isFinite(configuredCount) && Number.isFinite(totalCount) && totalCount > 0
+                        ? `${configuredCount}/${totalCount} set`
+                        : "";
+                    return (
+                      <button
+                        key={sectionKey}
+                        type="button"
+                        onClick={() => setSelectedObjectivesSection(sectionKey as ObjectivesSectionKey)}
+                        className="flex min-h-[5.75rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-white px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
+                      >
+                        <span className="text-base font-semibold text-[#1e1b16]">
+                          {section?.label || sectionKey.replace(/_/g, " ")}
+                        </span>
+                        {countLabel ? (
+                          <span className="mt-2 text-xs uppercase tracking-[0.16em] text-[#8c7f70]">{countLabel}</span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              {!weeklyObjectivesLoading && selectedObjectivesSection && selectedObjectivesSection !== "wellbeing" && selectedObjectivesPillar ? (
+                <div className="space-y-3">
+                  {(selectedObjectivesPillar.concepts || []).map((concept) => {
+                    const conceptKey = String(concept?.concept_key || "").trim();
+                    const selectedValue = selectedPillarObjectiveDraft[conceptKey];
+                    const unitLabel = String(concept?.unit_label || "").trim();
+                    const currentTargetLabel = String(concept?.target_label || "").trim();
+                    return (
+                      <div key={conceptKey} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold text-[#1e1b16]">{concept?.label}</p>
+                          <p className="text-xs uppercase tracking-[0.18em] text-[#8c7f70]">
+                            {concept?.metric_label || concept?.helper || conceptKey}
+                          </p>
+                          <p className="text-xs text-[#6b6257]">
+                            {unitLabel ? `Target ${unitLabel}` : String(concept?.helper || "").trim()}
+                            {currentTargetLabel ? ` · ${currentTargetLabel}` : ""}
+                          </p>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {(concept?.options || []).map((option) => {
+                            const optionValue = Number(option?.value);
+                            const isActive =
+                              Number.isFinite(optionValue) &&
+                              Number.isFinite(Number(selectedValue)) &&
+                              optionValue === Number(selectedValue);
+                            return (
+                              <button
+                                key={`${conceptKey}-${String(option?.label || option?.value || "")}`}
+                                type="button"
+                                onClick={() =>
+                                  setPillarObjectiveDrafts((current) => ({
+                                    ...current,
+                                    [selectedObjectivesSection]: {
+                                      ...(current[selectedObjectivesSection] || {}),
+                                      [conceptKey]: Number.isFinite(optionValue) ? optionValue : null,
+                                    },
+                                  }))
+                                }
+                                className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
+                                  isActive
+                                    ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                                    : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                                }`}
+                              >
+                                {option?.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              {!weeklyObjectivesLoading && selectedObjectivesSection === "wellbeing" ? (
+                <div className="space-y-3">
+                  {wellbeingObjectiveItems.map((item) => {
+                    const itemKey = String(item?.key || "").trim();
+                    const selectedValue = String(wellbeingObjectiveDraft[itemKey] || item?.value || "off").trim() || "off";
+                    return (
+                      <div key={itemKey} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold text-[#1e1b16]">{item?.label}</p>
+                          <p className="text-xs text-[#6b6257]">{item?.helper}</p>
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {(item?.options || []).map((option) => {
+                            const optionValue = String(option?.value || "").trim();
+                            const isActive = optionValue === selectedValue;
+                            return (
+                              <button
+                                key={`${itemKey}-${optionValue}`}
+                                type="button"
+                                onClick={() =>
+                                  setWellbeingObjectiveDraft((current) => ({
+                                    ...current,
+                                    [itemKey]: optionValue,
+                                  }))
+                                }
+                                className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
+                                  isActive
+                                    ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                                    : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                                }`}
+                              >
+                                {option?.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="shrink-0 border-t border-[#efe7db] px-4 py-4 sm:px-5">
+              {selectedObjectivesSection ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedObjectivesSection(null);
+                      setWeeklyObjectivesError(null);
+                    }}
+                    className="rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void saveObjectivesSection()}
+                    disabled={weeklyObjectivesSaving}
+                    className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {weeklyObjectivesSaving ? "Saving…" : "Save objectives"}
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={closeObjectivesModal}
+                  className="w-full rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+                >
+                  Close
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {selectedPillarKey ? (

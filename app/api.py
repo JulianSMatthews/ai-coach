@@ -211,6 +211,7 @@ from .daily_habits import (
 )
 from .coach_home_refresh import queue_coach_home_tracker_refresh
 from .coach_insight import get_or_generate_cached_coach_insight
+from .weekly_objectives import get_weekly_objectives_config, save_weekly_objectives_config
 
 # Lazy import holder to avoid startup/reload ImportError if symbol is added later
 _gen_okr_summary_report = None
@@ -7773,6 +7774,56 @@ def api_user_pillar_tracker_save(
         trigger="pillar_tracker_update",
         pillar_key=str(pillar_key or "").strip().lower() or None,
         score_date=raw_date or result.get("pillar", {}).get("today"),
+        background_tasks=background_tasks,
+    )
+    if isinstance(result, dict):
+        result["coach_home_refresh"] = refresh_job
+    return result
+
+
+@api_v1.get("/users/{user_id}/weekly-objectives")
+def api_user_weekly_objectives(
+    user_id: int,
+    request: Request,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    try:
+        return get_weekly_objectives_config(int(user_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@api_v1.post("/users/{user_id}/weekly-objectives")
+def api_user_weekly_objectives_save(
+    user_id: int,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    body: dict[str, Any] | None = Body(default=None),
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    payload = body or {}
+    section_key = str(payload.get("section_key") or payload.get("pillar_key") or "").strip().lower()
+    concept_targets_raw = payload.get("concept_targets")
+    concept_targets = concept_targets_raw if isinstance(concept_targets_raw, dict) else {}
+    wellbeing_raw = payload.get("wellbeing")
+    wellbeing_values = wellbeing_raw if isinstance(wellbeing_raw, dict) else {}
+    try:
+        result = save_weekly_objectives_config(
+            int(user_id),
+            pillar_key=section_key,
+            concept_targets=concept_targets,
+            wellbeing_values=wellbeing_values,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    refresh_job = queue_coach_home_tracker_refresh(
+        int(user_id),
+        trigger="weekly_objectives_update",
+        pillar_key=section_key or None,
         background_tasks=background_tasks,
     )
     if isinstance(result, dict):

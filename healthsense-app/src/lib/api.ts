@@ -213,6 +213,70 @@ export type PillarTrackerDetailResponse = {
   editable_dates?: PillarTrackerEditableDate[];
 };
 
+export type WeeklyObjectiveOption = {
+  value?: number | string | null;
+  label?: string;
+};
+
+export type WeeklyObjectiveConcept = {
+  concept_key?: string;
+  label?: string;
+  helper?: string;
+  metric_label?: string | null;
+  unit?: string | null;
+  unit_label?: string | null;
+  target_direction?: string | null;
+  target_source?: string | null;
+  target_label?: string | null;
+  selected_value?: number | null;
+  options?: WeeklyObjectiveOption[];
+};
+
+export type WeeklyObjectivePillarConfig = {
+  pillar_key?: string;
+  label?: string;
+  objective?: string | null;
+  concept_count?: number | null;
+  configured_count?: number | null;
+  concepts?: WeeklyObjectiveConcept[];
+};
+
+export type WeeklyObjectiveWellbeingItem = {
+  key?: string;
+  label?: string;
+  helper?: string | null;
+  value?: string | null;
+  options?: WeeklyObjectiveOption[];
+};
+
+export type WeeklyObjectivesResponse = {
+  user_id?: number;
+  week?: {
+    anchor_date?: string | null;
+    start?: string | null;
+    end?: string | null;
+  };
+  sections?: Array<{
+    key?: string;
+    label?: string;
+    type?: "pillar" | "wellbeing" | string;
+    configured_count?: number | null;
+    total_count?: number | null;
+  }>;
+  pillars?: WeeklyObjectivePillarConfig[];
+  wellbeing?: {
+    title?: string | null;
+    configured_count?: number | null;
+    items?: WeeklyObjectiveWellbeingItem[];
+  } | null;
+  coach_home_refresh?: {
+    queued?: boolean;
+    execution?: string | null;
+    job_id?: number | null;
+    created?: boolean;
+  } | null;
+};
+
 export type DailyHabitPlanItem = {
   id?: string | null;
   title?: string | null;
