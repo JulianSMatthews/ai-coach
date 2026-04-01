@@ -899,6 +899,17 @@ def _items_with_day_moments(items: list[dict[str, Any]]) -> list[dict[str, Any]]
     return output
 
 
+def _has_complete_day_plan_items(items: list[dict[str, Any]]) -> bool:
+    if len(items) < 3:
+        return False
+    keys = {
+        _normalize_moment_key(item.get("moment_key"))
+        for item in items
+        if isinstance(item, dict)
+    }
+    return {"morning", "pre_training", "evening"}.issubset({key for key in keys if key})
+
+
 def _dedupe_habit_plan_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     seen: set[str] = set()
     output: list[dict[str, Any]] = []
@@ -1418,6 +1429,11 @@ def _serialize_plan(
     current_options = []
     for item in _items_with_day_moments(raw_current_options):
         current_options.append({**item, "selected": str(item.get("id") or "").strip() in selected_ids})
+    display_habits = selected_habits
+    if len(display_habits) < 3 and len(current_options) >= 3:
+        display_habits = [dict(item) for item in current_options]
+    elif not display_habits and current_options:
+        display_habits = [dict(item) for item in current_options]
     concepts_payload = []
     for concept in available_concepts:
         concept_key = _normalize_concept_token(concept.get("concept_key"))
@@ -1435,7 +1451,7 @@ def _serialize_plan(
         "pillar_label": str(getattr(row, "pillar_label", "") or "").strip() or None,
         "title": str(getattr(row, "title", "") or "").strip() or None,
         "summary": str(getattr(row, "summary", "") or "").strip() or None,
-        "habits": selected_habits,
+        "habits": display_habits,
         "options": current_options,
         "ask_suggestions": ask_suggestions[:4],
         "available_concepts": concepts_payload,
@@ -1524,6 +1540,7 @@ def get_or_generate_daily_habit_plan(
             and str(getattr(existing, "context_hash", "") or "").strip() == hash_value
             and selected_concept_key
             and existing_options_for_concept
+            and _has_complete_day_plan_items(existing_options_for_concept)
         ):
             ask_suggestions = _normalized_ask_suggestions(existing_payload.get("ask_suggestions") or [])
             if not ask_suggestions:
@@ -1567,6 +1584,27 @@ def get_or_generate_daily_habit_plan(
                 generated_items=generated_items,
                 force=bool(force),
             )
+        if selected_concept_key:
+            current_option_set = option_sets.get(selected_concept_key, [])
+            if not _has_complete_day_plan_items(current_option_set):
+                fallback_items = [
+                    item
+                    for item in (
+                        _normalize_habit_plan_item(raw_item, default_concept=selected_concept)
+                        for raw_item in ((_fallback_plan(context) or {}).get("habits") or [])
+                    )
+                    if item
+                ]
+                fallback_items = _items_for_concept(_items_with_day_moments(fallback_items), concept_key=selected_concept_key)
+                if fallback_items:
+                    option_sets[selected_concept_key] = _merge_concept_option_set(
+                        existing_items=current_option_set,
+                        selected_items=[
+                            item for item in selected_habits if _normalize_concept_token(item.get("concept_key")) == selected_concept_key
+                        ],
+                        generated_items=fallback_items,
+                        force=True,
+                    )
         row = existing or DailyCoachHabitPlan(user_id=int(user_id), plan_date=today)
         row.pillar_key = str((context.get("selected_pillar") or {}).get("pillar_key") or "").strip() or None
         row.pillar_label = str((context.get("selected_pillar") or {}).get("label") or "").strip() or None

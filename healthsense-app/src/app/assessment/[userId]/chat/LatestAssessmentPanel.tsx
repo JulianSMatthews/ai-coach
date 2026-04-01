@@ -604,8 +604,13 @@ export default function LatestAssessmentPanel({
       const nextDraft: Record<string, number> = {};
       (payload.concepts || []).forEach((concept) => {
         const conceptKey = String(concept.concept_key || "").trim();
-        const value = Number(concept.value);
-        if (conceptKey && Number.isFinite(value)) {
+        const rawValue = concept.value;
+        const hasRecordedValue =
+          rawValue !== null &&
+          rawValue !== undefined &&
+          !(typeof rawValue === "string" && String(rawValue).trim() === "");
+        const value = Number(rawValue);
+        if (conceptKey && hasRecordedValue && Number.isFinite(value)) {
           nextDraft[conceptKey] = value;
         }
       });
