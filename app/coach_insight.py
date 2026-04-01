@@ -291,6 +291,54 @@ def get_coach_insight(
     anchor: date | None = None,
     concept_key: str | None = None,
 ) -> dict[str, Any]:
+    if anchor is None and not str(concept_key or "").strip():
+        snapshot = build_daily_tracker_generation_context_snapshot(int(user_id))
+        context = snapshot.get("context") if isinstance(snapshot.get("context"), dict) else {}
+        selected_pillar = context.get("selected_pillar") if isinstance(context.get("selected_pillar"), dict) else {}
+        focus_concept = context.get("selected_focus_concept") if isinstance(context.get("selected_focus_concept"), dict) else {}
+        selected_pillar_key = str(selected_pillar.get("pillar_key") or "nutrition").strip().lower() or "nutrition"
+        selected_pillar_label = str(selected_pillar.get("label") or selected_pillar_key.title()).strip() or selected_pillar_key.title()
+        rows = _load_library_rows(selected_pillar_key)
+        selected_row, matched_by = _select_library_item(
+            rows,
+            concept_key=(focus_concept or {}).get("concept_key"),
+        )
+        return {
+            "user_id": int(user_id),
+            "insight_date": str(context.get("tracker_focus_date") or tracker_today().isoformat()).strip() or tracker_today().isoformat(),
+            "pillar_key": selected_pillar_key,
+            "pillar_label": selected_pillar_label,
+            "concept_key": str((focus_concept or {}).get("concept_key") or "").strip() or None,
+            "concept_label": str((focus_concept or {}).get("label") or "").strip() or None,
+            "available_concepts": [
+                {
+                    "pillar_key": str(item.get("pillar_key") or "").strip().lower() or None,
+                    "pillar_label": str(item.get("pillar_label") or "").strip() or None,
+                    "concept_key": str(item.get("concept_key") or "").strip().lower() or None,
+                    "label": str(item.get("label") or "").strip() or None,
+                    "is_selected": str(item.get("concept_key") or "").strip().lower()
+                    == str((focus_concept or {}).get("concept_key") or "").strip().lower(),
+                }
+                for item in (context.get("focus_concepts") or [])
+                if isinstance(item, dict) and str(item.get("concept_key") or "").strip()
+            ],
+            "matched_by": matched_by,
+            "content": (
+                {
+                    "id": int(getattr(selected_row, "id", 0) or 0),
+                    "pillar_key": str(getattr(selected_row, "pillar_key", "") or "").strip() or None,
+                    "concept_code": _normalized_library_concept(selected_row),
+                    "title": str(getattr(selected_row, "title", "") or "").strip() or None,
+                    "body": str(getattr(selected_row, "body", "") or "").strip() or None,
+                    "podcast_url": str(getattr(selected_row, "podcast_url", "") or "").strip() or None,
+                    "podcast_voice": str(getattr(selected_row, "podcast_voice", "") or "").strip() or None,
+                    "avatar": _library_avatar_payload(selected_row),
+                    "created_at": getattr(selected_row, "created_at", None),
+                }
+                if selected_row is not None
+                else None
+            ),
+        }
     resolved_anchor = anchor or tracker_today()
     available_concepts, focus_concept, summary = _select_focus_concepts(
         user_id,

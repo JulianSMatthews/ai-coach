@@ -11,7 +11,12 @@ from sqlalchemy import desc, select
 from .db import SessionLocal, engine
 from .models import DailyCoachHabitPlan, OKRKeyResult, OKRKrHabitStep, OKRObjective, User
 from .okr import _guess_concept_from_description, _normalize_concept_key
-from .pillar_tracker import get_pillar_tracker_detail, get_pillar_tracker_summary, tracker_today
+from .pillar_tracker import (
+    get_pillar_tracker_detail,
+    get_pillar_tracker_summary,
+    get_recent_tracker_save_focus,
+    tracker_today,
+)
 from .prompts import build_prompt, ensure_builtin_prompt_templates, run_llm_prompt
 
 _DAILY_HABITS_SCHEMA_READY = False
@@ -198,13 +203,13 @@ def _select_weakest_pillar(summary: dict[str, Any]) -> dict[str, Any]:
 
 def _recent_concept_focuses(
     detail: dict[str, Any],
-    today: date,
+    anchor: date,
     *,
     pillar_key: str,
     pillar_label: str,
 ) -> list[dict[str, Any]]:
-    today_iso = today.isoformat()
-    yesterday_iso = (today - timedelta(days=1)).isoformat()
+    today_iso = anchor.isoformat()
+    yesterday_iso = (anchor - timedelta(days=1)).isoformat()
     focus_rows: list[dict[str, Any]] = []
     for concept in detail.get("concepts") or []:
         week_rows = {
@@ -250,6 +255,7 @@ def _recent_concept_focuses(
                 "missing": missing,
                 "latest_value": latest_value,
                 "score": current_score,
+                "anchor_date": anchor.isoformat(),
             }
         )
     return focus_rows
@@ -274,6 +280,8 @@ def _select_focus_concepts(
     *,
     today: date,
     preferred_concept_key: str | None = None,
+    preferred_pillar_key: str | None = None,
+    preferred_anchor: date | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
     focus_rows: list[dict[str, Any]] = []
     weakest = _select_weakest_pillar(summary)
@@ -283,17 +291,25 @@ def _select_focus_concepts(
         if not pillar_key:
             continue
         pillar_label = str(pillar_row.get("label") or "").strip() or pillar_key.title()
-        detail = get_pillar_tracker_detail(user_id, pillar_key, anchor=today)
+        detail_anchor = (
+            preferred_anchor
+            if preferred_anchor is not None and pillar_key == str(preferred_pillar_key or "").strip().lower()
+            else today
+        )
+        detail = get_pillar_tracker_detail(user_id, pillar_key, anchor=detail_anchor)
         focus_rows.extend(
             _recent_concept_focuses(
                 detail,
-                today,
+                detail_anchor,
                 pillar_key=pillar_key,
                 pillar_label=pillar_label,
             )
         )
     focus_rows.sort(
         key=lambda item: (
+            0
+            if preferred_pillar_key and str(item.get("pillar_key") or "").strip().lower() == str(preferred_pillar_key).strip().lower()
+            else 1,
             _focus_signal_priority(str(item.get("signal") or "")),
             -int(item.get("misses") or 0),
             -int(item.get("missing") or 0),
@@ -315,6 +331,16 @@ def _select_focus_concepts(
         visible = [selected, *visible[:7]]
     if selected is None:
         selected = next(
+            (
+                item
+                for item in visible
+                if preferred_pillar_key
+                and str(item.get("pillar_key") or "").strip().lower() == str(preferred_pillar_key).strip().lower()
+            ),
+            None,
+        )
+    if selected is None:
+        selected = next(
             (item for item in visible if str(item.get("pillar_key") or "").strip().lower() == weakest_key),
             None,
         ) or visible[0]
@@ -325,17 +351,29 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
     today = tracker_today()
     summary = get_pillar_tracker_summary(user_id, anchor=today)
     weakest = _select_weakest_pillar(summary)
+    latest_tracker_save = get_recent_tracker_save_focus(int(user_id), current_day=today) or {}
+    preferred_pillar_key = str(latest_tracker_save.get("pillar_key") or "").strip().lower() or None
+    preferred_anchor = latest_tracker_save.get("score_date") if isinstance(latest_tracker_save.get("score_date"), date) else None
+    preferred_concept_key = (
+        _normalize_concept_token(selected_concept_key)
+        or _normalize_concept_token(latest_tracker_save.get("concept_key"))
+    )
     focus_concepts, selected_focus = _select_focus_concepts(
         user_id,
         summary,
         today=today,
-        preferred_concept_key=selected_concept_key,
+        preferred_concept_key=preferred_concept_key,
+        preferred_pillar_key=preferred_pillar_key,
+        preferred_anchor=preferred_anchor,
     )
     selected_pillar_key = str(
-        (selected_focus or {}).get("pillar_key") or weakest.get("pillar_key") or "nutrition"
+        (selected_focus or {}).get("pillar_key") or preferred_pillar_key or weakest.get("pillar_key") or "nutrition"
     ).strip().lower()
     selected_pillar_label = str(
-        (selected_focus or {}).get("pillar_label") or weakest.get("label") or selected_pillar_key.title()
+        (selected_focus or {}).get("pillar_label")
+        or (preferred_pillar_key.title() if preferred_pillar_key else "")
+        or weakest.get("label")
+        or selected_pillar_key.title()
     ).strip()
     okr_context = _load_pillar_okr_context(
         user_id,
@@ -355,6 +393,20 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
     return {
         "user_name": _load_user_name(user_id),
         "plan_date": today.isoformat(),
+        "tracker_focus_date": str(
+            (selected_focus or {}).get("anchor_date") or (preferred_anchor.isoformat() if preferred_anchor else "")
+        ).strip()
+        or today.isoformat(),
+        "tracker_focus_source": "latest_tracker_save" if latest_tracker_save else "global_ranked_focus",
+        "latest_tracker_save": (
+            {
+                "pillar_key": preferred_pillar_key,
+                "score_date": preferred_anchor.isoformat() if preferred_anchor else None,
+                "concept_key": _normalize_concept_token(latest_tracker_save.get("concept_key")),
+            }
+            if latest_tracker_save
+            else None
+        ),
         "weakest_pillar": {
             "pillar_key": str(weakest.get("pillar_key") or "nutrition").strip().lower(),
             "label": str(weakest.get("label") or "").strip() or str(weakest.get("pillar_key") or "nutrition").strip().title(),

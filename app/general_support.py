@@ -308,6 +308,7 @@ def _tracker_history_lines(tracker_context: dict) -> list[str]:
     selected_focus = tracker_context.get("selected_focus_concept") or {}
     focus_concepts = tracker_context.get("focus_concepts") or []
     okr_context = tracker_context.get("okr_context") or {}
+    focus_source = str(tracker_context.get("tracker_focus_source") or "").strip().lower()
     if selected_focus:
         label = str(selected_focus.get("label") or selected_focus.get("concept_key") or "").strip()
         signal = str(selected_focus.get("signal") or "").strip()
@@ -315,10 +316,13 @@ def _tracker_history_lines(tracker_context: dict) -> list[str]:
         target = str(selected_focus.get("target_label") or "").strip()
         pillar = str(selected_focus.get("pillar_label") or selected_focus.get("pillar_key") or "").strip()
         score = _safe_int(selected_focus.get("score"))
+        anchor_date = str(selected_focus.get("anchor_date") or "").strip()
         if label:
             bits = []
             if pillar:
                 bits.append(f"pillar={pillar}")
+            if anchor_date:
+                bits.append(f"date={anchor_date}")
             if signal:
                 bits.append(f"signal={signal}")
             if latest:
@@ -329,7 +333,7 @@ def _tracker_history_lines(tracker_context: dict) -> list[str]:
                 bits.append(f"score={score}/100")
             suffix = f" ({'; '.join(bits)})" if bits else ""
             lines.append(f"Selected tracker focus: {label}{suffix}")
-    if focus_concepts:
+    if focus_concepts and focus_source != "latest_tracker_save":
         lines.append("Recent tracker focus:")
         for item in focus_concepts[:4]:
             if not isinstance(item, dict):
@@ -385,9 +389,9 @@ def _support_prompt(
     tracker_context = build_daily_tracker_generation_context(int(user.id))
     pillar_scores = tracker_context.get("pillar_scores") or []
     combined_score = _combined_score(pillar_scores)
-    plan_date = str(tracker_context.get("plan_date") or "").strip()
-    if plan_date:
-        extras_parts.append(f"tracker_date={plan_date}")
+    tracker_focus_date = str(tracker_context.get("tracker_focus_date") or tracker_context.get("plan_date") or "").strip()
+    if tracker_focus_date:
+        extras_parts.append(f"tracker_date={tracker_focus_date}")
     if tracker_summary_mode:
         extras_parts.append("tracker_priority=today_first_then_yesterday")
     selected_focus = tracker_context.get("selected_focus_concept") or {}

@@ -17,6 +17,7 @@ _TRACKER_SCHEMA_READY = False
 _TRACKER_TIMEZONE = (os.getenv("PILLAR_TRACKER_TIMEZONE") or "Europe/London").strip() or "Europe/London"
 _FASTING_MODE_PREF_KEY = "weekly_objectives_fasting_mode"
 _ALCOHOL_TRACKING_PREF_KEY = "weekly_objectives_alcohol_tracking"
+_LATEST_TRACKER_FOCUS_PREF_KEY = "coach_home_latest_tracker_focus"
 try:
     _TRACKER_YESTERDAY_GRACE_HOUR = int((os.getenv("PILLAR_TRACKER_YESTERDAY_GRACE_HOUR") or "12").strip() or "12")
 except Exception:
@@ -361,6 +362,31 @@ def _user_pref_value(session, user_id: int, key: str) -> str | None:
     return str(getattr(row, "value", "") or "").strip() or None
 
 
+def _user_pref_json(session, user_id: int, key: str) -> dict[str, Any] | None:
+    raw = _user_pref_value(session, int(user_id), key)
+    if not raw:
+        return None
+    try:
+        payload = json.loads(raw)
+        return payload if isinstance(payload, dict) else None
+    except Exception:
+        return None
+
+
+def _set_user_pref_json(session, user_id: int, key: str, payload: dict[str, Any]) -> None:
+    row = (
+        session.query(UserPreference)
+        .filter(UserPreference.user_id == int(user_id), UserPreference.key == str(key))
+        .one_or_none()
+    )
+    raw = json.dumps(payload, default=str)
+    if row is None:
+        session.add(UserPreference(user_id=int(user_id), key=str(key), value=raw))
+        return
+    row.value = raw
+    session.add(row)
+
+
 def _wellbeing_tracking_settings(user_id: int) -> tuple[str, str]:
     with SessionLocal() as s:
         fasting_mode = (_user_pref_value(s, int(user_id), _FASTING_MODE_PREF_KEY) or "off").strip().lower()
@@ -404,6 +430,76 @@ def _optional_nutrition_tracker_concepts(user_id: int) -> tuple[PillarTrackerCon
             )
         )
     return tuple(concepts)
+
+
+def _saved_tracker_focus_sort_key(item: dict[str, Any]) -> tuple[int, float, str]:
+    target_met = item.get("target_met")
+    score = _safe_float(item.get("score"))
+    return (
+        0 if target_met is False else 1,
+        score if score is not None else 999.0,
+        str(item.get("concept_key") or ""),
+    )
+
+
+def _record_latest_tracker_focus(
+    session,
+    *,
+    user_id: int,
+    pillar_key: str,
+    score_date: date,
+    session_day: date,
+    normalized_rows: dict[str, dict[str, Any]],
+) -> None:
+    ranked = sorted(
+        [
+            {
+                "concept_key": concept_key,
+                "score": payload.get("score"),
+                "target_met": payload.get("target_met"),
+            }
+            for concept_key, payload in normalized_rows.items()
+        ],
+        key=_saved_tracker_focus_sort_key,
+    )
+    selected = ranked[0] if ranked else {}
+    _set_user_pref_json(
+        session,
+        int(user_id),
+        _LATEST_TRACKER_FOCUS_PREF_KEY,
+        {
+            "pillar_key": str(pillar_key or "").strip().lower() or None,
+            "score_date": score_date.isoformat(),
+            "concept_key": str(selected.get("concept_key") or "").strip().lower() or None,
+            "session_day": session_day.isoformat(),
+            "saved_at": datetime.utcnow().replace(microsecond=0).isoformat(),
+        },
+    )
+
+
+def get_recent_tracker_save_focus(user_id: int, *, current_day: date | None = None) -> dict[str, Any] | None:
+    today = current_day or tracker_today()
+    with SessionLocal() as s:
+        payload = _user_pref_json(s, int(user_id), _LATEST_TRACKER_FOCUS_PREF_KEY) or {}
+    if not payload:
+        return None
+    session_day = parse_tracker_anchor(str(payload.get("session_day") or "").strip())
+    if session_day != today:
+        return None
+    pillar_key = str(payload.get("pillar_key") or "").strip().lower()
+    if pillar_key not in PILLAR_TRACKER_CONFIG:
+        return None
+    score_date = parse_tracker_anchor(str(payload.get("score_date") or "").strip())
+    if score_date is None:
+        return None
+    concept_key = _normalize_concept_key(payload.get("concept_key")) or None
+    return {
+        "pillar_key": pillar_key,
+        "score_date": score_date,
+        "concept_key": concept_key,
+        "session_day": session_day,
+        "saved_at": str(payload.get("saved_at") or "").strip() or None,
+    }
 
 
 def tracker_concepts_for_pillar(pillar_key: str, user_id: int | None = None) -> tuple[PillarTrackerConceptDefinition, ...]:
@@ -1545,6 +1641,14 @@ def save_pillar_tracker_day(
                 "target_unit": getattr(resolved_target, "target_unit", None),
                 "target_period": getattr(resolved_target, "target_period", None),
             }
+        _record_latest_tracker_focus(
+            s,
+            user_id=int(user_id),
+            pillar_key=key,
+            score_date=resolved_date,
+            session_day=current_day,
+            normalized_rows=normalized_rows,
+        )
         _sync_pillar_tracker_actuals_to_okrs(
             s,
             user_id=int(user_id),
