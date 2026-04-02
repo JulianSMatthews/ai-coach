@@ -70,6 +70,28 @@ function resolveRestingHeartRateValue(value?: number | null): string | null {
   return String(Math.round(resolved));
 }
 
+function resolveRestingHeartRateTrendLabel(label?: string | null): string {
+  const resolved = String(label || "").trim();
+  if (!resolved) return "normal";
+  return resolved.toLowerCase();
+}
+
+function formatBiometricDayLabel(value?: string | null): string {
+  const token = String(value || "").trim();
+  if (!token) return "—";
+  const parsed = new Date(`${token}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return token;
+  return parsed.toLocaleDateString("en-GB", { weekday: "short" });
+}
+
+function formatBiometricDayNumber(value?: string | null): string {
+  const token = String(value || "").trim();
+  if (!token) return "—";
+  const parsed = new Date(`${token}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return token;
+  return parsed.toLocaleDateString("en-GB", { day: "numeric" });
+}
+
 function resolveRestingHeartRateEmptyLabel(
   status: AppleHealthAuthorizationState,
   loading: boolean,
@@ -306,6 +328,23 @@ function GiaMessageIcon() {
   );
 }
 
+function HeartStatusIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-4 w-4"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M12 20s-6.5-4.4-8.6-8C1.5 8.7 3.1 5 6.6 5c2 0 3.2 1 4.1 2.3C11.6 6 12.8 5 14.8 5c3.5 0 5.1 3.7 3.2 7-2.1 3.6-8 8-8 8Z" />
+    </svg>
+  );
+}
+
 export default function LatestAssessmentPanel({
   userId,
   initialSummary,
@@ -338,6 +377,7 @@ export default function LatestAssessmentPanel({
   const [pillarObjectiveDrafts, setPillarObjectiveDrafts] = useState<Record<string, Record<string, number | null>>>({});
   const [wellbeingObjectiveDraft, setWellbeingObjectiveDraft] = useState<Record<string, string>>({});
   const [restingHeartRate, setRestingHeartRate] = useState<AppleHealthRestingHeartRateResponse | null>(null);
+  const [biometricsModalOpen, setBiometricsModalOpen] = useState(false);
   const [restingHeartRateLoading, setRestingHeartRateLoading] = useState(false);
   const [restingHeartRateEnabling, setRestingHeartRateEnabling] = useState(false);
   const [appleHealthAuthStatus, setAppleHealthAuthStatus] = useState<AppleHealthAuthorizationState>("unsupported");
@@ -427,6 +467,17 @@ export default function LatestAssessmentPanel({
   );
   const appleHealthSupported = canUseAppleHealth();
   const restingHeartRateValue = resolveRestingHeartRateValue(restingHeartRate?.resting_hr_bpm);
+  const restingHeartRateHistory = useMemo(
+    () =>
+      Array.isArray(restingHeartRate?.history)
+        ? restingHeartRate.history.filter(
+            (item) =>
+              Boolean(String(item?.metric_date || "").trim()) &&
+              Number.isFinite(Number(item?.resting_hr_bpm)),
+          )
+        : [],
+    [restingHeartRate?.history],
+  );
   const restingHeartRateChipVisible = Boolean(restingHeartRate?.available) || appleHealthSupported;
   const restingHeartRateToneClassName = resolveRestingHeartRateTone(
     displayTheme,
@@ -495,6 +546,10 @@ export default function LatestAssessmentPanel({
   );
 
   const handleRestingHeartRatePress = useCallback(async () => {
+    if (restingHeartRateValue) {
+      setBiometricsModalOpen(true);
+      return;
+    }
     if (!appleHealthSupported || restingHeartRateLoading || restingHeartRateEnabling) return;
     if (appleHealthAuthStatus === "denied") {
       await openAppleHealthSettings();
@@ -504,6 +559,7 @@ export default function LatestAssessmentPanel({
   }, [
     appleHealthAuthStatus,
     appleHealthSupported,
+    restingHeartRateValue,
     restingHeartRateEnabling,
     restingHeartRateLoading,
     syncNativeRestingHeartRate,
@@ -939,28 +995,24 @@ export default function LatestAssessmentPanel({
           <div className="mb-4 flex items-start justify-between gap-3">
             <div className="min-h-[3.5rem]">
               {restingHeartRateChipVisible ? (
-                appleHealthSupported ? (
+                appleHealthSupported || restingHeartRateValue ? (
                   <button
                     type="button"
                     onClick={() => void handleRestingHeartRatePress()}
-                    disabled={restingHeartRateLoading || restingHeartRateEnabling}
-                    className={`min-w-[7.5rem] rounded-[22px] border px-3 py-2 text-left shadow-[0_16px_30px_-24px_rgba(30,27,22,0.45)] transition disabled:cursor-not-allowed disabled:opacity-70 ${restingHeartRateToneClassName}`}
+                    disabled={Boolean(!restingHeartRateValue && (restingHeartRateLoading || restingHeartRateEnabling))}
+                    className={`min-w-[6.75rem] rounded-[22px] border px-3 py-2 text-left shadow-[0_16px_30px_-24px_rgba(30,27,22,0.45)] transition disabled:cursor-not-allowed disabled:opacity-70 ${restingHeartRateToneClassName}`}
                   >
                     <p className="text-[0.62rem] font-semibold uppercase tracking-[0.18em] opacity-80">
                       Resting HR
                     </p>
                     {restingHeartRateValue ? (
-                      <>
-                        <div className="mt-1 flex items-end gap-1">
-                          <span className="text-xl font-semibold leading-none">{restingHeartRateValue}</span>
-                          <span className="pb-[1px] text-[0.7rem] font-semibold uppercase tracking-[0.14em] opacity-80">
-                            bpm
-                          </span>
-                        </div>
-                        <p className="mt-1 text-[0.68rem] font-medium uppercase tracking-[0.12em] opacity-80">
-                          {restingHeartRate?.trend_label || "Normal"}
-                        </p>
-                      </>
+                      <div className="mt-1 flex items-center gap-2">
+                        <span className="text-xl font-semibold leading-none">{restingHeartRateValue}</span>
+                        <HeartStatusIcon />
+                        <span className="text-[0.78rem] font-semibold opacity-80">
+                          {resolveRestingHeartRateTrendLabel(restingHeartRate?.trend_label)}
+                        </span>
+                      </div>
                     ) : (
                       <p className="mt-2 text-sm font-semibold">
                         {resolveRestingHeartRateEmptyLabel(
@@ -970,21 +1022,6 @@ export default function LatestAssessmentPanel({
                       </p>
                     )}
                   </button>
-                ) : restingHeartRateValue ? (
-                  <div
-                    className={`min-w-[7.5rem] rounded-[22px] border px-3 py-2 text-left shadow-[0_16px_30px_-24px_rgba(30,27,22,0.45)] ${restingHeartRateToneClassName}`}
-                  >
-                    <p className="text-[0.62rem] font-semibold uppercase tracking-[0.18em] opacity-80">Resting HR</p>
-                    <div className="mt-1 flex items-end gap-1">
-                      <span className="text-xl font-semibold leading-none">{restingHeartRateValue}</span>
-                      <span className="pb-[1px] text-[0.7rem] font-semibold uppercase tracking-[0.14em] opacity-80">
-                        bpm
-                      </span>
-                    </div>
-                    <p className="mt-1 text-[0.68rem] font-medium uppercase tracking-[0.12em] opacity-80">
-                      {restingHeartRate?.trend_label || "Normal"}
-                    </p>
-                  </div>
                 ) : null
               ) : null}
             </div>
@@ -1069,6 +1106,103 @@ export default function LatestAssessmentPanel({
             </button>
           </div>
         </section>
+      ) : null}
+
+      {biometricsModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 sm:items-center sm:px-3 sm:py-3">
+          <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-2xl flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
+            <div className="shrink-0 border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
+              <div className="space-y-1">
+                <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Biometrics</p>
+                <p className="text-sm text-[#6b6257]">
+                  Review your recent biometric trend. More indicators can be added here later.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+              <div className="space-y-4">
+                <div className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
+                    Resting heart rate
+                  </p>
+                  {restingHeartRateValue ? (
+                    <>
+                      <div className="mt-3 flex items-center gap-3">
+                        <span className="text-3xl font-semibold leading-none text-[#1e1b16]">
+                          {restingHeartRateValue}
+                        </span>
+                        <HeartStatusIcon />
+                        <span className="text-sm font-semibold text-[#6b6257]">
+                          {resolveRestingHeartRateTrendLabel(restingHeartRate?.trend_label)}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-sm text-[#6b6257]">
+                        {restingHeartRate?.metric_date
+                          ? `Latest reading from ${formatBiometricDayLabel(restingHeartRate.metric_date)} ${formatBiometricDayNumber(restingHeartRate.metric_date)}`
+                          : "Latest synced reading"}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#6b6257]">
+                      No resting heart rate data is available yet.
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-[#1e1b16]">Last 7 days</p>
+                    <p className="text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
+                      {restingHeartRateHistory.length} day{restingHeartRateHistory.length === 1 ? "" : "s"}
+                    </p>
+                  </div>
+                  {restingHeartRateHistory.length ? (
+                    <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-7">
+                      {restingHeartRateHistory.map((item) => {
+                        const metricDate = String(item?.metric_date || "").trim();
+                        const value = resolveRestingHeartRateValue(item?.resting_hr_bpm);
+                        const isLatest = metricDate && metricDate === String(restingHeartRate?.metric_date || "").trim();
+                        return (
+                          <div
+                            key={metricDate || String(item?.resting_hr_bpm || "")}
+                            className={`rounded-[20px] border px-3 py-3 text-center ${
+                              isLatest
+                                ? "border-[var(--accent)] bg-[#fff4ea]"
+                                : "border-[#efe7db] bg-[#fffaf3]"
+                            }`}
+                          >
+                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">
+                              {formatBiometricDayLabel(metricDate)}
+                            </p>
+                            <p className="mt-1 text-xs text-[#8c7f70]">{formatBiometricDayNumber(metricDate)}</p>
+                            <p className="mt-3 text-xl font-semibold leading-none text-[#1e1b16]">
+                              {value || "—"}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#6b6257]">
+                      Daily history will appear here once recent biometrics have been synced.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="shrink-0 border-t border-[#efe7db] px-4 py-4 sm:px-5">
+              <button
+                type="button"
+                onClick={() => setBiometricsModalOpen(false)}
+                className="w-full rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {objectivesModalOpen ? (

@@ -1012,7 +1012,7 @@ def get_apple_health_resting_hr_summary(
             WearableDailyMetric.resting_hr_bpm.isnot(None),
         )
         .order_by(WearableDailyMetric.metric_date.desc())
-        .limit(APPLE_HEALTH_BASELINE_DAYS + 1)
+        .limit(max(APPLE_HEALTH_BASELINE_DAYS + 1, 7))
         .all()
     )
     latest_row = rows[0] if rows else None
@@ -1040,6 +1040,18 @@ def get_apple_health_resting_hr_summary(
     connected = bool(
         connection and str(getattr(connection, "status", "") or "").strip().lower() == "connected"
     )
+    history = [
+        {
+            "metric_date": row.metric_date.isoformat() if getattr(row, "metric_date", None) else None,
+            "resting_hr_bpm": (
+                round(float(row.resting_hr_bpm), 1)
+                if getattr(row, "resting_hr_bpm", None) is not None
+                else None
+            ),
+        }
+        for row in reversed(rows[:7])
+        if getattr(row, "metric_date", None) is not None and getattr(row, "resting_hr_bpm", None) is not None
+    ]
     return {
         "provider": APPLE_HEALTH_PROVIDER,
         "connected": connected,
@@ -1051,6 +1063,7 @@ def get_apple_health_resting_hr_summary(
         "trend_label": trend_label if latest_row else None,
         "synced_at": latest_row.synced_at.isoformat() if latest_row and latest_row.synced_at else None,
         "available": latest_row is not None,
+        "history": history,
     }
 
 

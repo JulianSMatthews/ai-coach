@@ -125,6 +125,10 @@ export type AppleHealthRestingHeartRateResponse = {
   trend_label?: string | null;
   synced_at?: string | null;
   available?: boolean;
+  history?: Array<{
+    metric_date?: string | null;
+    resting_hr_bpm?: number | null;
+  }>;
   ok?: boolean;
   sync?: {
     provider?: string;
