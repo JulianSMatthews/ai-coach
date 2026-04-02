@@ -98,7 +98,7 @@ def run_coach_home_tracker_refresh(
             if not user:
                 raise ValueError(f"user not found: {user_id}")
             s.expunge(user)
-        habit_result = get_or_generate_daily_habit_plan(int(user_id), force=False)
+        habit_result = get_or_generate_daily_habit_plan(int(user_id), force=False, allow_llm=True)
         gia_text = get_or_generate_cached_tracker_summary_message(
             user,
             source="app_tracker_summary",

@@ -1404,65 +1404,69 @@ def _fallback_ask_suggestions(context: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def _generate_plan_from_llm(user_id: int, context: dict[str, Any]) -> dict[str, Any] | None:
-    selected_pillar = context.get("selected_pillar") or {}
-    user_name = str(context.get("user_name") or "User").strip() or "User"
-    ensure_builtin_prompt_templates(["daily_habit_plan"])
-    assembly = build_prompt(
-        "daily_habit_plan",
-        user_id=user_id,
-        coach_name="HealthSense",
-        user_name=user_name,
-        locale="UK",
-        timeframe="today",
-        plan_date=context.get("plan_date"),
-        scores=context.get("pillar_scores") or [],
-        weakest_pillar=context.get("weakest_pillar") or {},
-        selected_pillar=selected_pillar,
-        okr_context=context.get("okr_context") or {},
-        tracker_review=context.get("tracker_review") or [],
-        day_brief=context.get("day_brief") or {},
-    )
-    prompt = assembly.text
-    raw = run_llm_prompt(
-        prompt,
-        user_id=user_id,
-        touchpoint="daily_habit_plan",
-        prompt_variant=assembly.variant,
-        task_label=assembly.task_label,
-        context_meta={
-            "page": "coach_home",
-            "pillar_key": str(selected_pillar.get("pillar_key") or "").strip().lower(),
-            "plan_date": _today_iso(),
-        },
-        prompt_blocks=assembly.blocks,
-        block_order=assembly.block_order,
-    )
-    parsed = _extract_json_object(raw)
-    if not parsed:
-        return None
-    raw_items = parsed.get("moments") if isinstance(parsed.get("moments"), list) else parsed.get("habits")
-    habits = [
-        item
-        for item in (
-            _normalize_habit_plan_item(row, default_concept=None)
-            for row in (raw_items or [])
+    try:
+        selected_pillar = context.get("selected_pillar") or {}
+        user_name = str(context.get("user_name") or "User").strip() or "User"
+        ensure_builtin_prompt_templates(["daily_habit_plan"])
+        assembly = build_prompt(
+            "daily_habit_plan",
+            user_id=user_id,
+            coach_name="HealthSense",
+            user_name=user_name,
+            locale="UK",
+            timeframe="today",
+            plan_date=context.get("plan_date"),
+            scores=context.get("pillar_scores") or [],
+            weakest_pillar=context.get("weakest_pillar") or {},
+            selected_pillar=selected_pillar,
+            okr_context=context.get("okr_context") or {},
+            tracker_review=context.get("tracker_review") or [],
+            day_brief=context.get("day_brief") or {},
         )
-        if item
-    ][:5]
-    habits = _items_with_day_moments(habits)
-    if len(habits) < len(_DAY_MOMENT_SEQUENCE):
+        prompt = assembly.text
+        raw = run_llm_prompt(
+            prompt,
+            user_id=user_id,
+            touchpoint="daily_habit_plan",
+            prompt_variant=assembly.variant,
+            task_label=assembly.task_label,
+            context_meta={
+                "page": "coach_home",
+                "pillar_key": str(selected_pillar.get("pillar_key") or "").strip().lower(),
+                "plan_date": _today_iso(),
+            },
+            prompt_blocks=assembly.blocks,
+            block_order=assembly.block_order,
+        )
+        parsed = _extract_json_object(raw)
+        if not parsed:
+            return None
+        raw_items = parsed.get("moments") if isinstance(parsed.get("moments"), list) else parsed.get("habits")
+        habits = [
+            item
+            for item in (
+                _normalize_habit_plan_item(row, default_concept=None)
+                for row in (raw_items or [])
+            )
+            if item
+        ][:5]
+        habits = _items_with_day_moments(habits)
+        if len(habits) < len(_DAY_MOMENT_SEQUENCE):
+            return None
+        day_brief = context.get("day_brief") or {}
+        title = str(parsed.get("title") or "").strip() or str(day_brief.get("plan_title") or "Today's plan").strip()
+        summary = str(parsed.get("summary") or "").strip() or str(
+            day_brief.get("plan_summary") or "Use these key moments to keep the day steady and practical."
+        ).strip()
+        return {
+            "title": title[:200],
+            "summary": summary[:500],
+            "habits": habits,
+            "source": "llm",
+        }
+    except Exception as exc:
+        print(f"[daily-habits] WARN: llm day-plan generation failed for user_id={user_id}: {exc}")
         return None
-    day_brief = context.get("day_brief") or {}
-    title = str(parsed.get("title") or "").strip() or str(day_brief.get("plan_title") or "Today's plan").strip()
-    summary = str(parsed.get("summary") or "").strip() or str(
-        day_brief.get("plan_summary") or "Use these key moments to keep the day steady and practical."
-    ).strip()
-    return {
-        "title": title[:200],
-        "summary": summary[:500],
-        "habits": habits,
-        "source": "llm",
-    }
 
 
 def _serialize_plan(
@@ -1551,9 +1555,9 @@ def get_or_generate_daily_habit_plan(
     *,
     force: bool = False,
     concept_key: str | None = None,
+    allow_llm: bool = False,
 ) -> dict[str, Any]:
     ensure_daily_habit_plan_schema()
-    ensure_builtin_prompt_templates(["daily_habit_plan"])
     today = tracker_today()
     with SessionLocal() as s:
         existing = (
@@ -1622,7 +1626,7 @@ def get_or_generate_daily_habit_plan(
                 default_habits_view="selected_habits" if selected_habits else "suggestions",
             )
 
-        generated = _generate_plan_from_llm(user_id, context) or _fallback_plan(context)
+        generated = (_generate_plan_from_llm(user_id, context) if allow_llm else None) or _fallback_plan(context)
         generated_items = [
             item
             for item in (

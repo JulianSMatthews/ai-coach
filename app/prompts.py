@@ -95,6 +95,78 @@ BUILTIN_PROMPT_TEMPLATE_DEFAULTS: Dict[str, Dict[str, Any]] = {
     },
 }
 
+_PROMPT_TEMPLATE_SCHEMA_READY = False
+_PROMPT_TEMPLATE_SCHEMA_LOCK = threading.Lock()
+_BUILTIN_PROMPT_TEMPLATES_READY: set[str] = set()
+_BUILTIN_PROMPT_TEMPLATES_LOCK = threading.Lock()
+
+
+def _prompt_template_schema_timeout_ms() -> int:
+    raw = (os.getenv("PROMPT_TEMPLATE_SCHEMA_TIMEOUT_MS") or "").strip()
+    if not raw:
+        return 1500
+    try:
+        val = int(raw)
+    except Exception:
+        return 1500
+    return max(250, val)
+
+
+def _prompt_template_schema_statements() -> List[str]:
+    return [
+        "ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS programme_scope varchar(32);",
+        "ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS response_format varchar(32);",
+        "ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS model_override varchar(120);",
+        "ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS state varchar(32) DEFAULT 'develop';",
+        "ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS version integer DEFAULT 1;",
+        "ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS note text;",
+        "ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS parent_id integer;",
+        "ALTER TABLE prompt_templates DROP CONSTRAINT IF EXISTS prompt_templates_touchpoint_key;",
+        "DROP INDEX IF EXISTS prompt_templates_touchpoint_key;",
+        "DROP INDEX IF EXISTS uq_prompt_templates_touchpoint;",
+        (
+            "CREATE UNIQUE INDEX IF NOT EXISTS "
+            "uq_prompt_templates_touchpoint_state_version ON prompt_templates(touchpoint, state, version);"
+        ),
+        "UPDATE prompt_templates SET state='beta' WHERE state='stage';",
+        "UPDATE prompt_templates SET state='live' WHERE state='production';",
+        "UPDATE prompt_templates SET version=1 WHERE version IS NULL;",
+    ]
+
+
+def _ensure_prompt_template_schema() -> None:
+    global _PROMPT_TEMPLATE_SCHEMA_READY
+    if _PROMPT_TEMPLATE_SCHEMA_READY:
+        return
+    with _PROMPT_TEMPLATE_SCHEMA_LOCK:
+        if _PROMPT_TEMPLATE_SCHEMA_READY:
+            return
+        try:
+            with engine.begin() as conn:
+                if _is_postgres():
+                    timeout_ms = _prompt_template_schema_timeout_ms()
+                    try:
+                        conn.execute(text(f"SET LOCAL lock_timeout = '{timeout_ms}ms';"))
+                    except Exception:
+                        pass
+                    try:
+                        conn.execute(text(f"SET LOCAL statement_timeout = '{timeout_ms}ms';"))
+                    except Exception:
+                        pass
+                if not _table_exists(conn, "prompt_templates"):
+                    PromptTemplate.__table__.create(bind=conn, checkfirst=True)
+                for stmt in _prompt_template_schema_statements():
+                    try:
+                        conn.execute(text(stmt))
+                    except Exception as e:
+                        print(f"[prompts] WARN: prompt_templates schema step skipped ({stmt}): {e}")
+                        break
+        except Exception as e:
+            print(f"[prompts] WARN: prompt_templates schema ensure skipped: {e}")
+        finally:
+            # Builtin task text should still work even if the template table cannot be migrated right now.
+            _PROMPT_TEMPLATE_SCHEMA_READY = True
+
 def _prompt_log_debug_enabled() -> bool:
     return debug_enabled()
 
@@ -497,37 +569,7 @@ def _load_prompt_template(touchpoint: str) -> Optional[Dict[str, Any]]:
     Fetch a prompt template row for this touchpoint (if any), preferring live > beta > develop.
     """
     try:
-        PromptTemplate.__table__.create(bind=engine, checkfirst=True)
-        try:
-            with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS programme_scope varchar(32);"))
-                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS response_format varchar(32);"))
-                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS model_override varchar(120);"))
-                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS state varchar(32) DEFAULT 'develop';"))
-                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS version integer DEFAULT 1;"))
-                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS note text;"))
-                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS parent_id integer;"))
-                # Relax legacy unique constraint on touchpoint to allow multi-state/version rows
-                try:
-                    conn.execute(text("ALTER TABLE prompt_templates DROP CONSTRAINT IF EXISTS prompt_templates_touchpoint_key;"))
-                except Exception:
-                    pass
-                try:
-                    conn.execute(text("DROP INDEX IF EXISTS prompt_templates_touchpoint_key;"))
-                except Exception:
-                    pass
-                try:
-                    conn.execute(text("DROP INDEX IF EXISTS uq_prompt_templates_touchpoint;"))
-                except Exception:
-                    pass
-                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_prompt_templates_touchpoint_state_version ON prompt_templates(touchpoint, state, version);"))
-                # Map legacy state labels to new ones
-                conn.execute(text("UPDATE prompt_templates SET state='beta' WHERE state='stage';"))
-                conn.execute(text("UPDATE prompt_templates SET state='live' WHERE state='production';"))
-                conn.execute(text("UPDATE prompt_templates SET version=1 WHERE version IS NULL;"))
-                conn.commit()
-        except Exception:
-            pass
+        _ensure_prompt_template_schema()
         with SessionLocal() as s:
             row = (
                 s.query(PromptTemplate)
@@ -564,7 +606,7 @@ def _load_prompt_template_with_state(touchpoint: str, state: str) -> Optional[Di
     """
     target_state = _canonical_state(state)
     try:
-        PromptTemplate.__table__.create(bind=engine, checkfirst=True)
+        _ensure_prompt_template_schema()
         with SessionLocal() as s:
             row = (
                 s.query(PromptTemplate)
@@ -609,77 +651,56 @@ def ensure_builtin_prompt_templates(touchpoints: List[str] | None = None) -> int
     requested = {item for item in requested if item in BUILTIN_PROMPT_TEMPLATE_DEFAULTS}
     if not requested:
         return 0
+    if requested.issubset(_BUILTIN_PROMPT_TEMPLATES_READY):
+        return 0
     try:
-        PromptTemplate.__table__.create(bind=engine, checkfirst=True)
-        try:
-            with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS programme_scope varchar(32);"))
-                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS response_format varchar(32);"))
-                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS model_override varchar(120);"))
-                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS state varchar(32) DEFAULT 'develop';"))
-                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS version integer DEFAULT 1;"))
-                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS note text;"))
-                conn.execute(text("ALTER TABLE prompt_templates ADD COLUMN IF NOT EXISTS parent_id integer;"))
-                try:
-                    conn.execute(text("ALTER TABLE prompt_templates DROP CONSTRAINT IF EXISTS prompt_templates_touchpoint_key;"))
-                except Exception:
-                    pass
-                try:
-                    conn.execute(text("DROP INDEX IF EXISTS prompt_templates_touchpoint_key;"))
-                except Exception:
-                    pass
-                try:
-                    conn.execute(text("DROP INDEX IF EXISTS uq_prompt_templates_touchpoint;"))
-                except Exception:
-                    pass
-                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS uq_prompt_templates_touchpoint_state_version ON prompt_templates(touchpoint, state, version);"))
-                conn.execute(text("UPDATE prompt_templates SET state='beta' WHERE state='stage';"))
-                conn.execute(text("UPDATE prompt_templates SET state='live' WHERE state='production';"))
-                conn.execute(text("UPDATE prompt_templates SET version=1 WHERE version IS NULL;"))
-                conn.commit()
-        except Exception:
-            pass
+        _ensure_prompt_template_schema()
         created = 0
-        with SessionLocal() as s:
-            for touchpoint in sorted(requested):
-                spec = dict(BUILTIN_PROMPT_TEMPLATE_DEFAULTS[touchpoint])
-                for state in ["develop", "beta", "live"]:
-                    row = (
-                        s.query(PromptTemplate)
-                        .filter(
-                            PromptTemplate.touchpoint == touchpoint,
-                            PromptTemplate.state.in_(
-                                [
-                                    state,
-                                    "stage" if state == "beta" else state,
-                                    "production" if state == "live" else state,
-                                ]
-                            ),
-                            PromptTemplate.version == 1,
+        with _BUILTIN_PROMPT_TEMPLATES_LOCK:
+            missing = {item for item in requested if item not in _BUILTIN_PROMPT_TEMPLATES_READY}
+            if not missing:
+                return 0
+            with SessionLocal() as s:
+                for touchpoint in sorted(missing):
+                    spec = dict(BUILTIN_PROMPT_TEMPLATE_DEFAULTS[touchpoint])
+                    for state in ["develop", "beta", "live"]:
+                        row = (
+                            s.query(PromptTemplate)
+                            .filter(
+                                PromptTemplate.touchpoint == touchpoint,
+                                PromptTemplate.state.in_(
+                                    [
+                                        state,
+                                        "stage" if state == "beta" else state,
+                                        "production" if state == "live" else state,
+                                    ]
+                                ),
+                                PromptTemplate.version == 1,
+                            )
+                            .order_by(PromptTemplate.id.desc())
+                            .first()
                         )
-                        .order_by(PromptTemplate.id.desc())
-                        .first()
-                    )
-                    if row:
-                        continue
-                    row = PromptTemplate(
-                        touchpoint=touchpoint,
-                        state=state,
-                        version=1,
-                        okr_scope=spec.get("okr_scope"),
-                        programme_scope=spec.get("programme_scope"),
-                        response_format=spec.get("response_format"),
-                        model_override=spec.get("model_override"),
-                        block_order=spec.get("block_order"),
-                        include_blocks=spec.get("include_blocks"),
-                        task_block=spec.get("task_block"),
-                        note=spec.get("note"),
-                        is_active=bool(spec.get("is_active", True)),
-                    )
-                    s.add(row)
-                    created += 1
-            if created:
-                s.commit()
+                        if row:
+                            continue
+                        row = PromptTemplate(
+                            touchpoint=touchpoint,
+                            state=state,
+                            version=1,
+                            okr_scope=spec.get("okr_scope"),
+                            programme_scope=spec.get("programme_scope"),
+                            response_format=spec.get("response_format"),
+                            model_override=spec.get("model_override"),
+                            block_order=spec.get("block_order"),
+                            include_blocks=spec.get("include_blocks"),
+                            task_block=spec.get("task_block"),
+                            note=spec.get("note"),
+                            is_active=bool(spec.get("is_active", True)),
+                        )
+                        s.add(row)
+                        created += 1
+                if created:
+                    s.commit()
+            _BUILTIN_PROMPT_TEMPLATES_READY.update(missing)
         return created
     except Exception as e:
         print(f"[prompts] WARN: failed to ensure builtin prompt templates: {e}")
