@@ -84,9 +84,10 @@ BUILTIN_PROMPT_TEMPLATE_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "include_blocks": ["system", "locale", "context", "scores", "okr", "history", "task"],
         "task_block": (
             "Create a coach-home day plan. Return STRICT JSON only with this shape: "
-            "{\"title\":\"...\",\"summary\":\"...\",\"moments\":[{\"moment\":\"morning|pre_training|evening\",\"title\":\"...\",\"detail\":\"...\"}]}. "
-            "Return exactly 3 moments for the day: morning, pre-training, and evening. "
+            "{\"title\":\"...\",\"summary\":\"...\",\"moments\":[{\"moment\":\"morning|midday|afternoon|evening\",\"title\":\"...\",\"detail\":\"...\"}]}. "
+            "Return exactly 4 moments for the day: morning, midday, afternoon, and evening. "
             "Use the provided two-day tracker read, exercise readiness, and key moments framework to make this feel like a practical schedule for today. "
+            "Take the whole programme into account: training, nutrition, resilience, and recovery. Build this around the day as a whole rather than one selected concept. "
             "Keep every moment specific, brief, and low-friction. Each title should be short. Each detail should be one sentence and under 18 words. "
             "Use British English. Do not mention JSON, scores, data tables, or being an AI."
         ),
@@ -1545,33 +1546,15 @@ def build_prompt(
         selected_pillar = data.get("selected_pillar") or {}
         okr_context = data.get("okr_context") or {}
         day_brief = data.get("day_brief") or {}
-        selected_concept_label = (
-            str(selected_focus_concept.get("label") or selected_focus_concept.get("concept_key") or "").strip()
-            or "selected concept"
-        )
         selected_pillar_label = (
             str(selected_pillar.get("label") or selected_pillar.get("pillar_key") or "").strip()
             or "selected pillar"
         )
         context_extras = (
             f"Selected pillar={json.dumps(selected_pillar, ensure_ascii=False)}; "
-            f"Selected concept={json.dumps(selected_focus_concept, ensure_ascii=False)}; "
             f"Plan date={data.get('plan_date') or ''}"
         )
         history_lines: List[str] = []
-        if selected_focus_concept:
-            label = str(selected_focus_concept.get("label") or selected_focus_concept.get("concept_key") or "").strip()
-            signal = str(selected_focus_concept.get("signal") or "").strip()
-            target = str(selected_focus_concept.get("target_label") or "").strip()
-            latest = str(selected_focus_concept.get("latest_value") or "").strip()
-            if label:
-                bits = [signal] if signal else []
-                if latest:
-                    bits.append(f"latest={latest}")
-                if target:
-                    bits.append(target)
-                suffix = f" ({'; '.join(bits)})" if bits else ""
-                history_lines.append(f"Selected concept focus: {label}{suffix}")
         if (okr_context or {}).get("habit_steps"):
             history_lines.append("Active KR habit steps:")
             for step in (okr_context.get("habit_steps") or [])[:5]:
@@ -1610,7 +1593,7 @@ def build_prompt(
         key_moments = day_brief.get("key_moments") if isinstance(day_brief, dict) else None
         if isinstance(key_moments, list) and key_moments:
             history_lines.append("Key moments for today:")
-            for item in key_moments[:3]:
+            for item in key_moments[:4]:
                 if not isinstance(item, dict):
                     continue
                 moment_label = str(item.get("moment_label") or item.get("moment") or "").strip()
@@ -1630,18 +1613,18 @@ def build_prompt(
             ("context", context_block("daily_habit_plan", "coach home day plan", timeframe=str(timeframe), channel="App", extras=context_extras)),
             ("scores", scores_block(pillar_scores) if pillar_scores else ""),
             ("okr", tracker_summary_okr_block(okr_context) if okr_context else ""),
-            ("history", history_block("selected concept and current habit focus", history_lines, channel="App") if history_lines else ""),
+            ("history", history_block("current day brief", history_lines, channel="App") if history_lines else ""),
             (
                 "task",
                 task_block(
-                    f"Create a daily day-plan for the coach home screen in strict JSON, focused only on {selected_concept_label} within {selected_pillar_label}.",
+                    f"Create a daily day-plan for the coach home screen in strict JSON for {selected_pillar_label}.",
                     constraints=(
                         "Return only {title, summary, moments} or {title, summary, habits}. "
-                        "Provide exactly 3 time-anchored moments for today: morning, pre-training, and evening. "
-                        "Every moment must directly support the selected concept only. "
-                        "Do not include actions for the weakest pillar or any other concept unless it is the same selected concept. "
+                        "Provide exactly 4 time-anchored moments for today: morning, midday, afternoon, and evening. "
                         "Use the supplied two-day read, exercise readiness, and key moments framework so this feels like a practical daily schedule. "
-                        "Keep the title and summary aligned to the selected concept only."
+                        "Take the whole programme into account: training, nutrition, resilience, and recovery. "
+                        "Build the plan around the day as a whole rather than one selected concept. "
+                        "Keep the title and summary aligned to the day as a whole rather than a single narrow task."
                     ),
                 ),
             ),

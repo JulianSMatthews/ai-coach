@@ -21,10 +21,11 @@ from .prompts import build_prompt, ensure_builtin_prompt_templates, run_llm_prom
 
 _DAILY_HABITS_SCHEMA_READY = False
 _PILLAR_ORDER = ("nutrition", "training", "resilience", "recovery")
-_CURRENT_HABIT_PLAN_VERSION = 5
+_CURRENT_HABIT_PLAN_VERSION = 7
 _DAY_MOMENT_SEQUENCE = (
     ("morning", "Morning"),
-    ("pre_training", "Pre-training"),
+    ("midday", "Midday"),
+    ("afternoon", "Afternoon"),
     ("evening", "Evening"),
 )
 
@@ -463,20 +464,10 @@ def _exercise_readiness(
     }
 
 
-def _moment_focus_addendum(selected_focus: dict[str, Any], *, signal: str) -> str:
-    label = str(selected_focus.get("label") or "").strip()
-    if not label:
-        return ""
-    label_lower = label.lower()
-    if signal == "not_logged_today":
-        return f"Make {label_lower} one of the things you lock in rather than leave until later."
-    if signal == "missed_today":
-        return f"Use it to get {label_lower} back under control quickly."
-    if signal == "missed_yesterday":
-        return f"Use it to stop {label_lower} drifting for a second day."
-    if signal == "needs_support":
-        return f"Keep {label_lower} steadier than it has been recently."
-    return f"Let it help keep {label_lower} moving in the right direction."
+def _snapshot_focus_label(snapshot: dict[str, Any], fallback: str) -> str:
+    focus = snapshot.get("primary_focus") if isinstance(snapshot, dict) else None
+    label = str((focus or {}).get("label") or "").strip()
+    return label or fallback
 
 
 def _build_key_moments(
@@ -484,54 +475,95 @@ def _build_key_moments(
     selected_pillar: dict[str, Any],
     selected_focus: dict[str, Any],
     readiness: dict[str, str],
+    snapshots: dict[str, dict[str, Any]],
 ) -> list[dict[str, str]]:
     pillar_key = str(
         selected_focus.get("pillar_key") or selected_pillar.get("pillar_key") or "nutrition"
     ).strip().lower()
-    signal = str(selected_focus.get("signal") or "").strip().lower()
+    nutrition_snapshot = snapshots.get("nutrition") or {}
+    training_snapshot = snapshots.get("training") or {}
+    resilience_snapshot = snapshots.get("resilience") or {}
+    recovery_snapshot = snapshots.get("recovery") or {}
+    nutrition_state = str(nutrition_snapshot.get("state") or "unknown").strip().lower()
+    resilience_state = str(resilience_snapshot.get("state") or "unknown").strip().lower()
+    recovery_state = str(recovery_snapshot.get("state") or "unknown").strip().lower()
+    training_focus_label = _snapshot_focus_label(training_snapshot, "training quality").lower()
+    nutrition_focus_label = _snapshot_focus_label(nutrition_snapshot, "food and fluids").lower()
+    resilience_focus_label = _snapshot_focus_label(resilience_snapshot, "your headspace").lower()
+    recovery_focus_label = _snapshot_focus_label(recovery_snapshot, "recovery basics").lower()
+
     morning_title = {
         "nutrition": "Set the basics early",
-        "training": "Define the session",
+        "training": "Prepare the session",
         "resilience": "Set your response",
         "recovery": "Protect your energy",
     }.get(pillar_key, "Set the day early")
-    morning_detail = {
-        "nutrition": "Get food and fluids started early so the rest of the day is easier to manage.",
-        "training": "Decide what a good session looks like before the day starts to pull you around.",
-        "resilience": "Take two minutes to decide how you want to respond when pressure picks up.",
-        "recovery": "Keep the pace controlled early so you do not spend the rest of the day catching up.",
-    }.get(pillar_key, "Get the basics in place early so the rest of the day feels easier.")
-    morning_detail = f"{morning_detail} {_moment_focus_addendum(selected_focus, signal=signal)}".strip()
+    if nutrition_state == "weak" or recovery_state == "weak":
+        morning_detail = (
+            "Start with food, fluids, and a calmer pace so you are not trying to rescue energy later on."
+        )
+    else:
+        morning_detail = (
+            "Get food, fluids, and a steady start in early so the rest of the day has a solid base."
+        )
+
+    midday_title = "Keep the middle steady"
+    if nutrition_state == "weak":
+        midday_detail = (
+            f"Do not let {nutrition_focus_label} drift at lunch, and top fluids up before the afternoon gets busy."
+        )
+    elif resilience_state == "weak":
+        midday_detail = (
+            f"Use the middle of the day for a short reset so {resilience_focus_label} does not slide later on."
+        )
+    else:
+        midday_detail = (
+            f"Check food, fluids, and your headspace around midday so the second half of the day stays controlled."
+        )
 
     exercise_state = str(readiness.get("exercise_state") or "steady").strip().lower()
     if exercise_state == "push":
-        midday_title = "Train with intent"
-        midday_detail = "Run the planned session properly today, but stick to the session rather than adding extra volume."
+        afternoon_title = "Train with intent"
+        afternoon_detail = (
+            f"Use the afternoon for your planned session and keep {training_focus_label} purposeful rather than adding junk volume."
+        )
     elif exercise_state == "steady":
-        midday_title = "Keep the session controlled"
-        midday_detail = "Train today if planned, but keep the effort measured and stop while the quality is still good."
+        afternoon_title = "Keep training controlled"
+        afternoon_detail = (
+            f"Train if planned, but keep the effort measured and let {training_focus_label} stay clean rather than forced."
+        )
     elif exercise_state == "light":
-        midday_title = "Keep movement supportive"
-        midday_detail = "Use lighter movement today and let fuelling and recovery catch up before you ask for more."
+        afternoon_title = "Keep movement supportive"
+        afternoon_detail = (
+            f"Use lighter movement or mobility today and let {nutrition_focus_label} and {recovery_focus_label} catch up first."
+        )
     else:
-        midday_title = "Make recovery the session"
-        midday_detail = "Skip the hard training today and put the effort into walking, mobility, and a calmer reset."
+        afternoon_title = "Make recovery the session"
+        afternoon_detail = (
+            f"Skip the hard session today and put the effort into walking, mobility, and settling {recovery_focus_label}."
+        )
 
     evening_title = {
         "recovery": "Close the day properly",
         "resilience": "Reset before bed",
-    }.get(pillar_key, "Close the loop")
-    evening_detail = {
-        "recovery": "Protect sleep tonight and keep the final part of the day genuinely low-stimulation.",
-        "resilience": "Finish with a short reflection on what went well and what you handled better than expected.",
-    }.get(
-        pillar_key,
-        "Keep the evening simple and finish with a short reset so tomorrow starts cleaner.",
-    )
+    }.get(pillar_key, "Close the day cleanly")
+    if recovery_state == "weak":
+        evening_detail = (
+            "Keep the evening very simple, protect sleep, and avoid anything that makes tomorrow harder."
+        )
+    elif resilience_state == "weak":
+        evening_detail = (
+            f"Use the evening for a short reset so {resilience_focus_label} feels steadier before bed."
+        )
+    else:
+        evening_detail = (
+            f"Close things down cleanly, keep {recovery_focus_label} steady, and finish with a short mental reset."
+        )
 
     return [
         {"moment_key": "morning", "moment_label": "Morning", "title": morning_title, "detail": morning_detail[:180]},
-        {"moment_key": "pre_training", "moment_label": "Pre-training", "title": midday_title, "detail": midday_detail[:180]},
+        {"moment_key": "midday", "moment_label": "Midday", "title": midday_title, "detail": midday_detail[:180]},
+        {"moment_key": "afternoon", "moment_label": "Afternoon", "title": afternoon_title, "detail": afternoon_detail[:180]},
         {"moment_key": "evening", "moment_label": "Evening", "title": evening_title, "detail": evening_detail[:180]},
     ]
 
@@ -584,26 +616,26 @@ def _build_day_brief(
         selected_focus or (snapshots.get(str(selected_pillar.get("pillar_key") or "").strip().lower()) or {}).get("primary_focus"),
         fallback_label=str(selected_pillar.get("label") or "today's focus").strip(),
     )
-    focus_label = str(selected_focus.get("label") or selected_pillar.get("label") or "today's focus").strip() or "today's focus"
     exercise_state = str(readiness.get("exercise_state") or "steady").strip().lower()
     if exercise_state == "push":
-        today_aim = f"Use the good base you have and put one solid session in without overshooting, while keeping {focus_label.lower()} tidy."
+        today_aim = "Use the good base you have, train properly if planned, and keep the rest of the day steady around it."
     elif exercise_state == "steady":
-        today_aim = f"Keep the day controlled, train with intent if planned, and keep {focus_label.lower()} from slipping."
+        today_aim = "Keep the day controlled, train with intent if planned, and do not let the basics drift."
     elif exercise_state == "light":
-        today_aim = f"Keep movement light, restore the basics, and stabilise {focus_label.lower()} before asking for more."
+        today_aim = "Keep movement light, restore the basics, and make the day easier rather than heavier."
     else:
-        today_aim = f"Keep the day simple, recover properly, and take the pressure off while you steady {focus_label.lower()}."
+        today_aim = "Keep the day simple, recover properly, and take the pressure off until the basics feel steadier."
     key_moments = _build_key_moments(
         selected_pillar=selected_pillar,
         selected_focus=selected_focus,
         readiness=readiness,
+        snapshots=snapshots,
     )
     return {
         "two_day_read": {
             "strength": strength_text,
             "carry_over_issue": carry_over_issue,
-            "today_priority": f"{focus_label} is the main thing to protect today.",
+            "today_priority": "The main job today is to match training, food, recovery, and headspace rather than let one area drag the rest off line.",
         },
         "readiness": readiness,
         "key_moments": key_moments,
@@ -644,7 +676,6 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
     okr_context = _load_pillar_okr_context(
         user_id,
         selected_pillar_key,
-        concept_key=(selected_focus or {}).get("concept_key"),
     )
     selected_pillar_payload = {
         "pillar_key": selected_pillar_key,
@@ -769,12 +800,14 @@ def _normalize_moment_key(value: Any) -> str | None:
         "morning": "morning",
         "am": "morning",
         "start_of_day": "morning",
-        "pretraining": "pre_training",
-        "pre_training": "pre_training",
-        "midday": "pre_training",
-        "mid_day": "pre_training",
-        "afternoon": "pre_training",
-        "training": "pre_training",
+        "midday": "midday",
+        "mid_day": "midday",
+        "lunch": "midday",
+        "pretraining": "afternoon",
+        "pre_training": "afternoon",
+        "afternoon": "afternoon",
+        "training": "afternoon",
+        "session": "afternoon",
         "evening": "evening",
         "pm": "evening",
         "night": "evening",
@@ -900,14 +933,15 @@ def _items_with_day_moments(items: list[dict[str, Any]]) -> list[dict[str, Any]]
 
 
 def _has_complete_day_plan_items(items: list[dict[str, Any]]) -> bool:
-    if len(items) < 3:
+    if len(items) < len(_DAY_MOMENT_SEQUENCE):
         return False
     keys = {
         _normalize_moment_key(item.get("moment_key"))
         for item in items
         if isinstance(item, dict)
     }
-    return {"morning", "pre_training", "evening"}.issubset({key for key in keys if key})
+    required_keys = {key for key, _label in _DAY_MOMENT_SEQUENCE}
+    return required_keys.issubset({key for key in keys if key})
 
 
 def _dedupe_habit_plan_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1272,9 +1306,17 @@ def _fallback_plan(context: dict[str, Any]) -> dict[str, Any]:
             ),
             _normalize_habit_plan_item(
                 {
-                    "title": "Keep the middle of the day controlled",
-                    "detail": _fallback_habit_for_concept(selected_concept, pillar_key).get("detail") or "Use the middle of the day to stay on top of the basics.",
-                    "moment_key": "pre_training",
+                    "title": "Keep the middle steady",
+                    "detail": "Use lunch and the middle of the day to keep food, fluids, and focus under control.",
+                    "moment_key": "midday",
+                },
+                default_concept=selected_concept,
+            ),
+            _normalize_habit_plan_item(
+                {
+                    "title": "Keep the afternoon purposeful",
+                    "detail": _fallback_habit_for_concept(selected_concept, pillar_key).get("detail") or "Use the afternoon for the right level of movement, not extra noise.",
+                    "moment_key": "afternoon",
                 },
                 default_concept=selected_concept,
             ),
@@ -1380,7 +1422,7 @@ def _generate_plan_from_llm(user_id: int, context: dict[str, Any]) -> dict[str, 
         if item
     ][:5]
     habits = _items_with_day_moments(habits)
-    if len(habits) < 3:
+    if len(habits) < len(_DAY_MOMENT_SEQUENCE):
         return None
     concept_label = str(selected_concept.get("label") or "").strip() or "habit focus"
     day_brief = context.get("day_brief") or {}
@@ -1430,7 +1472,7 @@ def _serialize_plan(
     for item in _items_with_day_moments(raw_current_options):
         current_options.append({**item, "selected": str(item.get("id") or "").strip() in selected_ids})
     display_habits = selected_habits
-    if len(display_habits) < 3 and len(current_options) >= 3:
+    if len(display_habits) < len(_DAY_MOMENT_SEQUENCE) and len(current_options) >= len(_DAY_MOMENT_SEQUENCE):
         display_habits = [dict(item) for item in current_options]
     elif not display_habits and current_options:
         display_habits = [dict(item) for item in current_options]

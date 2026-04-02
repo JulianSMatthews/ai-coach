@@ -16,7 +16,9 @@ from .okr import _GUIDE, _guess_concept_from_description, _normalize_concept_key
 _TRACKER_SCHEMA_READY = False
 _TRACKER_TIMEZONE = (os.getenv("PILLAR_TRACKER_TIMEZONE") or "Europe/London").strip() or "Europe/London"
 _FASTING_MODE_PREF_KEY = "weekly_objectives_fasting_mode"
+_FASTING_GOAL_DAYS_PREF_KEY = "weekly_objectives_fasting_goal_days"
 _ALCOHOL_TRACKING_PREF_KEY = "weekly_objectives_alcohol_tracking"
+_ALCOHOL_GOAL_UNITS_PREF_KEY = "weekly_objectives_alcohol_goal_units"
 _LATEST_TRACKER_FOCUS_PREF_KEY = "coach_home_latest_tracker_focus"
 try:
     _TRACKER_YESTERDAY_GRACE_HOUR = int((os.getenv("PILLAR_TRACKER_YESTERDAY_GRACE_HOUR") or "12").strip() or "12")
@@ -398,6 +400,33 @@ def _wellbeing_tracking_settings(user_id: int) -> tuple[str, str]:
     return fasting_mode, alcohol_tracking
 
 
+def _wellbeing_weekly_targets(user_id: int) -> tuple[str, str, int, int]:
+    with SessionLocal() as s:
+        fasting_mode = (_user_pref_value(s, int(user_id), _FASTING_MODE_PREF_KEY) or "off").strip().lower()
+        alcohol_tracking = (_user_pref_value(s, int(user_id), _ALCOHOL_TRACKING_PREF_KEY) or "off").strip().lower()
+        fasting_goal_days_raw = _user_pref_value(s, int(user_id), _FASTING_GOAL_DAYS_PREF_KEY) or "0"
+        alcohol_goal_units_raw = _user_pref_value(s, int(user_id), _ALCOHOL_GOAL_UNITS_PREF_KEY) or "0"
+    if fasting_mode not in {"off", "12:12", "14:10", "16:8", "18:6"}:
+        fasting_mode = "off"
+    if alcohol_tracking not in {"on", "off"}:
+        alcohol_tracking = "off"
+    try:
+        fasting_goal_days = int(float(str(fasting_goal_days_raw).strip() or "0"))
+    except Exception:
+        fasting_goal_days = 0
+    try:
+        alcohol_goal_units = int(float(str(alcohol_goal_units_raw).strip() or "0"))
+    except Exception:
+        alcohol_goal_units = 0
+    fasting_goal_days = max(0, min(7, fasting_goal_days))
+    alcohol_goal_units = max(0, min(50, alcohol_goal_units))
+    if fasting_mode != "off" and fasting_goal_days <= 0:
+        fasting_goal_days = 7
+    if alcohol_tracking != "on":
+        alcohol_goal_units = 0
+    return fasting_mode, alcohol_tracking, fasting_goal_days, alcohol_goal_units
+
+
 def _optional_nutrition_tracker_concepts(user_id: int) -> tuple[PillarTrackerConceptDefinition, ...]:
     fasting_mode, alcohol_tracking = _wellbeing_tracking_settings(int(user_id))
     concepts: list[PillarTrackerConceptDefinition] = []
@@ -604,6 +633,24 @@ def _format_progress_label(prefix: str, value: float | None, unit: str | None) -
     return f"{prefix} {number}"
 
 
+def _format_week_progress_label(value: float | None, unit: str | None) -> str | None:
+    number = _format_target_number(value)
+    if not number:
+        return None
+    unit_text = str(unit or "").strip().lower()
+    if unit_text.endswith("/week"):
+        noun = unit_text[: -len("/week")].strip()
+        if noun:
+            return f"Recorded {number} {noun} so far this week"
+    if unit_text.endswith("per week"):
+        noun = unit_text[: -len("per week")].strip()
+        if noun:
+            return f"Recorded {number} {noun} so far this week"
+    if unit_text:
+        return f"Recorded {number} {unit_text} so far this week"
+    return f"Recorded {number} so far this week"
+
+
 def _user_tracker_start_date(user_id: int, user: User | None = None) -> date | None:
     row = user
     if row is None:
@@ -678,7 +725,7 @@ def _okr_actual_achieved_from_logged_values(
         expected_value = target_value
         if elapsed_days is not None and elapsed_days > 0:
             expected_value = (target_value * min(max(int(elapsed_days), 0), 7)) / 7.0
-        detail_label = _format_progress_label("Recorded", actual_value, resolved_target.target_unit)
+        detail_label = _format_week_progress_label(actual_value, resolved_target.target_unit)
     else:
         actual_value = average_value_per_logged_day
         expected_value = target_value
@@ -740,17 +787,24 @@ def _resolve_pillar_targets_for_user_with_session(
         current = resolved[concept_key]
         target_value = _safe_float(getattr(kr, "target_num", None))
         unit = str(getattr(kr, "unit", "") or "").strip() or current.target_unit
+        target_period, start_date = _tracker_target_start_date(
+            current=current,
+            user_start_date=user_start_date,
+            objective_start_date=objective_start_date,
+            kr=kr,
+            unit=unit,
+        )
         resolved[concept_key] = PillarTrackerResolvedTarget(
             source="okr" if target_value is not None else current.source,
             target_value=target_value if target_value is not None else current.target_value,
             target_direction=current.target_direction,
             target_unit=unit,
-            target_period=_target_period_from_unit(unit) or current.target_period,
+            target_period=target_period,
             target_label=_format_target_label(target_value, unit) if target_value is not None else current.target_label,
             metric_label=str(getattr(kr, "metric_label", "") or "").strip() or current.metric_label,
             success_value=current.success_value,
             success_direction=current.success_direction,
-            start_date=_later_date(user_start_date, objective_start_date) or current.start_date,
+            start_date=start_date,
         )
     return resolved, best_by_concept
 
@@ -900,6 +954,58 @@ def _kr_priority(kr: OKRKeyResult) -> tuple[int, int, int]:
     return (active, target_present, int(getattr(kr, "id", 0) or 0))
 
 
+def _tracker_target_start_date(
+    *,
+    current: PillarTrackerResolvedTarget,
+    user_start_date: date | None,
+    objective_start_date: date | None,
+    kr: OKRKeyResult,
+    unit: str | None,
+) -> tuple[str | None, date | None]:
+    target_period = _target_period_from_unit(unit) or current.target_period
+    if target_period == "week":
+        # Tracker views should always reflect the whole recorded week to date for
+        # the currently active weekly target, not only rows after the objective/KR
+        # was created midweek.
+        return target_period, user_start_date or current.start_date
+    return target_period, _later_date(user_start_date, objective_start_date) or current.start_date
+
+
+def _weekly_expected_value(
+    resolved_target: PillarTrackerResolvedTarget,
+    *,
+    elapsed_days: int,
+) -> float:
+    target_value = _safe_float(resolved_target.target_value) or 0.0
+    unit = str(resolved_target.target_unit or "").strip().lower()
+    if unit in {"sessions/week", "days/week", "nights/week"}:
+        return float(_week_target_expected(target_value, elapsed_days))
+    return (target_value * min(max(int(elapsed_days), 0), 7)) / 7.0
+
+
+def _weekly_score_against_target(
+    *,
+    actual_value: float,
+    expected_value: float,
+    resolved_target: PillarTrackerResolvedTarget,
+) -> int:
+    direction = str(resolved_target.target_direction or "gte").strip().lower()
+    target_value = _safe_float(resolved_target.target_value) or 0.0
+    if direction == "lte":
+        if expected_value <= 0:
+            return 100 if actual_value <= 0 else 0
+        if actual_value <= expected_value:
+            return 100
+        ceiling = max(target_value, expected_value, 1.0)
+        span = max(1.0, ceiling - expected_value)
+        pct = 1.0 - min(max(actual_value - expected_value, 0.0), span) / span
+        return int(round(max(0.0, min(1.0, pct)) * 100))
+    if expected_value <= 0:
+        return 100
+    pct = max(0.0, min(1.0, actual_value / expected_value))
+    return int(round(pct * 100))
+
+
 def _default_resolved_target(pillar_key: str, defn: PillarTrackerConceptDefinition) -> PillarTrackerResolvedTarget:
     guide = _guide_meta(pillar_key, defn.concept_key)
     unit = guide.get("unit")
@@ -926,29 +1032,34 @@ def _default_resolved_target_for_user(
 ) -> PillarTrackerResolvedTarget:
     key = str(pillar_key or "").strip().lower()
     if key == "nutrition" and defn.concept_key == "alcohol_units":
+        _fasting_mode, _alcohol_tracking, _fasting_goal_days, alcohol_goal_units = _wellbeing_weekly_targets(int(user_id))
         return PillarTrackerResolvedTarget(
             source="default",
-            target_value=0.0,
+            target_value=float(alcohol_goal_units),
             target_direction="lte",
-            target_unit="units/day",
-            target_period="day",
-            target_label="Keep alcohol at 0 units today",
+            target_unit="units/week",
+            target_period="week",
+            target_label=(
+                "Keep alcohol at 0 units this week"
+                if alcohol_goal_units <= 0
+                else f"Keep alcohol within {alcohol_goal_units} units this week"
+            ),
             metric_label="alcohol units",
             success_value=0.0,
             success_direction="lte",
             start_date=None,
         )
     if key == "nutrition" and defn.concept_key == "fasting_adherence":
-        fasting_mode, _alcohol_tracking = _wellbeing_tracking_settings(int(user_id))
-        label = "Follow your fasting plan today"
+        fasting_mode, _alcohol_tracking, fasting_goal_days, _alcohol_goal_units = _wellbeing_weekly_targets(int(user_id))
+        label = "Follow your fasting plan this week"
         if fasting_mode and fasting_mode != "off":
-            label = f"Follow your {fasting_mode} fasting plan today"
+            label = f"Hit {fasting_goal_days} {fasting_mode} fasting days this week"
         return PillarTrackerResolvedTarget(
             source="default",
-            target_value=1.0,
+            target_value=float(fasting_goal_days),
             target_direction="gte",
-            target_unit=None,
-            target_period="day",
+            target_unit="days/week",
+            target_period="week",
             target_label=label,
             metric_label="fasting adherence",
             success_value=1.0,
@@ -1007,17 +1118,24 @@ def _resolve_pillar_targets_for_user(
         current = resolved[concept_key]
         target_value = _safe_float(getattr(kr, "target_num", None))
         unit = str(getattr(kr, "unit", "") or "").strip() or current.target_unit
+        target_period, start_date = _tracker_target_start_date(
+            current=current,
+            user_start_date=user_start_date,
+            objective_start_date=objective_start_date,
+            kr=kr,
+            unit=unit,
+        )
         resolved[concept_key] = PillarTrackerResolvedTarget(
             source="okr" if target_value is not None else current.source,
             target_value=target_value if target_value is not None else current.target_value,
             target_direction=current.target_direction,
             target_unit=unit,
-            target_period=_target_period_from_unit(unit) or current.target_period,
+            target_period=target_period,
             target_label=_format_target_label(target_value, unit) if target_value is not None else current.target_label,
             metric_label=str(getattr(kr, "metric_label", "") or "").strip() or current.metric_label,
             success_value=current.success_value,
             success_direction=current.success_direction,
-            start_date=_later_date(user_start_date, objective_start_date) or current.start_date,
+            start_date=start_date,
         )
     return resolved
 
@@ -1080,54 +1198,44 @@ def _build_concept_week_evaluations(
         resolved_target = resolved_targets.get(concept_key) or _default_resolved_target("", concept_def)
         effective_start = _effective_okr_window_start(resolved_target, week_days, week_days[-1])
         concept_rows: dict[date, dict[str, Any]] = {}
-        success_count = 0
+        cumulative_value = 0.0
         for day in week_days:
             row = (entries_by_day.get(day) or {}).get(concept_key)
-            if row is None or getattr(row, "value_num", None) is None:
-                concept_rows[day] = {
-                    "row": row,
-                    "value": None,
-                    "value_label": None,
-                    "score": None,
-                    "target_met": None,
-                    "target_reached": None,
-                    "daily_status": None,
-                    "daily_positive": None,
-                    "okr_on_track": None,
-                }
-                continue
-            value = _normalize_option_value(concept_def, getattr(row, "value_num", 0))
-            if value is None:
-                concept_rows[day] = {
-                    "row": row,
-                    "value": None,
-                    "value_label": None,
-                    "score": None,
-                    "target_met": None,
-                    "target_reached": None,
-                    "daily_status": None,
-                    "daily_positive": None,
-                    "okr_on_track": None,
-                }
-                continue
-            value_label = _to_value_label(concept_def, value) or str(getattr(row, "value_label", "") or "").strip() or None
-            target_reached = _value_meets_threshold(
-                resolved_target.success_direction,
-                resolved_target.success_value,
-                value,
-            )
-            daily_status = _daily_display_status_for_value(concept_def, value, resolved_target)
-            daily_positive = daily_status == "success"
+            value = None
+            value_label = None
+            target_reached = None
+            daily_status = None
+            daily_positive = None
+            if row is not None and getattr(row, "value_num", None) is not None:
+                value = _normalize_option_value(concept_def, getattr(row, "value_num", 0))
+            if value is not None:
+                value_label = _to_value_label(concept_def, value) or str(getattr(row, "value_label", "") or "").strip() or None
+                target_reached = _value_meets_threshold(
+                    resolved_target.success_direction,
+                    resolved_target.success_value,
+                    value,
+                )
+                daily_status = _daily_display_status_for_value(concept_def, value, resolved_target)
+                daily_positive = daily_status == "success"
+                if day >= effective_start:
+                    cumulative_value += float(value)
             if resolved_target.target_period == "week" and resolved_target.target_value is not None:
                 elapsed_days = max(0, (day - effective_start).days + 1) if day >= effective_start else 0
-                if day >= effective_start and target_reached:
-                    success_count += 1
-                expected = _week_target_expected(resolved_target.target_value, elapsed_days)
-                score = 100 if expected <= 0 else int(round(max(0.0, min(1.0, success_count / expected)) * 100))
-                target_met = success_count >= expected if expected > 0 else True
-            else:
+                expected = _weekly_expected_value(resolved_target, elapsed_days=elapsed_days)
+                score = _weekly_score_against_target(
+                    actual_value=cumulative_value,
+                    expected_value=expected,
+                    resolved_target=resolved_target,
+                )
+                target_met = _value_meets_threshold(resolved_target.target_direction, expected, cumulative_value)
+                if daily_status is None:
+                    daily_status = "success" if score >= 100 else "warning" if score >= 50 else "danger"
+            elif value is not None:
                 score = _score_for_value(concept_def, value, resolved_target)
                 target_met = _target_met_for_value(concept_def, value, resolved_target)
+            else:
+                score = None
+                target_met = None
             concept_rows[day] = {
                 "row": row,
                 "value": value,

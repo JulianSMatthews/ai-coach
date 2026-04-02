@@ -20,7 +20,9 @@ from .pillar_tracker import (
 PILLAR_ORDER: tuple[str, ...] = ("nutrition", "training", "resilience", "recovery")
 WELLBEING_KEY = "wellbeing"
 FASTING_MODE_PREF_KEY = "weekly_objectives_fasting_mode"
+FASTING_GOAL_DAYS_PREF_KEY = "weekly_objectives_fasting_goal_days"
 ALCOHOL_TRACKING_PREF_KEY = "weekly_objectives_alcohol_tracking"
+ALCOHOL_GOAL_UNITS_PREF_KEY = "weekly_objectives_alcohol_goal_units"
 
 FASTING_MODE_OPTIONS: tuple[tuple[str, str], ...] = (
     ("off", "Off"),
@@ -33,6 +35,22 @@ FASTING_MODE_OPTIONS: tuple[tuple[str, str], ...] = (
 BOOLEAN_TOGGLE_OPTIONS: tuple[tuple[str, str], ...] = (
     ("off", "Off"),
     ("on", "On"),
+)
+
+FASTING_GOAL_DAYS_OPTIONS: tuple[tuple[str, str], ...] = tuple((str(value), str(value)) for value in range(0, 8))
+ALCOHOL_GOAL_UNITS_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("0", "0"),
+    ("2", "2"),
+    ("4", "4"),
+    ("6", "6"),
+    ("8", "8"),
+    ("10", "10"),
+    ("12", "12"),
+    ("14", "14"),
+    ("16", "16"),
+    ("18", "18"),
+    ("21", "21"),
+    ("28", "28"),
 )
 
 
@@ -213,9 +231,19 @@ def _wellbeing_payload(user_id: int) -> dict[str, Any]:
         fasting_mode = (_pref_value(s, int(user_id), FASTING_MODE_PREF_KEY) or "off").lower()
         if fasting_mode not in {value for value, _label in FASTING_MODE_OPTIONS}:
             fasting_mode = "off"
+        fasting_goal_days = (_pref_value(s, int(user_id), FASTING_GOAL_DAYS_PREF_KEY) or "0").strip()
+        if fasting_goal_days not in {value for value, _label in FASTING_GOAL_DAYS_OPTIONS}:
+            fasting_goal_days = "0"
+        if fasting_mode != "off" and fasting_goal_days == "0":
+            fasting_goal_days = "7"
         alcohol_tracking = (_pref_value(s, int(user_id), ALCOHOL_TRACKING_PREF_KEY) or "off").lower()
         if alcohol_tracking not in {"on", "off"}:
             alcohol_tracking = "off"
+        alcohol_goal_units = (_pref_value(s, int(user_id), ALCOHOL_GOAL_UNITS_PREF_KEY) or "0").strip()
+        if alcohol_goal_units not in {value for value, _label in ALCOHOL_GOAL_UNITS_OPTIONS}:
+            alcohol_goal_units = "0"
+        if alcohol_tracking != "on":
+            alcohol_goal_units = "0"
     items = [
         {
             "key": "fasting_mode",
@@ -225,18 +253,34 @@ def _wellbeing_payload(user_id: int) -> dict[str, Any]:
             "options": [{"value": value, "label": label} for value, label in FASTING_MODE_OPTIONS],
         },
         {
+            "key": "fasting_goal_days",
+            "label": "Fasting goal",
+            "helper": "How many days this week to follow your fasting plan",
+            "value": fasting_goal_days,
+            "options": [{"value": value, "label": label} for value, label in FASTING_GOAL_DAYS_OPTIONS],
+        },
+        {
             "key": "alcohol_tracking",
             "label": "Alcohol tracking",
             "helper": "Turn alcohol tracking on or off",
             "value": alcohol_tracking,
             "options": [{"value": value, "label": label} for value, label in BOOLEAN_TOGGLE_OPTIONS],
         },
+        {
+            "key": "alcohol_goal_units",
+            "label": "Alcohol goal",
+            "helper": "Maximum alcohol units for the week",
+            "value": alcohol_goal_units,
+            "options": [{"value": value, "label": label} for value, label in ALCOHOL_GOAL_UNITS_OPTIONS],
+        },
     ]
     configured_count = sum(
         1
         for item in items
         if (item["key"] == "fasting_mode" and item["value"] != "off")
+        or (item["key"] == "fasting_goal_days" and item["value"] not in {"", "0"})
         or (item["key"] == "alcohol_tracking" and item["value"] == "on")
+        or (item["key"] == "alcohol_goal_units" and item["value"] not in {"", "0"})
     )
     return {
         "title": "Wellbeing objectives",
@@ -306,12 +350,26 @@ def save_weekly_objectives_config(
         fasting_mode = str(values.get("fasting_mode") or "off").strip().lower()
         if fasting_mode not in {value for value, _label in FASTING_MODE_OPTIONS}:
             raise ValueError("Invalid fasting mode")
+        fasting_goal_days = str(values.get("fasting_goal_days") or "0").strip()
+        if fasting_goal_days not in {value for value, _label in FASTING_GOAL_DAYS_OPTIONS}:
+            raise ValueError("Invalid fasting goal")
         alcohol_tracking = str(values.get("alcohol_tracking") or "off").strip().lower()
         if alcohol_tracking not in {"on", "off"}:
             raise ValueError("Invalid alcohol tracking value")
+        alcohol_goal_units = str(values.get("alcohol_goal_units") or "0").strip()
+        if alcohol_goal_units not in {value for value, _label in ALCOHOL_GOAL_UNITS_OPTIONS}:
+            raise ValueError("Invalid alcohol goal")
+        if fasting_mode == "off":
+            fasting_goal_days = "0"
+        elif fasting_goal_days == "0":
+            fasting_goal_days = "7"
+        if alcohol_tracking != "on":
+            alcohol_goal_units = "0"
         with SessionLocal() as s:
             _set_pref_value(s, int(user_id), FASTING_MODE_PREF_KEY, fasting_mode)
+            _set_pref_value(s, int(user_id), FASTING_GOAL_DAYS_PREF_KEY, fasting_goal_days)
             _set_pref_value(s, int(user_id), ALCOHOL_TRACKING_PREF_KEY, alcohol_tracking)
+            _set_pref_value(s, int(user_id), ALCOHOL_GOAL_UNITS_PREF_KEY, alcohol_goal_units)
             s.commit()
         return get_weekly_objectives_config(int(user_id))
 
