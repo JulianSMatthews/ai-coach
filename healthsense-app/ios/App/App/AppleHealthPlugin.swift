@@ -19,8 +19,16 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
         HKObjectType.quantityType(forIdentifier: .restingHeartRate)
     }
 
+    private var stepCountType: HKQuantityType? {
+        HKObjectType.quantityType(forIdentifier: .stepCount)
+    }
+
     private func restingHeartRateUnit() -> HKUnit {
         HKUnit.count().unitDivided(by: HKUnit.minute())
+    }
+
+    private func stepCountUnit() -> HKUnit {
+        HKUnit.count()
     }
 
     private func isoDayString(_ value: Date) -> String {
@@ -32,12 +40,133 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
         return formatter.string(from: value)
     }
 
-    private func resolveAuthorizationState(for quantityType: HKQuantityType?, completion: @escaping (String) -> Void) {
-        guard HKHealthStore.isHealthDataAvailable(), let quantityType else {
+    private func aggregateRestingHeartRateSamples(_ quantitySamples: [HKQuantitySample]) -> [JSObject] {
+        var totalsByDay: [String: Double] = [:]
+        var countsByDay: [String: Int] = [:]
+
+        for sample in quantitySamples {
+            let metricDate = isoDayString(sample.endDate)
+            let bpm = sample.quantity.doubleValue(for: restingHeartRateUnit())
+            guard bpm > 0 else { continue }
+            totalsByDay[metricDate, default: 0] += bpm
+            countsByDay[metricDate, default: 0] += 1
+        }
+
+        return totalsByDay.keys
+            .sorted()
+            .compactMap { metricDate in
+                guard let total = totalsByDay[metricDate], let count = countsByDay[metricDate], count > 0 else {
+                    return nil
+                }
+                let average = round((total / Double(count)) * 10) / 10
+                guard average > 0 else { return nil }
+                return [
+                    "metricDate": metricDate,
+                    "restingHeartRateBpm": average,
+                ]
+            }
+    }
+
+    private func aggregateStepSamples(_ quantitySamples: [HKQuantitySample]) -> [JSObject] {
+        var totalsByDay: [String: Double] = [:]
+        for sample in quantitySamples {
+            let metricDate = isoDayString(sample.endDate)
+            let steps = sample.quantity.doubleValue(for: stepCountUnit())
+            guard steps >= 0 else { continue }
+            totalsByDay[metricDate, default: 0] += steps
+        }
+
+        return totalsByDay.keys
+            .sorted()
+            .compactMap { metricDate in
+                guard let total = totalsByDay[metricDate] else { return nil }
+                let steps = Int(round(total))
+                guard steps >= 0 else { return nil }
+                return [
+                    "metricDate": metricDate,
+                    "steps": steps,
+                ]
+            }
+    }
+
+    private func mergeBiometricSamples(
+        restingHeartRateSamples: [JSObject],
+        stepSamples: [JSObject]
+    ) -> [JSObject] {
+        var byDay: [String: JSObject] = [:]
+
+        for sample in restingHeartRateSamples {
+            let metricDate = String(sample["metricDate"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !metricDate.isEmpty else { continue }
+            byDay[metricDate] = sample
+        }
+
+        for sample in stepSamples {
+            let metricDate = String(sample["metricDate"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !metricDate.isEmpty else { continue }
+            var row = byDay[metricDate] ?? ["metricDate": metricDate]
+            if let steps = sample["steps"] {
+                row["steps"] = steps
+            }
+            byDay[metricDate] = row
+        }
+
+        return byDay.keys.sorted().compactMap { byDay[$0] }
+    }
+
+    private func fetchRestingHeartRateSamples(
+        quantityType: HKQuantityType,
+        predicate: NSPredicate?,
+        sortDescriptors: [NSSortDescriptor],
+        limit: Int,
+        completion: @escaping ([JSObject]?, Error?) -> Void
+    ) {
+        let query = HKSampleQuery(
+            sampleType: quantityType,
+            predicate: predicate,
+            limit: limit,
+            sortDescriptors: sortDescriptors
+        ) { _, results, error in
+            if let error {
+                completion(nil, error)
+                return
+            }
+            let quantitySamples = (results as? [HKQuantitySample]) ?? []
+            completion(self.aggregateRestingHeartRateSamples(quantitySamples), nil)
+        }
+        healthStore.execute(query)
+    }
+
+    private func fetchStepSamples(
+        quantityType: HKQuantityType,
+        predicate: NSPredicate?,
+        sortDescriptors: [NSSortDescriptor],
+        limit: Int,
+        completion: @escaping ([JSObject]?, Error?) -> Void
+    ) {
+        let query = HKSampleQuery(
+            sampleType: quantityType,
+            predicate: predicate,
+            limit: limit,
+            sortDescriptors: sortDescriptors
+        ) { _, results, error in
+            if let error {
+                completion(nil, error)
+                return
+            }
+            let quantitySamples = (results as? [HKQuantitySample]) ?? []
+            completion(self.aggregateStepSamples(quantitySamples), nil)
+        }
+        healthStore.execute(query)
+    }
+
+    private func resolveAuthorizationState(completion: @escaping (String) -> Void) {
+        let quantityTypes = [restingHeartRateType, stepCountType].compactMap { $0 }
+        guard HKHealthStore.isHealthDataAvailable(), !quantityTypes.isEmpty else {
             completion("unsupported")
             return
         }
-        let readTypes: Set<HKObjectType> = [quantityType]
+        let readTypes: Set<HKObjectType> = Set(quantityTypes)
         healthStore.getRequestStatusForAuthorization(toShare: [], read: readTypes) { status, error in
             if error != nil {
                 completion("unsupported")
@@ -60,7 +189,7 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func authorizationPayload(status: String) -> JSObject {
-        let available = HKHealthStore.isHealthDataAvailable() && restingHeartRateType != nil
+        let available = HKHealthStore.isHealthDataAvailable() && (restingHeartRateType != nil || stepCountType != nil)
         return [
             "available": available,
             "status": status,
@@ -68,23 +197,24 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func authorizationStatus(_ call: CAPPluginCall) {
-        resolveAuthorizationState(for: restingHeartRateType) { status in
+        resolveAuthorizationState { status in
             call.resolve(self.authorizationPayload(status: status))
         }
     }
 
     @objc func requestAuthorization(_ call: CAPPluginCall) {
-        guard HKHealthStore.isHealthDataAvailable(), let quantityType = restingHeartRateType else {
+        let quantityTypes = [restingHeartRateType, stepCountType].compactMap { $0 }
+        guard HKHealthStore.isHealthDataAvailable(), !quantityTypes.isEmpty else {
             call.resolve(authorizationPayload(status: "unsupported"))
             return
         }
-        let readTypes: Set<HKObjectType> = [quantityType]
+        let readTypes: Set<HKObjectType> = Set(quantityTypes)
         healthStore.requestAuthorization(toShare: nil, read: readTypes) { _, error in
             if let error {
                 call.reject("Apple Health authorization failed: \(error.localizedDescription)")
                 return
             }
-            self.resolveAuthorizationState(for: quantityType) { status in
+            self.resolveAuthorizationState { status in
                 call.resolve(self.authorizationPayload(status: status))
             }
         }
@@ -127,39 +257,72 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
             end: endDate,
             options: [.strictStartDate],
         )
-        let interval = DateComponents(day: 1)
-        let query = HKStatisticsCollectionQuery(
+        let ascendingSort = [
+            NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: true)
+        ]
+        self.fetchRestingHeartRateSamples(
             quantityType: quantityType,
-            quantitySamplePredicate: predicate,
-            options: [.discreteAverage],
-            anchorDate: anchorDate,
-            intervalComponents: interval,
-        )
-
-        query.initialResultsHandler = { _, results, error in
+            predicate: predicate,
+            sortDescriptors: ascendingSort,
+            limit: HKObjectQueryNoLimit
+        ) { samples, error in
             if let error {
                 call.reject("Apple Health resting heart rate query failed: \(error.localizedDescription)")
                 return
             }
-            var samples: [JSObject] = []
-            results?.enumerateStatistics(from: startDate, to: endDate) { statistics, _ in
-                guard let quantity = statistics.averageQuantity() else {
+            let completeRestingHeartRateSamples = { (resolvedSamples: [JSObject]) in
+                guard let stepType = self.stepCountType else {
+                    call.resolve([
+                        "samples": resolvedSamples,
+                        "latestMetricDate": (resolvedSamples.last?["metricDate"] as? String) ?? NSNull(),
+                    ])
                     return
                 }
-                let bpm = round(quantity.doubleValue(for: self.restingHeartRateUnit()) * 10) / 10
-                if bpm <= 0 {
-                    return
+                self.fetchStepSamples(
+                    quantityType: stepType,
+                    predicate: predicate,
+                    sortDescriptors: ascendingSort,
+                    limit: HKObjectQueryNoLimit
+                ) { stepSamples, stepError in
+                    if let stepError {
+                        call.reject("Apple Health step query failed: \(stepError.localizedDescription)")
+                        return
+                    }
+                    let merged = self.mergeBiometricSamples(
+                        restingHeartRateSamples: resolvedSamples,
+                        stepSamples: stepSamples ?? []
+                    )
+                    call.resolve([
+                        "samples": merged,
+                        "latestMetricDate": (merged.last?["metricDate"] as? String) ?? NSNull(),
+                    ])
                 }
-                samples.append([
-                    "metricDate": self.isoDayString(statistics.startDate),
-                    "restingHeartRateBpm": bpm,
-                ])
             }
-            call.resolve([
-                "samples": samples,
-                "latestMetricDate": (samples.last?["metricDate"] as? String) ?? NSNull(),
-            ])
+
+            let recentSamples = samples ?? []
+            if !recentSamples.isEmpty {
+                completeRestingHeartRateSamples(recentSamples)
+                return
+            }
+
+            let descendingSort = [
+                NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+            ]
+            self.fetchRestingHeartRateSamples(
+                quantityType: quantityType,
+                predicate: nil,
+                sortDescriptors: descendingSort,
+                limit: 90
+            ) { fallbackSamples, fallbackError in
+                if let fallbackError {
+                    call.reject("Apple Health resting heart rate query failed: \(fallbackError.localizedDescription)")
+                    return
+                }
+                let samples = (fallbackSamples ?? []).sorted {
+                    String($0["metricDate"] as? String ?? "") < String($1["metricDate"] as? String ?? "")
+                }
+                completeRestingHeartRateSamples(samples)
+            }
         }
-        healthStore.execute(query)
     }
 }

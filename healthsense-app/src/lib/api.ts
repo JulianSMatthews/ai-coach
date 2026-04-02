@@ -119,6 +119,7 @@ export type AppleHealthRestingHeartRateResponse = {
   connected?: boolean;
   metric_date?: string | null;
   resting_hr_bpm?: number | null;
+  steps_today?: number | null;
   baseline_resting_hr_bpm?: number | null;
   delta_bpm?: number | null;
   trend_status?: "optimum" | "normal" | "elevated" | null;
