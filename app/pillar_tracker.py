@@ -1222,14 +1222,18 @@ def _build_concept_week_evaluations(
             if resolved_target.target_period == "week" and resolved_target.target_value is not None:
                 elapsed_days = max(0, (day - effective_start).days + 1) if day >= effective_start else 0
                 expected = _weekly_expected_value(resolved_target, elapsed_days=elapsed_days)
-                score = _weekly_score_against_target(
-                    actual_value=cumulative_value,
-                    expected_value=expected,
-                    resolved_target=resolved_target,
-                )
-                target_met = _value_meets_threshold(resolved_target.target_direction, expected, cumulative_value)
-                if daily_status is None:
-                    daily_status = "success" if score >= 100 else "warning" if score >= 50 else "danger"
+                if value is not None:
+                    score = _weekly_score_against_target(
+                        actual_value=cumulative_value,
+                        expected_value=expected,
+                        resolved_target=resolved_target,
+                    )
+                    target_met = _value_meets_threshold(resolved_target.target_direction, expected, cumulative_value)
+                    if daily_status is None:
+                        daily_status = "success" if score >= 100 else "warning" if score >= 50 else "danger"
+                else:
+                    score = None
+                    target_met = None
             elif value is not None:
                 score = _score_for_value(concept_def, value, resolved_target)
                 target_met = _target_met_for_value(concept_def, value, resolved_target)

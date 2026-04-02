@@ -801,6 +801,9 @@ export default function LatestAssessmentPanel({
     setDraft({});
     setDetailError(null);
     setSaveError(null);
+    const resolvedAnchorDate =
+      anchorDate ||
+      (!guided ? String(summary?.today || "").trim() || undefined : undefined);
     if (guided && typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent("healthsense-home-surface", {
@@ -810,8 +813,8 @@ export default function LatestAssessmentPanel({
         }),
       );
     }
-    await loadTrackerDetail(normalizedPillarKey, anchorDate);
-  }, [loadTrackerDetail]);
+    await loadTrackerDetail(normalizedPillarKey, resolvedAnchorDate);
+  }, [loadTrackerDetail, summary?.today]);
 
   const closeTracker = () => {
     setSelectedPillarKey(null);
@@ -1004,7 +1007,11 @@ export default function LatestAssessmentPanel({
                   <button
                     key={pillarKey}
                     type="button"
-                    onClick={() => void openTracker(pillarKey)}
+                    onClick={() =>
+                      void openTracker(pillarKey, String(summary?.today || "").trim() || undefined, {
+                        guided: false,
+                      })
+                    }
                     className="rounded-2xl border border-[#efe7db] bg-white px-3 py-4 text-left transition hover:border-[#dccfbe]"
                   >
                     <div className="flex flex-col items-center text-center">
