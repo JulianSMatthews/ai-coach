@@ -38,20 +38,45 @@ const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
 const HEALTHSENSE_ORANGE = "#c54817";
 const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
 
-function resolveRestingHeartRateTone(status?: string | null): string {
+function resolveRestingHeartRateTone(
+  theme: DisplayTheme,
+  status?: string | null,
+  hasValue = false,
+): string {
+  if (!hasValue) {
+    return theme === "dark"
+      ? "border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)]"
+      : "border-[#e7e1d6] bg-white text-[#5d5348]";
+  }
   if (status === "optimum") {
-    return "border-[#d7c8ff] bg-[#f4eeff] text-[#5f42aa]";
+    return theme === "dark"
+      ? "border-[#6d54af] bg-[#2c2247] text-[#ebdcff]"
+      : "border-[#d7c8ff] bg-[#f4eeff] text-[#5f42aa]";
   }
   if (status === "elevated") {
-    return "border-[#f0caa8] bg-[#fff3e7] text-[#9a4d18]";
+    return theme === "dark"
+      ? "border-[#8d5a28] bg-[#3d2818] text-[#ffd3ad]"
+      : "border-[#f0caa8] bg-[#fff3e7] text-[#9a4d18]";
   }
-  return "border-[#cfe5b8] bg-[#f2fae8] text-[#2d6226]";
+  return theme === "dark"
+    ? "border-[#53763e] bg-[#1d3120] text-[#d9f0c5]"
+    : "border-[#cfe5b8] bg-[#f2fae8] text-[#2d6226]";
 }
 
 function resolveRestingHeartRateValue(value?: number | null): string | null {
   const resolved = Number(value);
   if (!Number.isFinite(resolved) || resolved <= 0) return null;
   return String(Math.round(resolved));
+}
+
+function resolveRestingHeartRateEmptyLabel(
+  status: AppleHealthAuthorizationState,
+  loading: boolean,
+): string {
+  if (loading) return "Syncing…";
+  if (status === "authorized") return "No data";
+  if (status === "denied") return "Denied";
+  return "Allow";
 }
 
 function isDailyCheckInComplete(summary?: PillarTrackerSummaryResponse | null): boolean {
@@ -401,7 +426,11 @@ export default function LatestAssessmentPanel({
   const appleHealthSupported = canUseAppleHealth();
   const restingHeartRateValue = resolveRestingHeartRateValue(restingHeartRate?.resting_hr_bpm);
   const restingHeartRateChipVisible = Boolean(restingHeartRate?.available) || appleHealthSupported;
-  const restingHeartRateToneClassName = resolveRestingHeartRateTone(restingHeartRate?.trend_status);
+  const restingHeartRateToneClassName = resolveRestingHeartRateTone(
+    displayTheme,
+    restingHeartRate?.trend_status,
+    Boolean(restingHeartRateValue),
+  );
 
   const refreshSummary = useCallback(async () => {
     const res = await fetch(`/api/pillar-tracker/summary?userId=${encodeURIComponent(userId)}`, {
@@ -909,11 +938,10 @@ export default function LatestAssessmentPanel({
                       </>
                     ) : (
                       <p className="mt-2 text-sm font-semibold">
-                        {restingHeartRateLoading || restingHeartRateEnabling
-                          ? "Syncing…"
-                          : appleHealthAuthStatus === "authorized"
-                            ? "No data"
-                            : "Enable"}
+                        {resolveRestingHeartRateEmptyLabel(
+                          appleHealthAuthStatus,
+                          restingHeartRateLoading || restingHeartRateEnabling,
+                        )}
                       </p>
                     )}
                   </button>
