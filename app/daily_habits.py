@@ -12,6 +12,7 @@ from .db import SessionLocal, engine
 from .models import DailyCoachHabitPlan, OKRKeyResult, OKRKrHabitStep, OKRObjective, User
 from .okr import _guess_concept_from_description, _normalize_concept_key
 from .pillar_tracker import (
+    _wellbeing_weekly_targets,
     get_pillar_tracker_detail,
     get_pillar_tracker_summary,
     get_recent_tracker_save_focus,
@@ -21,7 +22,7 @@ from .prompts import build_prompt, ensure_builtin_prompt_templates, run_llm_prom
 
 _DAILY_HABITS_SCHEMA_READY = False
 _PILLAR_ORDER = ("nutrition", "training", "resilience", "recovery")
-_CURRENT_HABIT_PLAN_VERSION = 8
+_CURRENT_HABIT_PLAN_VERSION = 9
 _DAY_PLAN_SCOPE_KEY = "__day_plan__"
 _DAY_MOMENT_SEQUENCE = (
     ("morning", "Morning"),
@@ -479,6 +480,18 @@ def _snapshot_focus_label(snapshot: dict[str, Any], fallback: str) -> str:
     return label or fallback
 
 
+def _snapshot_concept(snapshot: dict[str, Any], concept_key: str) -> dict[str, Any] | None:
+    target = _normalize_concept_token(concept_key)
+    if not target or not isinstance(snapshot, dict):
+        return None
+    for item in (snapshot.get("review_concepts") or []):
+        if not isinstance(item, dict):
+            continue
+        if _normalize_concept_token(item.get("concept_key")) == target:
+            return item
+    return None
+
+
 def _all_tracker_review_concepts(snapshots: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     for snapshot in snapshots.values():
@@ -549,13 +562,16 @@ def _build_tracker_review(snapshots: dict[str, dict[str, Any]]) -> list[dict[str
 
 def _build_key_moments(
     *,
+    user_id: int,
     readiness: dict[str, str],
     snapshots: dict[str, dict[str, Any]],
+    wellbeing_targets: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     nutrition_snapshot = snapshots.get("nutrition") or {}
     training_snapshot = snapshots.get("training") or {}
     resilience_snapshot = snapshots.get("resilience") or {}
     recovery_snapshot = snapshots.get("recovery") or {}
+    wellbeing_targets = wellbeing_targets if isinstance(wellbeing_targets, dict) else {}
     nutrition_state = str(nutrition_snapshot.get("state") or "unknown").strip().lower()
     resilience_state = str(resilience_snapshot.get("state") or "unknown").strip().lower()
     recovery_state = str(recovery_snapshot.get("state") or "unknown").strip().lower()
@@ -563,9 +579,36 @@ def _build_key_moments(
     nutrition_focus_label = _snapshot_focus_label(nutrition_snapshot, "food and fluids").lower()
     resilience_focus_label = _snapshot_focus_label(resilience_snapshot, "your headspace").lower()
     recovery_focus_label = _snapshot_focus_label(recovery_snapshot, "recovery basics").lower()
+    nutrition_focus_key = _normalize_concept_token((nutrition_snapshot.get("primary_focus") or {}).get("concept_key"))
+    fasting_mode = str(wellbeing_targets.get("fasting_mode") or "off").strip().lower()
+    fasting_goal_days = _safe_int(wellbeing_targets.get("fasting_goal_days")) or 0
+    alcohol_goal_units = _safe_int(wellbeing_targets.get("alcohol_goal_units")) or 0
+    alcohol_tracking = str(wellbeing_targets.get("alcohol_tracking") or "off").strip().lower()
+    fasting_active = fasting_mode != "off" and _snapshot_concept(nutrition_snapshot, "fasting_adherence") is not None
+    alcohol_active = alcohol_tracking == "on" and _snapshot_concept(nutrition_snapshot, "alcohol_units") is not None
 
     morning_title = "Set the day early"
-    if nutrition_state == "weak" or recovery_state == "weak":
+    if fasting_active:
+        morning_title = "Set the window cleanly"
+        if nutrition_state == "weak" or recovery_state == "weak":
+            morning_detail = (
+                f"Hydrate early, reset your {fasting_mode} fasting window, and avoid drifting into reactive eating later on."
+            )
+        else:
+            morning_detail = (
+                f"Hydrate early and be clear on your {fasting_mode} fasting window so the day starts controlled rather than automatic."
+            )
+    elif nutrition_focus_key == "hydration":
+        morning_title = "Get fluids in early"
+        morning_detail = (
+            "Get fluids in early so energy, hunger, and training decisions are not driven by dehydration."
+        )
+    elif nutrition_focus_key in {"protein_intake", "fruit_veg", "processed_food"}:
+        morning_title = "Set nutrition up early"
+        morning_detail = (
+            f"Plan the first proper meal early so {nutrition_focus_label} does not drift once the day speeds up."
+        )
+    elif nutrition_state == "weak" or recovery_state == "weak":
         morning_detail = (
             "Start with food, fluids, and a calmer pace so you are not trying to rescue energy later on."
         )
@@ -575,7 +618,22 @@ def _build_key_moments(
         )
 
     midday_title = "Keep the middle steady"
-    if nutrition_state == "weak":
+    if fasting_active:
+        midday_title = "Keep the window deliberate"
+        if nutrition_state == "weak":
+            midday_detail = (
+                f"Stay deliberate with your {fasting_mode} window, keep fluids up, and plan the first meal instead of improvising it."
+            )
+        else:
+            midday_detail = (
+                f"Use the middle of the day to stay on top of fluids and decide exactly how your {fasting_mode} window will end."
+            )
+    elif nutrition_focus_key == "hydration":
+        midday_title = "Top fluids up again"
+        midday_detail = (
+            "Top fluids up again around midday so the afternoon does not become a catch-up job."
+        )
+    elif nutrition_state == "weak":
         midday_detail = (
             f"Do not let {nutrition_focus_label} drift at lunch, and top fluids up before the afternoon gets busy."
         )
@@ -591,14 +649,24 @@ def _build_key_moments(
     exercise_state = str(readiness.get("exercise_state") or "steady").strip().lower()
     if exercise_state == "push":
         afternoon_title = "Train with intent"
-        afternoon_detail = (
-            f"Use the afternoon for your planned session and keep {training_focus_label} purposeful rather than adding junk volume."
-        )
+        if fasting_active:
+            afternoon_detail = (
+                f"Use the planned session, but line it up with your {fasting_mode} plan so you are not forcing hard work under-fuelled."
+            )
+        else:
+            afternoon_detail = (
+                f"Use the afternoon for your planned session and keep {training_focus_label} purposeful rather than adding junk volume."
+            )
     elif exercise_state == "steady":
         afternoon_title = "Keep training controlled"
-        afternoon_detail = (
-            f"Train if planned, but keep the effort measured and let {training_focus_label} stay clean rather than forced."
-        )
+        if fasting_active:
+            afternoon_detail = (
+                f"If you train today, keep it measured and make the timing fit your {fasting_mode} window rather than winging it."
+            )
+        else:
+            afternoon_detail = (
+                f"Train if planned, but keep the effort measured and let {training_focus_label} stay clean rather than forced."
+            )
     elif exercise_state == "light":
         afternoon_title = "Keep movement supportive"
         afternoon_detail = (
@@ -611,7 +679,35 @@ def _build_key_moments(
         )
 
     evening_title = "Close the day cleanly"
-    if recovery_state == "weak":
+    if alcohol_active:
+        evening_title = "Protect the evening"
+        alcohol_text = (
+            "keep it alcohol-free"
+            if alcohol_goal_units <= 0
+            else f"keep alcohol within your {alcohol_goal_units}-unit weekly limit"
+        )
+        if fasting_active:
+            evening_detail = (
+                f"Close the day cleanly, {alcohol_text}, and finish eating deliberately so tomorrow's fasting window starts well."
+            )
+        elif recovery_state == "weak":
+            evening_detail = (
+                f"Keep the evening very simple, {alcohol_text}, and protect sleep so recovery is not dragged back further."
+            )
+        else:
+            evening_detail = (
+                f"Close things down cleanly, {alcohol_text}, and protect sleep so recovery keeps moving the right way."
+            )
+    elif fasting_active:
+        if recovery_state == "weak":
+            evening_detail = (
+                f"Keep the evening simple, finish eating deliberately, and let tomorrow's {fasting_mode} window start cleanly."
+            )
+        else:
+            evening_detail = (
+                f"Finish the last meal deliberately and close the evening well so tomorrow's {fasting_mode} window starts cleanly."
+            )
+    elif recovery_state == "weak":
         evening_detail = (
             "Keep the evening very simple, protect sleep, and avoid anything that makes tomorrow harder."
         )
@@ -659,6 +755,13 @@ def _build_day_brief(
     nutrition_snapshot = snapshots.get("nutrition") or {"state": "unknown", "label": "Nutrition"}
     recovery_snapshot = snapshots.get("recovery") or {"state": "unknown", "label": "Recovery"}
     resilience_snapshot = snapshots.get("resilience") or {"state": "unknown", "label": "Resilience"}
+    fasting_mode, alcohol_tracking, fasting_goal_days, alcohol_goal_units = _wellbeing_weekly_targets(int(user_id))
+    wellbeing_targets = {
+        "fasting_mode": fasting_mode,
+        "fasting_goal_days": fasting_goal_days,
+        "alcohol_tracking": alcohol_tracking,
+        "alcohol_goal_units": alcohol_goal_units,
+    }
     readiness = _exercise_readiness(
         nutrition_snapshot=nutrition_snapshot,
         recovery_snapshot=recovery_snapshot,
@@ -688,8 +791,10 @@ def _build_day_brief(
     else:
         today_aim = "Keep the day simple, recover properly, and take the pressure off until the basics feel steadier."
     key_moments = _build_key_moments(
+        user_id=user_id,
         readiness=readiness,
         snapshots=snapshots,
+        wellbeing_targets=wellbeing_targets,
     )
     return {
         "two_day_read": {
@@ -698,6 +803,7 @@ def _build_day_brief(
             "today_priority": "The main job today is to match training, food, recovery, and headspace rather than let one area drag the rest off line.",
         },
         "readiness": readiness,
+        "wellbeing_targets": wellbeing_targets,
         "key_moments": key_moments,
         "today_aim": today_aim,
         "plan_title": _day_plan_title(readiness),
