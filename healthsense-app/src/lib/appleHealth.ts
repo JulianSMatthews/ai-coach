@@ -20,6 +20,7 @@ export type AppleHealthRestingHeartRateSample = {
 type AppleHealthPlugin = {
   authorizationStatus(): Promise<AppleHealthAuthorizationResponse>;
   requestAuthorization(): Promise<AppleHealthAuthorizationResponse>;
+  openSettings(): Promise<{ ok?: boolean }>;
   getRecentRestingHeartRate(options?: {
     days?: number;
   }): Promise<{
@@ -52,6 +53,16 @@ export async function requestAppleHealthAuthorization(): Promise<AppleHealthAuth
     };
   }
   return AppleHealth.requestAuthorization();
+}
+
+export async function openAppleHealthSettings(): Promise<boolean> {
+  if (!canUseAppleHealth()) return false;
+  try {
+    const result = await AppleHealth.openSettings();
+    return Boolean(result?.ok);
+  } catch {
+    return false;
+  }
 }
 
 export async function syncAppleHealthRestingHeartRate(

@@ -13,6 +13,7 @@ import type {
 import {
   canUseAppleHealth,
   getAppleHealthAuthorizationStatus,
+  openAppleHealthSettings,
   requestAppleHealthAuthorization,
   syncAppleHealthRestingHeartRate,
   type AppleHealthAuthorizationState,
@@ -340,6 +341,7 @@ export default function LatestAssessmentPanel({
   const [restingHeartRateLoading, setRestingHeartRateLoading] = useState(false);
   const [restingHeartRateEnabling, setRestingHeartRateEnabling] = useState(false);
   const [appleHealthAuthStatus, setAppleHealthAuthStatus] = useState<AppleHealthAuthorizationState>("unsupported");
+  const appleHealthAutoRequestRef = useRef(false);
   const summaryPanelRef = useRef<HTMLElement | null>(null);
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
@@ -491,6 +493,21 @@ export default function LatestAssessmentPanel({
     },
     [appleHealthSupported, loadRestingHeartRate, userId],
   );
+
+  const handleRestingHeartRatePress = useCallback(async () => {
+    if (!appleHealthSupported || restingHeartRateLoading || restingHeartRateEnabling) return;
+    if (appleHealthAuthStatus === "denied") {
+      await openAppleHealthSettings();
+      return;
+    }
+    await syncNativeRestingHeartRate(appleHealthAuthStatus !== "authorized");
+  }, [
+    appleHealthAuthStatus,
+    appleHealthSupported,
+    restingHeartRateEnabling,
+    restingHeartRateLoading,
+    syncNativeRestingHeartRate,
+  ]);
 
   const toggleDisplayTheme = useCallback(async () => {
     if (togglingDisplay) return;
@@ -661,6 +678,11 @@ export default function LatestAssessmentPanel({
         if (cancelled) return;
         const status = auth.status || "unsupported";
         setAppleHealthAuthStatus(status);
+        if (auth.available && status === "not_determined" && !appleHealthAutoRequestRef.current) {
+          appleHealthAutoRequestRef.current = true;
+          await syncNativeRestingHeartRate(true);
+          return;
+        }
         if (auth.available && status === "authorized") {
           await syncNativeRestingHeartRate(false);
         }
@@ -917,7 +939,7 @@ export default function LatestAssessmentPanel({
                 appleHealthSupported ? (
                   <button
                     type="button"
-                    onClick={() => void syncNativeRestingHeartRate(appleHealthAuthStatus !== "authorized")}
+                    onClick={() => void handleRestingHeartRatePress()}
                     disabled={restingHeartRateLoading || restingHeartRateEnabling}
                     className={`min-w-[7.5rem] rounded-[22px] border px-3 py-2 text-left shadow-[0_16px_30px_-24px_rgba(30,27,22,0.45)] transition disabled:cursor-not-allowed disabled:opacity-70 ${restingHeartRateToneClassName}`}
                   >

@@ -9,6 +9,7 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "authorizationStatus", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "requestAuthorization", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "openSettings", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getRecentRestingHeartRate", returnType: CAPPluginReturnPromise),
     ]
 
@@ -31,37 +32,50 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
         return formatter.string(from: value)
     }
 
-    private func authorizationState(for quantityType: HKQuantityType?) -> String {
+    private func resolveAuthorizationState(for quantityType: HKQuantityType?, completion: @escaping (String) -> Void) {
         guard HKHealthStore.isHealthDataAvailable(), let quantityType else {
-            return "unsupported"
+            completion("unsupported")
+            return
         }
-        switch healthStore.authorizationStatus(for: quantityType) {
-        case .notDetermined:
-            return "not_determined"
-        case .sharingDenied:
-            return "denied"
-        case .sharingAuthorized:
-            return "authorized"
-        @unknown default:
-            return "unsupported"
+        let readTypes: Set<HKObjectType> = [quantityType]
+        healthStore.getRequestStatusForAuthorization(toShare: [], read: readTypes) { status, error in
+            if error != nil {
+                completion("unsupported")
+                return
+            }
+            switch status {
+            case .shouldRequest:
+                completion("not_determined")
+            case .unnecessary:
+                // For read-only permissions, HealthKit does not expose a reliable
+                // granted-vs-denied read status here. Treat prior requests as ready
+                // to query and let the query result distinguish value vs no data.
+                completion("authorized")
+            case .unknown:
+                completion("unsupported")
+            @unknown default:
+                completion("unsupported")
+            }
         }
     }
 
-    private func authorizationPayload() -> JSObject {
+    private func authorizationPayload(status: String) -> JSObject {
         let available = HKHealthStore.isHealthDataAvailable() && restingHeartRateType != nil
         return [
             "available": available,
-            "status": authorizationState(for: restingHeartRateType),
+            "status": status,
         ]
     }
 
     @objc func authorizationStatus(_ call: CAPPluginCall) {
-        call.resolve(authorizationPayload())
+        resolveAuthorizationState(for: restingHeartRateType) { status in
+            call.resolve(self.authorizationPayload(status: status))
+        }
     }
 
     @objc func requestAuthorization(_ call: CAPPluginCall) {
         guard HKHealthStore.isHealthDataAvailable(), let quantityType = restingHeartRateType else {
-            call.resolve(authorizationPayload())
+            call.resolve(authorizationPayload(status: "unsupported"))
             return
         }
         let readTypes: Set<HKObjectType> = [quantityType]
@@ -70,7 +84,23 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 call.reject("Apple Health authorization failed: \(error.localizedDescription)")
                 return
             }
-            call.resolve(self.authorizationPayload())
+            self.resolveAuthorizationState(for: quantityType) { status in
+                call.resolve(self.authorizationPayload(status: status))
+            }
+        }
+    }
+
+    @objc func openSettings(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let url = URL(string: UIApplication.openSettingsURLString) else {
+                call.reject("Could not resolve the iOS Settings URL.")
+                return
+            }
+            UIApplication.shared.open(url, options: [:]) { success in
+                call.resolve([
+                    "ok": success
+                ])
+            }
         }
     }
 
@@ -80,10 +110,6 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 "samples": [],
                 "latestMetricDate": NSNull(),
             ])
-            return
-        }
-        guard authorizationState(for: quantityType) == "authorized" else {
-            call.reject("Apple Health resting heart rate access is not authorised.")
             return
         }
 

@@ -2,7 +2,12 @@
 
 import { useSearchParams } from "next/navigation";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CoachInsightResponse, DailyHabitPlanResponse, PillarTrackerSummaryResponse } from "@/lib/api";
+import type {
+  CoachInsightResponse,
+  DailyHabitPlanItem,
+  DailyHabitPlanResponse,
+  PillarTrackerSummaryResponse,
+} from "@/lib/api";
 import { getPillarPalette } from "@/lib/pillars";
 import { ProgressBar, ScoreRing } from "@/components/ui";
 import AssessmentPromptCard, {
@@ -100,6 +105,7 @@ const HOME_SURFACE_SEQUENCE: HomeSurface[] = ["tracking", "habits", "insight", "
 const TRACKING_STEP_PILLARS = ["Nutrition", "Training", "Resilience", "Recovery"];
 const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
 type MorningSequenceState = "idle" | "in_progress" | "completed";
+const DAY_PLAN_MOMENT_ORDER = ["morning", "midday", "afternoon", "evening"] as const;
 
 const HOME_SURFACE_COPY: Record<
   HomeSurface,
@@ -192,6 +198,66 @@ function parseApiError(text: string, fallback: string) {
     }
     return text;
   }
+}
+
+function normalizeDayPlanMomentKey(value: string | null | undefined): string {
+  const token = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replaceAll("-", "_")
+    .replaceAll(" ", "_");
+  if (token === "pre_training" || token === "pretraining" || token === "training") {
+    return "afternoon";
+  }
+  return token;
+}
+
+function mergeDailyPlanItems(
+  primaryItems: DailyHabitPlanItem[],
+  fallbackItems: DailyHabitPlanItem[],
+): DailyHabitPlanItem[] {
+  const keepFilled = (items: DailyHabitPlanItem[]) =>
+    items.filter((item) => {
+      const title = String(item?.title || "").trim();
+      const detail = String(item?.detail || "").trim();
+      return Boolean(title || detail);
+    });
+
+  const primary = keepFilled(primaryItems);
+  const fallback = keepFilled(fallbackItems);
+
+  const primaryByMoment = new Map<string, DailyHabitPlanItem>();
+  const fallbackByMoment = new Map<string, DailyHabitPlanItem>();
+
+  for (const item of primary) {
+    const key = normalizeDayPlanMomentKey(item?.moment_key || item?.moment_label);
+    if (key && !primaryByMoment.has(key)) primaryByMoment.set(key, item);
+  }
+  for (const item of fallback) {
+    const key = normalizeDayPlanMomentKey(item?.moment_key || item?.moment_label);
+    if (key && !fallbackByMoment.has(key)) fallbackByMoment.set(key, item);
+  }
+
+  const merged: DailyHabitPlanItem[] = [];
+  const seenIds = new Set<string>();
+
+  const pushItem = (item: DailyHabitPlanItem | undefined) => {
+    if (!item) return;
+    const itemId = String(item.id || "").trim();
+    if (itemId && seenIds.has(itemId)) return;
+    if (itemId) seenIds.add(itemId);
+    merged.push(item);
+  };
+
+  for (const momentKey of DAY_PLAN_MOMENT_ORDER) {
+    pushItem(primaryByMoment.get(momentKey) || fallbackByMoment.get(momentKey));
+  }
+
+  for (const item of [...primary, ...fallback]) {
+    pushItem(item);
+  }
+
+  return merged;
 }
 
 function isDailyCheckInComplete(summary?: PillarTrackerSummaryResponse | null): boolean {
@@ -750,14 +816,7 @@ export default function AssessmentChatBox({
   const dailyHabits = useMemo(() => {
     const selected = Array.isArray(dailyHabitPlan?.habits) ? dailyHabitPlan.habits : [];
     const fallback = Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : [];
-    const source = selected.length ? selected : fallback;
-    return source
-      .filter((item) => {
-        const title = String(item?.title || "").trim();
-        const detail = String(item?.detail || "").trim();
-        return Boolean(title || detail);
-      })
-      .slice(0, 3);
+    return mergeDailyPlanItems(selected, fallback);
   }, [dailyHabitPlan?.habits, dailyHabitPlan?.options]);
   const currentHomeSurfaceIndex = HOME_SURFACE_SEQUENCE.indexOf(homeSurface);
   const homeSurfaceMeta = HOME_SURFACE_COPY[homeSurface];
