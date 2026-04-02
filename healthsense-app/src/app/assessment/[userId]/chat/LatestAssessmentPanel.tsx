@@ -92,6 +92,53 @@ function formatStepCount(value?: number | null): string {
   return new Intl.NumberFormat("en-GB").format(Math.round(resolved));
 }
 
+function formatIsoLocalDay(value: Date): string {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function resolveBiometricEndDay(...values: Array<string | null | undefined>): string {
+  let latest: Date | null = null;
+  values.forEach((value) => {
+    const token = String(value || "").trim();
+    if (!token) return;
+    const parsed = new Date(`${token}T12:00:00`);
+    if (Number.isNaN(parsed.getTime())) return;
+    if (!latest || parsed.getTime() > latest.getTime()) {
+      latest = parsed;
+    }
+  });
+  return latest ? formatIsoLocalDay(latest) : formatIsoLocalDay(new Date());
+}
+
+function buildBiometricWeek<T extends { metric_date?: string | null }>(
+  history: T[],
+  endDayToken?: string | null,
+): Array<{ metric_date: string; item: T | null }> {
+  const byDay = new Map<string, T>();
+  history.forEach((item) => {
+    const token = String(item?.metric_date || "").trim();
+    if (!token) return;
+    byDay.set(token, item);
+  });
+  const resolvedEndDay = resolveBiometricEndDay(endDayToken);
+  const endDate = new Date(`${resolvedEndDay}T12:00:00`);
+  if (Number.isNaN(endDate.getTime())) return [];
+  const items: Array<{ metric_date: string; item: T | null }> = [];
+  for (let offset = 6; offset >= 0; offset -= 1) {
+    const current = new Date(endDate);
+    current.setDate(endDate.getDate() - offset);
+    const metricDate = formatIsoLocalDay(current);
+    items.push({
+      metric_date: metricDate,
+      item: byDay.get(metricDate) || null,
+    });
+  }
+  return items;
+}
+
 function resolveRestingHeartRateEmptyLabel(
   status: AppleHealthAuthorizationState,
   loading: boolean,
@@ -487,7 +534,8 @@ export default function LatestAssessmentPanel({
   );
   const appleHealthSupported = canUseAppleHealth();
   const restingHeartRateValue = resolveRestingHeartRateValue(restingHeartRate?.resting_hr_bpm);
-  const stepsTodayValue = formatStepCount(restingHeartRate?.steps_today);
+  const stepsValue = formatStepCount(restingHeartRate?.steps_today);
+  const latestStepsMetricDate = String(restingHeartRate?.steps_metric_date || "").trim();
   const restingHeartRateHistory = useMemo(
     () =>
       Array.isArray(restingHeartRate?.history)
@@ -498,6 +546,26 @@ export default function LatestAssessmentPanel({
           )
         : [],
     [restingHeartRate?.history],
+  );
+  const stepsHistory = useMemo(
+    () =>
+      Array.isArray(restingHeartRate?.steps_history)
+        ? restingHeartRate.steps_history.filter(
+            (item) =>
+              Boolean(String(item?.metric_date || "").trim()) &&
+              Number.isFinite(Number(item?.steps)) &&
+              Number(item?.steps) >= 0,
+          )
+        : [],
+    [restingHeartRate?.steps_history],
+  );
+  const restingHeartRateWeek = useMemo(
+    () => buildBiometricWeek(restingHeartRateHistory, restingHeartRate?.metric_date),
+    [restingHeartRate?.metric_date, restingHeartRateHistory],
+  );
+  const stepsWeek = useMemo(
+    () => buildBiometricWeek(stepsHistory, latestStepsMetricDate),
+    [latestStepsMetricDate, stepsHistory],
   );
   const restingHeartRateChipVisible = Boolean(restingHeartRate?.available) || appleHealthSupported;
   const restingHeartRateBoxToneClassName = resolveRestingHeartRateBoxTone(displayTheme);
@@ -1176,47 +1244,46 @@ export default function LatestAssessmentPanel({
 
                   <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                      Steps today
+                      Steps
                     </p>
                     <div className="mt-3 flex items-center gap-3">
                       <span className="text-3xl font-semibold leading-none text-[#1e1b16]">
-                        {stepsTodayValue}
+                        {stepsValue}
                       </span>
                       <StepsStatusIcon />
                     </div>
                     <p className="mt-2 text-sm text-[#6b6257]">
-                      Daily step count from Apple Health for today.
+                      {latestStepsMetricDate
+                        ? `Latest reading from ${formatBiometricDayLabel(latestStepsMetricDate)} ${formatBiometricDayNumber(latestStepsMetricDate)}`
+                        : "Latest daily step count from Apple Health."}
                     </p>
                   </div>
                 </div>
 
                 <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-[#1e1b16]">Last 7 days</p>
+                    <p className="text-sm font-semibold text-[#1e1b16]">Resting heart rate</p>
                     <p className="text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
-                      {restingHeartRateHistory.length} day{restingHeartRateHistory.length === 1 ? "" : "s"}
+                      Last 7 days
                     </p>
                   </div>
                   {restingHeartRateHistory.length ? (
-                    <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-7">
-                      {restingHeartRateHistory.map((item) => {
-                        const metricDate = String(item?.metric_date || "").trim();
+                    <div className="mt-4 grid grid-cols-7 gap-2">
+                      {restingHeartRateWeek.map(({ metric_date: metricDate, item }) => {
                         const value = resolveRestingHeartRateValue(item?.resting_hr_bpm);
                         const isLatest = metricDate && metricDate === String(restingHeartRate?.metric_date || "").trim();
                         return (
                           <div
-                            key={metricDate || String(item?.resting_hr_bpm || "")}
-                            className={`rounded-[20px] border px-3 py-3 text-center ${
+                            key={`resting-hr-${metricDate}`}
+                            className={`rounded-xl border px-2 py-2 text-center text-[11px] ${
                               isLatest
                                 ? "border-[var(--accent)] bg-[#fff4ea]"
                                 : "border-[#efe7db] bg-[#fffaf3]"
                             }`}
                           >
-                            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">
-                              {formatBiometricDayLabel(metricDate)}
-                            </p>
-                            <p className="mt-1 text-xs text-[#8c7f70]">{formatBiometricDayNumber(metricDate)}</p>
-                            <p className="mt-3 text-xl font-semibold leading-none text-[#1e1b16]">
+                            <p className="font-semibold text-[#6b6257]">{formatBiometricDayLabel(metricDate)}</p>
+                            <p className="mt-1 text-[#8c7f70]">{formatBiometricDayNumber(metricDate)}</p>
+                            <p className="mt-3 text-sm font-semibold leading-none text-[#1e1b16]">
                               {value || "—"}
                             </p>
                           </div>
@@ -1226,6 +1293,43 @@ export default function LatestAssessmentPanel({
                   ) : (
                     <p className="mt-3 text-sm text-[#6b6257]">
                       Daily history will appear here once recent biometrics have been synced.
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-[#1e1b16]">Steps</p>
+                    <p className="text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
+                      Last 7 days
+                    </p>
+                  </div>
+                  {stepsHistory.length ? (
+                    <div className="mt-4 grid grid-cols-7 gap-2">
+                      {stepsWeek.map(({ metric_date: metricDate, item }) => {
+                        const value = formatStepCount(item?.steps);
+                        const isLatest = metricDate && metricDate === latestStepsMetricDate;
+                        return (
+                          <div
+                            key={`steps-${metricDate}`}
+                            className={`rounded-xl border px-2 py-2 text-center text-[11px] ${
+                              isLatest
+                                ? "border-[var(--accent)] bg-[#fff4ea]"
+                                : "border-[#efe7db] bg-[#fffaf3]"
+                            }`}
+                          >
+                            <p className="font-semibold text-[#6b6257]">{formatBiometricDayLabel(metricDate)}</p>
+                            <p className="mt-1 text-[#8c7f70]">{formatBiometricDayNumber(metricDate)}</p>
+                            <p className="mt-3 truncate text-sm font-semibold leading-none text-[#1e1b16]">
+                              {value}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#6b6257]">
+                      Daily step history will appear here once recent biometrics have been synced.
                     </p>
                   )}
                 </div>

@@ -1047,6 +1047,18 @@ def get_apple_health_resting_hr_summary(
     connected = bool(
         connection and str(getattr(connection, "status", "") or "").strip().lower() == "connected"
     )
+    step_rows = (
+        session.query(WearableDailyMetric)
+        .filter(
+            WearableDailyMetric.user_id == int(user_id),
+            WearableDailyMetric.provider == APPLE_HEALTH_PROVIDER,
+            WearableDailyMetric.steps.isnot(None),
+        )
+        .order_by(WearableDailyMetric.metric_date.desc())
+        .limit(7)
+        .all()
+    )
+    latest_step_row = step_rows[0] if step_rows else None
     today_row = (
         session.query(WearableDailyMetric)
         .filter(
@@ -1060,6 +1072,15 @@ def get_apple_health_resting_hr_summary(
     steps_today = (
         int(today_row.steps)
         if today_row and getattr(today_row, "steps", None) is not None
+        else int(latest_step_row.steps)
+        if latest_step_row and getattr(latest_step_row, "steps", None) is not None
+        else None
+    )
+    steps_metric_date = (
+        today_row.metric_date.isoformat()
+        if today_row and getattr(today_row, "steps", None) is not None and getattr(today_row, "metric_date", None)
+        else latest_step_row.metric_date.isoformat()
+        if latest_step_row and getattr(latest_step_row, "metric_date", None)
         else None
     )
     history = [
@@ -1074,6 +1095,14 @@ def get_apple_health_resting_hr_summary(
         for row in reversed(rows[:7])
         if getattr(row, "metric_date", None) is not None and getattr(row, "resting_hr_bpm", None) is not None
     ]
+    steps_history = [
+        {
+            "metric_date": row.metric_date.isoformat() if getattr(row, "metric_date", None) else None,
+            "steps": int(row.steps) if getattr(row, "steps", None) is not None else None,
+        }
+        for row in reversed(step_rows[:7])
+        if getattr(row, "metric_date", None) is not None and getattr(row, "steps", None) is not None
+    ]
     return {
         "provider": APPLE_HEALTH_PROVIDER,
         "connected": connected,
@@ -1086,7 +1115,9 @@ def get_apple_health_resting_hr_summary(
         "synced_at": latest_row.synced_at.isoformat() if latest_row and latest_row.synced_at else None,
         "available": latest_row is not None,
         "steps_today": steps_today,
+        "steps_metric_date": steps_metric_date,
         "history": history,
+        "steps_history": steps_history,
     }
 
 
