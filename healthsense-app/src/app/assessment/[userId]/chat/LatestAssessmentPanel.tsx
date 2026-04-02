@@ -39,29 +39,23 @@ const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
 const HEALTHSENSE_ORANGE = "#c54817";
 const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
 
-function resolveRestingHeartRateTone(
+function resolveRestingHeartRateBoxTone(theme: DisplayTheme): string {
+  return theme === "dark"
+    ? "border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)]"
+    : "border-[#e7e1d6] bg-white text-[#5d5348]";
+}
+
+function resolveRestingHeartRateMetricTone(
   theme: DisplayTheme,
   status?: string | null,
-  hasValue = false,
 ): string {
-  if (!hasValue) {
-    return theme === "dark"
-      ? "border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)]"
-      : "border-[#e7e1d6] bg-white text-[#5d5348]";
-  }
   if (status === "optimum") {
-    return theme === "dark"
-      ? "border-[#6d54af] bg-[#2c2247] text-[#ebdcff]"
-      : "border-[#d7c8ff] bg-[#f4eeff] text-[#5f42aa]";
+    return theme === "dark" ? "text-[#c7b0ff]" : "text-[#6b4cc2]";
   }
   if (status === "elevated") {
-    return theme === "dark"
-      ? "border-[#8d5a28] bg-[#3d2818] text-[#ffd3ad]"
-      : "border-[#f0caa8] bg-[#fff3e7] text-[#9a4d18]";
+    return theme === "dark" ? "text-[#ffd3ad]" : "text-[#b55d1c]";
   }
-  return theme === "dark"
-    ? "border-[#53763e] bg-[#1d3120] text-[#d9f0c5]"
-    : "border-[#cfe5b8] bg-[#f2fae8] text-[#2d6226]";
+  return theme === "dark" ? "text-[#d9f0c5]" : "text-[#3f7a2a]";
 }
 
 function resolveRestingHeartRateValue(value?: number | null): string | null {
@@ -90,6 +84,12 @@ function formatBiometricDayNumber(value?: string | null): string {
   const parsed = new Date(`${token}T12:00:00`);
   if (Number.isNaN(parsed.getTime())) return token;
   return parsed.toLocaleDateString("en-GB", { day: "numeric" });
+}
+
+function formatStepCount(value?: number | null): string {
+  const resolved = Number(value);
+  if (!Number.isFinite(resolved) || resolved < 0) return "—";
+  return new Intl.NumberFormat("en-GB").format(Math.round(resolved));
 }
 
 function resolveRestingHeartRateEmptyLabel(
@@ -332,7 +332,7 @@ function HeartStatusIcon() {
   return (
     <svg
       viewBox="0 0 24 24"
-      className="h-4 w-4"
+      className="h-5 w-5 text-[var(--accent)]"
       aria-hidden="true"
       fill="none"
       stroke="currentColor"
@@ -341,6 +341,26 @@ function HeartStatusIcon() {
       strokeLinejoin="round"
     >
       <path d="M12 20s-6.5-4.4-8.6-8C1.5 8.7 3.1 5 6.6 5c2 0 3.2 1 4.1 2.3C11.6 6 12.8 5 14.8 5c3.5 0 5.1 3.7 3.2 7-2.1 3.6-8 8-8 8Z" />
+    </svg>
+  );
+}
+
+function StepsStatusIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-4 w-4"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M8.5 6.5c0 1.7-1 3-2.3 3S4 8.2 4 6.5 5 3.5 6.2 3.5s2.3 1.3 2.3 3Z" />
+      <path d="M10 10.5c1 .8 1.7 2 1.7 3.4V18" />
+      <path d="M15.5 9c0 2-1.1 3.5-2.6 3.5s-2.6-1.5-2.6-3.5 1.1-3.5 2.6-3.5S15.5 7 15.5 9Z" />
+      <path d="M18.5 13c1 .8 1.5 1.9 1.5 3.2V20" />
     </svg>
   );
 }
@@ -467,6 +487,7 @@ export default function LatestAssessmentPanel({
   );
   const appleHealthSupported = canUseAppleHealth();
   const restingHeartRateValue = resolveRestingHeartRateValue(restingHeartRate?.resting_hr_bpm);
+  const stepsTodayValue = formatStepCount(restingHeartRate?.steps_today);
   const restingHeartRateHistory = useMemo(
     () =>
       Array.isArray(restingHeartRate?.history)
@@ -479,10 +500,10 @@ export default function LatestAssessmentPanel({
     [restingHeartRate?.history],
   );
   const restingHeartRateChipVisible = Boolean(restingHeartRate?.available) || appleHealthSupported;
-  const restingHeartRateToneClassName = resolveRestingHeartRateTone(
+  const restingHeartRateBoxToneClassName = resolveRestingHeartRateBoxTone(displayTheme);
+  const restingHeartRateMetricToneClassName = resolveRestingHeartRateMetricTone(
     displayTheme,
     restingHeartRate?.trend_status,
-    Boolean(restingHeartRateValue),
   );
 
   const refreshSummary = useCallback(async () => {
@@ -1000,16 +1021,18 @@ export default function LatestAssessmentPanel({
                     type="button"
                     onClick={() => void handleRestingHeartRatePress()}
                     disabled={Boolean(!restingHeartRateValue && (restingHeartRateLoading || restingHeartRateEnabling))}
-                    className={`min-w-[6.75rem] rounded-[22px] border px-3 py-2 text-left shadow-[0_16px_30px_-24px_rgba(30,27,22,0.45)] transition disabled:cursor-not-allowed disabled:opacity-70 ${restingHeartRateToneClassName}`}
+                    className={`min-w-[6.75rem] rounded-[22px] border px-3 py-2 text-left shadow-[0_16px_30px_-24px_rgba(30,27,22,0.45)] transition disabled:cursor-not-allowed disabled:opacity-70 ${restingHeartRateBoxToneClassName}`}
                   >
                     <p className="text-[0.62rem] font-semibold uppercase tracking-[0.18em] opacity-80">
                       Resting HR
                     </p>
                     {restingHeartRateValue ? (
                       <div className="mt-1 flex items-center gap-2">
-                        <span className="text-xl font-semibold leading-none">{restingHeartRateValue}</span>
                         <HeartStatusIcon />
-                        <span className="text-[0.78rem] font-semibold opacity-80">
+                        <span className={`text-xl font-semibold leading-none ${restingHeartRateMetricToneClassName}`}>
+                          {restingHeartRateValue}
+                        </span>
+                        <span className={`text-[0.78rem] font-semibold ${restingHeartRateMetricToneClassName}`}>
                           {resolveRestingHeartRateTrendLabel(restingHeartRate?.trend_label)}
                         </span>
                       </div>
@@ -1122,32 +1145,49 @@ export default function LatestAssessmentPanel({
 
             <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
               <div className="space-y-4">
-                <div className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                    Resting heart rate
-                  </p>
-                  {restingHeartRateValue ? (
-                    <>
-                      <div className="mt-3 flex items-center gap-3">
-                        <span className="text-3xl font-semibold leading-none text-[#1e1b16]">
-                          {restingHeartRateValue}
-                        </span>
-                        <HeartStatusIcon />
-                        <span className="text-sm font-semibold text-[#6b6257]">
-                          {resolveRestingHeartRateTrendLabel(restingHeartRate?.trend_label)}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-sm text-[#6b6257]">
-                        {restingHeartRate?.metric_date
-                          ? `Latest reading from ${formatBiometricDayLabel(restingHeartRate.metric_date)} ${formatBiometricDayNumber(restingHeartRate.metric_date)}`
-                          : "Latest synced reading"}
-                      </p>
-                    </>
-                  ) : (
-                    <p className="mt-3 text-sm text-[#6b6257]">
-                      No resting heart rate data is available yet.
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className={`rounded-[24px] border px-4 py-4 ${restingHeartRateBoxToneClassName}`}>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-80">
+                      Resting heart rate
                     </p>
-                  )}
+                    {restingHeartRateValue ? (
+                      <>
+                        <div className="mt-3 flex items-center gap-3">
+                          <HeartStatusIcon />
+                          <span className={`text-3xl font-semibold leading-none ${restingHeartRateMetricToneClassName}`}>
+                            {restingHeartRateValue}
+                          </span>
+                          <span className={`text-sm font-semibold ${restingHeartRateMetricToneClassName}`}>
+                            {resolveRestingHeartRateTrendLabel(restingHeartRate?.trend_label)}
+                          </span>
+                        </div>
+                        <p className="mt-2 text-sm opacity-80">
+                          {restingHeartRate?.metric_date
+                            ? `Latest reading from ${formatBiometricDayLabel(restingHeartRate.metric_date)} ${formatBiometricDayNumber(restingHeartRate.metric_date)}`
+                            : "Latest synced reading"}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="mt-3 text-sm opacity-80">
+                        No resting heart rate data is available yet.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
+                      Steps today
+                    </p>
+                    <div className="mt-3 flex items-center gap-3">
+                      <span className="text-3xl font-semibold leading-none text-[#1e1b16]">
+                        {stepsTodayValue}
+                      </span>
+                      <StepsStatusIcon />
+                    </div>
+                    <p className="mt-2 text-sm text-[#6b6257]">
+                      Daily step count from Apple Health for today.
+                    </p>
+                  </div>
                 </div>
 
                 <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
