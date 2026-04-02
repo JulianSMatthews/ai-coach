@@ -1091,6 +1091,26 @@ def get_apple_health_resting_hr_summary(
                 if getattr(row, "resting_hr_bpm", None) is not None
                 else None
             ),
+            "trend_status": (
+                _apple_health_resting_hr_status(
+                    round(float(row.resting_hr_bpm), 1)
+                    if getattr(row, "resting_hr_bpm", None) is not None
+                    else None,
+                    baseline_value,
+                )[0]
+                if getattr(row, "resting_hr_bpm", None) is not None
+                else None
+            ),
+            "trend_label": (
+                _apple_health_resting_hr_status(
+                    round(float(row.resting_hr_bpm), 1)
+                    if getattr(row, "resting_hr_bpm", None) is not None
+                    else None,
+                    baseline_value,
+                )[1]
+                if getattr(row, "resting_hr_bpm", None) is not None
+                else None
+            ),
         }
         for row in reversed(rows[:7])
         if getattr(row, "metric_date", None) is not None and getattr(row, "resting_hr_bpm", None) is not None

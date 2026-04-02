@@ -67,28 +67,6 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
             }
     }
 
-    private func aggregateStepSamples(_ quantitySamples: [HKQuantitySample]) -> [JSObject] {
-        var totalsByDay: [String: Double] = [:]
-        for sample in quantitySamples {
-            let metricDate = isoDayString(sample.endDate)
-            let steps = sample.quantity.doubleValue(for: stepCountUnit())
-            guard steps >= 0 else { continue }
-            totalsByDay[metricDate, default: 0] += steps
-        }
-
-        return totalsByDay.keys
-            .sorted()
-            .compactMap { metricDate in
-                guard let total = totalsByDay[metricDate] else { return nil }
-                let steps = Int(round(total))
-                guard steps >= 0 else { return nil }
-                return [
-                    "metricDate": metricDate,
-                    "steps": steps,
-                ]
-            }
-    }
-
     private func mergeBiometricSamples(
         restingHeartRateSamples: [JSObject],
         stepSamples: [JSObject]
@@ -140,22 +118,37 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
     private func fetchStepSamples(
         quantityType: HKQuantityType,
         predicate: NSPredicate?,
-        sortDescriptors: [NSSortDescriptor],
-        limit: Int,
+        startDate: Date,
+        endDate: Date,
         completion: @escaping ([JSObject]?, Error?) -> Void
     ) {
-        let query = HKSampleQuery(
-            sampleType: quantityType,
-            predicate: predicate,
-            limit: limit,
-            sortDescriptors: sortDescriptors
-        ) { _, results, error in
+        let interval = DateComponents(day: 1)
+        let anchorDate = Calendar.autoupdatingCurrent.startOfDay(for: endDate)
+        let query = HKStatisticsCollectionQuery(
+            quantityType: quantityType,
+            quantitySamplePredicate: predicate,
+            options: [.cumulativeSum],
+            anchorDate: anchorDate,
+            intervalComponents: interval
+        )
+        query.initialResultsHandler = { _, results, error in
             if let error {
                 completion(nil, error)
                 return
             }
-            let quantitySamples = (results as? [HKQuantitySample]) ?? []
-            completion(self.aggregateStepSamples(quantitySamples), nil)
+            var samples: [JSObject] = []
+            results?.enumerateStatistics(from: startDate, to: endDate) { statistics, _ in
+                guard let quantity = statistics.sumQuantity() else {
+                    return
+                }
+                let steps = Int(round(quantity.doubleValue(for: self.stepCountUnit())))
+                guard steps >= 0 else { return }
+                samples.append([
+                    "metricDate": self.isoDayString(statistics.startDate),
+                    "steps": steps,
+                ])
+            }
+            completion(samples, nil)
         }
         healthStore.execute(query)
     }
@@ -281,8 +274,8 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 self.fetchStepSamples(
                     quantityType: stepType,
                     predicate: predicate,
-                    sortDescriptors: ascendingSort,
-                    limit: HKObjectQueryNoLimit
+                    startDate: startDate,
+                    endDate: endDate
                 ) { stepSamples, stepError in
                     if let stepError {
                         call.reject("Apple Health step query failed: \(stepError.localizedDescription)")

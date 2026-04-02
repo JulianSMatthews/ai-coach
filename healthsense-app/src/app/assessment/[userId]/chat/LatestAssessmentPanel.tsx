@@ -100,7 +100,8 @@ function formatIsoLocalDay(value: Date): string {
 }
 
 function resolveBiometricEndDay(...values: Array<string | null | undefined>): string {
-  let latest: Date | null = null;
+  const today = new Date();
+  let latest: Date | null = new Date(`${formatIsoLocalDay(today)}T12:00:00`);
   values.forEach((value) => {
     const token = String(value || "").trim();
     if (!token) return;
@@ -392,26 +393,6 @@ function HeartStatusIcon() {
   );
 }
 
-function StepsStatusIcon() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-4 w-4"
-      aria-hidden="true"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.8"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M8.5 6.5c0 1.7-1 3-2.3 3S4 8.2 4 6.5 5 3.5 6.2 3.5s2.3 1.3 2.3 3Z" />
-      <path d="M10 10.5c1 .8 1.7 2 1.7 3.4V18" />
-      <path d="M15.5 9c0 2-1.1 3.5-2.6 3.5s-2.6-1.5-2.6-3.5 1.1-3.5 2.6-3.5S15.5 7 15.5 9Z" />
-      <path d="M18.5 13c1 .8 1.5 1.9 1.5 3.2V20" />
-    </svg>
-  );
-}
-
 export default function LatestAssessmentPanel({
   userId,
   initialSummary,
@@ -534,7 +515,6 @@ export default function LatestAssessmentPanel({
   );
   const appleHealthSupported = canUseAppleHealth();
   const restingHeartRateValue = resolveRestingHeartRateValue(restingHeartRate?.resting_hr_bpm);
-  const stepsValue = formatStepCount(restingHeartRate?.steps_today);
   const latestStepsMetricDate = String(restingHeartRate?.steps_metric_date || "").trim();
   const restingHeartRateHistory = useMemo(
     () =>
@@ -559,13 +539,19 @@ export default function LatestAssessmentPanel({
         : [],
     [restingHeartRate?.steps_history],
   );
+  const resolvedLatestStepsMetricDate = useMemo(() => {
+    if (latestStepsMetricDate) return latestStepsMetricDate;
+    const latestStepEntry = [...stepsHistory]
+      .sort((left, right) => String(right?.metric_date || "").localeCompare(String(left?.metric_date || "")))[0];
+    return String(latestStepEntry?.metric_date || "").trim();
+  }, [latestStepsMetricDate, stepsHistory]);
   const restingHeartRateWeek = useMemo(
     () => buildBiometricWeek(restingHeartRateHistory, restingHeartRate?.metric_date),
     [restingHeartRate?.metric_date, restingHeartRateHistory],
   );
   const stepsWeek = useMemo(
-    () => buildBiometricWeek(stepsHistory, latestStepsMetricDate),
-    [latestStepsMetricDate, stepsHistory],
+    () => buildBiometricWeek(stepsHistory, resolvedLatestStepsMetricDate),
+    [resolvedLatestStepsMetricDate, stepsHistory],
   );
   const restingHeartRateChipVisible = Boolean(restingHeartRate?.available) || appleHealthSupported;
   const restingHeartRateBoxToneClassName = resolveRestingHeartRateBoxTone(displayTheme);
@@ -1213,53 +1199,6 @@ export default function LatestAssessmentPanel({
 
             <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
               <div className="space-y-4">
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className={`rounded-[24px] border px-4 py-4 ${restingHeartRateBoxToneClassName}`}>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] opacity-80">
-                      Resting heart rate
-                    </p>
-                    {restingHeartRateValue ? (
-                      <>
-                        <div className="mt-3 flex items-center gap-3">
-                          <HeartStatusIcon />
-                          <span className={`text-3xl font-semibold leading-none ${restingHeartRateMetricToneClassName}`}>
-                            {restingHeartRateValue}
-                          </span>
-                          <span className={`text-sm font-semibold ${restingHeartRateMetricToneClassName}`}>
-                            {resolveRestingHeartRateTrendLabel(restingHeartRate?.trend_label)}
-                          </span>
-                        </div>
-                        <p className="mt-2 text-sm opacity-80">
-                          {restingHeartRate?.metric_date
-                            ? `Latest reading from ${formatBiometricDayLabel(restingHeartRate.metric_date)} ${formatBiometricDayNumber(restingHeartRate.metric_date)}`
-                            : "Latest synced reading"}
-                        </p>
-                      </>
-                    ) : (
-                      <p className="mt-3 text-sm opacity-80">
-                        No resting heart rate data is available yet.
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                      Steps
-                    </p>
-                    <div className="mt-3 flex items-center gap-3">
-                      <span className="text-3xl font-semibold leading-none text-[#1e1b16]">
-                        {stepsValue}
-                      </span>
-                      <StepsStatusIcon />
-                    </div>
-                    <p className="mt-2 text-sm text-[#6b6257]">
-                      {latestStepsMetricDate
-                        ? `Latest reading from ${formatBiometricDayLabel(latestStepsMetricDate)} ${formatBiometricDayNumber(latestStepsMetricDate)}`
-                        : "Latest daily step count from Apple Health."}
-                    </p>
-                  </div>
-                </div>
-
                 <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-semibold text-[#1e1b16]">Resting heart rate</p>
@@ -1271,20 +1210,22 @@ export default function LatestAssessmentPanel({
                     <div className="mt-4 grid grid-cols-7 gap-2">
                       {restingHeartRateWeek.map(({ metric_date: metricDate, item }) => {
                         const value = resolveRestingHeartRateValue(item?.resting_hr_bpm);
-                        const isLatest = metricDate && metricDate === String(restingHeartRate?.metric_date || "").trim();
+                        const metricToneClassName = resolveRestingHeartRateMetricTone(
+                          displayTheme,
+                          item?.trend_status,
+                        );
                         return (
                           <div
                             key={`resting-hr-${metricDate}`}
-                            className={`rounded-xl border px-2 py-2 text-center text-[11px] ${
-                              isLatest
-                                ? "border-[var(--accent)] bg-[#fff4ea]"
-                                : "border-[#efe7db] bg-[#fffaf3]"
-                            }`}
+                            className={`rounded-xl border px-2 py-2 text-center text-[11px] ${restingHeartRateBoxToneClassName}`}
                           >
-                            <p className="font-semibold text-[#6b6257]">{formatBiometricDayLabel(metricDate)}</p>
-                            <p className="mt-1 text-[#8c7f70]">{formatBiometricDayNumber(metricDate)}</p>
-                            <p className="mt-3 text-sm font-semibold leading-none text-[#1e1b16]">
+                            <p className="font-semibold opacity-80">{formatBiometricDayLabel(metricDate)}</p>
+                            <p className="mt-1 opacity-65">{formatBiometricDayNumber(metricDate)}</p>
+                            <p className={`mt-3 text-sm font-semibold leading-none ${metricToneClassName}`}>
                               {value || "—"}
+                            </p>
+                            <p className={`mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] ${metricToneClassName}`}>
+                              {value ? resolveRestingHeartRateTrendLabel(item?.trend_label) : "—"}
                             </p>
                           </div>
                         );
@@ -1308,19 +1249,14 @@ export default function LatestAssessmentPanel({
                     <div className="mt-4 grid grid-cols-7 gap-2">
                       {stepsWeek.map(({ metric_date: metricDate, item }) => {
                         const value = formatStepCount(item?.steps);
-                        const isLatest = metricDate && metricDate === latestStepsMetricDate;
                         return (
                           <div
                             key={`steps-${metricDate}`}
-                            className={`rounded-xl border px-2 py-2 text-center text-[11px] ${
-                              isLatest
-                                ? "border-[var(--accent)] bg-[#fff4ea]"
-                                : "border-[#efe7db] bg-[#fffaf3]"
-                            }`}
+                            className={`rounded-xl border px-2 py-2 text-center text-[11px] ${restingHeartRateBoxToneClassName}`}
                           >
-                            <p className="font-semibold text-[#6b6257]">{formatBiometricDayLabel(metricDate)}</p>
-                            <p className="mt-1 text-[#8c7f70]">{formatBiometricDayNumber(metricDate)}</p>
-                            <p className="mt-3 truncate text-sm font-semibold leading-none text-[#1e1b16]">
+                            <p className="font-semibold opacity-80">{formatBiometricDayLabel(metricDate)}</p>
+                            <p className="mt-1 opacity-65">{formatBiometricDayNumber(metricDate)}</p>
+                            <p className="mt-3 truncate text-sm font-semibold leading-none text-[var(--accent)]">
                               {value}
                             </p>
                           </div>

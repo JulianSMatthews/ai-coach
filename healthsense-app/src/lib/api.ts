@@ -130,6 +130,8 @@ export type AppleHealthRestingHeartRateResponse = {
   history?: Array<{
     metric_date?: string | null;
     resting_hr_bpm?: number | null;
+    trend_status?: "optimum" | "normal" | "elevated" | null;
+    trend_label?: string | null;
   }>;
   steps_history?: Array<{
     metric_date?: string | null;
