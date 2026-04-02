@@ -21,7 +21,8 @@ from .prompts import build_prompt, ensure_builtin_prompt_templates, run_llm_prom
 
 _DAILY_HABITS_SCHEMA_READY = False
 _PILLAR_ORDER = ("nutrition", "training", "resilience", "recovery")
-_CURRENT_HABIT_PLAN_VERSION = 7
+_CURRENT_HABIT_PLAN_VERSION = 8
+_DAY_PLAN_SCOPE_KEY = "__day_plan__"
 _DAY_MOMENT_SEQUENCE = (
     ("morning", "Morning"),
     ("midday", "Midday"),
@@ -62,6 +63,13 @@ def _pillar_rank(pillar_key: str) -> int:
 def _normalize_concept_token(value: Any) -> str | None:
     token = _normalize_concept_key(value)
     return token or None
+
+
+def _normalize_plan_scope_key(value: Any) -> str | None:
+    token = str(value or "").strip()
+    if token == _DAY_PLAN_SCOPE_KEY:
+        return _DAY_PLAN_SCOPE_KEY
+    return _normalize_concept_token(token)
 
 
 def _today_iso() -> str:
@@ -398,6 +406,7 @@ def _pillar_day_snapshot(user_id: int, pillar_row: dict[str, Any], today: date) 
         "score": score,
         "state": _score_state(score),
         "primary_focus": primary_focus,
+        "review_concepts": focus_rows,
     }
 
 
@@ -470,16 +479,79 @@ def _snapshot_focus_label(snapshot: dict[str, Any], fallback: str) -> str:
     return label or fallback
 
 
+def _all_tracker_review_concepts(snapshots: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for snapshot in snapshots.values():
+        if not isinstance(snapshot, dict):
+            continue
+        pillar_key = str(snapshot.get("pillar_key") or "").strip().lower()
+        pillar_label = str(snapshot.get("label") or "").strip() or pillar_key.title()
+        for raw_item in snapshot.get("review_concepts") or []:
+            if not isinstance(raw_item, dict):
+                continue
+            items.append(
+                {
+                    **raw_item,
+                    "pillar_key": str(raw_item.get("pillar_key") or pillar_key).strip().lower() or pillar_key,
+                    "pillar_label": str(raw_item.get("pillar_label") or pillar_label).strip() or pillar_label,
+                }
+            )
+    return items
+
+
+def _primary_tracker_issue(snapshots: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    items = _all_tracker_review_concepts(snapshots)
+    if not items:
+        return None
+    ordered = sorted(
+        items,
+        key=lambda item: (
+            _focus_signal_priority(str(item.get("signal") or "")),
+            item.get("score") if item.get("score") is not None else 999,
+            _pillar_rank(str(item.get("pillar_key") or "")),
+            str(item.get("label") or ""),
+        ),
+    )
+    return ordered[0] if ordered else None
+
+
+def _build_tracker_review(snapshots: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+    review: list[dict[str, Any]] = []
+    for pillar_key in _PILLAR_ORDER:
+        snapshot = snapshots.get(pillar_key)
+        if not isinstance(snapshot, dict):
+            continue
+        concepts = [
+            {
+                "concept_key": str(item.get("concept_key") or "").strip() or None,
+                "label": str(item.get("label") or "").strip() or None,
+                "helper": str(item.get("helper") or "").strip() or None,
+                "signal": str(item.get("signal") or "").strip() or None,
+                "target_label": str(item.get("target_label") or "").strip() or None,
+                "latest_value": str(item.get("latest_value") or "").strip() or None,
+                "score": _safe_int(item.get("score")),
+                "anchor_date": str(item.get("anchor_date") or "").strip() or None,
+            }
+            for item in (snapshot.get("review_concepts") or [])
+            if isinstance(item, dict) and str(item.get("label") or "").strip()
+        ]
+        review.append(
+            {
+                "pillar_key": pillar_key,
+                "pillar_label": str(snapshot.get("label") or pillar_key.title()).strip() or pillar_key.title(),
+                "state": str(snapshot.get("state") or "unknown").strip().lower() or "unknown",
+                "score": _safe_int(snapshot.get("score")),
+                "concepts": concepts,
+            }
+        )
+    return review
+
+
 def _build_key_moments(
     *,
-    selected_pillar: dict[str, Any],
-    selected_focus: dict[str, Any],
     readiness: dict[str, str],
     snapshots: dict[str, dict[str, Any]],
 ) -> list[dict[str, str]]:
-    pillar_key = str(
-        selected_focus.get("pillar_key") or selected_pillar.get("pillar_key") or "nutrition"
-    ).strip().lower()
     nutrition_snapshot = snapshots.get("nutrition") or {}
     training_snapshot = snapshots.get("training") or {}
     resilience_snapshot = snapshots.get("resilience") or {}
@@ -492,12 +564,7 @@ def _build_key_moments(
     resilience_focus_label = _snapshot_focus_label(resilience_snapshot, "your headspace").lower()
     recovery_focus_label = _snapshot_focus_label(recovery_snapshot, "recovery basics").lower()
 
-    morning_title = {
-        "nutrition": "Set the basics early",
-        "training": "Prepare the session",
-        "resilience": "Set your response",
-        "recovery": "Protect your energy",
-    }.get(pillar_key, "Set the day early")
+    morning_title = "Set the day early"
     if nutrition_state == "weak" or recovery_state == "weak":
         morning_detail = (
             "Start with food, fluids, and a calmer pace so you are not trying to rescue energy later on."
@@ -543,10 +610,7 @@ def _build_key_moments(
             f"Skip the hard session today and put the effort into walking, mobility, and settling {recovery_focus_label}."
         )
 
-    evening_title = {
-        "recovery": "Close the day properly",
-        "resilience": "Reset before bed",
-    }.get(pillar_key, "Close the day cleanly")
+    evening_title = "Close the day cleanly"
     if recovery_state == "weak":
         evening_detail = (
             "Keep the evening very simple, protect sleep, and avoid anything that makes tomorrow harder."
@@ -583,8 +647,6 @@ def _build_day_brief(
     user_id: int,
     summary: dict[str, Any],
     today: date,
-    selected_pillar: dict[str, Any],
-    selected_focus: dict[str, Any] | None,
 ) -> dict[str, Any]:
     snapshots: dict[str, dict[str, Any]] = {}
     for pillar_row in (summary.get("pillars") or []):
@@ -611,10 +673,10 @@ def _build_day_brief(
         strength_text = f"{strength_label} is holding reasonably steady."
     else:
         strength_text = f"{strength_label} is the most stable part of the day right now."
-    selected_focus = selected_focus or {}
+    primary_issue = _primary_tracker_issue(snapshots)
     carry_over_issue = _focus_issue_text(
-        selected_focus or (snapshots.get(str(selected_pillar.get("pillar_key") or "").strip().lower()) or {}).get("primary_focus"),
-        fallback_label=str(selected_pillar.get("label") or "today's focus").strip(),
+        primary_issue,
+        fallback_label="today's tracking",
     )
     exercise_state = str(readiness.get("exercise_state") or "steady").strip().lower()
     if exercise_state == "push":
@@ -626,8 +688,6 @@ def _build_day_brief(
     else:
         today_aim = "Keep the day simple, recover properly, and take the pressure off until the basics feel steadier."
     key_moments = _build_key_moments(
-        selected_pillar=selected_pillar,
-        selected_focus=selected_focus,
         readiness=readiness,
         snapshots=snapshots,
     )
@@ -649,34 +709,18 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
     today = tracker_today()
     summary = get_pillar_tracker_summary(user_id, anchor=today)
     weakest = _select_weakest_pillar(summary)
-    latest_tracker_save = get_recent_tracker_save_focus(int(user_id), current_day=today) or {}
-    preferred_pillar_key = str(latest_tracker_save.get("pillar_key") or "").strip().lower() or None
-    preferred_anchor = latest_tracker_save.get("score_date") if isinstance(latest_tracker_save.get("score_date"), date) else None
-    preferred_concept_key = (
-        _normalize_concept_token(selected_concept_key)
-        or _normalize_concept_token(latest_tracker_save.get("concept_key"))
-    )
-    focus_concepts, selected_focus = _select_focus_concepts(
-        user_id,
-        summary,
-        today=today,
-        preferred_concept_key=preferred_concept_key,
-        preferred_pillar_key=preferred_pillar_key,
-        preferred_anchor=preferred_anchor,
-    )
-    selected_pillar_key = str(
-        (selected_focus or {}).get("pillar_key") or preferred_pillar_key or weakest.get("pillar_key") or "nutrition"
-    ).strip().lower()
-    selected_pillar_label = str(
-        (selected_focus or {}).get("pillar_label")
-        or (preferred_pillar_key.title() if preferred_pillar_key else "")
-        or weakest.get("label")
-        or selected_pillar_key.title()
-    ).strip()
-    okr_context = _load_pillar_okr_context(
-        user_id,
-        selected_pillar_key,
-    )
+    snapshots: dict[str, dict[str, Any]] = {}
+    for pillar_row in (summary.get("pillars") or []):
+        if not isinstance(pillar_row, dict):
+            continue
+        pillar_key = str(pillar_row.get("pillar_key") or "").strip().lower()
+        if not pillar_key:
+            continue
+        snapshots[pillar_key] = _pillar_day_snapshot(user_id, pillar_row, today)
+    tracker_review = _build_tracker_review(snapshots)
+    selected_pillar_key = str(weakest.get("pillar_key") or "nutrition").strip().lower() or "nutrition"
+    selected_pillar_label = str(weakest.get("label") or selected_pillar_key.title()).strip() or selected_pillar_key.title()
+    okr_context: dict[str, Any] = {}
     selected_pillar_payload = {
         "pillar_key": selected_pillar_key,
         "label": selected_pillar_label or selected_pillar_key.title(),
@@ -685,8 +729,6 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
         user_id=user_id,
         summary=summary,
         today=today,
-        selected_pillar=selected_pillar_payload,
-        selected_focus=selected_focus,
     )
     pillars_payload = [
         {
@@ -701,20 +743,9 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
     return {
         "user_name": _load_user_name(user_id),
         "plan_date": today.isoformat(),
-        "tracker_focus_date": str(
-            (selected_focus or {}).get("anchor_date") or (preferred_anchor.isoformat() if preferred_anchor else "")
-        ).strip()
-        or today.isoformat(),
-        "tracker_focus_source": "latest_tracker_save" if latest_tracker_save else "global_ranked_focus",
-        "latest_tracker_save": (
-            {
-                "pillar_key": preferred_pillar_key,
-                "score_date": preferred_anchor.isoformat() if preferred_anchor else None,
-                "concept_key": _normalize_concept_token(latest_tracker_save.get("concept_key")),
-            }
-            if latest_tracker_save
-            else None
-        ),
+        "tracker_focus_date": today.isoformat(),
+        "tracker_focus_source": "all_daily_tracking",
+        "latest_tracker_save": None,
         "weakest_pillar": {
             "pillar_key": str(weakest.get("pillar_key") or "nutrition").strip().lower(),
             "label": str(weakest.get("label") or "").strip() or str(weakest.get("pillar_key") or "nutrition").strip().title(),
@@ -726,9 +757,10 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
             **selected_pillar_payload,
         },
         "pillar_scores": pillars_payload,
-        "focus_concepts": focus_concepts,
-        "selected_focus_concept": selected_focus,
+        "focus_concepts": [],
+        "selected_focus_concept": None,
         "okr_context": okr_context,
+        "tracker_review": tracker_review,
         "day_brief": day_brief,
     }
 
@@ -1000,10 +1032,10 @@ def _habit_option_sets_from_state(
     raw_sets = payload.get("habit_option_sets") if isinstance(payload, dict) else None
     if state_version >= _CURRENT_HABIT_PLAN_VERSION and isinstance(raw_sets, dict):
         for raw_key, raw_items in raw_sets.items():
-            concept_key = _normalize_concept_token(raw_key)
-            if not concept_key or not isinstance(raw_items, list):
+            scope_key = _normalize_plan_scope_key(raw_key)
+            if not scope_key or not isinstance(raw_items, list):
                 continue
-            default_concept = concept_lookup.get(concept_key) or default_selected_concept
+            default_concept = concept_lookup.get(scope_key) or default_selected_concept
             items = [
                 item
                 for item in (
@@ -1012,13 +1044,13 @@ def _habit_option_sets_from_state(
                 )
                 if item
             ]
-            items = _items_for_concept(items, concept_key=concept_key)
+            if scope_key != _DAY_PLAN_SCOPE_KEY:
+                items = _items_for_concept(items, concept_key=scope_key)
             if items:
-                option_sets[concept_key] = _dedupe_habit_plan_items(items)
+                option_sets[scope_key] = _dedupe_habit_plan_items(items)
     if option_sets:
         return option_sets
-    selected_key = _normalize_concept_token((default_selected_concept or {}).get("concept_key"))
-    if not selected_key or not isinstance(legacy_habits, list):
+    if not isinstance(legacy_habits, list):
         return {}
     legacy_items = [
         item
@@ -1028,9 +1060,8 @@ def _habit_option_sets_from_state(
         )
         if item
     ]
-    legacy_items = _items_for_concept(legacy_items, concept_key=selected_key)
     if legacy_items:
-        option_sets[selected_key] = _dedupe_habit_plan_items(legacy_items)
+        option_sets[_DAY_PLAN_SCOPE_KEY] = _dedupe_habit_plan_items(_items_with_day_moments(legacy_items))
     return option_sets
 
 
@@ -1063,8 +1094,8 @@ def _normalize_selected_ids_map(payload: dict[str, Any]) -> dict[str, list[str]]
         return {}
     normalized: dict[str, list[str]] = {}
     for raw_key, raw_ids in raw_map.items():
-        concept_key = _normalize_concept_token(raw_key)
-        if not concept_key or not isinstance(raw_ids, list):
+        scope_key = _normalize_plan_scope_key(raw_key)
+        if not scope_key or not isinstance(raw_ids, list):
             continue
         ids: list[str] = []
         seen: set[str] = set()
@@ -1075,7 +1106,7 @@ def _normalize_selected_ids_map(payload: dict[str, Any]) -> dict[str, list[str]]
             seen.add(item_id)
             ids.append(item_id)
         if ids:
-            normalized[concept_key] = ids
+            normalized[scope_key] = ids
     return normalized
 
 
@@ -1096,7 +1127,7 @@ def _recover_selected_ids_map_from_row(
         return {}
     recovered: dict[str, list[str]] = {}
     for item in recovered_items:
-        concept_key = _normalize_concept_token(item.get("concept_key"))
+        concept_key = _normalize_plan_scope_key(item.get("concept_key")) or _DAY_PLAN_SCOPE_KEY
         item_id = str(item.get("id") or "").strip()
         if not concept_key or not item_id:
             continue
@@ -1279,22 +1310,17 @@ def _fallback_habit_options_for_concept(concept: dict[str, Any], pillar_key: str
 
 
 def _fallback_plan(context: dict[str, Any]) -> dict[str, Any]:
-    selected_concept = context.get("selected_focus_concept") or {}
-    selected_pillar = context.get("selected_pillar") or {}
     day_brief = context.get("day_brief") or {}
     moments = [
         item
         for item in (
-            _normalize_habit_plan_item(raw_item, default_concept=selected_concept)
+            _normalize_habit_plan_item(raw_item, default_concept=None)
             for raw_item in (day_brief.get("key_moments") or [])
         )
         if item
     ]
     moments = _items_with_day_moments(moments)
     if not moments:
-        pillar_key = str(
-            selected_concept.get("pillar_key") or selected_pillar.get("pillar_key") or "nutrition"
-        ).strip().lower()
         fallback_items = [
             _normalize_habit_plan_item(
                 {
@@ -1302,7 +1328,7 @@ def _fallback_plan(context: dict[str, Any]) -> dict[str, Any]:
                     "detail": "Choose one simple action that makes the rest of the day easier to manage.",
                     "moment_key": "morning",
                 },
-                default_concept=selected_concept,
+                default_concept=None,
             ),
             _normalize_habit_plan_item(
                 {
@@ -1310,15 +1336,15 @@ def _fallback_plan(context: dict[str, Any]) -> dict[str, Any]:
                     "detail": "Use lunch and the middle of the day to keep food, fluids, and focus under control.",
                     "moment_key": "midday",
                 },
-                default_concept=selected_concept,
+                default_concept=None,
             ),
             _normalize_habit_plan_item(
                 {
                     "title": "Keep the afternoon purposeful",
-                    "detail": _fallback_habit_for_concept(selected_concept, pillar_key).get("detail") or "Use the afternoon for the right level of movement, not extra noise.",
+                    "detail": "Use the afternoon for the right level of movement for today, not extra noise.",
                     "moment_key": "afternoon",
                 },
-                default_concept=selected_concept,
+                default_concept=None,
             ),
             _normalize_habit_plan_item(
                 {
@@ -1326,7 +1352,7 @@ def _fallback_plan(context: dict[str, Any]) -> dict[str, Any]:
                     "detail": "Finish with a short reset so tomorrow starts cleaner than today.",
                     "moment_key": "evening",
                 },
-                default_concept=selected_concept,
+                default_concept=None,
             ),
         ]
         moments = _items_with_day_moments([item for item in fallback_items if item])
@@ -1353,9 +1379,14 @@ def _fallback_ask_suggestions(context: dict[str, Any]) -> list[dict[str, str]]:
         seen.add(key)
         suggestions.append({"label": normalized_label[:40], "text": normalized_text[:220]})
 
-    focus_concepts = [item for item in (context.get("focus_concepts") or []) if isinstance(item, dict)]
+    tracker_review = [item for item in (context.get("tracker_review") or []) if isinstance(item, dict)]
     selected_habits = [item for item in (context.get("selected_habits") or []) if isinstance(item, dict)]
-    signals = [str(item.get("signal") or "").strip().lower() for item in focus_concepts]
+    signals = [
+        str(concept.get("signal") or "").strip().lower()
+        for pillar in tracker_review
+        for concept in (pillar.get("concepts") or [])
+        if isinstance(concept, dict)
+    ]
 
     if "missed_today" in signals or "missed_yesterday" in signals:
         push("Get back on track", "What is the best way for me to get back on track today?")
@@ -1374,7 +1405,6 @@ def _fallback_ask_suggestions(context: dict[str, Any]) -> list[dict[str, str]]:
 
 def _generate_plan_from_llm(user_id: int, context: dict[str, Any]) -> dict[str, Any] | None:
     selected_pillar = context.get("selected_pillar") or {}
-    selected_concept = context.get("selected_focus_concept") or {}
     user_name = str(context.get("user_name") or "User").strip() or "User"
     ensure_builtin_prompt_templates(["daily_habit_plan"])
     assembly = build_prompt(
@@ -1387,10 +1417,9 @@ def _generate_plan_from_llm(user_id: int, context: dict[str, Any]) -> dict[str, 
         plan_date=context.get("plan_date"),
         scores=context.get("pillar_scores") or [],
         weakest_pillar=context.get("weakest_pillar") or {},
-        focus_concepts=context.get("focus_concepts") or [],
-        selected_focus_concept=selected_concept,
         selected_pillar=selected_pillar,
         okr_context=context.get("okr_context") or {},
+        tracker_review=context.get("tracker_review") or [],
         day_brief=context.get("day_brief") or {},
     )
     prompt = assembly.text
@@ -1403,7 +1432,6 @@ def _generate_plan_from_llm(user_id: int, context: dict[str, Any]) -> dict[str, 
         context_meta={
             "page": "coach_home",
             "pillar_key": str(selected_pillar.get("pillar_key") or "").strip().lower(),
-            "concept_key": str(selected_concept.get("concept_key") or "").strip().lower(),
             "plan_date": _today_iso(),
         },
         prompt_blocks=assembly.blocks,
@@ -1416,7 +1444,7 @@ def _generate_plan_from_llm(user_id: int, context: dict[str, Any]) -> dict[str, 
     habits = [
         item
         for item in (
-            _normalize_habit_plan_item(row, default_concept=selected_concept)
+            _normalize_habit_plan_item(row, default_concept=None)
             for row in (raw_items or [])
         )
         if item
@@ -1424,11 +1452,10 @@ def _generate_plan_from_llm(user_id: int, context: dict[str, Any]) -> dict[str, 
     habits = _items_with_day_moments(habits)
     if len(habits) < len(_DAY_MOMENT_SEQUENCE):
         return None
-    concept_label = str(selected_concept.get("label") or "").strip() or "habit focus"
     day_brief = context.get("day_brief") or {}
-    title = str(parsed.get("title") or "").strip() or str(day_brief.get("plan_title") or f"{concept_label} day plan").strip()
+    title = str(parsed.get("title") or "").strip() or str(day_brief.get("plan_title") or "Today's plan").strip()
     summary = str(parsed.get("summary") or "").strip() or str(
-        day_brief.get("plan_summary") or f"Use these key moments to support your {concept_label.lower()} today."
+        day_brief.get("plan_summary") or "Use these key moments to keep the day steady and practical."
     ).strip()
     return {
         "title": title[:200],
@@ -1444,18 +1471,12 @@ def _serialize_plan(
     default_habits_view: str | None = None,
 ) -> dict[str, Any]:
     payload = row.context_payload if isinstance(getattr(row, "context_payload", None), dict) else {}
-    available_concepts = [item for item in (payload.get("focus_concepts") or []) if isinstance(item, dict)]
-    fallback_concept = payload.get("selected_focus_concept") if isinstance(payload.get("selected_focus_concept"), dict) else None
-    selected_concept = _resolve_selected_concept(
-        payload,
-        available_concepts=available_concepts,
-        fallback_concept=fallback_concept,
-    )
+    available_concepts: list[dict[str, Any]] = []
     option_sets = _habit_option_sets_from_state(
         payload,
         available_concepts=available_concepts,
         legacy_habits=getattr(row, "habits", None) if isinstance(getattr(row, "habits", None), list) else None,
-        default_selected_concept=selected_concept,
+        default_selected_concept=None,
     )
     selected_ids_by_concept = _selected_ids_by_concept(
         payload,
@@ -1466,8 +1487,8 @@ def _serialize_plan(
     selected_habits = _items_with_day_moments(_selected_habits_from_option_sets(option_sets, selected_ids_by_concept))
     ask_suggestions = _normalized_ask_suggestions(payload.get("ask_suggestions") or [])
     selected_ids = {str(item.get("id") or "").strip() for item in selected_habits}
-    selected_concept_key = _normalize_concept_token((selected_concept or {}).get("concept_key"))
-    raw_current_options = [dict(item) for item in option_sets.get(selected_concept_key or "", [])]
+    selected_concept_key = None
+    raw_current_options = [dict(item) for item in option_sets.get(_DAY_PLAN_SCOPE_KEY, [])]
     current_options = []
     for item in _items_with_day_moments(raw_current_options):
         current_options.append({**item, "selected": str(item.get("id") or "").strip() in selected_ids})
@@ -1497,8 +1518,8 @@ def _serialize_plan(
         "options": current_options,
         "ask_suggestions": ask_suggestions[:4],
         "available_concepts": concepts_payload,
-        "selected_concept_key": selected_concept_key,
-        "selected_concept_label": str((selected_concept or {}).get("label") or "").strip() or None,
+        "selected_concept_key": None,
+        "selected_concept_label": None,
         "default_habits_view": (
             "selected_habits"
             if default_habits_view == "selected_habits" and selected_habits
@@ -1555,16 +1576,14 @@ def get_or_generate_daily_habit_plan(
         )
         carryover = existing or _latest_prior_daily_habit_plan(user_id, today)
         seed_payload = carryover.context_payload if carryover and isinstance(getattr(carryover, "context_payload", None), dict) else {}
-        preferred_concept_key = _normalize_concept_token(concept_key) or _normalize_concept_token(seed_payload.get("selected_concept_key"))
-        context = _build_generation_context(user_id, selected_concept_key=preferred_concept_key)
+        context = _build_generation_context(user_id, selected_concept_key=None)
         hash_value = _context_hash(context)
-        selected_concept = context.get("selected_focus_concept") or {}
-        available_concepts = [item for item in (context.get("focus_concepts") or []) if isinstance(item, dict)]
+        available_concepts: list[dict[str, Any]] = []
         option_sets = _habit_option_sets_from_state(
             seed_payload,
             available_concepts=available_concepts,
             legacy_habits=(getattr(carryover, "habits", None) if carryover is not None else None),
-            default_selected_concept=selected_concept,
+            default_selected_concept=None,
         )
         selected_ids_by_concept = _selected_ids_by_concept(
             seed_payload,
@@ -1573,14 +1592,13 @@ def get_or_generate_daily_habit_plan(
             option_sets=option_sets,
         )
         selected_habits = _selected_habits_from_option_sets(option_sets, selected_ids_by_concept)
-        selected_concept_key = _normalize_concept_token(selected_concept.get("concept_key"))
-        existing_options_for_concept = option_sets.get(selected_concept_key or "", [])
+        plan_scope_key = _DAY_PLAN_SCOPE_KEY
+        existing_options_for_concept = option_sets.get(plan_scope_key, [])
         if (
             existing
             and not force
             and _habit_plan_version(existing_payload) >= _CURRENT_HABIT_PLAN_VERSION
             and str(getattr(existing, "context_hash", "") or "").strip() == hash_value
-            and selected_concept_key
             and existing_options_for_concept
             and _has_complete_day_plan_items(existing_options_for_concept)
         ):
@@ -1590,7 +1608,6 @@ def get_or_generate_daily_habit_plan(
             existing.context_payload = {
                 **context,
                 "habit_plan_version": _CURRENT_HABIT_PLAN_VERSION,
-                "selected_concept_key": selected_concept_key,
                 "habit_option_sets": option_sets,
                 "selected_option_ids_by_concept": selected_ids_by_concept,
                 "ask_suggestions": ask_suggestions,
@@ -1609,44 +1626,38 @@ def get_or_generate_daily_habit_plan(
         generated_items = [
             item
             for item in (
-                _normalize_habit_plan_item(raw_item, default_concept=selected_concept)
+                _normalize_habit_plan_item(raw_item, default_concept=None)
                 for raw_item in (generated.get("habits") or [])
             )
             if item
         ]
-        generated_items = _items_for_concept(generated_items, concept_key=selected_concept_key)
-        if selected_concept_key and generated_items:
-            existing_options = option_sets.get(selected_concept_key, [])
-            preserved_selected_for_concept = [
-                item for item in selected_habits if _normalize_concept_token(item.get("concept_key")) == selected_concept_key
-            ]
-            option_sets[selected_concept_key] = _merge_concept_option_set(
+        generated_items = _items_with_day_moments(generated_items)
+        if generated_items:
+            existing_options = option_sets.get(plan_scope_key, [])
+            option_sets[plan_scope_key] = _merge_concept_option_set(
                 existing_items=existing_options,
-                selected_items=preserved_selected_for_concept,
+                selected_items=selected_habits,
                 generated_items=generated_items,
                 force=bool(force),
             )
-        if selected_concept_key:
-            current_option_set = option_sets.get(selected_concept_key, [])
-            if not _has_complete_day_plan_items(current_option_set):
-                fallback_items = [
-                    item
-                    for item in (
-                        _normalize_habit_plan_item(raw_item, default_concept=selected_concept)
-                        for raw_item in ((_fallback_plan(context) or {}).get("habits") or [])
-                    )
-                    if item
-                ]
-                fallback_items = _items_for_concept(_items_with_day_moments(fallback_items), concept_key=selected_concept_key)
-                if fallback_items:
-                    option_sets[selected_concept_key] = _merge_concept_option_set(
-                        existing_items=current_option_set,
-                        selected_items=[
-                            item for item in selected_habits if _normalize_concept_token(item.get("concept_key")) == selected_concept_key
-                        ],
-                        generated_items=fallback_items,
-                        force=True,
-                    )
+        current_option_set = option_sets.get(plan_scope_key, [])
+        if not _has_complete_day_plan_items(current_option_set):
+            fallback_items = [
+                item
+                for item in (
+                    _normalize_habit_plan_item(raw_item, default_concept=None)
+                    for raw_item in ((_fallback_plan(context) or {}).get("habits") or [])
+                )
+                if item
+            ]
+            fallback_items = _items_with_day_moments(fallback_items)
+            if fallback_items:
+                option_sets[plan_scope_key] = _merge_concept_option_set(
+                    existing_items=current_option_set,
+                    selected_items=selected_habits,
+                    generated_items=fallback_items,
+                    force=True,
+                )
         row = existing or DailyCoachHabitPlan(user_id=int(user_id), plan_date=today)
         row.pillar_key = str((context.get("selected_pillar") or {}).get("pillar_key") or "").strip() or None
         row.pillar_label = str((context.get("selected_pillar") or {}).get("label") or "").strip() or None
@@ -1659,7 +1670,6 @@ def get_or_generate_daily_habit_plan(
         row.context_payload = {
             **context,
             "habit_plan_version": _CURRENT_HABIT_PLAN_VERSION,
-            "selected_concept_key": selected_concept_key,
             "habit_option_sets": option_sets,
             "selected_option_ids_by_concept": selected_ids_by_concept,
             "ask_suggestions": ask_suggestions,
@@ -1702,21 +1712,13 @@ def update_daily_habit_plan_selection(
         if row is None:
             raise ValueError("No daily habit plan is available yet.")
         payload = row.context_payload if isinstance(getattr(row, "context_payload", None), dict) else {}
-        available_concepts = [item for item in (payload.get("focus_concepts") or []) if isinstance(item, dict)]
-        fallback_concept = payload.get("selected_focus_concept") if isinstance(payload.get("selected_focus_concept"), dict) else None
-        selected_concept = _resolve_selected_concept(
-            {"selected_concept_key": concept_key or payload.get("selected_concept_key")},
-            available_concepts=available_concepts,
-            fallback_concept=fallback_concept,
-        )
-        selected_concept_key = _normalize_concept_token((selected_concept or {}).get("concept_key"))
-        if not selected_concept_key:
-            raise ValueError("A habit concept must be selected.")
+        available_concepts: list[dict[str, Any]] = []
+        selected_concept_key = _DAY_PLAN_SCOPE_KEY
         option_sets = _habit_option_sets_from_state(
             payload,
             available_concepts=available_concepts,
             legacy_habits=getattr(row, "habits", None) if isinstance(getattr(row, "habits", None), list) else None,
-            default_selected_concept=selected_concept,
+            default_selected_concept=None,
         )
         options = option_sets.get(selected_concept_key, [])
         option_lookup = {str(item.get("id") or "").strip(): item for item in options}
@@ -1736,16 +1738,10 @@ def update_daily_habit_plan_selection(
         else:
             selected_ids_by_concept.pop(selected_concept_key, None)
         row.habits = _selected_habits_from_option_sets(option_sets, selected_ids_by_concept)
-        ask_context = {
-            **payload,
-            "selected_focus_concept": selected_concept,
-            "selected_concept_key": selected_concept_key,
-        }
-        ask_suggestions = _fallback_ask_suggestions({**ask_context, "selected_habits": row.habits})
+        ask_suggestions = _fallback_ask_suggestions({**payload, "selected_habits": row.habits})
         row.context_payload = {
             **payload,
             "habit_plan_version": _CURRENT_HABIT_PLAN_VERSION,
-            "selected_concept_key": selected_concept_key,
             "habit_option_sets": option_sets,
             "selected_option_ids_by_concept": selected_ids_by_concept,
             "ask_suggestions": ask_suggestions,

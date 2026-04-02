@@ -305,56 +305,49 @@ def _combined_score(pillar_scores: list[dict]) -> int | None:
 
 def _tracker_history_lines(tracker_context: dict) -> list[str]:
     lines: list[str] = []
-    selected_focus = tracker_context.get("selected_focus_concept") or {}
-    focus_concepts = tracker_context.get("focus_concepts") or []
+    tracker_review = tracker_context.get("tracker_review") or []
     okr_context = tracker_context.get("okr_context") or {}
     day_brief = tracker_context.get("day_brief") or {}
-    focus_source = str(tracker_context.get("tracker_focus_source") or "").strip().lower()
-    if selected_focus:
-        label = str(selected_focus.get("label") or selected_focus.get("concept_key") or "").strip()
-        signal = str(selected_focus.get("signal") or "").strip()
-        latest = str(selected_focus.get("latest_value") or "").strip()
-        target = str(selected_focus.get("target_label") or "").strip()
-        pillar = str(selected_focus.get("pillar_label") or selected_focus.get("pillar_key") or "").strip()
-        score = _safe_int(selected_focus.get("score"))
-        anchor_date = str(selected_focus.get("anchor_date") or "").strip()
-        if label:
-            bits = []
-            if pillar:
-                bits.append(f"pillar={pillar}")
-            if anchor_date:
-                bits.append(f"date={anchor_date}")
-            if signal:
-                bits.append(f"signal={signal}")
-            if latest:
-                bits.append(f"latest={latest}")
-            if target:
-                bits.append(f"target={target}")
-            if score is not None:
-                bits.append(f"score={score}/100")
-            suffix = f" ({'; '.join(bits)})" if bits else ""
-            lines.append(f"Selected tracker focus: {label}{suffix}")
-    if focus_concepts and focus_source != "latest_tracker_save":
-        lines.append("Recent tracker focus:")
-        for item in focus_concepts[:4]:
-            if not isinstance(item, dict):
+    if isinstance(tracker_review, list) and tracker_review:
+        lines.append("Daily tracker review:")
+        for pillar in tracker_review[:4]:
+            if not isinstance(pillar, dict):
                 continue
-            label = str(item.get("label") or item.get("concept_key") or "").strip()
-            if not label:
+            pillar_label = str(pillar.get("pillar_label") or pillar.get("pillar_key") or "").strip()
+            if not pillar_label:
                 continue
-            signal = str(item.get("signal") or "").strip()
-            latest = str(item.get("latest_value") or "").strip()
-            target = str(item.get("target_label") or "").strip()
-            score = _safe_int(item.get("score"))
-            bits = [signal] if signal else []
-            if latest:
-                bits.append(f"latest={latest}")
-            if target:
-                bits.append(target)
+            pillar_bits = []
+            score = _safe_int(pillar.get("score"))
+            state = str(pillar.get("state") or "").strip()
             if score is not None:
-                bits.append(f"score={score}/100")
-            suffix = f" ({'; '.join(bits)})" if bits else ""
-            lines.append(f"- {label}{suffix}")
+                pillar_bits.append(f"score={score}/100")
+            if state:
+                pillar_bits.append(f"state={state}")
+            concept_summaries: list[str] = []
+            for item in (pillar.get("concepts") or [])[:5]:
+                if not isinstance(item, dict):
+                    continue
+                label = str(item.get("label") or item.get("concept_key") or "").strip()
+                if not label:
+                    continue
+                concept_bits = []
+                signal = str(item.get("signal") or "").strip()
+                latest = str(item.get("latest_value") or "").strip()
+                target = str(item.get("target_label") or "").strip()
+                concept_score = _safe_int(item.get("score"))
+                if signal:
+                    concept_bits.append(signal)
+                if latest:
+                    concept_bits.append(f"latest={latest}")
+                if target:
+                    concept_bits.append(f"target={target}")
+                if concept_score is not None:
+                    concept_bits.append(f"score={concept_score}/100")
+                suffix = f" ({'; '.join(concept_bits)})" if concept_bits else ""
+                concept_summaries.append(f"{label}{suffix}")
+            pillar_suffix = f" ({'; '.join(pillar_bits)})" if pillar_bits else ""
+            review_text = "; ".join(concept_summaries) if concept_summaries else "No tracker detail available."
+            lines.append(f"- {pillar_label}{pillar_suffix}: {review_text}")
     if isinstance(day_brief, dict):
         two_day_read = day_brief.get("two_day_read") if isinstance(day_brief.get("two_day_read"), dict) else {}
         if two_day_read:
@@ -437,14 +430,7 @@ def _support_prompt(
         extras_parts.append(f"tracker_date={tracker_focus_date}")
     if tracker_summary_mode:
         extras_parts.append("tracker_priority=today_first_then_yesterday")
-    selected_focus = tracker_context.get("selected_focus_concept") or {}
-    if selected_focus:
-        focus_label = str(selected_focus.get("label") or selected_focus.get("concept_key") or "").strip()
-        focus_signal = str(selected_focus.get("signal") or "").strip()
-        if focus_label:
-            extras_parts.append(f"tracker_focus={focus_label}")
-        if focus_signal:
-            extras_parts.append(f"tracker_signal={focus_signal}")
+        extras_parts.append("tracker_scope=all_pillars")
     extras = "; ".join(extras_parts)
     timeframe = f"Week {week_no}" if week_no else "current week"
 

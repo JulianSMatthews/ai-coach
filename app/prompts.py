@@ -1507,8 +1507,8 @@ def build_prompt(
                 "task",
                 task_block(
                     (
-                        "Write a precise one-way daily coaching message for the member based on their daily tracking from today and yesterday. "
-                        "Review both days together, identify the clearest overall pattern, explain what level of exercise makes sense today based on recovery and nutrition, "
+                        "Write a precise one-way daily coaching message for the member based on all of their daily tracking from today and yesterday. "
+                        "Review the full tracker picture across the day, identify the clearest overall pattern, explain what level of exercise makes sense today based on recovery and nutrition, "
                         "and turn that into the key moments the member needs to get right across the day."
                         if tracker_summary_mode
                         else "Reply with a brief coaching message grounded in the latest daily tracker results. "
@@ -1542,16 +1542,12 @@ def build_prompt(
     if tp == "daily_habit_plan":
         timeframe = data.get("timeframe") or "today"
         pillar_scores = data.get("scores") or []
-        selected_focus_concept = data.get("selected_focus_concept") or {}
         selected_pillar = data.get("selected_pillar") or {}
         okr_context = data.get("okr_context") or {}
+        tracker_review = data.get("tracker_review") or []
         day_brief = data.get("day_brief") or {}
-        selected_pillar_label = (
-            str(selected_pillar.get("label") or selected_pillar.get("pillar_key") or "").strip()
-            or "selected pillar"
-        )
         context_extras = (
-            f"Selected pillar={json.dumps(selected_pillar, ensure_ascii=False)}; "
+            "Tracker scope=all daily tracking; "
             f"Plan date={data.get('plan_date') or ''}"
         )
         history_lines: List[str] = []
@@ -1561,6 +1557,46 @@ def build_prompt(
                 step_text = str(step or "").strip()
                 if step_text:
                     history_lines.append(f"- {step_text}")
+        if isinstance(tracker_review, list) and tracker_review:
+            history_lines.append("Daily tracker review:")
+            for pillar in tracker_review[:4]:
+                if not isinstance(pillar, dict):
+                    continue
+                pillar_label = str(pillar.get("pillar_label") or pillar.get("pillar_key") or "").strip()
+                if not pillar_label:
+                    continue
+                pillar_bits: List[str] = []
+                pillar_score = _safe_int(pillar.get("score"))
+                pillar_state = str(pillar.get("state") or "").strip()
+                if pillar_score is not None:
+                    pillar_bits.append(f"score={pillar_score}/100")
+                if pillar_state:
+                    pillar_bits.append(f"state={pillar_state}")
+                concept_summaries: List[str] = []
+                for item in (pillar.get("concepts") or [])[:5]:
+                    if not isinstance(item, dict):
+                        continue
+                    label = str(item.get("label") or item.get("concept_key") or "").strip()
+                    if not label:
+                        continue
+                    concept_bits: List[str] = []
+                    signal = str(item.get("signal") or "").strip()
+                    latest = str(item.get("latest_value") or "").strip()
+                    target = str(item.get("target_label") or "").strip()
+                    concept_score = _safe_int(item.get("score"))
+                    if signal:
+                        concept_bits.append(signal)
+                    if latest:
+                        concept_bits.append(f"latest={latest}")
+                    if target:
+                        concept_bits.append(f"target={target}")
+                    if concept_score is not None:
+                        concept_bits.append(f"score={concept_score}/100")
+                    suffix = f" ({'; '.join(concept_bits)})" if concept_bits else ""
+                    concept_summaries.append(f"{label}{suffix}")
+                pillar_suffix = f" ({'; '.join(pillar_bits)})" if pillar_bits else ""
+                payload = "; ".join(concept_summaries) if concept_summaries else "No tracker detail available."
+                history_lines.append(f"- {pillar_label}{pillar_suffix}: {payload}")
         two_day_read = day_brief.get("two_day_read") if isinstance(day_brief, dict) else {}
         if isinstance(two_day_read, dict):
             strength = str(two_day_read.get("strength") or "").strip()
@@ -1617,11 +1653,12 @@ def build_prompt(
             (
                 "task",
                 task_block(
-                    f"Create a daily day-plan for the coach home screen in strict JSON for {selected_pillar_label}.",
+                    "Create a daily day-plan for the coach home screen in strict JSON.",
                     constraints=(
                         "Return only {title, summary, moments} or {title, summary, habits}. "
                         "Provide exactly 4 time-anchored moments for today: morning, midday, afternoon, and evening. "
                         "Use the supplied two-day read, exercise readiness, and key moments framework so this feels like a practical daily schedule. "
+                        "Review all available daily tracking across the tracked pillars rather than narrowing in on one selected concept. "
                         "Take the whole programme into account: training, nutrition, resilience, and recovery. "
                         "Build the plan around the day as a whole rather than one selected concept. "
                         "Keep the title and summary aligned to the day as a whole rather than a single narrow task."

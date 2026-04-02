@@ -68,8 +68,12 @@ def _display_unit_label(unit: str | None) -> str | None:
     return replacements.get(token, token.replace("/", " per "))
 
 
-def _concept_target_options(pillar_key: str, concept_key: str) -> list[dict[str, Any]]:
-    concept_defs = {item.concept_key: item for item in tracker_concepts_for_pillar(pillar_key)}
+def _concept_target_options(user_id: int, pillar_key: str, concept_key: str) -> list[dict[str, Any]]:
+    if str(pillar_key or "").strip().lower() == "nutrition" and str(concept_key or "").strip().lower() == "fasting_adherence":
+        return [{"value": float(value), "label": label} for value, label in FASTING_GOAL_DAYS_OPTIONS]
+    if str(pillar_key or "").strip().lower() == "nutrition" and str(concept_key or "").strip().lower() == "alcohol_units":
+        return [{"value": float(value), "label": label} for value, label in ALCOHOL_GOAL_UNITS_OPTIONS]
+    concept_defs = {item.concept_key: item for item in tracker_concepts_for_pillar(pillar_key, user_id=int(user_id))}
     concept_def = concept_defs.get(concept_key)
     if concept_def is None:
         return []
@@ -150,7 +154,7 @@ def _objective_default_text(pillar_key: str) -> str:
 
 
 def _objective_concepts_payload(user_id: int, pillar_key: str) -> dict[str, Any]:
-    required_concepts = tracker_concepts_for_pillar(pillar_key)
+    required_concepts = tracker_concepts_for_pillar(pillar_key, user_id=int(user_id))
     resolved_targets = _resolve_pillar_targets_for_user(int(user_id), pillar_key, required_concepts)
     with SessionLocal() as s:
         objective, primary_krs, _duplicates = _primary_krs_by_concept(s, int(user_id), pillar_key)
@@ -191,7 +195,7 @@ def _objective_concepts_payload(user_id: int, pillar_key: str) -> dict[str, Any]
                 "target_source": getattr(resolved_target, "source", None),
                 "target_label": getattr(resolved_target, "target_label", None),
                 "selected_value": selected_value,
-                "options": _concept_target_options(pillar_key, concept_def.concept_key),
+                "options": _concept_target_options(int(user_id), pillar_key, concept_def.concept_key),
             }
         )
     return {
@@ -231,56 +235,30 @@ def _wellbeing_payload(user_id: int) -> dict[str, Any]:
         fasting_mode = (_pref_value(s, int(user_id), FASTING_MODE_PREF_KEY) or "off").lower()
         if fasting_mode not in {value for value, _label in FASTING_MODE_OPTIONS}:
             fasting_mode = "off"
-        fasting_goal_days = (_pref_value(s, int(user_id), FASTING_GOAL_DAYS_PREF_KEY) or "0").strip()
-        if fasting_goal_days not in {value for value, _label in FASTING_GOAL_DAYS_OPTIONS}:
-            fasting_goal_days = "0"
-        if fasting_mode != "off" and fasting_goal_days == "0":
-            fasting_goal_days = "7"
         alcohol_tracking = (_pref_value(s, int(user_id), ALCOHOL_TRACKING_PREF_KEY) or "off").lower()
         if alcohol_tracking not in {"on", "off"}:
             alcohol_tracking = "off"
-        alcohol_goal_units = (_pref_value(s, int(user_id), ALCOHOL_GOAL_UNITS_PREF_KEY) or "0").strip()
-        if alcohol_goal_units not in {value for value, _label in ALCOHOL_GOAL_UNITS_OPTIONS}:
-            alcohol_goal_units = "0"
-        if alcohol_tracking != "on":
-            alcohol_goal_units = "0"
     items = [
         {
             "key": "fasting_mode",
             "label": "Fasting mode",
-            "helper": "Optional weekly objective",
+            "helper": "Turns fasting into an optional nutrition concept",
             "value": fasting_mode,
             "options": [{"value": value, "label": label} for value, label in FASTING_MODE_OPTIONS],
         },
         {
-            "key": "fasting_goal_days",
-            "label": "Fasting goal",
-            "helper": "How many days this week to follow your fasting plan",
-            "value": fasting_goal_days,
-            "options": [{"value": value, "label": label} for value, label in FASTING_GOAL_DAYS_OPTIONS],
-        },
-        {
             "key": "alcohol_tracking",
             "label": "Alcohol tracking",
-            "helper": "Turn alcohol tracking on or off",
+            "helper": "Turns alcohol into an optional nutrition concept",
             "value": alcohol_tracking,
             "options": [{"value": value, "label": label} for value, label in BOOLEAN_TOGGLE_OPTIONS],
-        },
-        {
-            "key": "alcohol_goal_units",
-            "label": "Alcohol goal",
-            "helper": "Maximum alcohol units for the week",
-            "value": alcohol_goal_units,
-            "options": [{"value": value, "label": label} for value, label in ALCOHOL_GOAL_UNITS_OPTIONS],
         },
     ]
     configured_count = sum(
         1
         for item in items
         if (item["key"] == "fasting_mode" and item["value"] != "off")
-        or (item["key"] == "fasting_goal_days" and item["value"] not in {"", "0"})
         or (item["key"] == "alcohol_tracking" and item["value"] == "on")
-        or (item["key"] == "alcohol_goal_units" and item["value"] not in {"", "0"})
     )
     return {
         "title": "Wellbeing objectives",
@@ -350,33 +328,19 @@ def save_weekly_objectives_config(
         fasting_mode = str(values.get("fasting_mode") or "off").strip().lower()
         if fasting_mode not in {value for value, _label in FASTING_MODE_OPTIONS}:
             raise ValueError("Invalid fasting mode")
-        fasting_goal_days = str(values.get("fasting_goal_days") or "0").strip()
-        if fasting_goal_days not in {value for value, _label in FASTING_GOAL_DAYS_OPTIONS}:
-            raise ValueError("Invalid fasting goal")
         alcohol_tracking = str(values.get("alcohol_tracking") or "off").strip().lower()
         if alcohol_tracking not in {"on", "off"}:
             raise ValueError("Invalid alcohol tracking value")
-        alcohol_goal_units = str(values.get("alcohol_goal_units") or "0").strip()
-        if alcohol_goal_units not in {value for value, _label in ALCOHOL_GOAL_UNITS_OPTIONS}:
-            raise ValueError("Invalid alcohol goal")
-        if fasting_mode == "off":
-            fasting_goal_days = "0"
-        elif fasting_goal_days == "0":
-            fasting_goal_days = "7"
-        if alcohol_tracking != "on":
-            alcohol_goal_units = "0"
         with SessionLocal() as s:
             _set_pref_value(s, int(user_id), FASTING_MODE_PREF_KEY, fasting_mode)
-            _set_pref_value(s, int(user_id), FASTING_GOAL_DAYS_PREF_KEY, fasting_goal_days)
             _set_pref_value(s, int(user_id), ALCOHOL_TRACKING_PREF_KEY, alcohol_tracking)
-            _set_pref_value(s, int(user_id), ALCOHOL_GOAL_UNITS_PREF_KEY, alcohol_goal_units)
             s.commit()
         return get_weekly_objectives_config(int(user_id))
 
     if section_key not in PILLAR_ORDER:
         raise ValueError("Invalid objectives section")
     target_map = concept_targets if isinstance(concept_targets, dict) else {}
-    concept_defs = tracker_concepts_for_pillar(section_key)
+    concept_defs = tracker_concepts_for_pillar(section_key, user_id=int(user_id))
     guide = _GUIDE.get(section_key, {}) or {}
     with SessionLocal() as s:
         cycle = ensure_cycle(s, datetime.now(timezone.utc))
@@ -405,7 +369,7 @@ def save_weekly_objectives_config(
             metric_label = str(concept_meta.get("label") or concept_def.label).strip() or concept_def.label
             allowed_values = {
                 float(option.get("value"))
-                for option in _concept_target_options(section_key, concept_key)
+                for option in _concept_target_options(int(user_id), section_key, concept_key)
                 if option.get("value") is not None
             }
             selected_value = _normalize_numeric_choice(target_map.get(concept_key), allowed_values)

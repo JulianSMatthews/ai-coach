@@ -113,7 +113,10 @@ def run_coach_home_tracker_refresh(
             "trigger": str(trigger or "tracker_update").strip() or "tracker_update",
             "plan_date": plan_date,
             "context_hash": context_hash,
-            "habits_ready": isinstance(habit_result, dict) and bool(habit_result.get("selected_concept_key")),
+            "habits_ready": isinstance(habit_result, dict) and bool(
+                (habit_result.get("habits") if isinstance(habit_result, dict) else None)
+                or (habit_result.get("options") if isinstance(habit_result, dict) else None)
+            ),
             "habits_source": str((habit_result or {}).get("source") or "").strip() or None,
             "gia_ready": bool(str(gia_text or "").strip()),
             "insight_ready": isinstance(insight_result, dict) and bool(
