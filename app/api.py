@@ -189,6 +189,7 @@ from .wearables import (
     apply_token_payload as apply_wearable_token_payload,
     ensure_wearables_schema,
     exchange_code_for_tokens as exchange_wearable_code_for_tokens,
+    get_apple_health_resting_hr_summary,
     get_provider_definition as get_wearable_provider_definition,
     list_provider_definitions,
     prepare_connect_request as prepare_wearable_connect_request,
@@ -196,6 +197,7 @@ from .wearables import (
     parse_wearable_oauth_state,
     provider_configured as wearable_provider_configured,
     provider_enabled as wearable_provider_enabled,
+    upsert_apple_health_resting_hr_samples,
 )
 from .pillar_tracker import (
     ensure_pillar_tracker_schema,
@@ -8510,6 +8512,57 @@ def api_user_wearables(
         "user_id": int(user_id),
         "providers": providers,
         "connected_count": int(connected_count),
+    }
+
+
+@api_v1.get("/users/{user_id}/wearables/apple-health/resting-heart-rate")
+def api_user_apple_health_resting_hr(
+    user_id: int,
+    request: Request,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    ensure_wearables_schema()
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    with SessionLocal() as s:
+        user = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="user not found")
+        return get_apple_health_resting_hr_summary(s, user_id=int(user_id))
+
+
+@api_v1.post("/users/{user_id}/wearables/apple-health/resting-heart-rate")
+def api_user_apple_health_resting_hr_sync(
+    user_id: int,
+    request: Request,
+    payload: dict | None = Body(default=None),
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    ensure_wearables_schema()
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    if _is_readonly_admin_preview_request(
+        request,
+        x_admin_token=x_admin_token,
+        x_admin_user_id=x_admin_user_id,
+    ):
+        raise HTTPException(status_code=403, detail="Admin app preview is read-only")
+    samples = payload.get("samples") if isinstance(payload, dict) else None
+    with SessionLocal() as s:
+        user = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="user not found")
+        sync_result = upsert_apple_health_resting_hr_samples(
+            s,
+            user_id=int(user_id),
+            samples=samples if isinstance(samples, list) else [],
+        )
+        s.commit()
+        summary = get_apple_health_resting_hr_summary(s, user_id=int(user_id))
+    return {
+        "ok": True,
+        "sync": sync_result,
+        **summary,
     }
 
 

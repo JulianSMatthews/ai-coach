@@ -6,6 +6,7 @@ import hmac
 import json
 import os
 import secrets
+from statistics import median
 import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
@@ -37,6 +38,11 @@ DEFAULT_FITBIT_SCOPE = "activity heartrate sleep profile offline_access"
 DEFAULT_OURA_LOOKBACK_DAYS = 30
 DEFAULT_WHOOP_LOOKBACK_DAYS = 30
 DEFAULT_FITBIT_LOOKBACK_DAYS = 30
+APPLE_HEALTH_PROVIDER = "apple_health"
+APPLE_HEALTH_BASELINE_DAYS = 7
+APPLE_HEALTH_BASELINE_MIN_POINTS = 3
+APPLE_HEALTH_OPTIMUM_DELTA_BPM = -2.0
+APPLE_HEALTH_ELEVATED_DELTA_BPM = 3.0
 
 WEARABLE_METRIC_FIELDS = (
     "sleep_seconds",
@@ -120,8 +126,8 @@ PROVIDER_DEFINITIONS: dict[str, WearableProviderDefinition] = {
         partnership_required=True,
         default_note="Awaiting Garmin Connect Developer Program approval and credentials.",
     ),
-    "apple_health": WearableProviderDefinition(
-        key="apple_health",
+    APPLE_HEALTH_PROVIDER: WearableProviderDefinition(
+        key=APPLE_HEALTH_PROVIDER,
         label="Apple Health",
         availability="requires_app",
         description="Apple Health needs an iPhone app bridge using HealthKit.",
@@ -272,7 +278,7 @@ def provider_enabled(provider: str) -> bool:
 
 def provider_configured(provider: str) -> bool:
     key = str(provider or "").strip().lower()
-    if key == "apple_health":
+    if key == APPLE_HEALTH_PROVIDER:
         return False
     if key == "garmin":
         return bool(provider_client_id(key) and provider_client_secret(key))
@@ -893,6 +899,159 @@ def _provider_sync_window(
     else:
         start_date = today - timedelta(days=lookback_days)
     return start_date, today
+
+
+def _mark_native_connection_connected(
+    connection: WearableConnection,
+    *,
+    native_source: str,
+    last_sync_at: datetime | None = None,
+) -> None:
+    synced_at = last_sync_at or _utcnow()
+    connection.status = "connected"
+    connection.connected_at = connection.connected_at or synced_at
+    connection.disconnected_at = None
+    connection.last_sync_status = "succeeded"
+    connection.last_sync_error = None
+    connection.last_sync_at = synced_at
+    meta = connection.meta if isinstance(connection.meta, dict) else {}
+    meta["native_source"] = str(native_source or "").strip() or "native"
+    meta["last_native_sync_at"] = synced_at.replace(microsecond=0).isoformat()
+    connection.meta = meta
+
+
+def upsert_apple_health_resting_hr_samples(
+    session,
+    *,
+    user_id: int,
+    samples: list[dict[str, Any]] | None,
+) -> dict[str, Any]:
+    ensure_wearables_schema()
+    normalized_samples = samples if isinstance(samples, list) else []
+    connection = _find_or_create_connection(
+        session,
+        user_id=int(user_id),
+        provider=APPLE_HEALTH_PROVIDER,
+    )
+    synced_at = _utcnow()
+    day_map: dict[date, dict[str, Any]] = {}
+    for sample in normalized_samples:
+        if not isinstance(sample, dict):
+            continue
+        metric_date = _coerce_date(sample.get("metric_date") or sample.get("metricDate") or sample.get("date"))
+        resting_hr_bpm = _coerce_float(
+            sample.get("resting_hr_bpm")
+            or sample.get("restingHeartRateBpm")
+            or sample.get("value")
+        )
+        if not metric_date or resting_hr_bpm is None or resting_hr_bpm <= 0:
+            continue
+        normalized_bpm = round(float(resting_hr_bpm), 2)
+        _merge_day_patch(
+            day_map,
+            metric_date=metric_date,
+            source_name=APPLE_HEALTH_PROVIDER,
+            record={
+                "metric_date": metric_date.isoformat(),
+                "resting_hr_bpm": normalized_bpm,
+            },
+            patch={
+                "resting_hr_bpm": normalized_bpm,
+            },
+        )
+    _mark_native_connection_connected(connection, native_source="ios_healthkit", last_sync_at=synced_at)
+    records_synced = _upsert_daily_metrics(
+        session,
+        connection=connection,
+        provider=APPLE_HEALTH_PROVIDER,
+        day_map=day_map,
+    )
+    return {
+        "provider": APPLE_HEALTH_PROVIDER,
+        "records_synced": int(records_synced or 0),
+        "latest_metric_date": max(day_map.keys()).isoformat() if day_map else None,
+        "connected": True,
+    }
+
+
+def _apple_health_resting_hr_status(
+    latest_value: float | None,
+    baseline_value: float | None,
+) -> tuple[str, str]:
+    if latest_value is None:
+        return "normal", "Normal"
+    if baseline_value is None:
+        return "normal", "Normal"
+    delta = float(latest_value) - float(baseline_value)
+    if delta <= APPLE_HEALTH_OPTIMUM_DELTA_BPM:
+        return "optimum", "Optimal"
+    if delta >= APPLE_HEALTH_ELEVATED_DELTA_BPM:
+        return "elevated", "Elevated"
+    return "normal", "Normal"
+
+
+def get_apple_health_resting_hr_summary(
+    session,
+    *,
+    user_id: int,
+) -> dict[str, Any]:
+    ensure_wearables_schema()
+    connection = (
+        session.query(WearableConnection)
+        .filter(
+            WearableConnection.user_id == int(user_id),
+            WearableConnection.provider == APPLE_HEALTH_PROVIDER,
+        )
+        .one_or_none()
+    )
+    rows = (
+        session.query(WearableDailyMetric)
+        .filter(
+            WearableDailyMetric.user_id == int(user_id),
+            WearableDailyMetric.provider == APPLE_HEALTH_PROVIDER,
+            WearableDailyMetric.resting_hr_bpm.isnot(None),
+        )
+        .order_by(WearableDailyMetric.metric_date.desc())
+        .limit(APPLE_HEALTH_BASELINE_DAYS + 1)
+        .all()
+    )
+    latest_row = rows[0] if rows else None
+    latest_value = (
+        round(float(latest_row.resting_hr_bpm), 1)
+        if latest_row and latest_row.resting_hr_bpm is not None
+        else None
+    )
+    baseline_values = [
+        float(row.resting_hr_bpm)
+        for row in rows[1 : APPLE_HEALTH_BASELINE_DAYS + 1]
+        if row.resting_hr_bpm is not None
+    ]
+    baseline_value = (
+        round(float(median(baseline_values)), 1)
+        if len(baseline_values) >= APPLE_HEALTH_BASELINE_MIN_POINTS
+        else None
+    )
+    trend_status, trend_label = _apple_health_resting_hr_status(latest_value, baseline_value)
+    delta_bpm = (
+        round(float(latest_value) - float(baseline_value), 1)
+        if latest_value is not None and baseline_value is not None
+        else None
+    )
+    connected = bool(
+        connection and str(getattr(connection, "status", "") or "").strip().lower() == "connected"
+    )
+    return {
+        "provider": APPLE_HEALTH_PROVIDER,
+        "connected": connected,
+        "metric_date": latest_row.metric_date.isoformat() if latest_row else None,
+        "resting_hr_bpm": latest_value,
+        "baseline_resting_hr_bpm": baseline_value,
+        "delta_bpm": delta_bpm,
+        "trend_status": trend_status if latest_row else None,
+        "trend_label": trend_label if latest_row else None,
+        "synced_at": latest_row.synced_at.isoformat() if latest_row and latest_row.synced_at else None,
+        "available": latest_row is not None,
+    }
 
 
 def _token_value(connection: WearableConnection) -> str:

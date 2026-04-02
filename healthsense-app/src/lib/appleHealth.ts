@@ -1,0 +1,92 @@
+import { Capacitor, registerPlugin } from "@capacitor/core";
+import type { AppleHealthRestingHeartRateResponse } from "@/lib/api";
+
+export type AppleHealthAuthorizationState =
+  | "authorized"
+  | "denied"
+  | "not_determined"
+  | "unsupported";
+
+export type AppleHealthAuthorizationResponse = {
+  available?: boolean;
+  status?: AppleHealthAuthorizationState;
+};
+
+export type AppleHealthRestingHeartRateSample = {
+  metricDate: string;
+  restingHeartRateBpm: number;
+};
+
+type AppleHealthPlugin = {
+  authorizationStatus(): Promise<AppleHealthAuthorizationResponse>;
+  requestAuthorization(): Promise<AppleHealthAuthorizationResponse>;
+  getRecentRestingHeartRate(options?: {
+    days?: number;
+  }): Promise<{
+    samples?: AppleHealthRestingHeartRateSample[];
+    latestMetricDate?: string | null;
+  }>;
+};
+
+const AppleHealth = registerPlugin<AppleHealthPlugin>("AppleHealth");
+
+export function canUseAppleHealth(): boolean {
+  return Capacitor.isNativePlatform() && Capacitor.getPlatform() === "ios";
+}
+
+export async function getAppleHealthAuthorizationStatus(): Promise<AppleHealthAuthorizationResponse> {
+  if (!canUseAppleHealth()) {
+    return {
+      available: false,
+      status: "unsupported",
+    };
+  }
+  return AppleHealth.authorizationStatus();
+}
+
+export async function requestAppleHealthAuthorization(): Promise<AppleHealthAuthorizationResponse> {
+  if (!canUseAppleHealth()) {
+    return {
+      available: false,
+      status: "unsupported",
+    };
+  }
+  return AppleHealth.requestAuthorization();
+}
+
+export async function syncAppleHealthRestingHeartRate(
+  userId: string,
+  options?: { days?: number },
+): Promise<AppleHealthRestingHeartRateResponse | null> {
+  if (!canUseAppleHealth()) return null;
+  const readings = await AppleHealth.getRecentRestingHeartRate({
+    days: Math.max(7, Math.min(30, Number(options?.days) || 21)),
+  });
+  const samples = Array.isArray(readings?.samples)
+    ? readings.samples
+        .map((sample) => ({
+          metric_date: String(sample?.metricDate || "").trim(),
+          resting_hr_bpm: Number(sample?.restingHeartRateBpm),
+        }))
+        .filter(
+          (sample) =>
+            Boolean(sample.metric_date) &&
+            Number.isFinite(sample.resting_hr_bpm) &&
+            sample.resting_hr_bpm > 0,
+        )
+    : [];
+  if (!samples.length) return null;
+  const res = await fetch("/api/apple-health/resting-heart-rate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      userId,
+      samples,
+    }),
+  });
+  const text = await res.text().catch(() => "");
+  if (!res.ok) {
+    throw new Error(text || "Failed to sync Apple Health resting heart rate.");
+  }
+  return text ? (JSON.parse(text) as AppleHealthRestingHeartRateResponse) : null;
+}

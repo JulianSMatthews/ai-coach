@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
+  AppleHealthRestingHeartRateResponse,
   // Keep tracker responses local to this panel.
   PillarTrackerDetailResponse,
   PillarTrackerPillar,
@@ -9,6 +10,13 @@ import type {
   WeeklyObjectivePillarConfig,
   WeeklyObjectivesResponse,
 } from "@/lib/api";
+import {
+  canUseAppleHealth,
+  getAppleHealthAuthorizationStatus,
+  requestAppleHealthAuthorization,
+  syncAppleHealthRestingHeartRate,
+  type AppleHealthAuthorizationState,
+} from "@/lib/appleHealth";
 import { applyThemePreference, readStoredThemePreference } from "@/lib/theme";
 import { getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
@@ -29,6 +37,22 @@ type ObjectivesSectionKey = "nutrition" | "training" | "resilience" | "recovery"
 const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
 const HEALTHSENSE_ORANGE = "#c54817";
 const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
+
+function resolveRestingHeartRateTone(status?: string | null): string {
+  if (status === "optimum") {
+    return "border-[#d7c8ff] bg-[#f4eeff] text-[#5f42aa]";
+  }
+  if (status === "elevated") {
+    return "border-[#f0caa8] bg-[#fff3e7] text-[#9a4d18]";
+  }
+  return "border-[#cfe5b8] bg-[#f2fae8] text-[#2d6226]";
+}
+
+function resolveRestingHeartRateValue(value?: number | null): string | null {
+  const resolved = Number(value);
+  if (!Number.isFinite(resolved) || resolved <= 0) return null;
+  return String(Math.round(resolved));
+}
 
 function isDailyCheckInComplete(summary?: PillarTrackerSummaryResponse | null): boolean {
   if (!summary) return false;
@@ -287,6 +311,10 @@ export default function LatestAssessmentPanel({
   const [selectedObjectivesSection, setSelectedObjectivesSection] = useState<ObjectivesSectionKey | null>(null);
   const [pillarObjectiveDrafts, setPillarObjectiveDrafts] = useState<Record<string, Record<string, number | null>>>({});
   const [wellbeingObjectiveDraft, setWellbeingObjectiveDraft] = useState<Record<string, string>>({});
+  const [restingHeartRate, setRestingHeartRate] = useState<AppleHealthRestingHeartRateResponse | null>(null);
+  const [restingHeartRateLoading, setRestingHeartRateLoading] = useState(false);
+  const [restingHeartRateEnabling, setRestingHeartRateEnabling] = useState(false);
+  const [appleHealthAuthStatus, setAppleHealthAuthStatus] = useState<AppleHealthAuthorizationState>("unsupported");
   const summaryPanelRef = useRef<HTMLElement | null>(null);
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
@@ -370,6 +398,10 @@ export default function LatestAssessmentPanel({
     () => (Array.isArray(weeklyObjectives?.wellbeing?.items) ? weeklyObjectives.wellbeing.items : []),
     [weeklyObjectives],
   );
+  const appleHealthSupported = canUseAppleHealth();
+  const restingHeartRateValue = resolveRestingHeartRateValue(restingHeartRate?.resting_hr_bpm);
+  const restingHeartRateChipVisible = Boolean(restingHeartRate?.available) || appleHealthSupported;
+  const restingHeartRateToneClassName = resolveRestingHeartRateTone(restingHeartRate?.trend_status);
 
   const refreshSummary = useCallback(async () => {
     const res = await fetch(`/api/pillar-tracker/summary?userId=${encodeURIComponent(userId)}`, {
@@ -383,6 +415,53 @@ export default function LatestAssessmentPanel({
     const payload = (text ? (JSON.parse(text) as PillarTrackerSummaryResponse) : {}) as PillarTrackerSummaryResponse;
     setSummary(payload);
   }, [userId]);
+
+  const loadRestingHeartRate = useCallback(async () => {
+    const res = await fetch(`/api/apple-health/resting-heart-rate?userId=${encodeURIComponent(userId)}`, {
+      method: "GET",
+      cache: "no-store",
+    });
+    const text = await res.text().catch(() => "");
+    if (!res.ok) {
+      throw new Error(normalizeError(text, "Failed to load resting heart rate."));
+    }
+    const payload = (text ? (JSON.parse(text) as AppleHealthRestingHeartRateResponse) : {}) as AppleHealthRestingHeartRateResponse;
+    setRestingHeartRate(payload);
+    return payload;
+  }, [userId]);
+
+  const syncNativeRestingHeartRate = useCallback(
+    async (requestAccess = false) => {
+      if (!appleHealthSupported) return null;
+      if (requestAccess) {
+        setRestingHeartRateEnabling(true);
+      } else {
+        setRestingHeartRateLoading(true);
+      }
+      try {
+        const auth = requestAccess
+          ? await requestAppleHealthAuthorization()
+          : await getAppleHealthAuthorizationStatus();
+        const status = auth.status || "unsupported";
+        setAppleHealthAuthStatus(status);
+        if (!auth.available || status !== "authorized") {
+          return null;
+        }
+        const payload = await syncAppleHealthRestingHeartRate(userId, { days: 21 });
+        if (payload) {
+          setRestingHeartRate(payload);
+          return payload;
+        }
+        return await loadRestingHeartRate().catch(() => null);
+      } catch {
+        return null;
+      } finally {
+        setRestingHeartRateLoading(false);
+        setRestingHeartRateEnabling(false);
+      }
+    },
+    [appleHealthSupported, loadRestingHeartRate, userId],
+  );
 
   const toggleDisplayTheme = useCallback(async () => {
     if (togglingDisplay) return;
@@ -533,6 +612,40 @@ export default function LatestAssessmentPanel({
   useEffect(() => {
     setDisplayTheme(resolveCurrentDisplayTheme());
   }, []);
+
+  useEffect(() => {
+    if (!summaryPanelVisible) return;
+    let cancelled = false;
+    const hydrateRestingHeartRate = async () => {
+      try {
+        const summaryPayload = await loadRestingHeartRate();
+        if (cancelled) return;
+        if (summaryPayload?.available) {
+          setRestingHeartRate(summaryPayload);
+        }
+      } catch {
+        // Keep the score screen usable even if Apple Health data is unavailable.
+      }
+      if (!appleHealthSupported) return;
+      try {
+        const auth = await getAppleHealthAuthorizationStatus();
+        if (cancelled) return;
+        const status = auth.status || "unsupported";
+        setAppleHealthAuthStatus(status);
+        if (auth.available && status === "authorized") {
+          await syncNativeRestingHeartRate(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setAppleHealthAuthStatus("unsupported");
+        }
+      }
+    };
+    void hydrateRestingHeartRate();
+    return () => {
+      cancelled = true;
+    };
+  }, [appleHealthSupported, loadRestingHeartRate, summaryPanelVisible, syncNativeRestingHeartRate]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -769,7 +882,59 @@ export default function LatestAssessmentPanel({
           ref={summaryPanelRef}
           className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-5 sm:py-6"
         >
-          <div className="mb-4 flex justify-end">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div className="min-h-[3.5rem]">
+              {restingHeartRateChipVisible ? (
+                appleHealthSupported ? (
+                  <button
+                    type="button"
+                    onClick={() => void syncNativeRestingHeartRate(appleHealthAuthStatus !== "authorized")}
+                    disabled={restingHeartRateLoading || restingHeartRateEnabling}
+                    className={`min-w-[7.5rem] rounded-[22px] border px-3 py-2 text-left shadow-[0_16px_30px_-24px_rgba(30,27,22,0.45)] transition disabled:cursor-not-allowed disabled:opacity-70 ${restingHeartRateToneClassName}`}
+                  >
+                    <p className="text-[0.62rem] font-semibold uppercase tracking-[0.18em] opacity-80">
+                      Resting HR
+                    </p>
+                    {restingHeartRateValue ? (
+                      <>
+                        <div className="mt-1 flex items-end gap-1">
+                          <span className="text-xl font-semibold leading-none">{restingHeartRateValue}</span>
+                          <span className="pb-[1px] text-[0.7rem] font-semibold uppercase tracking-[0.14em] opacity-80">
+                            bpm
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[0.68rem] font-medium uppercase tracking-[0.12em] opacity-80">
+                          {restingHeartRate?.trend_label || "Normal"}
+                        </p>
+                      </>
+                    ) : (
+                      <p className="mt-2 text-sm font-semibold">
+                        {restingHeartRateLoading || restingHeartRateEnabling
+                          ? "Syncing…"
+                          : appleHealthAuthStatus === "authorized"
+                            ? "No data"
+                            : "Enable"}
+                      </p>
+                    )}
+                  </button>
+                ) : restingHeartRateValue ? (
+                  <div
+                    className={`min-w-[7.5rem] rounded-[22px] border px-3 py-2 text-left shadow-[0_16px_30px_-24px_rgba(30,27,22,0.45)] ${restingHeartRateToneClassName}`}
+                  >
+                    <p className="text-[0.62rem] font-semibold uppercase tracking-[0.18em] opacity-80">Resting HR</p>
+                    <div className="mt-1 flex items-end gap-1">
+                      <span className="text-xl font-semibold leading-none">{restingHeartRateValue}</span>
+                      <span className="pb-[1px] text-[0.7rem] font-semibold uppercase tracking-[0.14em] opacity-80">
+                        bpm
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[0.68rem] font-medium uppercase tracking-[0.12em] opacity-80">
+                      {restingHeartRate?.trend_label || "Normal"}
+                    </p>
+                  </div>
+                ) : null
+              ) : null}
+            </div>
             <button
               type="button"
               onClick={() => void toggleDisplayTheme()}

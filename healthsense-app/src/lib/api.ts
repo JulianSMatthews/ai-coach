@@ -114,6 +114,26 @@ export type WearablesResponse = {
   providers?: WearableProviderState[];
 };
 
+export type AppleHealthRestingHeartRateResponse = {
+  provider?: string;
+  connected?: boolean;
+  metric_date?: string | null;
+  resting_hr_bpm?: number | null;
+  baseline_resting_hr_bpm?: number | null;
+  delta_bpm?: number | null;
+  trend_status?: "optimum" | "normal" | "elevated" | null;
+  trend_label?: string | null;
+  synced_at?: string | null;
+  available?: boolean;
+  ok?: boolean;
+  sync?: {
+    provider?: string;
+    records_synced?: number;
+    latest_metric_date?: string | null;
+    connected?: boolean;
+  };
+};
+
 export type PillarTrackerOption = {
   value?: number;
   label?: string;
