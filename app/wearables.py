@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import urlencode
 
 import requests
+from sqlalchemy import inspect, text
 
 from .db import engine
 from .models import WearableConnection, WearableDailyMetric, WearableSyncRun
@@ -59,6 +60,17 @@ WEARABLE_METRIC_FIELDS = (
 _WEARABLE_STATE_VERSION = 1
 _WEARABLE_STATE_RUNTIME_SECRET = secrets.token_urlsafe(48)
 _WEARABLE_SCHEMA_READY = False
+_WEARABLE_DAILY_METRIC_COLUMN_TYPES = {
+    "sleep_seconds": "integer",
+    "sleep_score": "integer",
+    "readiness_score": "integer",
+    "hrv_ms": "double precision",
+    "resting_hr_bpm": "double precision",
+    "steps": "integer",
+    "active_minutes": "integer",
+    "calories": "integer",
+    "strain_score": "double precision",
+}
 
 
 def ensure_wearables_schema() -> None:
@@ -69,6 +81,34 @@ def ensure_wearables_schema() -> None:
         WearableConnection.__table__.create(bind=engine, checkfirst=True)
         WearableSyncRun.__table__.create(bind=engine, checkfirst=True)
         WearableDailyMetric.__table__.create(bind=engine, checkfirst=True)
+        inspector = inspect(engine)
+        existing_columns = {
+            str(column.get("name") or "").strip().lower()
+            for column in inspector.get_columns("wearable_daily_metrics")
+        }
+        missing_columns = [
+            (name, column_type)
+            for name, column_type in _WEARABLE_DAILY_METRIC_COLUMN_TYPES.items()
+            if name not in existing_columns
+        ]
+        if missing_columns:
+            with engine.begin() as conn:
+                dialect = str(getattr(conn.dialect, "name", "") or "").strip().lower()
+                for column_name, column_type in missing_columns:
+                    if dialect == "postgresql":
+                        conn.execute(
+                            text(
+                                f"ALTER TABLE wearable_daily_metrics "
+                                f"ADD COLUMN IF NOT EXISTS {column_name} {column_type};"
+                            )
+                        )
+                    else:
+                        conn.execute(
+                            text(
+                                f"ALTER TABLE wearable_daily_metrics "
+                                f"ADD COLUMN {column_name} {column_type};"
+                            )
+                        )
         _WEARABLE_SCHEMA_READY = True
     except Exception:
         _WEARABLE_SCHEMA_READY = False

@@ -1521,7 +1521,12 @@ def build_prompt(
                 ),
             ),
             ("okr", okr_txt),
-            ("scores", scores_block(scores_payload, combined=data.get("combined_score")) if scores_payload else ""),
+            (
+                "scores",
+                ""
+                if tracker_summary_mode
+                else scores_block(scores_payload, combined=data.get("combined_score")) if scores_payload else "",
+            ),
             ("habit", habit_readiness_block(psych_payload) if psych_payload else ""),
             ("history", history_block(history_label, history_lines, channel=history_channel) if history_lines else ""),
             (
@@ -1587,10 +1592,7 @@ def build_prompt(
                 if not pillar_label:
                     continue
                 pillar_bits: List[str] = []
-                pillar_score = _safe_int(pillar.get("score"))
                 pillar_state = str(pillar.get("state") or "").strip()
-                if pillar_score is not None:
-                    pillar_bits.append(f"score={pillar_score}/100")
                 if pillar_state:
                     pillar_bits.append(f"state={pillar_state}")
                 concept_summaries: List[str] = []
@@ -1604,15 +1606,12 @@ def build_prompt(
                     signal = str(item.get("signal") or "").strip()
                     latest = str(item.get("latest_value") or "").strip()
                     target = str(item.get("target_label") or "").strip()
-                    concept_score = _safe_int(item.get("score"))
                     if signal:
                         concept_bits.append(signal)
                     if latest:
                         concept_bits.append(f"latest={latest}")
                     if target:
                         concept_bits.append(f"target={target}")
-                    if concept_score is not None:
-                        concept_bits.append(f"score={concept_score}/100")
                     suffix = f" ({'; '.join(concept_bits)})" if concept_bits else ""
                     concept_summaries.append(f"{label}{suffix}")
                 pillar_suffix = f" ({'; '.join(pillar_bits)})" if pillar_bits else ""
@@ -1668,7 +1667,7 @@ def build_prompt(
             ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
             ("locale", settings.get("locale_block") or locale_block(locale)),
             ("context", context_block("daily_habit_plan", "coach home day plan", timeframe=str(timeframe), channel="App", extras=context_extras)),
-            ("scores", scores_block(pillar_scores) if pillar_scores else ""),
+            ("scores", ""),
             ("okr", tracker_summary_okr_block(okr_context) if okr_context else ""),
             ("history", history_block("current day brief", history_lines, channel="App") if history_lines else ""),
             (

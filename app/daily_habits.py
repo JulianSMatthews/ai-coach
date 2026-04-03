@@ -415,6 +415,13 @@ def _focus_issue_text(focus: dict[str, Any] | None, *, fallback_label: str) -> s
     focus = focus or {}
     label = str(focus.get("label") or fallback_label or "this area").strip() or "this area"
     signal = str(focus.get("signal") or "").strip().lower()
+    concept_key = _normalize_concept_token(focus.get("concept_key"))
+    if concept_key == "sleep_quality" and signal == "missed_today":
+        return "You did not wake up well rested today, so recovery needs more protecting across the day."
+    if concept_key == "sleep_duration" and signal == "missed_today":
+        return "Sleep came up short, so today needs to stay more recovery-aware."
+    if concept_key == "bedtime_consistency" and signal == "missed_today":
+        return "Last night did not finish cleanly, so recovery needs tighter protection today."
     if signal == "missed_today":
         return f"{label} has already slipped today and needs tightening."
     if signal == "missed_yesterday":
@@ -440,16 +447,87 @@ def _best_pillar_strength(summary: dict[str, Any]) -> dict[str, Any] | None:
     return ordered[0] if ordered else None
 
 
+def _latest_tracker_strength(snapshots: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    candidates: list[dict[str, Any]] = []
+    for pillar_key in _PILLAR_ORDER:
+        snapshot = snapshots.get(pillar_key)
+        if not isinstance(snapshot, dict):
+            continue
+        concepts = [item for item in (snapshot.get("review_concepts") or []) if isinstance(item, dict)]
+        if not concepts:
+            continue
+        on_track = sum(1 for item in concepts if _concept_signal(item) == "on_track")
+        missed_today = sum(1 for item in concepts if _concept_signal(item) == "missed_today")
+        missed_yesterday = sum(1 for item in concepts if _concept_signal(item) == "missed_yesterday")
+        candidates.append(
+            {
+                "pillar_key": pillar_key,
+                "label": str(snapshot.get("label") or pillar_key.title()).strip() or pillar_key.title(),
+                "on_track": on_track,
+                "missed_today": missed_today,
+                "missed_yesterday": missed_yesterday,
+            }
+        )
+    if not candidates:
+        return None
+    ordered = sorted(
+        candidates,
+        key=lambda item: (
+            int(item.get("missed_today") or 0),
+            int(item.get("missed_yesterday") or 0),
+            -(int(item.get("on_track") or 0)),
+            _pillar_rank(str(item.get("pillar_key") or "")),
+        ),
+    )
+    return ordered[0] if ordered else None
+
+
+def _concept_signal(item: dict[str, Any] | None) -> str:
+    return str((item or {}).get("signal") or "").strip().lower()
+
+
+def _recovery_signal_profile(recovery_snapshot: dict[str, Any]) -> dict[str, bool]:
+    rested = _snapshot_concept(recovery_snapshot, "sleep_quality") or {}
+    sleep_duration = _snapshot_concept(recovery_snapshot, "sleep_duration") or {}
+    bedtime = _snapshot_concept(recovery_snapshot, "bedtime_consistency") or {}
+    rested_signal = _concept_signal(rested)
+    sleep_signal = _concept_signal(sleep_duration)
+    bedtime_signal = _concept_signal(bedtime)
+    rested_today = rested_signal == "missed_today"
+    sleep_today = sleep_signal == "missed_today"
+    bedtime_today = bedtime_signal == "missed_today"
+    return {
+        "rested_today": rested_today,
+        "sleep_today": sleep_today,
+        "bedtime_today": bedtime_today,
+        "acute_recovery_drag": rested_today or sleep_today,
+    }
+
+
 def _exercise_readiness(
     *,
     nutrition_snapshot: dict[str, Any],
     recovery_snapshot: dict[str, Any],
     resilience_snapshot: dict[str, Any],
 ) -> dict[str, str]:
-    nutrition_state = str(nutrition_snapshot.get("state") or "unknown").strip().lower()
-    recovery_state = str(recovery_snapshot.get("state") or "unknown").strip().lower()
-    resilience_state = str(resilience_snapshot.get("state") or "unknown").strip().lower()
-    if nutrition_state == "weak" and recovery_state == "weak":
+    nutrition_state = _latest_daily_guidance_state(nutrition_snapshot, "nutrition")
+    recovery_state = _latest_daily_guidance_state(recovery_snapshot, "recovery")
+    resilience_state = _latest_daily_guidance_state(resilience_snapshot, "resilience")
+    recovery_profile = _recovery_signal_profile(recovery_snapshot)
+    if recovery_profile.get("rested_today") and recovery_profile.get("sleep_today"):
+        exercise_state = "recover"
+        reason = "You did not wake up rested and sleep was short, so today should stay recovery-first."
+    elif recovery_profile.get("rested_today"):
+        if nutrition_state == "weak":
+            exercise_state = "recover"
+            reason = "You did not wake up rested and nutrition also needs support, so keep today recovery-first."
+        else:
+            exercise_state = "light"
+            reason = "You did not wake up rested, so keep movement in but make this a more recovery-conscious day."
+    elif recovery_profile.get("sleep_today") and nutrition_state != "strong":
+        exercise_state = "light"
+        reason = "Sleep was short and the basics are not fully in place, so keep the day lighter and more supportive."
+    elif nutrition_state == "weak" and recovery_state == "weak":
         exercise_state = "recover"
         reason = "Recovery and nutrition are both off, so today should stay recovery-first."
     elif nutrition_state == "weak" or recovery_state == "weak":
@@ -490,6 +568,41 @@ def _snapshot_concept(snapshot: dict[str, Any], concept_key: str) -> dict[str, A
         if _normalize_concept_token(item.get("concept_key")) == target:
             return item
     return None
+
+
+def _latest_daily_guidance_state(snapshot: dict[str, Any], pillar_key: str) -> str:
+    concepts = [item for item in (snapshot.get("review_concepts") or []) if isinstance(item, dict)]
+    if not concepts:
+        return str(snapshot.get("state") or "unknown").strip().lower() or "unknown"
+    missed_today = sum(1 for item in concepts if _concept_signal(item) == "missed_today")
+    missed_yesterday = sum(1 for item in concepts if _concept_signal(item) == "missed_yesterday")
+    needs_support = sum(1 for item in concepts if _concept_signal(item) == "needs_support")
+    on_track = sum(1 for item in concepts if _concept_signal(item) == "on_track")
+    token = str(pillar_key or "").strip().lower()
+    if token == "recovery":
+        recovery_profile = _recovery_signal_profile(snapshot)
+        if recovery_profile.get("rested_today") or recovery_profile.get("sleep_today"):
+            return "weak"
+        if recovery_profile.get("bedtime_today") or missed_yesterday or needs_support:
+            return "fair"
+    elif token == "nutrition":
+        critical_miss = any(
+            _concept_signal(item) == "missed_today"
+            and _normalize_concept_token(item.get("concept_key")) in {"hydration", "protein_intake", "fasting_adherence"}
+            for item in concepts
+        )
+        if critical_miss or missed_today >= 2:
+            return "weak"
+        if missed_today or missed_yesterday or needs_support:
+            return "fair"
+    else:
+        if missed_today >= 2:
+            return "weak"
+        if missed_today or missed_yesterday or needs_support:
+            return "fair"
+    if on_track:
+        return "strong"
+    return str(snapshot.get("state") or "unknown").strip().lower() or "unknown"
 
 
 def _all_tracker_review_concepts(snapshots: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
@@ -552,7 +665,7 @@ def _build_tracker_review(snapshots: dict[str, dict[str, Any]]) -> list[dict[str
             {
                 "pillar_key": pillar_key,
                 "pillar_label": str(snapshot.get("label") or pillar_key.title()).strip() or pillar_key.title(),
-                "state": str(snapshot.get("state") or "unknown").strip().lower() or "unknown",
+                "state": _latest_daily_guidance_state(snapshot, pillar_key),
                 "score": _safe_int(snapshot.get("score")),
                 "concepts": concepts,
             }
@@ -572,9 +685,10 @@ def _build_key_moments(
     resilience_snapshot = snapshots.get("resilience") or {}
     recovery_snapshot = snapshots.get("recovery") or {}
     wellbeing_targets = wellbeing_targets if isinstance(wellbeing_targets, dict) else {}
-    nutrition_state = str(nutrition_snapshot.get("state") or "unknown").strip().lower()
-    resilience_state = str(resilience_snapshot.get("state") or "unknown").strip().lower()
-    recovery_state = str(recovery_snapshot.get("state") or "unknown").strip().lower()
+    nutrition_state = _latest_daily_guidance_state(nutrition_snapshot, "nutrition")
+    resilience_state = _latest_daily_guidance_state(resilience_snapshot, "resilience")
+    recovery_state = _latest_daily_guidance_state(recovery_snapshot, "recovery")
+    recovery_profile = _recovery_signal_profile(recovery_snapshot)
     training_focus_label = _snapshot_focus_label(training_snapshot, "training quality").lower()
     nutrition_focus_label = _snapshot_focus_label(nutrition_snapshot, "food and fluids").lower()
     resilience_focus_label = _snapshot_focus_label(resilience_snapshot, "your headspace").lower()
@@ -590,7 +704,11 @@ def _build_key_moments(
     morning_title = "Set the day early"
     if fasting_active:
         morning_title = "Set the window cleanly"
-        if nutrition_state == "weak" or recovery_state == "weak":
+        if recovery_profile.get("rested_today"):
+            morning_detail = (
+                f"Hydrate early, keep the start calm, and hold your {fasting_mode} window without turning the morning into a grind."
+            )
+        elif nutrition_state == "weak" or recovery_state == "weak":
             morning_detail = (
                 f"Hydrate early, reset your {fasting_mode} fasting window, and avoid drifting into reactive eating later on."
             )
@@ -598,6 +716,11 @@ def _build_key_moments(
             morning_detail = (
                 f"Hydrate early and be clear on your {fasting_mode} fasting window so the day starts controlled rather than automatic."
             )
+    elif recovery_profile.get("rested_today"):
+        morning_title = "Keep the start gentle"
+        morning_detail = (
+            "You did not wake up well rested, so keep the morning steady with fluids, food, and less rush than usual."
+        )
     elif nutrition_focus_key == "hydration":
         morning_title = "Get fluids in early"
         morning_detail = (
@@ -620,7 +743,11 @@ def _build_key_moments(
     midday_title = "Keep the middle steady"
     if fasting_active:
         midday_title = "Keep the window deliberate"
-        if nutrition_state == "weak":
+        if recovery_profile.get("rested_today"):
+            midday_detail = (
+                f"Keep the middle of the day lighter, stay on top of fluids, and end your {fasting_mode} window deliberately rather than reactively."
+            )
+        elif nutrition_state == "weak":
             midday_detail = (
                 f"Stay deliberate with your {fasting_mode} window, keep fluids up, and plan the first meal instead of improvising it."
             )
@@ -628,6 +755,11 @@ def _build_key_moments(
             midday_detail = (
                 f"Use the middle of the day to stay on top of fluids and decide exactly how your {fasting_mode} window will end."
             )
+    elif recovery_profile.get("rested_today"):
+        midday_title = "Protect your energy"
+        midday_detail = (
+            "Use lunch and the middle of the day to refuel properly and keep the pace steadier than a normal push day."
+        )
     elif nutrition_focus_key == "hydration":
         midday_title = "Top fluids up again"
         midday_detail = (
@@ -669,14 +801,24 @@ def _build_key_moments(
             )
     elif exercise_state == "light":
         afternoon_title = "Keep movement supportive"
-        afternoon_detail = (
-            f"Use lighter movement or mobility today and let {nutrition_focus_label} and {recovery_focus_label} catch up first."
-        )
+        if recovery_profile.get("rested_today"):
+            afternoon_detail = (
+                "Keep training lighter today and use walking, mobility, or an easier session rather than trying to force performance."
+            )
+        else:
+            afternoon_detail = (
+                f"Use lighter movement or mobility today and let {nutrition_focus_label} and {recovery_focus_label} catch up first."
+            )
     else:
         afternoon_title = "Make recovery the session"
-        afternoon_detail = (
-            f"Skip the hard session today and put the effort into walking, mobility, and settling {recovery_focus_label}."
-        )
+        if recovery_profile.get("acute_recovery_drag"):
+            afternoon_detail = (
+                "Skip the hard session today and put the effort into walking, mobility, and getting recovery back under you."
+            )
+        else:
+            afternoon_detail = (
+                f"Skip the hard session today and put the effort into walking, mobility, and settling {recovery_focus_label}."
+            )
 
     evening_title = "Close the day cleanly"
     if alcohol_active:
@@ -707,6 +849,10 @@ def _build_key_moments(
             evening_detail = (
                 f"Finish the last meal deliberately and close the evening well so tomorrow's {fasting_mode} window starts cleanly."
             )
+    elif recovery_profile.get("acute_recovery_drag"):
+        evening_detail = (
+            "Protect the evening properly tonight, keep stimulation low, and give yourself a better chance of waking up rested tomorrow."
+        )
     elif recovery_state == "weak":
         evening_detail = (
             "Keep the evening very simple, protect sleep, and avoid anything that makes tomorrow harder."
@@ -767,20 +913,20 @@ def _build_day_brief(
         recovery_snapshot=recovery_snapshot,
         resilience_snapshot=resilience_snapshot,
     )
-    strength_row = _best_pillar_strength(summary) or {}
+    recovery_profile = _recovery_signal_profile(recovery_snapshot)
+    strength_row = _latest_tracker_strength(snapshots) or {}
     strength_label = str(strength_row.get("label") or "The basics").strip() or "The basics"
-    strength_score = _safe_int(strength_row.get("score"))
-    if strength_score is not None and strength_score >= 80:
-        strength_text = f"{strength_label} is giving you a strong base."
-    elif strength_score is not None and strength_score >= 60:
-        strength_text = f"{strength_label} is holding reasonably steady."
-    else:
-        strength_text = f"{strength_label} is the most stable part of the day right now."
+    strength_text = f"{strength_label} looks the steadiest in the latest tracking."
     primary_issue = _primary_tracker_issue(snapshots)
-    carry_over_issue = _focus_issue_text(
-        primary_issue,
-        fallback_label="today's tracking",
-    )
+    if recovery_profile.get("rested_today"):
+        carry_over_issue = "You did not wake up well rested today, so this needs to be a more recovery-aware day rather than a push day."
+    elif recovery_profile.get("sleep_today"):
+        carry_over_issue = "Sleep came up short, so today needs to stay more protective and less aggressive."
+    else:
+        carry_over_issue = _focus_issue_text(
+            primary_issue,
+            fallback_label="today's tracking",
+        )
     exercise_state = str(readiness.get("exercise_state") or "steady").strip().lower()
     if exercise_state == "push":
         today_aim = "Use the good base you have, train properly if planned, and keep the rest of the day steady around it."
@@ -796,11 +942,16 @@ def _build_day_brief(
         snapshots=snapshots,
         wellbeing_targets=wellbeing_targets,
     )
+    today_priority = "The main job today is to match training, food, recovery, and headspace rather than let one area drag the rest off line."
+    if recovery_profile.get("rested_today"):
+        today_priority = "The main job today is to protect energy, keep training lighter, and set tonight up so recovery can catch back up."
+    elif recovery_profile.get("sleep_today"):
+        today_priority = "The main job today is to steady the basics, avoid forcing intensity, and give recovery a better chance tonight."
     return {
         "two_day_read": {
             "strength": strength_text,
             "carry_over_issue": carry_over_issue,
-            "today_priority": "The main job today is to match training, food, recovery, and headspace rather than let one area drag the rest off line.",
+            "today_priority": today_priority,
         },
         "readiness": readiness,
         "wellbeing_targets": wellbeing_targets,
@@ -1602,6 +1753,31 @@ def _serialize_plan(
     current_options = []
     for item in _items_with_day_moments(raw_current_options):
         current_options.append({**item, "selected": str(item.get("id") or "").strip() in selected_ids})
+    if not _has_complete_day_plan_items(current_options):
+        fallback_plan = _fallback_plan(payload)
+        fallback_items = [
+            item
+            for item in (
+                _normalize_habit_plan_item(raw_item, default_concept=None)
+                for raw_item in ((fallback_plan or {}).get("habits") or [])
+            )
+            if item
+        ]
+        fallback_items = _items_with_day_moments(fallback_items)
+        options_by_moment = {
+            _normalize_moment_key(item.get("moment_key")): dict(item)
+            for item in current_options
+            if _normalize_moment_key(item.get("moment_key"))
+        }
+        for item in fallback_items:
+            moment_key = _normalize_moment_key(item.get("moment_key"))
+            if moment_key and moment_key not in options_by_moment:
+                options_by_moment[moment_key] = {**item, "selected": False}
+        current_options = [
+            options_by_moment[moment_key]
+            for moment_key, _label in _DAY_MOMENT_SEQUENCE
+            if moment_key in options_by_moment
+        ]
     display_habits = selected_habits
     if len(display_habits) < len(_DAY_MOMENT_SEQUENCE) and len(current_options) >= len(_DAY_MOMENT_SEQUENCE):
         display_habits = [dict(item) for item in current_options]

@@ -70,6 +70,13 @@ function resolveRestingHeartRateTrendLabel(label?: string | null): string {
   return resolved.toLowerCase();
 }
 
+function resolveRestingHeartRateCompactTrendLabel(label?: string | null): string {
+  const resolved = resolveRestingHeartRateTrendLabel(label);
+  if (resolved === "optimal") return "opt";
+  if (resolved === "elevated") return "elev";
+  return "norm";
+}
+
 function formatBiometricDayLabel(value?: string | null): string {
   const token = String(value || "").trim();
   if (!token) return "—";
@@ -86,10 +93,37 @@ function formatBiometricDayNumber(value?: string | null): string {
   return parsed.toLocaleDateString("en-GB", { day: "numeric" });
 }
 
-function formatStepCount(value?: number | null): string {
+function formatCompactStepCount(value?: number | null): string {
   const resolved = Number(value);
   if (!Number.isFinite(resolved) || resolved < 0) return "—";
-  return new Intl.NumberFormat("en-GB").format(Math.round(resolved));
+  const roundedThousands = resolved / 1000;
+  if (resolved >= 10000) {
+    return `${Math.round(roundedThousands)}k`;
+  }
+  return `${roundedThousands.toFixed(1)}k`;
+}
+
+type StepsStatus = "base" | "strong" | "optimal" | null;
+
+function resolveStepsStatus(value?: number | null): StepsStatus {
+  const resolved = Number(value);
+  if (!Number.isFinite(resolved) || resolved < 5000) return null;
+  if (resolved >= 10000) return "optimal";
+  if (resolved >= 7500) return "strong";
+  return "base";
+}
+
+function resolveStepsMetricTone(theme: DisplayTheme, status: StepsStatus): string {
+  if (status === "optimal") {
+    return theme === "dark" ? "text-[#c7b0ff]" : "text-[#6b4cc2]";
+  }
+  if (status === "strong") {
+    return theme === "dark" ? "text-[#d9f0c5]" : "text-[#3f7a2a]";
+  }
+  if (status === "base") {
+    return theme === "dark" ? "text-[#ffd3ad]" : "text-[#b55d1c]";
+  }
+  return theme === "dark" ? "text-[var(--text-primary)]" : "text-[#5d5348]";
 }
 
 function formatIsoLocalDay(value: Date): string {
@@ -1265,7 +1299,7 @@ export default function LatestAssessmentPanel({
                               {value || "—"}
                             </p>
                             <p className={`mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] ${metricToneClassName}`}>
-                              {value ? resolveRestingHeartRateTrendLabel(item?.trend_label) : "—"}
+                              {value ? resolveRestingHeartRateCompactTrendLabel(item?.trend_label) : "—"}
                             </p>
                           </div>
                         );
@@ -1288,7 +1322,10 @@ export default function LatestAssessmentPanel({
                   {stepsHistory.length ? (
                     <div className="mt-4 grid grid-cols-7 gap-2">
                       {stepsWeek.map(({ metric_date: metricDate, item }) => {
-                        const value = formatStepCount(item?.steps);
+                        const rawSteps = Number(item?.steps);
+                        const value = formatCompactStepCount(item?.steps);
+                        const stepStatus = resolveStepsStatus(rawSteps);
+                        const metricToneClassName = resolveStepsMetricTone(displayTheme, stepStatus);
                         return (
                           <div
                             key={`steps-${metricDate}`}
@@ -1296,8 +1333,11 @@ export default function LatestAssessmentPanel({
                           >
                             <p className="font-semibold opacity-80">{formatBiometricDayLabel(metricDate)}</p>
                             <p className="mt-1 opacity-65">{formatBiometricDayNumber(metricDate)}</p>
-                            <p className="mt-3 truncate text-sm font-semibold leading-none text-[var(--accent)]">
+                            <p className={`mt-3 truncate text-sm font-semibold leading-none ${metricToneClassName}`}>
                               {value}
+                            </p>
+                            <p className={`mt-2 min-h-[0.75rem] text-[10px] font-semibold uppercase tracking-[0.12em] ${metricToneClassName}`}>
+                              {stepStatus || ""}
                             </p>
                           </div>
                         );

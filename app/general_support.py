@@ -317,10 +317,7 @@ def _tracker_history_lines(tracker_context: dict) -> list[str]:
             if not pillar_label:
                 continue
             pillar_bits = []
-            score = _safe_int(pillar.get("score"))
             state = str(pillar.get("state") or "").strip()
-            if score is not None:
-                pillar_bits.append(f"score={score}/100")
             if state:
                 pillar_bits.append(f"state={state}")
             concept_summaries: list[str] = []
@@ -334,15 +331,12 @@ def _tracker_history_lines(tracker_context: dict) -> list[str]:
                 signal = str(item.get("signal") or "").strip()
                 latest = str(item.get("latest_value") or "").strip()
                 target = str(item.get("target_label") or "").strip()
-                concept_score = _safe_int(item.get("score"))
                 if signal:
                     concept_bits.append(signal)
                 if latest:
                     concept_bits.append(f"latest={latest}")
                 if target:
                     concept_bits.append(f"target={target}")
-                if concept_score is not None:
-                    concept_bits.append(f"score={concept_score}/100")
                 suffix = f" ({'; '.join(concept_bits)})" if concept_bits else ""
                 concept_summaries.append(f"{label}{suffix}")
             pillar_suffix = f" ({'; '.join(pillar_bits)})" if pillar_bits else ""
