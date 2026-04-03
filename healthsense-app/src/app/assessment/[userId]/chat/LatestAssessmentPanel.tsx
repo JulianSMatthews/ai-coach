@@ -96,11 +96,12 @@ function formatBiometricDayNumber(value?: string | null): string {
 function formatCompactStepCount(value?: number | null): string {
   const resolved = Number(value);
   if (!Number.isFinite(resolved) || resolved < 0) return "—";
-  const roundedThousands = resolved / 1000;
-  if (resolved >= 10000) {
-    return `${Math.round(roundedThousands)}k`;
+  if (resolved < 1000) {
+    return String(Math.round(resolved));
   }
-  return `${roundedThousands.toFixed(1)}k`;
+  const thousands = resolved / 1000;
+  const decimals = thousands >= 100 ? 0 : 1;
+  return `${thousands.toFixed(decimals).replace(/\.0$/, "")}k`;
 }
 
 type StepsStatus = "base" | "strong" | "optimal" | null;
