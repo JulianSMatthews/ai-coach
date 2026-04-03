@@ -127,6 +127,13 @@ function resolveStepsMetricTone(theme: DisplayTheme, status: StepsStatus): strin
   return theme === "dark" ? "text-[var(--text-primary)]" : "text-[#5d5348]";
 }
 
+function resolveCompactStepsStatusLabel(status: StepsStatus): string {
+  if (status === "optimal") return "opt";
+  if (status === "strong") return "str";
+  if (status === "base") return "base";
+  return "";
+}
+
 function formatIsoLocalDay(value: Date): string {
   const year = value.getFullYear();
   const month = String(value.getMonth() + 1).padStart(2, "0");
@@ -1338,7 +1345,7 @@ export default function LatestAssessmentPanel({
                               {value}
                             </p>
                             <p className={`mt-2 min-h-[0.75rem] text-[10px] font-semibold uppercase tracking-[0.12em] ${metricToneClassName}`}>
-                              {stepStatus || ""}
+                              {resolveCompactStepsStatusLabel(stepStatus)}
                             </p>
                           </div>
                         );
