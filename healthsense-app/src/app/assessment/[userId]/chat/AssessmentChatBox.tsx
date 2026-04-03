@@ -240,12 +240,20 @@ function mergeDailyPlanItems(
 
   const merged: DailyHabitPlanItem[] = [];
   const seenIds = new Set<string>();
+  const seenMoments = new Set<string>();
+  const seenTextKeys = new Set<string>();
 
   const pushItem = (item: DailyHabitPlanItem | undefined) => {
     if (!item) return;
+    const momentKey = normalizeDayPlanMomentKey(item?.moment_key || item?.moment_label);
     const itemId = String(item.id || "").trim();
+    const textKey = `${String(item.title || "").trim().toLowerCase()}::${String(item.detail || "").trim().toLowerCase()}`;
     if (itemId && seenIds.has(itemId)) return;
+    if (momentKey && seenMoments.has(momentKey)) return;
+    if (!itemId && textKey !== "::" && seenTextKeys.has(textKey)) return;
     if (itemId) seenIds.add(itemId);
+    if (momentKey) seenMoments.add(momentKey);
+    if (textKey !== "::") seenTextKeys.add(textKey);
     merged.push(item);
   };
 
@@ -254,10 +262,14 @@ function mergeDailyPlanItems(
   }
 
   for (const item of [...primary, ...fallback]) {
+    const momentKey = normalizeDayPlanMomentKey(item?.moment_key || item?.moment_label);
+    if (momentKey && DAY_PLAN_MOMENT_ORDER.includes(momentKey as (typeof DAY_PLAN_MOMENT_ORDER)[number])) {
+      continue;
+    }
     pushItem(item);
   }
 
-  return merged;
+  return merged.slice(0, DAY_PLAN_MOMENT_ORDER.length);
 }
 
 function isDailyCheckInComplete(summary?: PillarTrackerSummaryResponse | null): boolean {

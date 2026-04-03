@@ -96,12 +96,9 @@ function formatBiometricDayNumber(value?: string | null): string {
 function formatCompactStepCount(value?: number | null): string {
   const resolved = Number(value);
   if (!Number.isFinite(resolved) || resolved < 0) return "—";
-  if (resolved < 1000) {
-    return String(Math.round(resolved));
-  }
   const thousands = resolved / 1000;
   const decimals = thousands >= 100 ? 0 : 1;
-  return `${thousands.toFixed(decimals).replace(/\.0$/, "")}k`;
+  return thousands.toFixed(decimals).replace(/\.0$/, "");
 }
 
 type StepsStatus = "base" | "strong" | "optimal" | null;
@@ -1322,7 +1319,7 @@ export default function LatestAssessmentPanel({
 
                 <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-[#1e1b16]">Steps</p>
+                    <p className="text-sm font-semibold text-[#1e1b16]">Steps (000s)</p>
                     <p className="text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
                       Last 7 days
                     </p>
@@ -1341,7 +1338,7 @@ export default function LatestAssessmentPanel({
                           >
                             <p className="font-semibold opacity-80">{formatBiometricDayLabel(metricDate)}</p>
                             <p className="mt-1 opacity-65">{formatBiometricDayNumber(metricDate)}</p>
-                            <p className={`mt-3 truncate text-sm font-semibold leading-none ${metricToneClassName}`}>
+                            <p className={`mt-3 truncate text-[13px] font-semibold leading-none ${metricToneClassName}`}>
                               {value}
                             </p>
                             <p className={`mt-2 min-h-[0.75rem] text-[10px] font-semibold uppercase tracking-[0.12em] ${metricToneClassName}`}>
