@@ -436,14 +436,14 @@ export default function LatestAssessmentPanel({
   const orderedPillarKeys = pillars
     .map((pillar) => String(pillar.pillar_key || "").trim().toLowerCase())
     .filter((pillarKey) => Boolean(pillarKey));
-  const resolveNextPillarKey = (pillarKey: string): string | null => {
+  const resolveNextPillarKey = useCallback((pillarKey: string): string | null => {
     const normalizedPillarKey = String(pillarKey || "").trim().toLowerCase();
     const currentIndex = orderedPillarKeys.indexOf(normalizedPillarKey);
     if (currentIndex < 0) {
       return orderedPillarKeys[0] || null;
     }
     return orderedPillarKeys[currentIndex + 1] || null;
-  };
+  }, [orderedPillarKeys]);
   const hasTrackerScores = pillars.some((pillar) => resolvePillarSource(pillar) === "tracker");
   const combinedScore = (() => {
     if (!hasTrackerScores) {
@@ -480,9 +480,10 @@ export default function LatestAssessmentPanel({
           ? `Complete ${activeLabel || "yesterday"} to update this week's score`
           : "Complete today to start this week's score"
         : "No completed tracker days last week";
-  const closeTrackerLabel =
-    trackerReturnSurface === "tracking"
-      ? "Back to daily check-in"
+  const closeTrackerLabel = guidedTrackingActive
+    ? "Skip"
+    : trackerReturnSurface === "tracking"
+      ? "Cancel"
       : "Close";
   const displayLabel = displayTheme === "dark" ? "light" : "dark";
   const displayButtonClassName =
@@ -958,6 +959,45 @@ export default function LatestAssessmentPanel({
     setLoadingDetail(false);
     setSaving(false);
   };
+
+  const handleTrackerDismiss = useCallback(async () => {
+    const currentPillarKey = String(detail?.pillar?.pillar_key || selectedPillarKey || "").trim().toLowerCase();
+    if (guidedTrackingActive) {
+      const nextPillarKey = currentPillarKey ? resolveNextPillarKey(currentPillarKey) : null;
+      if (nextPillarKey) {
+        await openTracker(nextPillarKey, undefined, { guided: true });
+        return;
+      }
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("healthsense-home-surface", {
+            detail: {
+              surface: "habits",
+            },
+          }),
+        );
+      }
+      closeTracker();
+      return;
+    }
+    if (trackerReturnSurface && typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("healthsense-home-surface", {
+          detail: {
+            surface: trackerReturnSurface,
+          },
+        }),
+      );
+    }
+    closeTracker();
+  }, [
+    detail?.pillar?.pillar_key,
+    guidedTrackingActive,
+    openTracker,
+    resolveNextPillarKey,
+    selectedPillarKey,
+    trackerReturnSurface,
+  ]);
 
   const saveTracker = async () => {
     if (!detail?.pillar?.pillar_key || !canSave) return;
@@ -1654,7 +1694,7 @@ export default function LatestAssessmentPanel({
                 <div className="grid grid-cols-2 gap-2">
                   <button
                     type="button"
-                    onClick={closeTracker}
+                    onClick={() => void handleTrackerDismiss()}
                     className="rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
                   >
                     {closeTrackerLabel}
@@ -1673,7 +1713,7 @@ export default function LatestAssessmentPanel({
               ) : (
                 <button
                   type="button"
-                  onClick={closeTracker}
+                  onClick={() => void handleTrackerDismiss()}
                   className="w-full rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
                 >
                   {closeTrackerLabel}
