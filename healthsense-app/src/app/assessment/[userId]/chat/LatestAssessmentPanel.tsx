@@ -1338,7 +1338,7 @@ export default function LatestAssessmentPanel({
                           >
                             <p className="font-semibold opacity-80">{formatBiometricDayLabel(metricDate)}</p>
                             <p className="mt-1 opacity-65">{formatBiometricDayNumber(metricDate)}</p>
-                            <p className={`mt-3 truncate text-[13px] font-semibold leading-none ${metricToneClassName}`}>
+                            <p className={`mt-3 whitespace-nowrap text-[12px] font-semibold leading-none tracking-[-0.02em] ${metricToneClassName}`}>
                               {value}
                             </p>
                             <p className={`mt-2 min-h-[0.75rem] text-[10px] font-semibold uppercase tracking-[0.12em] ${metricToneClassName}`}>
