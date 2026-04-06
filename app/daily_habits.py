@@ -310,6 +310,9 @@ def _anchored_concept_focuses(
     pillar_label: str,
 ) -> list[dict[str, Any]]:
     active_iso = active_day.isoformat()
+    current_day = tracker_today()
+    anchored_missed_signal = "missed_today" if active_day == current_day else "missed_yesterday"
+    anchored_missing_signal = "not_logged_today" if active_day == current_day else "not_logged_yesterday"
     focus_rows: list[dict[str, Any]] = []
     for concept in detail.get("concepts") or []:
         week_rows = {
@@ -320,13 +323,27 @@ def _anchored_concept_focuses(
         active_row = week_rows.get(active_iso) or {}
         latest_value = str(active_row.get("value_label") or "").strip() or None
         current_score = _safe_int(concept.get("score"))
+        target_period = str(concept.get("target_period") or "").strip().lower()
+        has_recorded_value = active_row.get("value_label") is not None
+        recorded_positive = active_row.get("daily_positive")
+        if recorded_positive is None:
+            recorded_positive = active_row.get("target_reached")
         signal = "on_track"
-        if active_row.get("target_met") is False:
-            signal = "missed_today"
-        elif active_row.get("target_met") is None:
-            signal = "not_logged_today"
+        if not has_recorded_value:
+            signal = anchored_missing_signal
+        elif target_period == "week":
+            if recorded_positive is False:
+                signal = anchored_missed_signal
+            elif recorded_positive is True:
+                signal = "on_track"
+            elif current_score is not None and current_score < 80:
+                signal = "needs_support"
+        elif active_row.get("target_met") is False:
+            signal = anchored_missed_signal
         elif current_score is not None and current_score < 80:
             signal = "needs_support"
+        misses = 1 if signal in {"missed_today", "missed_yesterday"} else 0
+        missing = 1 if signal in {"not_logged_today", "not_logged_yesterday"} else 0
         focus_rows.append(
             {
                 "pillar_key": str(pillar_key or "").strip().lower(),
@@ -336,8 +353,8 @@ def _anchored_concept_focuses(
                 "helper": str(concept.get("helper") or "").strip(),
                 "target_label": str(concept.get("target_label") or "").strip() or None,
                 "signal": signal,
-                "misses": 1 if active_row.get("target_met") is False else 0,
-                "missing": 1 if active_row.get("target_met") is None else 0,
+                "misses": misses,
+                "missing": missing,
                 "latest_value": latest_value,
                 "score": current_score,
                 "anchor_date": active_iso,
@@ -352,10 +369,12 @@ def _focus_signal_priority(signal: str) -> int:
         return 0
     if token == "missed_yesterday":
         return 1
-    if token == "needs_support":
+    if token == "not_logged_yesterday":
         return 2
-    if token == "not_logged_today":
+    if token == "needs_support":
         return 3
+    if token == "not_logged_today":
+        return 4
     return 4
 
 
@@ -448,10 +467,12 @@ def _signal_rank(signal: str) -> int:
         return 0
     if token == "missed_yesterday":
         return 1
-    if token == "needs_support":
+    if token == "not_logged_yesterday":
         return 2
-    if token == "not_logged_today":
+    if token == "needs_support":
         return 3
+    if token == "not_logged_today":
+        return 4
     return 4
 
 
@@ -508,6 +529,8 @@ def _focus_issue_text(focus: dict[str, Any] | None, *, fallback_label: str) -> s
         return f"{label} has already slipped today and needs tightening."
     if signal == "missed_yesterday":
         return f"{label} slipped yesterday and still needs protecting today."
+    if signal == "not_logged_yesterday":
+        return f"{label} still needs a proper check against yesterday's tracking."
     if signal == "not_logged_today":
         return f"{label} still needs an intentional check today."
     if signal == "needs_support":
@@ -658,6 +681,7 @@ def _latest_daily_guidance_state(snapshot: dict[str, Any], pillar_key: str) -> s
         return str(snapshot.get("state") or "unknown").strip().lower() or "unknown"
     missed_today = sum(1 for item in concepts if _concept_signal(item) == "missed_today")
     missed_yesterday = sum(1 for item in concepts if _concept_signal(item) == "missed_yesterday")
+    not_logged_yesterday = sum(1 for item in concepts if _concept_signal(item) == "not_logged_yesterday")
     needs_support = sum(1 for item in concepts if _concept_signal(item) == "needs_support")
     on_track = sum(1 for item in concepts if _concept_signal(item) == "on_track")
     token = str(pillar_key or "").strip().lower()
@@ -665,7 +689,7 @@ def _latest_daily_guidance_state(snapshot: dict[str, Any], pillar_key: str) -> s
         recovery_profile = _recovery_signal_profile(snapshot)
         if recovery_profile.get("rested_today") or recovery_profile.get("sleep_today"):
             return "weak"
-        if recovery_profile.get("bedtime_today") or missed_yesterday or needs_support:
+        if recovery_profile.get("bedtime_today") or missed_yesterday or not_logged_yesterday or needs_support:
             return "fair"
     elif token == "nutrition":
         critical_miss = any(
@@ -675,12 +699,12 @@ def _latest_daily_guidance_state(snapshot: dict[str, Any], pillar_key: str) -> s
         )
         if critical_miss or missed_today >= 2:
             return "weak"
-        if missed_today or missed_yesterday or needs_support:
+        if missed_today or missed_yesterday or not_logged_yesterday or needs_support:
             return "fair"
     else:
         if missed_today >= 2:
             return "weak"
-        if missed_today or missed_yesterday or needs_support:
+        if missed_today or missed_yesterday or not_logged_yesterday or needs_support:
             return "fair"
     if on_track:
         return "strong"
