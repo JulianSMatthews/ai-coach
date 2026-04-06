@@ -292,8 +292,10 @@ def _detail_day_complete(detail: dict[str, Any], target_day: date) -> bool:
 def _guidance_anchor_for_pillar(user_id: int, pillar_key: str, current_day: date) -> date:
     key = str(pillar_key or "").strip().lower()
     yesterday = current_day - timedelta(days=1)
-    if key in {"nutrition", "resilience", "recovery"}:
+    if key in {"nutrition", "resilience"}:
         return yesterday
+    if key == "recovery":
+        return current_day
     if key == "training":
         today_detail = get_pillar_tracker_detail(user_id, key, anchor=current_day)
         return current_day if _detail_day_complete(today_detail, current_day) else yesterday
