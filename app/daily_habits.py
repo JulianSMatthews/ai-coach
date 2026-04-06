@@ -278,6 +278,72 @@ def _recent_concept_focuses(
     return focus_rows
 
 
+def _detail_day_complete(detail: dict[str, Any], target_day: date) -> bool:
+    target_iso = target_day.isoformat()
+    for item in detail.get("days") or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("date") or "").strip() != target_iso:
+            continue
+        return bool(item.get("complete"))
+    return False
+
+
+def _guidance_anchor_for_pillar(user_id: int, pillar_key: str, current_day: date) -> date:
+    key = str(pillar_key or "").strip().lower()
+    yesterday = current_day - timedelta(days=1)
+    if key in {"nutrition", "resilience", "recovery"}:
+        return yesterday
+    if key == "training":
+        today_detail = get_pillar_tracker_detail(user_id, key, anchor=current_day)
+        return current_day if _detail_day_complete(today_detail, current_day) else yesterday
+    return current_day
+
+
+def _anchored_concept_focuses(
+    detail: dict[str, Any],
+    active_day: date,
+    *,
+    pillar_key: str,
+    pillar_label: str,
+) -> list[dict[str, Any]]:
+    active_iso = active_day.isoformat()
+    focus_rows: list[dict[str, Any]] = []
+    for concept in detail.get("concepts") or []:
+        week_rows = {
+            str((row or {}).get("date") or "").strip(): row
+            for row in (concept.get("week") or [])
+            if isinstance(row, dict)
+        }
+        active_row = week_rows.get(active_iso) or {}
+        latest_value = str(active_row.get("value_label") or "").strip() or None
+        current_score = _safe_int(concept.get("score"))
+        signal = "on_track"
+        if active_row.get("target_met") is False:
+            signal = "missed_today"
+        elif active_row.get("target_met") is None:
+            signal = "not_logged_today"
+        elif current_score is not None and current_score < 80:
+            signal = "needs_support"
+        focus_rows.append(
+            {
+                "pillar_key": str(pillar_key or "").strip().lower(),
+                "pillar_label": str(pillar_label or "").strip() or str(pillar_key or "").strip().title(),
+                "concept_key": str(concept.get("concept_key") or "").strip(),
+                "label": str(concept.get("label") or "").strip(),
+                "helper": str(concept.get("helper") or "").strip(),
+                "target_label": str(concept.get("target_label") or "").strip() or None,
+                "signal": signal,
+                "misses": 1 if active_row.get("target_met") is False else 0,
+                "missing": 1 if active_row.get("target_met") is None else 0,
+                "latest_value": latest_value,
+                "score": current_score,
+                "anchor_date": active_iso,
+            }
+        )
+    return focus_rows
+
+
 def _focus_signal_priority(signal: str) -> int:
     token = str(signal or "").strip().lower()
     if token == "missed_today":
@@ -390,8 +456,20 @@ def _signal_rank(signal: str) -> int:
 def _pillar_day_snapshot(user_id: int, pillar_row: dict[str, Any], today: date) -> dict[str, Any]:
     pillar_key = str(pillar_row.get("pillar_key") or "").strip().lower()
     pillar_label = str(pillar_row.get("label") or "").strip() or pillar_key.title()
-    detail = get_pillar_tracker_detail(user_id, pillar_key, anchor=today)
-    focus_rows = _recent_concept_focuses(detail, today, pillar_key=pillar_key, pillar_label=pillar_label)
+    requested_anchor = _guidance_anchor_for_pillar(user_id, pillar_key, today)
+    detail = get_pillar_tracker_detail(user_id, pillar_key, anchor=requested_anchor)
+    resolved_anchor = str(((detail.get("pillar") or {}).get("active_date")) or "").strip()
+    try:
+        active_day = date.fromisoformat(resolved_anchor) if resolved_anchor else requested_anchor
+    except Exception:
+        active_day = requested_anchor
+    active_label = str(((detail.get("pillar") or {}).get("active_label")) or "").strip()
+    focus_rows = _anchored_concept_focuses(
+        detail,
+        active_day,
+        pillar_key=pillar_key,
+        pillar_label=pillar_label,
+    )
     focus_rows.sort(
         key=lambda item: (
             _signal_rank(str(item.get("signal") or "")),
@@ -406,6 +484,8 @@ def _pillar_day_snapshot(user_id: int, pillar_row: dict[str, Any], today: date) 
         "label": pillar_label,
         "score": score,
         "state": _score_state(score),
+        "active_date": active_day.isoformat(),
+        "active_label": active_label or active_day.isoformat(),
         "primary_focus": primary_focus,
         "review_concepts": focus_rows,
     }
@@ -665,6 +745,8 @@ def _build_tracker_review(snapshots: dict[str, dict[str, Any]]) -> list[dict[str
             {
                 "pillar_key": pillar_key,
                 "pillar_label": str(snapshot.get("label") or pillar_key.title()).strip() or pillar_key.title(),
+                "active_date": str(snapshot.get("active_date") or "").strip() or None,
+                "active_label": str(snapshot.get("active_label") or "").strip() or None,
                 "state": _latest_daily_guidance_state(snapshot, pillar_key),
                 "score": _safe_int(snapshot.get("score")),
                 "concepts": concepts,

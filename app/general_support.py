@@ -318,6 +318,9 @@ def _tracker_history_lines(tracker_context: dict) -> list[str]:
                 continue
             pillar_bits = []
             state = str(pillar.get("state") or "").strip()
+            active_label = str(pillar.get("active_label") or "").strip()
+            if active_label:
+                pillar_bits.append(f"day={active_label}")
             if state:
                 pillar_bits.append(f"state={state}")
             concept_summaries: list[str] = []

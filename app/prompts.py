@@ -1593,6 +1593,9 @@ def build_prompt(
                     continue
                 pillar_bits: List[str] = []
                 pillar_state = str(pillar.get("state") or "").strip()
+                active_label = str(pillar.get("active_label") or "").strip()
+                if active_label:
+                    pillar_bits.append(f"day={active_label}")
                 if pillar_state:
                     pillar_bits.append(f"state={pillar_state}")
                 concept_summaries: List[str] = []
