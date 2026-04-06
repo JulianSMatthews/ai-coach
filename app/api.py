@@ -208,7 +208,7 @@ from .pillar_tracker import (
 )
 from .daily_habits import (
     ensure_daily_habit_plan_schema,
-    get_or_generate_daily_habit_plan,
+    get_or_generate_cached_daily_habit_plan,
     update_daily_habit_plan_selection,
 )
 from .coach_home_refresh import queue_coach_home_tracker_refresh
@@ -7845,7 +7845,7 @@ def api_user_daily_habits(
     _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
     ensure_daily_habit_plan_schema()
     try:
-        result = get_or_generate_daily_habit_plan(
+        result = get_or_generate_cached_daily_habit_plan(
             user_id,
             force=bool(force),
             concept_key=concept_key,

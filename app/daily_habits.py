@@ -1970,8 +1970,16 @@ def get_or_generate_daily_habit_plan(
         )
         carryover = existing or _latest_prior_daily_habit_plan(user_id, today)
         seed_payload = carryover.context_payload if carryover and isinstance(getattr(carryover, "context_payload", None), dict) else {}
-        context = _build_generation_context(user_id, selected_concept_key=None)
-        hash_value = _context_hash(context)
+        snapshot = build_daily_tracker_generation_context_snapshot(
+            int(user_id),
+            selected_concept_key=None,
+        )
+        context = snapshot.get("context") if isinstance(snapshot.get("context"), dict) else {}
+        hash_value = str(snapshot.get("context_hash") or "").strip()
+        if not context:
+            context = _build_generation_context(user_id, selected_concept_key=None)
+        if not hash_value:
+            hash_value = _context_hash(context)
         available_concepts: list[dict[str, Any]] = []
         option_sets = _habit_option_sets_from_state(
             seed_payload,
@@ -2082,13 +2090,27 @@ def get_or_generate_daily_habit_plan(
         )
 
 
+def get_or_generate_cached_daily_habit_plan(
+    user_id: int,
+    *,
+    force: bool = False,
+    concept_key: str | None = None,
+) -> dict[str, Any]:
+    return get_or_generate_daily_habit_plan(
+        int(user_id),
+        force=bool(force),
+        concept_key=concept_key,
+        allow_llm=True,
+    )
+
+
 def update_daily_habit_plan_selection(
     user_id: int,
     *,
     concept_key: str | None,
     selected_option_ids: list[Any],
 ) -> dict[str, Any]:
-    get_or_generate_daily_habit_plan(user_id, force=False, concept_key=concept_key)
+    get_or_generate_cached_daily_habit_plan(user_id, force=False, concept_key=concept_key)
     today = tracker_today()
     with SessionLocal() as s:
         row = (

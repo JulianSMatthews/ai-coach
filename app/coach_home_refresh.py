@@ -9,7 +9,7 @@ from typing import Any
 from .coach_insight import get_or_generate_cached_coach_insight
 from .daily_habits import (
     build_daily_tracker_generation_context_snapshot,
-    get_or_generate_daily_habit_plan,
+    get_or_generate_cached_daily_habit_plan,
 )
 from .db import SessionLocal
 from .general_support import get_or_generate_cached_tracker_summary_message
@@ -98,7 +98,7 @@ def run_coach_home_tracker_refresh(
             if not user:
                 raise ValueError(f"user not found: {user_id}")
             s.expunge(user)
-        habit_result = get_or_generate_daily_habit_plan(int(user_id), force=False, allow_llm=True)
+        habit_result = get_or_generate_cached_daily_habit_plan(int(user_id), force=False)
         gia_text = get_or_generate_cached_tracker_summary_message(
             user,
             source="app_tracker_summary",
