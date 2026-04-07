@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, desc, select
+from sqlalchemy import delete, desc, inspect, select, text
+from sqlalchemy.schema import CreateColumn
 
 from .coach_insight import _library_avatar_payload
 from .daily_habits import build_daily_tracker_generation_context_snapshot
@@ -32,21 +33,72 @@ _QUIZ_LOW_SCORE_PCT = 50.0
 _QUIZ_HIGH_SCORE_PCT = 85.0
 _LEVEL_PRIORITY = ("support", "foundation", "build", "perform")
 
+_EDUCATION_SCHEMA_TABLES = (
+    EducationProgramme.__table__,
+    EducationProgrammeDay.__table__,
+    EducationLessonVariant.__table__,
+    EducationQuiz.__table__,
+    EducationQuizQuestion.__table__,
+    UserEducationPlan.__table__,
+    UserEducationConceptLevel.__table__,
+    UserEducationDayProgress.__table__,
+    UserEducationQuizAnswer.__table__,
+)
+
+_EDUCATION_SCHEMA_INDEX_SQL = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_education_programmes_code ON education_programmes(code);",
+    "CREATE INDEX IF NOT EXISTS ix_education_programmes_pillar_active ON education_programmes(pillar_key, is_active);",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_education_programme_days_programme_day ON education_programme_days(programme_id, day_index);",
+    "CREATE INDEX IF NOT EXISTS ix_education_programme_days_programme_concept ON education_programme_days(programme_id, concept_key);",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_education_lesson_variants_day_level ON education_lesson_variants(programme_day_id, level);",
+    "CREATE INDEX IF NOT EXISTS ix_education_lesson_variants_day_active ON education_lesson_variants(programme_day_id, is_active);",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_education_quiz_questions_quiz_order ON education_quiz_questions(quiz_id, question_order);",
+    "CREATE INDEX IF NOT EXISTS ix_user_education_plans_user_status ON user_education_plans(user_id, status);",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_education_concept_levels_user_concept ON user_education_concept_levels(user_id, pillar_key, concept_key);",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_education_day_progress_plan_date ON user_education_day_progress(user_plan_id, lesson_date);",
+    "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_education_quiz_answers_progress_question ON user_education_quiz_answers(user_day_progress_id, question_id);",
+)
+
+
+def _ensure_table_columns(table) -> None:
+    inspector = inspect(engine)
+    if not inspector.has_table(table.name):
+        return
+    existing_columns = {
+        str(column.get("name") or "").strip().lower()
+        for column in inspector.get_columns(table.name)
+    }
+    missing_columns = [
+        column
+        for column in table.columns
+        if str(column.name or "").strip().lower() not in existing_columns
+    ]
+    if not missing_columns:
+        return
+    with engine.begin() as conn:
+        dialect = str(getattr(conn.dialect, "name", "") or "").strip().lower()
+        for column in missing_columns:
+            column_sql = str(CreateColumn(column).compile(dialect=conn.dialect)).strip()
+            if not column_sql:
+                continue
+            if dialect == "postgresql":
+                conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN IF NOT EXISTS {column_sql};"))
+            else:
+                conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {column_sql};"))
+
 
 def ensure_education_plan_schema() -> None:
     global _EDUCATION_PLAN_SCHEMA_READY
     if _EDUCATION_PLAN_SCHEMA_READY:
         return
     try:
-        EducationProgramme.__table__.create(bind=engine, checkfirst=True)
-        EducationProgrammeDay.__table__.create(bind=engine, checkfirst=True)
-        EducationLessonVariant.__table__.create(bind=engine, checkfirst=True)
-        EducationQuiz.__table__.create(bind=engine, checkfirst=True)
-        EducationQuizQuestion.__table__.create(bind=engine, checkfirst=True)
-        UserEducationPlan.__table__.create(bind=engine, checkfirst=True)
-        UserEducationConceptLevel.__table__.create(bind=engine, checkfirst=True)
-        UserEducationDayProgress.__table__.create(bind=engine, checkfirst=True)
-        UserEducationQuizAnswer.__table__.create(bind=engine, checkfirst=True)
+        for table in _EDUCATION_SCHEMA_TABLES:
+            table.create(bind=engine, checkfirst=True)
+        for table in _EDUCATION_SCHEMA_TABLES:
+            _ensure_table_columns(table)
+        with engine.begin() as conn:
+            for sql in _EDUCATION_SCHEMA_INDEX_SQL:
+                conn.execute(text(sql))
         _EDUCATION_PLAN_SCHEMA_READY = True
     except Exception:
         _EDUCATION_PLAN_SCHEMA_READY = False

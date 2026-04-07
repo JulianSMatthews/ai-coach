@@ -2219,13 +2219,19 @@ async def save_education_programme(
             raise HTTPException(404, "Education programme not found")
         if row is None:
             row = EducationProgramme()
+            row.pillar_key = pillar_token
+            row.code = code_token
+            row.name = name_text
+            row.duration_days = resolved_duration
+            row.is_active = is_active is not None
             s.add(row)
             s.flush()
-        row.pillar_key = pillar_token
-        row.code = code_token
-        row.name = name_text
-        row.duration_days = resolved_duration
-        row.is_active = is_active is not None
+        else:
+            row.pillar_key = pillar_token
+            row.code = code_token
+            row.name = name_text
+            row.duration_days = resolved_duration
+            row.is_active = is_active is not None
         s.add(row)
         s.flush()
 
