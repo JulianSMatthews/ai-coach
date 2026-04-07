@@ -579,6 +579,16 @@ def _education_editor_options(session) -> tuple[list[dict[str, object]], list[di
     return concepts, contents
 
 
+def _json_script_content(value: object) -> str:
+    return (
+        json.dumps(value, ensure_ascii=False)
+        .replace("</", "<\\/")
+        .replace("&", "\\u0026")
+        .replace("<", "\\u003c")
+        .replace(">", "\\u003e")
+    )
+
+
 def _promote_templates_batch(source_state: str, target_state: str, note: str | None = None) -> int:
     """
     Promote all templates from one state to another.
@@ -1720,9 +1730,9 @@ def edit_education_programme(id: int | None = None):
       </div>
     </form>
 
-    <script id="education-programme-seed" type="application/json">{html.escape(json.dumps(structure_seed))}</script>
-    <script id="education-concept-options" type="application/json">{html.escape(json.dumps(concept_options))}</script>
-    <script id="education-content-options" type="application/json">{html.escape(json.dumps(content_options))}</script>
+    <script id="education-programme-seed" type="application/json">{_json_script_content(structure_seed)}</script>
+    <script id="education-concept-options" type="application/json">{_json_script_content(concept_options)}</script>
+    <script id="education-content-options" type="application/json">{_json_script_content(content_options)}</script>
     <script>
       (function() {{
         const seed = JSON.parse(document.getElementById('education-programme-seed').textContent || '{{}}');
