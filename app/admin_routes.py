@@ -189,7 +189,7 @@ def _admin_menu_html() -> str:
         "<nav class='admin-menu'>"
         "<a href='/admin/runs'>Assessment Runs</a>"
         "<a href='/admin/prompt-templates'>Prompt Templates</a>"
-        "<a href='/admin/education-programmes'>Education Programmes</a>"
+        "<a href='/admin/education-programmes'>Education</a>"
         "</nav>"
     )
 
