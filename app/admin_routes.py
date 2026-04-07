@@ -134,6 +134,9 @@ PAGE_STYLE = """
   .page { max-width: 1100px; margin: 32px auto; padding: 0 20px 40px; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04); }
   .meta { color: var(--muted); font-size: 0.95rem; }
+  .admin-menu { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; padding: 10px 12px; background: #eef4ff; border: 1px solid #cfe0ff; border-radius: 12px; }
+  .admin-menu a { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; background: #fff; border: 1px solid #d9e0e8; border-radius: 999px; color: var(--text); text-decoration: none; font-weight: 600; }
+  .admin-menu a:hover { background: #f8fbff; text-decoration: none; }
   table { border-collapse: collapse; width: 100%; }
   th, td { border: 1px solid var(--border); padding: 10px; text-align: left; vertical-align: top; }
   th { background: #f3f5f8; font-weight: 600; }
@@ -180,6 +183,17 @@ PAGE_STYLE = """
 </style>
 """
 
+
+def _admin_menu_html() -> str:
+    return (
+        "<nav class='admin-menu'>"
+        "<a href='/admin/runs'>Assessment Runs</a>"
+        "<a href='/admin/prompt-templates'>Prompt Templates</a>"
+        "<a href='/admin/education-programmes'>Education Programmes</a>"
+        "</nav>"
+    )
+
+
 def _wrap_page(title: str, body_html: str) -> HTMLResponse:
     html_out = f"""<!doctype html>
 <html>
@@ -190,6 +204,7 @@ def _wrap_page(title: str, body_html: str) -> HTMLResponse:
 </head>
 <body>
   <div class="page">
+    {_admin_menu_html()}
     {body_html}
   </div>
 </body>
