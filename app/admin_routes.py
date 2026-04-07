@@ -12,12 +12,27 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from sqlalchemy import func, text as sa_text, case, false
 
 from .db import SessionLocal, engine
-from .models import AssessmentRun, AssessmentTurn, PillarResult, PromptTemplate, PromptSettings, PromptTemplateVersionLog
+from .models import (
+    AssessmentRun,
+    AssessmentTurn,
+    ContentLibraryItem,
+    Concept,
+    EducationLessonVariant,
+    EducationProgramme,
+    EducationProgrammeDay,
+    EducationQuiz,
+    EducationQuizQuestion,
+    PillarResult,
+    PromptTemplate,
+    PromptSettings,
+    PromptTemplateVersionLog,
+)
 from .job_queue import ensure_prompt_settings_schema
 from .prompts import _ensure_llm_prompt_log_schema, _canonical_state
 from .prompts import build_prompt
 from . import prompts as prompts_module
 from .models import User
+from .education_plan import ensure_education_plan_schema
 from .kickoff import _programme_blocks as kickoff_programme_blocks, _okr_by_pillar as kickoff_okr_by_pillar
 from .kickoff import _latest_assessment as kickoff_latest_assessment, _latest_psych as kickoff_latest_psych
 from .prompts import kr_payload_list, primary_kr_payload
@@ -131,6 +146,22 @@ PAGE_STYLE = """
   button:hover { background: #0f47cc; }
   .nav { margin-bottom: 12px; }
   .help { color: var(--muted); font-size: 0.9rem; margin: 4px 0 10px; }
+  select { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-family: 'Inter', system-ui, sans-serif; font-size: 14px; background: #fff; }
+  .grid-2 { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid-3 { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .stack { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .section-title { margin: 0 0 6px; font-size: 1.05rem; }
+  .subtle { color: var(--muted); font-size: 0.86rem; }
+  .programme-day { border: 1px solid var(--border); border-radius: 12px; padding: 14px; background: #fcfdff; margin-bottom: 12px; }
+  .lesson-variant { border: 1px solid #d7dfe8; border-radius: 10px; padding: 12px; background: #fff; margin-top: 10px; }
+  .quiz-question { border: 1px dashed #c6d1dc; border-radius: 10px; padding: 12px; background: #fbfcfe; margin-top: 10px; }
+  .danger { background: #9f1239; }
+  .danger:hover { background: #881337; }
+  .secondary { background: #e2e8f0; color: #0f172a; }
+  .secondary:hover { background: #cbd5e1; }
+  @media (max-width: 860px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  }
 </style>
 <style>
   .button-link {
@@ -388,6 +419,149 @@ def _clone_template(row: PromptTemplate, target_state: str, version: int) -> Pro
         is_active=row.is_active,
         note=row.note,
     )
+
+
+def _education_programme_payload(session, row: EducationProgramme | None) -> dict[str, object]:
+    if row is None:
+        return {
+            "id": None,
+            "pillar_key": "nutrition",
+            "code": "",
+            "name": "",
+            "duration_days": 21,
+            "is_active": True,
+            "days": [],
+        }
+    day_rows = (
+        session.query(EducationProgrammeDay)
+        .filter(EducationProgrammeDay.programme_id == int(row.id))
+        .order_by(EducationProgrammeDay.day_index.asc(), EducationProgrammeDay.id.asc())
+        .all()
+    )
+    day_ids = [int(item.id) for item in day_rows]
+    variant_rows = []
+    if day_ids:
+        variant_rows = (
+            session.query(EducationLessonVariant)
+            .filter(EducationLessonVariant.programme_day_id.in_(day_ids))
+            .order_by(EducationLessonVariant.programme_day_id.asc(), EducationLessonVariant.level.asc(), EducationLessonVariant.id.asc())
+            .all()
+        )
+    variant_ids = [int(item.id) for item in variant_rows]
+    quiz_rows = []
+    if variant_ids:
+        quiz_rows = (
+            session.query(EducationQuiz)
+            .filter(EducationQuiz.lesson_variant_id.in_(variant_ids))
+            .order_by(EducationQuiz.lesson_variant_id.asc(), EducationQuiz.id.asc())
+            .all()
+        )
+    quiz_ids = [int(item.id) for item in quiz_rows]
+    question_rows = []
+    if quiz_ids:
+        question_rows = (
+            session.query(EducationQuizQuestion)
+            .filter(EducationQuizQuestion.quiz_id.in_(quiz_ids))
+            .order_by(EducationQuizQuestion.quiz_id.asc(), EducationQuizQuestion.question_order.asc(), EducationQuizQuestion.id.asc())
+            .all()
+        )
+    quiz_by_variant = {int(item.lesson_variant_id): item for item in quiz_rows}
+    questions_by_quiz: dict[int, list[EducationQuizQuestion]] = {}
+    for item in question_rows:
+        questions_by_quiz.setdefault(int(item.quiz_id), []).append(item)
+    variants_by_day: dict[int, list[EducationLessonVariant]] = {}
+    for item in variant_rows:
+        variants_by_day.setdefault(int(item.programme_day_id), []).append(item)
+    payload_days: list[dict[str, object]] = []
+    for day in day_rows:
+        payload_variants: list[dict[str, object]] = []
+        for variant in variants_by_day.get(int(day.id), []):
+            quiz = quiz_by_variant.get(int(variant.id))
+            questions = []
+            if quiz is not None:
+                for question in questions_by_quiz.get(int(quiz.id), []):
+                    questions.append(
+                        {
+                            "id": int(question.id),
+                            "question_order": int(question.question_order or 0),
+                            "question_text": str(question.question_text or ""),
+                            "answer_type": str(question.answer_type or ""),
+                            "options_json": question.options_json,
+                            "correct_answer_json": question.correct_answer_json,
+                            "explanation": str(question.explanation or ""),
+                        }
+                    )
+            payload_variants.append(
+                {
+                    "id": int(variant.id),
+                    "level": str(variant.level or ""),
+                    "content_item_id": int(variant.content_item_id) if variant.content_item_id else None,
+                    "takeaway_default": str(variant.takeaway_default or ""),
+                    "takeaway_if_low_score": str(variant.takeaway_if_low_score or ""),
+                    "takeaway_if_high_score": str(variant.takeaway_if_high_score or ""),
+                    "is_active": bool(variant.is_active),
+                    "quiz": {
+                        "id": int(quiz.id) if quiz is not None else None,
+                        "pass_score_pct": float(quiz.pass_score_pct) if quiz is not None and quiz.pass_score_pct is not None else None,
+                        "questions": questions,
+                    },
+                }
+            )
+        payload_days.append(
+            {
+                "id": int(day.id),
+                "day_index": int(day.day_index or 0),
+                "concept_key": str(day.concept_key or ""),
+                "concept_label": str(day.concept_label or ""),
+                "lesson_goal": str(day.lesson_goal or ""),
+                "default_title": str(day.default_title or ""),
+                "default_summary": str(day.default_summary or ""),
+                "variants": payload_variants,
+            }
+        )
+    return {
+        "id": int(row.id),
+        "pillar_key": str(row.pillar_key or ""),
+        "code": str(row.code or ""),
+        "name": str(row.name or ""),
+        "duration_days": int(row.duration_days or 21),
+        "is_active": bool(row.is_active),
+        "days": payload_days,
+    }
+
+
+def _education_editor_options(session) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+    concept_rows = (
+        session.query(Concept)
+        .order_by(Concept.pillar_key.asc(), Concept.code.asc())
+        .all()
+    )
+    content_rows = (
+        session.query(ContentLibraryItem)
+        .order_by(ContentLibraryItem.pillar_key.asc(), ContentLibraryItem.concept_code.asc(), ContentLibraryItem.title.asc(), ContentLibraryItem.id.asc())
+        .limit(2000)
+        .all()
+    )
+    concepts = [
+        {
+            "pillar_key": str(row.pillar_key or "").strip().lower(),
+            "code": str(row.code or "").strip().lower(),
+            "name": str(row.name or "").strip() or str(row.code or "").strip().replace("_", " ").title(),
+        }
+        for row in concept_rows
+    ]
+    contents = [
+        {
+            "id": int(row.id),
+            "pillar_key": str(row.pillar_key or "").strip().lower(),
+            "concept_code": str(row.concept_code or "").strip().lower() or None,
+            "title": str(row.title or "").strip() or f"Content #{row.id}",
+            "level": str(row.level or "").strip().lower() or None,
+            "status": str(row.status or "").strip().lower() or None,
+        }
+        for row in content_rows
+    ]
+    return concepts, contents
 
 
 def _promote_templates_batch(source_state: str, target_state: str, note: str | None = None) -> int:
@@ -1408,6 +1582,820 @@ async def save_prompt_template(
         row.is_active = active_flag
         s.commit()
     return RedirectResponse(url="/admin/prompt-templates", status_code=303)
+
+
+@admin.get("/education-programmes", response_class=HTMLResponse)
+def list_education_programmes():
+    ensure_education_plan_schema()
+    with SessionLocal() as s:
+        rows = (
+            s.query(EducationProgramme)
+            .order_by(EducationProgramme.updated_at.desc(), EducationProgramme.id.desc())
+            .all()
+        )
+    items = []
+    for row in rows:
+        items.append(
+            "<tr>"
+            f"<td>{int(row.id)}</td>"
+            f"<td>{html.escape(str(row.pillar_key or ''))}</td>"
+            f"<td>{html.escape(str(row.code or ''))}</td>"
+            f"<td>{html.escape(str(row.name or ''))}</td>"
+            f"<td>{int(row.duration_days or 21)}</td>"
+            f"<td>{'✓' if bool(row.is_active) else '✕'}</td>"
+            f"<td>{html.escape(str(row.updated_at or ''))}</td>"
+            f"<td><a href='/admin/education-programmes/edit?id={int(row.id)}'>Edit</a></td>"
+            "</tr>"
+        )
+    body = (
+        "<h2>Education Programmes</h2>"
+        f"{_build_version_label()}"
+        "<div class='nav'><a href='/admin/education-programmes/edit'>Create new programme</a></div>"
+        "<div class='card'>"
+        "<table>"
+        "<tr><th>ID</th><th>Pillar</th><th>Code</th><th>Name</th><th>Days</th><th>Active</th><th>Updated</th><th>Action</th></tr>"
+        + ("".join(items) if items else "<tr><td colspan='8'><em>No education programmes configured yet.</em></td></tr>")
+        + "</table>"
+        "</div>"
+    )
+    return _wrap_page("Education Programmes", body)
+
+
+@admin.get("/education-programmes/edit", response_class=HTMLResponse)
+def edit_education_programme(id: int | None = None):
+    ensure_education_plan_schema()
+    row = None
+    with SessionLocal() as s:
+        if id is not None:
+            row = s.get(EducationProgramme, id)
+            if row is None:
+                raise HTTPException(404, "Education programme not found")
+        programme_payload = _education_programme_payload(s, row)
+        concept_options, content_options = _education_editor_options(s)
+    title = "Edit Education Programme" if row is not None else "Create Education Programme"
+    title += f": {html.escape(str(getattr(row, 'name', '') or '').strip())}" if row is not None else ""
+    pillar_options = [
+        ("nutrition", "Nutrition"),
+        ("training", "Training"),
+        ("resilience", "Resilience"),
+        ("recovery", "Recovery"),
+    ]
+    current_pillar = str(programme_payload.get("pillar_key") or "nutrition").strip().lower() or "nutrition"
+    structure_seed = {"days": programme_payload.get("days") or []}
+    body = f"""
+    <h2>{title}</h2>
+    {_build_version_label()}
+    <div class='card' style='margin-bottom:12px;'>
+      <p class='help'>Use this editor to define the 21-day lesson spine, levelled video variants, the 3-question quiz, and the takeaway text shown after quiz completion. Saving rewrites the programme structure for this template, so edit active programmes carefully.</p>
+    </div>
+    <form method="post" action="/admin/education-programmes/save" id="education-programme-form">
+      <input type="hidden" name="id" value="{html.escape(str(programme_payload.get('id') or ''))}" />
+      <input type="hidden" name="structure_json" id="structure_json" value="" />
+      <div class='card' style='margin-bottom:12px;'>
+        <div class='grid-2'>
+          <div class='field'>
+            <label>Pillar<br/>
+              <select name="pillar_key" id="pillar_key">
+                {"".join(
+                    f"<option value='{value}' {'selected' if current_pillar == value else ''}>{label}</option>"
+                    for value, label in pillar_options
+                )}
+              </select>
+            </label>
+          </div>
+          <div class='field'>
+            <label>Programme code<br/>
+              <input type="text" name="code" value="{html.escape(str(programme_payload.get('code') or ''))}" required />
+            </label>
+          </div>
+          <div class='field'>
+            <label>Programme name<br/>
+              <input type="text" name="name" value="{html.escape(str(programme_payload.get('name') or ''))}" required />
+            </label>
+          </div>
+          <div class='field'>
+            <label>Duration days<br/>
+              <input type="number" min="1" max="90" name="duration_days" id="duration_days" value="{html.escape(str(programme_payload.get('duration_days') or 21))}" />
+            </label>
+          </div>
+        </div>
+        <div class='field'>
+          <label><input type="checkbox" name="is_active" {"checked" if bool(programme_payload.get("is_active", True)) else ""} /> Active programme</label>
+        </div>
+      </div>
+
+      <div class='card' style='margin-bottom:12px;'>
+        <div class='stack' style='justify-content:space-between;'>
+          <div>
+            <h3 class='section-title'>Programme Days</h3>
+            <div class='subtle'>Each day can carry levelled video variants. Each variant can have one quiz with up to 3 questions.</div>
+          </div>
+          <div class='stack'>
+            <button type="button" class="secondary" id="seed-days-button">Seed From Duration</button>
+            <button type="button" class="secondary" id="add-day-button">Add Day</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="programme-days-root"></div>
+
+      <div class='actions stack' style='margin-top:16px;'>
+        <button type="submit">Save Programme</button>
+        <a class='button-link' href="/admin/education-programmes">Back to list</a>
+      </div>
+    </form>
+
+    <script id="education-programme-seed" type="application/json">{html.escape(json.dumps(structure_seed))}</script>
+    <script id="education-concept-options" type="application/json">{html.escape(json.dumps(concept_options))}</script>
+    <script id="education-content-options" type="application/json">{html.escape(json.dumps(content_options))}</script>
+    <script>
+      (function() {{
+        const seed = JSON.parse(document.getElementById('education-programme-seed').textContent || '{{}}');
+        const conceptOptions = JSON.parse(document.getElementById('education-concept-options').textContent || '[]');
+        const contentOptions = JSON.parse(document.getElementById('education-content-options').textContent || '[]');
+        const root = document.getElementById('programme-days-root');
+        const form = document.getElementById('education-programme-form');
+        const structureField = document.getElementById('structure_json');
+        const pillarInput = document.getElementById('pillar_key');
+        const durationInput = document.getElementById('duration_days');
+
+        function escapeHtml(value) {{
+          return String(value ?? '')
+            .replaceAll('&', '&amp;')
+            .replaceAll('<', '&lt;')
+            .replaceAll('>', '&gt;')
+            .replaceAll('"', '&quot;');
+        }}
+
+        function normaliseJsonText(value, fallback) {{
+          if (value === undefined || value === null || value === '') return JSON.stringify(fallback);
+          try {{
+            return JSON.stringify(typeof value === 'string' ? JSON.parse(value) : value);
+          }} catch (_err) {{
+            return typeof value === 'string' ? value : JSON.stringify(fallback);
+          }}
+        }}
+
+        function emptyQuestion(order) {{
+          return {{
+            id: null,
+            question_order: order,
+            question_text: '',
+            answer_type: 'single_choice',
+            options_json: [''],
+            correct_answer_json: '',
+            explanation: '',
+          }};
+        }}
+
+        function emptyVariant() {{
+          return {{
+            id: null,
+            level: 'build',
+            content_item_id: null,
+            takeaway_default: '',
+            takeaway_if_low_score: '',
+            takeaway_if_high_score: '',
+            is_active: true,
+            quiz: {{
+              id: null,
+              pass_score_pct: '',
+              questions: [emptyQuestion(1), emptyQuestion(2), emptyQuestion(3)],
+            }},
+          }};
+        }}
+
+        function emptyDay(dayIndex) {{
+          return {{
+            id: null,
+            day_index: dayIndex,
+            concept_key: '',
+            concept_label: '',
+            lesson_goal: '',
+            default_title: '',
+            default_summary: '',
+            variants: [emptyVariant()],
+          }};
+        }}
+
+        function selectedPillar() {{
+          return String(pillarInput.value || '').trim().toLowerCase();
+        }}
+
+        function conceptChoices(pillarKey) {{
+          const token = String(pillarKey || '').trim().toLowerCase();
+          return conceptOptions.filter((item) => String(item.pillar_key || '').toLowerCase() === token);
+        }}
+
+        function contentChoices(pillarKey, conceptKey, selectedId) {{
+          const pillarToken = String(pillarKey || '').trim().toLowerCase();
+          const conceptToken = String(conceptKey || '').trim().toLowerCase();
+          const selectedToken = selectedId ? Number(selectedId) : null;
+          const matched = [];
+          const fallback = [];
+          for (const item of contentOptions) {{
+            const samePillar = String(item.pillar_key || '').toLowerCase() === pillarToken;
+            const sameConcept = conceptToken && String(item.concept_code || '').toLowerCase() === conceptToken;
+            if (samePillar && (sameConcept || selectedToken === Number(item.id))) {{
+              matched.push(item);
+            }} else if (samePillar) {{
+              fallback.push(item);
+            }}
+          }}
+          const combined = [...matched];
+          for (const item of fallback) {{
+            if (!combined.some((candidate) => Number(candidate.id) === Number(item.id))) {{
+              combined.push(item);
+            }}
+          }}
+          return combined;
+        }}
+
+        function renderConceptSelect(day) {{
+          const options = conceptChoices(selectedPillar());
+          const current = String(day.concept_key || '').trim().toLowerCase();
+          const empty = "<option value=''>Select concept</option>";
+          const items = options.map((item) => {{
+            const selected = current === String(item.code || '').toLowerCase() ? 'selected' : '';
+            return `<option value="${{escapeHtml(item.code)}}" ${{selected}}>${{escapeHtml(item.name || item.code)}}</option>`;
+          }}).join('');
+          return `<select class="js-day-concept">${{empty}}${{items}}</select>`;
+        }}
+
+        function renderContentSelect(day, variant) {{
+          const current = variant.content_item_id ? Number(variant.content_item_id) : null;
+          const options = contentChoices(selectedPillar(), day.concept_key, current);
+          const empty = "<option value=''>Select video content</option>";
+          const items = options.map((item) => {{
+            const selected = current === Number(item.id) ? 'selected' : '';
+            const label = `#${{item.id}} · ${{item.title}}${{item.level ? ` · ${{item.level}}` : ''}}${{item.status ? ` · ${{item.status}}` : ''}}`;
+            return `<option value="${{Number(item.id)}}" ${{selected}}>${{escapeHtml(label)}}</option>`;
+          }}).join('');
+          return `<select class="js-variant-content-item">${{empty}}${{items}}</select>`;
+        }}
+
+        function renderQuestion(question) {{
+          return `
+            <div class="quiz-question js-question">
+              <input type="hidden" class="js-question-id" value="${{escapeHtml(question.id || '')}}" />
+              <div class="stack" style="justify-content:space-between;">
+                <strong>Question</strong>
+                <button type="button" class="danger js-remove-question">Remove</button>
+              </div>
+              <div class="grid-2" style="margin-top:10px;">
+                <div class="field">
+                  <label>Order<br/><input type="number" class="js-question-order" min="1" max="3" value="${{escapeHtml(question.question_order || 1)}}" /></label>
+                </div>
+                <div class="field">
+                  <label>Answer type<br/>
+                    <select class="js-question-answer-type">
+                      <option value="single_choice" ${{String(question.answer_type || 'single_choice') === 'single_choice' ? 'selected' : ''}}>single_choice</option>
+                      <option value="multi_choice" ${{String(question.answer_type || '') === 'multi_choice' ? 'selected' : ''}}>multi_choice</option>
+                      <option value="boolean" ${{String(question.answer_type || '') === 'boolean' ? 'selected' : ''}}>boolean</option>
+                    </select>
+                  </label>
+                </div>
+              </div>
+              <div class="field">
+                <label>Question text<br/><textarea class="js-question-text" rows="2">${{escapeHtml(question.question_text || '')}}</textarea></label>
+              </div>
+              <div class="grid-2">
+                <div class="field">
+                  <label>Options JSON<br/><textarea class="js-question-options" rows="3">${{escapeHtml(normaliseJsonText(question.options_json, []))}}</textarea></label>
+                </div>
+                <div class="field">
+                  <label>Correct answer JSON<br/><textarea class="js-question-correct" rows="3">${{escapeHtml(normaliseJsonText(question.correct_answer_json, ''))}}</textarea></label>
+                </div>
+              </div>
+              <div class="field">
+                <label>Explanation<br/><textarea class="js-question-explanation" rows="2">${{escapeHtml(question.explanation || '')}}</textarea></label>
+              </div>
+            </div>
+          `;
+        }}
+
+        function renderVariant(day, variant) {{
+          const quiz = variant.quiz || {{ id: null, pass_score_pct: '', questions: [] }};
+          const questions = Array.isArray(quiz.questions) && quiz.questions.length
+            ? quiz.questions
+            : [emptyQuestion(1), emptyQuestion(2), emptyQuestion(3)];
+          return `
+            <div class="lesson-variant js-variant">
+              <input type="hidden" class="js-variant-id" value="${{escapeHtml(variant.id || '')}}" />
+              <div class="stack" style="justify-content:space-between;">
+                <strong>Lesson Variant</strong>
+                <button type="button" class="danger js-remove-variant">Remove variant</button>
+              </div>
+              <div class="grid-3" style="margin-top:10px;">
+                <div class="field">
+                  <label>Level<br/>
+                    <select class="js-variant-level">
+                      <option value="support" ${{String(variant.level || '') === 'support' ? 'selected' : ''}}>support</option>
+                      <option value="foundation" ${{String(variant.level || '') === 'foundation' ? 'selected' : ''}}>foundation</option>
+                      <option value="build" ${{String(variant.level || 'build') === 'build' ? 'selected' : ''}}>build</option>
+                      <option value="perform" ${{String(variant.level || '') === 'perform' ? 'selected' : ''}}>perform</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="field">
+                  <label>Video content<br/>${{renderContentSelect(day, variant)}}</label>
+                </div>
+                <div class="field">
+                  <label><input type="checkbox" class="js-variant-active" ${{variant.is_active === false ? '' : 'checked'}} /> Active</label>
+                </div>
+              </div>
+              <div class="grid-3">
+                <div class="field">
+                  <label>Takeaway default<br/><textarea class="js-variant-takeaway-default" rows="3">${{escapeHtml(variant.takeaway_default || '')}}</textarea></label>
+                </div>
+                <div class="field">
+                  <label>Takeaway if low score<br/><textarea class="js-variant-takeaway-low" rows="3">${{escapeHtml(variant.takeaway_if_low_score || '')}}</textarea></label>
+                </div>
+                <div class="field">
+                  <label>Takeaway if high score<br/><textarea class="js-variant-takeaway-high" rows="3">${{escapeHtml(variant.takeaway_if_high_score || '')}}</textarea></label>
+                </div>
+              </div>
+              <div class="card" style="margin-top:10px; padding:12px 14px;">
+                <input type="hidden" class="js-quiz-id" value="${{escapeHtml(quiz.id || '')}}" />
+                <div class="stack" style="justify-content:space-between;">
+                  <strong>Quiz</strong>
+                  <button type="button" class="secondary js-add-question">Add question</button>
+                </div>
+                <div class="field" style="margin-top:10px;">
+                  <label>Pass score %<br/><input type="number" class="js-quiz-pass-score" min="0" max="100" step="0.01" value="${{escapeHtml(quiz.pass_score_pct ?? '')}}" /></label>
+                </div>
+                <div class="js-questions-root">
+                  ${{questions.map((question) => renderQuestion(question)).join('')}}
+                </div>
+              </div>
+            </div>
+          `;
+        }}
+
+        function renderDay(day) {{
+          const variants = Array.isArray(day.variants) && day.variants.length ? day.variants : [emptyVariant()];
+          return `
+            <div class="programme-day js-day">
+              <input type="hidden" class="js-day-id" value="${{escapeHtml(day.id || '')}}" />
+              <div class="stack" style="justify-content:space-between;">
+                <strong>Programme Day</strong>
+                <button type="button" class="danger js-remove-day">Remove day</button>
+              </div>
+              <div class="grid-3" style="margin-top:10px;">
+                <div class="field">
+                  <label>Day index<br/><input type="number" class="js-day-index" min="1" max="90" value="${{escapeHtml(day.day_index || '')}}" /></label>
+                </div>
+                <div class="field">
+                  <label>Concept<br/>${{renderConceptSelect(day)}}</label>
+                </div>
+                <div class="field">
+                  <label>Concept label<br/><input type="text" class="js-day-concept-label" value="${{escapeHtml(day.concept_label || '')}}" /></label>
+                </div>
+              </div>
+              <div class="field">
+                <label>Lesson goal<br/><textarea class="js-day-lesson-goal" rows="2">${{escapeHtml(day.lesson_goal || '')}}</textarea></label>
+              </div>
+              <div class="grid-2">
+                <div class="field">
+                  <label>Default title<br/><input type="text" class="js-day-default-title" value="${{escapeHtml(day.default_title || '')}}" /></label>
+                </div>
+                <div class="field">
+                  <label>Default summary<br/><textarea class="js-day-default-summary" rows="2">${{escapeHtml(day.default_summary || '')}}</textarea></label>
+                </div>
+              </div>
+              <div class="stack" style="justify-content:space-between; margin-top:10px;">
+                <strong>Variants</strong>
+                <button type="button" class="secondary js-add-variant">Add variant</button>
+              </div>
+              <div class="js-variants-root">
+                ${{variants.map((variant) => renderVariant(day, variant)).join('')}}
+              </div>
+            </div>
+          `;
+        }}
+
+        function collectDayData(dayEl) {{
+          const variantEls = Array.from(dayEl.querySelectorAll(':scope .js-variants-root > .js-variant'));
+          const conceptKey = String(dayEl.querySelector('.js-day-concept')?.value || '').trim();
+          return {{
+            id: dayEl.querySelector('.js-day-id')?.value ? Number(dayEl.querySelector('.js-day-id').value) : null,
+            day_index: Number(dayEl.querySelector('.js-day-index')?.value || 0),
+            concept_key: conceptKey,
+            concept_label: String(dayEl.querySelector('.js-day-concept-label')?.value || '').trim(),
+            lesson_goal: String(dayEl.querySelector('.js-day-lesson-goal')?.value || '').trim(),
+            default_title: String(dayEl.querySelector('.js-day-default-title')?.value || '').trim(),
+            default_summary: String(dayEl.querySelector('.js-day-default-summary')?.value || '').trim(),
+            variants: variantEls.map((variantEl) => {{
+              const questionEls = Array.from(variantEl.querySelectorAll(':scope .js-questions-root > .js-question'));
+              return {{
+                id: variantEl.querySelector('.js-variant-id')?.value ? Number(variantEl.querySelector('.js-variant-id').value) : null,
+                level: String(variantEl.querySelector('.js-variant-level')?.value || 'build').trim(),
+                content_item_id: variantEl.querySelector('.js-variant-content-item')?.value ? Number(variantEl.querySelector('.js-variant-content-item').value) : null,
+                takeaway_default: String(variantEl.querySelector('.js-variant-takeaway-default')?.value || '').trim(),
+                takeaway_if_low_score: String(variantEl.querySelector('.js-variant-takeaway-low')?.value || '').trim(),
+                takeaway_if_high_score: String(variantEl.querySelector('.js-variant-takeaway-high')?.value || '').trim(),
+                is_active: Boolean(variantEl.querySelector('.js-variant-active')?.checked),
+                quiz: {{
+                  id: variantEl.querySelector('.js-quiz-id')?.value ? Number(variantEl.querySelector('.js-quiz-id').value) : null,
+                  pass_score_pct: variantEl.querySelector('.js-quiz-pass-score')?.value !== '' ? Number(variantEl.querySelector('.js-quiz-pass-score').value) : null,
+                  questions: questionEls.map((questionEl) => {{
+                    return {{
+                      id: questionEl.querySelector('.js-question-id')?.value ? Number(questionEl.querySelector('.js-question-id').value) : null,
+                      question_order: Number(questionEl.querySelector('.js-question-order')?.value || 0),
+                      question_text: String(questionEl.querySelector('.js-question-text')?.value || '').trim(),
+                      answer_type: String(questionEl.querySelector('.js-question-answer-type')?.value || 'single_choice').trim(),
+                      options_json: String(questionEl.querySelector('.js-question-options')?.value || '').trim(),
+                      correct_answer_json: String(questionEl.querySelector('.js-question-correct')?.value || '').trim(),
+                      explanation: String(questionEl.querySelector('.js-question-explanation')?.value || '').trim(),
+                    }};
+                  }}),
+                }},
+              }};
+            }}),
+          }};
+        }}
+
+        function serializeStructure() {{
+          const dayEls = Array.from(root.querySelectorAll(':scope > .js-day'));
+          const days = dayEls
+            .map((dayEl) => collectDayData(dayEl))
+            .filter((day) => day.day_index > 0 || day.concept_key || day.default_title || day.variants.some((variant) => variant.content_item_id || variant.takeaway_default));
+          return {{ days }};
+        }}
+
+        function refreshContentSelectsWithinDay(dayEl) {{
+          const day = collectDayData(dayEl);
+          for (const variantEl of dayEl.querySelectorAll(':scope .js-variants-root > .js-variant')) {{
+            const select = variantEl.querySelector('.js-variant-content-item');
+            if (!select) continue;
+            const variant = {{
+              content_item_id: select.value ? Number(select.value) : null,
+            }};
+            select.outerHTML = renderContentSelect(day, variant);
+          }}
+        }}
+
+        function seedDays() {{
+          const duration = Math.max(1, Math.min(90, Number(durationInput.value || 21)));
+          root.innerHTML = '';
+          for (let index = 1; index <= duration; index += 1) {{
+            root.insertAdjacentHTML('beforeend', renderDay(emptyDay(index)));
+          }}
+        }}
+
+        function renderInitial() {{
+          const days = Array.isArray(seed.days) ? [...seed.days] : [];
+          if (!days.length) {{
+            seedDays();
+            return;
+          }}
+          root.innerHTML = days
+            .sort((left, right) => Number(left.day_index || 0) - Number(right.day_index || 0))
+            .map((day) => renderDay(day))
+            .join('');
+        }}
+
+        document.getElementById('seed-days-button').addEventListener('click', seedDays);
+        document.getElementById('add-day-button').addEventListener('click', function() {{
+          const nextIndex = root.querySelectorAll(':scope > .js-day').length + 1;
+          root.insertAdjacentHTML('beforeend', renderDay(emptyDay(nextIndex)));
+        }});
+
+        root.addEventListener('click', function(event) {{
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          if (target.classList.contains('js-remove-day')) {{
+            target.closest('.js-day')?.remove();
+            return;
+          }}
+          if (target.classList.contains('js-add-variant')) {{
+            const dayEl = target.closest('.js-day');
+            if (!dayEl) return;
+            const variantsRoot = dayEl.querySelector('.js-variants-root');
+            if (!variantsRoot) return;
+            variantsRoot.insertAdjacentHTML('beforeend', renderVariant(collectDayData(dayEl), emptyVariant()));
+            return;
+          }}
+          if (target.classList.contains('js-remove-variant')) {{
+            target.closest('.js-variant')?.remove();
+            return;
+          }}
+          if (target.classList.contains('js-add-question')) {{
+            const variantEl = target.closest('.js-variant');
+            if (!variantEl) return;
+            const questionsRoot = variantEl.querySelector('.js-questions-root');
+            if (!questionsRoot) return;
+            const existing = questionsRoot.querySelectorAll(':scope > .js-question').length;
+            if (existing >= 3) {{
+              window.alert('Use 3 quiz questions per lesson.');
+              return;
+            }}
+            questionsRoot.insertAdjacentHTML('beforeend', renderQuestion(emptyQuestion(existing + 1)));
+            return;
+          }}
+          if (target.classList.contains('js-remove-question')) {{
+            target.closest('.js-question')?.remove();
+          }}
+        }});
+
+        root.addEventListener('change', function(event) {{
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          if (target.classList.contains('js-day-concept')) {{
+            const dayEl = target.closest('.js-day');
+            if (!dayEl) return;
+            const select = target;
+            const match = conceptOptions.find((item) => String(item.code || '').toLowerCase() === String(select.value || '').toLowerCase());
+            const labelInput = dayEl.querySelector('.js-day-concept-label');
+            if (labelInput && !String(labelInput.value || '').trim() && match) {{
+              labelInput.value = String(match.name || '').trim();
+            }}
+            refreshContentSelectsWithinDay(dayEl);
+          }}
+        }});
+
+        pillarInput.addEventListener('change', function() {{
+          const days = Array.from(root.querySelectorAll(':scope > .js-day')).map((dayEl) => collectDayData(dayEl));
+          root.innerHTML = days.map((day) => renderDay(day)).join('');
+        }});
+
+        form.addEventListener('submit', function(event) {{
+          try {{
+            structureField.value = JSON.stringify(serializeStructure());
+          }} catch (err) {{
+            event.preventDefault();
+            window.alert('Failed to prepare programme structure for saving.');
+          }}
+        }});
+
+        renderInitial();
+      }})();
+    </script>
+    <p class='nav' style='margin-top:16px;'><a href="/admin/education-programmes">Back to list</a></p>
+    """
+    return _wrap_page(title, body)
+
+
+@admin.post("/education-programmes/save")
+async def save_education_programme(
+    id: int | None = Form(default=None),
+    pillar_key: str = Form(...),
+    code: str = Form(...),
+    name: str = Form(...),
+    duration_days: int = Form(default=21),
+    is_active: str | None = Form(default=None),
+    structure_json: str | None = Form(default=None),
+):
+    ensure_education_plan_schema()
+    pillar_token = str(pillar_key or "").strip().lower()
+    code_token = str(code or "").strip()
+    name_text = str(name or "").strip()
+    if pillar_token not in {"nutrition", "training", "resilience", "recovery"}:
+        raise HTTPException(400, "pillar_key must be one of nutrition|training|resilience|recovery")
+    if not code_token:
+        raise HTTPException(400, "code is required")
+    if not name_text:
+        raise HTTPException(400, "name is required")
+    resolved_duration = max(1, min(90, int(duration_days or 21)))
+    try:
+        structure = json.loads(str(structure_json or "{}"))
+    except Exception as exc:
+        raise HTTPException(400, f"Invalid programme structure JSON: {exc}")
+    days_payload = structure.get("days") if isinstance(structure, dict) else []
+    if days_payload is None:
+        days_payload = []
+    if not isinstance(days_payload, list):
+        raise HTTPException(400, "structure_json.days must be a list")
+
+    seen_day_indexes: set[int] = set()
+    normalised_days: list[dict[str, object]] = []
+    for raw_day in days_payload:
+        if not isinstance(raw_day, dict):
+            continue
+        try:
+            day_index = int(raw_day.get("day_index") or 0)
+        except Exception:
+            day_index = 0
+        concept_key = str(raw_day.get("concept_key") or "").strip().lower()
+        if not day_index:
+            continue
+        if day_index in seen_day_indexes:
+            raise HTTPException(400, f"Duplicate day_index: {day_index}")
+        seen_day_indexes.add(day_index)
+        if not concept_key:
+            raise HTTPException(400, f"Day {day_index} requires concept_key")
+        variants = raw_day.get("variants") if isinstance(raw_day.get("variants"), list) else []
+        normalised_days.append(
+            {
+                "id": int(raw_day.get("id")) if raw_day.get("id") else None,
+                "day_index": day_index,
+                "concept_key": concept_key,
+                "concept_label": str(raw_day.get("concept_label") or "").strip() or None,
+                "lesson_goal": str(raw_day.get("lesson_goal") or "").strip() or None,
+                "default_title": str(raw_day.get("default_title") or "").strip() or None,
+                "default_summary": str(raw_day.get("default_summary") or "").strip() or None,
+                "variants": variants,
+            }
+        )
+
+    with SessionLocal() as s:
+        row = s.get(EducationProgramme, id) if id else None
+        if id and row is None:
+            raise HTTPException(404, "Education programme not found")
+        if row is None:
+            row = EducationProgramme()
+            s.add(row)
+            s.flush()
+        row.pillar_key = pillar_token
+        row.code = code_token
+        row.name = name_text
+        row.duration_days = resolved_duration
+        row.is_active = is_active is not None
+        s.add(row)
+        s.flush()
+
+        existing_days = {
+            int(item.id): item
+            for item in s.query(EducationProgrammeDay)
+            .filter(EducationProgrammeDay.programme_id == int(row.id))
+            .all()
+        }
+        existing_days_by_index = {
+            int(item.day_index): item
+            for item in existing_days.values()
+        }
+        keep_day_ids: set[int] = set()
+
+        for day_payload in sorted(normalised_days, key=lambda item: int(item.get("day_index") or 0)):
+            day_row = None
+            day_id = day_payload.get("id")
+            if day_id and int(day_id) in existing_days:
+                day_row = existing_days[int(day_id)]
+            elif int(day_payload["day_index"]) in existing_days_by_index:
+                day_row = existing_days_by_index[int(day_payload["day_index"])]
+            else:
+                day_row = EducationProgrammeDay(programme_id=int(row.id))
+                s.add(day_row)
+                s.flush()
+            day_row.programme_id = int(row.id)
+            day_row.day_index = int(day_payload["day_index"])
+            day_row.concept_key = str(day_payload["concept_key"] or "").strip().lower()
+            day_row.concept_label = day_payload.get("concept_label")
+            day_row.lesson_goal = day_payload.get("lesson_goal")
+            day_row.default_title = day_payload.get("default_title")
+            day_row.default_summary = day_payload.get("default_summary")
+            s.add(day_row)
+            s.flush()
+            keep_day_ids.add(int(day_row.id))
+
+            existing_variants = {
+                int(item.id): item
+                for item in s.query(EducationLessonVariant)
+                .filter(EducationLessonVariant.programme_day_id == int(day_row.id))
+                .all()
+            }
+            existing_variants_by_level = {
+                str(item.level or "").strip().lower(): item
+                for item in existing_variants.values()
+            }
+            keep_variant_ids: set[int] = set()
+
+            raw_variants = day_payload.get("variants") if isinstance(day_payload.get("variants"), list) else []
+            for raw_variant in raw_variants:
+                if not isinstance(raw_variant, dict):
+                    continue
+                level = str(raw_variant.get("level") or "").strip().lower() or "build"
+                variant_row = None
+                variant_id = raw_variant.get("id")
+                if variant_id and int(variant_id) in existing_variants:
+                    variant_row = existing_variants[int(variant_id)]
+                elif level in existing_variants_by_level:
+                    variant_row = existing_variants_by_level[level]
+                else:
+                    variant_row = EducationLessonVariant(programme_day_id=int(day_row.id))
+                    s.add(variant_row)
+                    s.flush()
+                variant_row.programme_day_id = int(day_row.id)
+                variant_row.level = level
+                variant_row.content_item_id = int(raw_variant.get("content_item_id")) if raw_variant.get("content_item_id") else None
+                variant_row.takeaway_default = str(raw_variant.get("takeaway_default") or "").strip() or None
+                variant_row.takeaway_if_low_score = str(raw_variant.get("takeaway_if_low_score") or "").strip() or None
+                variant_row.takeaway_if_high_score = str(raw_variant.get("takeaway_if_high_score") or "").strip() or None
+                variant_row.is_active = bool(raw_variant.get("is_active", True))
+                s.add(variant_row)
+                s.flush()
+                keep_variant_ids.add(int(variant_row.id))
+
+                quiz_payload = raw_variant.get("quiz") if isinstance(raw_variant.get("quiz"), dict) else {}
+                raw_questions = quiz_payload.get("questions") if isinstance(quiz_payload.get("questions"), list) else []
+                pass_score_pct = quiz_payload.get("pass_score_pct")
+                try:
+                    pass_score_val = float(pass_score_pct) if pass_score_pct not in (None, "") else None
+                except Exception:
+                    pass_score_val = None
+                existing_quiz = (
+                    s.query(EducationQuiz)
+                    .filter(EducationQuiz.lesson_variant_id == int(variant_row.id))
+                    .one_or_none()
+                )
+                normalised_questions = []
+                for raw_question in raw_questions:
+                    if not isinstance(raw_question, dict):
+                        continue
+                    question_text = str(raw_question.get("question_text") or "").strip()
+                    if not question_text:
+                        continue
+                    try:
+                        order = int(raw_question.get("question_order") or (len(normalised_questions) + 1))
+                    except Exception:
+                        order = len(normalised_questions) + 1
+                    options_val = raw_question.get("options_json")
+                    correct_val = raw_question.get("correct_answer_json")
+                    if isinstance(options_val, str) and options_val.strip():
+                        try:
+                            options_val = json.loads(options_val)
+                        except Exception as exc:
+                            raise HTTPException(400, f"Day {day_row.day_index} variant {level} question {order}: invalid options JSON ({exc})")
+                    if isinstance(correct_val, str) and correct_val.strip():
+                        try:
+                            correct_val = json.loads(correct_val)
+                        except Exception:
+                            correct_val = correct_val.strip()
+                    elif correct_val == "":
+                        correct_val = None
+                    normalised_questions.append(
+                        {
+                            "id": int(raw_question.get("id")) if raw_question.get("id") else None,
+                            "question_order": order,
+                            "question_text": question_text,
+                            "answer_type": str(raw_question.get("answer_type") or "single_choice").strip() or "single_choice",
+                            "options_json": options_val,
+                            "correct_answer_json": correct_val,
+                            "explanation": str(raw_question.get("explanation") or "").strip() or None,
+                        }
+                    )
+
+                if pass_score_val is not None or normalised_questions:
+                    quiz_row = existing_quiz or EducationQuiz(lesson_variant_id=int(variant_row.id))
+                    quiz_row.lesson_variant_id = int(variant_row.id)
+                    quiz_row.pass_score_pct = pass_score_val
+                    s.add(quiz_row)
+                    s.flush()
+                    existing_questions = {
+                        int(item.id): item
+                        for item in s.query(EducationQuizQuestion)
+                        .filter(EducationQuizQuestion.quiz_id == int(quiz_row.id))
+                        .all()
+                    }
+                    existing_questions_by_order = {
+                        int(item.question_order): item
+                        for item in existing_questions.values()
+                    }
+                    keep_question_ids: set[int] = set()
+                    for question_payload in sorted(normalised_questions, key=lambda item: int(item.get("question_order") or 0)):
+                        question_row = None
+                        question_id = question_payload.get("id")
+                        if question_id and int(question_id) in existing_questions:
+                            question_row = existing_questions[int(question_id)]
+                        elif int(question_payload["question_order"]) in existing_questions_by_order:
+                            question_row = existing_questions_by_order[int(question_payload["question_order"])]
+                        else:
+                            question_row = EducationQuizQuestion(quiz_id=int(quiz_row.id))
+                            s.add(question_row)
+                            s.flush()
+                        question_row.quiz_id = int(quiz_row.id)
+                        question_row.question_order = int(question_payload["question_order"])
+                        question_row.question_text = str(question_payload["question_text"] or "").strip()
+                        question_row.answer_type = str(question_payload["answer_type"] or "single_choice").strip() or "single_choice"
+                        question_row.options_json = question_payload.get("options_json")
+                        question_row.correct_answer_json = question_payload.get("correct_answer_json")
+                        question_row.explanation = question_payload.get("explanation")
+                        s.add(question_row)
+                        s.flush()
+                        keep_question_ids.add(int(question_row.id))
+                    for question_id, question_row in existing_questions.items():
+                        if question_id not in keep_question_ids:
+                            s.delete(question_row)
+                elif existing_quiz is not None:
+                    for question_row in (
+                        s.query(EducationQuizQuestion)
+                        .filter(EducationQuizQuestion.quiz_id == int(existing_quiz.id))
+                        .all()
+                    ):
+                        s.delete(question_row)
+                    s.delete(existing_quiz)
+
+            for variant_id, variant_row in existing_variants.items():
+                if variant_id not in keep_variant_ids:
+                    s.delete(variant_row)
+
+        for day_id, day_row in existing_days.items():
+            if day_id not in keep_day_ids:
+                s.delete(day_row)
+
+        s.commit()
+        redirect_id = int(row.id)
+    return RedirectResponse(url=f"/admin/education-programmes/edit?id={redirect_id}", status_code=303)
 
 
 @admin.get("/reports/prompt-audit", response_class=HTMLResponse)

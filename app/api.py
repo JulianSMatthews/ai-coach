@@ -213,6 +213,12 @@ from .daily_habits import (
 )
 from .coach_home_refresh import queue_coach_home_tracker_refresh
 from .coach_insight import get_or_generate_cached_coach_insight
+from .education_plan import (
+    ensure_education_plan_schema,
+    get_today_education_plan,
+    record_education_video_progress,
+    submit_education_quiz,
+)
 from .weekly_objectives import get_weekly_objectives_config, save_weekly_objectives_config
 
 # Lazy import holder to avoid startup/reload ImportError if symbol is added later
@@ -711,6 +717,10 @@ def on_startup():
                 ensure_daily_habit_plan_schema()
             except Exception as e:
                 print(f"⚠️  Could not ensure daily habit plan schema: {e!r}")
+            try:
+                ensure_education_plan_schema()
+            except Exception as e:
+                print(f"⚠️  Could not ensure education plan schema: {e!r}")
             try:
                 prompts_module.ensure_builtin_prompt_templates(["assessment_completion_summary", "daily_habit_plan"])
             except Exception as e:
@@ -7944,6 +7954,133 @@ def api_user_coach_insight(
             "concept_key": result.get("concept_key"),
             "matched_by": result.get("matched_by"),
             "anchor_date": result.get("insight_date"),
+        },
+    )
+    return result
+
+
+@api_v1.get("/users/{user_id}/education-plan/today")
+def api_user_education_plan_today(
+    user_id: int,
+    request: Request,
+    anchor_date: str | None = None,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    ensure_education_plan_schema()
+    if anchor_date:
+        anchor = parse_tracker_anchor(anchor_date)
+        if anchor is None:
+            raise HTTPException(status_code=400, detail="anchor_date must be YYYY-MM-DD")
+    else:
+        anchor = None
+    result = get_today_education_plan(int(user_id), anchor=anchor)
+    lesson = result.get("lesson")
+    if isinstance(lesson, dict):
+        content = lesson.get("content")
+        if isinstance(content, dict):
+            video_url = str(content.get("video_url") or "").strip()
+            podcast_url = str(content.get("podcast_url") or "").strip()
+            if video_url:
+                content["video_url"] = _normalize_reports_url(video_url)
+            if podcast_url:
+                content["podcast_url"] = _normalize_reports_url(podcast_url)
+            avatar = content.get("avatar")
+            if isinstance(avatar, dict):
+                avatar_url = str(avatar.get("url") or "").strip()
+                poster_url = str(avatar.get("poster_url") or "").strip()
+                if avatar_url:
+                    avatar["url"] = _normalize_reports_url(avatar_url)
+                if poster_url:
+                    avatar["poster_url"] = _normalize_reports_url(poster_url)
+    _log_app_engagement_event(
+        user_id=user_id,
+        unit_type="education_plan_view",
+        meta={
+            "page": "coach_home",
+            "pillar_key": result.get("pillar_key"),
+            "concept_key": result.get("concept_key"),
+            "day_index": result.get("day_index"),
+            "lesson_date": result.get("lesson_date"),
+        },
+    )
+    return result
+
+
+@api_v1.post("/users/{user_id}/education-plan/video-progress")
+def api_user_education_plan_video_progress(
+    user_id: int,
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    ensure_education_plan_schema()
+    anchor = None
+    anchor_date = str((body or {}).get("anchor_date") or "").strip()
+    if anchor_date:
+        anchor = parse_tracker_anchor(anchor_date)
+        if anchor is None:
+            raise HTTPException(status_code=400, detail="anchor_date must be YYYY-MM-DD")
+    result = record_education_video_progress(
+        int(user_id),
+        watch_pct=(body or {}).get("watch_pct"),
+        watched_seconds=_safe_int((body or {}).get("watched_seconds")),
+        anchor=anchor,
+    )
+    _log_app_engagement_event(
+        user_id=user_id,
+        unit_type="education_video_progress",
+        meta={
+            "page": "coach_home",
+            "pillar_key": result.get("pillar_key"),
+            "concept_key": result.get("concept_key"),
+            "day_index": result.get("day_index"),
+            "lesson_date": result.get("lesson_date"),
+            "watch_pct": ((result.get("progress") or {}) if isinstance(result.get("progress"), dict) else {}).get("watch_pct"),
+            "completion_status": ((result.get("progress") or {}) if isinstance(result.get("progress"), dict) else {}).get("completion_status"),
+        },
+    )
+    return result
+
+
+@api_v1.post("/users/{user_id}/education-plan/quiz-submit")
+def api_user_education_plan_quiz_submit(
+    user_id: int,
+    request: Request,
+    body: dict[str, Any] = Body(default_factory=dict),
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    ensure_education_plan_schema()
+    anchor = None
+    anchor_date = str((body or {}).get("anchor_date") or "").strip()
+    if anchor_date:
+        anchor = parse_tracker_anchor(anchor_date)
+        if anchor is None:
+            raise HTTPException(status_code=400, detail="anchor_date must be YYYY-MM-DD")
+    answers = (body or {}).get("answers")
+    if answers is not None and not isinstance(answers, list):
+        raise HTTPException(status_code=400, detail="answers must be a list")
+    result = submit_education_quiz(
+        int(user_id),
+        answers=answers if isinstance(answers, list) else [],
+        anchor=anchor,
+    )
+    _log_app_engagement_event(
+        user_id=user_id,
+        unit_type="education_quiz_submit",
+        meta={
+            "page": "coach_home",
+            "pillar_key": result.get("pillar_key"),
+            "concept_key": result.get("concept_key"),
+            "day_index": result.get("day_index"),
+            "lesson_date": result.get("lesson_date"),
+            "quiz_score_pct": ((result.get("progress") or {}) if isinstance(result.get("progress"), dict) else {}).get("quiz_score_pct"),
+            "completion_status": ((result.get("progress") or {}) if isinstance(result.get("progress"), dict) else {}).get("completion_status"),
         },
     )
     return result

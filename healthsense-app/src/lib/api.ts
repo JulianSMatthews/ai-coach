@@ -402,6 +402,91 @@ export type CoachInsightResponse = {
   content?: CoachInsightContent | null;
 };
 
+export type EducationLessonContent = {
+  id?: number;
+  pillar_key?: string | null;
+  concept_code?: string | null;
+  title?: string | null;
+  body?: string | null;
+  video_url?: string | null;
+  podcast_url?: string | null;
+  level?: string | null;
+  avatar?: {
+    url?: string | null;
+    title?: string | null;
+    script?: string | null;
+    poster_url?: string | null;
+    character?: string | null;
+    style?: string | null;
+    voice?: string | null;
+    status?: string | null;
+    job_id?: string | null;
+    error?: string | null;
+    generated_at?: string | null;
+    source?: string | null;
+    summary_url?: string | null;
+  } | null;
+  created_at?: string | null;
+};
+
+export type EducationPlanTodayResponse = {
+  available?: boolean;
+  reason?: string | null;
+  user_id?: number;
+  lesson_date?: string | null;
+  plan_id?: number | null;
+  programme_id?: number | null;
+  programme?: {
+    id?: number;
+    code?: string | null;
+    name?: string | null;
+    duration_days?: number | null;
+  } | null;
+  pillar_key?: string | null;
+  pillar_label?: string | null;
+  day_index?: number | null;
+  streak_days?: number | null;
+  best_streak_days?: number | null;
+  concept_key?: string | null;
+  concept_label?: string | null;
+  level?: string | null;
+  assessment_score?: number | null;
+  tracker_signal?: string | null;
+  tracker_state?: string | null;
+  tracker_day_label?: string | null;
+  lesson?: {
+    programme_day_id?: number | null;
+    lesson_variant_id?: number | null;
+    title?: string | null;
+    summary?: string | null;
+    goal?: string | null;
+    content?: EducationLessonContent | null;
+  } | null;
+  quiz?: {
+    id?: number | null;
+    pass_score_pct?: number | null;
+    questions?: Array<{
+      id?: number;
+      order?: number;
+      question_text?: string;
+      answer_type?: string;
+      options?: unknown[];
+      explanation?: string | null;
+    }>;
+  } | null;
+  progress?: {
+    id?: number | null;
+    watch_pct?: number | null;
+    watched_seconds?: number | null;
+    quiz_score_pct?: number | null;
+    completion_status?: string | null;
+    video_completed_at?: string | null;
+    quiz_completed_at?: string | null;
+    completed_at?: string | null;
+  } | null;
+  takeaway?: string | null;
+};
+
 export type BillingPriceOption = {
   id?: number;
   plan_id?: number;
@@ -549,6 +634,15 @@ export async function getCoachInsight(
 ): Promise<CoachInsightResponse> {
   return apiGet<CoachInsightResponse>(`/api/v1/users/${userId}/coach-insight`, {
     query: { anchor_date: anchorDate, concept_key: conceptKey },
+  });
+}
+
+export async function getEducationPlanToday(
+  userId: string | number,
+  anchorDate?: string,
+): Promise<EducationPlanTodayResponse> {
+  return apiGet<EducationPlanTodayResponse>(`/api/v1/users/${userId}/education-plan/today`, {
+    query: { anchor_date: anchorDate },
   });
 }
 

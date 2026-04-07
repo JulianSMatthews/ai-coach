@@ -1253,6 +1253,177 @@ class ContentLibraryItem(Base):
     )
 
 
+class EducationProgramme(Base):
+    __tablename__ = "education_programmes"
+
+    id = Column(Integer, primary_key=True)
+    pillar_key = Column(String(64), nullable=False, index=True)
+    code = Column(String(64), nullable=False, unique=True, index=True)
+    name = Column(String(200), nullable=False)
+    duration_days = Column(Integer, nullable=False, server_default=text("21"))
+    is_active = Column(Boolean, nullable=False, server_default=text("true"), index=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_education_programmes_pillar_active", "pillar_key", "is_active"),
+    )
+
+
+class EducationProgrammeDay(Base):
+    __tablename__ = "education_programme_days"
+
+    id = Column(Integer, primary_key=True)
+    programme_id = Column(Integer, ForeignKey("education_programmes.id", ondelete="CASCADE"), nullable=False, index=True)
+    day_index = Column(Integer, nullable=False)
+    concept_key = Column(String(64), nullable=False, index=True)
+    concept_label = Column(String(160), nullable=True)
+    lesson_goal = Column(Text, nullable=True)
+    default_title = Column(String(200), nullable=True)
+    default_summary = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("programme_id", "day_index", name="uq_education_programme_days_programme_day"),
+        Index("ix_education_programme_days_programme_concept", "programme_id", "concept_key"),
+    )
+
+
+class EducationLessonVariant(Base):
+    __tablename__ = "education_lesson_variants"
+
+    id = Column(Integer, primary_key=True)
+    programme_day_id = Column(Integer, ForeignKey("education_programme_days.id", ondelete="CASCADE"), nullable=False, index=True)
+    level = Column(String(32), nullable=False, index=True)
+    content_item_id = Column(Integer, ForeignKey("content_library_items.id", ondelete="SET NULL"), nullable=True, index=True)
+    takeaway_default = Column(Text, nullable=True)
+    takeaway_if_low_score = Column(Text, nullable=True)
+    takeaway_if_high_score = Column(Text, nullable=True)
+    is_active = Column(Boolean, nullable=False, server_default=text("true"), index=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("programme_day_id", "level", name="uq_education_lesson_variants_day_level"),
+        Index("ix_education_lesson_variants_day_active", "programme_day_id", "is_active"),
+    )
+
+
+class EducationQuiz(Base):
+    __tablename__ = "education_quizzes"
+
+    id = Column(Integer, primary_key=True)
+    lesson_variant_id = Column(Integer, ForeignKey("education_lesson_variants.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    pass_score_pct = Column(Float, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+
+class EducationQuizQuestion(Base):
+    __tablename__ = "education_quiz_questions"
+
+    id = Column(Integer, primary_key=True)
+    quiz_id = Column(Integer, ForeignKey("education_quizzes.id", ondelete="CASCADE"), nullable=False, index=True)
+    question_order = Column(Integer, nullable=False)
+    question_text = Column(Text, nullable=False)
+    answer_type = Column(String(32), nullable=False)
+    options_json = Column(JSONType, nullable=True)
+    correct_answer_json = Column(JSONType, nullable=True)
+    explanation = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("quiz_id", "question_order", name="uq_education_quiz_questions_quiz_order"),
+    )
+
+
+class UserEducationPlan(Base):
+    __tablename__ = "user_education_plans"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    programme_id = Column(Integer, ForeignKey("education_programmes.id", ondelete="CASCADE"), nullable=False, index=True)
+    pillar_key = Column(String(64), nullable=False, index=True)
+    starts_on = Column(Date, nullable=False, index=True)
+    current_day_index = Column(Integer, nullable=False, server_default=text("1"))
+    status = Column(String(32), nullable=False, server_default=text("'active'"), index=True)
+    current_streak_days = Column(Integer, nullable=False, server_default=text("0"))
+    best_streak_days = Column(Integer, nullable=False, server_default=text("0"))
+    source_assessment_run_id = Column(Integer, ForeignKey("assessment_runs.id", ondelete="SET NULL"), nullable=True, index=True)
+    initial_context_json = Column(JSONType, nullable=True)
+    last_context_hash = Column(String(64), nullable=True, index=True)
+    last_refreshed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        Index("ix_user_education_plans_user_status", "user_id", "status"),
+    )
+
+
+class UserEducationConceptLevel(Base):
+    __tablename__ = "user_education_concept_levels"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    pillar_key = Column(String(64), nullable=False, index=True)
+    concept_key = Column(String(64), nullable=False, index=True)
+    starting_level = Column(String(32), nullable=False)
+    current_level = Column(String(32), nullable=False)
+    assessment_score_snapshot = Column(Float, nullable=True)
+    tracker_state_json = Column(JSONType, nullable=True)
+    last_recomputed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "pillar_key", "concept_key", name="uq_user_education_concept_levels_user_concept"),
+    )
+
+
+class UserEducationDayProgress(Base):
+    __tablename__ = "user_education_day_progress"
+
+    id = Column(Integer, primary_key=True)
+    user_plan_id = Column(Integer, ForeignKey("user_education_plans.id", ondelete="CASCADE"), nullable=False, index=True)
+    programme_day_id = Column(Integer, ForeignKey("education_programme_days.id", ondelete="CASCADE"), nullable=False, index=True)
+    lesson_variant_id = Column(Integer, ForeignKey("education_lesson_variants.id", ondelete="SET NULL"), nullable=True, index=True)
+    lesson_date = Column(Date, nullable=False, index=True)
+    watch_pct = Column(Float, nullable=True)
+    watched_seconds = Column(Integer, nullable=True)
+    video_completed_at = Column(DateTime, nullable=True)
+    quiz_score_pct = Column(Float, nullable=True)
+    quiz_completed_at = Column(DateTime, nullable=True)
+    takeaway_text_shown = Column(Text, nullable=True)
+    takeaway_variant = Column(String(32), nullable=True)
+    completion_status = Column(String(32), nullable=False, server_default=text("'pending'"), index=True)
+    completed_at = Column(DateTime, nullable=True)
+    adaptation_reason = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+    updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_plan_id", "lesson_date", name="uq_user_education_day_progress_plan_date"),
+    )
+
+
+class UserEducationQuizAnswer(Base):
+    __tablename__ = "user_education_quiz_answers"
+
+    id = Column(Integer, primary_key=True)
+    user_day_progress_id = Column(Integer, ForeignKey("user_education_day_progress.id", ondelete="CASCADE"), nullable=False, index=True)
+    question_id = Column(Integer, ForeignKey("education_quiz_questions.id", ondelete="CASCADE"), nullable=False, index=True)
+    answer_json = Column(JSONType, nullable=True)
+    is_correct = Column(Boolean, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=func.now())
+
+    __table_args__ = (
+        UniqueConstraint("user_day_progress_id", "question_id", name="uq_user_education_quiz_answers_progress_question"),
+    )
+
+
 class EngagementEvent(Base):
     __tablename__ = "engagement_events"
 
