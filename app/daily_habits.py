@@ -1946,6 +1946,7 @@ def get_or_generate_daily_habit_plan(
     force: bool = False,
     concept_key: str | None = None,
     allow_llm: bool = False,
+    tracker_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     ensure_daily_habit_plan_schema()
     today = tracker_today()
@@ -1970,7 +1971,7 @@ def get_or_generate_daily_habit_plan(
         )
         carryover = existing or _latest_prior_daily_habit_plan(user_id, today)
         seed_payload = carryover.context_payload if carryover and isinstance(getattr(carryover, "context_payload", None), dict) else {}
-        snapshot = build_daily_tracker_generation_context_snapshot(
+        snapshot = tracker_snapshot if isinstance(tracker_snapshot, dict) else build_daily_tracker_generation_context_snapshot(
             int(user_id),
             selected_concept_key=None,
         )
@@ -2095,12 +2096,14 @@ def get_or_generate_cached_daily_habit_plan(
     *,
     force: bool = False,
     concept_key: str | None = None,
+    tracker_snapshot: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return get_or_generate_daily_habit_plan(
         int(user_id),
         force=bool(force),
         concept_key=concept_key,
         allow_llm=True,
+        tracker_snapshot=tracker_snapshot,
     )
 
 

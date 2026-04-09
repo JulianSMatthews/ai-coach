@@ -98,12 +98,17 @@ def run_coach_home_tracker_refresh(
             if not user:
                 raise ValueError(f"user not found: {user_id}")
             s.expunge(user)
-        habit_result = get_or_generate_cached_daily_habit_plan(int(user_id), force=False)
+        habit_result = get_or_generate_cached_daily_habit_plan(
+            int(user_id),
+            force=False,
+            tracker_snapshot=snapshot,
+        )
         gia_text = get_or_generate_cached_tracker_summary_message(
             user,
             source="app_tracker_summary",
             include_prefix=False,
             force=False,
+            tracker_snapshot=snapshot,
         )
         insight_result = get_or_generate_cached_coach_insight(int(user_id), force=False)
         completed_at = datetime.utcnow().replace(microsecond=0).isoformat()

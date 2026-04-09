@@ -411,6 +411,125 @@ def history_block(label: str, entries: List[str], channel: str = "WhatsApp") -> 
     return context_block("history", label, channel=channel, extras="\n".join(entries))
 
 
+def _coach_home_history_lines(
+    tracker_context: Dict[str, Any],
+    *,
+    include_habit_steps: bool = False,
+) -> List[str]:
+    lines: List[str] = []
+    tracker_review = tracker_context.get("tracker_review") or []
+    day_brief = tracker_context.get("day_brief") or {}
+    okr_context = tracker_context.get("okr_context") or {}
+    plan_date = str(tracker_context.get("plan_date") or "").strip()
+
+    if isinstance(tracker_review, list) and tracker_review:
+        def _pillar_sort_key(raw: Dict[str, Any]) -> tuple[int, int, str]:
+            active_date = str(raw.get("active_date") or "").strip()
+            active_label = str(raw.get("active_label") or "").strip().lower()
+            day_rank = 0 if (active_date and active_date == plan_date) or active_label == "today" else 1
+            state = str(raw.get("state") or "").strip().lower()
+            state_rank = 0 if state == "weak" else 1 if state == "fair" else 2
+            label = str(raw.get("pillar_label") or raw.get("pillar_key") or "").strip().lower()
+            return (day_rank, state_rank, label)
+
+        lines.append("Daily tracker review:")
+        for pillar in sorted((item for item in tracker_review if isinstance(item, dict)), key=_pillar_sort_key)[:4]:
+            pillar_label = str(pillar.get("pillar_label") or pillar.get("pillar_key") or "").strip()
+            if not pillar_label:
+                continue
+            pillar_bits: List[str] = []
+            active_label = str(pillar.get("active_label") or "").strip()
+            state = str(pillar.get("state") or "").strip()
+            if active_label:
+                pillar_bits.append(f"day={active_label}")
+            if state:
+                pillar_bits.append(f"state={state}")
+            concept_summaries: List[str] = []
+            for item in (pillar.get("concepts") or [])[:5]:
+                if not isinstance(item, dict):
+                    continue
+                label = str(item.get("label") or item.get("concept_key") or "").strip()
+                if not label:
+                    continue
+                concept_bits: List[str] = []
+                signal = str(item.get("signal") or "").strip()
+                latest = str(item.get("latest_value") or "").strip()
+                target = str(item.get("target_label") or "").strip()
+                if signal:
+                    concept_bits.append(signal)
+                if latest:
+                    concept_bits.append(f"latest={latest}")
+                if target:
+                    concept_bits.append(f"target={target}")
+                suffix = f" ({'; '.join(concept_bits)})" if concept_bits else ""
+                concept_summaries.append(f"{label}{suffix}")
+            pillar_suffix = f" ({'; '.join(pillar_bits)})" if pillar_bits else ""
+            payload = "; ".join(concept_summaries) if concept_summaries else "No tracker detail available."
+            lines.append(f"- {pillar_label}{pillar_suffix}: {payload}")
+
+    if isinstance(day_brief, dict):
+        two_day_read = day_brief.get("two_day_read") if isinstance(day_brief.get("two_day_read"), dict) else {}
+        if two_day_read:
+            lines.append("Two-day read:")
+            strength = str(two_day_read.get("strength") or "").strip()
+            carry = str(two_day_read.get("carry_over_issue") or "").strip()
+            priority = str(two_day_read.get("today_priority") or "").strip()
+            if strength:
+                lines.append(f"- strength: {strength}")
+            if carry:
+                lines.append(f"- carry-over issue: {carry}")
+            if priority:
+                lines.append(f"- today priority: {priority}")
+
+        readiness = day_brief.get("readiness") if isinstance(day_brief.get("readiness"), dict) else {}
+        if readiness:
+            bits: List[str] = []
+            for key, label in (
+                ("nutrition_state", "nutrition"),
+                ("recovery_state", "recovery"),
+                ("resilience_state", "resilience"),
+            ):
+                value = str(readiness.get(key) or "").strip()
+                if value:
+                    bits.append(f"{label}={value}")
+            exercise_state = str(readiness.get("exercise_state") or "").strip()
+            reason = str(readiness.get("exercise_reason") or "").strip()
+            if exercise_state:
+                bits.append(f"state={exercise_state}")
+            if reason:
+                bits.append(f"reason={reason}")
+            if bits:
+                lines.append("Exercise readiness: " + "; ".join(bits))
+
+        key_moments = day_brief.get("key_moments") if isinstance(day_brief.get("key_moments"), list) else []
+        if key_moments:
+            lines.append("Key moments for today:")
+            for item in key_moments[:4]:
+                if not isinstance(item, dict):
+                    continue
+                moment_label = str(item.get("moment_label") or item.get("moment") or "").strip()
+                title = str(item.get("title") or "").strip()
+                detail = str(item.get("detail") or "").strip()
+                if not (moment_label or title or detail):
+                    continue
+                prefix = moment_label or "Moment"
+                payload = " ".join(part for part in [title, detail] if part).strip()
+                lines.append(f"- {prefix}: {payload}".strip())
+
+        today_aim = str(day_brief.get("today_aim") or "").strip()
+        if today_aim:
+            lines.append(f"Today aim: {today_aim}")
+
+    if include_habit_steps and isinstance(okr_context, dict) and (okr_context.get("habit_steps") or []):
+        lines.append("Active KR habit steps:")
+        for step in (okr_context.get("habit_steps") or [])[:5]:
+            step_text = str(step or "").strip()
+            if step_text:
+                lines.append(f"- {step_text}")
+
+    return lines
+
+
 # ---------------------------------------------------------------------------
 # Prompt logging helpers
 # ---------------------------------------------------------------------------
@@ -1462,26 +1581,14 @@ def build_prompt(
         history = "\n".join(data.get("history", []))
         scores_payload = data.get("scores") or []
         psych_payload = data.get("psych_payload") or {}
-        tracker_history = data.get("tracker_history") or []
         timeframe = data.get("timeframe", "")
         extras = data.get("extras", "")
         source = str(data.get("source") or "").strip().lower()
         tracker_summary_mode = source == "app_tracker_summary"
         okr_context = data.get("okr_context") or {}
         if tracker_summary_mode:
-            okr_txt = tracker_summary_okr_block(okr_context)
-            okr_meta = {"okr_scope": "pillar"} if okr_txt else {}
-            if not okr_txt:
-                payload = kr_payload_list(user_id, max_krs=3)
-                primary = payload[0] if payload else None
-                krs = _krs_for_okr_scope(
-                    okr_scope="week",
-                    user_id=user_id,
-                    week_no=data.get("week_no"),
-                    primary=primary,
-                    fallback_krs=payload,
-                )
-                okr_txt, okr_meta = okr_block_with_scope("week", krs)
+            okr_txt = ""
+            okr_meta = {}
         else:
             okr_scope = (template or {}).get("okr_scope") or "week"
             payload = kr_payload_list(user_id, max_krs=3)
@@ -1495,8 +1602,9 @@ def build_prompt(
             )
             okr_txt, okr_meta = okr_block_with_scope(okr_scope, krs)
         history_lines: List[str] = []
-        if tracker_history:
-            history_lines.extend(str(item or "").strip() for item in tracker_history if str(item or "").strip())
+        if tracker_summary_mode:
+            tracker_context = data.get("tracker_context") or {}
+            history_lines.extend(_coach_home_history_lines(tracker_context, include_habit_steps=False))
         if history and not tracker_summary_mode:
             history_lines.extend(history.splitlines())
         history_label = (
@@ -1576,102 +1684,19 @@ def build_prompt(
             "Tracker scope=all daily tracking; "
             f"Plan date={data.get('plan_date') or ''}"
         )
-        history_lines: List[str] = []
-        if (okr_context or {}).get("habit_steps"):
-            history_lines.append("Active KR habit steps:")
-            for step in (okr_context.get("habit_steps") or [])[:5]:
-                step_text = str(step or "").strip()
-                if step_text:
-                    history_lines.append(f"- {step_text}")
-        if isinstance(tracker_review, list) and tracker_review:
-            history_lines.append("Daily tracker review:")
-            for pillar in tracker_review[:4]:
-                if not isinstance(pillar, dict):
-                    continue
-                pillar_label = str(pillar.get("pillar_label") or pillar.get("pillar_key") or "").strip()
-                if not pillar_label:
-                    continue
-                pillar_bits: List[str] = []
-                pillar_state = str(pillar.get("state") or "").strip()
-                active_label = str(pillar.get("active_label") or "").strip()
-                if active_label:
-                    pillar_bits.append(f"day={active_label}")
-                if pillar_state:
-                    pillar_bits.append(f"state={pillar_state}")
-                concept_summaries: List[str] = []
-                for item in (pillar.get("concepts") or [])[:5]:
-                    if not isinstance(item, dict):
-                        continue
-                    label = str(item.get("label") or item.get("concept_key") or "").strip()
-                    if not label:
-                        continue
-                    concept_bits: List[str] = []
-                    signal = str(item.get("signal") or "").strip()
-                    latest = str(item.get("latest_value") or "").strip()
-                    target = str(item.get("target_label") or "").strip()
-                    if signal:
-                        concept_bits.append(signal)
-                    if latest:
-                        concept_bits.append(f"latest={latest}")
-                    if target:
-                        concept_bits.append(f"target={target}")
-                    suffix = f" ({'; '.join(concept_bits)})" if concept_bits else ""
-                    concept_summaries.append(f"{label}{suffix}")
-                pillar_suffix = f" ({'; '.join(pillar_bits)})" if pillar_bits else ""
-                payload = "; ".join(concept_summaries) if concept_summaries else "No tracker detail available."
-                history_lines.append(f"- {pillar_label}{pillar_suffix}: {payload}")
-        two_day_read = day_brief.get("two_day_read") if isinstance(day_brief, dict) else {}
-        if isinstance(two_day_read, dict):
-            strength = str(two_day_read.get("strength") or "").strip()
-            carry = str(two_day_read.get("carry_over_issue") or "").strip()
-            priority = str(two_day_read.get("today_priority") or "").strip()
-            if strength or carry or priority:
-                history_lines.append("Two-day read:")
-                if strength:
-                    history_lines.append(f"- strength: {strength}")
-                if carry:
-                    history_lines.append(f"- carry-over issue: {carry}")
-                if priority:
-                    history_lines.append(f"- today priority: {priority}")
-        readiness = day_brief.get("readiness") if isinstance(day_brief, dict) else {}
-        if isinstance(readiness, dict):
-            exercise_state = str(readiness.get("exercise_state") or "").strip()
-            exercise_reason = str(readiness.get("exercise_reason") or "").strip()
-            if exercise_state or exercise_reason:
-                line = "Exercise readiness"
-                bits: List[str] = []
-                if str(readiness.get("nutrition_state") or "").strip():
-                    bits.append(f"nutrition={readiness.get('nutrition_state')}")
-                if str(readiness.get("recovery_state") or "").strip():
-                    bits.append(f"recovery={readiness.get('recovery_state')}")
-                if exercise_state:
-                    bits.append(f"state={exercise_state}")
-                if exercise_reason:
-                    bits.append(f"reason={exercise_reason}")
-                history_lines.append(f"{line}: {'; '.join(bits)}")
-        key_moments = day_brief.get("key_moments") if isinstance(day_brief, dict) else None
-        if isinstance(key_moments, list) and key_moments:
-            history_lines.append("Key moments for today:")
-            for item in key_moments[:4]:
-                if not isinstance(item, dict):
-                    continue
-                moment_label = str(item.get("moment_label") or item.get("moment") or "").strip()
-                title = str(item.get("title") or "").strip()
-                detail = str(item.get("detail") or "").strip()
-                if not (moment_label or title or detail):
-                    continue
-                prefix = moment_label or "Moment"
-                payload = " ".join(part for part in [title, detail] if part).strip()
-                history_lines.append(f"- {prefix}: {payload}".strip())
-        today_aim = str(day_brief.get("today_aim") or "").strip() if isinstance(day_brief, dict) else ""
-        if today_aim:
-            history_lines.append(f"Today aim: {today_aim}")
+        tracker_context = {
+            "plan_date": data.get("plan_date"),
+            "tracker_review": tracker_review,
+            "day_brief": day_brief,
+            "okr_context": okr_context,
+        }
+        history_lines: List[str] = _coach_home_history_lines(tracker_context, include_habit_steps=False)
         parts: List[tuple[str, str]] = [
             ("system", settings.get("system_block") or common_prompt_header(coach_name, user_name, locale)),
             ("locale", settings.get("locale_block") or locale_block(locale)),
             ("context", context_block("daily_habit_plan", "coach home day plan", timeframe=str(timeframe), channel="App", extras=context_extras)),
             ("scores", ""),
-            ("okr", tracker_summary_okr_block(okr_context) if okr_context else ""),
+            ("okr", ""),
             ("history", history_block("current day brief", history_lines, channel="App") if history_lines else ""),
             (
                 "task",

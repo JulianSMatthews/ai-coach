@@ -108,8 +108,11 @@ def _apply_prefix_preference(text: str | None, *, include_prefix: bool) -> str:
     return normalized
 
 
-def _tracker_summary_cache_signature(user_id: int) -> tuple[str, str | None]:
-    snapshot = build_daily_tracker_generation_context_snapshot(int(user_id))
+def _tracker_summary_cache_signature(
+    user_id: int,
+    tracker_snapshot: dict | None = None,
+) -> tuple[str, str | None]:
+    snapshot = tracker_snapshot if isinstance(tracker_snapshot, dict) else build_daily_tracker_generation_context_snapshot(int(user_id))
     context = snapshot.get("context") if isinstance(snapshot.get("context"), dict) else {}
     return (
         str(snapshot.get("context_hash") or "").strip(),
@@ -121,8 +124,9 @@ def get_cached_tracker_summary_message(
     user_id: int,
     *,
     include_prefix: bool = False,
+    tracker_snapshot: dict | None = None,
 ) -> str | None:
-    context_hash, plan_date = _tracker_summary_cache_signature(int(user_id))
+    context_hash, plan_date = _tracker_summary_cache_signature(int(user_id), tracker_snapshot=tracker_snapshot)
     if not context_hash or not plan_date:
         return None
     with SessionLocal() as s:
@@ -145,6 +149,7 @@ def cache_tracker_summary_message(
     context_hash: str | None = None,
     plan_date: str | None = None,
     source: str = "app_tracker_summary",
+    tracker_snapshot: dict | None = None,
 ) -> None:
     clean_text = _strip_coach_prefix(text)
     if not clean_text:
@@ -152,7 +157,7 @@ def cache_tracker_summary_message(
     resolved_hash = str(context_hash or "").strip()
     resolved_plan_date = str(plan_date or "").strip() or None
     if not resolved_hash or not resolved_plan_date:
-        resolved_hash, resolved_plan_date = _tracker_summary_cache_signature(int(user_id))
+        resolved_hash, resolved_plan_date = _tracker_summary_cache_signature(int(user_id), tracker_snapshot=tracker_snapshot)
     if not resolved_hash or not resolved_plan_date:
         return
     payload = {
@@ -174,11 +179,16 @@ def get_or_generate_cached_tracker_summary_message(
     include_prefix: bool = False,
     user_message: str | None = None,
     force: bool = False,
+    tracker_snapshot: dict | None = None,
 ) -> str:
     resolved_source = str(source or "app_tracker_summary").strip() or "app_tracker_summary"
     use_cache = resolved_source == "app_tracker_summary" and not str(user_message or "").strip()
     if use_cache and not force:
-        cached = get_cached_tracker_summary_message(int(user.id), include_prefix=include_prefix)
+        cached = get_cached_tracker_summary_message(
+            int(user.id),
+            include_prefix=include_prefix,
+            tracker_snapshot=tracker_snapshot,
+        )
         if cached:
             return cached
     text_out = generate_tracker_summary_message(
@@ -186,12 +196,14 @@ def get_or_generate_cached_tracker_summary_message(
         source=resolved_source,
         include_prefix=False,
         user_message=user_message,
+        tracker_snapshot=tracker_snapshot,
     )
     if use_cache and text_out:
         cache_tracker_summary_message(
             int(user.id),
             text_out,
             source=resolved_source,
+            tracker_snapshot=tracker_snapshot,
         )
     return _apply_prefix_preference(text_out, include_prefix=include_prefix)
 
@@ -309,8 +321,20 @@ def _tracker_history_lines(tracker_context: dict) -> list[str]:
     okr_context = tracker_context.get("okr_context") or {}
     day_brief = tracker_context.get("day_brief") or {}
     if isinstance(tracker_review, list) and tracker_review:
+        plan_date = str(tracker_context.get("plan_date") or "").strip()
+        def _pillar_sort_key(raw: dict) -> tuple[int, int, str]:
+            if not isinstance(raw, dict):
+                return (2, 2, "")
+            active_date = str(raw.get("active_date") or "").strip()
+            active_label = str(raw.get("active_label") or "").strip().lower()
+            day_rank = 0 if (active_date and active_date == plan_date) or active_label == "today" else 1
+            state = str(raw.get("state") or "").strip().lower()
+            state_rank = 0 if state == "weak" else 1 if state == "fair" else 2
+            label = str(raw.get("pillar_label") or raw.get("pillar_key") or "").strip().lower()
+            return (day_rank, state_rank, label)
+
         lines.append("Daily tracker review:")
-        for pillar in tracker_review[:4]:
+        for pillar in sorted((item for item in tracker_review if isinstance(item, dict)), key=_pillar_sort_key)[:4]:
             if not isinstance(pillar, dict):
                 continue
             pillar_label = str(pillar.get("pillar_label") or pillar.get("pillar_key") or "").strip()
@@ -373,7 +397,7 @@ def _tracker_history_lines(tracker_context: dict) -> list[str]:
         key_moments = day_brief.get("key_moments") if isinstance(day_brief.get("key_moments"), list) else []
         if key_moments:
             lines.append("Key moments for today:")
-            for item in key_moments[:3]:
+            for item in key_moments[:4]:
                 if not isinstance(item, dict):
                     continue
                 moment_label = str(item.get("moment_label") or item.get("moment") or "").strip()
@@ -402,6 +426,7 @@ def _support_prompt(
     user_message: str | None,
     week_no: int | None,
     source: str | None,
+    tracker_snapshot: dict | None = None,
 ):
     tracker_summary_mode = str(source or "").strip().lower() == "app_tracker_summary"
     transcript = []
@@ -419,7 +444,11 @@ def _support_prompt(
         extras_parts.append(f"flow={source}")
     if week_no:
         extras_parts.append(f"week_no={week_no}")
-    tracker_context = build_daily_tracker_generation_context(int(user.id))
+    tracker_context = (
+        tracker_snapshot.get("context")
+        if isinstance(tracker_snapshot, dict) and isinstance(tracker_snapshot.get("context"), dict)
+        else build_daily_tracker_generation_context(int(user.id))
+    )
     pillar_scores = tracker_context.get("pillar_scores") or []
     combined_score = _combined_score(pillar_scores)
     tracker_focus_date = str(tracker_context.get("tracker_focus_date") or tracker_context.get("plan_date") or "").strip()
@@ -458,8 +487,9 @@ def _generate_support_reply(
     week_no: int | None,
     source: str | None,
     include_prefix: bool = True,
+    tracker_snapshot: dict | None = None,
 ) -> str:
-    prompt_assembly = _support_prompt(user, history, user_message, week_no, source)
+    prompt_assembly = _support_prompt(user, history, user_message, week_no, source, tracker_snapshot=tracker_snapshot)
 
     print(f"[prompts] logging LLM prompt touchpoint=general_support user_id={user.id}")
     candidate = run_llm_prompt(
@@ -491,6 +521,7 @@ def generate_tracker_summary_message(
     source: str = "app_tracker_summary",
     include_prefix: bool = False,
     user_message: str | None = None,
+    tracker_snapshot: dict | None = None,
 ) -> str:
     with SessionLocal() as s:
         state = _get_state(s, int(user.id)) or {}
@@ -504,6 +535,7 @@ def generate_tracker_summary_message(
         week_no=week_no,
         source=resolved_source,
         include_prefix=include_prefix,
+        tracker_snapshot=tracker_snapshot,
     )
 
 
