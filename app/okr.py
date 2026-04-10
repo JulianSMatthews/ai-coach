@@ -825,7 +825,7 @@ _GUIDE: dict[str, dict[str, dict[str, str]]] = {
         "emotional_regulation": {"label": "emotional regulation practice", "unit": "days/week", "low": "increase", "high": "maintain"},
         "optimism_perspective": {"label": "optimism/perspective drills",   "unit": "days/week", "low": "increase", "high": "maintain"},
         "stress_recovery":      {"label": "stress-recovery techniques",    "unit": "days/week", "low": "increase", "high": "maintain"},
-        "positive_connection":  {"label": "positive connection actions",   "unit": "days/week", "low": "increase", "high": "maintain"},
+        "positive_connection":  {"label": "enjoyment/restoration actions", "unit": "days/week", "low": "increase", "high": "maintain"},
         "support_openness":     {"label": "support/openness actions",      "unit": "days/week", "low": "increase", "high": "maintain"},
     },
     "recovery": {
@@ -889,7 +889,7 @@ def _fallback_structured_okr(pillar_slug: str, pillar_score: float | None):
         "resilience": [
             {"kr_key": "stress_step", "description": "Practice one short stress-recovery technique daily.", "concept_key": "stress_recovery"},
             {"kr_key": "emotion_step", "description": "Use one emotional regulation strategy on challenging days.", "concept_key": "emotional_regulation"},
-            {"kr_key": "connection_step", "description": "Schedule one positive connection action each week.", "concept_key": "positive_connection"},
+            {"kr_key": "connection_step", "description": "Schedule one enjoyable or restorative action each week.", "concept_key": "positive_connection"},
         ],
         "recovery": [
             {"kr_key": "sleep_duration_step", "description": "Increase average nightly sleep duration with an earlier wind-down.", "concept_key": "sleep_duration"},

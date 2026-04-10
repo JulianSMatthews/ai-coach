@@ -138,7 +138,7 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
         PillarTrackerConceptDefinition(
             concept_key="emotional_regulation",
             label="Calm & Control",
-            helper="When stress or strong emotions showed up today, did you stay calm and in control?",
+            helper="Did you feel calm and in control for most of today?",
             options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
             target_value=1,
             target_direction="gte",
@@ -146,8 +146,8 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
         ),
         PillarTrackerConceptDefinition(
             concept_key="positive_connection",
-            label="Positive Connection",
-            helper="Did you have a positive moment of connection with someone today?",
+            label="Enjoyment / Restoration",
+            helper="Did you make time for something enjoyable or restorative today?",
             options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
             target_value=1,
             target_direction="gte",
@@ -156,7 +156,7 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
         PillarTrackerConceptDefinition(
             concept_key="stress_recovery",
             label="Stress Recovery",
-            helper="Did you use a reset or recovery strategy today, such as breathing, walking, or a short pause?",
+            helper="Did you use a reset or recovery strategy today?",
             options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
             target_value=1,
             target_direction="gte",
@@ -165,7 +165,7 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
         PillarTrackerConceptDefinition(
             concept_key="optimism_perspective",
             label="Perspective",
-            helper="When something difficult came up today, did you avoid spiralling and keep perspective?",
+            helper="Did you stay positive and keep perspective today?",
             options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
             target_value=1,
             target_direction="gte",

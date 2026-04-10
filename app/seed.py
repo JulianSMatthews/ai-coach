@@ -79,11 +79,11 @@ CONCEPTS: Dict[str, Dict[str, str]] = {
         "flexibility_mobility": "Flexibility & mobility",
     },
     "resilience": {
-        "emotional_regulation":   "Emotional regulation",
-        "positive_connection":    "Positive connection & enjoyment",
-        "stress_recovery":        "Stress recovery",
-        "optimism_perspective":   "Optimism & perspective",
-        "support_openness":       "Support & openness",
+        "emotional_regulation":   "Calm & Control",
+        "positive_connection":    "Enjoyment / Restoration",
+        "stress_recovery":        "Stress Recovery",
+        "optimism_perspective":   "Perspective",
+        "support_openness":       "Support",
     },
     "recovery": {
         "sleep_duration":       "Sleep duration",
@@ -120,16 +120,16 @@ CONCEPT_QUESTIONS = {
     },
     "resilience": {
         "emotional_regulation": {
-            "primary": "In the past 7 days, on how many days were you able to stay calm and in control when stress or strong emotions showed up?"
+            "primary": "In the past 7 days, on how many days did you feel calm and in control for most of the day?"
         },
         "positive_connection": {
-            "primary": "In the past 7 days, on how many days did you have a meaningful positive moment of connection with someone you enjoy spending time with?"
+            "primary": "In the past 7 days, on how many days did you do something genuinely enjoyable or restorative for yourself, even if only briefly?"
         },
         "stress_recovery": {
             "primary": "In the past 7 days, on how many days did you deliberately use a reset or recovery strategy, such as breathing, walking, pausing, or taking a short break?"
         },
         "optimism_perspective": {
-            "primary": "In the past 7 days, on how many days were you able to avoid spiralling and keep a balanced perspective when something difficult came up?"
+            "primary": "In the past 7 days, on how many days were you able to stay positive and keep things in perspective when challenges came up?"
         },
         "support_openness": {
             "primary": "In the past 7 days, on how many days did you open up, ask for support, or let someone help you with something that felt important?"
@@ -192,8 +192,8 @@ KB_SNIPPETS: Dict[str, Dict[str, List[Dict]]] = {
             {"title": "Scoring cue (0–7 days/wk)", "text": "Reward intentional regulation efforts and consistency, not the absence of difficult emotion."},
         ],
         "positive_connection": [
-            {"title": "Small moments of connection", "text": "A meaningful chat, message, shared laugh, or check-in with someone you value counts; short positive moments still matter."},
-            {"title": "Scoring cue (0–7 days/wk)", "text": "Intentional positive connection with other people scores higher when it happens more consistently across the week."},
+            {"title": "Small enjoyable or restorative moments", "text": "Something genuinely enjoyable or restorative still counts, even if it is brief: a short walk, music, reading, quiet time, or another small moment that helps you feel restored."},
+            {"title": "Scoring cue (0–7 days/wk)", "text": "Consistent moments of enjoyment or restoration for yourself score higher, even when they are short."},
         ],
         "stress_recovery": [
             {"title": "Reset strategies", "text": "Short resets such as breathing, walking, stretching, stepping outside, journaling, or taking a brief pause can help the body come down from stress."},
@@ -1274,6 +1274,8 @@ def upsert_concepts(session: Session) -> int:
                 ))
                 created += 1
             else:
+                if (row.name or "").strip() != name:
+                    row.name = name
                 row.description = measure_label
                 if bounds:
                     row.zero_score = bounds.get("zero_score")
@@ -1765,3 +1767,19 @@ def run_seed() -> None:
             s.rollback()
             print(f"[seed] ERROR during seeding: {e}")
             raise
+
+
+def sync_assessment_seed_definitions() -> tuple[int, int, int]:
+    """
+    Lightweight sync for concept labels and assessment question text.
+    Safe to run on startup without invoking the full seed flow.
+    """
+    ensure_concept_measure_labels()
+    with SessionLocal() as s:
+        Pillar.__table__.create(bind=s.bind, checkfirst=True)
+        Concept.__table__.create(bind=s.bind, checkfirst=True)
+        ConceptQuestion.__table__.create(bind=s.bind, checkfirst=True)
+        p = upsert_pillars(s)
+        c = upsert_concepts(s)
+        cq = upsert_concept_questions(s)
+        return p, c, cq

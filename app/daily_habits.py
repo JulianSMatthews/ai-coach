@@ -1626,7 +1626,7 @@ def _fallback_habit_for_concept(concept: dict[str, Any], pillar_key: str) -> dic
         "strength_training": ("Complete a short strength session", target_label or "Even one focused block moves this forward."),
         "flexibility_mobility": ("Do 10 minutes of mobility", target_label or "Use it as a reset before bed or after work."),
         "emotional_regulation": ("Take one reset pause today", "Use breathing or a short walk before your busiest moment."),
-        "positive_connection": ("Create one positive connection", "Check in with someone or take 10 minutes for yourself."),
+        "positive_connection": ("Make time for one enjoyable or restorative moment", "Even 10 minutes for something enjoyable or restorative counts."),
         "stress_recovery": ("Use one recovery tool today", "Schedule a short reset before stress spikes."),
         "optimism_perspective": ("Reframe one difficult moment", "Write one constructive response before the day ends."),
         "support_openness": ("Ask for one bit of support", "Be clear about one thing you need today."),

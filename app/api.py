@@ -452,8 +452,8 @@ def _print_env_banner():
 
 debug_log(f"🚀 app.api loaded: v-2025-09-04E (ENV={ENV})", tag="startup")
 
-# Seed import 
-from .seed import run_seed  # fallback
+# Seed import
+from .seed import run_seed, sync_assessment_seed_definitions  # fallback
 
 # Assessor entrypoints
 
@@ -499,6 +499,18 @@ async def _startup_init() -> None:
         debug_log("education plan schema ensured before serving traffic", tag="startup")
     except Exception as e:
         debug_log(f"education plan schema startup ensure failed: {e!r}", tag="startup")
+        raise
+
+    # Keep concept labels and assessment questions aligned with the seeded
+    # definitions before the first assessment/admin request is served.
+    try:
+        p, c, cq = sync_assessment_seed_definitions()
+        debug_log(
+            f"assessment seed sync complete: pillars={p}, concepts={c}, concept_questions={cq}",
+            tag="startup",
+        )
+    except Exception as e:
+        debug_log(f"assessment seed sync failed: {e!r}", tag="startup")
         raise
 
     try:
