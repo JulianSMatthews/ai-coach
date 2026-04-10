@@ -440,10 +440,12 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
     if row is None:
         return {
             "id": None,
-            "pillar_key": "nutrition",
+            "pillar_key": "",
+            "programme_concept_key": "",
+            "programme_concept_label": "",
             "code": "",
             "name": "",
-            "duration_days": 21,
+            "duration_days": 0,
             "is_active": True,
             "days": [],
         }
@@ -534,12 +536,15 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
                 "variants": payload_variants,
             }
         )
+    derived_duration = max((int(item.get("day_index") or 0) for item in payload_days), default=0)
     return {
         "id": int(row.id),
         "pillar_key": str(row.pillar_key or ""),
+        "programme_concept_key": str(getattr(row, "concept_key", "") or ""),
+        "programme_concept_label": str(getattr(row, "concept_label", "") or ""),
         "code": str(row.code or ""),
         "name": str(row.name or ""),
-        "duration_days": int(row.duration_days or 21),
+        "duration_days": derived_duration or int(row.duration_days or 0) or 0,
         "is_active": bool(row.is_active),
         "days": payload_days,
     }
@@ -1618,15 +1623,25 @@ def list_education_programmes():
             .order_by(EducationProgramme.updated_at.desc(), EducationProgramme.id.desc())
             .all()
         )
+        day_lengths = {
+            int(programme_id): int(max_day or 0)
+            for programme_id, max_day in (
+                s.query(EducationProgrammeDay.programme_id, func.max(EducationProgrammeDay.day_index))
+                .group_by(EducationProgrammeDay.programme_id)
+                .all()
+            )
+        }
     items = []
     for row in rows:
+        duration_days = int(day_lengths.get(int(row.id), 0) or 0)
         items.append(
             "<tr>"
             f"<td>{int(row.id)}</td>"
+            f"<td>{html.escape(str(getattr(row, 'concept_label', None) or getattr(row, 'concept_key', None) or ''))}</td>"
             f"<td>{html.escape(str(row.pillar_key or ''))}</td>"
             f"<td>{html.escape(str(row.code or ''))}</td>"
             f"<td>{html.escape(str(row.name or ''))}</td>"
-            f"<td>{int(row.duration_days or 21)}</td>"
+            f"<td>{duration_days}</td>"
             f"<td>{'✓' if bool(row.is_active) else '✕'}</td>"
             f"<td>{html.escape(str(row.updated_at or ''))}</td>"
             f"<td><a href='/admin/education-programmes/edit?id={int(row.id)}'>Edit</a></td>"
@@ -1638,8 +1653,8 @@ def list_education_programmes():
         "<div class='nav'><a href='/admin/education-programmes/edit'>Create new programme</a></div>"
         "<div class='card'>"
         "<table>"
-        "<tr><th>ID</th><th>Pillar</th><th>Code</th><th>Name</th><th>Days</th><th>Active</th><th>Updated</th><th>Action</th></tr>"
-        + ("".join(items) if items else "<tr><td colspan='8'><em>No education programmes configured yet.</em></td></tr>")
+        "<tr><th>ID</th><th>Concept</th><th>Derived Pillar</th><th>Code</th><th>Name</th><th>Days</th><th>Active</th><th>Updated</th><th>Action</th></tr>"
+        + ("".join(items) if items else "<tr><td colspan='9'><em>No education programmes configured yet.</em></td></tr>")
         + "</table>"
         "</div>"
     )
@@ -1659,19 +1674,19 @@ def edit_education_programme(id: int | None = None):
         concept_options, content_options = _education_editor_options(s)
     title = "Edit Education Programme" if row is not None else "Create Education Programme"
     title += f": {html.escape(str(getattr(row, 'name', '') or '').strip())}" if row is not None else ""
-    pillar_options = [
-        ("nutrition", "Nutrition"),
-        ("training", "Training"),
-        ("resilience", "Resilience"),
-        ("recovery", "Recovery"),
-    ]
-    current_pillar = str(programme_payload.get("pillar_key") or "nutrition").strip().lower() or "nutrition"
+    current_pillar = str(programme_payload.get("pillar_key") or "").strip().lower()
+    current_programme_concept = str(programme_payload.get("programme_concept_key") or "").strip().lower()
+    current_programme_concept_value = (
+        f"{current_pillar}::{current_programme_concept}"
+        if current_pillar and current_programme_concept
+        else current_programme_concept
+    )
     structure_seed = {"days": programme_payload.get("days") or []}
     body = f"""
     <h2>{title}</h2>
     {_build_version_label()}
     <div class='card' style='margin-bottom:12px;'>
-      <p class='help'>Use this editor to define the 21-day lesson spine, levelled video variants, the 3-question quiz, and the takeaway text shown after quiz completion. Saving rewrites the programme structure for this template, so edit active programmes carefully.</p>
+      <p class='help'>Use this editor to define a concept-based lesson module with levelled video variants, the 3-question quiz, and the takeaway text shown after quiz completion. The user is routed into a programme by concept, and the programme length is derived from the days you configure here.</p>
     </div>
     <form method="post" action="/admin/education-programmes/save" id="education-programme-form">
       <input type="hidden" name="id" value="{html.escape(str(programme_payload.get('id') or ''))}" />
@@ -1679,13 +1694,15 @@ def edit_education_programme(id: int | None = None):
       <div class='card' style='margin-bottom:12px;'>
         <div class='grid-2'>
           <div class='field'>
-            <label>Pillar<br/>
-              <select name="pillar_key" id="pillar_key">
-                {"".join(
-                    f"<option value='{value}' {'selected' if current_pillar == value else ''}>{label}</option>"
-                    for value, label in pillar_options
-                )}
+            <label>Programme concept<br/>
+              <select name="programme_concept_key" id="programme_concept_key" data-selected="{html.escape(current_programme_concept_value)}">
+                <option value="">Select concept</option>
               </select>
+            </label>
+          </div>
+          <div class='field'>
+            <label>Pillar (derived)<br/>
+              <input type="text" id="programme_pillar_display" value="{html.escape(current_pillar.title() if current_pillar else '')}" readonly />
             </label>
           </div>
           <div class='field'>
@@ -1699,8 +1716,8 @@ def edit_education_programme(id: int | None = None):
             </label>
           </div>
           <div class='field'>
-            <label>Duration days<br/>
-              <input type="number" min="1" max="90" name="duration_days" id="duration_days" value="{html.escape(str(programme_payload.get('duration_days') or 21))}" />
+            <label>Programme concept label<br/>
+              <input type="text" name="programme_concept_label" id="programme_concept_label" value="{html.escape(str(programme_payload.get('programme_concept_label') or ''))}" />
             </label>
           </div>
         </div>
@@ -1713,10 +1730,9 @@ def edit_education_programme(id: int | None = None):
         <div class='stack' style='justify-content:space-between;'>
           <div>
             <h3 class='section-title'>Programme Days</h3>
-            <div class='subtle'>Each day can carry levelled video variants. Each variant can have one quiz with up to 3 questions.</div>
+            <div class='subtle'>Each day inherits the programme concept. Add as many days as needed; the total programme length is derived from the configured day indexes.</div>
           </div>
           <div class='stack'>
-            <button type="button" class="secondary" id="seed-days-button">Seed From Duration</button>
             <button type="button" class="secondary" id="add-day-button">Add Day</button>
           </div>
         </div>
@@ -1741,8 +1757,9 @@ def edit_education_programme(id: int | None = None):
         const root = document.getElementById('programme-days-root');
         const form = document.getElementById('education-programme-form');
         const structureField = document.getElementById('structure_json');
-        const pillarInput = document.getElementById('pillar_key');
-        const durationInput = document.getElementById('duration_days');
+        const programmeConceptInput = document.getElementById('programme_concept_key');
+        const programmeConceptLabelInput = document.getElementById('programme_concept_label');
+        const pillarDisplayInput = document.getElementById('programme_pillar_display');
 
         function escapeHtml(value) {{
           return String(value ?? '')
@@ -1794,8 +1811,8 @@ def edit_education_programme(id: int | None = None):
           return {{
             id: null,
             day_index: dayIndex,
-            concept_key: '',
-            concept_label: '',
+            concept_key: String(programmeConceptInput?.value || '').trim().toLowerCase(),
+            concept_label: String(programmeConceptLabelInput?.value || '').trim(),
             lesson_goal: '',
             default_title: '',
             default_summary: '',
@@ -1803,13 +1820,72 @@ def edit_education_programme(id: int | None = None):
           }};
         }}
 
-        function selectedPillar() {{
-          return String(pillarInput.value || '').trim().toLowerCase();
+        function titleCasePillar(value) {{
+          const token = String(value || '').trim().toLowerCase();
+          return token ? token.charAt(0).toUpperCase() + token.slice(1) : '';
         }}
 
-        function conceptChoices(pillarKey) {{
-          const token = String(pillarKey || '').trim().toLowerCase();
-          return conceptOptions.filter((item) => String(item.pillar_key || '').toLowerCase() === token);
+        function splitProgrammeConceptValue(value) {{
+          const raw = String(value || '').trim().toLowerCase();
+          if (!raw) return {{ pillarKey: '', conceptKey: '' }};
+          const parts = raw.split('::', 2);
+          if (parts.length === 2) {{
+            return {{
+              pillarKey: String(parts[0] || '').trim().toLowerCase(),
+              conceptKey: String(parts[1] || '').trim().toLowerCase(),
+            }};
+          }}
+          return {{ pillarKey: '', conceptKey: raw }};
+        }}
+
+        function selectedProgrammeConceptValue() {{
+          return String(programmeConceptInput?.value || '').trim().toLowerCase();
+        }}
+
+        function selectedProgrammeConceptKey() {{
+          return splitProgrammeConceptValue(selectedProgrammeConceptValue()).conceptKey;
+        }}
+
+        function selectedProgrammeConcept() {{
+          const selection = splitProgrammeConceptValue(selectedProgrammeConceptValue());
+          return conceptOptions.find((item) => {{
+            const code = String(item.code || '').toLowerCase();
+            const pillar = String(item.pillar_key || '').toLowerCase();
+            if (!selection.conceptKey) return false;
+            if (selection.pillarKey) return code === selection.conceptKey && pillar === selection.pillarKey;
+            return code === selection.conceptKey;
+          }}) || null;
+        }}
+
+        function selectedProgrammePillar() {{
+          const selected = splitProgrammeConceptValue(selectedProgrammeConceptValue());
+          return String(selectedProgrammeConcept()?.pillar_key || selected.pillarKey || '').trim().toLowerCase();
+        }}
+
+        function resolvedProgrammeConceptLabel() {{
+          const typed = String(programmeConceptLabelInput?.value || '').trim();
+          if (typed) return typed;
+          return String(selectedProgrammeConcept()?.name || '').trim();
+        }}
+
+        function refreshProgrammeConceptChoices() {{
+          if (!programmeConceptInput) return;
+          const selected = String(programmeConceptInput.value || programmeConceptInput.dataset.selected || '').trim().toLowerCase();
+          const options = conceptOptions;
+          programmeConceptInput.innerHTML = "<option value=''>Select concept</option>" + options.map((item) => {{
+            const value = `${{String(item.pillar_key || '').toLowerCase()}}::${{String(item.code || '').toLowerCase()}}`;
+            const isSelected = value === selected ? 'selected' : '';
+            const pillarLabel = titleCasePillar(item.pillar_key || '');
+            return `<option value="${{escapeHtml(value)}}" ${{isSelected}}>${{escapeHtml(pillarLabel ? `${{pillarLabel}} · ${{item.name || item.code}}` : (item.name || item.code))}}</option>`;
+          }}).join('');
+          const stillValid = options.some((item) => `${{String(item.pillar_key || '').toLowerCase()}}::${{String(item.code || '').toLowerCase()}}` === selected);
+          if (!stillValid) {{
+            programmeConceptInput.value = '';
+          }}
+          programmeConceptInput.dataset.selected = String(programmeConceptInput.value || '').trim().toLowerCase();
+          if (pillarDisplayInput) {{
+            pillarDisplayInput.value = titleCasePillar(selectedProgrammePillar());
+          }}
         }}
 
         function contentChoices(pillarKey, conceptKey, selectedId) {{
@@ -1836,20 +1912,17 @@ def edit_education_programme(id: int | None = None):
           return combined;
         }}
 
-        function renderConceptSelect(day) {{
-          const options = conceptChoices(selectedPillar());
-          const current = String(day.concept_key || '').trim().toLowerCase();
-          const empty = "<option value=''>Select concept</option>";
-          const items = options.map((item) => {{
-            const selected = current === String(item.code || '').toLowerCase() ? 'selected' : '';
-            return `<option value="${{escapeHtml(item.code)}}" ${{selected}}>${{escapeHtml(item.name || item.code)}}</option>`;
-          }}).join('');
-          return `<select class="js-day-concept">${{empty}}${{items}}</select>`;
+        function dayConceptKey(day) {{
+          return selectedProgrammeConceptKey() || String(day?.concept_key || '').trim().toLowerCase();
+        }}
+
+        function dayConceptLabel(day) {{
+          return resolvedProgrammeConceptLabel() || String(day?.concept_label || '').trim();
         }}
 
         function renderContentSelect(day, variant) {{
           const current = variant.content_item_id ? Number(variant.content_item_id) : null;
-          const options = contentChoices(selectedPillar(), day.concept_key, current);
+          const options = contentChoices(selectedProgrammePillar(), dayConceptKey(day), current);
           const empty = "<option value=''>Select video content</option>";
           const items = options.map((item) => {{
             const selected = current === Number(item.id) ? 'selected' : '';
@@ -1959,6 +2032,7 @@ def edit_education_programme(id: int | None = None):
 
         function renderDay(day) {{
           const variants = Array.isArray(day.variants) && day.variants.length ? day.variants : [emptyVariant()];
+          const conceptLabel = dayConceptLabel(day);
           return `
             <div class="programme-day js-day">
               <input type="hidden" class="js-day-id" value="${{escapeHtml(day.id || '')}}" />
@@ -1971,10 +2045,7 @@ def edit_education_programme(id: int | None = None):
                   <label>Day index<br/><input type="number" class="js-day-index" min="1" max="90" value="${{escapeHtml(day.day_index || '')}}" /></label>
                 </div>
                 <div class="field">
-                  <label>Concept<br/>${{renderConceptSelect(day)}}</label>
-                </div>
-                <div class="field">
-                  <label>Concept label<br/><input type="text" class="js-day-concept-label" value="${{escapeHtml(day.concept_label || '')}}" /></label>
+                  <label>Concept<br/><input type="text" value="${{escapeHtml(conceptLabel)}}" readonly /></label>
                 </div>
               </div>
               <div class="field">
@@ -2001,12 +2072,12 @@ def edit_education_programme(id: int | None = None):
 
         function collectDayData(dayEl) {{
           const variantEls = Array.from(dayEl.querySelectorAll(':scope .js-variants-root > .js-variant'));
-          const conceptKey = String(dayEl.querySelector('.js-day-concept')?.value || '').trim();
+          const conceptKey = selectedProgrammeConceptKey();
           return {{
             id: dayEl.querySelector('.js-day-id')?.value ? Number(dayEl.querySelector('.js-day-id').value) : null,
             day_index: Number(dayEl.querySelector('.js-day-index')?.value || 0),
             concept_key: conceptKey,
-            concept_label: String(dayEl.querySelector('.js-day-concept-label')?.value || '').trim(),
+            concept_label: resolvedProgrammeConceptLabel(),
             lesson_goal: String(dayEl.querySelector('.js-day-lesson-goal')?.value || '').trim(),
             default_title: String(dayEl.querySelector('.js-day-default-title')?.value || '').trim(),
             default_summary: String(dayEl.querySelector('.js-day-default-summary')?.value || '').trim(),
@@ -2044,7 +2115,7 @@ def edit_education_programme(id: int | None = None):
           const dayEls = Array.from(root.querySelectorAll(':scope > .js-day'));
           const days = dayEls
             .map((dayEl) => collectDayData(dayEl))
-            .filter((day) => day.day_index > 0 || day.concept_key || day.default_title || day.variants.some((variant) => variant.content_item_id || variant.takeaway_default));
+            .filter((day) => day.day_index > 0 || day.default_title || day.lesson_goal || day.variants.some((variant) => variant.content_item_id || variant.takeaway_default));
           return {{ days }};
         }}
 
@@ -2060,18 +2131,10 @@ def edit_education_programme(id: int | None = None):
           }}
         }}
 
-        function seedDays() {{
-          const duration = Math.max(1, Math.min(90, Number(durationInput.value || 21)));
-          root.innerHTML = '';
-          for (let index = 1; index <= duration; index += 1) {{
-            root.insertAdjacentHTML('beforeend', renderDay(emptyDay(index)));
-          }}
-        }}
-
         function renderInitial() {{
           const days = Array.isArray(seed.days) ? [...seed.days] : [];
           if (!days.length) {{
-            seedDays();
+            root.innerHTML = renderDay(emptyDay(1));
             return;
           }}
           root.innerHTML = days
@@ -2080,9 +2143,12 @@ def edit_education_programme(id: int | None = None):
             .join('');
         }}
 
-        document.getElementById('seed-days-button').addEventListener('click', seedDays);
         document.getElementById('add-day-button').addEventListener('click', function() {{
-          const nextIndex = root.querySelectorAll(':scope > .js-day').length + 1;
+          const dayEls = Array.from(root.querySelectorAll(':scope > .js-day'));
+          const nextIndex = dayEls.reduce((maxValue, dayEl) => {{
+            const value = Number(dayEl.querySelector('.js-day-index')?.value || 0);
+            return Math.max(maxValue, value);
+          }}, 0) + 1;
           root.insertAdjacentHTML('beforeend', renderDay(emptyDay(nextIndex)));
         }});
 
@@ -2123,25 +2189,26 @@ def edit_education_programme(id: int | None = None):
           }}
         }});
 
-        root.addEventListener('change', function(event) {{
+        programmeConceptInput.addEventListener('change', function(event) {{
           const target = event.target;
-          if (!(target instanceof HTMLElement)) return;
-          if (target.classList.contains('js-day-concept')) {{
-            const dayEl = target.closest('.js-day');
-            if (!dayEl) return;
-            const select = target;
-            const match = conceptOptions.find((item) => String(item.code || '').toLowerCase() === String(select.value || '').toLowerCase());
-            const labelInput = dayEl.querySelector('.js-day-concept-label');
-            if (labelInput && !String(labelInput.value || '').trim() && match) {{
-              labelInput.value = String(match.name || '').trim();
-            }}
-            refreshContentSelectsWithinDay(dayEl);
+          if (!(target instanceof HTMLSelectElement)) return;
+          const previousLabel = String(programmeConceptLabelInput?.value || '').trim();
+          const match = selectedProgrammeConcept();
+          if (programmeConceptLabelInput && (!previousLabel || previousLabel === String(programmeConceptInput.dataset.previousLabel || ''))) {{
+            programmeConceptLabelInput.value = String(match?.name || '').trim();
           }}
+          programmeConceptInput.dataset.previousLabel = String(programmeConceptLabelInput?.value || '').trim();
+          programmeConceptInput.dataset.selected = String(target.value || '').trim().toLowerCase();
+          if (pillarDisplayInput) {{
+            pillarDisplayInput.value = titleCasePillar(selectedProgrammePillar());
+          }}
+          const days = Array.from(root.querySelectorAll(':scope > .js-day')).map((dayEl) => collectDayData(dayEl));
+          root.innerHTML = (days.length ? days : [emptyDay(1)]).map((day) => renderDay(day)).join('');
         }});
 
-        pillarInput.addEventListener('change', function() {{
+        programmeConceptLabelInput?.addEventListener('input', function() {{
           const days = Array.from(root.querySelectorAll(':scope > .js-day')).map((dayEl) => collectDayData(dayEl));
-          root.innerHTML = days.map((day) => renderDay(day)).join('');
+          root.innerHTML = (days.length ? days : [emptyDay(1)]).map((day) => renderDay(day)).join('');
         }});
 
         form.addEventListener('submit', function(event) {{
@@ -2153,6 +2220,8 @@ def edit_education_programme(id: int | None = None):
           }}
         }});
 
+        refreshProgrammeConceptChoices();
+        programmeConceptInput.dataset.previousLabel = String(programmeConceptLabelInput?.value || '').trim();
         renderInitial();
       }})();
     </script>
@@ -2164,24 +2233,32 @@ def edit_education_programme(id: int | None = None):
 @admin.post("/education-programmes/save")
 async def save_education_programme(
     id: int | None = Form(default=None),
-    pillar_key: str = Form(...),
+    pillar_key: str | None = Form(default=None),
+    programme_concept_key: str | None = Form(default=None),
+    programme_concept_label: str | None = Form(default=None),
     code: str = Form(...),
     name: str = Form(...),
-    duration_days: int = Form(default=21),
     is_active: str | None = Form(default=None),
     structure_json: str | None = Form(default=None),
 ):
     ensure_education_plan_schema()
     pillar_token = str(pillar_key or "").strip().lower()
+    raw_programme_concept_token = str(programme_concept_key or "").strip().lower()
+    if "::" in raw_programme_concept_token:
+        explicit_pillar, explicit_concept = raw_programme_concept_token.split("::", 1)
+        pillar_token = str(explicit_pillar or "").strip().lower() or pillar_token
+        programme_concept_token = str(explicit_concept or "").strip().lower()
+    else:
+        programme_concept_token = raw_programme_concept_token
+    programme_concept_text = str(programme_concept_label or "").strip()
     code_token = str(code or "").strip()
     name_text = str(name or "").strip()
-    if pillar_token not in {"nutrition", "training", "resilience", "recovery"}:
-        raise HTTPException(400, "pillar_key must be one of nutrition|training|resilience|recovery")
+    if not programme_concept_token:
+        raise HTTPException(400, "programme_concept_key is required")
     if not code_token:
         raise HTTPException(400, "code is required")
     if not name_text:
         raise HTTPException(400, "name is required")
-    resolved_duration = max(1, min(90, int(duration_days or 21)))
     try:
         structure = json.loads(str(structure_json or "{}"))
     except Exception as exc:
@@ -2201,35 +2278,55 @@ async def save_education_programme(
             day_index = int(raw_day.get("day_index") or 0)
         except Exception:
             day_index = 0
-        concept_key = str(raw_day.get("concept_key") or "").strip().lower()
         if not day_index:
             continue
         if day_index in seen_day_indexes:
             raise HTTPException(400, f"Duplicate day_index: {day_index}")
         seen_day_indexes.add(day_index)
-        if not concept_key:
-            raise HTTPException(400, f"Day {day_index} requires concept_key")
         variants = raw_day.get("variants") if isinstance(raw_day.get("variants"), list) else []
         normalised_days.append(
             {
                 "id": int(raw_day.get("id")) if raw_day.get("id") else None,
                 "day_index": day_index,
-                "concept_key": concept_key,
-                "concept_label": str(raw_day.get("concept_label") or "").strip() or None,
                 "lesson_goal": str(raw_day.get("lesson_goal") or "").strip() or None,
                 "default_title": str(raw_day.get("default_title") or "").strip() or None,
                 "default_summary": str(raw_day.get("default_summary") or "").strip() or None,
                 "variants": variants,
             }
         )
+    resolved_duration = max(seen_day_indexes, default=0)
 
     with SessionLocal() as s:
+        concept_candidates = (
+            s.query(Concept)
+            .filter(Concept.code == programme_concept_token)
+            .order_by(Concept.pillar_key.asc(), Concept.id.asc())
+            .all()
+        )
+        if pillar_token:
+            concept_candidates = [
+                item
+                for item in concept_candidates
+                if str(getattr(item, "pillar_key", "") or "").strip().lower() == pillar_token
+            ]
+        if not concept_candidates:
+            raise HTTPException(400, "programme_concept_key is invalid")
+        if len(concept_candidates) > 1:
+            raise HTTPException(400, "programme_concept_key is ambiguous; provide a pillar-specific concept code")
+        concept_row = concept_candidates[0]
+        pillar_token = str(getattr(concept_row, "pillar_key", "") or "").strip().lower()
+        if pillar_token not in {"nutrition", "training", "resilience", "recovery"}:
+            raise HTTPException(400, "programme_concept_key must resolve to a supported pillar")
+        if not programme_concept_text:
+            programme_concept_text = str(getattr(concept_row, "name", "") or "").strip()
         row = s.get(EducationProgramme, id) if id else None
         if id and row is None:
             raise HTTPException(404, "Education programme not found")
         if row is None:
             row = EducationProgramme()
             row.pillar_key = pillar_token
+            row.concept_key = programme_concept_token or None
+            row.concept_label = programme_concept_text or None
             row.code = code_token
             row.name = name_text
             row.duration_days = resolved_duration
@@ -2238,6 +2335,8 @@ async def save_education_programme(
             s.flush()
         else:
             row.pillar_key = pillar_token
+            row.concept_key = programme_concept_token or None
+            row.concept_label = programme_concept_text or None
             row.code = code_token
             row.name = name_text
             row.duration_days = resolved_duration
@@ -2270,8 +2369,8 @@ async def save_education_programme(
                 s.flush()
             day_row.programme_id = int(row.id)
             day_row.day_index = int(day_payload["day_index"])
-            day_row.concept_key = str(day_payload["concept_key"] or "").strip().lower()
-            day_row.concept_label = day_payload.get("concept_label")
+            day_row.concept_key = programme_concept_token
+            day_row.concept_label = programme_concept_text or None
             day_row.lesson_goal = day_payload.get("lesson_goal")
             day_row.default_title = day_payload.get("default_title")
             day_row.default_summary = day_payload.get("default_summary")

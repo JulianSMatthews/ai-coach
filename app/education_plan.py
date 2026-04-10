@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, desc, inspect, select, text
+from sqlalchemy import and_, delete, desc, inspect, or_, select, text
 from sqlalchemy.schema import CreateColumn
 
 from .coach_insight import _library_avatar_payload
@@ -11,6 +11,7 @@ from .daily_habits import build_daily_tracker_generation_context_snapshot
 from .db import SessionLocal, engine
 from .models import (
     AssessmentRun,
+    Concept,
     ContentLibraryItem,
     EducationLessonVariant,
     EducationProgramme,
@@ -27,7 +28,6 @@ from .okr import _normalize_concept_key
 from .pillar_tracker import tracker_today
 
 _EDUCATION_PLAN_SCHEMA_READY = False
-_DEFAULT_PROGRAMME_DURATION_DAYS = 21
 _WATCH_COMPLETE_THRESHOLD_PCT = 80.0
 _QUIZ_LOW_SCORE_PCT = 50.0
 _QUIZ_HIGH_SCORE_PCT = 85.0
@@ -48,12 +48,14 @@ _EDUCATION_SCHEMA_TABLES = (
 _EDUCATION_SCHEMA_INDEX_SQL = (
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_education_programmes_code ON education_programmes(code);",
     "CREATE INDEX IF NOT EXISTS ix_education_programmes_pillar_active ON education_programmes(pillar_key, is_active);",
+    "CREATE INDEX IF NOT EXISTS ix_education_programmes_pillar_concept_active ON education_programmes(pillar_key, concept_key, is_active);",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_education_programme_days_programme_day ON education_programme_days(programme_id, day_index);",
     "CREATE INDEX IF NOT EXISTS ix_education_programme_days_programme_concept ON education_programme_days(programme_id, concept_key);",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_education_lesson_variants_day_level ON education_lesson_variants(programme_day_id, level);",
     "CREATE INDEX IF NOT EXISTS ix_education_lesson_variants_day_active ON education_lesson_variants(programme_day_id, is_active);",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_education_quiz_questions_quiz_order ON education_quiz_questions(quiz_id, question_order);",
     "CREATE INDEX IF NOT EXISTS ix_user_education_plans_user_status ON user_education_plans(user_id, status);",
+    "CREATE INDEX IF NOT EXISTS ix_user_education_plans_user_entry_concept ON user_education_plans(user_id, entry_concept_key);",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_education_concept_levels_user_concept ON user_education_concept_levels(user_id, pillar_key, concept_key);",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_education_day_progress_plan_date ON user_education_day_progress(user_plan_id, lesson_date);",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_education_quiz_answers_progress_question ON user_education_quiz_answers(user_day_progress_id, question_id);",
@@ -224,6 +226,109 @@ def _assessment_pillar_score(snapshot: dict[str, Any], pillar_key: str) -> float
     return _safe_float(getattr(pillar, "overall", None)) if pillar is not None else None
 
 
+def _concept_label(session, pillar_key: str | None, concept_key: str | None, context: dict[str, Any] | None = None) -> str | None:
+    pillar_token = str(pillar_key or "").strip().lower()
+    concept_token = _normalize_concept_key(concept_key)
+    if not pillar_token or not concept_token:
+        return None
+    tracker_concept = _find_tracker_concept(context or {}, pillar_token, concept_token)
+    if isinstance(tracker_concept, dict):
+        label = str(tracker_concept.get("label") or "").strip()
+        if label:
+            return label
+    row = (
+        session.execute(
+            select(Concept)
+            .where(
+                Concept.pillar_key == pillar_token,
+                Concept.code == concept_token,
+            )
+            .order_by(desc(Concept.id))
+        )
+        .scalars()
+        .first()
+    )
+    if row is not None:
+        label = str(getattr(row, "name", "") or "").strip()
+        if label:
+            return label
+    return concept_token.replace("_", " ").title()
+
+
+def _programme_duration_days(
+    session,
+    programme: EducationProgramme | None,
+) -> int:
+    if programme is None or not getattr(programme, "id", None):
+        return 1
+    configured_max = (
+        session.execute(
+            select(EducationProgrammeDay.day_index)
+            .where(EducationProgrammeDay.programme_id == int(programme.id))
+            .order_by(desc(EducationProgrammeDay.day_index), desc(EducationProgrammeDay.id))
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+    try:
+        configured_days = int(configured_max or 0)
+    except Exception:
+        configured_days = 0
+    if configured_days > 0:
+        return configured_days
+    try:
+        stored_days = int(getattr(programme, "duration_days", 0) or 0)
+    except Exception:
+        stored_days = 0
+    return stored_days if stored_days > 0 else 1
+
+
+def _weakest_assessment_concept_key(
+    snapshot: dict[str, Any],
+    pillar_key: str | None,
+    *,
+    allowed: set[str] | None = None,
+) -> str | None:
+    pillar = (snapshot.get("pillars") or {}).get(str(pillar_key or "").strip().lower())
+    if pillar is None:
+        return None
+    concept_scores = getattr(pillar, "concept_scores", None)
+    if not isinstance(concept_scores, dict):
+        return None
+    candidates: list[tuple[float, str]] = []
+    for raw_key, raw_value in concept_scores.items():
+        token = _normalize_concept_key(raw_key)
+        score = _safe_float(raw_value)
+        if not token or score is None:
+            continue
+        if allowed and token not in allowed:
+            continue
+        candidates.append((float(score), token))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: (item[0], item[1]))
+    return candidates[0][1]
+
+
+def _weakest_tracker_concept_key(
+    context: dict[str, Any],
+    pillar_key: str | None,
+    *,
+    allowed: set[str] | None = None,
+) -> str | None:
+    pillar = _find_tracker_pillar(context, str(pillar_key or "").strip().lower())
+    concepts = [item for item in (pillar or {}).get("concepts") or [] if isinstance(item, dict)]
+    for concept in concepts:
+        token = _normalize_concept_key(concept.get("concept_key"))
+        if not token:
+            continue
+        if allowed and token not in allowed:
+            continue
+        return token
+    return None
+
+
 def _starting_level_for_score(score: float | None) -> str:
     if score is None:
         return "build"
@@ -371,14 +476,25 @@ def _resolve_plan_date(anchor: date | None) -> date:
     return anchor if isinstance(anchor, date) else tracker_today()
 
 
-def _select_programme(session, pillar_key: str | None) -> EducationProgramme | None:
-    if pillar_key:
+def _select_programme(
+    session,
+    pillar_key: str | None,
+    concept_key: str | None = None,
+) -> EducationProgramme | None:
+    pillar_token = str(pillar_key or "").strip().lower()
+    concept_token = _normalize_concept_key(concept_key)
+    concept_programme = and_(
+        EducationProgramme.concept_key.isnot(None),
+        EducationProgramme.concept_key != "",
+    )
+    if concept_token and not pillar_token:
         row = (
             session.execute(
                 select(EducationProgramme)
                 .where(
                     EducationProgramme.is_active.is_(True),
-                    EducationProgramme.pillar_key == str(pillar_key).strip().lower(),
+                    concept_programme,
+                    EducationProgramme.concept_key == concept_token,
                 )
                 .order_by(desc(EducationProgramme.updated_at), desc(EducationProgramme.id))
             )
@@ -387,15 +503,40 @@ def _select_programme(session, pillar_key: str | None) -> EducationProgramme | N
         )
         if row is not None:
             return row
-    return (
-        session.execute(
-            select(EducationProgramme)
-            .where(EducationProgramme.is_active.is_(True))
-            .order_by(desc(EducationProgramme.updated_at), desc(EducationProgramme.id))
+    if pillar_token and concept_token:
+        row = (
+            session.execute(
+                select(EducationProgramme)
+                .where(
+                    EducationProgramme.is_active.is_(True),
+                    concept_programme,
+                    EducationProgramme.pillar_key == pillar_token,
+                    EducationProgramme.concept_key == concept_token,
+                )
+                .order_by(desc(EducationProgramme.updated_at), desc(EducationProgramme.id))
+            )
+            .scalars()
+            .first()
         )
-        .scalars()
-        .first()
-    )
+        if row is not None:
+            return row
+    if pillar_token:
+        row = (
+            session.execute(
+                select(EducationProgramme)
+                .where(
+                    EducationProgramme.is_active.is_(True),
+                    EducationProgramme.pillar_key == pillar_token,
+                    concept_programme,
+                )
+                .order_by(desc(EducationProgramme.updated_at), desc(EducationProgramme.id))
+            )
+            .scalars()
+            .first()
+        )
+        if row is not None:
+            return row
+    return None
 
 
 def _resolve_programme_day(session, programme_id: int, day_index: int) -> EducationProgrammeDay | None:
@@ -513,6 +654,51 @@ def _get_or_create_active_plan(
     context: dict[str, Any],
     context_hash: str,
 ) -> tuple[UserEducationPlan | None, EducationProgramme | None]:
+    preferred_pillar = (
+        str(((context.get("weakest_pillar") or {}).get("pillar_key")) or "").strip().lower()
+        if isinstance(context.get("weakest_pillar"), dict)
+        else ""
+    )
+    assessment = _assessment_snapshot(session, int(user_id))
+    available_programmes = (
+        session.execute(
+            select(EducationProgramme)
+            .where(
+                EducationProgramme.is_active.is_(True),
+                EducationProgramme.pillar_key == preferred_pillar,
+                EducationProgramme.concept_key.isnot(None),
+                EducationProgramme.concept_key != "",
+            )
+            .order_by(desc(EducationProgramme.updated_at), desc(EducationProgramme.id))
+        )
+        .scalars()
+        .all()
+        if preferred_pillar
+        else []
+    )
+    available_concepts = {
+        _normalize_concept_key(getattr(row, "concept_key", None)) or ""
+        for row in available_programmes
+        if _normalize_concept_key(getattr(row, "concept_key", None))
+    }
+    preferred_concept = _weakest_assessment_concept_key(
+        assessment,
+        preferred_pillar,
+        allowed=available_concepts or None,
+    )
+    if preferred_concept is None:
+        preferred_concept = _weakest_tracker_concept_key(
+            context,
+            preferred_pillar,
+            allowed=available_concepts or None,
+        )
+    preferred_concept_label = _concept_label(
+        session,
+        preferred_pillar,
+        preferred_concept,
+        context=context,
+    )
+    preferred_programme = _select_programme(session, preferred_pillar or None, preferred_concept)
     existing = (
         session.execute(
             select(UserEducationPlan)
@@ -534,18 +720,50 @@ def _get_or_create_active_plan(
             session.flush()
             existing = None
             programme = None
+        elif (
+            preferred_programme is not None
+            and int(getattr(preferred_programme, "id", 0) or 0) != int(existing.programme_id)
+            and not session.execute(
+                select(UserEducationDayProgress.id)
+                .where(
+                    UserEducationDayProgress.user_plan_id == int(existing.id),
+                    or_(
+                        UserEducationDayProgress.completed_at.isnot(None),
+                        UserEducationDayProgress.quiz_completed_at.isnot(None),
+                        UserEducationDayProgress.video_completed_at.isnot(None),
+                        UserEducationDayProgress.watch_pct.isnot(None),
+                        UserEducationDayProgress.watched_seconds.isnot(None),
+                    ),
+                )
+                .limit(1)
+            ).scalar_one_or_none()
+        ):
+            programme = preferred_programme
+            existing.programme_id = int(preferred_programme.id)
+            existing.pillar_key = str(getattr(preferred_programme, "pillar_key", "") or "").strip().lower() or preferred_pillar or "nutrition"
+            existing.entry_concept_key = (
+                _normalize_concept_key(getattr(preferred_programme, "concept_key", None))
+                or preferred_concept
+            )
+            existing.entry_concept_label = (
+                str(getattr(preferred_programme, "concept_label", "") or "").strip()
+                or preferred_concept_label
+            )
+            existing.route_version = "concept_programme_v1"
+            session.add(existing)
+            session.flush()
     if existing is None:
-        weakest = context.get("weakest_pillar") if isinstance(context.get("weakest_pillar"), dict) else {}
-        preferred_pillar = str((weakest or {}).get("pillar_key") or "").strip().lower() or None
-        programme = _select_programme(session, preferred_pillar)
+        programme = preferred_programme or _select_programme(session, preferred_pillar or None, preferred_concept)
         if programme is None:
             return None, None
-        snapshot = _assessment_snapshot(session, int(user_id))
-        run = snapshot.get("run")
+        run = assessment.get("run")
         existing = UserEducationPlan(
             user_id=int(user_id),
             programme_id=int(programme.id),
             pillar_key=str(getattr(programme, "pillar_key", "") or "").strip().lower() or "nutrition",
+            entry_concept_key=_normalize_concept_key(getattr(programme, "concept_key", None)) or preferred_concept,
+            entry_concept_label=str(getattr(programme, "concept_label", "") or "").strip() or preferred_concept_label,
+            route_version="concept_programme_v1",
             starts_on=plan_date,
             current_day_index=1,
             status="active",
@@ -554,16 +772,31 @@ def _get_or_create_active_plan(
                 "created_from": "education_plan",
                 "weakest_pillar": context.get("weakest_pillar"),
                 "tracker_focus_source": context.get("tracker_focus_source"),
+                "entry_concept_key": _normalize_concept_key(getattr(programme, "concept_key", None)) or preferred_concept,
+                "entry_concept_label": str(getattr(programme, "concept_label", "") or "").strip() or preferred_concept_label,
             },
             last_context_hash=context_hash or None,
             last_refreshed_at=_now_utc(),
         )
         session.add(existing)
         session.flush()
-    duration_days = int(getattr(programme, "duration_days", 0) or 0) if programme is not None else 0
-    duration_days = duration_days if duration_days > 0 else _DEFAULT_PROGRAMME_DURATION_DAYS
+    if programme is None:
+        programme = session.get(EducationProgramme, int(existing.programme_id))
+    duration_days = _programme_duration_days(session, programme)
     elapsed = max(0, (plan_date - existing.starts_on).days)
     existing.current_day_index = min(duration_days, elapsed + 1)
+    existing.pillar_key = str(getattr(programme, "pillar_key", "") or existing.pillar_key or "").strip().lower() or "nutrition"
+    existing.entry_concept_key = (
+        _normalize_concept_key(getattr(existing, "entry_concept_key", None))
+        or _normalize_concept_key(getattr(programme, "concept_key", None))
+        or preferred_concept
+    )
+    existing.entry_concept_label = (
+        str(getattr(existing, "entry_concept_label", "") or "").strip()
+        or str(getattr(programme, "concept_label", "") or "").strip()
+        or preferred_concept_label
+    )
+    existing.route_version = str(getattr(existing, "route_version", "") or "").strip() or "concept_programme_v1"
     existing.last_context_hash = context_hash or None
     existing.last_refreshed_at = _now_utc()
     session.add(existing)
@@ -746,7 +979,9 @@ def _lesson_state(
             "id": int(programme.id),
             "code": str(getattr(programme, "code", "") or "").strip() or None,
             "name": str(getattr(programme, "name", "") or "").strip() or None,
-            "duration_days": int(getattr(programme, "duration_days", 0) or 0) or _DEFAULT_PROGRAMME_DURATION_DAYS,
+            "concept_key": _normalize_concept_key(getattr(programme, "concept_key", None)),
+            "concept_label": str(getattr(programme, "concept_label", "") or "").strip() or None,
+            "duration_days": _programme_duration_days(session, programme),
         },
         "pillar_key": pillar_key or None,
         "pillar_label": _pillar_label(pillar_key),
@@ -755,6 +990,9 @@ def _lesson_state(
         "best_streak_days": int(getattr(plan, "best_streak_days", 0) or 0),
         "concept_key": concept_key or None,
         "concept_label": str(getattr(programme_day, "concept_label", "") or "").strip() or str(getattr(programme_day, "concept_key", "") or "").strip() or None,
+        "entry_concept_key": _normalize_concept_key(getattr(plan, "entry_concept_key", None)),
+        "entry_concept_label": str(getattr(plan, "entry_concept_label", "") or "").strip() or None,
+        "route_version": str(getattr(plan, "route_version", "") or "").strip() or None,
         "level": str(getattr(concept_level, "current_level", "") or "").strip() or "build",
         "assessment_score": concept_score if concept_score is not None else pillar_score,
         "tracker_signal": str(tracker_concept.get("signal") or "").strip() or None,

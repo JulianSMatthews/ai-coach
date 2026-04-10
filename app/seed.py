@@ -120,19 +120,19 @@ CONCEPT_QUESTIONS = {
     },
     "resilience": {
         "emotional_regulation": {
-            "primary": "In the past 7 days, on how many days did you feel calm and in control of your emotions for most of the day?"
+            "primary": "In the past 7 days, on how many days were you able to stay calm and in control when stress or strong emotions showed up?"
         },
         "positive_connection": {
-            "primary": "In the past 7 days, on how many days did you do something that made you feel genuinely good — either by taking time for yourself or connecting with someone you enjoy spending time with?"
+            "primary": "In the past 7 days, on how many days did you have a meaningful positive moment of connection with someone you enjoy spending time with?"
         },
         "stress_recovery": {
-            "primary": "In the past 7 days, on how many days did you take a short break to relax, breathe deeply, or reset when you felt stressed or tired?"
+            "primary": "In the past 7 days, on how many days did you deliberately use a reset or recovery strategy, such as breathing, walking, pausing, or taking a short break?"
         },
         "optimism_perspective": {
-            "primary": "In the past 7 days, on how many days did you feel able to stay positive and keep things in perspective when challenges arose?"
+            "primary": "In the past 7 days, on how many days were you able to avoid spiralling and keep a balanced perspective when something difficult came up?"
         },
         "support_openness": {
-            "primary": "In the past 7 days, on how many days did you actively connect with others to discuss your goals, progress, or challenges?"
+            "primary": "In the past 7 days, on how many days did you open up, ask for support, or let someone help you with something that felt important?"
         },
     },
     "recovery": {
@@ -188,15 +188,15 @@ KB_SNIPPETS: Dict[str, Dict[str, List[Dict]]] = {
     },
     "resilience": {
         "emotional_regulation": [
-            {"title": "Micro-resets", "text": "Take 5–10 min walks or mindful breaks; use 2–3 presence prompts/day (breath, posture, body scan)."},
+            {"title": "Calm under pressure", "text": "Notice stress early and use a settling skill in the moment, such as slower breathing, relaxing your jaw or shoulders, or taking a brief pause before responding."},
             {"title": "Scoring cue (0–7 days/wk)", "text": "Reward intentional regulation efforts and consistency, not the absence of difficult emotion."},
         ],
         "positive_connection": [
-            {"title": "Gratitude & contact", "text": "Note 2–3 gratitudes/day; brief check-ins (message/call) count as positive connection."},
-            {"title": "Scoring cue (0–7 days/wk)", "text": "Intentional engagement and gratitude both improve scores; more days = higher."},
+            {"title": "Small moments of connection", "text": "A meaningful chat, message, shared laugh, or check-in with someone you value counts; short positive moments still matter."},
+            {"title": "Scoring cue (0–7 days/wk)", "text": "Intentional positive connection with other people scores higher when it happens more consistently across the week."},
         ],
         "stress_recovery": [
-            {"title": "Active coping", "text": "Use journaling and reach out to supports to reduce overload; short resets beat avoidance."},
+            {"title": "Reset strategies", "text": "Short resets such as breathing, walking, stretching, stepping outside, journaling, or taking a brief pause can help the body come down from stress."},
             {"title": "Scoring cue (0–7 days/wk)", "text": "Consistent use of a coping strategy scores higher than infrequent, long sessions."},
         ],
         "optimism_perspective": [
@@ -1292,14 +1292,40 @@ def upsert_concept_questions(session: Session) -> int:
             # primary
             primary = (bundle.get("primary") or "").strip()
             if primary:
-                exists = session.execute(
+                current_primary = session.execute(
                     select(ConceptQuestion).where(
                         ConceptQuestion.concept_id == concept.id,
-                        ConceptQuestion.text == primary
+                        ConceptQuestion.is_primary == True,
                     )
-                ).scalar_one_or_none()
-                if not exists:
-                    session.add(ConceptQuestion(concept_id=concept.id, text=primary, is_primary=True)); created += 1
+                ).scalars().first()
+                if current_primary:
+                    if (current_primary.text or "").strip() != primary:
+                        current_primary.text = primary
+                else:
+                    existing_text = session.execute(
+                        select(ConceptQuestion).where(
+                            ConceptQuestion.concept_id == concept.id,
+                            ConceptQuestion.text == primary
+                        )
+                    ).scalars().first()
+                    if existing_text:
+                        existing_text.is_primary = True
+                    else:
+                        session.add(ConceptQuestion(concept_id=concept.id, text=primary, is_primary=True)); created += 1
+                # Enforce a single primary row per concept to avoid ambiguous question selection.
+                other_primaries = session.execute(
+                    select(ConceptQuestion).where(
+                        ConceptQuestion.concept_id == concept.id,
+                        ConceptQuestion.is_primary == True,
+                    )
+                ).scalars().all()
+                primary_kept = False
+                for row in other_primaries:
+                    if not primary_kept and (row.text or "").strip() == primary:
+                        row.is_primary = True
+                        primary_kept = True
+                    else:
+                        row.is_primary = False
             # alternates
             for alt in bundle.get("alts", []):
                 t = (alt or "").strip()
