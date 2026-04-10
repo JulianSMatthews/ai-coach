@@ -4,7 +4,6 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import and_, delete, desc, inspect, or_, select, text
-from sqlalchemy.schema import CreateColumn
 
 from .coach_insight import _library_avatar_payload
 from .daily_habits import build_daily_tracker_generation_context_snapshot
@@ -45,6 +44,25 @@ _EDUCATION_SCHEMA_TABLES = (
     UserEducationQuizAnswer.__table__,
 )
 
+_EDUCATION_SCHEMA_COLUMNS = {
+    "education_programmes": {
+        "concept_key": "varchar(64)",
+        "concept_label": "varchar(160)",
+    },
+    "education_programme_days": {
+        "concept_key": "varchar(64)",
+        "concept_label": "varchar(160)",
+        "lesson_goal": "text",
+        "default_title": "varchar(200)",
+        "default_summary": "text",
+    },
+    "user_education_plans": {
+        "entry_concept_key": "varchar(64)",
+        "entry_concept_label": "varchar(160)",
+        "route_version": "varchar(32)",
+    },
+}
+
 _EDUCATION_SCHEMA_INDEX_SQL = (
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_education_programmes_code ON education_programmes(code);",
     "CREATE INDEX IF NOT EXISTS ix_education_programmes_pillar_active ON education_programmes(pillar_key, is_active);",
@@ -61,32 +79,34 @@ _EDUCATION_SCHEMA_INDEX_SQL = (
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_user_education_quiz_answers_progress_question ON user_education_quiz_answers(user_day_progress_id, question_id);",
 )
 
-
-def _ensure_table_columns(table) -> None:
+def _ensure_education_columns() -> None:
     inspector = inspect(engine)
-    if not inspector.has_table(table.name):
-        return
-    existing_columns = {
-        str(column.get("name") or "").strip().lower()
-        for column in inspector.get_columns(table.name)
-    }
-    missing_columns = [
-        column
-        for column in table.columns
-        if str(column.name or "").strip().lower() not in existing_columns
-    ]
-    if not missing_columns:
-        return
     with engine.begin() as conn:
         dialect = str(getattr(conn.dialect, "name", "") or "").strip().lower()
-        for column in missing_columns:
-            column_sql = str(CreateColumn(column).compile(dialect=conn.dialect)).strip()
-            if not column_sql:
+        for table_name, columns in _EDUCATION_SCHEMA_COLUMNS.items():
+            if not inspector.has_table(table_name):
                 continue
-            if dialect == "postgresql":
-                conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN IF NOT EXISTS {column_sql};"))
-            else:
-                conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {column_sql};"))
+            existing_columns = {
+                str(column.get("name") or "").strip().lower()
+                for column in inspector.get_columns(table_name)
+            }
+            for column_name, column_type in columns.items():
+                if column_name in existing_columns:
+                    continue
+                if dialect == "postgresql":
+                    conn.execute(
+                        text(
+                            f"ALTER TABLE {table_name} "
+                            f"ADD COLUMN IF NOT EXISTS {column_name} {column_type};"
+                        )
+                    )
+                else:
+                    conn.execute(
+                        text(
+                            f"ALTER TABLE {table_name} "
+                            f"ADD COLUMN {column_name} {column_type};"
+                        )
+                    )
 
 
 def ensure_education_plan_schema() -> None:
@@ -96,8 +116,7 @@ def ensure_education_plan_schema() -> None:
     try:
         for table in _EDUCATION_SCHEMA_TABLES:
             table.create(bind=engine, checkfirst=True)
-        for table in _EDUCATION_SCHEMA_TABLES:
-            _ensure_table_columns(table)
+        _ensure_education_columns()
         with engine.begin() as conn:
             for sql in _EDUCATION_SCHEMA_INDEX_SQL:
                 conn.execute(text(sql))
