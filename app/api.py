@@ -492,6 +492,15 @@ _RENDER_INFRA_CACHE: dict[str, object] = {
 
 @app.on_event("startup")
 async def _startup_init() -> None:
+    # Education admin and lesson routing depend on these columns existing before
+    # the first request arrives, so ensure them synchronously at startup.
+    try:
+        ensure_education_plan_schema()
+        debug_log("education plan schema ensured before serving traffic", tag="startup")
+    except Exception as e:
+        debug_log(f"education plan schema startup ensure failed: {e!r}", tag="startup")
+        raise
+
     try:
         from .nudges import ensure_quick_reply_templates
 
