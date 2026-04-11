@@ -231,6 +231,16 @@ function formatUrineStatusLabel(marker: UrineTestMarker): string {
   return label || "ready";
 }
 
+function resolveUrineResultMessage(urineTest?: UrineTestResponse | null): string | null {
+  const payload = urineTest?.result_payload;
+  if (!payload || typeof payload !== "object") return null;
+  const notes = Array.isArray(payload.notes) ? payload.notes : [];
+  const firstNote = notes.map((note) => String(note || "").trim()).find(Boolean);
+  if (firstNote) return firstNote;
+  const screeningNote = String(payload.screening_note || "").trim();
+  return screeningNote || null;
+}
+
 function formatIsoLocalDay(value: Date): string {
   const year = value.getFullYear();
   const month = String(value.getMonth() + 1).padStart(2, "0");
@@ -576,7 +586,8 @@ export default function LatestAssessmentPanel({
   const [urineCaptureStartedAt, setUrineCaptureStartedAt] = useState<number | null>(null);
   const [urineTimerSecondsLeft, setUrineTimerSecondsLeft] = useState(0);
   const appleHealthAutoRequestRef = useRef(false);
-  const urinePhotoInputRef = useRef<HTMLInputElement | null>(null);
+  const urinePhotoCameraInputRef = useRef<HTMLInputElement | null>(null);
+  const urinePhotoLibraryInputRef = useRef<HTMLInputElement | null>(null);
   const summaryPanelRef = useRef<HTMLElement | null>(null);
   const [urinePhotoName, setUrinePhotoName] = useState<string | null>(null);
   const [urinePhotoCapturedAt, setUrinePhotoCapturedAt] = useState<string | null>(null);
@@ -713,6 +724,7 @@ export default function LatestAssessmentPanel({
     () => normalizeUrineMarkers(urineTest?.markers),
     [urineTest?.markers],
   );
+  const urineResultMessage = useMemo(() => resolveUrineResultMessage(urineTest), [urineTest]);
   const urineTestStatus = String(urineTest?.status || "").trim().toLowerCase();
   let urineCaptureState: UrineCaptureState = "ready";
   if (urineTestError) {
@@ -921,7 +933,43 @@ export default function LatestAssessmentPanel({
         return;
       }
     }
-    urinePhotoInputRef.current?.click();
+    urinePhotoCameraInputRef.current?.click();
+  }, [submitUrinePhotoCapture]);
+
+  const openUrinePhotoLibrary = useCallback(async () => {
+    setUrineTestError(null);
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
+        const photo = await Camera.getPhoto({
+          allowEditing: false,
+          correctOrientation: true,
+          quality: 88,
+          resultType: CameraResultType.DataUrl,
+          saveToGallery: false,
+          source: CameraSource.Photos,
+        });
+        const imageDataUrl = String(photo.dataUrl || "").trim();
+        if (!imageDataUrl) {
+          throw new Error("No photo data was returned.");
+        }
+        await submitUrinePhotoCapture({
+          capturedAt: new Date(),
+          fileName: "urine-sample-library.jpg",
+          imageDataUrl,
+          mimeType: "image/jpeg",
+          sizeBytes: Math.round((imageDataUrl.length * 3) / 4),
+        });
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.toLowerCase().includes("cancel")) {
+          setUrineTestError(message || "Photo library selection failed.");
+        }
+        return;
+      }
+    }
+    urinePhotoLibraryInputRef.current?.click();
   }, [submitUrinePhotoCapture]);
 
   const handleUrinePhotoSelected = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1594,10 +1642,17 @@ export default function LatestAssessmentPanel({
                       </p>
                     </div>
                     <input
-                      ref={urinePhotoInputRef}
+                      ref={urinePhotoCameraInputRef}
                       type="file"
                       accept="image/*"
                       capture="environment"
+                      onChange={handleUrinePhotoSelected}
+                      className="hidden"
+                    />
+                    <input
+                      ref={urinePhotoLibraryInputRef}
+                      type="file"
+                      accept="image/*"
                       onChange={handleUrinePhotoSelected}
                       className="hidden"
                     />
@@ -1639,14 +1694,24 @@ export default function LatestAssessmentPanel({
                               Keep the strip flat in the frame. Retake if the image is blurred, shadowed, or strongly tinted.
                             </p>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => void openUrinePhotoCapture()}
-                            disabled={urineTestSaving}
-                            className="rounded-full border border-[#c54817] bg-[#c54817] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-                          >
-                            {urineTestSaving ? "Saving" : urinePhotoCapturedAt || urineTest?.available ? "Retake photo" : "Take photo"}
-                          </button>
+                          <div className="flex flex-col gap-2 sm:items-end">
+                            <button
+                              type="button"
+                              onClick={() => void openUrinePhotoCapture()}
+                              disabled={urineTestSaving}
+                              className="rounded-full border border-[#c54817] bg-[#c54817] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              {urineTestSaving ? "Saving" : urinePhotoCapturedAt || urineTest?.available ? "Retake photo" : "Take photo"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void openUrinePhotoLibrary()}
+                              disabled={urineTestSaving}
+                              className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348] disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Use existing photo
+                            </button>
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1677,6 +1742,11 @@ export default function LatestAssessmentPanel({
                           ? `Latest capture ${formatCapturedAt(new Date(urineTest.captured_at))}`
                           : "No urine photo captured yet."}
                     </p>
+                    {urineResultMessage ? (
+                      <p className="mt-2 rounded-2xl border border-[#f2dccb] bg-[#fff8ef] px-3 py-2 text-xs text-[#8a5a1a]">
+                        {urineResultMessage}
+                      </p>
+                    ) : null}
                   </div>
                 ) : (
                   <>
@@ -1723,9 +1793,14 @@ export default function LatestAssessmentPanel({
                             : urinePhotoCapturedAt
                           ? `Latest capture ${urinePhotoCapturedAt}${urinePhotoName ? ` · ${urinePhotoName}` : ""}`
                           : urineTest?.captured_at
-                            ? `Latest capture ${formatCapturedAt(new Date(urineTest.captured_at))}`
-                            : "No urine photo captured yet."}
+                          ? `Latest capture ${formatCapturedAt(new Date(urineTest.captured_at))}`
+                          : "No urine photo captured yet."}
                       </p>
+                      {urineResultMessage ? (
+                        <p className="mt-2 rounded-2xl border border-[#f2dccb] bg-[#fff8ef] px-3 py-2 text-xs text-[#8a5a1a]">
+                          {urineResultMessage}
+                        </p>
+                      ) : null}
                     </div>
 
                 <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">

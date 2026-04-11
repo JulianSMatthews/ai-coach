@@ -14,7 +14,7 @@ from .db import _is_postgres, engine
 
 SIEMENS_MULTISTIX_PROVIDER = "siemens_multistix"
 URINE_TEST_MAX_IMAGE_DATA_URL_BYTES = 12 * 1024 * 1024
-URINE_TEST_MIN_ANALYSIS_CONFIDENCE = 0.62
+URINE_TEST_DEFAULT_MIN_ANALYSIS_CONFIDENCE = 0.45
 
 URINE_MARKER_DEFINITIONS: tuple[dict[str, Any], ...] = (
     {
@@ -261,6 +261,18 @@ def _analysis_model_name() -> str:
     )
 
 
+def _analysis_min_confidence() -> float:
+    raw = str(os.getenv("URINE_TEST_MIN_ANALYSIS_CONFIDENCE") or "").strip()
+    if raw:
+        try:
+            value = float(raw)
+            if value == value:
+                return max(0.0, min(1.0, value))
+        except Exception:
+            pass
+    return URINE_TEST_DEFAULT_MIN_ANALYSIS_CONFIDENCE
+
+
 def _extract_json_object(raw: str) -> dict[str, Any] | None:
     text_value = str(raw or "").strip()
     if not text_value:
@@ -300,7 +312,42 @@ def _coerce_float(value: Any, default: float = 0.0) -> float:
 
 def _normalize_status(marker_key: str, raw_status: Any) -> str:
     key = str(marker_key or "").strip().lower()
-    status = str(raw_status or "").strip().lower().replace(" ", "_").replace("-", "_")
+    status = re.sub(r"[^a-z0-9+]+", "_", str(raw_status or "").strip().lower()).strip("_")
+    if status in {"review", "needs_review", "uncertain", "unknown", "cannot_read", "not_visible"}:
+        return "review"
+    if key == "concentration":
+        if status in {"dilute", "low", "very_low", "overhydrated"}:
+            return "dilute"
+        if status in {"balanced", "normal", "clear", "ok", "hydrated", "well_hydrated", "in_range"}:
+            return "balanced"
+        if status in {"concentrated", "high", "very_high", "dehydrated"}:
+            return "concentrated"
+    if key == "uti":
+        if status in {"clear", "negative", "neg", "none", "normal", "ok"}:
+            return "clear"
+        if status in {"watch", "trace", "small", "trace_small"}:
+            return "watch"
+        if status in {"flagged", "positive", "pos", "moderate", "large", "moderate_large", "raised", "high"}:
+            return "flagged"
+    if key in {"protein", "blood"}:
+        if status in {"clear", "negative", "neg", "none", "normal", "ok"}:
+            return "clear"
+        if status in {"trace", "small", "trace_small", "non_hemolyzed", "non_haemolyzed"}:
+            return "trace"
+        if status in {"flagged", "positive", "pos", "moderate", "large", "moderate_large", "raised", "high", "1+", "2+", "3+"}:
+            return "flagged"
+    if key == "glucose":
+        if status in {"clear", "negative", "neg", "none", "normal", "ok"}:
+            return "clear"
+        if status in {"raised", "positive", "pos", "trace", "small", "moderate", "large", "high", "1+", "2+", "3+"}:
+            return "raised"
+    if key == "ketones":
+        if status in {"clear", "negative", "neg", "none", "normal", "ok"}:
+            return "clear"
+        if status in {"trace", "small", "trace_small"}:
+            return "trace"
+        if status in {"raised", "positive", "pos", "moderate", "large", "moderate_large", "high", "1+", "2+", "3+"}:
+            return "raised"
     status = _STATUS_SYNONYMS.get(status, status)
     options = _STATUS_OPTIONS_BY_MARKER.get(key) or set()
     if status in options:
@@ -316,6 +363,50 @@ def _normalize_status(marker_key: str, raw_status: Any) -> str:
     if key == "uti" and status == "raised":
         return "flagged"
     return "review"
+
+
+def _analyte_token(raw_value: Any) -> str:
+    return re.sub(r"[^a-z0-9.+]+", "_", str(raw_value or "").strip().lower()).strip("_")
+
+
+def _is_negative_analyte(raw_value: Any) -> bool:
+    return _analyte_token(raw_value) in {"neg", "negative", "none", "normal", "clear", "0", "0.0"}
+
+
+def _derive_marker_status_from_analytes(marker_key: str, raw_analytes: dict[str, Any]) -> str | None:
+    key = str(marker_key or "").strip().lower()
+    if key == "concentration":
+        token = _analyte_token(raw_analytes.get("specific_gravity"))
+        try:
+            value = float(re.sub(r"[^0-9.]+", "", token))
+            if value <= 1.005:
+                return "dilute"
+            if value <= 1.025:
+                return "balanced"
+            return "concentrated"
+        except Exception:
+            return _normalize_status("concentration", token) if token else None
+    if key == "uti":
+        leukocytes = _analyte_token(raw_analytes.get("leukocytes"))
+        nitrite = _analyte_token(raw_analytes.get("nitrite"))
+        if nitrite in {"positive", "pos", "trace", "small", "moderate", "large"}:
+            return "flagged"
+        if leukocytes in {"moderate", "large", "positive", "pos"}:
+            return "flagged"
+        if leukocytes in {"trace", "small", "trace_small"}:
+            return "watch"
+        if leukocytes and nitrite and _is_negative_analyte(leukocytes) and _is_negative_analyte(nitrite):
+            return "clear"
+        return None
+    if key in {"protein", "blood", "glucose", "ketones"}:
+        analyte_key = "ketones" if key == "ketones" else key
+        raw_value = raw_analytes.get(analyte_key)
+        if not _analyte_token(raw_value):
+            return None
+        if _is_negative_analyte(raw_value):
+            return "clear"
+        return _normalize_status(key, raw_value)
+    return None
 
 
 def _marker_tone(status: str) -> str:
@@ -347,11 +438,16 @@ def _review_markers(reason: str) -> list[dict[str, Any]]:
 
 def _validate_analysis_payload(parsed: dict[str, Any], *, model: str, duration_ms: int) -> dict[str, Any]:
     interpretation_status = str(parsed.get("interpretation_status") or "").strip().lower()
-    if interpretation_status == "analyzed":
+    if interpretation_status in {"analyzed", "analysed", "analysis_complete", "complete", "ok"}:
         interpretation_status = "analysed"
+    elif interpretation_status in {"needs review", "needs_review", "review"}:
+        interpretation_status = "needs_review"
     confidence = _coerce_float(parsed.get("confidence"), 0.0)
+    min_confidence = _analysis_min_confidence()
     notes = parsed.get("notes") if isinstance(parsed.get("notes"), list) else []
+    clean_notes = [str(note).strip() for note in notes if str(note).strip()]
     raw_markers = parsed.get("markers") if isinstance(parsed.get("markers"), list) else []
+    raw_analytes = parsed.get("raw_analytes") if isinstance(parsed.get("raw_analytes"), dict) else {}
     raw_marker_map: dict[str, dict[str, Any]] = {}
     for item in raw_markers:
         if not isinstance(item, dict):
@@ -360,35 +456,19 @@ def _validate_analysis_payload(parsed: dict[str, Any], *, model: str, duration_m
         if marker_key:
             raw_marker_map[marker_key] = item
 
-    if interpretation_status != "analysed" or confidence < URINE_TEST_MIN_ANALYSIS_CONFIDENCE:
-        reason = "review"
-        return {
-            "provider": SIEMENS_MULTISTIX_PROVIDER,
-            "test_name": "Siemens Multistix",
-            "interpretation_status": "needs_review",
-            "confidence": confidence,
-            "markers": _review_markers(reason),
-            "notes": notes or ["Photo quality, timing, or strip/chart visibility was not strong enough for interpretation."],
-            "raw_analytes": parsed.get("raw_analytes") if isinstance(parsed.get("raw_analytes"), dict) else {},
-            "analysis": {
-                "model": model,
-                "duration_ms": duration_ms,
-                "minimum_confidence": URINE_TEST_MIN_ANALYSIS_CONFIDENCE,
-                "source": "vision_llm",
-            },
-            "screening_note": (
-                "This urine strip photo could not be interpreted with enough confidence. "
-                "Retake on a plain white background in good light at the 60-second capture point."
-            ),
-        }
-
     markers: list[dict[str, Any]] = []
+    resolved_marker_count = 0
+    review_marker_count = 0
     for definition in URINE_MARKER_DEFINITIONS:
         marker_key = str(definition["key"])
         item = raw_marker_map.get(marker_key) or {}
         status = _normalize_status(marker_key, item.get("status"))
         if status == "review":
-            interpretation_status = "needs_review"
+            status = _derive_marker_status_from_analytes(marker_key, raw_analytes) or status
+        if status == "review":
+            review_marker_count += 1
+        else:
+            resolved_marker_count += 1
         markers.append(
             {
                 "key": marker_key,
@@ -402,18 +482,48 @@ def _validate_analysis_payload(parsed: dict[str, Any], *, model: str, duration_m
                 "note": str(item.get("note") or "").strip() or None,
             }
         )
+
+    whole_photo_uncertain = interpretation_status != "analysed" or confidence < min_confidence
+    if whole_photo_uncertain and resolved_marker_count == 0:
+        reason = "review"
+        return {
+            "provider": SIEMENS_MULTISTIX_PROVIDER,
+            "test_name": "Siemens Multistix",
+            "interpretation_status": "needs_review",
+            "confidence": confidence,
+            "markers": _review_markers(reason),
+            "notes": clean_notes or ["Photo quality, timing, or strip visibility was not strong enough for interpretation."],
+            "raw_analytes": raw_analytes,
+            "analysis": {
+                "model": model,
+                "duration_ms": duration_ms,
+                "minimum_confidence": min_confidence,
+                "source": "vision_llm",
+            },
+            "screening_note": (
+                "This urine strip photo could not be interpreted with enough confidence. "
+                "Retake on a plain white background in good light at the 60-second capture point."
+            ),
+        }
+
+    if whole_photo_uncertain:
+        if confidence < min_confidence:
+            clean_notes.append("Overall photo confidence was low; resolved markers are shown, but uncertain markers should be retaken.")
+        elif interpretation_status != "analysed":
+            clean_notes.append("The analyser requested review for part of the photo; resolved markers are shown where available.")
+    interpretation_status = "needs_review" if whole_photo_uncertain or review_marker_count else "analysed"
     return {
         "provider": SIEMENS_MULTISTIX_PROVIDER,
         "test_name": "Siemens Multistix",
         "interpretation_status": interpretation_status,
         "confidence": confidence,
         "markers": markers,
-        "notes": notes,
-        "raw_analytes": parsed.get("raw_analytes") if isinstance(parsed.get("raw_analytes"), dict) else {},
+        "notes": clean_notes,
+        "raw_analytes": raw_analytes,
         "analysis": {
             "model": model,
             "duration_ms": duration_ms,
-            "minimum_confidence": URINE_TEST_MIN_ANALYSIS_CONFIDENCE,
+            "minimum_confidence": min_confidence,
             "source": "vision_llm",
         },
         "screening_note": (
@@ -454,8 +564,9 @@ def analyse_urine_test_photo(image_data_url: str) -> dict[str, Any]:
     system_prompt = (
         "You analyse photos of Siemens Multistix urine reagent strips for a wellness screening app. "
         "Return only JSON. Do not diagnose disease. Use the embedded colour/status reference; do not "
-        "require an external colour chart to be visible. If the strip, reagent pads, lighting, or focus "
-        "are not clear enough, set interpretation_status to needs_review. "
+        "require an external colour chart to be visible. If a strip and most reagent pads are visible, "
+        "return interpretation_status analysed and provide the best marker statuses you can. Only set the "
+        "whole test to needs_review when the strip cannot be interpreted at all. "
         "Use only the allowed marker status words."
     )
     user_text = (
@@ -469,16 +580,15 @@ def analyse_urine_test_photo(image_data_url: str) -> dict[str, Any]:
         "- blood: clear, trace, flagged\n"
         "- glucose: clear, raised\n"
         "- ketones: clear, trace, raised\n\n"
-        "Return JSON exactly in this shape: "
-        '{"interpretation_status":"analysed|needs_review","confidence":0.0,'
-        '"markers":[{"key":"concentration","status":"balanced","confidence":0.0,"note":""},'
-        '{"key":"uti","status":"clear","confidence":0.0,"note":""},'
-        '{"key":"protein","status":"clear","confidence":0.0,"note":""},'
-        '{"key":"blood","status":"clear","confidence":0.0,"note":""},'
-        '{"key":"glucose","status":"clear","confidence":0.0,"note":""},'
-        '{"key":"ketones","status":"clear","confidence":0.0,"note":""}],'
-        '"raw_analytes":{"specific_gravity":"","leukocytes":"","nitrite":"","protein":"","blood":"","glucose":"","ketones":""},'
-        '"notes":[]}'
+        "Return one JSON object with these keys only: "
+        "interpretation_status, confidence, markers, raw_analytes, notes. "
+        'interpretation_status must be "analysed" or "needs_review". '
+        "confidence must be a number from 0 to 1 based on the overall image. "
+        "markers must contain exactly six objects in this order: concentration, uti, protein, blood, glucose, ketones. "
+        "Each marker object must include key, status, confidence, and note. "
+        "Use review for an individual marker only when that pad cannot be judged. "
+        "raw_analytes must include specific_gravity, leukocytes, nitrite, protein, blood, glucose, and ketones. "
+        "Do not wrap the JSON in markdown."
     )
     try:
         from . import llm as shared_llm
