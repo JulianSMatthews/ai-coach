@@ -165,6 +165,19 @@ function resolveUrineCaptureTone(theme: DisplayTheme, state: UrineCaptureState):
     : "border-[#e7e1d6] bg-white text-[#8c7f70]";
 }
 
+function resolveUrineCaptureTextTone(theme: DisplayTheme, state: UrineCaptureState): string {
+  if (state === "analysed") {
+    return theme === "dark" ? "text-[#d9f0c5]" : "text-[#3f7a2a]";
+  }
+  if (state === "error") {
+    return theme === "dark" ? "text-[#ffb7a1]" : "text-[#9b3218]";
+  }
+  if (state === "queued" || state === "timing" || state === "saving" || state === "review") {
+    return theme === "dark" ? "text-[#ffd3ad]" : "text-[#b55d1c]";
+  }
+  return theme === "dark" ? "text-[var(--text-secondary)]" : "text-[#8c7f70]";
+}
+
 function formatCapturedAt(value: Date): string {
   return value.toLocaleString("en-GB", {
     day: "numeric",
@@ -727,6 +740,7 @@ export default function LatestAssessmentPanel({
     urineCaptureState = "timing";
   }
   const urineCaptureToneClassName = resolveUrineCaptureTone(displayTheme, urineCaptureState);
+  const urineCaptureTextToneClassName = resolveUrineCaptureTextTone(displayTheme, urineCaptureState);
 
   const refreshSummary = useCallback(async () => {
     const res = await fetch(`/api/pillar-tracker/summary?userId=${encodeURIComponent(userId)}`, {
@@ -1376,7 +1390,7 @@ export default function LatestAssessmentPanel({
           className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-5 sm:py-6"
         >
           <div className="mb-4 flex items-start justify-between gap-3">
-            <div className="min-h-[3.5rem]">
+            <div className="flex min-h-[3.5rem] flex-wrap items-start gap-2">
               {restingHeartRateChipVisible ? (
                 appleHealthSupported || restingHeartRateValue ? (
                   <button
@@ -1409,6 +1423,23 @@ export default function LatestAssessmentPanel({
                   </button>
                 ) : null
               ) : null}
+              <button
+                type="button"
+                onClick={() => setBiometricsModalOpen(true)}
+                className={`min-w-[6.75rem] rounded-[22px] border px-3 py-2 text-left shadow-[0_16px_30px_-24px_rgba(30,27,22,0.45)] transition ${restingHeartRateBoxToneClassName}`}
+              >
+                <p className="text-[0.62rem] font-semibold uppercase tracking-[0.18em] opacity-80">
+                  Biomarkers
+                </p>
+                <div className="mt-1 flex items-center gap-2">
+                  <span className={`text-xl font-semibold leading-none ${urineCaptureTextToneClassName}`}>
+                    urine
+                  </span>
+                  <span className={`text-[0.78rem] font-semibold ${urineCaptureTextToneClassName}`}>
+                    {urineCaptureState}
+                  </span>
+                </div>
+              </button>
             </div>
             <button
               type="button"
