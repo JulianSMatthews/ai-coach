@@ -2617,11 +2617,11 @@ export default function LatestAssessmentPanel({
                         onClick={() => setSelectedObjectivesSection(sectionKey as ObjectivesSectionKey)}
                         className="flex min-h-[5.75rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-white px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
                       >
-                        <span className="flex w-full items-center justify-between gap-3">
+                        <span className="flex w-full items-center gap-3">
+                          <WeeklyObjectiveSectionIcon sectionKey={sectionKey} />
                           <span className="text-base font-semibold text-[#1e1b16]">
                             {section?.label || sectionKey.replace(/_/g, " ")}
                           </span>
-                          <WeeklyObjectiveSectionIcon sectionKey={sectionKey} />
                         </span>
                         {countLabel ? (
                           <span className="mt-2 text-xs uppercase tracking-[0.16em] text-[#8c7f70]">{countLabel}</span>
