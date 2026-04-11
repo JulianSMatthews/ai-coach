@@ -55,6 +55,70 @@ URINE_MARKER_DEFINITIONS: tuple[dict[str, Any], ...] = (
     },
 )
 
+URINE_ANALYTE_REFERENCE: dict[str, dict[str, Any]] = {
+    "specific_gravity": {
+        "marker_key": "concentration",
+        "healthsense_status_map": {
+            "1.000-1.005": "dilute",
+            "1.010-1.025": "balanced",
+            "1.030+": "concentrated",
+        },
+        "visual_reference": "low values trend blue/blue-green; mid values trend green/yellow-green; high values trend yellow/orange.",
+    },
+    "leukocytes": {
+        "marker_key": "uti",
+        "healthsense_status_map": {
+            "negative": "clear",
+            "trace/small": "watch",
+            "moderate/large": "flagged",
+        },
+        "visual_reference": "negative is beige/off-white; positive shifts toward lavender/purple.",
+    },
+    "nitrite": {
+        "marker_key": "uti",
+        "healthsense_status_map": {
+            "negative": "clear",
+            "positive": "flagged",
+        },
+        "visual_reference": "negative is white/tan; positive shifts pink.",
+    },
+    "protein": {
+        "marker_key": "protein",
+        "healthsense_status_map": {
+            "negative": "clear",
+            "trace": "trace",
+            "1+ or higher": "flagged",
+        },
+        "visual_reference": "negative is yellow; positive shifts green to blue-green.",
+    },
+    "blood": {
+        "marker_key": "blood",
+        "healthsense_status_map": {
+            "negative": "clear",
+            "trace/non-hemolyzed": "trace",
+            "small or higher": "flagged",
+        },
+        "visual_reference": "negative is yellow/orange; positive appears green spots or green/blue-green.",
+    },
+    "glucose": {
+        "marker_key": "glucose",
+        "healthsense_status_map": {
+            "negative": "clear",
+            "trace or higher": "raised",
+        },
+        "visual_reference": "negative trends blue/green; positive shifts green/brown.",
+    },
+    "ketones": {
+        "marker_key": "ketones",
+        "healthsense_status_map": {
+            "negative": "clear",
+            "trace/small": "trace",
+            "moderate/large": "raised",
+        },
+        "visual_reference": "negative is beige/tan; positive shifts pink, purple, or maroon.",
+    },
+}
+
 _URINE_TEST_SCHEMA_READY = False
 
 
@@ -283,6 +347,8 @@ def _review_markers(reason: str) -> list[dict[str, Any]]:
 
 def _validate_analysis_payload(parsed: dict[str, Any], *, model: str, duration_ms: int) -> dict[str, Any]:
     interpretation_status = str(parsed.get("interpretation_status") or "").strip().lower()
+    if interpretation_status == "analyzed":
+        interpretation_status = "analysed"
     confidence = _coerce_float(parsed.get("confidence"), 0.0)
     notes = parsed.get("notes") if isinstance(parsed.get("notes"), list) else []
     raw_markers = parsed.get("markers") if isinstance(parsed.get("markers"), list) else []
@@ -312,7 +378,7 @@ def _validate_analysis_payload(parsed: dict[str, Any], *, model: str, duration_m
             },
             "screening_note": (
                 "This urine strip photo could not be interpreted with enough confidence. "
-                "Retake with the strip beside the Siemens colour chart and use the bottle timings."
+                "Retake on a plain white background in good light at the 60-second capture point."
             ),
         }
 
@@ -384,14 +450,18 @@ def analyse_urine_test_photo(image_data_url: str) -> dict[str, Any]:
         }
 
     model = _analysis_model_name()
+    reference_json = json.dumps(URINE_ANALYTE_REFERENCE, ensure_ascii=False, sort_keys=True)
     system_prompt = (
         "You analyse photos of Siemens Multistix urine reagent strips for a wellness screening app. "
-        "Return only JSON. Do not diagnose disease. If the strip, reagent pads, colour chart, timing, "
-        "lighting, or focus are not clear enough, set interpretation_status to needs_review. "
+        "Return only JSON. Do not diagnose disease. Use the embedded colour/status reference; do not "
+        "require an external colour chart to be visible. If the strip, reagent pads, lighting, or focus "
+        "are not clear enough, set interpretation_status to needs_review. "
         "Use only the allowed marker status words."
     )
     user_text = (
-        "Inspect the image for a Siemens Multistix urine strip, preferably beside the bottle colour chart. "
+        "Inspect the image for a Siemens Multistix urine strip photographed at about 60 seconds after dipping. "
+        "No external colour chart is required; use this embedded HealthSense reference map:\n"
+        f"{reference_json}\n\n"
         "Use this HealthSense output mapping only:\n"
         "- concentration from specific gravity: dilute, balanced, concentrated\n"
         "- uti from leukocytes + nitrite: clear, watch, flagged\n"
@@ -448,7 +518,7 @@ def analyse_urine_test_photo(image_data_url: str) -> dict[str, Any]:
                     "source": "vision_llm",
                     "raw_preview": raw_text[:500],
                 },
-                "screening_note": "Retake with the strip beside the Siemens colour chart.",
+                "screening_note": "Retake on a plain white background in good light at the 60-second capture point.",
             }
         result = _validate_analysis_payload(parsed, model=model, duration_ms=duration_ms)
         result.setdefault("analysis", {})["raw_preview"] = raw_text[:500]

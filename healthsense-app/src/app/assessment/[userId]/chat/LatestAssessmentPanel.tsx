@@ -42,7 +42,7 @@ type UrineCaptureState = "ready" | "timing" | "saving" | "queued" | "analysed" |
 const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
 const HEALTHSENSE_ORANGE = "#c54817";
 const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
-const URINE_CAPTURE_TIMER_SECONDS = 120;
+const URINE_CAPTURE_TIMER_SECONDS = 60;
 const URINE_TEST_MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 const URINE_SCREENING_MARKERS = [
   { key: "concentration", label: "Concentration" },
@@ -1562,7 +1562,7 @@ export default function LatestAssessmentPanel({
                   </p>
                   <p className="text-sm text-[#6b6257]">
                     {urineTestFlowOpen
-                      ? "Follow the Siemens Multistix timing steps before taking the photo."
+                      ? "Follow the 60-second HealthSense capture flow before taking the photo."
                       : "Review your recent biometric trend and optional urine marker screening."}
                   </p>
                 </div>
@@ -1586,7 +1586,7 @@ export default function LatestAssessmentPanel({
                       <div className="space-y-1">
                         <p className="text-sm font-semibold text-[#1e1b16]">Take urine test</p>
                         <p className="text-sm text-[#6b6257]">
-                          Photograph the strip beside the Siemens Multistix colour chart at the bottle-label read time.
+                          Photograph the strip on a plain white background at 60 seconds.
                         </p>
                       </div>
                       <p className={`shrink-0 rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${urineCaptureToneClassName}`}>
@@ -1606,7 +1606,7 @@ export default function LatestAssessmentPanel({
                         <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Step 1</p>
                         <p className="mt-1 text-sm font-semibold text-[#1e1b16]">Prepare the strip</p>
                         <p className="mt-1 text-sm text-[#6b6257]">
-                          Dip the Siemens Multistix strip, remove excess urine, and place it next to the bottle colour chart in good light.
+                          Dip the Siemens Multistix strip, remove excess urine, and place it flat on a plain white background in good light.
                         </p>
                       </div>
                       <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3">
@@ -1616,8 +1616,8 @@ export default function LatestAssessmentPanel({
                             <p className="mt-1 text-sm font-semibold text-[#1e1b16]">Start the read window</p>
                             <p className="mt-1 text-sm text-[#6b6257]">
                               {urineCaptureStartedAt
-                                ? `${urineTimerSecondsLeft}s remaining. Do not read after 2 minutes.`
-                                : "Start after dipping, then use the timing printed on the Multistix bottle."}
+                                ? `${urineTimerSecondsLeft}s remaining. Take the photo when the timer reaches zero.`
+                                : "Start after dipping. HealthSense captures at 60 seconds for the selected marker set."}
                             </p>
                           </div>
                           <button
@@ -1636,7 +1636,7 @@ export default function LatestAssessmentPanel({
                             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Step 3</p>
                             <p className="mt-1 text-sm font-semibold text-[#1e1b16]">Take the photo</p>
                             <p className="mt-1 text-sm text-[#6b6257]">
-                              Keep the strip and colour chart flat in the frame. Retake if the image is blurred or shadowed.
+                              Keep the strip flat in the frame. Retake if the image is blurred, shadowed, or strongly tinted.
                             </p>
                           </div>
                           <button
