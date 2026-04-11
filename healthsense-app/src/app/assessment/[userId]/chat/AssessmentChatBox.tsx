@@ -736,6 +736,8 @@ export default function AssessmentChatBox({
   const [finalGiaMessage, setFinalGiaMessage] = useState<string | null>(null);
   const [finalGiaMessageLoading, setFinalGiaMessageLoading] = useState(false);
   const [finalGiaMessageError, setFinalGiaMessageError] = useState<string | null>(null);
+  const [finalGiaListening, setFinalGiaListening] = useState(false);
+  const [finalGiaListenError, setFinalGiaListenError] = useState<string | null>(null);
   const [dailyHabitPlan, setDailyHabitPlan] = useState<DailyHabitPlanResponse | null>(null);
   const [dailyHabitPlanLoading, setDailyHabitPlanLoading] = useState(false);
   const [dailyHabitPlanError, setDailyHabitPlanError] = useState<string | null>(null);
@@ -744,6 +746,7 @@ export default function AssessmentChatBox({
   const [coachInsightError, setCoachInsightError] = useState<string | null>(null);
   const insightRequestIdRef = useRef(0);
   const finalGiaRequestIdRef = useRef(0);
+  const finalGiaSpeechRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   const autoStart = useMemo(() => isTruthyToken(searchParams?.get("autostart")), [searchParams]);
   const leadFlow = useMemo(() => isTruthyToken(searchParams?.get("lead")), [searchParams]);
@@ -996,6 +999,7 @@ export default function AssessmentChatBox({
     finalGiaRequestIdRef.current = requestId;
     setFinalGiaMessageLoading(true);
     setFinalGiaMessageError(null);
+    setFinalGiaListenError(null);
     setStatus(null);
     try {
       const res = await fetch("/api/assessment/chat/tracker-summary", {
@@ -1030,6 +1034,69 @@ export default function AssessmentChatBox({
     }
   }, [userId, leadToken]);
 
+  const stopFinalGiaListening = useCallback(() => {
+    if (typeof window !== "undefined" && finalGiaSpeechRef.current) {
+      window.speechSynthesis?.cancel();
+    }
+    finalGiaSpeechRef.current = null;
+    setFinalGiaListening(false);
+  }, []);
+
+  const startFinalGiaListening = useCallback(() => {
+    const message = String(finalGiaMessage || "").trim();
+    if (!message) return;
+    if (
+      typeof window === "undefined" ||
+      typeof window.speechSynthesis === "undefined" ||
+      typeof SpeechSynthesisUtterance === "undefined"
+    ) {
+      setFinalGiaListenError("Listening is not available in this browser.");
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(message);
+    utterance.lang = "en-GB";
+    utterance.rate = 0.96;
+    utterance.pitch = 1;
+
+    const voices = window.speechSynthesis.getVoices?.() || [];
+    const preferredVoice =
+      voices.find((voice) => voice.lang.toLowerCase().startsWith("en-gb") && /female|susan|sonia|serena|kate|libby/i.test(voice.name)) ||
+      voices.find((voice) => voice.lang.toLowerCase().startsWith("en-gb")) ||
+      voices.find((voice) => voice.lang.toLowerCase().startsWith("en"));
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+    }
+
+    utterance.onend = () => {
+      if (finalGiaSpeechRef.current === utterance) {
+        finalGiaSpeechRef.current = null;
+      }
+      setFinalGiaListening(false);
+    };
+    utterance.onerror = () => {
+      if (finalGiaSpeechRef.current === utterance) {
+        finalGiaSpeechRef.current = null;
+      }
+      setFinalGiaListening(false);
+      setFinalGiaListenError("Gia's audio could not be played right now.");
+    };
+
+    finalGiaSpeechRef.current = utterance;
+    setFinalGiaListenError(null);
+    setFinalGiaListening(true);
+    window.speechSynthesis.speak(utterance);
+  }, [finalGiaMessage]);
+
+  const toggleFinalGiaListening = useCallback(() => {
+    if (finalGiaListening) {
+      stopFinalGiaListening();
+      return;
+    }
+    startFinalGiaListening();
+  }, [finalGiaListening, startFinalGiaListening, stopFinalGiaListening]);
+
   const refreshDailyCheckInStatus = useCallback(async () => {
     if (!assessmentCompleted || leadFlow || isLeadGuest) {
       return null;
@@ -1048,10 +1115,11 @@ export default function AssessmentChatBox({
 
   useEffect(() => {
     if (!showGuidedHomeChatPanel) {
+      stopFinalGiaListening();
       setHomeSurface("tracking");
       setHomeSurfaceEntryMode("guided");
     }
-  }, [showGuidedHomeChatPanel, userId]);
+  }, [showGuidedHomeChatPanel, stopFinalGiaListening, userId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1078,13 +1146,15 @@ export default function AssessmentChatBox({
     setFinalGiaMessage(null);
     setFinalGiaMessageError(null);
     setFinalGiaMessageLoading(false);
+    setFinalGiaListenError(null);
+    stopFinalGiaListening();
     setDailyHabitPlan(null);
     setDailyHabitPlanError(null);
     setDailyHabitPlanLoading(false);
     setCoachInsight(null);
     setCoachInsightError(null);
     setCoachInsightLoading(false);
-  }, [assessmentCompleted, initialMorningSequenceDay, initialTrackerSummary, userId]);
+  }, [assessmentCompleted, initialMorningSequenceDay, initialTrackerSummary, stopFinalGiaListening, userId]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !assessmentCompleted || leadFlow || isLeadGuest) {
@@ -1131,6 +1201,14 @@ export default function AssessmentChatBox({
     refreshDailyCheckInStatus,
     userId,
   ]);
+
+  useEffect(() => {
+    if (homeSurface !== "ask") {
+      stopFinalGiaListening();
+    }
+  }, [homeSurface, stopFinalGiaListening]);
+
+  useEffect(() => () => stopFinalGiaListening(), [stopFinalGiaListening]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1205,6 +1283,8 @@ export default function AssessmentChatBox({
       setFinalGiaMessage(null);
       setFinalGiaMessageError(null);
       setFinalGiaMessageLoading(false);
+      setFinalGiaListenError(null);
+      stopFinalGiaListening();
       if (detail?.guided !== true) {
         return;
       }
@@ -1219,7 +1299,7 @@ export default function AssessmentChatBox({
     return () => {
       window.removeEventListener("healthsense-tracker-updated", onTrackerUpdated as EventListener);
     };
-  }, [morningSequenceDay, refreshChatState, showGuidedHomeChatPanel, loadDailyHabitPlan, userId]);
+  }, [morningSequenceDay, refreshChatState, showGuidedHomeChatPanel, loadDailyHabitPlan, stopFinalGiaListening, userId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2107,7 +2187,22 @@ export default function AssessmentChatBox({
                   </div>
                 ) : finalGiaMessage ? (
                   <div className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5 sm:px-5 sm:py-6">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--accent)]">Gia</p>
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--accent)]">Gia</p>
+                      <button
+                        type="button"
+                        onClick={toggleFinalGiaListening}
+                        aria-pressed={finalGiaListening}
+                        className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
+                      >
+                        {finalGiaListening ? "Stop" : "Listen"}
+                      </button>
+                    </div>
+                    {finalGiaListenError ? (
+                      <p className="mt-2 text-sm text-[#8a3e1a]">{finalGiaListenError}</p>
+                    ) : finalGiaListening ? (
+                      <p className="mt-2 text-xs uppercase tracking-[0.16em] text-[#8c7f70]">Playing Gia&apos;s message</p>
+                    ) : null}
                     <p className="mt-3 whitespace-pre-wrap text-[21px] leading-8 text-[#3c332b] sm:text-[24px] sm:leading-9">
                       {finalGiaMessage}
                     </p>
@@ -2121,6 +2216,8 @@ export default function AssessmentChatBox({
                       type="button"
                       onClick={() => {
                         setFinalGiaMessageError(null);
+                        setFinalGiaListenError(null);
+                        stopFinalGiaListening();
                         void requestFinalGiaMessage();
                       }}
                       className="mt-4 rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white"

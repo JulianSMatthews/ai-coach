@@ -919,6 +919,12 @@ function WeeklyObjectiveSectionIcon({ sectionKey }: { sectionKey: string }) {
   );
 }
 
+function formatWeeklyObjectiveSectionLabel(sectionKey: string, label?: string | null): string {
+  const normalizedKey = String(sectionKey || "").trim().toLowerCase();
+  if (normalizedKey === "wellbeing") return "General";
+  return String(label || "").trim() || normalizedKey.replace(/_/g, " ");
+}
+
 export default function LatestAssessmentPanel({
   userId,
   initialSummary,
@@ -1023,6 +1029,8 @@ export default function LatestAssessmentPanel({
     : trackerReturnSurface === "tracking"
       ? "Cancel"
       : "Close";
+  const trackerPillarLabel = detail?.pillar?.label || selectedPillarKey?.replace(/_/g, " ") || "";
+  const trackerPillarKey = String(detail?.pillar?.pillar_key || selectedPillarKey || "").trim().toLowerCase();
   const displayLabel = displayTheme === "dark" ? "light" : "dark";
   const displayButtonClassName =
     displayLabel === "dark"
@@ -2569,14 +2577,14 @@ export default function LatestAssessmentPanel({
                   <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
                     {selectedObjectivesSection
                       ? selectedObjectivesSection === "wellbeing"
-                        ? "Wellbeing objectives"
+                        ? "General objectives"
                         : selectedObjectivesPillar?.label || "Weekly objectives"
                       : "Weekly objectives"}
                   </p>
                   <p className="text-sm text-[#6b6257]">
                     {selectedObjectivesSection
                       ? selectedObjectivesSection === "wellbeing"
-                        ? "Set optional wellbeing tracking preferences."
+                        ? "Set optional general tracking preferences."
                         : "Choose your target for each concept this week."
                       : "Select a pillar to set or adjust this week's targets."}
                   </p>
@@ -2617,15 +2625,19 @@ export default function LatestAssessmentPanel({
                         onClick={() => setSelectedObjectivesSection(sectionKey as ObjectivesSectionKey)}
                         className="flex min-h-[5.75rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-white px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
                       >
-                        <span className="flex w-full items-center gap-3">
-                          <WeeklyObjectiveSectionIcon sectionKey={sectionKey} />
-                          <span className="text-base font-semibold text-[#1e1b16]">
-                            {section?.label || sectionKey.replace(/_/g, " ")}
+                        <span className="flex w-full items-center justify-between gap-3">
+                          <span className="flex min-w-0 items-center gap-3">
+                            <WeeklyObjectiveSectionIcon sectionKey={sectionKey} />
+                            <span className="truncate text-base font-semibold text-[#1e1b16]">
+                              {formatWeeklyObjectiveSectionLabel(sectionKey, section?.label)}
+                            </span>
                           </span>
+                          {countLabel ? (
+                            <span className="shrink-0 text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
+                              {countLabel}
+                            </span>
+                          ) : null}
                         </span>
-                        {countLabel ? (
-                          <span className="mt-2 text-xs uppercase tracking-[0.16em] text-[#8c7f70]">{countLabel}</span>
-                        ) : null}
                       </button>
                     );
                   })}
@@ -2772,14 +2784,17 @@ export default function LatestAssessmentPanel({
           <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-2xl flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
             <div className="shrink-0 border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
               <div className="min-w-0 space-y-1">
-                <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
-                  {(detail?.pillar?.label || selectedPillarKey.replace(/_/g, " ")) +
-                    (viewingCurrentWeek
+                <div className="flex min-w-0 items-center gap-3">
+                  <WeeklyObjectiveSectionIcon sectionKey={trackerPillarKey} />
+                  <p className="min-w-0 text-xs uppercase tracking-[0.22em] text-[#6b6257]">
+                    {trackerPillarLabel}
+                    {viewingCurrentWeek
                       ? savingPastDay
                         ? ` · Catching up ${activeLabel || "yesterday"}`
                         : " · Tracking today"
-                      : " · Last week results")}
-                </p>
+                      : " · Last week results"}
+                  </p>
+                </div>
                 <p className="text-sm text-[#6b6257]">{trackerScoreLabel}</p>
                 {detail?.pillar?.completed_days_count !== undefined || detail?.pillar?.streak_days !== undefined ? (
                   <p className="text-xs text-[#8c7f70]">
