@@ -436,6 +436,48 @@ def _review_markers(reason: str) -> list[dict[str, Any]]:
     ]
 
 
+def _normalize_response_marker_status(marker_key: str, item: dict[str, Any]) -> str:
+    for raw_status in (item.get("status"), item.get("status_label")):
+        token = _analyte_token(raw_status)
+        if token in {"ready", "queued"}:
+            return token
+        if not token:
+            continue
+        normalized = _normalize_status(marker_key, raw_status)
+        if normalized != "review" or token in {"review", "needs_review", "uncertain", "unknown"}:
+            return normalized
+    return "review"
+
+
+def _normalize_response_markers(raw_markers: Any) -> list[dict[str, Any]]:
+    marker_map: dict[str, dict[str, Any]] = {}
+    for item in raw_markers if isinstance(raw_markers, list) else []:
+        if not isinstance(item, dict):
+            continue
+        marker_key = str(item.get("key") or "").strip().lower()
+        if marker_key:
+            marker_map[marker_key] = item
+
+    markers: list[dict[str, Any]] = []
+    for definition in URINE_MARKER_DEFINITIONS:
+        marker_key = str(definition["key"])
+        item = marker_map.get(marker_key) or {}
+        status = _normalize_response_marker_status(marker_key, item) if item else "queued"
+        markers.append(
+            {
+                **item,
+                "key": marker_key,
+                "label": str(definition["label"]),
+                "source_analytes": list(item.get("source_analytes") or definition.get("source_analytes") or []),
+                "status": status,
+                "status_label": status,
+                "tone": _marker_tone(status),
+                "status_options": list(item.get("status_options") or definition.get("status_options") or []),
+            }
+        )
+    return markers
+
+
 def _validate_analysis_payload(parsed: dict[str, Any], *, model: str, duration_ms: int) -> dict[str, Any]:
     interpretation_status = str(parsed.get("interpretation_status") or "").strip().lower()
     if interpretation_status in {"analyzed", "analysed", "analysis_complete", "complete", "ok"}:
@@ -666,6 +708,8 @@ def _serialize_row(row: Any | None) -> dict[str, Any]:
     created_at = mapping.get("created_at")
     updated_at = mapping.get("updated_at")
     payload = result_payload if isinstance(result_payload, dict) else {}
+    markers = _normalize_response_markers(payload.get("markers"))
+    payload = {**payload, "markers": markers}
     return {
         "available": True,
         "id": int(mapping.get("id")),
@@ -673,7 +717,7 @@ def _serialize_row(row: Any | None) -> dict[str, Any]:
         "sample_date": sample_date.isoformat() if isinstance(sample_date, date) else str(sample_date or ""),
         "captured_at": captured_at.isoformat() if isinstance(captured_at, datetime) else str(captured_at or ""),
         "status": str(mapping.get("status") or "queued"),
-        "markers": payload.get("markers") if isinstance(payload.get("markers"), list) else _queued_markers(),
+        "markers": markers,
         "result_payload": payload,
         "image_metadata": image_metadata if isinstance(image_metadata, dict) else {},
         "created_at": created_at.isoformat() if isinstance(created_at, datetime) else str(created_at or ""),

@@ -198,6 +198,59 @@ function readFileAsDataUrl(file: File): Promise<string> {
   });
 }
 
+function normalizeUrineMarkerStatus(markerKey: string, rawStatus: unknown): string {
+  const key = String(markerKey || "").trim().toLowerCase();
+  const status = String(rawStatus || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9+]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  if (!status) return "";
+  if (status === "ready" || status === "queued") return status;
+  if (["review", "needs_review", "uncertain", "unknown", "cannot_read", "not_visible"].includes(status)) {
+    return "review";
+  }
+  if (key === "concentration") {
+    if (["well", "dilute", "very_dilute", "very_low", "overhydrated", "well_hydrated"].includes(status)) {
+      return "well";
+    }
+    if (["ok", "balanced", "normal", "clear", "hydrated", "in_range"].includes(status)) {
+      return "ok";
+    }
+    if (["low", "concentrated", "high", "very_high", "dehydrated", "underhydrated"].includes(status)) {
+      return "low";
+    }
+  }
+  if (key === "uti") {
+    if (["clear", "negative", "neg", "none", "normal", "ok"].includes(status)) return "clear";
+    if (["watch", "trace", "small", "trace_small"].includes(status)) return "watch";
+    if (["flagged", "positive", "pos", "moderate", "large", "moderate_large", "raised", "high"].includes(status)) {
+      return "flagged";
+    }
+  }
+  if (key === "protein" || key === "blood") {
+    if (["clear", "negative", "neg", "none", "normal", "ok"].includes(status)) return "clear";
+    if (["trace", "small", "trace_small", "non_hemolyzed", "non_haemolyzed"].includes(status)) return "trace";
+    if (["flagged", "positive", "pos", "moderate", "large", "moderate_large", "raised", "high", "1+", "2+", "3+"].includes(status)) {
+      return "flagged";
+    }
+  }
+  if (key === "glucose") {
+    if (["clear", "negative", "neg", "none", "normal", "ok"].includes(status)) return "clear";
+    if (["raised", "positive", "pos", "trace", "small", "moderate", "large", "high", "1+", "2+", "3+"].includes(status)) {
+      return "raised";
+    }
+  }
+  if (key === "ketones") {
+    if (["clear", "negative", "neg", "none", "normal", "ok"].includes(status)) return "clear";
+    if (["trace", "small", "trace_small"].includes(status)) return "trace";
+    if (["raised", "positive", "pos", "moderate", "large", "moderate_large", "high", "1+", "2+", "3+"].includes(status)) {
+      return "raised";
+    }
+  }
+  return status;
+}
+
 function normalizeUrineMarkers(markers?: UrineTestMarker[] | null): UrineTestMarker[] {
   const markerMap = new Map<string, UrineTestMarker>();
   (Array.isArray(markers) ? markers : []).forEach((marker) => {
@@ -206,11 +259,15 @@ function normalizeUrineMarkers(markers?: UrineTestMarker[] | null): UrineTestMar
   });
   return URINE_SCREENING_MARKERS.map((marker) => {
     const saved = markerMap.get(marker.key);
+    const status =
+      normalizeUrineMarkerStatus(marker.key, saved?.status) ||
+      normalizeUrineMarkerStatus(marker.key, saved?.status_label) ||
+      "ready";
     return {
       key: marker.key,
       label: marker.label,
-      status: saved?.status || "ready",
-      status_label: saved?.status_label || saved?.status || "ready",
+      status,
+      status_label: status,
       tone: saved?.tone || "neutral",
       source_analytes: saved?.source_analytes || [],
       status_options: saved?.status_options || [],
@@ -235,7 +292,7 @@ function resolveUrineMarkerTone(
   context?: { glucoseRaised?: boolean; ketogenicDietActive?: boolean },
 ): string {
   const markerKey = String(marker?.key || "").trim().toLowerCase();
-  const status = String(marker?.status_label || marker?.status || "").trim().toLowerCase();
+  const status = formatUrineStatusLabel(marker);
   const glucoseRaised = Boolean(context?.glucoseRaised);
   const ketogenicDietActive = Boolean(context?.ketogenicDietActive);
   if (markerKey === "concentration" && status === "well") {
@@ -319,8 +376,10 @@ function resolveUrineMarkerTone(
 }
 
 function formatUrineStatusLabel(marker: UrineTestMarker): string {
-  const label = String(marker?.status_label || marker?.status || "ready").trim().toLowerCase();
-  return label || "ready";
+  const markerKey = String(marker?.key || "").trim().toLowerCase();
+  const status = normalizeUrineMarkerStatus(markerKey, marker?.status);
+  const statusLabel = normalizeUrineMarkerStatus(markerKey, marker?.status_label);
+  return status || statusLabel || "ready";
 }
 
 function formatUrineDisplayStatusLabel(marker: UrineTestMarker): string {
