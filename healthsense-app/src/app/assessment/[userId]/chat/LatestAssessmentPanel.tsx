@@ -547,6 +547,7 @@ function BiomarkerExplanationCard({
   description,
   result,
   scaleRows,
+  showMarkerColumn = true,
   theme,
   title,
 }: {
@@ -554,27 +555,46 @@ function BiomarkerExplanationCard({
   description?: string;
   result: string;
   scaleRows: BiomarkerExplanationScaleRow[];
+  showMarkerColumn?: boolean;
   theme: DisplayTheme;
   title: string;
 }) {
+  const cardToneClassName =
+    theme === "dark"
+      ? "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]"
+      : "border-[#efe7db] bg-[#fffaf3] text-[#5d5348]";
+  const titleToneClassName = theme === "dark" ? "text-[var(--text-primary)]" : "text-[#1e1b16]";
+  const tableToneClassName =
+    theme === "dark" ? "border-[var(--border)] bg-[#151a24]" : "border-[#efe7db] bg-white";
+  const headerToneClassName =
+    theme === "dark"
+      ? "border-[var(--border)] bg-[#1c2230] text-[var(--text-secondary)]"
+      : "border-[#efe7db] bg-[#fff7ec] text-[#8c7f70]";
+  const rowBorderClassName = theme === "dark" ? "border-[var(--border)]" : "border-[#f3eadf]";
+  const markerTextClassName = theme === "dark" ? "text-[var(--text-primary)]" : "text-[#1e1b16]";
+  const meaningTextClassName = theme === "dark" ? "text-[var(--text-secondary)]" : "text-[#6b6257]";
   return (
-    <div className={`${className} rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3 text-sm text-[#5d5348]`}>
-      <p className="font-semibold text-[#1e1b16]">{title}</p>
+    <div className={`${className} rounded-2xl border px-4 py-3 text-sm ${cardToneClassName}`}>
+      <p className={`font-semibold ${titleToneClassName}`}>{title}</p>
       {description ? <p className="mt-2">{description}</p> : null}
       <p className="mt-2">{result}</p>
-      <div className="mt-4 overflow-x-auto rounded-2xl border border-[#efe7db] bg-white">
-        <table className="w-full min-w-[32rem] border-collapse text-left">
+      <div className={`mt-4 overflow-x-auto rounded-2xl border ${tableToneClassName}`}>
+        <table className={`w-full ${showMarkerColumn ? "min-w-[32rem]" : "min-w-[24rem]"} border-collapse text-left`}>
           <thead>
-            <tr className="border-b border-[#efe7db] bg-[#fff7ec] text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">
-              <th className="px-3 py-2 font-semibold">Marker</th>
+            <tr className={`border-b text-[10px] font-semibold uppercase tracking-[0.16em] ${headerToneClassName}`}>
+              {showMarkerColumn ? <th className="px-3 py-2 font-semibold">Marker</th> : null}
               <th className="px-3 py-2 font-semibold">Status</th>
               <th className="px-3 py-2 font-semibold">Meaning</th>
             </tr>
           </thead>
           <tbody>
             {scaleRows.map((row, index) => (
-              <tr key={`${row.marker}-${row.status}-${index}`} className="border-b border-[#f3eadf] last:border-b-0">
-                <td className="px-3 py-2 align-middle text-xs font-semibold text-[#1e1b16]">{row.marker}</td>
+              <tr key={`${row.marker}-${row.status}-${index}`} className={`border-b last:border-b-0 ${rowBorderClassName}`}>
+                {showMarkerColumn ? (
+                  <td className={`px-3 py-2 align-middle text-xs font-semibold ${markerTextClassName}`}>
+                    {row.marker}
+                  </td>
+                ) : null}
                 <td className="px-3 py-2 align-middle">
                   <span
                     className={`inline-flex min-h-9 min-w-[4.5rem] items-center justify-center gap-2 rounded-xl border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${resolveBiomarkerExplanationTone(theme, row.tone)}`}
@@ -583,7 +603,9 @@ function BiomarkerExplanationCard({
                     {row.status}
                   </span>
                 </td>
-                <td className="px-3 py-2 align-middle text-xs leading-relaxed text-[#6b6257]">{row.meaning}</td>
+                <td className={`px-3 py-2 align-middle text-xs leading-relaxed ${meaningTextClassName}`}>
+                  {row.meaning}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -1317,6 +1339,7 @@ export default function LatestAssessmentPanel({
           description: "Resting HR is your heart rate at rest. HealthSense compares it with your recent pattern rather than using one fixed target.",
           result: rhrExplanationResult,
           scaleRows: rhrExplanationScaleRows,
+          showMarkerColumn: false,
         }
       : activeBiomarkerExplanation === "steps"
         ? {
@@ -1324,6 +1347,7 @@ export default function LatestAssessmentPanel({
             description: "Steps show daily movement volume. They do not replace training quality, but they are useful context for activity, energy, and routine.",
             result: stepsExplanationResult,
             scaleRows: stepsExplanationScaleRows,
+            showMarkerColumn: false,
           }
         : activeBiomarkerExplanation === "urine"
           ? {
@@ -1332,6 +1356,7 @@ export default function LatestAssessmentPanel({
                 "Urine uses the strip photo to group six dipstick readings into practical HealthSense markers. Hydration comes from specific gravity; UTI Signs combines leukocytes and nitrite; protein, blood, glucose, and ketones are screening signals that make most sense with context and repeat tests.",
               result: urineExplanationResult,
               scaleRows: urineExplanationScaleRows,
+              showMarkerColumn: true,
             }
           : null;
 
@@ -2126,11 +2151,11 @@ export default function LatestAssessmentPanel({
               </button>
             </div>
           </div>
-          <div className="mt-5 space-y-3">
+          <div className="mt-4 space-y-2.5">
             <button
               type="button"
               onClick={handleReviewBiometricsPress}
-              className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-white px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
+              className="flex min-h-[4.75rem] w-full flex-col items-start justify-center rounded-[24px] border border-[#d9cdbb] bg-white px-5 py-3 text-left shadow-[0_18px_34px_-32px_rgba(30,27,22,0.4)]"
             >
               <div className="flex items-center gap-3">
                 <BiometricsIcon />
@@ -2140,7 +2165,7 @@ export default function LatestAssessmentPanel({
             <button
               type="button"
               onClick={() => openDailyMenuSurface("habits")}
-              className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-white px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
+              className="flex min-h-[4.75rem] w-full flex-col items-start justify-center rounded-[24px] border border-[#d9cdbb] bg-white px-5 py-3 text-left shadow-[0_18px_34px_-32px_rgba(30,27,22,0.4)]"
             >
               <div className="flex items-center gap-3">
                 <HabitStepsIcon />
@@ -2150,7 +2175,7 @@ export default function LatestAssessmentPanel({
             <button
               type="button"
               onClick={() => openDailyMenuSurface("insight")}
-              className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-white px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
+              className="flex min-h-[4.75rem] w-full flex-col items-start justify-center rounded-[24px] border border-[#d9cdbb] bg-white px-5 py-3 text-left shadow-[0_18px_34px_-32px_rgba(30,27,22,0.4)]"
             >
               <div className="flex items-center gap-3">
                 <InsightIcon />
@@ -2160,7 +2185,7 @@ export default function LatestAssessmentPanel({
             <button
               type="button"
               onClick={() => openDailyMenuSurface("ask")}
-              className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-white px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
+              className="flex min-h-[4.75rem] w-full flex-col items-start justify-center rounded-[24px] border border-[#d9cdbb] bg-white px-5 py-3 text-left shadow-[0_18px_34px_-32px_rgba(30,27,22,0.4)]"
             >
               <div className="flex items-center gap-3">
                 <GiaMessageIcon />
@@ -2220,6 +2245,7 @@ export default function LatestAssessmentPanel({
                       title={activeBiomarkerExplanationDetail.title}
                       result={activeBiomarkerExplanationDetail.result}
                       scaleRows={activeBiomarkerExplanationDetail.scaleRows}
+                      showMarkerColumn={activeBiomarkerExplanationDetail.showMarkerColumn}
                       theme={displayTheme}
                     />
                   </div>
