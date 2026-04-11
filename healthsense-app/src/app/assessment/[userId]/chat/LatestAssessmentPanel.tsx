@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import type {
   AppleHealthRestingHeartRateResponse,
   // Keep tracker responses local to this panel.
@@ -34,10 +34,19 @@ type TrackerReturnSurface = "tracking" | "habits" | "insight" | "ask";
 type MorningSequenceState = "idle" | "in_progress" | "completed";
 type DisplayTheme = "light" | "dark";
 type ObjectivesSectionKey = "nutrition" | "training" | "resilience" | "recovery" | "wellbeing";
+type UrineCaptureState = "ready" | "queued";
 
 const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
 const HEALTHSENSE_ORANGE = "#c54817";
 const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
+const URINE_SCREENING_MARKERS = [
+  "Concentration",
+  "UTI",
+  "Protein",
+  "Blood",
+  "Glucose",
+  "Ketones",
+] as const;
 
 function resolveRestingHeartRateBoxTone(theme: DisplayTheme): string {
   return theme === "dark"
@@ -129,6 +138,26 @@ function resolveCompactStepsStatusLabel(status: StepsStatus): string {
   if (status === "strong") return "str";
   if (status === "base") return "base";
   return "";
+}
+
+function resolveUrineCaptureTone(theme: DisplayTheme, state: UrineCaptureState): string {
+  if (state === "queued") {
+    return theme === "dark"
+      ? "border-[#5f4938] bg-[#2d241c] text-[#ffd3ad]"
+      : "border-[#f2dccb] bg-[#fff4ea] text-[#b55d1c]";
+  }
+  return theme === "dark"
+    ? "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]"
+    : "border-[#e7e1d6] bg-white text-[#8c7f70]";
+}
+
+function formatCapturedAt(value: Date): string {
+  return value.toLocaleString("en-GB", {
+    day: "numeric",
+    month: "short",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function formatIsoLocalDay(value: Date): string {
@@ -469,7 +498,10 @@ export default function LatestAssessmentPanel({
   const [restingHeartRateEnabling, setRestingHeartRateEnabling] = useState(false);
   const [appleHealthAuthStatus, setAppleHealthAuthStatus] = useState<AppleHealthAuthorizationState>("unsupported");
   const appleHealthAutoRequestRef = useRef(false);
+  const urinePhotoInputRef = useRef<HTMLInputElement | null>(null);
   const summaryPanelRef = useRef<HTMLElement | null>(null);
+  const [urinePhotoName, setUrinePhotoName] = useState<string | null>(null);
+  const [urinePhotoCapturedAt, setUrinePhotoCapturedAt] = useState<string | null>(null);
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
   const orderedPillarKeys = pillars
@@ -599,6 +631,8 @@ export default function LatestAssessmentPanel({
     displayTheme,
     restingHeartRate?.trend_status,
   );
+  const urineCaptureState: UrineCaptureState = urinePhotoCapturedAt ? "queued" : "ready";
+  const urineCaptureToneClassName = resolveUrineCaptureTone(displayTheme, urineCaptureState);
 
   const refreshSummary = useCallback(async () => {
     const res = await fetch(`/api/pillar-tracker/summary?userId=${encodeURIComponent(userId)}`, {
@@ -679,6 +713,18 @@ export default function LatestAssessmentPanel({
     restingHeartRateLoading,
     syncNativeRestingHeartRate,
   ]);
+
+  const openUrinePhotoCapture = useCallback(() => {
+    urinePhotoInputRef.current?.click();
+  }, []);
+
+  const handleUrinePhotoSelected = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setUrinePhotoName(String(file.name || "urine-sample.jpg").trim() || "urine-sample.jpg");
+    setUrinePhotoCapturedAt(formatCapturedAt(new Date()));
+    event.target.value = "";
+  }, []);
 
   const toggleDisplayTheme = useCallback(async () => {
     if (togglingDisplay) return;
@@ -1278,6 +1324,50 @@ export default function LatestAssessmentPanel({
 
             <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
               <div className="space-y-4">
+                <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-[#1e1b16]">Urine sample</p>
+                      <p className="text-sm text-[#6b6257]">
+                        Capture a Siemens Multistix photo to screen key urine markers.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openUrinePhotoCapture()}
+                      className="shrink-0 rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
+                    >
+                      {urinePhotoCapturedAt ? "Retake" : "Take photo"}
+                    </button>
+                  </div>
+                  <input
+                    ref={urinePhotoInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    onChange={handleUrinePhotoSelected}
+                    className="hidden"
+                  />
+                  <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {URINE_SCREENING_MARKERS.map((marker) => (
+                      <div
+                        key={marker}
+                        className={`rounded-xl border px-3 py-3 text-left text-[11px] ${urineCaptureToneClassName}`}
+                      >
+                        <p className="font-semibold opacity-80">{marker}</p>
+                        <p className="mt-3 text-sm font-semibold uppercase tracking-[0.12em]">
+                          {urineCaptureState}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-4 text-sm text-[#6b6257]">
+                    {urinePhotoCapturedAt
+                      ? `Latest capture ${urinePhotoCapturedAt}${urinePhotoName ? ` · ${urinePhotoName}` : ""}`
+                      : "Entry point ready. Guided interpretation is the next step."}
+                  </p>
+                </div>
+
                 <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-semibold text-[#1e1b16]">Resting heart rate</p>
