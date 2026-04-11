@@ -15,7 +15,6 @@ import type {
 import {
   canUseAppleHealth,
   getAppleHealthAuthorizationStatus,
-  openAppleHealthSettings,
   requestAppleHealthAuthorization,
   syncAppleHealthRestingHeartRate,
   type AppleHealthAuthorizationState,
@@ -39,6 +38,14 @@ type DisplayTheme = "light" | "dark";
 type ObjectivesSectionKey = "nutrition" | "training" | "resilience" | "recovery" | "wellbeing";
 type UrineCaptureState = "ready" | "timing" | "saving" | "queued" | "analysed" | "review" | "error";
 type BiomarkerExplanationKey = "rhr" | "steps" | "urine";
+type BiomarkerExplanationTone = "purple" | "green" | "amber" | "red" | "neutral";
+type BiomarkerExplanationScaleRow = {
+  marker: string;
+  status: string;
+  meaning: string;
+  dotClassName?: string;
+  tone?: BiomarkerExplanationTone;
+};
 
 const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
 const HEALTHSENSE_ORANGE = "#c54817";
@@ -393,6 +400,13 @@ function formatUrineDisplayStatusLabel(marker: UrineTestMarker): string {
   return label;
 }
 
+function formatUrineExplanationStatusLabel(marker: UrineTestMarker): string {
+  const label = formatUrineDisplayStatusLabel(marker);
+  if (!label || label === "—") return "—";
+  if (label === "OK") return label;
+  return `${label.charAt(0).toUpperCase()}${label.slice(1)}`;
+}
+
 function formatUrineStatusAbbreviation(marker: UrineTestMarker): string {
   const label = formatUrineStatusLabel(marker);
   const abbreviations: Record<string, string> = {
@@ -489,27 +503,91 @@ function resolveUrineResultMessage(urineTest?: UrineTestResponse | null): string
   return screeningNote || null;
 }
 
+function resolveBiomarkerExplanationTone(theme: DisplayTheme, tone: BiomarkerExplanationTone = "neutral"): string {
+  if (tone === "purple") {
+    return theme === "dark"
+      ? "border-[#57447a] bg-[#251f32] text-[#d8c9ff]"
+      : "border-[#d8cbff] bg-[#f4efff] text-[#6b4cc2]";
+  }
+  if (tone === "green") {
+    return theme === "dark"
+      ? "border-[#405b35] bg-[#1f2b1d] text-[#d9f0c5]"
+      : "border-[#d5e8bf] bg-[#f2fae8] text-[#335f16]";
+  }
+  if (tone === "amber") {
+    return theme === "dark"
+      ? "border-[#5f4938] bg-[#2d241c] text-[#ffd3ad]"
+      : "border-[#f2dccb] bg-[#fff4ea] text-[#8a5a1a]";
+  }
+  if (tone === "red") {
+    return theme === "dark"
+      ? "border-[#674033] bg-[#2c1d1a] text-[#ffb7a1]"
+      : "border-[#efc4b6] bg-[#fff0eb] text-[#9b3218]";
+  }
+  return theme === "dark"
+    ? "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]"
+    : "border-[#e7e1d6] bg-white text-[#8c7f70]";
+}
+
+function urineStatusDot(
+  theme: DisplayTheme,
+  markerKey: string,
+  status: string,
+  context?: { glucoseRaised?: boolean; ketogenicDietActive?: boolean },
+): string {
+  return resolveUrineStatusDotTone(
+    theme,
+    { key: markerKey, status, status_label: status },
+    context,
+  );
+}
+
 function BiomarkerExplanationCard({
   className = "mt-4",
+  description,
   result,
-  scale,
+  scaleRows,
+  theme,
   title,
 }: {
   className?: string;
+  description?: string;
   result: string;
-  scale: string[];
+  scaleRows: BiomarkerExplanationScaleRow[];
+  theme: DisplayTheme;
   title: string;
 }) {
   return (
     <div className={`${className} rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3 text-sm text-[#5d5348]`}>
       <p className="font-semibold text-[#1e1b16]">{title}</p>
+      {description ? <p className="mt-2">{description}</p> : null}
       <p className="mt-2">{result}</p>
-      <div className="mt-3 space-y-1">
-        {scale.map((item) => (
-          <p key={item} className="text-xs leading-relaxed text-[#6b6257]">
-            {item}
-          </p>
-        ))}
+      <div className="mt-4 overflow-x-auto rounded-2xl border border-[#efe7db] bg-white">
+        <table className="w-full min-w-[32rem] border-collapse text-left">
+          <thead>
+            <tr className="border-b border-[#efe7db] bg-[#fff7ec] text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">
+              <th className="px-3 py-2 font-semibold">Marker</th>
+              <th className="px-3 py-2 font-semibold">Status</th>
+              <th className="px-3 py-2 font-semibold">Meaning</th>
+            </tr>
+          </thead>
+          <tbody>
+            {scaleRows.map((row, index) => (
+              <tr key={`${row.marker}-${row.status}-${index}`} className="border-b border-[#f3eadf] last:border-b-0">
+                <td className="px-3 py-2 align-middle text-xs font-semibold text-[#1e1b16]">{row.marker}</td>
+                <td className="px-3 py-2 align-middle">
+                  <span
+                    className={`inline-flex min-h-9 min-w-[4.5rem] items-center justify-center gap-2 rounded-xl border px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] ${resolveBiomarkerExplanationTone(theme, row.tone)}`}
+                  >
+                    {row.dotClassName ? <span className={`block h-4 w-4 rounded-full border-2 ${row.dotClassName}`} /> : null}
+                    {row.status}
+                  </span>
+                </td>
+                <td className="px-3 py-2 align-middle text-xs leading-relaxed text-[#6b6257]">{row.meaning}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
@@ -561,16 +639,6 @@ function buildBiometricWeek<T extends { metric_date?: string | null }>(
     });
   }
   return items;
-}
-
-function resolveRestingHeartRateEmptyLabel(
-  status: AppleHealthAuthorizationState,
-  loading: boolean,
-): string {
-  if (loading) return "Syncing…";
-  if (status === "authorized") return "No data";
-  if (status === "denied") return "Denied";
-  return "Allow";
 }
 
 function isDailyCheckInComplete(summary?: PillarTrackerSummaryResponse | null): boolean {
@@ -799,7 +867,7 @@ function GiaMessageIcon() {
   );
 }
 
-function HeartStatusIcon() {
+function BiometricsIcon() {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -811,7 +879,9 @@ function HeartStatusIcon() {
       strokeLinecap="round"
       strokeLinejoin="round"
     >
-      <path d="M12 20s-6.5-4.4-8.6-8C1.5 8.7 3.1 5 6.6 5c2 0 3.2 1 4.1 2.3C11.6 6 12.8 5 14.8 5c3.5 0 5.1 3.7 3.2 7-2.1 3.6-8 8-8 8Z" />
+      <path d="M4 14.5h3l1.8-5 3.1 9 2.1-6h6" />
+      <path d="M7.5 5.5a3.5 3.5 0 0 1 5 0L12 6l-.5-.5a3.5 3.5 0 0 1 5 0c1.4 1.4 1.4 3.6 0 5L12 15l-4.5-4.5a3.5 3.5 0 0 1 0-5Z" />
+      <path d="M18.5 17.5a2.5 2.5 0 0 0-5 0c0 1.9 2.5 4 2.5 4s2.5-2.1 2.5-4Z" />
     </svg>
   );
 }
@@ -1008,12 +1078,7 @@ export default function LatestAssessmentPanel({
       null,
     [resolvedLatestStepsMetricDate, stepsHistory],
   );
-  const restingHeartRateChipVisible = Boolean(restingHeartRate?.available) || appleHealthSupported;
   const restingHeartRateBoxToneClassName = resolveRestingHeartRateBoxTone(displayTheme);
-  const restingHeartRateMetricToneClassName = resolveRestingHeartRateMetricTone(
-    displayTheme,
-    restingHeartRate?.trend_status,
-  );
   const urineMarkers = useMemo(
     () => normalizeUrineMarkers(urineTest?.markers),
     [urineTest?.markers],
@@ -1056,42 +1121,217 @@ export default function LatestAssessmentPanel({
   const stepsExplanationResult = latestStepsValue
     ? `Latest result: ${latestStepsValue} steps, currently shown as ${resolveStepsStatusDescription(latestStepsStatus)}. Steps are a movement-volume marker; they help show whether the day included enough basic activity, independent of formal training.`
     : "Latest result: no recent step count is available yet. Once steps sync, this section shows your daily movement volume.";
+  const urineStatusSummary = urineMarkers
+    .map((marker) => `${marker.label}: ${formatUrineExplanationStatusLabel(marker)}`)
+    .join("; ");
   const urineExplanationResult = urineTest?.available
-    ? `Latest result: ${urineMarkers.map((marker) => `${marker.label}: ${formatUrineStatusLabel(marker)}`).join("; ")}. These are urine-strip screening markers, not diagnoses. Press Test to take or retake a sample.`
+    ? `Latest result: ${urineStatusSummary}. Use this as a quick screening and trend check; if a result looks unexpected, retake the strip in good light at the 60-second point.`
     : "Latest result: no urine test has been completed yet. Press Test to take a sample and populate these markers.";
+  const rhrExplanationScaleRows: BiomarkerExplanationScaleRow[] = [
+    {
+      marker: "Resting HR",
+      status: "Optimum",
+      tone: "purple",
+      meaning: "Lower than your recent pattern, which usually suggests recovery/load is moving in the right direction.",
+    },
+    {
+      marker: "Resting HR",
+      status: "Normal",
+      tone: "green",
+      meaning: "Broadly in your expected recent range.",
+    },
+    {
+      marker: "Resting HR",
+      status: "Elevated",
+      tone: "amber",
+      meaning: "Higher than usual; consider sleep, stress, hydration, illness, alcohol, or training load.",
+    },
+  ];
+  const stepsExplanationScaleRows: BiomarkerExplanationScaleRow[] = [
+    {
+      marker: "Steps",
+      status: "Optimal",
+      tone: "purple",
+      meaning: "10,000+ steps; strong daily movement volume.",
+    },
+    {
+      marker: "Steps",
+      status: "Strong",
+      tone: "green",
+      meaning: "7,500-9,999 steps; a solid active day.",
+    },
+    {
+      marker: "Steps",
+      status: "Base",
+      tone: "amber",
+      meaning: "5,000-7,499 steps; enough to show movement, but still a lower activity day.",
+    },
+    {
+      marker: "Steps",
+      status: "Below",
+      tone: "neutral",
+      meaning: "Below 5,000 steps; useful context for energy, recovery, and routine rather than a score by itself.",
+    },
+  ];
+  const urineExplanationScaleRows: BiomarkerExplanationScaleRow[] = [
+    {
+      marker: "Hydration",
+      status: "Well",
+      tone: "purple",
+      dotClassName: urineStatusDot(displayTheme, "concentration", "well"),
+      meaning: "Dilute urine, usually consistent with good recent fluid intake.",
+    },
+    {
+      marker: "Hydration",
+      status: "OK",
+      tone: "green",
+      dotClassName: urineStatusDot(displayTheme, "concentration", "ok"),
+      meaning: "Typical urine concentration; hydration looks acceptable.",
+    },
+    {
+      marker: "Hydration",
+      status: "Low",
+      tone: "amber",
+      dotClassName: urineStatusDot(displayTheme, "concentration", "low"),
+      meaning: "More concentrated urine; often suggests lower fluid intake or higher fluid loss.",
+    },
+    {
+      marker: "UTI Signs",
+      status: "Clear",
+      tone: "green",
+      dotClassName: urineStatusDot(displayTheme, "uti", "clear"),
+      meaning: "No leukocyte/nitrite signal detected on the strip.",
+    },
+    {
+      marker: "UTI Signs",
+      status: "Watch",
+      tone: "amber",
+      dotClassName: urineStatusDot(displayTheme, "uti", "watch"),
+      meaning: "A small leukocyte-type signal; retest and consider symptoms such as burning, urgency, or frequency.",
+    },
+    {
+      marker: "UTI Signs",
+      status: "Flagged",
+      tone: "red",
+      dotClassName: urineStatusDot(displayTheme, "uti", "flagged"),
+      meaning: "Nitrite or stronger leukocyte signal; more relevant if symptoms are present or if repeated.",
+    },
+    {
+      marker: "Protein",
+      status: "Clear",
+      tone: "green",
+      dotClassName: urineStatusDot(displayTheme, "protein", "clear"),
+      meaning: "No protein signal detected.",
+    },
+    {
+      marker: "Protein",
+      status: "Trace",
+      tone: "amber",
+      dotClassName: urineStatusDot(displayTheme, "protein", "trace"),
+      meaning: "Small protein signal; can be temporary after exercise, dehydration, or illness.",
+    },
+    {
+      marker: "Protein",
+      status: "Flagged",
+      tone: "red",
+      dotClassName: urineStatusDot(displayTheme, "protein", "flagged"),
+      meaning: "Protein signal present; more important if it repeats across tests.",
+    },
+    {
+      marker: "Blood",
+      status: "Clear",
+      tone: "green",
+      dotClassName: urineStatusDot(displayTheme, "blood", "clear"),
+      meaning: "No blood signal detected.",
+    },
+    {
+      marker: "Blood",
+      status: "Trace",
+      tone: "amber",
+      dotClassName: urineStatusDot(displayTheme, "blood", "trace"),
+      meaning: "Small blood signal; can be affected by exercise, contamination, or timing.",
+    },
+    {
+      marker: "Blood",
+      status: "Flagged",
+      tone: "red",
+      dotClassName: urineStatusDot(displayTheme, "blood", "flagged"),
+      meaning: "Blood signal present; repeat and consider symptoms or persistence.",
+    },
+    {
+      marker: "Glucose",
+      status: "Clear",
+      tone: "green",
+      dotClassName: urineStatusDot(displayTheme, "glucose", "clear"),
+      meaning: "No glucose signal detected.",
+    },
+    {
+      marker: "Glucose",
+      status: "Raised",
+      tone: "red",
+      dotClassName: urineStatusDot(displayTheme, "glucose", "raised"),
+      meaning: "Glucose detected in urine; retest and consider recent food, diabetes risk, or symptoms.",
+    },
+    {
+      marker: "Ketones",
+      status: "Clear",
+      tone: ketogenicDietActive ? "amber" : "green",
+      dotClassName: urineStatusDot(displayTheme, "ketones", "clear", { ketogenicDietActive }),
+      meaning: ketogenicDietActive
+        ? "No ketone signal; less expected if actively following a keto/low-carb objective."
+        : "No ketone signal detected.",
+    },
+    {
+      marker: "Ketones",
+      status: "Trace",
+      tone: ketogenicDietActive ? "green" : "amber",
+      dotClassName: urineStatusDot(displayTheme, "ketones", "trace", { ketogenicDietActive }),
+      meaning: ketogenicDietActive
+        ? "Small ketone signal, consistent with a keto/low-carb objective."
+        : "Small ketone signal; can appear with fasting, low intake, heavy exercise, or illness.",
+    },
+    {
+      marker: "Ketones",
+      status: "Raised",
+      tone: ketogenicDietActive ? "purple" : "red",
+      dotClassName: urineStatusDot(displayTheme, "ketones", "raised", { ketogenicDietActive }),
+      meaning: ketogenicDietActive
+        ? "Higher ketone signal can fit a keto/low-carb objective; if glucose is also raised, HealthSense shows this as red."
+        : "Higher ketone signal; more important when unexpected, repeated, or paired with raised glucose.",
+    },
+    {
+      marker: "Ketones + glucose",
+      status: "Flagged",
+      tone: "red",
+      dotClassName: urineStatusDot(displayTheme, "ketones", "raised", {
+        glucoseRaised: true,
+        ketogenicDietActive,
+      }),
+      meaning: "Raised glucose with trace or raised ketones is shown as red because the combination needs more attention than ketones alone.",
+    },
+  ];
   const activeBiomarkerExplanationDetail =
     activeBiomarkerExplanation === "rhr"
       ? {
           title: "Resting HR",
+          description: "Resting HR is your heart rate at rest. HealthSense compares it with your recent pattern rather than using one fixed target.",
           result: rhrExplanationResult,
-          scale: [
-            "Purple optimum: trending better than your recent Resting HR pattern.",
-            "Green normal: broadly in your expected recent range.",
-            "Amber elevated: higher than expected; consider recovery, sleep, hydration, illness, alcohol, or training load.",
-          ],
+          scaleRows: rhrExplanationScaleRows,
         }
       : activeBiomarkerExplanation === "steps"
         ? {
             title: "Steps",
+            description: "Steps show daily movement volume. They do not replace training quality, but they are useful context for activity, energy, and routine.",
             result: stepsExplanationResult,
-            scale: [
-              "Purple optimal: 10,000+ steps.",
-              "Green strong: 7,500-9,999 steps.",
-              "Amber base: 5,000-7,499 steps; below 5,000 is below base.",
-            ],
+            scaleRows: stepsExplanationScaleRows,
           }
         : activeBiomarkerExplanation === "urine"
           ? {
               title: "Urine",
+              description:
+                "Urine uses the strip photo to group six dipstick readings into practical HealthSense markers. Hydration comes from specific gravity; UTI Signs combines leukocytes and nitrite; protein, blood, glucose, and ketones are screening signals that make most sense with context and repeat tests.",
               result: urineExplanationResult,
-              scale: [
-                "Hydration: Well is purple, OK is green, Low is amber.",
-                "UTI, Protein, Blood, and Glucose: clear is green, watch/trace is amber, flagged/raised is red.",
-                ketogenicDietActive
-                  ? "Ketones with keto/low-carb on: clear is amber, trace is green, raised is purple unless glucose is raised."
-                  : "Ketones with keto/low-carb off: clear is green, trace is amber, raised is red.",
-                "If glucose is raised with trace or raised ketones, ketones show red as a safety flag.",
-              ],
+              scaleRows: urineExplanationScaleRows,
             }
           : null;
 
@@ -1178,23 +1418,25 @@ export default function LatestAssessmentPanel({
     [appleHealthSupported, loadRestingHeartRate, userId],
   );
 
-  const handleRestingHeartRatePress = useCallback(async () => {
-    if (restingHeartRateValue) {
-      setBiometricsModalOpen(true);
-      return;
+  const handleReviewBiometricsPress = useCallback(() => {
+    setActiveBiomarkerExplanation(null);
+    setUrineTestFlowOpen(false);
+    setBiometricsModalOpen(true);
+    if (
+      appleHealthSupported &&
+      !restingHeartRateValue &&
+      !restingHeartRateLoading &&
+      !restingHeartRateEnabling &&
+      appleHealthAuthStatus !== "denied"
+    ) {
+      void syncNativeRestingHeartRate(appleHealthAuthStatus !== "authorized");
     }
-    if (!appleHealthSupported || restingHeartRateLoading || restingHeartRateEnabling) return;
-    if (appleHealthAuthStatus === "denied") {
-      await openAppleHealthSettings();
-      return;
-    }
-    await syncNativeRestingHeartRate(appleHealthAuthStatus !== "authorized");
   }, [
     appleHealthAuthStatus,
     appleHealthSupported,
-    restingHeartRateValue,
     restingHeartRateEnabling,
     restingHeartRateLoading,
+    restingHeartRateValue,
     syncNativeRestingHeartRate,
   ]);
 
@@ -1835,41 +2077,7 @@ export default function LatestAssessmentPanel({
           ref={summaryPanelRef}
           className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-5 sm:py-6"
         >
-          <div className="mb-4 flex items-start justify-between gap-3">
-            <div className="flex min-h-[3.5rem] flex-wrap items-start gap-2">
-              {restingHeartRateChipVisible ? (
-                appleHealthSupported || restingHeartRateValue ? (
-                  <button
-                    type="button"
-                    onClick={() => void handleRestingHeartRatePress()}
-                    disabled={Boolean(!restingHeartRateValue && (restingHeartRateLoading || restingHeartRateEnabling))}
-                    className={`min-w-[6.75rem] rounded-[22px] border px-3 py-2 text-left shadow-[0_16px_30px_-24px_rgba(30,27,22,0.45)] transition disabled:cursor-not-allowed disabled:opacity-70 ${restingHeartRateBoxToneClassName}`}
-                  >
-                    <p className="text-[0.62rem] font-semibold uppercase tracking-[0.18em] opacity-80">
-                      Resting HR
-                    </p>
-                    {restingHeartRateValue ? (
-                      <div className="mt-1 flex items-center gap-2">
-                        <HeartStatusIcon />
-                        <span className={`text-xl font-semibold leading-none ${restingHeartRateMetricToneClassName}`}>
-                          {restingHeartRateValue}
-                        </span>
-                        <span className={`text-[0.78rem] font-semibold ${restingHeartRateMetricToneClassName}`}>
-                          {resolveRestingHeartRateTrendLabel(restingHeartRate?.trend_label)}
-                        </span>
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-sm font-semibold">
-                        {resolveRestingHeartRateEmptyLabel(
-                          appleHealthAuthStatus,
-                          restingHeartRateLoading || restingHeartRateEnabling,
-                        )}
-                      </p>
-                    )}
-                  </button>
-                ) : null
-              ) : null}
-            </div>
+          <div className="mb-4 flex justify-end">
             <button
               type="button"
               onClick={() => void toggleDisplayTheme()}
@@ -1919,6 +2127,16 @@ export default function LatestAssessmentPanel({
             </div>
           </div>
           <div className="mt-5 space-y-3">
+            <button
+              type="button"
+              onClick={handleReviewBiometricsPress}
+              className="flex min-h-[6.25rem] w-full flex-col items-start justify-center rounded-[28px] border border-[#d9cdbb] bg-white px-5 py-4 text-left shadow-[0_24px_40px_-36px_rgba(30,27,22,0.4)]"
+            >
+              <div className="flex items-center gap-3">
+                <BiometricsIcon />
+                <span className="text-base font-semibold text-[#1e1b16]">Review biometrics</span>
+              </div>
+            </button>
             <button
               type="button"
               onClick={() => openDailyMenuSurface("habits")}
@@ -1998,9 +2216,11 @@ export default function LatestAssessmentPanel({
                   <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
                     <BiomarkerExplanationCard
                       className=""
+                      description={activeBiomarkerExplanationDetail.description}
                       title={activeBiomarkerExplanationDetail.title}
                       result={activeBiomarkerExplanationDetail.result}
-                      scale={activeBiomarkerExplanationDetail.scale}
+                      scaleRows={activeBiomarkerExplanationDetail.scaleRows}
+                      theme={displayTheme}
                     />
                   </div>
                 ) : urineTestFlowOpen ? (
