@@ -19,13 +19,13 @@ URINE_TEST_DEFAULT_MIN_ANALYSIS_CONFIDENCE = 0.45
 URINE_MARKER_DEFINITIONS: tuple[dict[str, Any], ...] = (
     {
         "key": "concentration",
-        "label": "Concentration",
+        "label": "Hydration",
         "source_analytes": ["specific_gravity"],
-        "status_options": ["dilute", "balanced", "concentrated"],
+        "status_options": ["well", "ok", "low"],
     },
     {
         "key": "uti",
-        "label": "UTI",
+        "label": "UTI Signs",
         "source_analytes": ["leukocytes", "nitrite"],
         "status_options": ["clear", "watch", "flagged"],
     },
@@ -59,9 +59,9 @@ URINE_ANALYTE_REFERENCE: dict[str, dict[str, Any]] = {
     "specific_gravity": {
         "marker_key": "concentration",
         "healthsense_status_map": {
-            "1.000-1.005": "dilute",
-            "1.010-1.025": "balanced",
-            "1.030+": "concentrated",
+            "1.000-1.005": "well",
+            "1.010-1.025": "ok",
+            "1.030+": "low",
         },
         "visual_reference": "low values trend blue/blue-green; mid values trend green/yellow-green; high values trend yellow/orange.",
     },
@@ -316,12 +316,12 @@ def _normalize_status(marker_key: str, raw_status: Any) -> str:
     if status in {"review", "needs_review", "uncertain", "unknown", "cannot_read", "not_visible"}:
         return "review"
     if key == "concentration":
-        if status in {"dilute", "low", "very_low", "overhydrated"}:
-            return "dilute"
-        if status in {"balanced", "normal", "clear", "ok", "hydrated", "well_hydrated", "in_range"}:
-            return "balanced"
-        if status in {"concentrated", "high", "very_high", "dehydrated"}:
-            return "concentrated"
+        if status in {"well", "dilute", "very_dilute", "very_low", "overhydrated", "well_hydrated"}:
+            return "well"
+        if status in {"ok", "balanced", "normal", "clear", "hydrated", "in_range"}:
+            return "ok"
+        if status in {"low", "concentrated", "high", "very_high", "dehydrated", "underhydrated"}:
+            return "low"
     if key == "uti":
         if status in {"clear", "negative", "neg", "none", "normal", "ok"}:
             return "clear"
@@ -354,8 +354,8 @@ def _normalize_status(marker_key: str, raw_status: Any) -> str:
         return status
     if status == "review":
         return "review"
-    if key == "concentration" and status in {"clear", "normal", "ok"}:
-        return "balanced"
+    if key == "concentration" and status in {"clear", "normal", "balanced"}:
+        return "ok"
     if key in {"glucose", "ketones"} and status == "flagged":
         return "raised"
     if key in {"protein", "blood"} and status == "raised":
@@ -380,10 +380,10 @@ def _derive_marker_status_from_analytes(marker_key: str, raw_analytes: dict[str,
         try:
             value = float(re.sub(r"[^0-9.]+", "", token))
             if value <= 1.005:
-                return "dilute"
+                return "well"
             if value <= 1.025:
-                return "balanced"
-            return "concentrated"
+                return "ok"
+            return "low"
         except Exception:
             return _normalize_status("concentration", token) if token else None
     if key == "uti":
@@ -411,11 +411,11 @@ def _derive_marker_status_from_analytes(marker_key: str, raw_analytes: dict[str,
 
 def _marker_tone(status: str) -> str:
     normalized = str(status or "").strip().lower()
-    if normalized in {"clear", "balanced"}:
+    if normalized in {"clear", "ok", "well"}:
         return "success"
     if normalized in {"flagged", "raised"}:
         return "danger"
-    if normalized in {"watch", "trace", "dilute", "concentrated", "queued", "review"}:
+    if normalized in {"watch", "trace", "low", "queued", "review"}:
         return "warning"
     return "neutral"
 
@@ -574,7 +574,7 @@ def analyse_urine_test_photo(image_data_url: str) -> dict[str, Any]:
         "No external colour chart is required; use this embedded HealthSense reference map:\n"
         f"{reference_json}\n\n"
         "Use this HealthSense output mapping only:\n"
-        "- concentration from specific gravity: dilute, balanced, concentrated\n"
+        "- hydration from specific gravity: well, ok, low\n"
         "- uti from leukocytes + nitrite: clear, watch, flagged\n"
         "- protein: clear, trace, flagged\n"
         "- blood: clear, trace, flagged\n"

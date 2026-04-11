@@ -38,6 +38,7 @@ type MorningSequenceState = "idle" | "in_progress" | "completed";
 type DisplayTheme = "light" | "dark";
 type ObjectivesSectionKey = "nutrition" | "training" | "resilience" | "recovery" | "wellbeing";
 type UrineCaptureState = "ready" | "timing" | "saving" | "queued" | "analysed" | "review" | "error";
+type BiomarkerExplanationKey = "rhr" | "steps" | "urine";
 
 const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
 const HEALTHSENSE_ORANGE = "#c54817";
@@ -45,8 +46,8 @@ const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
 const URINE_CAPTURE_TIMER_SECONDS = 60;
 const URINE_TEST_MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 const URINE_SCREENING_MARKERS = [
-  { key: "concentration", label: "Concentration" },
-  { key: "uti", label: "UTI" },
+  { key: "concentration", label: "Hydration" },
+  { key: "uti", label: "UTI Signs" },
   { key: "protein", label: "Protein" },
   { key: "blood", label: "Blood" },
   { key: "glucose", label: "Glucose" },
@@ -145,6 +146,19 @@ function resolveCompactStepsStatusLabel(status: StepsStatus): string {
   return "";
 }
 
+function resolveStepsStatusDescription(status: StepsStatus): string {
+  if (status === "optimal") return "optimal";
+  if (status === "strong") return "strong";
+  if (status === "base") return "base";
+  return "below base";
+}
+
+function formatFullStepCount(value?: number | null): string | null {
+  const resolved = Number(value);
+  if (!Number.isFinite(resolved) || resolved < 0) return null;
+  return Math.round(resolved).toLocaleString("en-GB");
+}
+
 function resolveUrineCaptureTone(theme: DisplayTheme, state: UrineCaptureState): string {
   if (state === "analysed") {
     return theme === "dark"
@@ -204,9 +218,76 @@ function normalizeUrineMarkers(markers?: UrineTestMarker[] | null): UrineTestMar
   });
 }
 
-function resolveUrineMarkerTone(theme: DisplayTheme, marker: UrineTestMarker): string {
+function resolveUrineMarkerTone(
+  theme: DisplayTheme,
+  marker: UrineTestMarker,
+  context?: { glucoseRaised?: boolean; ketogenicDietActive?: boolean },
+): string {
+  const markerKey = String(marker?.key || "").trim().toLowerCase();
   const status = String(marker?.status_label || marker?.status || "").trim().toLowerCase();
-  if (status === "clear" || status === "balanced") {
+  const glucoseRaised = Boolean(context?.glucoseRaised);
+  const ketogenicDietActive = Boolean(context?.ketogenicDietActive);
+  if (markerKey === "concentration" && status === "well") {
+    return theme === "dark"
+      ? "border-[#57447a] bg-[#251f32] text-[#d8c9ff]"
+      : "border-[#d8cbff] bg-[#f4efff] text-[#6b4cc2]";
+  }
+  if (markerKey === "concentration" && status === "ok") {
+    return theme === "dark"
+      ? "border-[#405b35] bg-[#1f2b1d] text-[#d9f0c5]"
+      : "border-[#d5e8bf] bg-[#f2fae8] text-[#335f16]";
+  }
+  if (markerKey === "concentration" && status === "low") {
+    return theme === "dark"
+      ? "border-[#5f4938] bg-[#2d241c] text-[#ffd3ad]"
+      : "border-[#f2dccb] bg-[#fff4ea] text-[#8a5a1a]";
+  }
+  if (markerKey === "uti" && status === "clear") {
+    return theme === "dark"
+      ? "border-[#405b35] bg-[#1f2b1d] text-[#d9f0c5]"
+      : "border-[#d5e8bf] bg-[#f2fae8] text-[#335f16]";
+  }
+  if (markerKey === "uti" && status === "watch") {
+    return theme === "dark"
+      ? "border-[#5f4938] bg-[#2d241c] text-[#ffd3ad]"
+      : "border-[#f2dccb] bg-[#fff4ea] text-[#8a5a1a]";
+  }
+  if (markerKey === "uti" && status === "flagged") {
+    return theme === "dark"
+      ? "border-[#674033] bg-[#2c1d1a] text-[#ffb7a1]"
+      : "border-[#efc4b6] bg-[#fff0eb] text-[#9b3218]";
+  }
+  if (markerKey === "glucose" && status === "clear") {
+    return theme === "dark"
+      ? "border-[#405b35] bg-[#1f2b1d] text-[#d9f0c5]"
+      : "border-[#d5e8bf] bg-[#f2fae8] text-[#335f16]";
+  }
+  if (markerKey === "glucose" && status === "raised") {
+    return theme === "dark"
+      ? "border-[#674033] bg-[#2c1d1a] text-[#ffb7a1]"
+      : "border-[#efc4b6] bg-[#fff0eb] text-[#9b3218]";
+  }
+  if (markerKey === "ketones" && glucoseRaised && (status === "trace" || status === "raised")) {
+    return theme === "dark"
+      ? "border-[#674033] bg-[#2c1d1a] text-[#ffb7a1]"
+      : "border-[#efc4b6] bg-[#fff0eb] text-[#9b3218]";
+  }
+  if (markerKey === "ketones" && ketogenicDietActive && status === "clear") {
+    return theme === "dark"
+      ? "border-[#5f4938] bg-[#2d241c] text-[#ffd3ad]"
+      : "border-[#f2dccb] bg-[#fff4ea] text-[#8a5a1a]";
+  }
+  if (markerKey === "ketones" && ketogenicDietActive && status === "trace") {
+    return theme === "dark"
+      ? "border-[#405b35] bg-[#1f2b1d] text-[#d9f0c5]"
+      : "border-[#d5e8bf] bg-[#f2fae8] text-[#335f16]";
+  }
+  if (markerKey === "ketones" && ketogenicDietActive && status === "raised") {
+    return theme === "dark"
+      ? "border-[#57447a] bg-[#251f32] text-[#d8c9ff]"
+      : "border-[#d8cbff] bg-[#f4efff] text-[#6b4cc2]";
+  }
+  if (status === "clear" || status === "ok" || status === "well") {
     return theme === "dark"
       ? "border-[#405b35] bg-[#1f2b1d] text-[#d9f0c5]"
       : "border-[#d5e8bf] bg-[#f2fae8] text-[#335f16]";
@@ -216,7 +297,7 @@ function resolveUrineMarkerTone(theme: DisplayTheme, marker: UrineTestMarker): s
       ? "border-[#674033] bg-[#2c1d1a] text-[#ffb7a1]"
       : "border-[#efc4b6] bg-[#fff0eb] text-[#9b3218]";
   }
-  if (status === "watch" || status === "trace" || status === "raised" || status === "dilute" || status === "concentrated" || status === "queued" || status === "review") {
+  if (status === "watch" || status === "trace" || status === "raised" || status === "low" || status === "queued" || status === "review") {
     return theme === "dark"
       ? "border-[#5f4938] bg-[#2d241c] text-[#ffd3ad]"
       : "border-[#f2dccb] bg-[#fff4ea] text-[#8a5a1a]";
@@ -234,17 +315,17 @@ function formatUrineStatusLabel(marker: UrineTestMarker): string {
 function formatUrineStatusAbbreviation(marker: UrineTestMarker): string {
   const label = formatUrineStatusLabel(marker);
   const abbreviations: Record<string, string> = {
-    balanced: "bal",
     clear: "clr",
-    concentrated: "conc",
-    dilute: "dil",
     flagged: "flag",
+    low: "low",
+    ok: "ok",
     queued: "wait",
     raised: "high",
     ready: "—",
     review: "rev",
     trace: "trc",
     watch: "wch",
+    well: "well",
   };
   return abbreviations[label] || label.slice(0, 4) || "—";
 }
@@ -260,15 +341,58 @@ function formatUrineTestDayMonth(urineTest?: UrineTestResponse | null): { day: s
   };
 }
 
-function resolveUrineStatusDotTone(theme: DisplayTheme, marker: UrineTestMarker): string {
+function resolveUrineStatusDotTone(
+  theme: DisplayTheme,
+  marker: UrineTestMarker,
+  context?: { glucoseRaised?: boolean; ketogenicDietActive?: boolean },
+): string {
+  const markerKey = String(marker?.key || "").trim().toLowerCase();
   const status = formatUrineStatusLabel(marker);
-  if (status === "clear" || status === "balanced") {
+  const glucoseRaised = Boolean(context?.glucoseRaised);
+  const ketogenicDietActive = Boolean(context?.ketogenicDietActive);
+  if (markerKey === "concentration" && status === "well") {
+    return theme === "dark" ? "border-[#d8c9ff] bg-[#8d72df]" : "border-[#7c62cf] bg-[#6b4cc2]";
+  }
+  if (markerKey === "concentration" && status === "ok") {
+    return theme === "dark" ? "border-[#6e8c55] bg-[#d9f0c5]" : "border-[#8db66b] bg-[#69a23a]";
+  }
+  if (markerKey === "concentration" && status === "low") {
+    return theme === "dark" ? "border-[#ffd3ad] bg-[#e8a867]" : "border-[#d9a25f] bg-[#f0b35f]";
+  }
+  if (markerKey === "uti" && status === "clear") {
+    return theme === "dark" ? "border-[#6e8c55] bg-[#d9f0c5]" : "border-[#8db66b] bg-[#69a23a]";
+  }
+  if (markerKey === "uti" && status === "watch") {
+    return theme === "dark" ? "border-[#ffd3ad] bg-[#e8a867]" : "border-[#d9a25f] bg-[#f0b35f]";
+  }
+  if (markerKey === "uti" && status === "flagged") {
+    return theme === "dark" ? "border-[#ffb7a1] bg-[#ef6d4c]" : "border-[#d66a48] bg-[#c54817]";
+  }
+  if (markerKey === "glucose" && status === "clear") {
+    return theme === "dark" ? "border-[#6e8c55] bg-[#d9f0c5]" : "border-[#8db66b] bg-[#69a23a]";
+  }
+  if (markerKey === "glucose" && status === "raised") {
+    return theme === "dark" ? "border-[#ffb7a1] bg-[#ef6d4c]" : "border-[#d66a48] bg-[#c54817]";
+  }
+  if (markerKey === "ketones" && glucoseRaised && (status === "trace" || status === "raised")) {
+    return theme === "dark" ? "border-[#ffb7a1] bg-[#ef6d4c]" : "border-[#d66a48] bg-[#c54817]";
+  }
+  if (markerKey === "ketones" && ketogenicDietActive && status === "clear") {
+    return theme === "dark" ? "border-[#ffd3ad] bg-[#e8a867]" : "border-[#d9a25f] bg-[#f0b35f]";
+  }
+  if (markerKey === "ketones" && ketogenicDietActive && status === "trace") {
+    return theme === "dark" ? "border-[#6e8c55] bg-[#d9f0c5]" : "border-[#8db66b] bg-[#69a23a]";
+  }
+  if (markerKey === "ketones" && ketogenicDietActive && status === "raised") {
+    return theme === "dark" ? "border-[#d8c9ff] bg-[#8d72df]" : "border-[#7c62cf] bg-[#6b4cc2]";
+  }
+  if (status === "clear" || status === "ok" || status === "well") {
     return theme === "dark" ? "border-[#6e8c55] bg-[#d9f0c5]" : "border-[#8db66b] bg-[#69a23a]";
   }
   if (status === "flagged" || status === "raised") {
     return theme === "dark" ? "border-[#ffb7a1] bg-[#ef6d4c]" : "border-[#d66a48] bg-[#c54817]";
   }
-  if (status === "watch" || status === "trace" || status === "dilute" || status === "concentrated" || status === "review") {
+  if (status === "watch" || status === "trace" || status === "low" || status === "review") {
     return theme === "dark" ? "border-[#ffd3ad] bg-[#e8a867]" : "border-[#d9a25f] bg-[#f0b35f]";
   }
   return theme === "dark" ? "border-[var(--border)] bg-[#6b6257]" : "border-[#d9cdbb] bg-[#d8d0c5]";
@@ -282,6 +406,30 @@ function resolveUrineResultMessage(urineTest?: UrineTestResponse | null): string
   if (firstNote) return firstNote;
   const screeningNote = String(payload.screening_note || "").trim();
   return screeningNote || null;
+}
+
+function BiomarkerExplanationCard({
+  result,
+  scale,
+  title,
+}: {
+  result: string;
+  scale: string[];
+  title: string;
+}) {
+  return (
+    <div className="mt-4 rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3 text-sm text-[#5d5348]">
+      <p className="font-semibold text-[#1e1b16]">{title}</p>
+      <p className="mt-2">{result}</p>
+      <div className="mt-3 space-y-1">
+        {scale.map((item) => (
+          <p key={item} className="text-xs leading-relaxed text-[#6b6257]">
+            {item}
+          </p>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function formatIsoLocalDay(value: Date): string {
@@ -619,6 +767,7 @@ export default function LatestAssessmentPanel({
   const [restingHeartRate, setRestingHeartRate] = useState<AppleHealthRestingHeartRateResponse | null>(null);
   const [biometricsModalOpen, setBiometricsModalOpen] = useState(false);
   const [urineTestFlowOpen, setUrineTestFlowOpen] = useState(false);
+  const [activeBiomarkerExplanation, setActiveBiomarkerExplanation] = useState<BiomarkerExplanationKey | null>(null);
   const [restingHeartRateLoading, setRestingHeartRateLoading] = useState(false);
   const [restingHeartRateEnabling, setRestingHeartRateEnabling] = useState(false);
   const [appleHealthAuthStatus, setAppleHealthAuthStatus] = useState<AppleHealthAuthorizationState>("unsupported");
@@ -717,6 +866,15 @@ export default function LatestAssessmentPanel({
     () => (Array.isArray(weeklyObjectives?.wellbeing?.items) ? weeklyObjectives.wellbeing.items : []),
     [weeklyObjectives],
   );
+  const ketogenicDietActive = useMemo(
+    () =>
+      wellbeingObjectiveItems.some(
+        (item) =>
+          String(item?.key || "").trim().toLowerCase() === "ketogenic_diet" &&
+          String(item?.value || "").trim().toLowerCase() === "on",
+      ),
+    [wellbeingObjectiveItems],
+  );
   const appleHealthSupported = canUseAppleHealth();
   const restingHeartRateValue = resolveRestingHeartRateValue(restingHeartRate?.resting_hr_bpm);
   const latestStepsMetricDate = String(restingHeartRate?.steps_metric_date || "").trim();
@@ -757,6 +915,16 @@ export default function LatestAssessmentPanel({
     () => buildBiometricWeek(stepsHistory, resolvedLatestStepsMetricDate),
     [resolvedLatestStepsMetricDate, stepsHistory],
   );
+  const latestStepsItem = useMemo(
+    () =>
+      stepsHistory.find(
+        (item) => String(item?.metric_date || "").trim() === resolvedLatestStepsMetricDate,
+      ) ||
+      [...stepsHistory]
+        .sort((left, right) => String(right?.metric_date || "").localeCompare(String(left?.metric_date || "")))[0] ||
+      null,
+    [resolvedLatestStepsMetricDate, stepsHistory],
+  );
   const restingHeartRateChipVisible = Boolean(restingHeartRate?.available) || appleHealthSupported;
   const restingHeartRateBoxToneClassName = resolveRestingHeartRateBoxTone(displayTheme);
   const restingHeartRateMetricToneClassName = resolveRestingHeartRateMetricTone(
@@ -767,7 +935,17 @@ export default function LatestAssessmentPanel({
     () => normalizeUrineMarkers(urineTest?.markers),
     [urineTest?.markers],
   );
+  const urineGlucoseRaised = useMemo(
+    () =>
+      urineMarkers.some(
+        (marker) =>
+          String(marker?.key || "").trim().toLowerCase() === "glucose" &&
+          formatUrineStatusLabel(marker) === "raised",
+      ),
+    [urineMarkers],
+  );
   const urineTestDayMonth = useMemo(() => formatUrineTestDayMonth(urineTest), [urineTest]);
+  const urineTestHeadingDate = `${urineTestDayMonth.day}${urineTestDayMonth.month ? ` ${urineTestDayMonth.month}` : ""}`;
   const urineResultMessage = useMemo(() => resolveUrineResultMessage(urineTest), [urineTest]);
   const urineTestStatus = String(urineTest?.status || "").trim().toLowerCase();
   let urineCaptureState: UrineCaptureState = "ready";
@@ -785,6 +963,19 @@ export default function LatestAssessmentPanel({
     urineCaptureState = "timing";
   }
   const urineCaptureToneClassName = resolveUrineCaptureTone(displayTheme, urineCaptureState);
+  const biomarkerExplanationButtonClassName =
+    "rounded-full border border-[#d9cdbb] bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#5d5348]";
+  const rhrExplanationResult = restingHeartRateValue
+    ? `Latest result: ${restingHeartRateValue} bpm, currently shown as ${resolveRestingHeartRateTrendLabel(restingHeartRate?.trend_label)}. Resting heart rate is a recovery and load signal; lower than your usual range often suggests better recovery, while elevated can reflect stress, illness, poor sleep, dehydration, alcohol, or training load.`
+    : "Latest result: no current resting heart rate is available yet. Once Apple Health syncs a value, this section will compare it with your recent pattern.";
+  const latestStepsValue = formatFullStepCount(latestStepsItem?.steps);
+  const latestStepsStatus = resolveStepsStatus(latestStepsItem?.steps);
+  const stepsExplanationResult = latestStepsValue
+    ? `Latest result: ${latestStepsValue} steps, currently shown as ${resolveStepsStatusDescription(latestStepsStatus)}. Steps are a movement-volume marker; they help show whether the day included enough basic activity, independent of formal training.`
+    : "Latest result: no recent step count is available yet. Once steps sync, this section shows your daily movement volume.";
+  const urineExplanationResult = urineTest?.available
+    ? `Latest result: ${urineMarkers.map((marker) => `${marker.label}: ${formatUrineStatusLabel(marker)}`).join("; ")}. These are urine-strip screening markers, not diagnoses. Press Test to take or retake a sample.`
+    : "Latest result: no urine test has been completed yet. Press Test to take a sample and populate these markers.";
 
   const refreshSummary = useCallback(async () => {
     const res = await fetch(`/api/pillar-tracker/summary?userId=${encodeURIComponent(userId)}`, {
@@ -1190,7 +1381,8 @@ export default function LatestAssessmentPanel({
   useEffect(() => {
     if (!biometricsModalOpen) return;
     void loadLatestUrineTest();
-  }, [biometricsModalOpen, loadLatestUrineTest]);
+    void loadWeeklyObjectives();
+  }, [biometricsModalOpen, loadLatestUrineTest, loadWeeklyObjectives]);
 
   useEffect(() => {
     if (!biometricsModalOpen || !urineCaptureStartedAt) return;
@@ -1761,7 +1953,10 @@ export default function LatestAssessmentPanel({
                     </div>
                     <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
                       {urineMarkers.map((marker) => {
-                        const markerToneClassName = resolveUrineMarkerTone(displayTheme, marker);
+                        const markerToneClassName = resolveUrineMarkerTone(displayTheme, marker, {
+                          glucoseRaised: urineGlucoseRaised,
+                          ketogenicDietActive,
+                        });
                         return (
                           <div
                             key={String(marker.key || marker.label)}
@@ -1797,9 +1992,20 @@ export default function LatestAssessmentPanel({
                     <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-semibold text-[#1e1b16]">Resting heart rate</p>
-                    <p className="text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
-                      Last 7 days
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveBiomarkerExplanation((current) => (current === "rhr" ? null : "rhr"))
+                        }
+                        className={biomarkerExplanationButtonClassName}
+                      >
+                        Explain
+                      </button>
+                      <p className="text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
+                        Last 7 days
+                      </p>
+                    </div>
                   </div>
                   {restingHeartRateHistory.length ? (
                     <div className="mt-4 grid grid-cols-7 gap-2">
@@ -1831,14 +2037,36 @@ export default function LatestAssessmentPanel({
                       Daily history will appear here once recent biometrics have been synced.
                     </p>
                   )}
+                  {activeBiomarkerExplanation === "rhr" ? (
+                    <BiomarkerExplanationCard
+                      title="Resting heart rate"
+                      result={rhrExplanationResult}
+                      scale={[
+                        "Purple optimum: trending better than your recent resting heart-rate pattern.",
+                        "Green normal: broadly in your expected recent range.",
+                        "Amber elevated: higher than expected; consider recovery, sleep, hydration, illness, alcohol, or training load.",
+                      ]}
+                    />
+                  ) : null}
                 </div>
 
                 <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-semibold text-[#1e1b16]">Steps (000s)</p>
-                    <p className="text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
-                      Last 7 days
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveBiomarkerExplanation((current) => (current === "steps" ? null : "steps"))
+                        }
+                        className={biomarkerExplanationButtonClassName}
+                      >
+                        Explain
+                      </button>
+                      <p className="text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
+                        Last 7 days
+                      </p>
+                    </div>
                   </div>
                   {stepsHistory.length ? (
                     <div className="mt-4 grid grid-cols-7 gap-2">
@@ -1869,27 +2097,65 @@ export default function LatestAssessmentPanel({
                       Daily step history will appear here once recent biometrics have been synced.
                     </p>
                   )}
+                  {activeBiomarkerExplanation === "steps" ? (
+                    <BiomarkerExplanationCard
+                      title="Steps"
+                      result={stepsExplanationResult}
+                      scale={[
+                        "Purple optimal: 10,000+ steps.",
+                        "Green strong: 7,500-9,999 steps.",
+                        "Amber base: 5,000-7,499 steps; below 5,000 is below base.",
+                      ]}
+                    />
+                  ) : null}
                 </div>
 
                     <div className="rounded-[24px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4">
                       <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-semibold text-[#1e1b16]">Urine markers</p>
+                        <p className="text-sm font-semibold text-[#1e1b16]">
+                          Urine markers{urineTestHeadingDate !== "—" ? ` (${urineTestHeadingDate})` : ""}
+                        </p>
+                        <div className="ml-auto flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActiveBiomarkerExplanation((current) => (current === "urine" ? null : "urine"))
+                            }
+                            className={biomarkerExplanationButtonClassName}
+                          >
+                            Explain
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setActiveBiomarkerExplanation(null);
+                              setUrineTestFlowOpen(true);
+                            }}
+                            className="rounded-full border border-[#c54817] bg-[#c54817] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
+                          >
+                            Test
+                          </button>
+                        </div>
                       </div>
-                      <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
+                      <div className="mt-4 grid grid-cols-6 gap-2">
                         {urineMarkers.map((marker) => {
-                          const dotToneClassName = resolveUrineStatusDotTone(displayTheme, marker);
-                          const dateLabel = `${urineTestDayMonth.day}${urineTestDayMonth.month ? ` ${urineTestDayMonth.month}` : ""}`;
+                          const dotToneClassName = resolveUrineStatusDotTone(displayTheme, marker, {
+                            glucoseRaised: urineGlucoseRaised,
+                            ketogenicDietActive,
+                          });
                           return (
                             <button
                               key={String(marker.key || marker.label)}
                               type="button"
-                              onClick={() => setUrineTestFlowOpen(true)}
+                              onClick={() => {
+                                setActiveBiomarkerExplanation(null);
+                                setUrineTestFlowOpen(true);
+                              }}
                               className={`rounded-xl border px-2 py-2 text-center text-[11px] transition hover:border-[#dccfbe] ${restingHeartRateBoxToneClassName}`}
                               aria-label={`Open urine sample test for ${String(marker.label || "urine marker")}`}
                             >
                               <p className="truncate font-semibold opacity-80">{marker.label}</p>
-                              <p className="mt-1 opacity-65">{dateLabel}</p>
-                              <span className={`mx-auto mt-3 block h-7 w-7 rounded-full border-2 ${dotToneClassName}`} />
+                              <span className={`mx-auto mt-3 block h-6 w-6 rounded-full border-2 sm:h-7 sm:w-7 ${dotToneClassName}`} />
                               <p className="mt-2 min-h-[0.75rem] text-[10px] font-semibold uppercase tracking-[0.12em]">
                                 {formatUrineStatusAbbreviation(marker)}
                               </p>
@@ -1897,6 +2163,20 @@ export default function LatestAssessmentPanel({
                           );
                         })}
                       </div>
+                      {activeBiomarkerExplanation === "urine" ? (
+                        <BiomarkerExplanationCard
+                          title="Urine markers"
+                          result={urineExplanationResult}
+                          scale={[
+                            "Hydration: well is purple, ok is green, low is amber.",
+                            "UTI Signs, Protein, Blood, and Glucose: clear is green, watch/trace is amber, flagged/raised is red.",
+                            ketogenicDietActive
+                              ? "Ketones with keto/low-carb on: clear is amber, trace is green, raised is purple unless glucose is raised."
+                              : "Ketones with keto/low-carb off: clear is green, trace is amber, raised is red.",
+                            "If glucose is raised with trace or raised ketones, ketones show red as a safety flag.",
+                          ]}
+                        />
+                      ) : null}
                     </div>
                   </>
                 )}
@@ -1907,6 +2187,7 @@ export default function LatestAssessmentPanel({
               <button
                 type="button"
                 onClick={() => {
+                  setActiveBiomarkerExplanation(null);
                   setUrineTestFlowOpen(false);
                   setBiometricsModalOpen(false);
                 }}

@@ -23,6 +23,7 @@ FASTING_MODE_PREF_KEY = "weekly_objectives_fasting_mode"
 FASTING_GOAL_DAYS_PREF_KEY = "weekly_objectives_fasting_goal_days"
 ALCOHOL_TRACKING_PREF_KEY = "weekly_objectives_alcohol_tracking"
 ALCOHOL_GOAL_UNITS_PREF_KEY = "weekly_objectives_alcohol_goal_units"
+KETOGENIC_DIET_PREF_KEY = "weekly_objectives_ketogenic_diet"
 
 FASTING_MODE_OPTIONS: tuple[tuple[str, str], ...] = (
     ("off", "Off"),
@@ -238,6 +239,9 @@ def _wellbeing_payload(user_id: int) -> dict[str, Any]:
         alcohol_tracking = (_pref_value(s, int(user_id), ALCOHOL_TRACKING_PREF_KEY) or "off").lower()
         if alcohol_tracking not in {"on", "off"}:
             alcohol_tracking = "off"
+        ketogenic_diet = (_pref_value(s, int(user_id), KETOGENIC_DIET_PREF_KEY) or "off").lower()
+        if ketogenic_diet not in {"on", "off"}:
+            ketogenic_diet = "off"
     items = [
         {
             "key": "fasting_mode",
@@ -253,12 +257,20 @@ def _wellbeing_payload(user_id: int) -> dict[str, Any]:
             "value": alcohol_tracking,
             "options": [{"value": value, "label": label} for value, label in BOOLEAN_TOGGLE_OPTIONS],
         },
+        {
+            "key": "ketogenic_diet",
+            "label": "Ketogenic / low-carb diet",
+            "helper": "Treats urine ketones as a context-aware wellbeing marker",
+            "value": ketogenic_diet,
+            "options": [{"value": value, "label": label} for value, label in BOOLEAN_TOGGLE_OPTIONS],
+        },
     ]
     configured_count = sum(
         1
         for item in items
         if (item["key"] == "fasting_mode" and item["value"] != "off")
         or (item["key"] == "alcohol_tracking" and item["value"] == "on")
+        or (item["key"] == "ketogenic_diet" and item["value"] == "on")
     )
     return {
         "title": "Wellbeing objectives",
@@ -331,9 +343,13 @@ def save_weekly_objectives_config(
         alcohol_tracking = str(values.get("alcohol_tracking") or "off").strip().lower()
         if alcohol_tracking not in {"on", "off"}:
             raise ValueError("Invalid alcohol tracking value")
+        ketogenic_diet = str(values.get("ketogenic_diet") or "off").strip().lower()
+        if ketogenic_diet not in {"on", "off"}:
+            raise ValueError("Invalid ketogenic diet value")
         with SessionLocal() as s:
             _set_pref_value(s, int(user_id), FASTING_MODE_PREF_KEY, fasting_mode)
             _set_pref_value(s, int(user_id), ALCOHOL_TRACKING_PREF_KEY, alcohol_tracking)
+            _set_pref_value(s, int(user_id), KETOGENIC_DIET_PREF_KEY, ketogenic_diet)
             s.commit()
         return get_weekly_objectives_config(int(user_id))
 
