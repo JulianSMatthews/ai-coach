@@ -20,6 +20,7 @@ import {
   syncAppleHealthRestingHeartRate,
   type AppleHealthAuthorizationState,
 } from "@/lib/appleHealth";
+import { Capacitor } from "@capacitor/core";
 import { applyThemePreference, readStoredThemePreference } from "@/lib/theme";
 import { getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
@@ -163,19 +164,6 @@ function resolveUrineCaptureTone(theme: DisplayTheme, state: UrineCaptureState):
   return theme === "dark"
     ? "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]"
     : "border-[#e7e1d6] bg-white text-[#8c7f70]";
-}
-
-function resolveUrineCaptureTextTone(theme: DisplayTheme, state: UrineCaptureState): string {
-  if (state === "analysed") {
-    return theme === "dark" ? "text-[#d9f0c5]" : "text-[#3f7a2a]";
-  }
-  if (state === "error") {
-    return theme === "dark" ? "text-[#ffb7a1]" : "text-[#9b3218]";
-  }
-  if (state === "queued" || state === "timing" || state === "saving" || state === "review") {
-    return theme === "dark" ? "text-[#ffd3ad]" : "text-[#b55d1c]";
-  }
-  return theme === "dark" ? "text-[var(--text-secondary)]" : "text-[#8c7f70]";
 }
 
 function formatCapturedAt(value: Date): string {
@@ -577,6 +565,7 @@ export default function LatestAssessmentPanel({
   const [wellbeingObjectiveDraft, setWellbeingObjectiveDraft] = useState<Record<string, string>>({});
   const [restingHeartRate, setRestingHeartRate] = useState<AppleHealthRestingHeartRateResponse | null>(null);
   const [biometricsModalOpen, setBiometricsModalOpen] = useState(false);
+  const [urineTestFlowOpen, setUrineTestFlowOpen] = useState(false);
   const [restingHeartRateLoading, setRestingHeartRateLoading] = useState(false);
   const [restingHeartRateEnabling, setRestingHeartRateEnabling] = useState(false);
   const [appleHealthAuthStatus, setAppleHealthAuthStatus] = useState<AppleHealthAuthorizationState>("unsupported");
@@ -740,7 +729,6 @@ export default function LatestAssessmentPanel({
     urineCaptureState = "timing";
   }
   const urineCaptureToneClassName = resolveUrineCaptureTone(displayTheme, urineCaptureState);
-  const urineCaptureTextToneClassName = resolveUrineCaptureTextTone(displayTheme, urineCaptureState);
 
   const refreshSummary = useCallback(async () => {
     const res = await fetch(`/api/pillar-tracker/summary?userId=${encodeURIComponent(userId)}`, {
@@ -845,31 +833,31 @@ export default function LatestAssessmentPanel({
     syncNativeRestingHeartRate,
   ]);
 
-  const openUrinePhotoCapture = useCallback(() => {
-    setUrineTestError(null);
-    urinePhotoInputRef.current?.click();
-  }, []);
-
   const startUrineCaptureTimer = useCallback(() => {
     setUrineTestError(null);
     setUrineCaptureStartedAt(Date.now());
     setUrineTimerSecondsLeft(URINE_CAPTURE_TIMER_SECONDS);
   }, []);
 
-  const handleUrinePhotoSelected = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) {
-      event.target.value = "";
-      return;
-    }
+  const submitUrinePhotoCapture = useCallback(async ({
+    capturedAt,
+    fileName,
+    imageDataUrl,
+    mimeType,
+    sizeBytes,
+  }: {
+    capturedAt: Date;
+    fileName: string;
+    imageDataUrl: string;
+    mimeType: string;
+    sizeBytes: number;
+  }) => {
     setUrineTestSaving(true);
     setUrineTestError(null);
     try {
-      if (file.size > URINE_TEST_MAX_PHOTO_BYTES) {
+      if (sizeBytes > URINE_TEST_MAX_PHOTO_BYTES) {
         throw new Error("Photo is too large. Retake or choose a smaller image.");
       }
-      const capturedAt = new Date();
-      const imageDataUrl = await readFileAsDataUrl(file);
       const res = await fetch("/api/urine-tests", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -877,9 +865,9 @@ export default function LatestAssessmentPanel({
           userId,
           capturedAt: capturedAt.toISOString(),
           captureStage: urineCaptureStartedAt ? "timed" : "single",
-          fileName: String(file.name || "urine-sample.jpg").trim() || "urine-sample.jpg",
-          mimeType: String(file.type || "image/jpeg"),
-          sizeBytes: file.size,
+          fileName,
+          mimeType,
+          sizeBytes,
           imageDataUrl,
         }),
       });
@@ -889,7 +877,7 @@ export default function LatestAssessmentPanel({
       }
       const payload = (text ? (JSON.parse(text) as UrineTestResponse) : {}) as UrineTestResponse;
       setUrineTest(payload);
-      setUrinePhotoName(String(file.name || "urine-sample.jpg").trim() || "urine-sample.jpg");
+      setUrinePhotoName(fileName);
       setUrinePhotoCapturedAt(formatCapturedAt(capturedAt));
       setUrineCaptureStartedAt(null);
       setUrineTimerSecondsLeft(0);
@@ -897,9 +885,65 @@ export default function LatestAssessmentPanel({
       setUrineTestError(error instanceof Error ? error.message : String(error));
     } finally {
       setUrineTestSaving(false);
-      event.target.value = "";
     }
   }, [urineCaptureStartedAt, userId]);
+
+  const openUrinePhotoCapture = useCallback(async () => {
+    setUrineTestError(null);
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const { Camera, CameraResultType, CameraSource } = await import("@capacitor/camera");
+        const photo = await Camera.getPhoto({
+          allowEditing: false,
+          correctOrientation: true,
+          quality: 88,
+          resultType: CameraResultType.DataUrl,
+          saveToGallery: false,
+          source: CameraSource.Camera,
+        });
+        const imageDataUrl = String(photo.dataUrl || "").trim();
+        if (!imageDataUrl) {
+          throw new Error("No photo data was returned.");
+        }
+        await submitUrinePhotoCapture({
+          capturedAt: new Date(),
+          fileName: "urine-sample.jpg",
+          imageDataUrl,
+          mimeType: "image/jpeg",
+          sizeBytes: Math.round((imageDataUrl.length * 3) / 4),
+        });
+        return;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.toLowerCase().includes("cancel")) {
+          setUrineTestError(message || "Camera capture failed.");
+        }
+        return;
+      }
+    }
+    urinePhotoInputRef.current?.click();
+  }, [submitUrinePhotoCapture]);
+
+  const handleUrinePhotoSelected = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      event.target.value = "";
+      return;
+    }
+    try {
+      const capturedAt = new Date();
+      const imageDataUrl = await readFileAsDataUrl(file);
+      await submitUrinePhotoCapture({
+        capturedAt,
+        fileName: String(file.name || "urine-sample.jpg").trim() || "urine-sample.jpg",
+        imageDataUrl,
+        mimeType: String(file.type || "image/jpeg"),
+        sizeBytes: file.size,
+      });
+    } finally {
+      event.target.value = "";
+    }
+  }, [submitUrinePhotoCapture]);
 
   const toggleDisplayTheme = useCallback(async () => {
     if (togglingDisplay) return;
@@ -1423,23 +1467,6 @@ export default function LatestAssessmentPanel({
                   </button>
                 ) : null
               ) : null}
-              <button
-                type="button"
-                onClick={() => setBiometricsModalOpen(true)}
-                className={`min-w-[6.75rem] rounded-[22px] border px-3 py-2 text-left shadow-[0_16px_30px_-24px_rgba(30,27,22,0.45)] transition ${restingHeartRateBoxToneClassName}`}
-              >
-                <p className="text-[0.62rem] font-semibold uppercase tracking-[0.18em] opacity-80">
-                  Biomarkers
-                </p>
-                <div className="mt-1 flex items-center gap-2">
-                  <span className={`text-xl font-semibold leading-none ${urineCaptureTextToneClassName}`}>
-                    urine
-                  </span>
-                  <span className={`text-[0.78rem] font-semibold ${urineCaptureTextToneClassName}`}>
-                    {urineCaptureState}
-                  </span>
-                </div>
-              </button>
             </div>
             <button
               type="button"
@@ -1528,96 +1555,178 @@ export default function LatestAssessmentPanel({
         <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 sm:items-center sm:px-3 sm:py-3">
           <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-2xl flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
             <div className="shrink-0 border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
-              <div className="space-y-1">
-                <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Biometrics</p>
-                <p className="text-sm text-[#6b6257]">
-                  Review your recent biometric trend. More indicators can be added here later.
-                </p>
+              <div className="flex items-start justify-between gap-3">
+                <div className="space-y-1">
+                  <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
+                    {urineTestFlowOpen ? "Urine test" : "Biometrics"}
+                  </p>
+                  <p className="text-sm text-[#6b6257]">
+                    {urineTestFlowOpen
+                      ? "Follow the Siemens Multistix timing steps before taking the photo."
+                      : "Review your recent biometric trend and optional urine marker screening."}
+                  </p>
+                </div>
+                {urineTestFlowOpen ? (
+                  <button
+                    type="button"
+                    onClick={() => setUrineTestFlowOpen(false)}
+                    className="rounded-full border border-[#d9cdbb] bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
+                  >
+                    Back
+                  </button>
+                ) : null}
               </div>
             </div>
 
             <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
               <div className="space-y-4">
-                <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold text-[#1e1b16]">Urine sample</p>
-                      <p className="text-sm text-[#6b6257]">
-                        Capture a Siemens Multistix photo. Use the strip bottle timings and do not read after 2 minutes.
+                {urineTestFlowOpen ? (
+                  <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-semibold text-[#1e1b16]">Take urine test</p>
+                        <p className="text-sm text-[#6b6257]">
+                          Photograph the strip beside the Siemens Multistix colour chart at the bottle-label read time.
+                        </p>
+                      </div>
+                      <p className={`shrink-0 rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${urineCaptureToneClassName}`}>
+                        {urineCaptureState}
                       </p>
                     </div>
-                    <p className={`shrink-0 rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${urineCaptureToneClassName}`}>
-                      {urineCaptureState}
-                    </p>
-                  </div>
-                  <input
-                    ref={urinePhotoInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={handleUrinePhotoSelected}
-                    className="hidden"
-                  />
-                  <div className="mt-4 rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">
-                          Guided capture
-                        </p>
+                    <input
+                      ref={urinePhotoInputRef}
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      onChange={handleUrinePhotoSelected}
+                      className="hidden"
+                    />
+                    <div className="mt-4 space-y-3">
+                      <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3">
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Step 1</p>
+                        <p className="mt-1 text-sm font-semibold text-[#1e1b16]">Prepare the strip</p>
                         <p className="mt-1 text-sm text-[#6b6257]">
-                          {urineCaptureStartedAt
-                            ? `${urineTimerSecondsLeft}s remaining in the safe read window.`
-                            : "Start the timer after dipping the strip, then take the photo at the bottle-label read time."}
+                          Dip the Siemens Multistix strip, remove excess urine, and place it next to the bottle colour chart in good light.
                         </p>
                       </div>
-                      <div className="flex shrink-0 gap-2">
-                        <button
-                          type="button"
-                          onClick={startUrineCaptureTimer}
-                          disabled={urineTestSaving}
-                          className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348] disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          Start timer
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openUrinePhotoCapture()}
-                          disabled={urineTestSaving}
-                          className="rounded-full border border-[#c54817] bg-[#c54817] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {urineTestSaving ? "Saving" : urinePhotoCapturedAt || urineTest?.available ? "Retake" : "Take photo"}
-                        </button>
+                      <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Step 2</p>
+                            <p className="mt-1 text-sm font-semibold text-[#1e1b16]">Start the read window</p>
+                            <p className="mt-1 text-sm text-[#6b6257]">
+                              {urineCaptureStartedAt
+                                ? `${urineTimerSecondsLeft}s remaining. Do not read after 2 minutes.`
+                                : "Start after dipping, then use the timing printed on the Multistix bottle."}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={startUrineCaptureTimer}
+                            disabled={urineTestSaving}
+                            className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348] disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            Start timer
+                          </button>
+                        </div>
+                      </div>
+                      <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3">
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">Step 3</p>
+                            <p className="mt-1 text-sm font-semibold text-[#1e1b16]">Take the photo</p>
+                            <p className="mt-1 text-sm text-[#6b6257]">
+                              Keep the strip and colour chart flat in the frame. Retake if the image is blurred or shadowed.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void openUrinePhotoCapture()}
+                            disabled={urineTestSaving}
+                            className="rounded-full border border-[#c54817] bg-[#c54817] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {urineTestSaving ? "Saving" : urinePhotoCapturedAt || urineTest?.available ? "Retake photo" : "Take photo"}
+                          </button>
+                        </div>
                       </div>
                     </div>
+                    <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                      {urineMarkers.map((marker) => {
+                        const markerToneClassName = resolveUrineMarkerTone(displayTheme, marker);
+                        return (
+                          <div
+                            key={String(marker.key || marker.label)}
+                            className={`rounded-xl border px-3 py-3 text-left text-[11px] ${markerToneClassName}`}
+                          >
+                            <p className="font-semibold opacity-80">{marker.label}</p>
+                            <p className="mt-3 text-sm font-semibold uppercase tracking-[0.12em]">
+                              {formatUrineStatusLabel(marker)}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-4 text-sm text-[#6b6257]">
+                      {urineTestLoading
+                        ? "Loading latest urine test..."
+                        : urineTestError
+                          ? urineTestError
+                          : urinePhotoCapturedAt
+                        ? `Latest capture ${urinePhotoCapturedAt}${urinePhotoName ? ` · ${urinePhotoName}` : ""}`
+                        : urineTest?.captured_at
+                          ? `Latest capture ${formatCapturedAt(new Date(urineTest.captured_at))}`
+                          : "No urine photo captured yet."}
+                    </p>
                   </div>
-                  <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {urineMarkers.map((marker) => {
-                      const markerToneClassName = resolveUrineMarkerTone(displayTheme, marker);
-                      return (
-                        <div
-                          key={String(marker.key || marker.label)}
-                          className={`rounded-xl border px-3 py-3 text-left text-[11px] ${markerToneClassName}`}
-                        >
-                          <p className="font-semibold opacity-80">{marker.label}</p>
-                          <p className="mt-3 text-sm font-semibold uppercase tracking-[0.12em]">
-                            {formatUrineStatusLabel(marker)}
+                ) : (
+                  <>
+                    <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold text-[#1e1b16]">Urine sample</p>
+                          <p className="text-sm text-[#6b6257]">
+                            Optional Siemens Multistix screening for concentration, UTI, protein, blood, glucose, and ketones.
                           </p>
                         </div>
-                      );
-                    })}
-                  </div>
-                  <p className="mt-4 text-sm text-[#6b6257]">
-                    {urineTestLoading
-                      ? "Loading latest urine test..."
-                      : urineTestError
-                        ? urineTestError
-                        : urinePhotoCapturedAt
-                      ? `Latest capture ${urinePhotoCapturedAt}${urinePhotoName ? ` · ${urinePhotoName}` : ""}`
-                      : urineTest?.captured_at
-                        ? `Latest capture ${formatCapturedAt(new Date(urineTest.captured_at))}`
-                        : "No urine photo captured yet. Interpretation will remain queued until the strip-reading analyser is connected."}
-                  </p>
-                </div>
+                        <p className={`shrink-0 rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${urineCaptureToneClassName}`}>
+                          {urineCaptureState}
+                        </p>
+                      </div>
+                      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                        {urineMarkers.map((marker) => {
+                          const markerToneClassName = resolveUrineMarkerTone(displayTheme, marker);
+                          return (
+                            <div
+                              key={String(marker.key || marker.label)}
+                              className={`rounded-xl border px-3 py-3 text-left text-[11px] ${markerToneClassName}`}
+                            >
+                              <p className="font-semibold opacity-80">{marker.label}</p>
+                              <p className="mt-3 text-sm font-semibold uppercase tracking-[0.12em]">
+                                {formatUrineStatusLabel(marker)}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setUrineTestFlowOpen(true)}
+                        className="mt-4 w-full rounded-full border border-[#c54817] bg-[#c54817] px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-white"
+                      >
+                        Take urine sample
+                      </button>
+                      <p className="mt-3 text-sm text-[#6b6257]">
+                        {urineTestLoading
+                          ? "Loading latest urine test..."
+                          : urineTestError
+                            ? urineTestError
+                            : urinePhotoCapturedAt
+                          ? `Latest capture ${urinePhotoCapturedAt}${urinePhotoName ? ` · ${urinePhotoName}` : ""}`
+                          : urineTest?.captured_at
+                            ? `Latest capture ${formatCapturedAt(new Date(urineTest.captured_at))}`
+                            : "No urine photo captured yet."}
+                      </p>
+                    </div>
 
                 <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
                   <div className="flex items-center justify-between gap-3">
@@ -1695,13 +1804,18 @@ export default function LatestAssessmentPanel({
                     </p>
                   )}
                 </div>
+                  </>
+                )}
               </div>
             </div>
 
             <div className="shrink-0 border-t border-[#efe7db] px-4 py-4 sm:px-5">
               <button
                 type="button"
-                onClick={() => setBiometricsModalOpen(false)}
+                onClick={() => {
+                  setUrineTestFlowOpen(false);
+                  setBiometricsModalOpen(false);
+                }}
                 className="w-full rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
               >
                 Close

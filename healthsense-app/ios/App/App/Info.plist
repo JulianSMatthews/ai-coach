@@ -41,6 +41,12 @@
 	<true/>
 	<key>NSHealthShareUsageDescription</key>
 	<string>HealthSense reads your resting heart rate from Apple Health so it can show recovery status on your score screen.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>HealthSense uses the camera to capture Siemens Multistix urine test photos for optional biomarker screening.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>HealthSense may save urine test photos only if you choose to save them.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>HealthSense may access selected photos if you choose to upload a urine test image from your library.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

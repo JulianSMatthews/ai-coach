@@ -14,6 +14,7 @@
     "cap:run:ios": "npx cap run ios"
   },
   "dependencies": {
+    "@capacitor/camera": "^8.0.2",
     "@capacitor/cli": "^8.2.0",
     "@capacitor/core": "^8.2.0",
     "@capacitor/ios": "^8.2.0",
