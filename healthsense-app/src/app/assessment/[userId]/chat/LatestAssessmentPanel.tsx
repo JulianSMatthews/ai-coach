@@ -993,8 +993,8 @@ export default function LatestAssessmentPanel({
   const displayLabel = displayTheme === "dark" ? "light" : "dark";
   const displayButtonClassName =
     displayLabel === "dark"
-      ? "rounded-full border border-[#2f3542] bg-[#1c2230] px-4 py-2 text-xs font-semibold text-white shadow-[0_10px_24px_-18px_rgba(12,18,28,0.9)] disabled:cursor-not-allowed disabled:opacity-60"
-      : "rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold text-[#5d5348] shadow-[0_10px_24px_-18px_rgba(93,83,72,0.45)] disabled:cursor-not-allowed disabled:opacity-60";
+      ? "rounded-full border border-[#2f3542] bg-[#1c2230] px-3 py-1.5 text-[11px] font-semibold text-white shadow-[0_10px_24px_-18px_rgba(12,18,28,0.9)] disabled:cursor-not-allowed disabled:opacity-60"
+      : "rounded-full border border-[#d9cdbb] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#5d5348] shadow-[0_10px_24px_-18px_rgba(93,83,72,0.45)] disabled:cursor-not-allowed disabled:opacity-60";
   const objectivesSections = useMemo(
     () => (Array.isArray(weeklyObjectives?.sections) ? weeklyObjectives.sections : []),
     [weeklyObjectives],
@@ -2075,9 +2075,9 @@ export default function LatestAssessmentPanel({
       {summaryPanelVisible ? (
         <section
           ref={summaryPanelRef}
-          className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-5 sm:py-6"
+          className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-5 sm:py-5"
         >
-          <div className="mb-4 flex justify-end">
+          <div className="mb-2 flex justify-end">
             <button
               type="button"
               onClick={() => void toggleDisplayTheme()}
