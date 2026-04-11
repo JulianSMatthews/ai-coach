@@ -146,6 +146,31 @@ export type AppleHealthRestingHeartRateResponse = {
   };
 };
 
+export type UrineTestMarker = {
+  key?: string;
+  label?: string;
+  source_analytes?: string[];
+  status?: string;
+  status_label?: string;
+  tone?: "success" | "warning" | "danger" | "neutral" | string;
+  status_options?: string[];
+};
+
+export type UrineTestResponse = {
+  ok?: boolean;
+  available?: boolean;
+  id?: number | null;
+  provider?: string;
+  sample_date?: string | null;
+  captured_at?: string | null;
+  status?: string | null;
+  markers?: UrineTestMarker[];
+  result_payload?: Record<string, unknown>;
+  image_metadata?: Record<string, unknown>;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
 export type PillarTrackerOption = {
   value?: number;
   label?: string;

@@ -199,6 +199,11 @@ from .wearables import (
     provider_enabled as wearable_provider_enabled,
     upsert_apple_health_resting_hr_samples,
 )
+from .urine_tests import (
+    ensure_urine_test_schema,
+    get_latest_urine_test_result,
+    record_urine_test_capture,
+)
 from .pillar_tracker import (
     ensure_pillar_tracker_schema,
     get_pillar_tracker_detail,
@@ -730,6 +735,10 @@ def on_startup():
                 ensure_wearables_schema()
             except Exception as e:
                 print(f"⚠️  Could not ensure wearable schema: {e!r}")
+            try:
+                ensure_urine_test_schema()
+            except Exception as e:
+                print(f"⚠️  Could not ensure urine test schema: {e!r}")
             try:
                 ensure_pillar_tracker_schema()
             except Exception as e:
@@ -8721,6 +8730,47 @@ def api_user_apple_health_resting_hr_sync(
         "ok": True,
         "sync": sync_result,
         **summary,
+    }
+
+
+@api_v1.get("/users/{user_id}/urine-tests/latest")
+def api_user_latest_urine_test(
+    user_id: int,
+    request: Request,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    ensure_urine_test_schema()
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    with SessionLocal() as s:
+        return get_latest_urine_test_result(s, user_id=int(user_id))
+
+
+@api_v1.post("/users/{user_id}/urine-tests/photo")
+def api_user_urine_test_photo(
+    user_id: int,
+    request: Request,
+    payload: dict | None = Body(default=None),
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    ensure_urine_test_schema()
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    if _is_readonly_admin_preview_request(
+        request,
+        x_admin_token=x_admin_token,
+        x_admin_user_id=x_admin_user_id,
+    ):
+        raise HTTPException(status_code=403, detail="Admin app preview is read-only")
+    with SessionLocal() as s:
+        try:
+            result = record_urine_test_capture(s, user_id=int(user_id), payload=payload if isinstance(payload, dict) else {})
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        s.commit()
+    return {
+        "ok": True,
+        **result,
     }
 
 
@@ -22128,6 +22178,12 @@ def admin_reset_user(user_id: int, admin_user: User = Depends(_require_admin)):
         _delete_rows("wearable_daily_metrics", s.query(WearableDailyMetric).filter(WearableDailyMetric.user_id == user_id))
         _delete_rows("wearable_sync_runs", s.query(WearableSyncRun).filter(WearableSyncRun.user_id == user_id))
         _delete_rows("wearable_connections", s.query(WearableConnection).filter(WearableConnection.user_id == user_id))
+        try:
+            ensure_urine_test_schema()
+            count = s.execute(text("DELETE FROM urine_tests WHERE user_id = :user_id"), {"user_id": user_id}).rowcount
+            deleted["urine_tests"] = int(count or 0)
+        except Exception:
+            deleted["urine_tests"] = 0
         _delete_rows("user_preferences", s.query(UserPreference).filter(UserPreference.user_id == user_id))
 
         if user_phone:

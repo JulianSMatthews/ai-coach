@@ -7,6 +7,8 @@ import type {
   PillarTrackerDetailResponse,
   PillarTrackerPillar,
   PillarTrackerSummaryResponse,
+  UrineTestMarker,
+  UrineTestResponse,
   WeeklyObjectivePillarConfig,
   WeeklyObjectivesResponse,
 } from "@/lib/api";
@@ -34,18 +36,20 @@ type TrackerReturnSurface = "tracking" | "habits" | "insight" | "ask";
 type MorningSequenceState = "idle" | "in_progress" | "completed";
 type DisplayTheme = "light" | "dark";
 type ObjectivesSectionKey = "nutrition" | "training" | "resilience" | "recovery" | "wellbeing";
-type UrineCaptureState = "ready" | "queued";
+type UrineCaptureState = "ready" | "timing" | "saving" | "queued" | "analysed" | "review" | "error";
 
 const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
 const HEALTHSENSE_ORANGE = "#c54817";
 const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
+const URINE_CAPTURE_TIMER_SECONDS = 120;
+const URINE_TEST_MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 const URINE_SCREENING_MARKERS = [
-  "Concentration",
-  "UTI",
-  "Protein",
-  "Blood",
-  "Glucose",
-  "Ketones",
+  { key: "concentration", label: "Concentration" },
+  { key: "uti", label: "UTI" },
+  { key: "protein", label: "Protein" },
+  { key: "blood", label: "Blood" },
+  { key: "glucose", label: "Glucose" },
+  { key: "ketones", label: "Ketones" },
 ] as const;
 
 function resolveRestingHeartRateBoxTone(theme: DisplayTheme): string {
@@ -141,7 +145,17 @@ function resolveCompactStepsStatusLabel(status: StepsStatus): string {
 }
 
 function resolveUrineCaptureTone(theme: DisplayTheme, state: UrineCaptureState): string {
-  if (state === "queued") {
+  if (state === "analysed") {
+    return theme === "dark"
+      ? "border-[#405b35] bg-[#1f2b1d] text-[#d9f0c5]"
+      : "border-[#d5e8bf] bg-[#f2fae8] text-[#335f16]";
+  }
+  if (state === "error") {
+    return theme === "dark"
+      ? "border-[#674033] bg-[#2c1d1a] text-[#ffb7a1]"
+      : "border-[#efc4b6] bg-[#fff0eb] text-[#9b3218]";
+  }
+  if (state === "queued" || state === "timing" || state === "saving" || state === "review") {
     return theme === "dark"
       ? "border-[#5f4938] bg-[#2d241c] text-[#ffd3ad]"
       : "border-[#f2dccb] bg-[#fff4ea] text-[#b55d1c]";
@@ -158,6 +172,62 @@ function formatCapturedAt(value: Date): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Unable to read the photo."));
+    reader.readAsDataURL(file);
+  });
+}
+
+function normalizeUrineMarkers(markers?: UrineTestMarker[] | null): UrineTestMarker[] {
+  const markerMap = new Map<string, UrineTestMarker>();
+  (Array.isArray(markers) ? markers : []).forEach((marker) => {
+    const markerKey = String(marker?.key || "").trim().toLowerCase();
+    if (markerKey) markerMap.set(markerKey, marker);
+  });
+  return URINE_SCREENING_MARKERS.map((marker) => {
+    const saved = markerMap.get(marker.key);
+    return {
+      key: marker.key,
+      label: saved?.label || marker.label,
+      status: saved?.status || "ready",
+      status_label: saved?.status_label || saved?.status || "ready",
+      tone: saved?.tone || "neutral",
+      source_analytes: saved?.source_analytes || [],
+      status_options: saved?.status_options || [],
+    };
+  });
+}
+
+function resolveUrineMarkerTone(theme: DisplayTheme, marker: UrineTestMarker): string {
+  const status = String(marker?.status_label || marker?.status || "").trim().toLowerCase();
+  if (status === "clear" || status === "balanced") {
+    return theme === "dark"
+      ? "border-[#405b35] bg-[#1f2b1d] text-[#d9f0c5]"
+      : "border-[#d5e8bf] bg-[#f2fae8] text-[#335f16]";
+  }
+  if (status === "flagged") {
+    return theme === "dark"
+      ? "border-[#674033] bg-[#2c1d1a] text-[#ffb7a1]"
+      : "border-[#efc4b6] bg-[#fff0eb] text-[#9b3218]";
+  }
+  if (status === "watch" || status === "trace" || status === "raised" || status === "dilute" || status === "concentrated" || status === "queued" || status === "review") {
+    return theme === "dark"
+      ? "border-[#5f4938] bg-[#2d241c] text-[#ffd3ad]"
+      : "border-[#f2dccb] bg-[#fff4ea] text-[#8a5a1a]";
+  }
+  return theme === "dark"
+    ? "border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]"
+    : "border-[#e7e1d6] bg-white text-[#8c7f70]";
+}
+
+function formatUrineStatusLabel(marker: UrineTestMarker): string {
+  const label = String(marker?.status_label || marker?.status || "ready").trim().toLowerCase();
+  return label || "ready";
 }
 
 function formatIsoLocalDay(value: Date): string {
@@ -497,6 +567,12 @@ export default function LatestAssessmentPanel({
   const [restingHeartRateLoading, setRestingHeartRateLoading] = useState(false);
   const [restingHeartRateEnabling, setRestingHeartRateEnabling] = useState(false);
   const [appleHealthAuthStatus, setAppleHealthAuthStatus] = useState<AppleHealthAuthorizationState>("unsupported");
+  const [urineTest, setUrineTest] = useState<UrineTestResponse | null>(null);
+  const [urineTestLoading, setUrineTestLoading] = useState(false);
+  const [urineTestSaving, setUrineTestSaving] = useState(false);
+  const [urineTestError, setUrineTestError] = useState<string | null>(null);
+  const [urineCaptureStartedAt, setUrineCaptureStartedAt] = useState<number | null>(null);
+  const [urineTimerSecondsLeft, setUrineTimerSecondsLeft] = useState(0);
   const appleHealthAutoRequestRef = useRef(false);
   const urinePhotoInputRef = useRef<HTMLInputElement | null>(null);
   const summaryPanelRef = useRef<HTMLElement | null>(null);
@@ -631,7 +707,25 @@ export default function LatestAssessmentPanel({
     displayTheme,
     restingHeartRate?.trend_status,
   );
-  const urineCaptureState: UrineCaptureState = urinePhotoCapturedAt ? "queued" : "ready";
+  const urineMarkers = useMemo(
+    () => normalizeUrineMarkers(urineTest?.markers),
+    [urineTest?.markers],
+  );
+  const urineTestStatus = String(urineTest?.status || "").trim().toLowerCase();
+  let urineCaptureState: UrineCaptureState = "ready";
+  if (urineTestError) {
+    urineCaptureState = "error";
+  } else if (urineTestSaving) {
+    urineCaptureState = "saving";
+  } else if (urineTestStatus === "analysed") {
+    urineCaptureState = "analysed";
+  } else if (urineTestStatus === "needs_review") {
+    urineCaptureState = "review";
+  } else if (urinePhotoCapturedAt || urineTest?.available) {
+    urineCaptureState = "queued";
+  } else if (urineCaptureStartedAt) {
+    urineCaptureState = "timing";
+  }
   const urineCaptureToneClassName = resolveUrineCaptureTone(displayTheme, urineCaptureState);
 
   const refreshSummary = useCallback(async () => {
@@ -659,6 +753,29 @@ export default function LatestAssessmentPanel({
     const payload = (text ? (JSON.parse(text) as AppleHealthRestingHeartRateResponse) : {}) as AppleHealthRestingHeartRateResponse;
     setRestingHeartRate(payload);
     return payload;
+  }, [userId]);
+
+  const loadLatestUrineTest = useCallback(async () => {
+    setUrineTestLoading(true);
+    setUrineTestError(null);
+    try {
+      const res = await fetch(`/api/urine-tests?userId=${encodeURIComponent(userId)}`, {
+        method: "GET",
+        cache: "no-store",
+      });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        throw new Error(normalizeError(text, "Failed to load urine test."));
+      }
+      const payload = (text ? (JSON.parse(text) as UrineTestResponse) : {}) as UrineTestResponse;
+      setUrineTest(payload);
+      return payload;
+    } catch (error) {
+      setUrineTestError(error instanceof Error ? error.message : String(error));
+      return null;
+    } finally {
+      setUrineTestLoading(false);
+    }
   }, [userId]);
 
   const syncNativeRestingHeartRate = useCallback(
@@ -715,16 +832,60 @@ export default function LatestAssessmentPanel({
   ]);
 
   const openUrinePhotoCapture = useCallback(() => {
+    setUrineTestError(null);
     urinePhotoInputRef.current?.click();
   }, []);
 
-  const handleUrinePhotoSelected = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    setUrinePhotoName(String(file.name || "urine-sample.jpg").trim() || "urine-sample.jpg");
-    setUrinePhotoCapturedAt(formatCapturedAt(new Date()));
-    event.target.value = "";
+  const startUrineCaptureTimer = useCallback(() => {
+    setUrineTestError(null);
+    setUrineCaptureStartedAt(Date.now());
+    setUrineTimerSecondsLeft(URINE_CAPTURE_TIMER_SECONDS);
   }, []);
+
+  const handleUrinePhotoSelected = useCallback(async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      event.target.value = "";
+      return;
+    }
+    setUrineTestSaving(true);
+    setUrineTestError(null);
+    try {
+      if (file.size > URINE_TEST_MAX_PHOTO_BYTES) {
+        throw new Error("Photo is too large. Retake or choose a smaller image.");
+      }
+      const capturedAt = new Date();
+      const imageDataUrl = await readFileAsDataUrl(file);
+      const res = await fetch("/api/urine-tests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          capturedAt: capturedAt.toISOString(),
+          captureStage: urineCaptureStartedAt ? "timed" : "single",
+          fileName: String(file.name || "urine-sample.jpg").trim() || "urine-sample.jpg",
+          mimeType: String(file.type || "image/jpeg"),
+          sizeBytes: file.size,
+          imageDataUrl,
+        }),
+      });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        throw new Error(normalizeError(text, "Failed to save urine test photo."));
+      }
+      const payload = (text ? (JSON.parse(text) as UrineTestResponse) : {}) as UrineTestResponse;
+      setUrineTest(payload);
+      setUrinePhotoName(String(file.name || "urine-sample.jpg").trim() || "urine-sample.jpg");
+      setUrinePhotoCapturedAt(formatCapturedAt(capturedAt));
+      setUrineCaptureStartedAt(null);
+      setUrineTimerSecondsLeft(0);
+    } catch (error) {
+      setUrineTestError(error instanceof Error ? error.message : String(error));
+    } finally {
+      setUrineTestSaving(false);
+      event.target.value = "";
+    }
+  }, [urineCaptureStartedAt, userId]);
 
   const toggleDisplayTheme = useCallback(async () => {
     if (togglingDisplay) return;
@@ -875,6 +1036,28 @@ export default function LatestAssessmentPanel({
   useEffect(() => {
     setDisplayTheme(resolveCurrentDisplayTheme());
   }, []);
+
+  useEffect(() => {
+    if (!biometricsModalOpen) return;
+    void loadLatestUrineTest();
+  }, [biometricsModalOpen, loadLatestUrineTest]);
+
+  useEffect(() => {
+    if (!biometricsModalOpen || !urineCaptureStartedAt) return;
+    const updateTimer = () => {
+      const elapsedSeconds = Math.floor((Date.now() - urineCaptureStartedAt) / 1000);
+      const nextSecondsLeft = Math.max(0, URINE_CAPTURE_TIMER_SECONDS - elapsedSeconds);
+      setUrineTimerSecondsLeft(nextSecondsLeft);
+      if (nextSecondsLeft <= 0) {
+        setUrineCaptureStartedAt(null);
+      }
+    };
+    updateTimer();
+    const interval = window.setInterval(updateTimer, 1000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [biometricsModalOpen, urineCaptureStartedAt]);
 
   useEffect(() => {
     if (!summaryPanelVisible) return;
@@ -1329,16 +1512,12 @@ export default function LatestAssessmentPanel({
                     <div className="space-y-1">
                       <p className="text-sm font-semibold text-[#1e1b16]">Urine sample</p>
                       <p className="text-sm text-[#6b6257]">
-                        Capture a Siemens Multistix photo to screen key urine markers.
+                        Capture a Siemens Multistix photo. Use the strip bottle timings and do not read after 2 minutes.
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => openUrinePhotoCapture()}
-                      className="shrink-0 rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
-                    >
-                      {urinePhotoCapturedAt ? "Retake" : "Take photo"}
-                    </button>
+                    <p className={`shrink-0 rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${urineCaptureToneClassName}`}>
+                      {urineCaptureState}
+                    </p>
                   </div>
                   <input
                     ref={urinePhotoInputRef}
@@ -1348,23 +1527,64 @@ export default function LatestAssessmentPanel({
                     onChange={handleUrinePhotoSelected}
                     className="hidden"
                   />
-                  <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                    {URINE_SCREENING_MARKERS.map((marker) => (
-                      <div
-                        key={marker}
-                        className={`rounded-xl border px-3 py-3 text-left text-[11px] ${urineCaptureToneClassName}`}
-                      >
-                        <p className="font-semibold opacity-80">{marker}</p>
-                        <p className="mt-3 text-sm font-semibold uppercase tracking-[0.12em]">
-                          {urineCaptureState}
+                  <div className="mt-4 rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">
+                          Guided capture
+                        </p>
+                        <p className="mt-1 text-sm text-[#6b6257]">
+                          {urineCaptureStartedAt
+                            ? `${urineTimerSecondsLeft}s remaining in the safe read window.`
+                            : "Start the timer after dipping the strip, then take the photo at the bottle-label read time."}
                         </p>
                       </div>
-                    ))}
+                      <div className="flex shrink-0 gap-2">
+                        <button
+                          type="button"
+                          onClick={startUrineCaptureTimer}
+                          disabled={urineTestSaving}
+                          className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#5d5348] disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          Start timer
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openUrinePhotoCapture()}
+                          disabled={urineTestSaving}
+                          className="rounded-full border border-[#c54817] bg-[#c54817] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {urineTestSaving ? "Saving" : urinePhotoCapturedAt || urineTest?.available ? "Retake" : "Take photo"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                    {urineMarkers.map((marker) => {
+                      const markerToneClassName = resolveUrineMarkerTone(displayTheme, marker);
+                      return (
+                        <div
+                          key={String(marker.key || marker.label)}
+                          className={`rounded-xl border px-3 py-3 text-left text-[11px] ${markerToneClassName}`}
+                        >
+                          <p className="font-semibold opacity-80">{marker.label}</p>
+                          <p className="mt-3 text-sm font-semibold uppercase tracking-[0.12em]">
+                            {formatUrineStatusLabel(marker)}
+                          </p>
+                        </div>
+                      );
+                    })}
                   </div>
                   <p className="mt-4 text-sm text-[#6b6257]">
-                    {urinePhotoCapturedAt
+                    {urineTestLoading
+                      ? "Loading latest urine test..."
+                      : urineTestError
+                        ? urineTestError
+                        : urinePhotoCapturedAt
                       ? `Latest capture ${urinePhotoCapturedAt}${urinePhotoName ? ` · ${urinePhotoName}` : ""}`
-                      : "Entry point ready. Guided interpretation is the next step."}
+                      : urineTest?.captured_at
+                        ? `Latest capture ${formatCapturedAt(new Date(urineTest.captured_at))}`
+                        : "No urine photo captured yet. Interpretation will remain queued until the strip-reading analyser is connected."}
                   </p>
                 </div>
 
