@@ -231,6 +231,49 @@ function formatUrineStatusLabel(marker: UrineTestMarker): string {
   return label || "ready";
 }
 
+function formatUrineStatusAbbreviation(marker: UrineTestMarker): string {
+  const label = formatUrineStatusLabel(marker);
+  const abbreviations: Record<string, string> = {
+    balanced: "bal",
+    clear: "clr",
+    concentrated: "conc",
+    dilute: "dil",
+    flagged: "flag",
+    queued: "wait",
+    raised: "high",
+    ready: "—",
+    review: "rev",
+    trace: "trc",
+    watch: "wch",
+  };
+  return abbreviations[label] || label.slice(0, 4) || "—";
+}
+
+function formatUrineTestDayMonth(urineTest?: UrineTestResponse | null): { day: string; month: string } {
+  const token = String(urineTest?.captured_at || urineTest?.sample_date || "").trim();
+  if (!token) return { day: "—", month: "" };
+  const parsed = new Date(token.includes("T") ? token : `${token}T12:00:00`);
+  if (Number.isNaN(parsed.getTime())) return { day: token, month: "" };
+  return {
+    day: parsed.toLocaleDateString("en-GB", { day: "numeric" }),
+    month: parsed.toLocaleDateString("en-GB", { month: "short" }),
+  };
+}
+
+function resolveUrineStatusDotTone(theme: DisplayTheme, marker: UrineTestMarker): string {
+  const status = formatUrineStatusLabel(marker);
+  if (status === "clear" || status === "balanced") {
+    return theme === "dark" ? "border-[#6e8c55] bg-[#d9f0c5]" : "border-[#8db66b] bg-[#69a23a]";
+  }
+  if (status === "flagged" || status === "raised") {
+    return theme === "dark" ? "border-[#ffb7a1] bg-[#ef6d4c]" : "border-[#d66a48] bg-[#c54817]";
+  }
+  if (status === "watch" || status === "trace" || status === "dilute" || status === "concentrated" || status === "review") {
+    return theme === "dark" ? "border-[#ffd3ad] bg-[#e8a867]" : "border-[#d9a25f] bg-[#f0b35f]";
+  }
+  return theme === "dark" ? "border-[var(--border)] bg-[#6b6257]" : "border-[#d9cdbb] bg-[#d8d0c5]";
+}
+
 function resolveUrineResultMessage(urineTest?: UrineTestResponse | null): string | null {
   const payload = urineTest?.result_payload;
   if (!payload || typeof payload !== "object") return null;
@@ -724,6 +767,7 @@ export default function LatestAssessmentPanel({
     () => normalizeUrineMarkers(urineTest?.markers),
     [urineTest?.markers],
   );
+  const urineTestDayMonth = useMemo(() => formatUrineTestDayMonth(urineTest), [urineTest]);
   const urineResultMessage = useMemo(() => resolveUrineResultMessage(urineTest), [urineTest]);
   const urineTestStatus = String(urineTest?.status || "").trim().toLowerCase();
   let urineCaptureState: UrineCaptureState = "ready";
@@ -1611,7 +1655,7 @@ export default function LatestAssessmentPanel({
                   <p className="text-sm text-[#6b6257]">
                     {urineTestFlowOpen
                       ? "Follow the 60-second HealthSense capture flow before taking the photo."
-                      : "Review your recent biometric trend and optional urine marker screening."}
+                      : "Review your latest biometric measurements."}
                   </p>
                 </div>
                 {urineTestFlowOpen ? (
@@ -1751,59 +1795,6 @@ export default function LatestAssessmentPanel({
                 ) : (
                   <>
                     <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="space-y-1">
-                          <p className="text-sm font-semibold text-[#1e1b16]">Urine sample</p>
-                          <p className="text-sm text-[#6b6257]">
-                            Optional Siemens Multistix screening for concentration, UTI, protein, blood, glucose, and ketones.
-                          </p>
-                        </div>
-                        <p className={`shrink-0 rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] ${urineCaptureToneClassName}`}>
-                          {urineCaptureState}
-                        </p>
-                      </div>
-                      <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-                        {urineMarkers.map((marker) => {
-                          const markerToneClassName = resolveUrineMarkerTone(displayTheme, marker);
-                          return (
-                            <div
-                              key={String(marker.key || marker.label)}
-                              className={`rounded-xl border px-3 py-3 text-left text-[11px] ${markerToneClassName}`}
-                            >
-                              <p className="font-semibold opacity-80">{marker.label}</p>
-                              <p className="mt-3 text-sm font-semibold uppercase tracking-[0.12em]">
-                                {formatUrineStatusLabel(marker)}
-                              </p>
-                            </div>
-                          );
-                        })}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setUrineTestFlowOpen(true)}
-                        className="mt-4 w-full rounded-full border border-[#c54817] bg-[#c54817] px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-white"
-                      >
-                        Take urine sample
-                      </button>
-                      <p className="mt-3 text-sm text-[#6b6257]">
-                        {urineTestLoading
-                          ? "Loading latest urine test..."
-                          : urineTestError
-                            ? urineTestError
-                            : urinePhotoCapturedAt
-                          ? `Latest capture ${urinePhotoCapturedAt}${urinePhotoName ? ` · ${urinePhotoName}` : ""}`
-                          : urineTest?.captured_at
-                          ? `Latest capture ${formatCapturedAt(new Date(urineTest.captured_at))}`
-                          : "No urine photo captured yet."}
-                      </p>
-                      {urineResultMessage ? (
-                        <p className="mt-2 rounded-2xl border border-[#f2dccb] bg-[#fff8ef] px-3 py-2 text-xs text-[#8a5a1a]">
-                          {urineResultMessage}
-                        </p>
-                      ) : null}
-                    </div>
-
-                <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-semibold text-[#1e1b16]">Resting heart rate</p>
                     <p className="text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
@@ -1879,6 +1870,34 @@ export default function LatestAssessmentPanel({
                     </p>
                   )}
                 </div>
+
+                    <div className="rounded-[24px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="text-sm font-semibold text-[#1e1b16]">Urine markers</p>
+                      </div>
+                      <div className="mt-4 grid grid-cols-3 gap-2 sm:grid-cols-6">
+                        {urineMarkers.map((marker) => {
+                          const dotToneClassName = resolveUrineStatusDotTone(displayTheme, marker);
+                          const dateLabel = `${urineTestDayMonth.day}${urineTestDayMonth.month ? ` ${urineTestDayMonth.month}` : ""}`;
+                          return (
+                            <button
+                              key={String(marker.key || marker.label)}
+                              type="button"
+                              onClick={() => setUrineTestFlowOpen(true)}
+                              className={`rounded-xl border px-2 py-2 text-center text-[11px] transition hover:border-[#dccfbe] ${restingHeartRateBoxToneClassName}`}
+                              aria-label={`Open urine sample test for ${String(marker.label || "urine marker")}`}
+                            >
+                              <p className="truncate font-semibold opacity-80">{marker.label}</p>
+                              <p className="mt-1 opacity-65">{dateLabel}</p>
+                              <span className={`mx-auto mt-3 block h-7 w-7 rounded-full border-2 ${dotToneClassName}`} />
+                              <p className="mt-2 min-h-[0.75rem] text-[10px] font-semibold uppercase tracking-[0.12em]">
+                                {formatUrineStatusAbbreviation(marker)}
+                              </p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </>
                 )}
               </div>
