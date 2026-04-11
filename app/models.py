@@ -1258,6 +1258,8 @@ class EducationProgramme(Base):
 
     id = Column(Integer, primary_key=True)
     pillar_key = Column(String(64), nullable=False, index=True)
+    concept_key = Column(String(64), nullable=True, index=True)
+    concept_label = Column(String(160), nullable=True)
     code = Column(String(64), nullable=False, unique=True, index=True)
     name = Column(String(200), nullable=False)
     duration_days = Column(Integer, nullable=False, server_default=text("21"))
@@ -1267,6 +1269,7 @@ class EducationProgramme(Base):
 
     __table_args__ = (
         Index("ix_education_programmes_pillar_active", "pillar_key", "is_active"),
+        Index("ix_education_programmes_pillar_concept_active", "pillar_key", "concept_key", "is_active"),
     )
 
 
@@ -1346,6 +1349,9 @@ class UserEducationPlan(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     programme_id = Column(Integer, ForeignKey("education_programmes.id", ondelete="CASCADE"), nullable=False, index=True)
     pillar_key = Column(String(64), nullable=False, index=True)
+    entry_concept_key = Column(String(64), nullable=True, index=True)
+    entry_concept_label = Column(String(160), nullable=True)
+    route_version = Column(String(32), nullable=True)
     starts_on = Column(Date, nullable=False, index=True)
     current_day_index = Column(Integer, nullable=False, server_default=text("1"))
     status = Column(String(32), nullable=False, server_default=text("'active'"), index=True)

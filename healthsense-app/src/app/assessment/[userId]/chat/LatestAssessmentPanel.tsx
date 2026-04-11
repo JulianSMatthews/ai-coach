@@ -208,7 +208,7 @@ function normalizeUrineMarkers(markers?: UrineTestMarker[] | null): UrineTestMar
     const saved = markerMap.get(marker.key);
     return {
       key: marker.key,
-      label: saved?.label || marker.label,
+      label: marker.label,
       status: saved?.status || "ready",
       status_label: saved?.status_label || saved?.status || "ready",
       tone: saved?.tone || "neutral",
@@ -216,6 +216,17 @@ function normalizeUrineMarkers(markers?: UrineTestMarker[] | null): UrineTestMar
       status_options: saved?.status_options || [],
     };
   });
+}
+
+function formatUrineTileLabel(marker: UrineTestMarker): string {
+  const markerKey = String(marker?.key || "").trim().toLowerCase();
+  if (markerKey === "concentration") return "Hyd.";
+  if (markerKey === "uti") return "UTI";
+  if (markerKey === "protein") return "Prot.";
+  if (markerKey === "blood") return "Blood";
+  if (markerKey === "glucose") return "Gluc.";
+  if (markerKey === "ketones") return "Ket.";
+  return String(marker?.label || "").trim() || markerKey;
 }
 
 function resolveUrineMarkerTone(
@@ -310,6 +321,17 @@ function resolveUrineMarkerTone(
 function formatUrineStatusLabel(marker: UrineTestMarker): string {
   const label = String(marker?.status_label || marker?.status || "ready").trim().toLowerCase();
   return label || "ready";
+}
+
+function formatUrineDisplayStatusLabel(marker: UrineTestMarker): string {
+  const markerKey = String(marker?.key || "").trim().toLowerCase();
+  const label = formatUrineStatusLabel(marker);
+  if (markerKey === "concentration") {
+    if (label === "well") return "Well";
+    if (label === "ok") return "OK";
+    if (label === "low") return "Low";
+  }
+  return label;
 }
 
 function formatUrineStatusAbbreviation(marker: UrineTestMarker): string {
@@ -409,16 +431,18 @@ function resolveUrineResultMessage(urineTest?: UrineTestResponse | null): string
 }
 
 function BiomarkerExplanationCard({
+  className = "mt-4",
   result,
   scale,
   title,
 }: {
+  className?: string;
   result: string;
   scale: string[];
   title: string;
 }) {
   return (
-    <div className="mt-4 rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3 text-sm text-[#5d5348]">
+    <div className={`${className} rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3 text-sm text-[#5d5348]`}>
       <p className="font-semibold text-[#1e1b16]">{title}</p>
       <p className="mt-2">{result}</p>
       <div className="mt-3 space-y-1">
@@ -966,8 +990,8 @@ export default function LatestAssessmentPanel({
   const biomarkerExplanationButtonClassName =
     "rounded-full border border-[#d9cdbb] bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#5d5348]";
   const rhrExplanationResult = restingHeartRateValue
-    ? `Latest result: ${restingHeartRateValue} bpm, currently shown as ${resolveRestingHeartRateTrendLabel(restingHeartRate?.trend_label)}. Resting heart rate is a recovery and load signal; lower than your usual range often suggests better recovery, while elevated can reflect stress, illness, poor sleep, dehydration, alcohol, or training load.`
-    : "Latest result: no current resting heart rate is available yet. Once Apple Health syncs a value, this section will compare it with your recent pattern.";
+    ? `Latest result: ${restingHeartRateValue} bpm, currently shown as ${resolveRestingHeartRateTrendLabel(restingHeartRate?.trend_label)}. Resting HR is a recovery and load signal; lower than your usual range often suggests better recovery, while elevated can reflect stress, illness, poor sleep, dehydration, alcohol, or training load.`
+    : "Latest result: no current Resting HR is available yet. Once Apple Health syncs a value, this section will compare it with your recent pattern.";
   const latestStepsValue = formatFullStepCount(latestStepsItem?.steps);
   const latestStepsStatus = resolveStepsStatus(latestStepsItem?.steps);
   const stepsExplanationResult = latestStepsValue
@@ -976,6 +1000,41 @@ export default function LatestAssessmentPanel({
   const urineExplanationResult = urineTest?.available
     ? `Latest result: ${urineMarkers.map((marker) => `${marker.label}: ${formatUrineStatusLabel(marker)}`).join("; ")}. These are urine-strip screening markers, not diagnoses. Press Test to take or retake a sample.`
     : "Latest result: no urine test has been completed yet. Press Test to take a sample and populate these markers.";
+  const activeBiomarkerExplanationDetail =
+    activeBiomarkerExplanation === "rhr"
+      ? {
+          title: "Resting HR",
+          result: rhrExplanationResult,
+          scale: [
+            "Purple optimum: trending better than your recent Resting HR pattern.",
+            "Green normal: broadly in your expected recent range.",
+            "Amber elevated: higher than expected; consider recovery, sleep, hydration, illness, alcohol, or training load.",
+          ],
+        }
+      : activeBiomarkerExplanation === "steps"
+        ? {
+            title: "Steps",
+            result: stepsExplanationResult,
+            scale: [
+              "Purple optimal: 10,000+ steps.",
+              "Green strong: 7,500-9,999 steps.",
+              "Amber base: 5,000-7,499 steps; below 5,000 is below base.",
+            ],
+          }
+        : activeBiomarkerExplanation === "urine"
+          ? {
+              title: "Urine",
+              result: urineExplanationResult,
+              scale: [
+                "Hydration: Well is purple, OK is green, Low is amber.",
+                "UTI, Protein, Blood, and Glucose: clear is green, watch/trace is amber, flagged/raised is red.",
+                ketogenicDietActive
+                  ? "Ketones with keto/low-carb on: clear is amber, trace is green, raised is purple unless glucose is raised."
+                  : "Ketones with keto/low-carb off: clear is green, trace is amber, raised is red.",
+                "If glucose is raised with trace or raised ketones, ketones show red as a safety flag.",
+              ],
+            }
+          : null;
 
   const refreshSummary = useCallback(async () => {
     const res = await fetch(`/api/pillar-tracker/summary?userId=${encodeURIComponent(userId)}`, {
@@ -997,7 +1056,7 @@ export default function LatestAssessmentPanel({
     });
     const text = await res.text().catch(() => "");
     if (!res.ok) {
-      throw new Error(normalizeError(text, "Failed to load resting heart rate."));
+      throw new Error(normalizeError(text, "Failed to load Resting HR."));
     }
     const payload = (text ? (JSON.parse(text) as AppleHealthRestingHeartRateResponse) : {}) as AppleHealthRestingHeartRateResponse;
     setRestingHeartRate(payload);
@@ -1842,21 +1901,33 @@ export default function LatestAssessmentPanel({
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
                   <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
-                    {urineTestFlowOpen ? "Urine test" : "Biometrics"}
+                    {activeBiomarkerExplanationDetail
+                      ? activeBiomarkerExplanationDetail.title
+                      : urineTestFlowOpen
+                        ? "Urine test"
+                        : "Biometrics"}
                   </p>
                   <p className="text-sm text-[#6b6257]">
-                    {urineTestFlowOpen
+                    {activeBiomarkerExplanationDetail
+                      ? "Understand what this biomarker means, your latest result, and the scale."
+                      : urineTestFlowOpen
                       ? "Follow the 60-second HealthSense capture flow before taking the photo."
                       : "Review your latest biometric measurements."}
                   </p>
                 </div>
-                {urineTestFlowOpen ? (
+                {urineTestFlowOpen || activeBiomarkerExplanationDetail ? (
                   <button
                     type="button"
-                    onClick={() => setUrineTestFlowOpen(false)}
+                    onClick={() => {
+                      if (activeBiomarkerExplanationDetail) {
+                        setActiveBiomarkerExplanation(null);
+                        return;
+                      }
+                      setUrineTestFlowOpen(false);
+                    }}
                     className="rounded-full border border-[#d9cdbb] bg-white px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
                   >
-                    Back
+                    {activeBiomarkerExplanationDetail ? "Close" : "Back"}
                   </button>
                 ) : null}
               </div>
@@ -1864,7 +1935,16 @@ export default function LatestAssessmentPanel({
 
             <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
               <div className="space-y-4">
-                {urineTestFlowOpen ? (
+                {!urineTestFlowOpen && activeBiomarkerExplanationDetail ? (
+                  <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
+                    <BiomarkerExplanationCard
+                      className=""
+                      title={activeBiomarkerExplanationDetail.title}
+                      result={activeBiomarkerExplanationDetail.result}
+                      scale={activeBiomarkerExplanationDetail.scale}
+                    />
+                  </div>
+                ) : urineTestFlowOpen ? (
                   <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1">
@@ -1991,7 +2071,7 @@ export default function LatestAssessmentPanel({
                   <>
                     <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-[#1e1b16]">Resting heart rate</p>
+                    <p className="text-sm font-semibold text-[#1e1b16]">Resting HR</p>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -2037,17 +2117,6 @@ export default function LatestAssessmentPanel({
                       Daily history will appear here once recent biometrics have been synced.
                     </p>
                   )}
-                  {activeBiomarkerExplanation === "rhr" ? (
-                    <BiomarkerExplanationCard
-                      title="Resting heart rate"
-                      result={rhrExplanationResult}
-                      scale={[
-                        "Purple optimum: trending better than your recent resting heart-rate pattern.",
-                        "Green normal: broadly in your expected recent range.",
-                        "Amber elevated: higher than expected; consider recovery, sleep, hydration, illness, alcohol, or training load.",
-                      ]}
-                    />
-                  ) : null}
                 </div>
 
                 <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
@@ -2097,23 +2166,12 @@ export default function LatestAssessmentPanel({
                       Daily step history will appear here once recent biometrics have been synced.
                     </p>
                   )}
-                  {activeBiomarkerExplanation === "steps" ? (
-                    <BiomarkerExplanationCard
-                      title="Steps"
-                      result={stepsExplanationResult}
-                      scale={[
-                        "Purple optimal: 10,000+ steps.",
-                        "Green strong: 7,500-9,999 steps.",
-                        "Amber base: 5,000-7,499 steps; below 5,000 is below base.",
-                      ]}
-                    />
-                  ) : null}
                 </div>
 
                     <div className="rounded-[24px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4">
                       <div className="flex items-center justify-between gap-3">
                         <p className="text-sm font-semibold text-[#1e1b16]">
-                          Urine markers{urineTestHeadingDate !== "—" ? ` (${urineTestHeadingDate})` : ""}
+                          Urine{urineTestHeadingDate !== "—" ? ` (${urineTestHeadingDate})` : ""}
                         </p>
                         <div className="ml-auto flex items-center gap-2">
                           <button
@@ -2144,39 +2202,21 @@ export default function LatestAssessmentPanel({
                             ketogenicDietActive,
                           });
                           return (
-                            <button
+                            <div
                               key={String(marker.key || marker.label)}
-                              type="button"
-                              onClick={() => {
-                                setActiveBiomarkerExplanation(null);
-                                setUrineTestFlowOpen(true);
-                              }}
-                              className={`rounded-xl border px-2 py-2 text-center text-[11px] transition hover:border-[#dccfbe] ${restingHeartRateBoxToneClassName}`}
-                              aria-label={`Open urine sample test for ${String(marker.label || "urine marker")}`}
+                              className={`rounded-xl border px-1.5 py-2 text-center text-[10px] sm:px-2 sm:text-[11px] ${restingHeartRateBoxToneClassName}`}
                             >
-                              <p className="truncate font-semibold opacity-80">{marker.label}</p>
+                              <p className="truncate text-[9px] font-semibold leading-tight opacity-80 sm:text-[10px]">
+                                {formatUrineTileLabel(marker)}
+                              </p>
                               <span className={`mx-auto mt-3 block h-6 w-6 rounded-full border-2 sm:h-7 sm:w-7 ${dotToneClassName}`} />
                               <p className="mt-2 min-h-[0.75rem] text-[10px] font-semibold uppercase tracking-[0.12em]">
-                                {formatUrineStatusAbbreviation(marker)}
+                                {formatUrineDisplayStatusLabel(marker)}
                               </p>
-                            </button>
+                            </div>
                           );
                         })}
                       </div>
-                      {activeBiomarkerExplanation === "urine" ? (
-                        <BiomarkerExplanationCard
-                          title="Urine markers"
-                          result={urineExplanationResult}
-                          scale={[
-                            "Hydration: well is purple, ok is green, low is amber.",
-                            "UTI Signs, Protein, Blood, and Glucose: clear is green, watch/trace is amber, flagged/raised is red.",
-                            ketogenicDietActive
-                              ? "Ketones with keto/low-carb on: clear is amber, trace is green, raised is purple unless glucose is raised."
-                              : "Ketones with keto/low-carb off: clear is green, trace is amber, raised is red.",
-                            "If glucose is raised with trace or raised ketones, ketones show red as a safety flag.",
-                          ]}
-                        />
-                      ) : null}
                     </div>
                   </>
                 )}
@@ -2187,6 +2227,10 @@ export default function LatestAssessmentPanel({
               <button
                 type="button"
                 onClick={() => {
+                  if (activeBiomarkerExplanationDetail) {
+                    setActiveBiomarkerExplanation(null);
+                    return;
+                  }
                   setActiveBiomarkerExplanation(null);
                   setUrineTestFlowOpen(false);
                   setBiometricsModalOpen(false);
