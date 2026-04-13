@@ -427,13 +427,27 @@ def _normalize_media_url(raw: str | None) -> str | None:
     return value or None
 
 
+def _avatar_result_url(row: EducationLessonVariant | None) -> str | None:
+    payload = getattr(row, "avatar_payload_json", None) if row is not None else None
+    if not isinstance(payload, dict):
+        return None
+    outputs = payload.get("outputs") if isinstance(payload.get("outputs"), dict) else {}
+    return _normalize_media_url((outputs or {}).get("result"))
+
+
+def _lesson_variant_video_url(row: EducationLessonVariant | None) -> str | None:
+    if row is None:
+        return None
+    return _normalize_media_url(getattr(row, "video_url", None)) or _avatar_result_url(row)
+
+
 def education_lesson_avatar_payload(row: EducationLessonVariant | None) -> dict[str, Any] | None:
     if row is None:
         return None
     defaults = azure_avatar_defaults()
     title = str(getattr(row, "title", "") or "").strip()
     script = str(getattr(row, "script", "") or "").strip()
-    url = _normalize_media_url(getattr(row, "video_url", None))
+    url = _lesson_variant_video_url(row)
     poster_url = _normalize_media_url(getattr(row, "poster_url", None))
     character = str(getattr(row, "avatar_character", "") or "").strip()
     style = str(getattr(row, "avatar_style", "") or "").strip()
@@ -507,7 +521,7 @@ def _content_payload(
     summary = str(getattr(lesson_variant, "summary", "") or "").strip()
     script = str(getattr(lesson_variant, "script", "") or "").strip()
     action_prompt = str(getattr(lesson_variant, "action_prompt", "") or "").strip()
-    video_url = _normalize_media_url(getattr(lesson_variant, "video_url", None))
+    video_url = _lesson_variant_video_url(lesson_variant)
     poster_url = _normalize_media_url(getattr(lesson_variant, "poster_url", None))
     avatar = education_lesson_avatar_payload(lesson_variant) or legacy.get("avatar")
     body = script or str(legacy.get("body") or "").strip()
@@ -1044,12 +1058,12 @@ def _resolve_lesson_variant(
             break
     if selected is None:
         selected = rows[0]
-    if str(getattr(selected, "video_url", "") or "").strip():
+    if _lesson_variant_video_url(selected):
         return selected
     video_rows = [
         row
         for row in rows
-        if str(getattr(row, "video_url", "") or "").strip()
+        if _lesson_variant_video_url(row)
     ]
     if not video_rows:
         return selected

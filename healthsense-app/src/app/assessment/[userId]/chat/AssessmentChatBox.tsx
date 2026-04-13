@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -874,6 +875,7 @@ export default function AssessmentChatBox({
     educationLesson?.lesson_variant_id || "",
   )}:${educationVideoUrl}`;
   const educationProgrammeName = String(educationPlan?.programme?.name || "").trim();
+  const educationPillarPalette = getPillarPalette(educationPlan?.pillar_key);
   const educationConceptTitle = String(
     educationPlan?.concept_label || educationLesson?.title || educationPlan?.pillar_label || "",
   ).trim();
@@ -2306,23 +2308,45 @@ export default function AssessmentChatBox({
                   <p className="text-sm text-[#6b6257]">Refreshing today&apos;s lesson…</p>
                 ) : null}
                 <div className="rounded-[20px] border border-[#efe7db] bg-white px-4 py-3">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                    {educationProgrammeName || "Education programme"}
-                  </p>
-                  <p className="mt-2 text-sm font-semibold text-[#1e1b16]">
-                    {educationLesson?.title || educationConceptTitle || "Today's lesson"}
-                  </p>
-                  <p className="mt-1 text-xs uppercase tracking-[0.14em] text-[#8c7f70]">
-                    {[
-                      educationConceptTitle,
-                      educationDayIndex > 0
-                        ? educationDurationDays > 0
-                          ? `Day ${educationDayIndex} of ${educationDurationDays}`
-                          : `Day ${educationDayIndex}`
-                        : "",
-                      educationPlan.level ? `${educationPlan.level} level` : "",
-                    ].filter(Boolean).join(" · ")}
-                  </p>
+                  <div className="flex items-start gap-3">
+                    {educationPillarPalette.icon ? (
+                      <div
+                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[8px] border"
+                        style={{
+                          backgroundColor: educationPillarPalette.bg,
+                          borderColor: educationPillarPalette.border,
+                        }}
+                      >
+                        <Image
+                          src={educationPillarPalette.icon}
+                          alt=""
+                          aria-hidden="true"
+                          width={26}
+                          height={26}
+                          className="h-7 w-7 object-contain"
+                        />
+                      </div>
+                    ) : null}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
+                        {educationProgrammeName || "Education programme"}
+                      </p>
+                      <p className="mt-2 text-sm font-semibold text-[#1e1b16]">
+                        {educationLesson?.title || educationConceptTitle || "Today's lesson"}
+                      </p>
+                      <p className="mt-1 text-xs uppercase tracking-[0.14em] text-[#8c7f70]">
+                        {[
+                          educationConceptTitle,
+                          educationDayIndex > 0
+                            ? educationDurationDays > 0
+                              ? `Day ${educationDayIndex} of ${educationDurationDays}`
+                              : `Day ${educationDayIndex}`
+                            : "",
+                          educationPlan.level ? `${educationPlan.level} level` : "",
+                        ].filter(Boolean).join(" · ")}
+                      </p>
+                    </div>
+                  </div>
                   {educationLesson?.summary ? (
                     <p className="mt-3 text-sm leading-6 text-[#6b6257]">{educationLesson.summary}</p>
                   ) : null}

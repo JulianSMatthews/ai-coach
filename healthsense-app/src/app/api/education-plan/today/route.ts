@@ -31,6 +31,12 @@ function normalizeReportUrl(value: unknown, base: string): string | null {
   if (raw.startsWith("/reports/")) {
     return `${base}${raw}`;
   }
+  if (raw.startsWith("reports/")) {
+    return `${base}/${raw}`;
+  }
+  if (raw.startsWith("content/")) {
+    return `${base}/reports/${raw}`;
+  }
   return raw;
 }
 

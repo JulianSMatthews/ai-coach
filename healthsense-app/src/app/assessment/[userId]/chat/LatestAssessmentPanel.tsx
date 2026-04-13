@@ -2234,7 +2234,7 @@ export default function LatestAssessmentPanel({
             >
               <div className="flex items-center gap-3">
                 <InsightIcon />
-                <span className="text-base font-semibold text-[#1e1b16]">Insight of the day</span>
+                <span className="text-base font-semibold text-[#1e1b16]">Today&apos;s focus</span>
               </div>
             </button>
             <button
