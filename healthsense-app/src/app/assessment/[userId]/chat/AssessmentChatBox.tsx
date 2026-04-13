@@ -624,6 +624,14 @@ function isLikelyVideoUrl(value: string): boolean {
   return /\.(mp4|m4v|mov|webm)(?:$|[?#])/i.test(token);
 }
 
+function firstNonEmptyString(...values: unknown[]): string {
+  for (const value of values) {
+    const token = String(value || "").trim();
+    if (token) return token;
+  }
+  return "";
+}
+
 function educationQuizOptionLabel(option: unknown): string {
   if (typeof option === "string" || typeof option === "number" || typeof option === "boolean") {
     return String(option).trim();
@@ -860,22 +868,39 @@ export default function AssessmentChatBox({
   const educationLesson = educationPlan?.lesson || null;
   const educationContent = educationLesson?.content || null;
   const educationAvatar = educationContent?.avatar || null;
-  const explicitEducationVideoUrl = String(
-    educationAvatar?.url || educationContent?.video_url || "",
-  ).trim();
+  const educationAvatarRecord = educationAvatar && typeof educationAvatar === "object"
+    ? educationAvatar as Record<string, unknown>
+    : null;
+  const explicitEducationVideoUrl = firstNonEmptyString(
+    educationAvatarRecord?.url,
+    educationAvatarRecord?.video_url,
+    educationAvatarRecord?.videoUrl,
+    educationAvatarRecord?.result_url,
+    educationAvatarRecord?.resultUrl,
+    educationContent?.video_url,
+  );
   const fallbackEducationMediaUrl = String(educationContent?.podcast_url || "").trim();
   const educationVideoUrl = explicitEducationVideoUrl || (
     isLikelyVideoUrl(fallbackEducationMediaUrl) ? fallbackEducationMediaUrl : ""
   );
-  const educationVideoPosterUrl = String(
-    educationAvatar?.poster_url || educationContent?.poster_url || "",
-  ).trim();
+  const educationVideoPosterUrl = firstNonEmptyString(
+    educationAvatarRecord?.poster_url,
+    educationAvatarRecord?.posterUrl,
+    educationContent?.poster_url,
+  );
   const educationHasVideo = Boolean(educationVideoUrl);
+  const educationAvatarStatus = String(educationAvatarRecord?.status || "").trim().toLowerCase();
+  const educationAvatarPending = Boolean(
+    !educationHasVideo &&
+      educationAvatarRecord?.job_id &&
+      !["failed", "cancelled", "canceled"].includes(educationAvatarStatus),
+  );
   const educationMediaKey = `${String(educationPlan?.plan_id || "education")}:${String(
     educationLesson?.lesson_variant_id || "",
   )}:${educationVideoUrl}`;
   const educationProgrammeName = String(educationPlan?.programme?.name || "").trim();
   const educationPillarPalette = getPillarPalette(educationPlan?.pillar_key);
+  const educationPillarIconSrc = educationPillarPalette.icon;
   const educationConceptTitle = String(
     educationPlan?.concept_label || educationLesson?.title || educationPlan?.pillar_label || "",
   ).trim();
@@ -885,11 +910,31 @@ export default function AssessmentChatBox({
     () => (Array.isArray(educationPlan?.quiz?.questions) ? educationPlan.quiz.questions : []),
     [educationPlan?.quiz?.questions],
   );
+  const educationCompletionStatus = String(educationPlan?.progress?.completion_status || "").trim().toLowerCase();
+  const educationVideoCompleted = Boolean(
+    educationPlan?.progress?.video_completed_at ||
+      educationCompletionStatus === "video_done" ||
+      educationCompletionStatus === "completed",
+  );
   const educationQuizCompleted = Boolean(
     educationPlan?.progress?.quiz_completed_at ||
-      String(educationPlan?.progress?.completion_status || "").includes("quiz") ||
-      String(educationPlan?.progress?.completion_status || "") === "completed",
+      educationCompletionStatus.includes("quiz") ||
+      educationCompletionStatus === "completed",
   );
+  const educationFocusCompleted = Boolean(
+    educationPlan?.progress?.completed_at || educationCompletionStatus === "completed",
+  );
+  const educationStreakDays = Math.max(0, Math.floor(Number(educationPlan?.streak_days || 0) || 0));
+  const educationBestStreakDays = Math.max(0, Math.floor(Number(educationPlan?.best_streak_days || 0) || 0));
+  const educationStreakLabel = `${educationStreakDays} day${educationStreakDays === 1 ? "" : "s"}`;
+  const educationBestStreakLabel = `${educationBestStreakDays} day${educationBestStreakDays === 1 ? "" : "s"}`;
+  const educationStreakStatusText = educationFocusCompleted
+    ? "Today's focus complete"
+    : educationVideoCompleted
+      ? "Complete the quick check to count today."
+      : educationQuizCompleted
+        ? "Watch the video to count today."
+        : "Watch the video and complete the quick check to count today.";
   const dailyHabits = useMemo(() => {
     const selected = Array.isArray(dailyHabitPlan?.habits) ? dailyHabitPlan.habits : [];
     const fallback = Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : [];
@@ -1477,6 +1522,14 @@ export default function AssessmentChatBox({
     if (educationPlan) return;
     void loadEducationPlan();
   }, [showGuidedHomeChatPanel, homeSurface, loadEducationPlan, educationPlan]);
+
+  useEffect(() => {
+    if (!showGuidedHomeChatPanel || homeSurface !== "insight" || !educationAvatarPending) return;
+    const timeout = window.setTimeout(() => {
+      void loadEducationPlan();
+    }, 12000);
+    return () => window.clearTimeout(timeout);
+  }, [showGuidedHomeChatPanel, homeSurface, educationAvatarPending, loadEducationPlan]);
 
   useEffect(() => {
     if (educationVideoProgressRef.current.key === educationMediaKey) return;
@@ -2309,28 +2362,36 @@ export default function AssessmentChatBox({
                 ) : null}
                 <div className="rounded-[20px] border border-[#efe7db] bg-white px-4 py-3">
                   <div className="flex items-start gap-3">
-                    {educationPillarPalette.icon ? (
-                      <div
-                        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[8px] border"
-                        style={{
-                          backgroundColor: educationPillarPalette.bg,
-                          borderColor: educationPillarPalette.border,
-                        }}
-                      >
+                    {educationPillarIconSrc ? (
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[#efe7db] bg-[#fffaf3]">
                         <Image
-                          src={educationPillarPalette.icon}
+                          src={educationPillarIconSrc}
                           alt=""
                           aria-hidden="true"
-                          width={26}
-                          height={26}
-                          className="h-7 w-7 object-contain"
+                          width={24}
+                          height={24}
+                          className="h-6 w-6 object-contain"
                         />
-                      </div>
+                      </span>
                     ) : null}
                     <div className="min-w-0 flex-1">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                        {educationProgrammeName || "Education programme"}
-                      </p>
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <p className="min-w-0 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
+                          {educationProgrammeName || "Education programme"}
+                        </p>
+                        <div
+                          className={`shrink-0 rounded-[8px] border px-3 py-1 text-right ${
+                            educationFocusCompleted
+                              ? "border-[#b7dcc2] bg-[#edf7f0] text-[#317a4d]"
+                              : "border-[#efe7db] bg-[#fffaf3] text-[#6b6257]"
+                          }`}
+                        >
+                          <p className="text-[10px] font-semibold uppercase">
+                            Daily streak
+                          </p>
+                          <p className="text-sm font-semibold">{educationStreakLabel}</p>
+                        </div>
+                      </div>
                       <p className="mt-2 text-sm font-semibold text-[#1e1b16]">
                         {educationLesson?.title || educationConceptTitle || "Today's lesson"}
                       </p>
@@ -2350,6 +2411,34 @@ export default function AssessmentChatBox({
                   {educationLesson?.summary ? (
                     <p className="mt-3 text-sm leading-6 text-[#6b6257]">{educationLesson.summary}</p>
                   ) : null}
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                    <span
+                      className={`rounded-[8px] border px-2.5 py-1 font-semibold ${
+                        educationVideoCompleted
+                          ? "border-[#b7dcc2] bg-[#edf7f0] text-[#317a4d]"
+                          : "border-[#efe7db] bg-[#fffaf3] text-[#6b6257]"
+                      }`}
+                    >
+                      Video {educationVideoCompleted ? "watched" : "to watch"}
+                    </span>
+                    <span
+                      className={`rounded-[8px] border px-2.5 py-1 font-semibold ${
+                        educationQuizCompleted
+                          ? "border-[#b7dcc2] bg-[#edf7f0] text-[#317a4d]"
+                          : "border-[#efe7db] bg-[#fffaf3] text-[#6b6257]"
+                      }`}
+                    >
+                      Quiz {educationQuizCompleted ? "complete" : "to do"}
+                    </span>
+                    {educationBestStreakDays > educationStreakDays ? (
+                      <span className="rounded-[8px] border border-[#efe7db] bg-white px-2.5 py-1 font-semibold text-[#6b6257]">
+                        Best {educationBestStreakLabel}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="mt-2 text-xs font-medium text-[#6b6257]">
+                    {educationStreakStatusText}
+                  </p>
                 </div>
                 {educationHasVideo ? (
                   <div className="rounded-[24px] border border-[#efe7db] bg-[#f7f4ee]">
@@ -2377,6 +2466,15 @@ export default function AssessmentChatBox({
                     >
                       <source src={educationVideoUrl} />
                     </video>
+                  </div>
+                ) : educationAvatarPending ? (
+                  <div className="rounded-[20px] border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
+                      Avatar video
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-[#6b6257]">
+                      Today&apos;s avatar video is being prepared. This will update automatically when the video is ready.
+                    </p>
                   </div>
                 ) : educationContent?.script || educationContent?.body ? (
                   <div className="rounded-[20px] border border-[#efe7db] bg-[#fffaf3] px-4 py-4">

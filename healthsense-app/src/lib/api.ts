@@ -393,6 +393,10 @@ export type CoachInsightContent = {
   podcast_voice?: string | null;
   avatar?: {
     url?: string | null;
+    video_url?: string | null;
+    videoUrl?: string | null;
+    result_url?: string | null;
+    resultUrl?: string | null;
     title?: string | null;
     script?: string | null;
     poster_url?: string | null;
@@ -444,6 +448,10 @@ export type EducationLessonContent = {
   level?: string | null;
   avatar?: {
     url?: string | null;
+    video_url?: string | null;
+    videoUrl?: string | null;
+    result_url?: string | null;
+    resultUrl?: string | null;
     title?: string | null;
     script?: string | null;
     poster_url?: string | null;

@@ -432,13 +432,25 @@ def _avatar_result_url(row: EducationLessonVariant | None) -> str | None:
     if not isinstance(payload, dict):
         return None
     outputs = payload.get("outputs") if isinstance(payload.get("outputs"), dict) else {}
-    return _normalize_media_url((outputs or {}).get("result"))
+    for candidate in (
+        (outputs or {}).get("result"),
+        (outputs or {}).get("video"),
+        (outputs or {}).get("video_url"),
+        (outputs or {}).get("url"),
+        payload.get("result_url"),
+        payload.get("video_url"),
+        payload.get("url"),
+    ):
+        url = _normalize_media_url(candidate)
+        if url:
+            return url
+    return None
 
 
 def _lesson_variant_video_url(row: EducationLessonVariant | None) -> str | None:
     if row is None:
         return None
-    return _normalize_media_url(getattr(row, "video_url", None)) or _avatar_result_url(row)
+    return _normalize_media_url(getattr(row, "video_url", None))
 
 
 def education_lesson_avatar_payload(row: EducationLessonVariant | None) -> dict[str, Any] | None:
@@ -746,6 +758,49 @@ def _poll_education_avatar_status(
         summary_url=summary_url,
         response_payload=status_payload,
     )
+
+
+def _refresh_lesson_variant_avatar_media(
+    session,
+    row: EducationLessonVariant | None,
+) -> EducationLessonVariant | None:
+    if row is None:
+        return None
+    if _normalize_media_url(getattr(row, "video_url", None)):
+        return row
+    job_id = str(getattr(row, "avatar_job_id", "") or "").strip()
+    status = str(getattr(row, "avatar_status", "") or "").strip().lower()
+    if status in {"failed", "cancelled", "canceled"}:
+        return row
+    result_url = _avatar_result_url(row)
+    if result_url and status in {"", "succeeded"}:
+        try:
+            filename = (
+                f"education-avatar-{int(getattr(row, 'id', 0) or 0)}-"
+                f"{_safe_avatar_asset_token(job_id or result_url)}.mp4"
+            )
+            row.video_url = _write_education_report_bytes(
+                f"content/education/{filename}",
+                download_batch_avatar_output(result_url),
+            )
+            row.avatar_status = "succeeded"
+            row.avatar_generated_at = getattr(row, "avatar_generated_at", None) or _now_utc()
+            row.avatar_source = str(getattr(row, "avatar_source", "") or "").strip() or "azure_batch"
+            session.add(row)
+            session.flush()
+            return row
+        except Exception as exc:
+            print(f"[education] avatar cache skipped for lesson_variant={getattr(row, 'id', None)}: {exc}")
+            if not job_id:
+                return row
+    if not job_id:
+        return row
+    try:
+        _poll_education_avatar_status(session, row=row)
+        return session.get(EducationLessonVariant, int(getattr(row, "id", 0) or 0)) or row
+    except Exception as exc:
+        print(f"[education] avatar refresh skipped for lesson_variant={getattr(row, 'id', None)}: {exc}")
+        return row
 
 
 def generate_education_lesson_avatar(
@@ -1436,6 +1491,7 @@ def _lesson_state(
         },
     )
     lesson_variant = _resolve_lesson_variant(session, int(programme_day.id), str(getattr(concept_level, "current_level", "") or "build"))
+    lesson_variant = _refresh_lesson_variant_avatar_media(session, lesson_variant)
     quiz = _quiz_row(session, int(getattr(lesson_variant, "id", 0) or 0) or None)
     quiz_questions = _question_rows(session, int(getattr(quiz, "id", 0) or 0) or None)
     content_item = session.get(ContentLibraryItem, int(getattr(lesson_variant, "content_item_id", 0) or 0)) if lesson_variant is not None and getattr(lesson_variant, "content_item_id", None) else None

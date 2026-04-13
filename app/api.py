@@ -8035,10 +8035,18 @@ def api_user_education_plan_today(
             avatar = content.get("avatar")
             if isinstance(avatar, dict):
                 avatar_url = str(avatar.get("url") or "").strip()
+                avatar_video_url = str(avatar.get("video_url") or "").strip()
+                avatar_result_url = str(avatar.get("result_url") or avatar.get("resultUrl") or "").strip()
                 poster_url = str(avatar.get("poster_url") or "").strip()
                 summary_url = str(avatar.get("summary_url") or "").strip()
                 if avatar_url:
                     avatar["url"] = _normalize_reports_url(avatar_url)
+                if avatar_video_url:
+                    avatar["video_url"] = _normalize_reports_url(avatar_video_url)
+                if avatar_result_url:
+                    normalized_result_url = _normalize_reports_url(avatar_result_url)
+                    avatar["result_url"] = normalized_result_url
+                    avatar["resultUrl"] = normalized_result_url
                 if poster_url:
                     avatar["poster_url"] = _normalize_reports_url(poster_url)
                 if summary_url:

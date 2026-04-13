@@ -49,7 +49,7 @@ function normalizeEducationPlanMedia(data: Record<string, unknown>, base: string
   }
   const avatar = content.avatar && typeof content.avatar === "object" ? content.avatar as Record<string, unknown> : null;
   if (avatar) {
-    for (const key of ["url", "poster_url", "summary_url"]) {
+    for (const key of ["url", "video_url", "result_url", "resultUrl", "poster_url", "summary_url"]) {
       avatar[key] = normalizeReportUrl(avatar[key], base);
     }
   }
