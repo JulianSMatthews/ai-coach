@@ -429,12 +429,18 @@ export type CoachInsightResponse = {
 
 export type EducationLessonContent = {
   id?: number;
+  source?: string | null;
+  lesson_variant_id?: number | null;
   pillar_key?: string | null;
   concept_code?: string | null;
   title?: string | null;
+  summary?: string | null;
   body?: string | null;
+  script?: string | null;
+  action_prompt?: string | null;
   video_url?: string | null;
   podcast_url?: string | null;
+  poster_url?: string | null;
   level?: string | null;
   avatar?: {
     url?: string | null;
@@ -485,6 +491,7 @@ export type EducationPlanTodayResponse = {
     title?: string | null;
     summary?: string | null;
     goal?: string | null;
+    action_prompt?: string | null;
     content?: EducationLessonContent | null;
   } | null;
   quiz?: {

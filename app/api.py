@@ -8012,18 +8012,24 @@ def api_user_education_plan_today(
         if isinstance(content, dict):
             video_url = str(content.get("video_url") or "").strip()
             podcast_url = str(content.get("podcast_url") or "").strip()
+            poster_url = str(content.get("poster_url") or "").strip()
             if video_url:
                 content["video_url"] = _normalize_reports_url(video_url)
             if podcast_url:
                 content["podcast_url"] = _normalize_reports_url(podcast_url)
+            if poster_url:
+                content["poster_url"] = _normalize_reports_url(poster_url)
             avatar = content.get("avatar")
             if isinstance(avatar, dict):
                 avatar_url = str(avatar.get("url") or "").strip()
                 poster_url = str(avatar.get("poster_url") or "").strip()
+                summary_url = str(avatar.get("summary_url") or "").strip()
                 if avatar_url:
                     avatar["url"] = _normalize_reports_url(avatar_url)
                 if poster_url:
                     avatar["poster_url"] = _normalize_reports_url(poster_url)
+                if summary_url:
+                    avatar["summary_url"] = _normalize_reports_url(summary_url)
     _log_app_engagement_event(
         user_id=user_id,
         unit_type="education_plan_view",

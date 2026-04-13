@@ -5,6 +5,7 @@ import html
 import os
 
 import json
+from datetime import datetime
 from types import SimpleNamespace
 
 from fastapi import APIRouter, HTTPException, Request, Form
@@ -32,7 +33,11 @@ from .prompts import _ensure_llm_prompt_log_schema, _canonical_state
 from .prompts import build_prompt
 from . import prompts as prompts_module
 from .models import User
-from .education_plan import ensure_education_plan_schema
+from .education_plan import (
+    ensure_education_plan_schema,
+    generate_education_lesson_avatar,
+    refresh_education_lesson_avatar,
+)
 from .kickoff import _programme_blocks as kickoff_programme_blocks, _okr_by_pillar as kickoff_okr_by_pillar
 from .kickoff import _latest_assessment as kickoff_latest_assessment, _latest_psych as kickoff_latest_psych
 from .prompts import kr_payload_list, primary_kr_payload
@@ -512,6 +517,21 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
                 {
                     "id": int(variant.id),
                     "level": str(variant.level or ""),
+                    "title": str(getattr(variant, "title", "") or ""),
+                    "summary": str(getattr(variant, "summary", "") or ""),
+                    "script": str(getattr(variant, "script", "") or ""),
+                    "action_prompt": str(getattr(variant, "action_prompt", "") or ""),
+                    "video_url": str(getattr(variant, "video_url", "") or ""),
+                    "poster_url": str(getattr(variant, "poster_url", "") or ""),
+                    "avatar_character": str(getattr(variant, "avatar_character", "") or ""),
+                    "avatar_style": str(getattr(variant, "avatar_style", "") or ""),
+                    "avatar_voice": str(getattr(variant, "avatar_voice", "") or ""),
+                    "avatar_status": str(getattr(variant, "avatar_status", "") or ""),
+                    "avatar_job_id": str(getattr(variant, "avatar_job_id", "") or ""),
+                    "avatar_error": str(getattr(variant, "avatar_error", "") or ""),
+                    "avatar_generated_at": getattr(variant, "avatar_generated_at", None).isoformat() if getattr(variant, "avatar_generated_at", None) else "",
+                    "avatar_source": str(getattr(variant, "avatar_source", "") or ""),
+                    "avatar_summary_url": str(getattr(variant, "avatar_summary_url", "") or ""),
                     "content_item_id": int(variant.content_item_id) if variant.content_item_id else None,
                     "takeaway_default": str(variant.takeaway_default or ""),
                     "takeaway_if_low_score": str(variant.takeaway_if_low_score or ""),
@@ -1661,6 +1681,32 @@ def list_education_programmes():
     return _wrap_page("Education Programmes", body)
 
 
+@admin.post("/education-programmes/lesson-variants/{variant_id}/avatar/generate")
+async def generate_education_programme_lesson_avatar(variant_id: int, request: Request):
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+    try:
+        return generate_education_lesson_avatar(int(variant_id), payload if isinstance(payload, dict) else {})
+    except RuntimeError as exc:
+        message = str(exc)
+        status_code = 503 if "not enabled" in message.lower() else 400
+        raise HTTPException(status_code, message)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@admin.post("/education-programmes/lesson-variants/{variant_id}/avatar/refresh")
+async def refresh_education_programme_lesson_avatar(variant_id: int):
+    try:
+        return refresh_education_lesson_avatar(int(variant_id))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(400, str(exc))
+
+
 @admin.get("/education-programmes/edit", response_class=HTMLResponse)
 def edit_education_programme(id: int | None = None):
     ensure_education_plan_schema()
@@ -1794,6 +1840,21 @@ def edit_education_programme(id: int | None = None):
           return {{
             id: null,
             level: 'build',
+            title: '',
+            summary: '',
+            script: '',
+            action_prompt: '',
+            video_url: '',
+            poster_url: '',
+            avatar_character: '',
+            avatar_style: '',
+            avatar_voice: '',
+            avatar_status: '',
+            avatar_job_id: '',
+            avatar_error: '',
+            avatar_generated_at: '',
+            avatar_source: '',
+            avatar_summary_url: '',
             content_item_id: null,
             takeaway_default: '',
             takeaway_if_low_score: '',
@@ -1923,7 +1984,7 @@ def edit_education_programme(id: int | None = None):
         function renderContentSelect(day, variant) {{
           const current = variant.content_item_id ? Number(variant.content_item_id) : null;
           const options = contentChoices(selectedProgrammePillar(), dayConceptKey(day), current);
-          const empty = "<option value=''>Select video content</option>";
+          const empty = "<option value=''>No library fallback</option>";
           const items = options.map((item) => {{
             const selected = current === Number(item.id) ? 'selected' : '';
             const label = `#${{item.id}} · ${{item.title}}${{item.level ? ` · ${{item.level}}` : ''}}${{item.status ? ` · ${{item.status}}` : ''}}`;
@@ -1977,12 +2038,17 @@ def edit_education_programme(id: int | None = None):
           const questions = Array.isArray(quiz.questions) && quiz.questions.length
             ? quiz.questions
             : [emptyQuestion(1), emptyQuestion(2), emptyQuestion(3)];
+          const variantId = String(variant.id || '').trim();
+          const avatarStatus = String(variant.avatar_status || '').trim();
           return `
             <div class="lesson-variant js-variant">
               <input type="hidden" class="js-variant-id" value="${{escapeHtml(variant.id || '')}}" />
               <div class="stack" style="justify-content:space-between;">
                 <strong>Lesson Variant</strong>
-                <button type="button" class="danger js-remove-variant">Remove variant</button>
+                <div class="stack">
+                  ${{variantId ? `<button type="button" class="secondary js-generate-avatar">Generate avatar video</button><button type="button" class="secondary js-refresh-avatar">Refresh avatar</button>` : `<span class="subtle">Save this variant before generating avatar video.</span>`}}
+                  <button type="button" class="danger js-remove-variant">Remove variant</button>
+                </div>
               </div>
               <div class="grid-3" style="margin-top:10px;">
                 <div class="field">
@@ -1996,12 +2062,81 @@ def edit_education_programme(id: int | None = None):
                   </label>
                 </div>
                 <div class="field">
-                  <label>Video content<br/>${{renderContentSelect(day, variant)}}</label>
-                </div>
-                <div class="field">
                   <label><input type="checkbox" class="js-variant-active" ${{variant.is_active === false ? '' : 'checked'}} /> Active</label>
                 </div>
+                <div class="field">
+                  <label>Avatar status<br/><input type="text" class="js-variant-avatar-status" value="${{escapeHtml(avatarStatus)}}" readonly /></label>
+                </div>
               </div>
+
+              <div class="card" style="margin-top:10px; padding:12px 14px;">
+                <h4 class="section-title">Education lesson content</h4>
+                <div class="grid-2">
+                  <div class="field">
+                    <label>Lesson title<br/><input type="text" class="js-variant-title" value="${{escapeHtml(variant.title || '')}}" /></label>
+                  </div>
+                  <div class="field">
+                    <label>Lesson summary<br/><textarea class="js-variant-summary" rows="2">${{escapeHtml(variant.summary || '')}}</textarea></label>
+                  </div>
+                </div>
+                <div class="field">
+                  <label>Avatar/video script<br/><textarea class="js-variant-script" rows="8">${{escapeHtml(variant.script || '')}}</textarea></label>
+                </div>
+                <div class="field">
+                  <label>Daily action prompt<br/><textarea class="js-variant-action-prompt" rows="2">${{escapeHtml(variant.action_prompt || '')}}</textarea></label>
+                </div>
+              </div>
+
+              <div class="card" style="margin-top:10px; padding:12px 14px;">
+                <h4 class="section-title">Avatar video</h4>
+                <div class="grid-2">
+                  <div class="field">
+                    <label>Video URL<br/><input type="text" class="js-variant-video-url" value="${{escapeHtml(variant.video_url || '')}}" /></label>
+                  </div>
+                  <div class="field">
+                    <label>Poster URL<br/><input type="text" class="js-variant-poster-url" value="${{escapeHtml(variant.poster_url || '')}}" /></label>
+                  </div>
+                </div>
+                <div class="grid-3">
+                  <div class="field">
+                    <label>Character<br/><input type="text" class="js-variant-avatar-character" value="${{escapeHtml(variant.avatar_character || '')}}" placeholder="lisa" /></label>
+                  </div>
+                  <div class="field">
+                    <label>Style<br/><input type="text" class="js-variant-avatar-style" value="${{escapeHtml(variant.avatar_style || '')}}" placeholder="graceful-sitting" /></label>
+                  </div>
+                  <div class="field">
+                    <label>Voice<br/><input type="text" class="js-variant-avatar-voice" value="${{escapeHtml(variant.avatar_voice || '')}}" placeholder="en-GB-SoniaNeural" /></label>
+                  </div>
+                </div>
+                <div class="grid-3">
+                  <div class="field">
+                    <label>Avatar job ID<br/><input type="text" class="js-variant-avatar-job-id" value="${{escapeHtml(variant.avatar_job_id || '')}}" readonly /></label>
+                  </div>
+                  <div class="field">
+                    <label>Generated at<br/><input type="text" class="js-variant-avatar-generated-at" value="${{escapeHtml(variant.avatar_generated_at || '')}}" readonly /></label>
+                  </div>
+                  <div class="field">
+                    <label>Source<br/><input type="text" class="js-variant-avatar-source" value="${{escapeHtml(variant.avatar_source || '')}}" readonly /></label>
+                  </div>
+                </div>
+                <div class="grid-2">
+                  <div class="field">
+                    <label>Summary URL<br/><input type="text" class="js-variant-avatar-summary-url" value="${{escapeHtml(variant.avatar_summary_url || '')}}" readonly /></label>
+                  </div>
+                  <div class="field">
+                    <label>Error<br/><textarea class="js-variant-avatar-error" rows="2" readonly>${{escapeHtml(variant.avatar_error || '')}}</textarea></label>
+                  </div>
+                </div>
+              </div>
+
+              <details class="card" style="margin-top:10px; padding:12px 14px;">
+                <summary><strong>Legacy library fallback</strong></summary>
+                <p class="help">Optional fallback for old programmes. New education programmes should store their script and video on this lesson variant.</p>
+                <div class="field">
+                  <label>Library content fallback<br/>${{renderContentSelect(day, variant)}}</label>
+                </div>
+              </details>
+
               <div class="grid-3">
                 <div class="field">
                   <label>Takeaway default<br/><textarea class="js-variant-takeaway-default" rows="3">${{escapeHtml(variant.takeaway_default || '')}}</textarea></label>
@@ -2086,6 +2221,21 @@ def edit_education_programme(id: int | None = None):
               return {{
                 id: variantEl.querySelector('.js-variant-id')?.value ? Number(variantEl.querySelector('.js-variant-id').value) : null,
                 level: String(variantEl.querySelector('.js-variant-level')?.value || 'build').trim(),
+                title: String(variantEl.querySelector('.js-variant-title')?.value || '').trim(),
+                summary: String(variantEl.querySelector('.js-variant-summary')?.value || '').trim(),
+                script: String(variantEl.querySelector('.js-variant-script')?.value || '').trim(),
+                action_prompt: String(variantEl.querySelector('.js-variant-action-prompt')?.value || '').trim(),
+                video_url: String(variantEl.querySelector('.js-variant-video-url')?.value || '').trim(),
+                poster_url: String(variantEl.querySelector('.js-variant-poster-url')?.value || '').trim(),
+                avatar_character: String(variantEl.querySelector('.js-variant-avatar-character')?.value || '').trim(),
+                avatar_style: String(variantEl.querySelector('.js-variant-avatar-style')?.value || '').trim(),
+                avatar_voice: String(variantEl.querySelector('.js-variant-avatar-voice')?.value || '').trim(),
+                avatar_status: String(variantEl.querySelector('.js-variant-avatar-status')?.value || '').trim(),
+                avatar_job_id: String(variantEl.querySelector('.js-variant-avatar-job-id')?.value || '').trim(),
+                avatar_error: String(variantEl.querySelector('.js-variant-avatar-error')?.value || '').trim(),
+                avatar_generated_at: String(variantEl.querySelector('.js-variant-avatar-generated-at')?.value || '').trim(),
+                avatar_source: String(variantEl.querySelector('.js-variant-avatar-source')?.value || '').trim(),
+                avatar_summary_url: String(variantEl.querySelector('.js-variant-avatar-summary-url')?.value || '').trim(),
                 content_item_id: variantEl.querySelector('.js-variant-content-item')?.value ? Number(variantEl.querySelector('.js-variant-content-item').value) : null,
                 takeaway_default: String(variantEl.querySelector('.js-variant-takeaway-default')?.value || '').trim(),
                 takeaway_if_low_score: String(variantEl.querySelector('.js-variant-takeaway-low')?.value || '').trim(),
@@ -2115,7 +2265,7 @@ def edit_education_programme(id: int | None = None):
           const dayEls = Array.from(root.querySelectorAll(':scope > .js-day'));
           const days = dayEls
             .map((dayEl) => collectDayData(dayEl))
-            .filter((day) => day.day_index > 0 || day.default_title || day.lesson_goal || day.variants.some((variant) => variant.content_item_id || variant.takeaway_default));
+            .filter((day) => day.day_index > 0 || day.default_title || day.lesson_goal || day.variants.some((variant) => variant.title || variant.script || variant.action_prompt || variant.video_url || variant.content_item_id || variant.takeaway_default));
           return {{ days }};
         }}
 
@@ -2128,6 +2278,80 @@ def edit_education_programme(id: int | None = None):
               content_item_id: select.value ? Number(select.value) : null,
             }};
             select.outerHTML = renderContentSelect(day, variant);
+          }}
+        }}
+
+        function updateVariantAvatarFields(variantEl, avatar) {{
+          const data = avatar || {{}};
+          const setValue = (selector, value) => {{
+            const el = variantEl.querySelector(selector);
+            if (!el) return;
+            el.value = String(value || '');
+          }};
+          setValue('.js-variant-video-url', data.url);
+          setValue('.js-variant-poster-url', data.poster_url);
+          setValue('.js-variant-avatar-character', data.character);
+          setValue('.js-variant-avatar-style', data.style);
+          setValue('.js-variant-avatar-voice', data.voice);
+          setValue('.js-variant-avatar-status', data.status);
+          setValue('.js-variant-avatar-job-id', data.job_id);
+          setValue('.js-variant-avatar-error', data.error);
+          setValue('.js-variant-avatar-generated-at', data.generated_at);
+          setValue('.js-variant-avatar-source', data.source);
+          setValue('.js-variant-avatar-summary-url', data.summary_url);
+        }}
+
+        async function requestVariantAvatar(variantEl, mode) {{
+          const variantId = String(variantEl.querySelector('.js-variant-id')?.value || '').trim();
+          if (!variantId) {{
+            window.alert('Save this programme before generating avatar video for this lesson.');
+            return;
+          }}
+          const generateButton = variantEl.querySelector('.js-generate-avatar');
+          const refreshButton = variantEl.querySelector('.js-refresh-avatar');
+          const previousGenerateText = generateButton ? generateButton.textContent : '';
+          const previousRefreshText = refreshButton ? refreshButton.textContent : '';
+          if (generateButton) {{
+            generateButton.disabled = true;
+            generateButton.textContent = mode === 'generate' ? 'Generating...' : 'Generate avatar video';
+          }}
+          if (refreshButton) {{
+            refreshButton.disabled = true;
+            refreshButton.textContent = mode === 'refresh' ? 'Refreshing...' : 'Refresh avatar';
+          }}
+          try {{
+            const payload = mode === 'generate' ? {{
+              avatar_title: String(variantEl.querySelector('.js-variant-title')?.value || '').trim(),
+              avatar_script: String(variantEl.querySelector('.js-variant-script')?.value || '').trim(),
+              avatar_poster_url: String(variantEl.querySelector('.js-variant-poster-url')?.value || '').trim(),
+              avatar_character: String(variantEl.querySelector('.js-variant-avatar-character')?.value || '').trim(),
+              avatar_style: String(variantEl.querySelector('.js-variant-avatar-style')?.value || '').trim(),
+              avatar_voice: String(variantEl.querySelector('.js-variant-avatar-voice')?.value || '').trim(),
+            }} : {{}};
+            const response = await fetch(`/admin/education-programmes/lesson-variants/${{encodeURIComponent(variantId)}}/avatar/${{mode}}`, {{
+              method: 'POST',
+              headers: {{ 'Content-Type': 'application/json' }},
+              body: JSON.stringify(payload),
+            }});
+            const result = await response.json().catch(() => ({{}}));
+            if (!response.ok || result.ok === false) {{
+              const message = String(result.error || result.detail || `Avatar ${{mode}} failed.`);
+              window.alert(message);
+            }}
+            if (result.avatar) {{
+              updateVariantAvatarFields(variantEl, result.avatar);
+            }}
+          }} catch (err) {{
+            window.alert(err instanceof Error ? err.message : String(err));
+          }} finally {{
+            if (generateButton) {{
+              generateButton.disabled = false;
+              generateButton.textContent = previousGenerateText || 'Generate avatar video';
+            }}
+            if (refreshButton) {{
+              refreshButton.disabled = false;
+              refreshButton.textContent = previousRefreshText || 'Refresh avatar';
+            }}
           }}
         }}
 
@@ -2169,6 +2393,20 @@ def edit_education_programme(id: int | None = None):
           }}
           if (target.classList.contains('js-remove-variant')) {{
             target.closest('.js-variant')?.remove();
+            return;
+          }}
+          if (target.classList.contains('js-generate-avatar')) {{
+            const variantEl = target.closest('.js-variant');
+            if (variantEl) {{
+              void requestVariantAvatar(variantEl, 'generate');
+            }}
+            return;
+          }}
+          if (target.classList.contains('js-refresh-avatar')) {{
+            const variantEl = target.closest('.js-variant');
+            if (variantEl) {{
+              void requestVariantAvatar(variantEl, 'refresh');
+            }}
             return;
           }}
           if (target.classList.contains('js-add-question')) {{
@@ -2407,6 +2645,28 @@ async def save_education_programme(
                     s.flush()
                 variant_row.programme_day_id = int(day_row.id)
                 variant_row.level = level
+                variant_row.title = str(raw_variant.get("title") or "").strip() or None
+                variant_row.summary = str(raw_variant.get("summary") or "").strip() or None
+                variant_row.script = str(raw_variant.get("script") or "").strip() or None
+                variant_row.action_prompt = str(raw_variant.get("action_prompt") or "").strip() or None
+                variant_row.video_url = str(raw_variant.get("video_url") or "").strip() or None
+                variant_row.poster_url = str(raw_variant.get("poster_url") or "").strip() or None
+                variant_row.avatar_character = str(raw_variant.get("avatar_character") or "").strip() or None
+                variant_row.avatar_style = str(raw_variant.get("avatar_style") or "").strip() or None
+                variant_row.avatar_voice = str(raw_variant.get("avatar_voice") or "").strip() or None
+                variant_row.avatar_status = str(raw_variant.get("avatar_status") or "").strip() or None
+                variant_row.avatar_job_id = str(raw_variant.get("avatar_job_id") or "").strip() or None
+                variant_row.avatar_error = str(raw_variant.get("avatar_error") or "").strip() or None
+                variant_row.avatar_source = str(raw_variant.get("avatar_source") or "").strip() or None
+                variant_row.avatar_summary_url = str(raw_variant.get("avatar_summary_url") or "").strip() or None
+                avatar_generated_at = str(raw_variant.get("avatar_generated_at") or "").strip()
+                if avatar_generated_at:
+                    try:
+                        variant_row.avatar_generated_at = datetime.fromisoformat(avatar_generated_at)
+                    except Exception:
+                        pass
+                else:
+                    variant_row.avatar_generated_at = None
                 variant_row.content_item_id = int(raw_variant.get("content_item_id")) if raw_variant.get("content_item_id") else None
                 variant_row.takeaway_default = str(raw_variant.get("takeaway_default") or "").strip() or None
                 variant_row.takeaway_if_low_score = str(raw_variant.get("takeaway_if_low_score") or "").strip() or None

@@ -1,10 +1,23 @@
 from __future__ import annotations
 
+import base64
+import json
+import os
+import re
+import secrets
+import urllib.request
 from datetime import date, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import and_, delete, desc, inspect, or_, select, text
 
+from .avatar import (
+    azure_avatar_defaults,
+    azure_avatar_enabled,
+    download_batch_avatar_output,
+    generate_batch_avatar_video,
+    get_batch_avatar,
+)
 from .coach_insight import _library_avatar_payload
 from .daily_habits import build_daily_tracker_generation_context_snapshot
 from .db import SessionLocal, engine
@@ -55,6 +68,24 @@ _EDUCATION_SCHEMA_COLUMNS = {
         "lesson_goal": "text",
         "default_title": "varchar(200)",
         "default_summary": "text",
+    },
+    "education_lesson_variants": {
+        "title": "varchar(200)",
+        "summary": "text",
+        "script": "text",
+        "action_prompt": "text",
+        "video_url": "varchar(512)",
+        "poster_url": "varchar(512)",
+        "avatar_character": "varchar(64)",
+        "avatar_style": "varchar(96)",
+        "avatar_voice": "varchar(128)",
+        "avatar_status": "varchar(32)",
+        "avatar_job_id": "varchar(128)",
+        "avatar_error": "text",
+        "avatar_generated_at": "timestamp",
+        "avatar_source": "varchar(64)",
+        "avatar_summary_url": "varchar(512)",
+        "avatar_payload_json": "jsonb",
     },
     "user_education_plans": {
         "entry_concept_key": "varchar(64)",
@@ -391,7 +422,63 @@ def _variant_level_candidates(level: str) -> list[str]:
     return ordered
 
 
-def _content_payload(item: ContentLibraryItem | None) -> dict[str, Any] | None:
+def _normalize_media_url(raw: str | None) -> str | None:
+    value = str(raw or "").strip()
+    return value or None
+
+
+def education_lesson_avatar_payload(row: EducationLessonVariant | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    defaults = azure_avatar_defaults()
+    title = str(getattr(row, "title", "") or "").strip()
+    script = str(getattr(row, "script", "") or "").strip()
+    url = _normalize_media_url(getattr(row, "video_url", None))
+    poster_url = _normalize_media_url(getattr(row, "poster_url", None))
+    character = str(getattr(row, "avatar_character", "") or "").strip()
+    style = str(getattr(row, "avatar_style", "") or "").strip()
+    voice = str(getattr(row, "avatar_voice", "") or "").strip()
+    status = str(getattr(row, "avatar_status", "") or "").strip()
+    job_id = str(getattr(row, "avatar_job_id", "") or "").strip()
+    error = str(getattr(row, "avatar_error", "") or "").strip()
+    source = str(getattr(row, "avatar_source", "") or "").strip()
+    summary_url = _normalize_media_url(getattr(row, "avatar_summary_url", None))
+    generated_at_val = getattr(row, "avatar_generated_at", None)
+    generated_at = generated_at_val.isoformat() if isinstance(generated_at_val, datetime) else None
+    if not any(
+        [
+            url,
+            poster_url,
+            character,
+            style,
+            voice,
+            status,
+            job_id,
+            error,
+            source,
+            summary_url,
+            generated_at,
+        ]
+    ):
+        return None
+    return {
+        "url": url,
+        "title": title or "Education lesson",
+        "script": script or None,
+        "poster_url": poster_url,
+        "character": character or str(defaults.get("character") or "lisa"),
+        "style": style or str(defaults.get("style") or "graceful-sitting"),
+        "voice": voice or str(defaults.get("voice") or "en-GB-SoniaNeural"),
+        "status": status or None,
+        "job_id": job_id or None,
+        "error": error or None,
+        "generated_at": generated_at,
+        "source": source or None,
+        "summary_url": summary_url,
+    }
+
+
+def _legacy_content_payload(item: ContentLibraryItem | None) -> dict[str, Any] | None:
     if item is None:
         return None
     avatar = _library_avatar_payload(item)
@@ -407,6 +494,338 @@ def _content_payload(item: ContentLibraryItem | None) -> dict[str, Any] | None:
         "level": str(getattr(item, "level", "") or "").strip() or None,
         "created_at": getattr(item, "created_at", None).isoformat() if getattr(item, "created_at", None) else None,
     }
+
+
+def _content_payload(
+    lesson_variant: EducationLessonVariant | None,
+    legacy_item: ContentLibraryItem | None = None,
+) -> dict[str, Any] | None:
+    legacy = _legacy_content_payload(legacy_item) or {}
+    if lesson_variant is None and not legacy:
+        return None
+    title = str(getattr(lesson_variant, "title", "") or "").strip()
+    summary = str(getattr(lesson_variant, "summary", "") or "").strip()
+    script = str(getattr(lesson_variant, "script", "") or "").strip()
+    action_prompt = str(getattr(lesson_variant, "action_prompt", "") or "").strip()
+    video_url = _normalize_media_url(getattr(lesson_variant, "video_url", None))
+    poster_url = _normalize_media_url(getattr(lesson_variant, "poster_url", None))
+    avatar = education_lesson_avatar_payload(lesson_variant) or legacy.get("avatar")
+    body = script or str(legacy.get("body") or "").strip()
+    return {
+        "id": int(legacy.get("id") or 0) or None,
+        "source": "education" if lesson_variant is not None and any([title, summary, script, action_prompt, video_url, poster_url]) else legacy.get("source"),
+        "lesson_variant_id": int(getattr(lesson_variant, "id", 0) or 0) or None,
+        "pillar_key": str(legacy.get("pillar_key") or "").strip() or None,
+        "concept_code": str(legacy.get("concept_code") or "").strip() or None,
+        "title": title or str(legacy.get("title") or "").strip() or None,
+        "summary": summary or None,
+        "body": body or None,
+        "script": script or body or None,
+        "action_prompt": action_prompt or None,
+        "video_url": video_url or legacy.get("video_url"),
+        "podcast_url": video_url or legacy.get("podcast_url"),
+        "poster_url": poster_url,
+        "avatar": avatar,
+        "level": str(getattr(lesson_variant, "level", "") or "").strip() or str(legacy.get("level") or "").strip() or None,
+        "created_at": getattr(lesson_variant, "created_at", None).isoformat() if lesson_variant is not None and getattr(lesson_variant, "created_at", None) else legacy.get("created_at"),
+    }
+
+
+def _public_report_url_global(path_under_reports: str) -> str:
+    rel_path = str(path_under_reports or "").strip().replace("\\", "/").lstrip("/")
+    base = (
+        os.getenv("REPORTS_BASE_URL")
+        or os.getenv("PUBLIC_REPORT_BASE_URL")
+        or os.getenv("API_PUBLIC_BASE_URL")
+        or os.getenv("PUBLIC_BASE_URL")
+        or os.getenv("RENDER_EXTERNAL_URL")
+        or ""
+    ).strip()
+    if base:
+        prefix = base if base.startswith(("http://", "https://")) else f"https://{base}"
+        return f"{prefix.rstrip('/')}/reports/{rel_path}"
+    return f"/reports/{rel_path}"
+
+
+def _normalize_reports_rel_path(path_under_reports: str) -> str:
+    rel_path = str(path_under_reports or "").strip().replace("\\", "/").lstrip("/")
+    if not rel_path or rel_path.endswith("/"):
+        raise ValueError("invalid reports path")
+    if ".." in rel_path.split("/"):
+        raise ValueError("invalid reports path")
+    return rel_path
+
+
+def _write_education_report_bytes(path_under_reports: str, raw_bytes: bytes) -> str:
+    from .reporting import _reports_root_global
+
+    rel_path = _normalize_reports_rel_path(path_under_reports)
+    upload_url = (os.getenv("REPORTS_UPLOAD_URL") or "").strip()
+    upload_token = (os.getenv("REPORTS_UPLOAD_TOKEN") or "").strip()
+    if upload_url and upload_token:
+        try:
+            payload = json.dumps(
+                {
+                    "path_under_reports": rel_path,
+                    "content_b64": base64.b64encode(raw_bytes).decode("ascii"),
+                }
+            ).encode("utf-8")
+            req = urllib.request.Request(
+                upload_url,
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Reports-Token": upload_token,
+                },
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                body = resp.read()
+            data = json.loads(body.decode("utf-8")) if body else {}
+            uploaded_url = str((data or {}).get("url") or "").strip()
+            if uploaded_url:
+                return uploaded_url
+        except Exception as exc:
+            print(f"[education] report upload error: {exc}")
+    root = _reports_root_global()
+    out_path = os.path.join(root, *rel_path.split("/"))
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with open(out_path, "wb") as handle:
+        handle.write(raw_bytes)
+    return _public_report_url_global(rel_path)
+
+
+def _safe_avatar_asset_token(value: str | None) -> str:
+    token = re.sub(r"[^A-Za-z0-9_-]+", "-", str(value or "").strip()).strip("-_")
+    return token[:48] or secrets.token_hex(6)
+
+
+def _save_education_avatar_generation_result(
+    session,
+    *,
+    row: EducationLessonVariant,
+    title: str,
+    script: str,
+    poster_url: str | None,
+    character: str,
+    style: str,
+    voice: str,
+    status: str,
+    job_id: str | None,
+    error: str | None,
+    summary_url: str | None,
+    video_bytes: bytes | None = None,
+    response_payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    resolved_status = str(status or "").strip() or "Running"
+    if title:
+        row.title = title
+    if script:
+        row.script = script
+    row.poster_url = str(poster_url or "").strip() or None
+    row.avatar_character = str(character or "").strip() or None
+    row.avatar_style = str(style or "").strip() or None
+    row.avatar_voice = str(voice or "").strip() or None
+    row.avatar_status = resolved_status.lower()
+    row.avatar_job_id = str(job_id or "").strip() or None
+    row.avatar_error = str(error or "").strip() or None
+    row.avatar_source = "azure_batch"
+    row.avatar_summary_url = str(summary_url or "").strip() or None
+    row.avatar_payload_json = response_payload or None
+    if resolved_status == "Succeeded" and video_bytes:
+        filename = (
+            f"education-avatar-{int(getattr(row, 'id', 0) or 0)}-"
+            f"{_safe_avatar_asset_token(job_id)}.mp4"
+        )
+        row.video_url = _write_education_report_bytes(f"content/education/{filename}", video_bytes)
+        row.avatar_generated_at = _now_utc()
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return education_lesson_avatar_payload(row) or {}
+
+
+def _poll_education_avatar_status(
+    session,
+    *,
+    row: EducationLessonVariant,
+) -> dict[str, Any]:
+    avatar_payload = education_lesson_avatar_payload(row) or {}
+    job_id = str(avatar_payload.get("job_id") or "").strip()
+    if not job_id:
+        raise ValueError("No avatar job is pending for this education lesson.")
+    status_payload = get_batch_avatar(job_id)
+    status = str(status_payload.get("status") or "").strip()
+    outputs = status_payload.get("outputs") if isinstance(status_payload.get("outputs"), dict) else {}
+    summary_url = str((outputs or {}).get("summary") or "").strip() or None
+    defaults = azure_avatar_defaults()
+    title = str(avatar_payload.get("title") or "").strip() or str(getattr(row, "title", "") or "").strip() or "Education lesson"
+    script = str(avatar_payload.get("script") or "").strip() or str(getattr(row, "script", "") or "").strip()
+    poster_url = str(avatar_payload.get("poster_url") or "").strip() or None
+    character = str(avatar_payload.get("character") or "").strip() or str(defaults.get("character") or "lisa")
+    style = str(avatar_payload.get("style") or "").strip() or str(defaults.get("style") or "graceful-sitting")
+    voice = str(avatar_payload.get("voice") or "").strip() or str(defaults.get("voice") or "en-GB-SoniaNeural")
+    if status == "Succeeded":
+        result_url = str((outputs or {}).get("result") or "").strip()
+        if not result_url:
+            return _save_education_avatar_generation_result(
+                session,
+                row=row,
+                title=title,
+                script=script,
+                poster_url=poster_url,
+                character=character,
+                style=style,
+                voice=voice,
+                status="Failed",
+                job_id=job_id,
+                error="Azure avatar completed without a result video URL.",
+                summary_url=summary_url,
+                response_payload=status_payload,
+            )
+        return _save_education_avatar_generation_result(
+            session,
+            row=row,
+            title=title,
+            script=script,
+            poster_url=poster_url,
+            character=character,
+            style=style,
+            voice=voice,
+            status=status,
+            job_id=job_id,
+            error=None,
+            summary_url=summary_url,
+            video_bytes=download_batch_avatar_output(result_url),
+            response_payload=status_payload,
+        )
+    if status == "Failed":
+        props = status_payload.get("properties") if isinstance(status_payload.get("properties"), dict) else {}
+        error_detail = str((props or {}).get("error") or status_payload.get("error") or "Azure avatar generation failed.").strip()
+        return _save_education_avatar_generation_result(
+            session,
+            row=row,
+            title=title,
+            script=script,
+            poster_url=poster_url,
+            character=character,
+            style=style,
+            voice=voice,
+            status=status,
+            job_id=job_id,
+            error=error_detail,
+            summary_url=summary_url,
+            response_payload=status_payload,
+        )
+    return _save_education_avatar_generation_result(
+        session,
+        row=row,
+        title=title,
+        script=script,
+        poster_url=poster_url,
+        character=character,
+        style=style,
+        voice=voice,
+        status=status or "Running",
+        job_id=job_id,
+        error=None,
+        summary_url=summary_url,
+        response_payload=status_payload,
+    )
+
+
+def generate_education_lesson_avatar(
+    lesson_variant_id: int,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    ensure_education_plan_schema()
+    if not azure_avatar_enabled():
+        raise RuntimeError("Azure avatar generation is not enabled.")
+    payload = payload if isinstance(payload, dict) else {}
+    defaults = azure_avatar_defaults()
+    with SessionLocal() as session:
+        row = session.get(EducationLessonVariant, int(lesson_variant_id))
+        if row is None:
+            raise ValueError("Education lesson variant not found.")
+        title = str(payload.get("avatar_title") or payload.get("title") or "").strip() or str(getattr(row, "title", "") or "").strip() or "Education lesson"
+        script = str(payload.get("avatar_script") or payload.get("script") or "").strip() or str(getattr(row, "script", "") or "").strip()
+        poster_url = str(payload.get("avatar_poster_url") or payload.get("poster_url") or "").strip() or str(getattr(row, "poster_url", "") or "").strip() or None
+        character = str(payload.get("avatar_character") or "").strip() or str(getattr(row, "avatar_character", "") or "").strip() or str(defaults.get("character") or "lisa")
+        style = str(payload.get("avatar_style") or "").strip() or str(getattr(row, "avatar_style", "") or "").strip() or str(defaults.get("style") or "graceful-sitting")
+        voice = str(payload.get("avatar_voice") or "").strip() or str(getattr(row, "avatar_voice", "") or "").strip() or str(defaults.get("voice") or "en-GB-SoniaNeural")
+        if not script:
+            raise ValueError("Education lesson avatar script is required.")
+        _save_education_avatar_generation_result(
+            session,
+            row=row,
+            title=title,
+            script=script,
+            poster_url=poster_url,
+            character=character,
+            style=style,
+            voice=voice,
+            status="Running",
+            job_id=None,
+            error=None,
+            summary_url=None,
+        )
+        try:
+            result = generate_batch_avatar_video(
+                script=script,
+                title=title,
+                character=character,
+                style=style,
+                voice=voice,
+            )
+        except Exception as exc:
+            avatar = _save_education_avatar_generation_result(
+                session,
+                row=row,
+                title=title,
+                script=script,
+                poster_url=poster_url,
+                character=character,
+                style=style,
+                voice=voice,
+                status="Failed",
+                job_id=None,
+                error=str(exc),
+                summary_url=None,
+            )
+            return {"ok": False, "avatar": avatar, "error": str(exc)}
+        status = str(result.get("status") or "").strip()
+        pending_error = str(result.get("response") or "")[:500] if status == "Failed" else None
+        avatar = _save_education_avatar_generation_result(
+            session,
+            row=row,
+            title=title,
+            script=script,
+            poster_url=poster_url,
+            character=character,
+            style=style,
+            voice=voice,
+            status=status or "Running",
+            job_id=str(result.get("job_id") or "").strip() or None,
+            error=pending_error,
+            summary_url=str(result.get("summary_url") or "").strip() or None,
+            video_bytes=result.get("video_bytes") if isinstance(result.get("video_bytes"), (bytes, bytearray)) else None,
+            response_payload=result.get("response") if isinstance(result.get("response"), dict) else None,
+        )
+        return {
+            "ok": status != "Failed",
+            "avatar": avatar,
+            "pending": bool(result.get("timed_out")) or status not in {"Succeeded", "Failed"},
+        }
+
+
+def refresh_education_lesson_avatar(lesson_variant_id: int) -> dict[str, Any]:
+    ensure_education_plan_schema()
+    with SessionLocal() as session:
+        row = session.get(EducationLessonVariant, int(lesson_variant_id))
+        if row is None:
+            raise ValueError("Education lesson variant not found.")
+        avatar = _poll_education_avatar_status(session, row=row)
+        return {"ok": str(avatar.get("status") or "").strip().lower() == "succeeded", "avatar": avatar}
 
 
 def _quiz_question_payload(row: EducationQuizQuestion) -> dict[str, Any]:
@@ -978,6 +1397,7 @@ def _lesson_state(
     quiz = _quiz_row(session, int(getattr(lesson_variant, "id", 0) or 0) or None)
     quiz_questions = _question_rows(session, int(getattr(quiz, "id", 0) or 0) or None)
     content_item = session.get(ContentLibraryItem, int(getattr(lesson_variant, "content_item_id", 0) or 0)) if lesson_variant is not None and getattr(lesson_variant, "content_item_id", None) else None
+    content_payload = _content_payload(lesson_variant, content_item)
     progress = _get_or_create_day_progress(
         session,
         plan=plan,
@@ -1021,18 +1441,22 @@ def _lesson_state(
             "programme_day_id": int(programme_day.id),
             "lesson_variant_id": int(getattr(lesson_variant, "id", 0) or 0) or None,
             "title": (
-                str((content_item.title if content_item is not None else None) or "").strip()
+                str(getattr(lesson_variant, "title", "") or "").strip()
+                or str((content_item.title if content_item is not None else None) or "").strip()
                 or str(getattr(programme_day, "default_title", "") or "").strip()
                 or str(getattr(programme_day, "concept_label", "") or getattr(programme_day, "concept_key", "") or "").strip()
                 or "Today's lesson"
             ),
             "summary": (
-                str(getattr(programme_day, "default_summary", "") or "").strip()
+                str(getattr(lesson_variant, "summary", "") or "").strip()
+                or str(getattr(programme_day, "default_summary", "") or "").strip()
+                or str(getattr(lesson_variant, "script", "") or "").strip()[:280]
                 or str((content_item.body if content_item is not None else "") or "").strip()[:280]
                 or None
             ),
             "goal": str(getattr(programme_day, "lesson_goal", "") or "").strip() or None,
-            "content": _content_payload(content_item),
+            "action_prompt": str(getattr(lesson_variant, "action_prompt", "") or "").strip() or None,
+            "content": content_payload,
         },
         "quiz": {
             "id": int(getattr(quiz, "id", 0) or 0) or None,

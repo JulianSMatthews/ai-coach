@@ -9,11 +9,14 @@
 
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Any, Dict, List
 from datetime import datetime
 import os
 import hashlib, math, random
 import json
+import re
+import zipfile
+from xml.etree import ElementTree as ET
 
 from sqlalchemy import select, text as sa_text
 from sqlalchemy.orm import Session
@@ -34,6 +37,12 @@ from .models import (
     PromptTemplateVersionLog,
     TwilioTemplate,
     MessagingSettings,
+    EducationLessonVariant,
+    EducationProgramme,
+    EducationProgrammeDay,
+    EducationQuiz,
+    EducationQuizQuestion,
+    UserEducationDayProgress,
     ADMIN_ROLE_MEMBER,
     ADMIN_ROLE_CLUB,
     ADMIN_ROLE_GLOBAL,
@@ -1689,6 +1698,449 @@ def upsert_messaging_defaults(session: Session) -> int:
     return created
 
 
+_EDUCATION_DAY_RE = re.compile(r"^\s*DAY\s+(\d+)\s*[-–]\s*(.+?)\s*$", re.IGNORECASE)
+_EDUCATION_QUESTION_RE = re.compile(r"^\s*(\d+)[.)]\s*(.+?)\s*$")
+_EDUCATION_OPTION_RE = re.compile(r"^\s*([A-D])[.)]\s*(.+?)\s*$", re.IGNORECASE)
+_EDUCATION_SECTION_LABELS = {
+    "script": "script",
+    "questions": "questions",
+    "question": "questions",
+    "action": "action",
+    "takeaway": "takeaway",
+}
+
+
+def _docx_paragraphs(path: str) -> list[str]:
+    """
+    Read visible paragraph text from a DOCX without adding python-docx as a dependency.
+    This parser is intentionally small: it is for structured seed docs, not full Word fidelity.
+    """
+    with zipfile.ZipFile(path) as archive:
+        raw_xml = archive.read("word/document.xml")
+    root = ET.fromstring(raw_xml)
+    paragraphs: list[str] = []
+    for paragraph in root.iter("{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p"):
+        parts: list[str] = []
+        for node in paragraph.iter():
+            tag = str(node.tag or "")
+            if tag.endswith("}t"):
+                parts.append(node.text or "")
+            elif tag.endswith("}tab"):
+                parts.append("\t")
+            elif tag.endswith("}br"):
+                parts.append("\n")
+        text = "".join(parts).replace("\xa0", " ").strip()
+        if text:
+            paragraphs.append(text)
+    return paragraphs
+
+
+def _education_doc_section(line: str) -> str | None:
+    token = str(line or "").strip().rstrip(":").strip().lower()
+    return _EDUCATION_SECTION_LABELS.get(token)
+
+
+def _education_clean_option(raw: str) -> tuple[str, bool]:
+    text = str(raw or "").strip()
+    is_correct = bool(re.search(r"\(\s*correct\s*\)", text, flags=re.IGNORECASE))
+    text = re.sub(r"\(\s*correct\s*\)", "", text, flags=re.IGNORECASE).strip()
+    return text, is_correct
+
+
+def _education_flush_question(day: dict[str, Any], question: dict[str, Any] | None) -> None:
+    if not question:
+        return
+    text = str(question.get("text") or "").strip()
+    options = [str(item or "").strip() for item in question.get("options") or [] if str(item or "").strip()]
+    correct = str(question.get("correct") or "").strip()
+    if not text:
+        return
+    day.setdefault("questions", []).append(
+        {
+            "text": text,
+            "options": options,
+            "correct": correct or (options[0] if options else None),
+        }
+    )
+
+
+def _education_summary_from_script(script: str) -> str:
+    compact = re.sub(r"\s+", " ", str(script or "")).strip()
+    if not compact:
+        return ""
+    first_sentence = re.split(r"(?<=[.!?])\s+", compact, maxsplit=1)[0].strip()
+    return first_sentence[:260].strip()
+
+
+def parse_education_programme_docx(path: str) -> dict[str, Any]:
+    """
+    Parse HealthSense education DOCX files that follow this convention:
+    DAY n - Title
+    Script:
+    Questions:
+    1. ...
+    A. ...
+    B. ... (Correct)
+    Action:
+    Takeaway:
+    """
+    paragraphs = _docx_paragraphs(path)
+    programme_title = ""
+    days: list[dict[str, Any]] = []
+    current_day: dict[str, Any] | None = None
+    current_section: str | None = None
+    current_question: dict[str, Any] | None = None
+
+    def flush_day() -> None:
+        nonlocal current_day, current_question
+        if current_day is None:
+            return
+        _education_flush_question(current_day, current_question)
+        current_question = None
+        script = "\n\n".join(current_day.pop("_script_lines", [])).strip()
+        action = " ".join(current_day.pop("_action_lines", [])).strip()
+        takeaway = " ".join(current_day.pop("_takeaway_lines", [])).strip()
+        current_day["script"] = script
+        current_day["action_prompt"] = action
+        current_day["takeaway"] = takeaway
+        current_day["summary"] = current_day.get("summary") or _education_summary_from_script(script)
+        days.append(current_day)
+        current_day = None
+
+    for raw_line in paragraphs:
+        line = str(raw_line or "").strip()
+        if not line or set(line) <= {"-"}:
+            continue
+        day_match = _EDUCATION_DAY_RE.match(line)
+        if day_match:
+            flush_day()
+            current_section = None
+            current_day = {
+                "day_index": int(day_match.group(1)),
+                "title": str(day_match.group(2) or "").strip(),
+                "summary": "",
+                "questions": [],
+                "_script_lines": [],
+                "_action_lines": [],
+                "_takeaway_lines": [],
+            }
+            continue
+        if current_day is None:
+            if not programme_title:
+                programme_title = line
+            continue
+        section = _education_doc_section(line)
+        if section:
+            if current_section == "questions":
+                _education_flush_question(current_day, current_question)
+                current_question = None
+            current_section = section
+            continue
+        if current_section == "script":
+            current_day["_script_lines"].append(line)
+            continue
+        if current_section == "action":
+            current_day["_action_lines"].append(line)
+            continue
+        if current_section == "takeaway":
+            current_day["_takeaway_lines"].append(line)
+            continue
+        if current_section == "questions":
+            question_match = _EDUCATION_QUESTION_RE.match(line)
+            if question_match:
+                _education_flush_question(current_day, current_question)
+                current_question = {
+                    "text": str(question_match.group(2) or "").strip(),
+                    "options": [],
+                    "correct": None,
+                }
+                continue
+            option_match = _EDUCATION_OPTION_RE.match(line)
+            if option_match and current_question is not None:
+                option_text, is_correct = _education_clean_option(option_match.group(2))
+                if option_text:
+                    current_question.setdefault("options", []).append(option_text)
+                    if is_correct:
+                        current_question["correct"] = option_text
+                continue
+
+    flush_day()
+    if not days:
+        raise ValueError(f"No DAY sections found in education programme DOCX: {path}")
+    for day in days:
+        if not str(day.get("script") or "").strip():
+            raise ValueError(f"Day {day.get('day_index')} is missing Script content in {path}")
+        if len(day.get("questions") or []) != 3:
+            raise ValueError(f"Day {day.get('day_index')} must contain exactly 3 questions in {path}")
+        for question in day.get("questions") or []:
+            if not question.get("options"):
+                raise ValueError(f"Day {day.get('day_index')} question is missing options in {path}")
+            if not question.get("correct"):
+                raise ValueError(f"Day {day.get('day_index')} question is missing a (Correct) option in {path}")
+    return {"title": programme_title, "days": days}
+
+
+def upsert_education_programme_from_docx(
+    session: Session,
+    *,
+    docx_path: str,
+    pillar_key: str,
+    concept_key: str,
+    code: str,
+    name: str | None = None,
+    concept_label: str | None = None,
+    level: str = "build",
+    pass_score_pct: float = 66.67,
+    is_active: bool = True,
+) -> dict[str, Any]:
+    from .education_plan import ensure_education_plan_schema
+
+    ensure_education_plan_schema()
+    doc = parse_education_programme_docx(docx_path)
+    pillar_token = str(pillar_key or "").strip().lower()
+    concept_token = str(concept_key or "").strip().lower()
+    code_token = str(code or "").strip()
+    level_token = str(level or "").strip().lower() or "build"
+    if not pillar_token or not concept_token or not code_token:
+        raise ValueError("pillar_key, concept_key, and code are required")
+
+    concept = (
+        session.query(Concept)
+        .filter(Concept.pillar_key == pillar_token, Concept.code == concept_token)
+        .one_or_none()
+    )
+    if concept is None:
+        raise ValueError(f"Unknown education concept: {pillar_token}/{concept_token}")
+    resolved_label = str(concept_label or getattr(concept, "name", "") or concept_token).strip()
+    resolved_name = str(name or "").strip() or str(doc.get("title") or "").strip() or resolved_label
+    days = list(doc.get("days") or [])
+
+    programme = session.query(EducationProgramme).filter(EducationProgramme.code == code_token).one_or_none()
+    created_programme = False
+    if programme is None:
+        programme = EducationProgramme(
+            pillar_key=pillar_token,
+            concept_key=concept_token,
+            concept_label=resolved_label,
+            code=code_token,
+            name=resolved_name,
+            duration_days=len(days),
+            is_active=bool(is_active),
+        )
+        session.add(programme)
+        session.flush()
+        created_programme = True
+    else:
+        programme.pillar_key = pillar_token
+        programme.concept_key = concept_token
+        programme.concept_label = resolved_label
+        programme.name = resolved_name
+        programme.duration_days = len(days)
+        programme.is_active = bool(is_active)
+        session.add(programme)
+        session.flush()
+
+    existing_days = {
+        int(row.day_index): row
+        for row in session.query(EducationProgrammeDay)
+        .filter(EducationProgrammeDay.programme_id == int(programme.id))
+        .all()
+    }
+    keep_day_ids: set[int] = set()
+    variant_ids: list[int] = []
+    quiz_ids: list[int] = []
+    question_count = 0
+
+    for day in sorted(days, key=lambda item: int(item.get("day_index") or 0)):
+        day_index = int(day.get("day_index") or 0)
+        if day_index <= 0:
+            continue
+        day_row = existing_days.get(day_index)
+        if day_row is None:
+            day_row = EducationProgrammeDay(
+                programme_id=int(programme.id),
+                day_index=day_index,
+                concept_key=concept_token,
+            )
+            session.add(day_row)
+        day_row.programme_id = int(programme.id)
+        day_row.day_index = day_index
+        day_row.concept_key = concept_token
+        day_row.concept_label = resolved_label
+        day_row.lesson_goal = str(day.get("action_prompt") or "").strip() or None
+        day_row.default_title = str(day.get("title") or "").strip() or None
+        day_row.default_summary = str(day.get("summary") or "").strip() or None
+        session.add(day_row)
+        session.flush()
+        keep_day_ids.add(int(day_row.id))
+
+        variant = (
+            session.query(EducationLessonVariant)
+            .filter(
+                EducationLessonVariant.programme_day_id == int(day_row.id),
+                EducationLessonVariant.level == level_token,
+            )
+            .one_or_none()
+        )
+        if variant is None:
+            variant = EducationLessonVariant(programme_day_id=int(day_row.id), level=level_token)
+            session.add(variant)
+            session.flush()
+        variant.programme_day_id = int(day_row.id)
+        variant.level = level_token
+        variant.title = str(day.get("title") or "").strip() or None
+        variant.summary = str(day.get("summary") or "").strip() or None
+        variant.script = str(day.get("script") or "").strip() or None
+        variant.action_prompt = str(day.get("action_prompt") or "").strip() or None
+        variant.takeaway_default = str(day.get("takeaway") or "").strip() or None
+        variant.takeaway_if_low_score = str(day.get("takeaway") or "").strip() or None
+        variant.takeaway_if_high_score = str(day.get("takeaway") or "").strip() or None
+        variant.content_item_id = None
+        variant.is_active = True
+        session.add(variant)
+        session.flush()
+        variant_ids.append(int(variant.id))
+
+        quiz = session.query(EducationQuiz).filter(EducationQuiz.lesson_variant_id == int(variant.id)).one_or_none()
+        if quiz is None:
+            quiz = EducationQuiz(lesson_variant_id=int(variant.id))
+            session.add(quiz)
+            session.flush()
+        quiz.lesson_variant_id = int(variant.id)
+        quiz.pass_score_pct = float(pass_score_pct)
+        session.add(quiz)
+        session.flush()
+        quiz_ids.append(int(quiz.id))
+
+        existing_questions = {
+            int(row.question_order): row
+            for row in session.query(EducationQuizQuestion)
+            .filter(EducationQuizQuestion.quiz_id == int(quiz.id))
+            .all()
+        }
+        keep_question_ids: set[int] = set()
+        for order, question in enumerate(day.get("questions") or [], start=1):
+            question_row = existing_questions.get(order)
+            if question_row is None:
+                question_row = EducationQuizQuestion(
+                    quiz_id=int(quiz.id),
+                    question_order=order,
+                    question_text=str(question.get("text") or "").strip(),
+                    answer_type="single_choice",
+                )
+                session.add(question_row)
+            question_row.quiz_id = int(quiz.id)
+            question_row.question_order = order
+            question_row.question_text = str(question.get("text") or "").strip()
+            question_row.answer_type = "single_choice"
+            question_row.options_json = list(question.get("options") or [])
+            question_row.correct_answer_json = question.get("correct")
+            question_row.explanation = str(question.get("explanation") or "").strip() or None
+            session.add(question_row)
+            session.flush()
+            keep_question_ids.add(int(question_row.id))
+            question_count += 1
+        for question_row in existing_questions.values():
+            if int(question_row.id) not in keep_question_ids:
+                session.delete(question_row)
+
+    for old_day in session.query(EducationProgrammeDay).filter(EducationProgrammeDay.programme_id == int(programme.id)).all():
+        if int(old_day.id) in keep_day_ids:
+            continue
+        has_progress = (
+            session.query(UserEducationDayProgress.id)
+            .filter(UserEducationDayProgress.programme_day_id == int(old_day.id))
+            .first()
+            is not None
+        )
+        if not has_progress:
+            session.delete(old_day)
+
+    session.flush()
+    return {
+        "created_programme": created_programme,
+        "programme_id": int(programme.id),
+        "code": code_token,
+        "name": resolved_name,
+        "pillar_key": pillar_token,
+        "concept_key": concept_token,
+        "days": len(days),
+        "variant_ids": variant_ids,
+        "quiz_ids": quiz_ids,
+        "questions": question_count,
+    }
+
+
+def seed_education_programme_from_docx(
+    docx_path: str,
+    *,
+    pillar_key: str,
+    concept_key: str,
+    code: str,
+    name: str | None = None,
+    concept_label: str | None = None,
+    level: str = "build",
+    pass_score_pct: float = 66.67,
+    is_active: bool = True,
+) -> dict[str, Any]:
+    with SessionLocal() as session:
+        result = upsert_education_programme_from_docx(
+            session,
+            docx_path=docx_path,
+            pillar_key=pillar_key,
+            concept_key=concept_key,
+            code=code,
+            name=name,
+            concept_label=concept_label,
+            level=level,
+            pass_score_pct=pass_score_pct,
+            is_active=is_active,
+        )
+        session.commit()
+        return result
+
+
+def seed_education_programmes_from_manifest(
+    session: Session,
+    manifest: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    results: list[dict[str, Any]] = []
+    for entry in manifest:
+        if not isinstance(entry, dict):
+            continue
+        path = str(entry.get("path") or entry.get("docx_path") or "").strip()
+        if not path:
+            continue
+        results.append(
+            upsert_education_programme_from_docx(
+                session,
+                docx_path=path,
+                pillar_key=str(entry.get("pillar_key") or "").strip(),
+                concept_key=str(entry.get("concept_key") or entry.get("concept_code") or "").strip(),
+                code=str(entry.get("code") or "").strip(),
+                name=str(entry.get("name") or "").strip() or None,
+                concept_label=str(entry.get("concept_label") or "").strip() or None,
+                level=str(entry.get("level") or "build").strip() or "build",
+                pass_score_pct=float(entry.get("pass_score_pct") or 66.67),
+                is_active=bool(entry.get("is_active", True)),
+            )
+        )
+    return results
+
+
+def seed_education_programmes_from_env(session: Session) -> list[dict[str, Any]]:
+    raw = str(os.getenv("EDUCATION_PROGRAMME_DOCS_JSON") or "").strip()
+    if not raw:
+        return []
+    try:
+        manifest = json.loads(raw)
+    except Exception as exc:
+        raise ValueError(f"EDUCATION_PROGRAMME_DOCS_JSON must be valid JSON: {exc}") from exc
+    if not isinstance(manifest, list):
+        raise ValueError("EDUCATION_PROGRAMME_DOCS_JSON must be a JSON list")
+    return seed_education_programmes_from_manifest(session, manifest)
+
+
 def run_seed() -> None:
     """
     Full seed entrypoint. Safely seeds in the right order and won't crash
@@ -1704,6 +2156,7 @@ def run_seed() -> None:
             p  = upsert_pillars(s) if 'upsert_pillars' in globals() else 0
             c  = upsert_concepts(s) if 'upsert_concepts' in globals() else 0
             cq = upsert_concept_questions(s) if 'upsert_concept_questions' in globals() else 0
+            edu = seed_education_programmes_from_env(s) if 'seed_education_programmes_from_env' in globals() else []
 
             # 3) KB snippets / vectors
             keep_kb = os.getenv("KEEP_KB_SNIPPETS_ON_RESET") == "1"
@@ -1756,6 +2209,7 @@ def run_seed() -> None:
             print(f"[seed] Concepts seed complete. pillars={len(PILLARS) if 'PILLARS' in globals() else 'n/a'} "
                   f"concepts={total_concepts} new_concepts={c}")
             print(f"[seed] Concept questions upsert complete. new_questions={cq}")
+            print(f"[seed] Education programmes complete. upserted={len(edu)}")
             print(f"[seed] KB vectors complete. new_vectors={kv} (dim={kb_dim})")
             print(f"[seed] Users seed complete. Created {u} new user(s).")
             print(f"[seed] Touchpoint defaults complete. new_prefs={tp['created_prefs']} new_defs={tp['created_defs']}")
