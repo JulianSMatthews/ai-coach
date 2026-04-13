@@ -51,6 +51,7 @@ const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
 const HEALTHSENSE_ORANGE = "#c54817";
 const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
 const URINE_CAPTURE_TIMER_SECONDS = 60;
+const URINE_RECENT_CAPTURE_WINDOW_MS = 5 * 60 * 1000;
 const URINE_TEST_MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 const URINE_SCREENING_MARKERS = [
   { key: "concentration", label: "Hydration" },
@@ -194,6 +195,14 @@ function formatCapturedAt(value: Date): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function parseTimestampMs(value?: string | null): number | null {
+  const token = String(value || "").trim();
+  if (!token) return null;
+  const parsed = new Date(token);
+  const timeMs = parsed.getTime();
+  return Number.isFinite(timeMs) ? timeMs : null;
 }
 
 function readFileAsDataUrl(file: File): Promise<string> {
@@ -975,6 +984,8 @@ export default function LatestAssessmentPanel({
   const summaryPanelRef = useRef<HTMLElement | null>(null);
   const [urinePhotoName, setUrinePhotoName] = useState<string | null>(null);
   const [urinePhotoCapturedAt, setUrinePhotoCapturedAt] = useState<string | null>(null);
+  const [urinePhotoCapturedAtMs, setUrinePhotoCapturedAtMs] = useState<number | null>(null);
+  const [urineCaptureNowMs, setUrineCaptureNowMs] = useState(() => Date.now());
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
   const orderedPillarKeys = pillars
@@ -1137,6 +1148,16 @@ export default function LatestAssessmentPanel({
   const urineTestHeadingDate = `${urineTestDayMonth.day}${urineTestDayMonth.month ? ` ${urineTestDayMonth.month}` : ""}`;
   const urineResultMessage = useMemo(() => resolveUrineResultMessage(urineTest), [urineTest]);
   const urineTestStatus = String(urineTest?.status || "").trim().toLowerCase();
+  const savedUrineCaptureMs = parseTimestampMs(urineTest?.captured_at);
+  const latestUrineCaptureMs = Math.max(
+    ...[urinePhotoCapturedAtMs, savedUrineCaptureMs].filter(
+      (value): value is number => typeof value === "number" && Number.isFinite(value),
+    ),
+  );
+  const hasRecentUrineCapture =
+    Number.isFinite(latestUrineCaptureMs) &&
+    urineCaptureNowMs - latestUrineCaptureMs >= -60000 &&
+    urineCaptureNowMs - latestUrineCaptureMs <= URINE_RECENT_CAPTURE_WINDOW_MS;
   let urineCaptureState: UrineCaptureState = "ready";
   if (urineTestError) {
     urineCaptureState = "error";
@@ -1420,6 +1441,7 @@ export default function LatestAssessmentPanel({
       }
       const payload = (text ? (JSON.parse(text) as UrineTestResponse) : {}) as UrineTestResponse;
       setUrineTest(payload);
+      setUrinePhotoCapturedAtMs(parseTimestampMs(payload?.captured_at));
       return payload;
     } catch (error) {
       setUrineTestError(error instanceof Error ? error.message : String(error));
@@ -1530,8 +1552,13 @@ export default function LatestAssessmentPanel({
       setUrineTest(payload);
       setUrinePhotoName(fileName);
       setUrinePhotoCapturedAt(formatCapturedAt(capturedAt));
+      setUrinePhotoCapturedAtMs(capturedAt.getTime());
+      setUrineCaptureNowMs(Date.now());
       setUrineCaptureStartedAt(null);
       setUrineTimerSecondsLeft(0);
+      setActiveBiomarkerExplanation(null);
+      setUrineTestFlowOpen(false);
+      setBiometricsModalOpen(true);
     } catch (error) {
       setUrineTestError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -1787,6 +1814,15 @@ export default function LatestAssessmentPanel({
     void loadLatestUrineTest();
     void loadWeeklyObjectives();
   }, [biometricsModalOpen, loadLatestUrineTest, loadWeeklyObjectives]);
+
+  useEffect(() => {
+    if (!biometricsModalOpen || !urineTestFlowOpen) return;
+    setUrineCaptureNowMs(Date.now());
+    const interval = window.setInterval(() => setUrineCaptureNowMs(Date.now()), 30000);
+    return () => {
+      window.clearInterval(interval);
+    };
+  }, [biometricsModalOpen, urineTestFlowOpen]);
 
   useEffect(() => {
     if (!biometricsModalOpen || !urineCaptureStartedAt) return;
@@ -2341,7 +2377,7 @@ export default function LatestAssessmentPanel({
                               disabled={urineTestSaving}
                               className="rounded-full border border-[#c54817] bg-[#c54817] px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-60"
                             >
-                              {urineTestSaving ? "Saving" : urinePhotoCapturedAt || urineTest?.available ? "Retake photo" : "Take photo"}
+                              {urineTestSaving ? "Saving" : hasRecentUrineCapture ? "Retake photo" : "Take photo"}
                             </button>
                             <button
                               type="button"

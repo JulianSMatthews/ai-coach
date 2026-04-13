@@ -100,6 +100,14 @@ type AssessmentCompletionSummaryMedia = {
 
 type HomeSurface = "tracking" | "habits" | "insight" | "ask";
 type HomeSurfaceEntryMode = "guided" | "summary";
+type GiaMessageRealtimeSessionResponse = {
+  session_id?: string;
+  speech_token?: string;
+  speech_region?: string;
+  ssml?: string;
+  summary_text?: string;
+  error?: string;
+};
 
 const HOME_SURFACE_SEQUENCE: HomeSurface[] = ["tracking", "habits", "insight", "ask"];
 const TRACKING_STEP_PILLARS = ["Nutrition", "Training", "Resilience", "Recovery"];
@@ -746,7 +754,10 @@ export default function AssessmentChatBox({
   const [coachInsightError, setCoachInsightError] = useState<string | null>(null);
   const insightRequestIdRef = useRef(0);
   const finalGiaRequestIdRef = useRef(0);
-  const finalGiaSpeechRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const finalGiaListenRequestIdRef = useRef(0);
+  const finalGiaSpeechRef = useRef<{ close?: () => void } | null>(null);
+  const finalGiaListenSessionIdRef = useRef<string | null>(null);
+  const finalGiaListenStartedAtRef = useRef<number | null>(null);
 
   const autoStart = useMemo(() => isTruthyToken(searchParams?.get("autostart")), [searchParams]);
   const leadFlow = useMemo(() => isTruthyToken(searchParams?.get("lead")), [searchParams]);
@@ -1034,67 +1045,135 @@ export default function AssessmentChatBox({
     }
   }, [userId, leadToken]);
 
+  const completeFinalGiaListenSession = useCallback(
+    (statusValue: "completed" | "failed" | "stopped", error?: string | null) => {
+      const sessionId = finalGiaListenSessionIdRef.current;
+      const startedAt = finalGiaListenStartedAtRef.current;
+      finalGiaListenSessionIdRef.current = null;
+      finalGiaListenStartedAtRef.current = null;
+      if (!sessionId) return;
+      const durationMs = startedAt ? Math.max(0, Date.now() - startedAt) : 0;
+      void fetch("/api/assessment/gia-message-avatar/realtime-complete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          session_id: sessionId,
+          duration_ms: durationMs,
+          status: statusValue,
+          error: error || undefined,
+        }),
+      }).catch(() => undefined);
+    },
+    [userId],
+  );
+
   const stopFinalGiaListening = useCallback(() => {
-    if (typeof window !== "undefined" && finalGiaSpeechRef.current) {
-      window.speechSynthesis?.cancel();
+    finalGiaListenRequestIdRef.current += 1;
+    try {
+      finalGiaSpeechRef.current?.close?.();
+    } catch {
+      // Ignore speech cleanup failures.
     }
     finalGiaSpeechRef.current = null;
     setFinalGiaListening(false);
-  }, []);
+    completeFinalGiaListenSession("stopped");
+  }, [completeFinalGiaListenSession]);
 
-  const startFinalGiaListening = useCallback(() => {
+  const startFinalGiaListening = useCallback(async () => {
     const message = String(finalGiaMessage || "").trim();
     if (!message) return;
-    if (
-      typeof window === "undefined" ||
-      typeof window.speechSynthesis === "undefined" ||
-      typeof SpeechSynthesisUtterance === "undefined"
-    ) {
+    if (typeof window === "undefined") {
       setFinalGiaListenError("Listening is not available in this browser.");
       return;
     }
 
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(message);
-    utterance.lang = "en-GB";
-    utterance.rate = 0.96;
-    utterance.pitch = 1;
-
-    const voices = window.speechSynthesis.getVoices?.() || [];
-    const preferredVoice =
-      voices.find((voice) => voice.lang.toLowerCase().startsWith("en-gb") && /female|susan|sonia|serena|kate|libby/i.test(voice.name)) ||
-      voices.find((voice) => voice.lang.toLowerCase().startsWith("en-gb")) ||
-      voices.find((voice) => voice.lang.toLowerCase().startsWith("en"));
-    if (preferredVoice) {
-      utterance.voice = preferredVoice;
+    const requestId = finalGiaListenRequestIdRef.current + 1;
+    finalGiaListenRequestIdRef.current = requestId;
+    try {
+      finalGiaSpeechRef.current?.close?.();
+    } catch {
+      // Ignore speech cleanup failures.
     }
-
-    utterance.onend = () => {
-      if (finalGiaSpeechRef.current === utterance) {
-        finalGiaSpeechRef.current = null;
-      }
-      setFinalGiaListening(false);
-    };
-    utterance.onerror = () => {
-      if (finalGiaSpeechRef.current === utterance) {
-        finalGiaSpeechRef.current = null;
-      }
-      setFinalGiaListening(false);
-      setFinalGiaListenError("Gia's audio could not be played right now.");
-    };
-
-    finalGiaSpeechRef.current = utterance;
+    finalGiaSpeechRef.current = null;
+    finalGiaListenSessionIdRef.current = null;
+    finalGiaListenStartedAtRef.current = null;
     setFinalGiaListenError(null);
     setFinalGiaListening(true);
-    window.speechSynthesis.speak(utterance);
-  }, [finalGiaMessage]);
+
+    try {
+      const res = await fetch("/api/assessment/gia-message-avatar/realtime-session", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          text: message,
+        }),
+      });
+      const rawText = await res.text().catch(() => "");
+      if (!res.ok) {
+        throw new Error(parseApiError(rawText, "Gia's audio could not be started right now."));
+      }
+      const payload = (rawText ? JSON.parse(rawText) : {}) as GiaMessageRealtimeSessionResponse;
+      if (requestId !== finalGiaListenRequestIdRef.current) return;
+      const speechToken = String(payload.speech_token || "").trim();
+      const speechRegion = String(payload.speech_region || "").trim();
+      const ssml = String(payload.ssml || "").trim();
+      const sessionId = String(payload.session_id || "").trim();
+      if (!speechToken || !speechRegion || !ssml) {
+        throw new Error("Gia's configured voice is not available right now.");
+      }
+
+      const SpeechSDK = await import("microsoft-cognitiveservices-speech-sdk");
+      if (requestId !== finalGiaListenRequestIdRef.current) return;
+      const speechConfig = SpeechSDK.SpeechConfig.fromAuthorizationToken(speechToken, speechRegion);
+      const audioConfig = SpeechSDK.AudioConfig.fromDefaultSpeakerOutput();
+      const synthesizer = new SpeechSDK.SpeechSynthesizer(speechConfig, audioConfig);
+      finalGiaSpeechRef.current = synthesizer;
+      finalGiaListenSessionIdRef.current = sessionId || null;
+      finalGiaListenStartedAtRef.current = Date.now();
+
+      const result = await new Promise<unknown>((resolve, reject) => {
+        synthesizer.speakSsmlAsync(
+          ssml,
+          (speakResult) => resolve(speakResult),
+          (error) => reject(error),
+        );
+      });
+      if (requestId !== finalGiaListenRequestIdRef.current) return;
+      const speakResult = result as { reason?: unknown; errorDetails?: string };
+      if (speakResult.reason !== SpeechSDK.ResultReason.SynthesizingAudioCompleted) {
+        throw new Error(speakResult.errorDetails || "Gia's audio did not complete.");
+      }
+      finalGiaSpeechRef.current = null;
+      try {
+        synthesizer.close();
+      } catch {
+        // Ignore speech cleanup failures.
+      }
+      setFinalGiaListening(false);
+      completeFinalGiaListenSession("completed");
+    } catch (error) {
+      if (requestId !== finalGiaListenRequestIdRef.current) return;
+      try {
+        finalGiaSpeechRef.current?.close?.();
+      } catch {
+        // Ignore speech cleanup failures.
+      }
+      finalGiaSpeechRef.current = null;
+      setFinalGiaListening(false);
+      const messageText = error instanceof Error ? error.message : String(error);
+      setFinalGiaListenError(messageText || "Gia's audio could not be played right now.");
+      completeFinalGiaListenSession("failed", messageText);
+    }
+  }, [completeFinalGiaListenSession, finalGiaMessage, userId]);
 
   const toggleFinalGiaListening = useCallback(() => {
     if (finalGiaListening) {
       stopFinalGiaListening();
       return;
     }
-    startFinalGiaListening();
+    void startFinalGiaListening();
   }, [finalGiaListening, startFinalGiaListening, stopFinalGiaListening]);
 
   const refreshDailyCheckInStatus = useCallback(async () => {
