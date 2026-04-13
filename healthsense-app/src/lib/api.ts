@@ -504,6 +504,9 @@ export type EducationPlanTodayResponse = {
       answer_type?: string;
       options?: unknown[];
       explanation?: string | null;
+      submitted_answer?: unknown;
+      is_correct?: boolean | null;
+      correct_answer?: unknown;
     }>;
   } | null;
   progress?: {

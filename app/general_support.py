@@ -22,7 +22,7 @@ from .prompts import build_prompt, run_llm_prompt
 COACH_NAME = os.getenv("COACH_NAME", "Gia")
 
 STATE_KEY = "general_support_state"
-TRACKER_SUMMARY_CACHE_KEY = "coach_home_tracker_summary_cache_v2"
+TRACKER_SUMMARY_CACHE_KEY = "coach_home_tracker_summary_cache_v4"
 
 
 def _coach_message_prefix() -> str:

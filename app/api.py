@@ -765,7 +765,7 @@ def on_startup():
             except Exception as e:
                 print(f"⚠️  Could not ensure education plan schema: {e!r}")
             try:
-                prompts_module.ensure_builtin_prompt_templates(["assessment_completion_summary", "daily_habit_plan"])
+                prompts_module.ensure_builtin_prompt_templates(["assessment_completion_summary", "daily_habit_plan", "app_tracker_summary"])
             except Exception as e:
                 print(f"⚠️  Could not ensure builtin prompt templates: {e!r}")
 

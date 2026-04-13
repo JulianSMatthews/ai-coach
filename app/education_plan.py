@@ -828,8 +828,11 @@ def refresh_education_lesson_avatar(lesson_variant_id: int) -> dict[str, Any]:
         return {"ok": str(avatar.get("status") or "").strip().lower() == "succeeded", "avatar": avatar}
 
 
-def _quiz_question_payload(row: EducationQuizQuestion) -> dict[str, Any]:
-    return {
+def _quiz_question_payload(
+    row: EducationQuizQuestion,
+    answer: UserEducationQuizAnswer | None = None,
+) -> dict[str, Any]:
+    payload = {
         "id": int(getattr(row, "id", 0) or 0),
         "order": int(getattr(row, "question_order", 0) or 0),
         "question_text": str(getattr(row, "question_text", "") or "").strip(),
@@ -837,6 +840,11 @@ def _quiz_question_payload(row: EducationQuizQuestion) -> dict[str, Any]:
         "options": list(getattr(row, "options_json", None) or []),
         "explanation": str(getattr(row, "explanation", "") or "").strip() or None,
     }
+    if answer is not None:
+        payload["submitted_answer"] = getattr(answer, "answer_json", None)
+        payload["is_correct"] = getattr(answer, "is_correct", None)
+        payload["correct_answer"] = getattr(row, "correct_answer_json", None)
+    return payload
 
 
 def _normalize_answer_payload(value: Any) -> Any:
@@ -1029,10 +1037,30 @@ def _resolve_lesson_variant(
         _normalize_level(getattr(row, "level", None)): row
         for row in rows
     }
+    selected: EducationLessonVariant | None = None
     for candidate in _variant_level_candidates(resolved_level):
         if candidate in by_level:
-            return by_level[candidate]
-    return rows[0]
+            selected = by_level[candidate]
+            break
+    if selected is None:
+        selected = rows[0]
+    if str(getattr(selected, "video_url", "") or "").strip():
+        return selected
+    video_rows = [
+        row
+        for row in rows
+        if str(getattr(row, "video_url", "") or "").strip()
+    ]
+    if not video_rows:
+        return selected
+    video_by_level = {
+        _normalize_level(getattr(row, "level", None)): row
+        for row in video_rows
+    }
+    for candidate in _variant_level_candidates(resolved_level):
+        if candidate in video_by_level:
+            return video_by_level[candidate]
+    return video_rows[0]
 
 
 def _get_or_create_concept_level(
@@ -1405,6 +1433,22 @@ def _lesson_state(
         lesson_variant=lesson_variant,
         lesson_date=anchor,
     )
+    quiz_answers_by_question: dict[int, UserEducationQuizAnswer] = {}
+    if getattr(progress, "id", None):
+        quiz_answers = (
+            session.execute(
+                select(UserEducationQuizAnswer)
+                .where(UserEducationQuizAnswer.user_day_progress_id == int(progress.id))
+                .order_by(UserEducationQuizAnswer.id.asc())
+            )
+            .scalars()
+            .all()
+        )
+        quiz_answers_by_question = {
+            int(getattr(item, "question_id", 0) or 0): item
+            for item in quiz_answers
+            if int(getattr(item, "question_id", 0) or 0)
+        }
     _sync_plan_streaks(session, plan)
     session.flush()
     takeaway = str(getattr(progress, "takeaway_text_shown", "") or "").strip() or None
@@ -1461,7 +1505,13 @@ def _lesson_state(
         "quiz": {
             "id": int(getattr(quiz, "id", 0) or 0) or None,
             "pass_score_pct": _safe_float(getattr(quiz, "pass_score_pct", None)),
-            "questions": [_quiz_question_payload(item) for item in quiz_questions],
+            "questions": [
+                _quiz_question_payload(
+                    item,
+                    quiz_answers_by_question.get(int(getattr(item, "id", 0) or 0)),
+                )
+                for item in quiz_questions
+            ],
         },
         "progress": {
             "id": int(getattr(progress, "id", 0) or 0),

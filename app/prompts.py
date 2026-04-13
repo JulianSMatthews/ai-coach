@@ -52,6 +52,17 @@ from .usage import log_usage_event, estimate_tokens, estimate_llm_cost
 
 PROMPT_STATE_ALIASES = {"production": "live", "stage": "beta"}
 PROMPT_STATE_ORDER = ["live", "beta", "develop"]
+APP_TRACKER_SUMMARY_TASK_BLOCK = (
+    "Task: write a concise one-way daily briefing for the member. Bring together their daily tracking from today and yesterday, "
+    "biometric/readiness signals, the existing Today's plan, and the current Today's focus lesson.\n\n"
+    "Do not create a new plan for the day. Do not rewrite the plan as a schedule. Do not use a morning/midday/evening list. "
+    "Do not add new habits, times, or tasks beyond the supplied education action.\n\n"
+    "Identify the clearest overall pattern, explain what level of exercise makes sense today based on recovery and nutrition, "
+    "mention the Today's focus lesson once when it is available, include the supplied education action, and close with the single "
+    "main priority to carry into the plan the member has already seen.\n\n"
+    "Keep it to 2-3 short paragraphs. Use plain British English. Avoid OKR/KR jargon and system terms like pillar, drill, or resilience work. "
+    "Do not ask a question and do not invite a reply."
+)
 BUILTIN_PROMPT_TEMPLATE_DEFAULTS: Dict[str, Dict[str, Any]] = {
     "assessment_completion_summary": {
         "touchpoint": "assessment_completion_summary",
@@ -92,6 +103,18 @@ BUILTIN_PROMPT_TEMPLATE_DEFAULTS: Dict[str, Dict[str, Any]] = {
             "Use British English. Do not mention JSON, scores, data tables, or being an AI."
         ),
         "note": "Runtime builtin template for coach-home daily plan generated from tracker context.",
+    },
+    "app_tracker_summary": {
+        "touchpoint": "app_tracker_summary",
+        "okr_scope": "none",
+        "programme_scope": "none",
+        "response_format": "",
+        "model_override": None,
+        "is_active": True,
+        "block_order": ["system", "locale", "context", "history", "task"],
+        "include_blocks": ["system", "locale", "context", "history", "task"],
+        "task_block": APP_TRACKER_SUMMARY_TASK_BLOCK,
+        "note": "Runtime builtin template for Gia's one-way coach-home message of the day.",
     },
 }
 
@@ -1624,6 +1647,14 @@ def build_prompt(
         extras = data.get("extras", "")
         source = str(data.get("source") or "").strip().lower()
         tracker_summary_mode = source == "app_tracker_summary"
+        if tracker_summary_mode:
+            ensure_builtin_prompt_templates(["app_tracker_summary"])
+            tracker_template = (
+                _load_prompt_template("app_tracker_summary")
+                if not preferred_state
+                else _load_prompt_template_with_state("app_tracker_summary", preferred_state)
+            )
+            template = tracker_template or None
         okr_context = data.get("okr_context") or {}
         if tracker_summary_mode:
             okr_txt = ""
@@ -1680,9 +1711,9 @@ def build_prompt(
                 "task",
                 task_block(
                     (
-                        "Write a precise one-way daily coaching message for the member that combines their daily tracking from today and yesterday, today's plan, biometric/readiness signals, and the current education programme lesson. "
-                        "Review the full tracker picture across the day, identify the clearest overall pattern, explain what level of exercise makes sense today based on recovery and nutrition, "
-                        "connect the education lesson to the member's day, and turn that into the key moments the member needs to get right across the day."
+                        "Write a concise one-way daily briefing for the member that brings together their daily tracking from today and yesterday, biometric/readiness signals, the existing Today's plan, and the current Today's focus lesson. "
+                        "Do not create a new plan for the day. Identify the clearest overall pattern, explain what level of exercise makes sense today based on recovery and nutrition, "
+                        "connect the education lesson to the member's day, and close with the single main priority to carry into the plan they have already seen."
                         if tracker_summary_mode
                         else "Reply with a brief coaching message grounded in the latest daily tracker results. "
                         "Reference the most relevant tracker pattern for today or yesterday, give one practical next step tied to that result, "
@@ -1694,8 +1725,8 @@ def build_prompt(
                             "Base the reply on the tracker context when it is available; do not give a generic encouragement message. "
                             "Use plain language, avoid OKR/KR jargon, and avoid system terms like pillar, drill, or resilience work. "
                             "When an education programme lesson is available, mention its concept or lesson title once and include the supplied education action without replacing the lesson content. "
-                            "Include the key moments for the day in the message, make the exercise guidance proportionate to recovery and nutrition, "
-                            "and end with one clear practical aim for today that ties the programme, plan, and biometrics together. Do not ask a question and do not invite a reply."
+                            "Use the key moments from the day plan only as context; do not rewrite them as a schedule, do not use a morning/midday/evening list, and do not add new habits, times, or tasks beyond the supplied education action. "
+                            "Make the exercise guidance proportionate to recovery and nutrition, then end with one clear practical aim that ties the programme, plan, and biometrics together. Do not ask a question and do not invite a reply."
                             if tracker_summary_mode
                             else "Keep it concise (2-4 short sentences), warm, calm, supportive. "
                             "Base the reply on the tracker context when it is available; do not give a generic encouragement message. "

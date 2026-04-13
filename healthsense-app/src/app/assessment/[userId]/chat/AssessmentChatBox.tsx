@@ -140,9 +140,9 @@ const HOME_SURFACE_COPY: Record<
   },
   insight: {
     eyebrow: "Step 3 of 4",
-    title: "Education programme",
-    description: "Watch today's lesson, complete the quick check, then continue to Gia's coaching message.",
-    nextLabel: "Read Gia's message",
+    title: "Today's focus",
+    description: "Watch today's short lesson, complete the quick check, then Gia will bring it together with your plan and tracker results.",
+    nextLabel: "Continue to Gia's message",
   },
   ask: {
     eyebrow: "Step 4 of 4",
@@ -639,6 +639,13 @@ function educationQuizOptions(question: EducationQuizQuestion | null | undefined
   return options.map(educationQuizOptionLabel).filter((option) => Boolean(option));
 }
 
+function educationQuizAnswerLabel(answer: unknown): string {
+  if (Array.isArray(answer)) {
+    return answer.map(educationQuizOptionLabel).filter(Boolean).join(", ");
+  }
+  return educationQuizOptionLabel(answer);
+}
+
 function fallbackLocalIsoDate(): string {
   const now = new Date();
   const year = now.getFullYear();
@@ -852,11 +859,13 @@ export default function AssessmentChatBox({
   const educationLesson = educationPlan?.lesson || null;
   const educationContent = educationLesson?.content || null;
   const educationAvatar = educationContent?.avatar || null;
-  const educationMediaUrl = String(
-    educationAvatar?.url || educationContent?.video_url || educationContent?.podcast_url || "",
+  const explicitEducationVideoUrl = String(
+    educationAvatar?.url || educationContent?.video_url || "",
   ).trim();
-  const educationMediaIsVideo = isLikelyVideoUrl(educationMediaUrl);
-  const educationVideoUrl = educationMediaIsVideo ? educationMediaUrl : "";
+  const fallbackEducationMediaUrl = String(educationContent?.podcast_url || "").trim();
+  const educationVideoUrl = explicitEducationVideoUrl || (
+    isLikelyVideoUrl(fallbackEducationMediaUrl) ? fallbackEducationMediaUrl : ""
+  );
   const educationVideoPosterUrl = String(
     educationAvatar?.poster_url || educationContent?.poster_url || "",
   ).trim();
@@ -2384,13 +2393,23 @@ export default function AssessmentChatBox({
                     <div className="mt-3 space-y-4">
                       {educationQuizQuestions.map((question, index) => {
                         const questionId = Number(question?.id || 0);
-                        const selectedAnswer = educationQuizAnswers[String(questionId)];
+                        const selectedAnswer = educationQuizAnswers[String(questionId)] ?? question?.submitted_answer;
                         const options = educationQuizOptions(question);
+                        const answered = question?.submitted_answer !== undefined && question?.submitted_answer !== null;
+                        const isCorrect = typeof question?.is_correct === "boolean" ? question.is_correct : null;
+                        const correctAnswerLabel = educationQuizAnswerLabel(question?.correct_answer);
                         return (
                           <div key={questionId || index}>
-                            <p className="text-sm font-semibold text-[#1e1b16]">
-                              {question?.question_text || `Question ${index + 1}`}
-                            </p>
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="text-sm font-semibold text-[#1e1b16]">
+                                {question?.question_text || `Question ${index + 1}`}
+                              </p>
+                              {answered && isCorrect !== null ? (
+                                <p className={`shrink-0 text-xs font-semibold ${isCorrect ? "text-[#317a4d]" : "text-[#9a3f2d]"}`}>
+                                  {isCorrect ? "Correct" : "Not quite"}
+                                </p>
+                              ) : null}
+                            </div>
                             {options.length ? (
                               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                                 {options.map((option) => {
@@ -2402,7 +2421,11 @@ export default function AssessmentChatBox({
                                       onClick={() => selectEducationQuizAnswer(questionId, option)}
                                       disabled={educationQuizCompleted || educationQuizSubmitting}
                                       className={`rounded-[14px] border px-3 py-2 text-left text-sm transition ${
-                                        active
+                                        active && answered && isCorrect === true
+                                          ? "border-[#7fb48f] bg-white text-[#1e1b16]"
+                                          : active && answered && isCorrect === false
+                                            ? "border-[#c98977] bg-white text-[#1e1b16]"
+                                            : active
                                           ? "border-[var(--accent)] bg-white text-[#1e1b16]"
                                           : "border-[#efe7db] bg-white text-[#6b6257]"
                                       } disabled:cursor-not-allowed disabled:opacity-70`}
@@ -2412,6 +2435,12 @@ export default function AssessmentChatBox({
                                   );
                                 })}
                               </div>
+                            ) : null}
+                            {answered && isCorrect === false && correctAnswerLabel ? (
+                              <p className="mt-2 text-xs text-[#6b6257]">Correct answer: {correctAnswerLabel}</p>
+                            ) : null}
+                            {answered && question?.explanation ? (
+                              <p className="mt-2 text-xs leading-5 text-[#6b6257]">{question.explanation}</p>
                             ) : null}
                           </div>
                         );

@@ -290,6 +290,15 @@ def _seed_admin_role(entry: dict) -> str:
     return ADMIN_ROLE_GLOBAL if bool(entry.get("is_superuser")) else ADMIN_ROLE_MEMBER
 
 
+APP_TRACKER_SUMMARY_TASK_BLOCK = """Task: write a concise one-way daily briefing for the member. Bring together their daily tracking from today and yesterday, biometric/readiness signals, the existing Today's plan, and the current Today's focus lesson.
+
+Do not create a new plan for the day. Do not rewrite the plan as a schedule. Do not use a morning/midday/evening list. Do not add new habits, times, or tasks beyond the supplied education action.
+
+Identify the clearest overall pattern, explain what level of exercise makes sense today based on recovery and nutrition, mention the Today's focus lesson once when it is available, include the supplied education action, and close with the single main priority to carry into the plan the member has already seen.
+
+Keep it to 2-3 short paragraphs. Use plain British English. Avoid OKR/KR jargon and system terms like pillar, drill, or resilience work. Do not ask a question and do not invite a reply."""
+
+
 DEFAULT_PROMPT_TEMPLATES = [
     {
         "touchpoint": 'podcast_kickoff',
@@ -629,6 +638,16 @@ When speaking about HealthSense:
 • Keep the tone calm, steady, and reassuring.
 Do not sound promotional — sound like a coach who trusts the system and knows how to help the user make progress.
 Always bring the conversation back to what will genuinely support the user’s health, wellness, habits, or current focus, but do so gently so it feels like a natural coaching conversation rather than a redirect.""",
+    },
+    {
+        "touchpoint": 'app_tracker_summary',
+        "okr_scope": 'none',
+        "programme_scope": 'none',
+        "response_format": '',
+        "is_active": True,
+        "block_order": ['system', 'locale', 'context', 'history', 'task'],
+        "include_blocks": ['system', 'locale', 'context', 'history', 'task'],
+        "task_block": APP_TRACKER_SUMMARY_TASK_BLOCK,
     },
     {
         "touchpoint": 'tuesday',

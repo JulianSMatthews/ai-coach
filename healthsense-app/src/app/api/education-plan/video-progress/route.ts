@@ -25,6 +25,31 @@ function getCookieValue(cookieHeader: string, key: string): string | null {
   return match ? match[1] : null;
 }
 
+function normalizeReportUrl(value: unknown, base: string): string | null {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  if (raw.startsWith("/reports/")) {
+    return `${base}${raw}`;
+  }
+  return raw;
+}
+
+function normalizeEducationPlanMedia(data: Record<string, unknown>, base: string) {
+  const lesson = data.lesson && typeof data.lesson === "object" ? data.lesson as Record<string, unknown> : null;
+  const content = lesson?.content && typeof lesson.content === "object" ? lesson.content as Record<string, unknown> : null;
+  if (!content) return data;
+  for (const key of ["video_url", "podcast_url", "poster_url"]) {
+    content[key] = normalizeReportUrl(content[key], base);
+  }
+  const avatar = content.avatar && typeof content.avatar === "object" ? content.avatar as Record<string, unknown> : null;
+  if (avatar) {
+    for (const key of ["url", "poster_url", "summary_url"]) {
+      avatar[key] = normalizeReportUrl(avatar[key], base);
+    }
+  }
+  return data;
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
@@ -53,7 +78,8 @@ export async function POST(request: Request) {
     if (!res.ok) {
       return NextResponse.json({ error: text || "Failed to save education video progress" }, { status: res.status });
     }
-    return NextResponse.json(text ? JSON.parse(text) : {});
+    const data = (text ? JSON.parse(text) : {}) as Record<string, unknown>;
+    return NextResponse.json(normalizeEducationPlanMedia(data, base));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: 500 });
