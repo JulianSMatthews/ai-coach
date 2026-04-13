@@ -27,6 +27,7 @@ from .models import (
     PromptTemplate,
     PromptSettings,
     PromptTemplateVersionLog,
+    UserEducationPlan,
 )
 from .job_queue import ensure_prompt_settings_schema
 from .prompts import _ensure_llm_prompt_log_schema, _canonical_state
@@ -1654,17 +1655,29 @@ def list_education_programmes():
     items = []
     for row in rows:
         duration_days = int(day_lengths.get(int(row.id), 0) or 0)
+        row_id = int(row.id)
+        row_code = str(row.code or "")
+        row_name = str(row.name or "")
         items.append(
             "<tr>"
-            f"<td>{int(row.id)}</td>"
+            f"<td>{row_id}</td>"
             f"<td>{html.escape(str(getattr(row, 'concept_label', None) or getattr(row, 'concept_key', None) or ''))}</td>"
             f"<td>{html.escape(str(row.pillar_key or ''))}</td>"
-            f"<td>{html.escape(str(row.code or ''))}</td>"
-            f"<td>{html.escape(str(row.name or ''))}</td>"
+            f"<td>{html.escape(row_code)}</td>"
+            f"<td>{html.escape(row_name)}</td>"
             f"<td>{duration_days}</td>"
             f"<td>{'✓' if bool(row.is_active) else '✕'}</td>"
             f"<td>{html.escape(str(row.updated_at or ''))}</td>"
-            f"<td><a href='/admin/education-programmes/edit?id={int(row.id)}'>Edit</a></td>"
+            "<td>"
+            f"<a href='/admin/education-programmes/edit?id={row_id}'>Edit</a>"
+            "<form method='post' action='/admin/education-programmes/delete' "
+            "style='display:inline; margin-left:8px;' "
+            "onsubmit=\"return confirm('Delete this education programme? This cannot be undone.');\">"
+            f"<input type='hidden' name='id' value='{row_id}' />"
+            f"<input type='hidden' name='expected_code' value='{html.escape(row_code)}' />"
+            "<button type='submit' class='danger' style='padding:6px 10px;'>Delete</button>"
+            "</form>"
+            "</td>"
             "</tr>"
         )
     body = (
@@ -1679,6 +1692,43 @@ def list_education_programmes():
         "</div>"
     )
     return _wrap_page("Education Programmes", body)
+
+
+@admin.post("/education-programmes/delete")
+def delete_education_programme(
+    id: int = Form(...),
+    expected_code: str | None = Form(default=None),
+):
+    ensure_education_plan_schema()
+    with SessionLocal() as s:
+        row = s.get(EducationProgramme, int(id))
+        if row is None:
+            raise HTTPException(404, "Education programme not found")
+        code = str(getattr(row, "code", "") or "").strip()
+        expected = str(expected_code or "").strip()
+        if expected and expected != code:
+            raise HTTPException(400, "Programme code confirmation did not match")
+        plan_count = (
+            s.query(UserEducationPlan)
+            .filter(UserEducationPlan.programme_id == int(row.id))
+            .count()
+        )
+        if plan_count:
+            row.is_active = False
+            s.add(row)
+            s.commit()
+            body = (
+                "<h2>Programme not deleted</h2>"
+                "<div class='card'>"
+                f"<p>Programme <strong>{html.escape(code)}</strong> has {int(plan_count)} user education plan(s) attached.</p>"
+                "<p>It has been deactivated instead, so it will no longer be selected for new users.</p>"
+                "<p class='nav'><a href='/admin/education-programmes'>Back to education programmes</a></p>"
+                "</div>"
+            )
+            return _wrap_page("Programme not deleted", body)
+        s.delete(row)
+        s.commit()
+    return RedirectResponse(url="/admin/education-programmes", status_code=303)
 
 
 @admin.post("/education-programmes/lesson-variants/{variant_id}/avatar/generate")
@@ -1728,6 +1778,18 @@ def edit_education_programme(id: int | None = None):
         else current_programme_concept
     )
     structure_seed = {"days": programme_payload.get("days") or []}
+    delete_form_html = ""
+    if row is not None:
+        delete_form_html = (
+            "<form method='post' action='/admin/education-programmes/delete' class='card' style='margin-top:12px;' "
+            "onsubmit=\"return confirm('Delete this education programme? This cannot be undone.');\">"
+            "<h3 class='section-title'>Delete programme</h3>"
+            "<p class='help'>Deletes this programme only if no user education plans are attached. If user plans exist, the programme is deactivated instead.</p>"
+            f"<input type='hidden' name='id' value='{html.escape(str(programme_payload.get('id') or ''))}' />"
+            f"<input type='hidden' name='expected_code' value='{html.escape(str(programme_payload.get('code') or ''))}' />"
+            "<button type='submit' class='danger'>Delete Programme</button>"
+            "</form>"
+        )
     body = f"""
     <h2>{title}</h2>
     {_build_version_label()}
@@ -1791,6 +1853,8 @@ def edit_education_programme(id: int | None = None):
         <a class='button-link' href="/admin/education-programmes">Back to list</a>
       </div>
     </form>
+
+    {delete_form_html}
 
     <script id="education-programme-seed" type="application/json">{_json_script_content(structure_seed)}</script>
     <script id="education-concept-options" type="application/json">{_json_script_content(concept_options)}</script>

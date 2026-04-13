@@ -1880,10 +1880,560 @@ def parse_education_programme_docx(path: str) -> dict[str, Any]:
     return {"title": programme_title, "days": days}
 
 
-def upsert_education_programme_from_docx(
+BUILTIN_EDUCATION_PROGRAMMES: list[dict[str, Any]] = [
+    {
+        "pillar_key": "nutrition",
+        "concept_key": "fruit_veg",
+        "concept_label": "Fruit & vegetables",
+        "code": "fruit_veg_awareness_4d",
+        "name": "Fruit & Vegetable Awareness",
+        "level": "build",
+        "pass_score_pct": 66.67,
+        "is_active": True,
+        "doc": {
+            "title": "HealthSense - Fruit & Vegetable Education Programme (4 Days)",
+            "days": [
+                {
+                    "day_index": 1,
+                    "title": "Awareness: Why Fruit & Veg Matter",
+                    "summary": "Today you'll learn why fruit and vegetables are one of the most important components of your diet.",
+                    "questions": [
+                        {
+                            "text": "What do fruit and vegetables provide?",
+                            "options": ["Only calories", "Vitamins, minerals and fibre", "Only sugar", "Only protein"],
+                            "correct": "Vitamins, minerals and fibre",
+                        },
+                        {
+                            "text": "What is nutrient density?",
+                            "options": ["High calories", "More nutrients per calorie", "More fat", "More sugar"],
+                            "correct": "More nutrients per calorie",
+                        },
+                        {
+                            "text": "What are fruit and veg linked to?",
+                            "options": ["Poor health", "Improved health outcomes", "Weight gain", "Fatigue"],
+                            "correct": "Improved health outcomes",
+                        },
+                    ],
+                    "script": (
+                        "Today you'll learn why fruit and vegetables are one of the most important components of your diet.\n\n"
+                        "They provide essential vitamins, minerals, fibre, and antioxidants that support overall health, immunity, and long-term disease prevention.\n\n"
+                        "Unlike ultra-processed foods, fruit and vegetables are nutrient-dense and low in energy density, meaning they provide more nutrients for fewer calories.\n\n"
+                        "Regular intake is associated with improved health outcomes, including reduced risk of heart disease and improved digestion."
+                    ),
+                    "action_prompt": "Add one portion of fruit or vegetables to your next meal.",
+                    "takeaway": "Fruit and vegetables are essential for overall health.",
+                },
+                {
+                    "day_index": 2,
+                    "title": "Why It's Hard: Why People Undereat Them",
+                    "summary": "Yesterday you learned why fruit and vegetables matter.",
+                    "questions": [
+                        {
+                            "text": "Why do people underconsume fruit and veg?",
+                            "options": ["No benefit", "Convenience and habits", "Too much protein", "Too much fat"],
+                            "correct": "Convenience and habits",
+                        },
+                        {
+                            "text": "What is a key barrier?",
+                            "options": ["Cost only", "Availability and convenience", "Sleep", "Exercise"],
+                            "correct": "Availability and convenience",
+                        },
+                        {
+                            "text": "What is often underestimated?",
+                            "options": ["Protein intake", "Portion and variety", "Water intake", "Sleep"],
+                            "correct": "Portion and variety",
+                        },
+                    ],
+                    "script": (
+                        "Yesterday you learned why fruit and vegetables matter. Today you'll understand why most people don't eat enough.\n\n"
+                        "Barriers include convenience, habit, and availability. Ultra-processed foods are often easier and quicker.\n\n"
+                        "Many people also underestimate portion sizes and variety.\n\n"
+                        "The key challenge isn't knowledge - it's making fruit and veg easy to include."
+                    ),
+                    "action_prompt": "Identify one meal today where you could easily add fruit or vegetables.",
+                    "takeaway": "The challenge is environment and habits, not knowledge.",
+                },
+                {
+                    "day_index": 3,
+                    "title": "What It's Doing: Fibre, Gut & Health",
+                    "summary": "Today you'll learn how fruit and vegetables affect your body.",
+                    "questions": [
+                        {
+                            "text": "What do fruit and veg provide for gut health?",
+                            "options": ["Fat", "Fibre", "Sugar only", "Salt"],
+                            "correct": "Fibre",
+                        },
+                        {
+                            "text": "What does fibre support?",
+                            "options": ["Digestion", "Bone growth", "Hair growth", "Vision"],
+                            "correct": "Digestion",
+                        },
+                        {
+                            "text": "How do fruit and veg affect appetite?",
+                            "options": ["Increase hunger", "Improve satiety", "No effect", "Reduce energy"],
+                            "correct": "Improve satiety",
+                        },
+                    ],
+                    "script": (
+                        "Today you'll learn how fruit and vegetables affect your body.\n\n"
+                        "They are a primary source of fibre, which supports digestion and gut health.\n\n"
+                        "Fibre feeds beneficial bacteria in the gut, supporting immunity and reducing inflammation.\n\n"
+                        "They also help regulate appetite and improve satiety, reducing overeating."
+                    ),
+                    "action_prompt": "Include at least one fibre-rich food (e.g. vegetables or fruit) in your next meal.",
+                    "takeaway": "Fibre supports gut health and appetite control.",
+                },
+                {
+                    "day_index": 4,
+                    "title": "What To Do: Simple Strategy",
+                    "summary": "Now it's about action.",
+                    "questions": [
+                        {
+                            "text": "Best strategy?",
+                            "options": ["Eat once per week", "Include in every meal", "Avoid fruit", "Only drink juice"],
+                            "correct": "Include in every meal",
+                        },
+                        {
+                            "text": "Why variety?",
+                            "options": ["More calories", "Broader nutrients", "Less hydration", "Less fibre"],
+                            "correct": "Broader nutrients",
+                        },
+                        {
+                            "text": "What is a simple step?",
+                            "options": ["Skip meals", "Add vegetables to meals", "Remove protein", "Eat less"],
+                            "correct": "Add vegetables to meals",
+                        },
+                    ],
+                    "script": (
+                        "Now it's about action.\n\n"
+                        "Aim to include fruit and vegetables in every meal and increase variety.\n\n"
+                        "Simple strategies:\n\n"
+                        "- Add vegetables to main meals\n\n"
+                        "- Include fruit as snacks\n\n"
+                        "- Aim for different colours\n\n"
+                        "Variety improves nutrient intake and supports overall health."
+                    ),
+                    "action_prompt": "Add at least two different coloured vegetables or fruits to your next meal.",
+                    "takeaway": "Consistency and variety drive results.",
+                },
+            ],
+        },
+    },
+    {
+        "pillar_key": "nutrition",
+        "concept_key": "hydration",
+        "concept_label": "Hydration",
+        "code": "hydration_awareness_4d",
+        "name": "Hydration Awareness",
+        "level": "build",
+        "pass_score_pct": 66.67,
+        "is_active": True,
+        "doc": {
+            "title": "HealthSense - Hydration Education Programme (4 Days)",
+            "days": [
+                {
+                    "day_index": 1,
+                    "title": "Awareness: What Hydration Means",
+                    "summary": "Today you'll learn what hydration actually means and why simply drinking water isn't the full picture.",
+                    "questions": [
+                        {
+                            "text": "Hydration is about:",
+                            "options": ["Drinking lots", "Fluid balance", "Avoiding salt", "Thirst only"],
+                            "correct": "Fluid balance",
+                        },
+                        {
+                            "text": "Body water percentage:",
+                            "options": ["30%", "60%", "80%", "90%"],
+                            "correct": "60%",
+                        },
+                        {
+                            "text": "Indicator of hydration:",
+                            "options": ["Heart rate", "Urine colour", "Weight", "Height"],
+                            "correct": "Urine colour",
+                        },
+                    ],
+                    "script": (
+                        "Today you'll learn what hydration actually means and why simply drinking water isn't the full picture. "
+                        "By the end, you'll understand how your body uses water and how to assess hydration.\n\n"
+                        "Hydration is about fluid balance. Your body is around 60% water and uses it for temperature, circulation, digestion, and brain function.\n\n"
+                        "Even mild dehydration impacts energy and focus. A simple indicator is urine colour - pale means well hydrated."
+                    ),
+                    "action_prompt": "Check urine colour twice today.",
+                    "takeaway": "Hydration is about balance.",
+                },
+                {
+                    "day_index": 2,
+                    "title": "Why It's Hard",
+                    "summary": "Yesterday you learned hydration is about balance.",
+                    "questions": [
+                        {
+                            "text": "Thirst occurs:",
+                            "options": ["Before dehydration", "After dehydration starts", "Perfect timing", "Random"],
+                            "correct": "After dehydration starts",
+                        },
+                        {
+                            "text": "What increases dehydration?",
+                            "options": ["Water", "Alcohol/caffeine", "Sleep", "Protein"],
+                            "correct": "Alcohol/caffeine",
+                        },
+                        {
+                            "text": "Why underdrink?",
+                            "options": ["Taste", "Distraction", "No access", "No need"],
+                            "correct": "Distraction",
+                        },
+                    ],
+                    "script": (
+                        "Yesterday you learned hydration is about balance. Today you'll learn why thirst isn't enough.\n\n"
+                        "Thirst is delayed. By the time you feel thirsty, dehydration has started.\n\n"
+                        "Caffeine, alcohol, and busy routines make hydration inconsistent."
+                    ),
+                    "action_prompt": "Set 3 reminders to drink water.",
+                    "takeaway": "Thirst is a lagging signal.",
+                },
+                {
+                    "day_index": 3,
+                    "title": "Energy & Performance",
+                    "summary": "Hydration affects energy, focus, and performance.",
+                    "questions": [
+                        {
+                            "text": "Dehydration affects:",
+                            "options": ["Only thirst", "Energy/focus", "Height", "Bones"],
+                            "correct": "Energy/focus",
+                        },
+                        {
+                            "text": "Heart rate:",
+                            "options": ["Decreases", "Same", "Increases", "Stops"],
+                            "correct": "Increases",
+                        },
+                        {
+                            "text": "Exercise impact:",
+                            "options": ["Easier", "No effect", "Harder", "Faster muscle"],
+                            "correct": "Harder",
+                        },
+                    ],
+                    "script": (
+                        "Hydration affects energy, focus, and performance.\n\n"
+                        "Even mild dehydration reduces concentration and increases fatigue.\n\n"
+                        "Heart rate increases and exercise feels harder."
+                    ),
+                    "action_prompt": "Drink water before activity and observe performance.",
+                    "takeaway": "Hydration impacts performance.",
+                },
+                {
+                    "day_index": 4,
+                    "title": "What To Do",
+                    "summary": "Now focus on action.",
+                    "questions": [
+                        {
+                            "text": "Best approach:",
+                            "options": ["All at once", "Consistent intake", "Only thirst", "Avoid fluids"],
+                            "correct": "Consistent intake",
+                        },
+                        {
+                            "text": "What guides hydration:",
+                            "options": ["Fixed rule", "Feedback", "Weight only", "Time only"],
+                            "correct": "Feedback",
+                        },
+                        {
+                            "text": "Good timing:",
+                            "options": ["Night only", "Exercise only", "Throughout day", "Never"],
+                            "correct": "Throughout day",
+                        },
+                    ],
+                    "script": (
+                        "Now focus on action. Build simple consistency.\n\n"
+                        "Drink regularly, start the day with water, and adjust based on activity.\n\n"
+                        "Use feedback like urine colour and energy."
+                    ),
+                    "action_prompt": "Start tomorrow with a glass of water.",
+                    "takeaway": "Consistency beats precision.",
+                },
+            ],
+        },
+    },
+    {
+        "pillar_key": "nutrition",
+        "concept_key": "processed_food",
+        "concept_label": "Processed food",
+        "code": "processed_food_awareness_4d",
+        "name": "Processed Foods Awareness",
+        "level": "build",
+        "pass_score_pct": 66.67,
+        "is_active": True,
+        "doc": {
+            "title": "HealthSense - Processed Foods Education Programme (4 Days)",
+            "days": [
+                {
+                    "day_index": 1,
+                    "title": "Awareness: What Are Ultra-Processed Foods?",
+                    "summary": "Today, you're going to learn something that will completely change how you look at food - and why you eat the way you do.",
+                    "questions": [
+                        {
+                            "text": "What is the main issue with ultra-processed foods?",
+                            "options": ["High temperature cooking", "Designed to increase intake", "Protein content", "Freezing"],
+                            "correct": "Designed to increase intake",
+                        },
+                        {
+                            "text": "Which is ultra-processed?",
+                            "options": ["Fresh vegetables", "Chicken", "Packaged snack", "Eggs"],
+                            "correct": "Packaged snack",
+                        },
+                        {
+                            "text": "What did research show?",
+                            "options": ["Less eating", "500 extra calories", "Muscle gain", "No change"],
+                            "correct": "500 extra calories",
+                        },
+                    ],
+                    "script": (
+                        "Today, you're going to learn something that will completely change how you look at food - and why you eat the way you do. "
+                        "By the end of this session, you'll understand the difference between normal processed food and ultra-processed food, and why that matters.\n\n"
+                        "Most people think processed food is the problem - but that's not quite right. Processing itself isn't bad. "
+                        "Freezing vegetables, cooking meat, making yoghurt - that's all processing.\n\n"
+                        "The real issue is ultra-processed foods. These are engineered foods with additives like emulsifiers and preservatives, designed for convenience and to make you eat more.\n\n"
+                        "Research shows people eat around 500 extra calories per day on ultra-processed diets - without realising."
+                    ),
+                    "action_prompt": "Check one ingredient list today and count unfamiliar ingredients.",
+                    "takeaway": "Ultra-processed foods are designed to increase intake.",
+                },
+                {
+                    "day_index": 2,
+                    "title": "Why It's Hard",
+                    "summary": "Yesterday you learned what ultra-processed foods are.",
+                    "questions": [
+                        {
+                            "text": "What are hyper-palatable foods?",
+                            "options": ["Improve digestion", "Increase fullness", "Override appetite", "Reduce cravings"],
+                            "correct": "Override appetite",
+                        },
+                        {
+                            "text": "What system is activated?",
+                            "options": ["Immune", "Dopamine reward", "Respiratory", "Skeletal"],
+                            "correct": "Dopamine reward",
+                        },
+                        {
+                            "text": "Why hard to stop?",
+                            "options": ["Expensive", "Engineered", "Fibre", "Chewing"],
+                            "correct": "Engineered",
+                        },
+                    ],
+                    "script": (
+                        "Yesterday you learned what ultra-processed foods are. Today you'll learn why they are hard to stop eating.\n\n"
+                        "These foods are hyper-palatable - combining sugar, fat, and salt to override fullness. "
+                        "They also stimulate the brain's reward system, reinforcing cravings.\n\n"
+                        "This is why stopping can feel difficult - it's not willpower, it's design."
+                    ),
+                    "action_prompt": "Notice one food you overeat and when you reach for it.",
+                    "takeaway": "It's not willpower - it's design.",
+                },
+                {
+                    "day_index": 3,
+                    "title": "Energy & Cravings",
+                    "summary": "You now understand intake and behaviour.",
+                    "questions": [
+                        {
+                            "text": "What happens after a spike?",
+                            "options": ["Stable energy", "Crash and cravings", "No hunger", "Muscle gain"],
+                            "correct": "Crash and cravings",
+                        },
+                        {
+                            "text": "Glycemic index measures?",
+                            "options": ["Fat", "Blood sugar", "Protein", "Vitamins"],
+                            "correct": "Blood sugar",
+                        },
+                        {
+                            "text": "What is affected?",
+                            "options": ["Bones", "Gut microbiome", "Hair", "Vision"],
+                            "correct": "Gut microbiome",
+                        },
+                    ],
+                    "script": (
+                        "You now understand intake and behaviour. Today is about what happens in your body.\n\n"
+                        "Ultra-processed foods spike blood sugar, followed by crashes. This leads to hunger, cravings, and repeat eating.\n\n"
+                        "They also affect your gut, impacting digestion and energy."
+                    ),
+                    "action_prompt": "Observe how you feel 60-90 minutes after eating.",
+                    "takeaway": "Energy and cravings are signals.",
+                },
+                {
+                    "day_index": 4,
+                    "title": "What To Do",
+                    "summary": "You now understand what, why, and impact.",
+                    "questions": [
+                        {
+                            "text": "Best approach?",
+                            "options": ["Remove all", "Gradual change", "Ignore", "Eat less"],
+                            "correct": "Gradual change",
+                        },
+                        {
+                            "text": "What works better than willpower?",
+                            "options": ["Skipping meals", "Environment change", "Coffee", "Exercise"],
+                            "correct": "Environment change",
+                        },
+                        {
+                            "text": "First step?",
+                            "options": ["Count calories", "Add whole foods", "Skip meals", "Avoid carbs"],
+                            "correct": "Add whole foods",
+                        },
+                    ],
+                    "script": (
+                        "You now understand what, why, and impact. Today is action.\n\n"
+                        "You don't need perfection - just small steps.\n\n"
+                        "Replace one processed food, choose simpler ingredients, and build consistency."
+                    ),
+                    "action_prompt": "Replace one ultra-processed food today.",
+                    "takeaway": "Small changes create lasting improvement.",
+                },
+            ],
+        },
+    },
+    {
+        "pillar_key": "nutrition",
+        "concept_key": "protein_intake",
+        "concept_label": "Protein intake",
+        "code": "protein_intake_awareness_4d",
+        "name": "Protein Awareness",
+        "level": "build",
+        "pass_score_pct": 66.67,
+        "is_active": True,
+        "doc": {
+            "title": "HealthSense - Protein Education Programme (4 Days)",
+            "days": [
+                {
+                    "day_index": 1,
+                    "title": "Awareness: What Protein Does",
+                    "summary": "Today you'll learn what protein actually does in your body and why it's essential for health, performance, and recovery.",
+                    "questions": [
+                        {
+                            "text": "What is protein primarily used for?",
+                            "options": ["Energy storage", "Tissue repair and function", "Hydration", "Bone density only"],
+                            "correct": "Tissue repair and function",
+                        },
+                        {
+                            "text": "Does the body store protein efficiently?",
+                            "options": ["Yes", "No", "Only at night", "Only after exercise"],
+                            "correct": "No",
+                        },
+                        {
+                            "text": "What does protein help with?",
+                            "options": ["Hunger increase", "Feeling fuller", "Dehydration", "Sleep only"],
+                            "correct": "Feeling fuller",
+                        },
+                    ],
+                    "script": (
+                        "Today you'll learn what protein actually does in your body and why it's essential for health, performance, and recovery.\n\n"
+                        "Protein is not just for muscle building. It plays a role in repairing tissues, supporting immune function, and maintaining metabolism.\n\n"
+                        "Protein is made up of amino acids, which are the building blocks your body uses for repair and function. "
+                        "Unlike fats and carbohydrates, your body does not store protein efficiently, so regular intake is important.\n\n"
+                        "Studies show that higher protein intake supports satiety - helping you feel fuller for longer."
+                    ),
+                    "action_prompt": "At your next meal, identify your main protein source.",
+                    "takeaway": "Protein supports repair, function, and satiety.",
+                },
+                {
+                    "day_index": 2,
+                    "title": "Why It's Hard: Most People Undereat Protein",
+                    "summary": "Yesterday you learned what protein does.",
+                    "questions": [
+                        {
+                            "text": "Why do people underconsume protein?",
+                            "options": ["Too expensive", "Meals lack focus on protein", "Protein unavailable", "Not needed"],
+                            "correct": "Meals lack focus on protein",
+                        },
+                        {
+                            "text": "When is protein often consumed most?",
+                            "options": ["Breakfast", "Lunch", "Dinner", "Midnight"],
+                            "correct": "Dinner",
+                        },
+                        {
+                            "text": "What happens with low protein intake?",
+                            "options": ["More fullness", "Increased hunger", "Better energy", "Faster recovery"],
+                            "correct": "Increased hunger",
+                        },
+                    ],
+                    "script": (
+                        "Yesterday you learned what protein does. Today you'll learn why most people don't get enough.\n\n"
+                        "Many meals are built around carbohydrates, with protein as an afterthought. This leads to lower satiety and more frequent hunger.\n\n"
+                        "Protein intake is often inconsistent across the day, with most consumed at dinner rather than evenly spread.\n\n"
+                        "This pattern reduces its effectiveness for energy and muscle maintenance."
+                    ),
+                    "action_prompt": "Check your last meal - was protein the main component or secondary?",
+                    "takeaway": "Protein is often under-consumed and unevenly distributed.",
+                },
+                {
+                    "day_index": 3,
+                    "title": "What It's Doing: Muscle, Metabolism & Energy",
+                    "summary": "Today you'll learn how protein affects your body directly.",
+                    "questions": [
+                        {
+                            "text": "What does protein support?",
+                            "options": ["Only fat storage", "Muscle maintenance", "Dehydration", "Bone shrinkage"],
+                            "correct": "Muscle maintenance",
+                        },
+                        {
+                            "text": "What is the thermic effect?",
+                            "options": ["Energy stored", "Energy used in digestion", "Water loss", "Heat loss"],
+                            "correct": "Energy used in digestion",
+                        },
+                        {
+                            "text": "How does protein affect energy?",
+                            "options": ["Causes spikes", "Stabilises energy", "Reduces energy", "No effect"],
+                            "correct": "Stabilises energy",
+                        },
+                    ],
+                    "script": (
+                        "Today you'll learn how protein affects your body directly.\n\n"
+                        "Protein supports muscle maintenance and repair, especially important during exercise or ageing.\n\n"
+                        "It also has a higher thermic effect - meaning your body uses more energy to digest it compared to fats and carbs.\n\n"
+                        "This helps support metabolism and body composition.\n\n"
+                        "Protein also stabilises energy levels by slowing digestion and reducing blood sugar spikes."
+                    ),
+                    "action_prompt": "Add a clear protein source to your next meal (e.g. eggs, chicken, yoghurt).",
+                    "takeaway": "Protein supports muscle, metabolism, and stable energy.",
+                },
+                {
+                    "day_index": 4,
+                    "title": "What To Do: Practical Protein Strategy",
+                    "summary": "Now it's about applying what you've learned.",
+                    "questions": [
+                        {
+                            "text": "Best protein strategy?",
+                            "options": ["One large portion", "Spread across meals", "Only after exercise", "Avoid protein"],
+                            "correct": "Spread across meals",
+                        },
+                        {
+                            "text": "Good protein sources?",
+                            "options": ["Sugary snacks", "Meat, eggs, legumes", "Drinks only", "Oils"],
+                            "correct": "Meat, eggs, legumes",
+                        },
+                        {
+                            "text": "How to structure meals?",
+                            "options": ["Start with carbs", "Build around protein", "Skip protein", "Eat randomly"],
+                            "correct": "Build around protein",
+                        },
+                    ],
+                    "script": (
+                        "Now it's about applying what you've learned.\n\n"
+                        "Aim to include protein in every meal rather than focusing on one large portion.\n\n"
+                        "Good sources include:\n\n"
+                        "- meat, fish, eggs\n\n"
+                        "- dairy\n\n"
+                        "- legumes and plant proteins\n\n"
+                        "A simple approach is to build each meal around a protein source first, then add other components.\n\n"
+                        "Consistency matters more than perfection."
+                    ),
+                    "action_prompt": "Plan your next meal with protein as the starting point.",
+                    "takeaway": "Build meals around protein for better results.",
+                },
+            ],
+        },
+    },
+]
+
+
+def _upsert_education_programme_doc(
     session: Session,
     *,
-    docx_path: str,
+    doc: dict[str, Any],
     pillar_key: str,
     concept_key: str,
     code: str,
@@ -1893,10 +2443,6 @@ def upsert_education_programme_from_docx(
     pass_score_pct: float = 66.67,
     is_active: bool = True,
 ) -> dict[str, Any]:
-    from .education_plan import ensure_education_plan_schema
-
-    ensure_education_plan_schema()
-    doc = parse_education_programme_docx(docx_path)
     pillar_token = str(pillar_key or "").strip().lower()
     concept_token = str(concept_key or "").strip().lower()
     code_token = str(code or "").strip()
@@ -2071,6 +2617,58 @@ def upsert_education_programme_from_docx(
     }
 
 
+def upsert_education_programme_from_docx(
+    session: Session,
+    *,
+    docx_path: str,
+    pillar_key: str,
+    concept_key: str,
+    code: str,
+    name: str | None = None,
+    concept_label: str | None = None,
+    level: str = "build",
+    pass_score_pct: float = 66.67,
+    is_active: bool = True,
+) -> dict[str, Any]:
+    from .education_plan import ensure_education_plan_schema
+
+    ensure_education_plan_schema()
+    return _upsert_education_programme_doc(
+        session,
+        doc=parse_education_programme_docx(docx_path),
+        pillar_key=pillar_key,
+        concept_key=concept_key,
+        code=code,
+        name=name,
+        concept_label=concept_label,
+        level=level,
+        pass_score_pct=pass_score_pct,
+        is_active=is_active,
+    )
+
+
+def upsert_education_programme_from_definition(
+    session: Session,
+    definition: dict[str, Any],
+) -> dict[str, Any]:
+    from .education_plan import ensure_education_plan_schema
+
+    ensure_education_plan_schema()
+    doc = definition.get("doc") if isinstance(definition.get("doc"), dict) else definition
+    return _upsert_education_programme_doc(
+        session,
+        doc=dict(doc or {}),
+        pillar_key=str(definition.get("pillar_key") or "").strip(),
+        concept_key=str(definition.get("concept_key") or definition.get("concept_code") or "").strip(),
+        code=str(definition.get("code") or "").strip(),
+        name=str(definition.get("name") or "").strip() or None,
+        concept_label=str(definition.get("concept_label") or "").strip() or None,
+        level=str(definition.get("level") or "build").strip() or "build",
+        pass_score_pct=float(definition.get("pass_score_pct") or 66.67),
+        is_active=bool(definition.get("is_active", True)),
+    )
+
+
 def seed_education_programme_from_docx(
     docx_path: str,
     *,
@@ -2141,6 +2739,44 @@ def seed_education_programmes_from_env(session: Session) -> list[dict[str, Any]]
     return seed_education_programmes_from_manifest(session, manifest)
 
 
+def _sync_education_seed_definitions(
+    session: Session,
+    *,
+    include_env: bool = True,
+) -> list[dict[str, Any]]:
+    upsert_pillars(session)
+    upsert_concepts(session)
+    results = [
+        upsert_education_programme_from_definition(session, definition)
+        for definition in BUILTIN_EDUCATION_PROGRAMMES
+    ]
+    if include_env:
+        results.extend(seed_education_programmes_from_env(session))
+    return results
+
+
+def sync_education_seed_definitions(
+    session: Session | None = None,
+    *,
+    include_env: bool = True,
+) -> list[dict[str, Any]]:
+    """
+    Lightweight education programme sync. Safe to run on every startup because
+    programmes, days, variants, quizzes, and questions are upserted by stable keys.
+    """
+    if session is not None:
+        return _sync_education_seed_definitions(session, include_env=include_env)
+
+    with SessionLocal() as s:
+        try:
+            results = _sync_education_seed_definitions(s, include_env=include_env)
+            s.commit()
+            return results
+        except Exception:
+            s.rollback()
+            raise
+
+
 def run_seed() -> None:
     """
     Full seed entrypoint. Safely seeds in the right order and won't crash
@@ -2156,7 +2792,7 @@ def run_seed() -> None:
             p  = upsert_pillars(s) if 'upsert_pillars' in globals() else 0
             c  = upsert_concepts(s) if 'upsert_concepts' in globals() else 0
             cq = upsert_concept_questions(s) if 'upsert_concept_questions' in globals() else 0
-            edu = seed_education_programmes_from_env(s) if 'seed_education_programmes_from_env' in globals() else []
+            edu = sync_education_seed_definitions(s) if 'sync_education_seed_definitions' in globals() else []
 
             # 3) KB snippets / vectors
             keep_kb = os.getenv("KEEP_KB_SNIPPETS_ON_RESET") == "1"

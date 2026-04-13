@@ -458,7 +458,7 @@ def _print_env_banner():
 debug_log(f"🚀 app.api loaded: v-2025-09-04E (ENV={ENV})", tag="startup")
 
 # Seed import
-from .seed import run_seed, sync_assessment_seed_definitions  # fallback
+from .seed import run_seed, sync_assessment_seed_definitions, sync_education_seed_definitions  # fallback
 
 # Assessor entrypoints
 
@@ -516,6 +516,19 @@ async def _startup_init() -> None:
         )
     except Exception as e:
         debug_log(f"assessment seed sync failed: {e!r}", tag="startup")
+        raise
+
+    try:
+        education_results = sync_education_seed_definitions(include_env=False)
+        education_days = sum(int(item.get("days") or 0) for item in education_results)
+        education_questions = sum(int(item.get("questions") or 0) for item in education_results)
+        debug_log(
+            "education programme seed sync complete: "
+            f"programmes={len(education_results)}, days={education_days}, questions={education_questions}",
+            tag="startup",
+        )
+    except Exception as e:
+        debug_log(f"education programme seed sync failed: {e!r}", tag="startup")
         raise
 
     try:
