@@ -520,6 +520,45 @@ def _coach_home_history_lines(
         if today_aim:
             lines.append(f"Today aim: {today_aim}")
 
+    education = tracker_context.get("education_programme")
+    if isinstance(education, dict):
+        if education.get("available"):
+            programme_name = str(education.get("programme_name") or "").strip()
+            concept_label = str(education.get("concept_label") or "").strip()
+            day_index = str(education.get("day_index") or "").strip()
+            duration_days = str(education.get("duration_days") or "").strip()
+            day_label = f"Day {day_index} of {duration_days}" if day_index and duration_days else f"Day {day_index}" if day_index else ""
+            heading = " | ".join(part for part in [programme_name, concept_label, day_label] if part)
+            if heading:
+                lines.append(f"Education programme: {heading}")
+            lesson_title = str(education.get("lesson_title") or "").strip()
+            lesson_summary = str(education.get("lesson_summary") or "").strip()
+            lesson_goal = str(education.get("lesson_goal") or "").strip()
+            action_prompt = str(education.get("action_prompt") or "").strip()
+            completion = str(education.get("completion_status") or "pending").strip()
+            if lesson_title:
+                lines.append(f"- lesson: {lesson_title}")
+            if lesson_summary:
+                lines.append(f"- lesson summary: {lesson_summary}")
+            if lesson_goal:
+                lines.append(f"- lesson goal: {lesson_goal}")
+            if action_prompt:
+                lines.append(f"- education action: {action_prompt}")
+            lines.append(
+                "- lesson assets: "
+                + "; ".join(
+                    [
+                        f"avatar/video={'available' if education.get('has_video') else 'not available'}",
+                        f"quiz_questions={education.get('quiz_question_count') or 0}",
+                        f"completion={completion or 'pending'}",
+                    ]
+                )
+            )
+        else:
+            reason = str(education.get("reason") or "").strip()
+            if reason:
+                lines.append(f"Education programme: unavailable ({reason})")
+
     if include_habit_steps and isinstance(okr_context, dict) and (okr_context.get("habit_steps") or []):
         lines.append("Active KR habit steps:")
         for step in (okr_context.get("habit_steps") or [])[:5]:
@@ -1620,7 +1659,7 @@ def build_prompt(
                 "context",
                 context_block(
                     "general_support",
-                    "one-way mobile coaching message based on the latest daily tracker results"
+                    "one-way mobile coaching message integrating the daily tracker, day plan, biometrics, and education programme"
                     if tracker_summary_mode
                     else "open coaching support based on the latest daily tracker results",
                     timeframe=timeframe,
@@ -1641,9 +1680,9 @@ def build_prompt(
                 "task",
                 task_block(
                     (
-                        "Write a precise one-way daily coaching message for the member based on all of their daily tracking from today and yesterday. "
+                        "Write a precise one-way daily coaching message for the member that combines their daily tracking from today and yesterday, today's plan, biometric/readiness signals, and the current education programme lesson. "
                         "Review the full tracker picture across the day, identify the clearest overall pattern, explain what level of exercise makes sense today based on recovery and nutrition, "
-                        "and turn that into the key moments the member needs to get right across the day."
+                        "connect the education lesson to the member's day, and turn that into the key moments the member needs to get right across the day."
                         if tracker_summary_mode
                         else "Reply with a brief coaching message grounded in the latest daily tracker results. "
                         "Reference the most relevant tracker pattern for today or yesterday, give one practical next step tied to that result, "
@@ -1654,8 +1693,9 @@ def build_prompt(
                             "Keep it to 2-3 short paragraphs, warm, calm, and practical. "
                             "Base the reply on the tracker context when it is available; do not give a generic encouragement message. "
                             "Use plain language, avoid OKR/KR jargon, and avoid system terms like pillar, drill, or resilience work. "
+                            "When an education programme lesson is available, mention its concept or lesson title once and include the supplied education action without replacing the lesson content. "
                             "Include the key moments for the day in the message, make the exercise guidance proportionate to recovery and nutrition, "
-                            "and end with a clear practical aim for today. Do not ask a question and do not invite a reply."
+                            "and end with one clear practical aim for today that ties the programme, plan, and biometrics together. Do not ask a question and do not invite a reply."
                             if tracker_summary_mode
                             else "Keep it concise (2-4 short sentences), warm, calm, supportive. "
                             "Base the reply on the tracker context when it is available; do not give a generic encouragement message. "

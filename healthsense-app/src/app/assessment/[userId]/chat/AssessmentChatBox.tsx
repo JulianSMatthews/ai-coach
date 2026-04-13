@@ -3,9 +3,9 @@
 import { useSearchParams } from "next/navigation";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
-  CoachInsightResponse,
   DailyHabitPlanItem,
   DailyHabitPlanResponse,
+  EducationPlanTodayResponse,
   PillarTrackerSummaryResponse,
 } from "@/lib/api";
 import { getPillarPalette } from "@/lib/pillars";
@@ -100,6 +100,8 @@ type AssessmentCompletionSummaryMedia = {
 
 type HomeSurface = "tracking" | "habits" | "insight" | "ask";
 type HomeSurfaceEntryMode = "guided" | "summary";
+type EducationQuizAnswerValue = string | number | boolean | string[] | null;
+type EducationQuizQuestion = NonNullable<NonNullable<EducationPlanTodayResponse["quiz"]>["questions"]>[number];
 type GiaMessageRealtimeSessionResponse = {
   session_id?: string;
   speech_token?: string;
@@ -133,14 +135,14 @@ const HOME_SURFACE_COPY: Record<
   habits: {
     eyebrow: "Step 2 of 4",
     title: "Today's plan",
-    description: "Review the key moments for today, then continue to today's insight.",
-    nextLabel: "Watch insight",
+    description: "Review the key moments for today, then continue to today's lesson.",
+    nextLabel: "Start lesson",
   },
   insight: {
     eyebrow: "Step 3 of 4",
-    title: "Today's insight",
-    description: "Watch today's avatar insight, then continue to Gia's coaching message.",
-    nextLabel: "Read Gia's coaching",
+    title: "Education programme",
+    description: "Watch today's lesson, complete the quick check, then continue to Gia's coaching message.",
+    nextLabel: "Read Gia's message",
   },
   ask: {
     eyebrow: "Step 4 of 4",
@@ -621,6 +623,22 @@ function isLikelyVideoUrl(value: string): boolean {
   return /\.(mp4|m4v|mov|webm)(?:$|[?#])/i.test(token);
 }
 
+function educationQuizOptionLabel(option: unknown): string {
+  if (typeof option === "string" || typeof option === "number" || typeof option === "boolean") {
+    return String(option).trim();
+  }
+  if (option && typeof option === "object") {
+    const row = option as Record<string, unknown>;
+    return String(row.label || row.text || row.value || "").trim();
+  }
+  return "";
+}
+
+function educationQuizOptions(question: EducationQuizQuestion | null | undefined): string[] {
+  const options = Array.isArray(question?.options) ? question.options : [];
+  return options.map(educationQuizOptionLabel).filter((option) => Boolean(option));
+}
+
 function fallbackLocalIsoDate(): string {
   const now = new Date();
   const year = now.getFullYear();
@@ -749,10 +767,18 @@ export default function AssessmentChatBox({
   const [dailyHabitPlan, setDailyHabitPlan] = useState<DailyHabitPlanResponse | null>(null);
   const [dailyHabitPlanLoading, setDailyHabitPlanLoading] = useState(false);
   const [dailyHabitPlanError, setDailyHabitPlanError] = useState<string | null>(null);
-  const [coachInsight, setCoachInsight] = useState<CoachInsightResponse | null>(null);
-  const [coachInsightLoading, setCoachInsightLoading] = useState(false);
-  const [coachInsightError, setCoachInsightError] = useState<string | null>(null);
-  const insightRequestIdRef = useRef(0);
+  const [educationPlan, setEducationPlan] = useState<EducationPlanTodayResponse | null>(null);
+  const [educationPlanLoading, setEducationPlanLoading] = useState(false);
+  const [educationPlanError, setEducationPlanError] = useState<string | null>(null);
+  const [educationQuizAnswers, setEducationQuizAnswers] = useState<Record<string, EducationQuizAnswerValue>>({});
+  const [educationQuizSubmitting, setEducationQuizSubmitting] = useState(false);
+  const [educationQuizMessage, setEducationQuizMessage] = useState<string | null>(null);
+  const educationPlanRequestIdRef = useRef(0);
+  const educationVideoProgressRef = useRef<{ key: string; sent80: boolean; sent100: boolean }>({
+    key: "",
+    sent80: false,
+    sent100: false,
+  });
   const finalGiaRequestIdRef = useRef(0);
   const finalGiaListenRequestIdRef = useRef(0);
   const finalGiaSpeechRef = useRef<{ close?: () => void } | null>(null);
@@ -823,22 +849,36 @@ export default function AssessmentChatBox({
     !summaryExperienceBlocked &&
     (!completionSummaryUsesRealtime ||
       ["playing", "completed", "failed", "stopped", "timeout"].includes(realtimeSummaryPhase));
-  const insightContent = coachInsight?.content || null;
-  const insightSelectedConceptKey = String(coachInsight?.concept_key || "").trim();
-  const insightMediaUrl = String(insightContent?.podcast_url || "").trim();
-  const insightMediaIsVideo = isLikelyVideoUrl(insightMediaUrl);
-  const insightAvatar = insightContent?.avatar || null;
-  const insightVideoUrl = String(
-    insightAvatar?.url || (insightMediaIsVideo ? insightMediaUrl : "") || "",
+  const educationLesson = educationPlan?.lesson || null;
+  const educationContent = educationLesson?.content || null;
+  const educationAvatar = educationContent?.avatar || null;
+  const educationMediaUrl = String(
+    educationAvatar?.url || educationContent?.video_url || educationContent?.podcast_url || "",
   ).trim();
-  const insightVideoPosterUrl = String(
-    insightAvatar?.poster_url || "",
+  const educationMediaIsVideo = isLikelyVideoUrl(educationMediaUrl);
+  const educationVideoUrl = educationMediaIsVideo ? educationMediaUrl : "";
+  const educationVideoPosterUrl = String(
+    educationAvatar?.poster_url || educationContent?.poster_url || "",
   ).trim();
-  const insightHasVideo = Boolean(insightVideoUrl);
-  const insightMediaKey = `${insightSelectedConceptKey || "insight"}:${insightVideoUrl}`;
-  const insightConceptTitle = String(
-    coachInsight?.concept_label || insightContent?.title || coachInsight?.pillar_label || "",
+  const educationHasVideo = Boolean(educationVideoUrl);
+  const educationMediaKey = `${String(educationPlan?.plan_id || "education")}:${String(
+    educationLesson?.lesson_variant_id || "",
+  )}:${educationVideoUrl}`;
+  const educationProgrammeName = String(educationPlan?.programme?.name || "").trim();
+  const educationConceptTitle = String(
+    educationPlan?.concept_label || educationLesson?.title || educationPlan?.pillar_label || "",
   ).trim();
+  const educationDayIndex = Number(educationPlan?.day_index || 0);
+  const educationDurationDays = Number(educationPlan?.programme?.duration_days || 0);
+  const educationQuizQuestions = useMemo(
+    () => (Array.isArray(educationPlan?.quiz?.questions) ? educationPlan.quiz.questions : []),
+    [educationPlan?.quiz?.questions],
+  );
+  const educationQuizCompleted = Boolean(
+    educationPlan?.progress?.quiz_completed_at ||
+      String(educationPlan?.progress?.completion_status || "").includes("quiz") ||
+      String(educationPlan?.progress?.completion_status || "") === "completed",
+  );
   const dailyHabits = useMemo(() => {
     const selected = Array.isArray(dailyHabitPlan?.habits) ? dailyHabitPlan.habits : [];
     const fallback = Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : [];
@@ -941,37 +981,111 @@ export default function AssessmentChatBox({
       setDailyHabitPlanLoading(false);
     }
   }, [userId]);
-  const loadCoachInsight = useCallback(async () => {
-    const requestId = insightRequestIdRef.current + 1;
-    insightRequestIdRef.current = requestId;
-    setCoachInsightLoading(true);
-    setCoachInsightError(null);
+  const loadEducationPlan = useCallback(async () => {
+    const requestId = educationPlanRequestIdRef.current + 1;
+    educationPlanRequestIdRef.current = requestId;
+    setEducationPlanLoading(true);
+    setEducationPlanError(null);
+    setEducationQuizMessage(null);
     try {
       const params = new URLSearchParams({ userId });
-      const res = await fetch(`/api/coach-insight?${params.toString()}`, {
+      const res = await fetch(`/api/education-plan/today?${params.toString()}`, {
         method: "GET",
         cache: "no-store",
       });
       const text = await res.text().catch(() => "");
       if (!res.ok) {
-        throw new Error(parseApiError(text, "Failed to load today's insight."));
+        throw new Error(parseApiError(text, "Failed to load today's lesson."));
       }
-      const data = (text ? (JSON.parse(text) as CoachInsightResponse) : {}) as CoachInsightResponse;
-      if (requestId !== insightRequestIdRef.current) {
+      const data = (text ? (JSON.parse(text) as EducationPlanTodayResponse) : {}) as EducationPlanTodayResponse;
+      if (requestId !== educationPlanRequestIdRef.current) {
         return;
       }
-      setCoachInsight(data);
+      setEducationPlan(data);
     } catch (error) {
-      if (requestId !== insightRequestIdRef.current) {
+      if (requestId !== educationPlanRequestIdRef.current) {
         return;
       }
-      setCoachInsightError(error instanceof Error ? error.message : String(error));
+      setEducationPlanError(error instanceof Error ? error.message : String(error));
     } finally {
-      if (requestId === insightRequestIdRef.current) {
-        setCoachInsightLoading(false);
+      if (requestId === educationPlanRequestIdRef.current) {
+        setEducationPlanLoading(false);
       }
     }
   }, [userId]);
+
+  const recordEducationVideoProgress = useCallback(async (watchPct: number, watchedSeconds?: number) => {
+    try {
+      const res = await fetch("/api/education-plan/video-progress", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          watch_pct: Math.max(0, Math.min(100, Math.round(watchPct))),
+          watched_seconds: Number.isFinite(Number(watchedSeconds)) ? Math.max(0, Math.round(Number(watchedSeconds))) : undefined,
+        }),
+      });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        throw new Error(parseApiError(text, "Failed to save lesson progress."));
+      }
+      const data = (text ? (JSON.parse(text) as EducationPlanTodayResponse) : {}) as EducationPlanTodayResponse;
+      setEducationPlan(data);
+    } catch (error) {
+      setEducationPlanError(error instanceof Error ? error.message : String(error));
+    }
+  }, [userId]);
+
+  const selectEducationQuizAnswer = useCallback((questionId: number | undefined, answer: EducationQuizAnswerValue) => {
+    if (!questionId) return;
+    setEducationQuizAnswers((current) => ({
+      ...current,
+      [String(questionId)]: answer,
+    }));
+    setEducationQuizMessage(null);
+  }, []);
+
+  const submitEducationQuiz = useCallback(async () => {
+    const answers = educationQuizQuestions
+      .map((question) => {
+        const questionId = Number(question?.id || 0);
+        if (!questionId) return null;
+        const answer = educationQuizAnswers[String(questionId)];
+        return {
+          question_id: questionId,
+          answer,
+        };
+      })
+      .filter((item): item is { question_id: number; answer: EducationQuizAnswerValue } => Boolean(item));
+    const missingAnswer = answers.some((item) => item.answer === undefined || item.answer === null || item.answer === "");
+    if (!answers.length || missingAnswer || answers.length < educationQuizQuestions.length) {
+      setEducationQuizMessage("Complete the quick check before submitting.");
+      return;
+    }
+    setEducationQuizSubmitting(true);
+    setEducationQuizMessage(null);
+    try {
+      const res = await fetch("/api/education-plan/quiz-submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          answers,
+        }),
+      });
+      const text = await res.text().catch(() => "");
+      if (!res.ok) {
+        throw new Error(parseApiError(text, "Failed to submit the quick check."));
+      }
+      const data = (text ? (JSON.parse(text) as EducationPlanTodayResponse) : {}) as EducationPlanTodayResponse;
+      setEducationPlan(data);
+      setEducationQuizMessage("Quick check saved.");
+    } catch (error) {
+      setEducationQuizMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setEducationQuizSubmitting(false);
+    }
+  }, [educationQuizAnswers, educationQuizQuestions, userId]);
 
   const refreshChatState = useCallback(
     async (options?: { showLoading?: boolean; clearStatus?: boolean }) => {
@@ -1230,9 +1344,11 @@ export default function AssessmentChatBox({
     setDailyHabitPlan(null);
     setDailyHabitPlanError(null);
     setDailyHabitPlanLoading(false);
-    setCoachInsight(null);
-    setCoachInsightError(null);
-    setCoachInsightLoading(false);
+    setEducationPlan(null);
+    setEducationPlanError(null);
+    setEducationPlanLoading(false);
+    setEducationQuizAnswers({});
+    setEducationQuizMessage(null);
   }, [assessmentCompleted, initialMorningSequenceDay, initialTrackerSummary, stopFinalGiaListening, userId]);
 
   useEffect(() => {
@@ -1347,9 +1463,18 @@ export default function AssessmentChatBox({
 
   useEffect(() => {
     if (!showGuidedHomeChatPanel || homeSurface !== "insight") return;
-    if (coachInsight) return;
-    void loadCoachInsight();
-  }, [showGuidedHomeChatPanel, homeSurface, loadCoachInsight, coachInsight]);
+    if (educationPlan) return;
+    void loadEducationPlan();
+  }, [showGuidedHomeChatPanel, homeSurface, loadEducationPlan, educationPlan]);
+
+  useEffect(() => {
+    if (educationVideoProgressRef.current.key === educationMediaKey) return;
+    educationVideoProgressRef.current = {
+      key: educationMediaKey,
+      sent80: false,
+      sent100: false,
+    };
+  }, [educationMediaKey]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -1357,8 +1482,10 @@ export default function AssessmentChatBox({
       const detail = (event as CustomEvent<{ guided?: boolean }>).detail;
       setDailyHabitPlan(null);
       setDailyHabitPlanError(null);
-      setCoachInsight(null);
-      setCoachInsightError(null);
+      setEducationPlan(null);
+      setEducationPlanError(null);
+      setEducationQuizAnswers({});
+      setEducationQuizMessage(null);
       setFinalGiaMessage(null);
       setFinalGiaMessageError(null);
       setFinalGiaMessageLoading(false);
@@ -2158,50 +2285,162 @@ export default function AssessmentChatBox({
               </div>
             </div>
           ) : homeSurface === "insight" ? (
-            coachInsightLoading && !coachInsight ? (
+            educationPlanLoading && !educationPlan ? (
               <div className="flex h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
                 <p className="text-sm text-[#6b6257]">
-                  Reviewing your latest tracker and loading today&apos;s concept insight…
+                  Loading today&apos;s education programme…
                 </p>
               </div>
-            ) : coachInsight ? (
-              <div className="flex h-full flex-col gap-3">
-                {coachInsightLoading && coachInsight ? (
-                  <p className="text-sm text-[#6b6257]">Loading concept insight…</p>
+            ) : educationPlan?.available ? (
+              <div className="flex h-full flex-col gap-3 overflow-y-auto pr-1">
+                {educationPlanLoading && educationPlan ? (
+                  <p className="text-sm text-[#6b6257]">Refreshing today&apos;s lesson…</p>
                 ) : null}
-                {insightHasVideo ? (
-                  <>
-                    {insightConceptTitle ? (
-                      <div className="rounded-[20px] border border-[#efe7db] bg-white px-4 py-3">
-                        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                          Concept
-                        </p>
-                        <p className="mt-2 text-sm font-semibold text-[#1e1b16]">{insightConceptTitle}</p>
-                      </div>
-                    ) : null}
+                <div className="rounded-[20px] border border-[#efe7db] bg-white px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
+                    {educationProgrammeName || "Education programme"}
+                  </p>
+                  <p className="mt-2 text-sm font-semibold text-[#1e1b16]">
+                    {educationLesson?.title || educationConceptTitle || "Today's lesson"}
+                  </p>
+                  <p className="mt-1 text-xs uppercase tracking-[0.14em] text-[#8c7f70]">
+                    {[
+                      educationConceptTitle,
+                      educationDayIndex > 0
+                        ? educationDurationDays > 0
+                          ? `Day ${educationDayIndex} of ${educationDurationDays}`
+                          : `Day ${educationDayIndex}`
+                        : "",
+                      educationPlan.level ? `${educationPlan.level} level` : "",
+                    ].filter(Boolean).join(" · ")}
+                  </p>
+                  {educationLesson?.summary ? (
+                    <p className="mt-3 text-sm leading-6 text-[#6b6257]">{educationLesson.summary}</p>
+                  ) : null}
+                </div>
+                {educationHasVideo ? (
+                  <div className="rounded-[24px] border border-[#efe7db] bg-[#f7f4ee]">
                     <video
-                      key={`video-${insightMediaKey}`}
+                      key={`education-video-${educationMediaKey}`}
                       controls
                       preload="metadata"
                       playsInline
-                      poster={insightVideoPosterUrl || undefined}
-                      className="h-full min-h-0 w-full rounded-[24px] border border-[#efe7db] bg-[#f7f4ee] object-contain"
+                      poster={educationVideoPosterUrl || undefined}
+                      onTimeUpdate={(event) => {
+                        const video = event.currentTarget;
+                        if (!video.duration || !Number.isFinite(video.duration)) return;
+                        const pct = (video.currentTime / video.duration) * 100;
+                        if (pct >= 80 && !educationVideoProgressRef.current.sent80) {
+                          educationVideoProgressRef.current.sent80 = true;
+                          void recordEducationVideoProgress(pct, video.currentTime);
+                        }
+                      }}
+                      onEnded={(event) => {
+                        if (educationVideoProgressRef.current.sent100) return;
+                        educationVideoProgressRef.current.sent100 = true;
+                        void recordEducationVideoProgress(100, event.currentTarget.currentTime);
+                      }}
+                      className="max-h-[22rem] w-full rounded-[24px] bg-[#f7f4ee] object-contain"
                     >
-                      <source src={insightVideoUrl} />
+                      <source src={educationVideoUrl} />
                     </video>
-                  </>
-                ) : (
-                  <div className="flex h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
-                    <p className="text-sm text-[#6b6257]">
-                      {coachInsightError || "A concept insight is not available right now."}
+                  </div>
+                ) : educationContent?.script || educationContent?.body ? (
+                  <div className="rounded-[20px] border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
+                      Lesson
+                    </p>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#6b6257]">
+                      {educationContent.script || educationContent.body}
                     </p>
                   </div>
+                ) : (
+                  <div className="rounded-[20px] border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                    <p className="text-sm text-[#6b6257]">Lesson content is not available right now.</p>
+                  </div>
                 )}
+                {educationLesson?.action_prompt ? (
+                  <div className="rounded-[20px] border border-[#efe7db] bg-white px-4 py-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
+                      Today&apos;s action
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-[#1e1b16]">{educationLesson.action_prompt}</p>
+                  </div>
+                ) : null}
+                {educationQuizQuestions.length ? (
+                  <div className="rounded-[20px] border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
+                        Quick check
+                      </p>
+                      {educationQuizCompleted ? (
+                        <p className="text-xs font-semibold text-[#5d5348]">
+                          {educationPlan.progress?.quiz_score_pct != null
+                            ? `${Math.round(Number(educationPlan.progress.quiz_score_pct))}%`
+                            : "Complete"}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="mt-3 space-y-4">
+                      {educationQuizQuestions.map((question, index) => {
+                        const questionId = Number(question?.id || 0);
+                        const selectedAnswer = educationQuizAnswers[String(questionId)];
+                        const options = educationQuizOptions(question);
+                        return (
+                          <div key={questionId || index}>
+                            <p className="text-sm font-semibold text-[#1e1b16]">
+                              {question?.question_text || `Question ${index + 1}`}
+                            </p>
+                            {options.length ? (
+                              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                                {options.map((option) => {
+                                  const active = selectedAnswer === option;
+                                  return (
+                                    <button
+                                      key={option}
+                                      type="button"
+                                      onClick={() => selectEducationQuizAnswer(questionId, option)}
+                                      disabled={educationQuizCompleted || educationQuizSubmitting}
+                                      className={`rounded-[14px] border px-3 py-2 text-left text-sm transition ${
+                                        active
+                                          ? "border-[var(--accent)] bg-white text-[#1e1b16]"
+                                          : "border-[#efe7db] bg-white text-[#6b6257]"
+                                      } disabled:cursor-not-allowed disabled:opacity-70`}
+                                    >
+                                      {option}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {educationPlan.takeaway ? (
+                      <p className="mt-4 text-sm leading-6 text-[#5d5348]">{educationPlan.takeaway}</p>
+                    ) : null}
+                    {educationQuizMessage ? (
+                      <p className="mt-3 text-sm text-[#8a3e1a]">{educationQuizMessage}</p>
+                    ) : null}
+                    {!educationQuizCompleted ? (
+                      <button
+                        type="button"
+                        onClick={() => void submitEducationQuiz()}
+                        disabled={educationQuizSubmitting}
+                        className="mt-4 rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {educationQuizSubmitting ? "Saving" : "Submit quick check"}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+                {educationPlanError ? <p className="text-sm text-[#8a3e1a]">{educationPlanError}</p> : null}
               </div>
             ) : (
               <div className="flex h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
                 <p className="text-sm text-[#6b6257]">
-                  {coachInsightError || "A concept insight is not available right now."}
+                  {educationPlanError || educationPlan?.reason || "Today's lesson is not available right now."}
                 </p>
               </div>
             )

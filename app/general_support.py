@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -22,7 +22,7 @@ from .prompts import build_prompt, run_llm_prompt
 COACH_NAME = os.getenv("COACH_NAME", "Gia")
 
 STATE_KEY = "general_support_state"
-TRACKER_SUMMARY_CACHE_KEY = "coach_home_tracker_summary_cache"
+TRACKER_SUMMARY_CACHE_KEY = "coach_home_tracker_summary_cache_v2"
 
 
 def _coach_message_prefix() -> str:
@@ -315,6 +315,124 @@ def _combined_score(pillar_scores: list[dict]) -> int | None:
     return int(round(sum(values) / max(len(values), 1)))
 
 
+def _tracker_anchor_date(tracker_context: dict) -> date | None:
+    for key in ("tracker_focus_date", "plan_date"):
+        raw = str((tracker_context or {}).get(key) or "").strip()
+        if not raw:
+            continue
+        try:
+            return date.fromisoformat(raw[:10])
+        except Exception:
+            continue
+    return None
+
+
+def _education_programme_context(user_id: int, tracker_context: dict) -> dict | None:
+    try:
+        from .education_plan import get_today_education_plan
+
+        payload = get_today_education_plan(
+            int(user_id),
+            anchor=_tracker_anchor_date(tracker_context),
+        )
+    except Exception as exc:
+        print(f"[coach] education programme context unavailable user_id={user_id} error={exc}")
+        return None
+    if not isinstance(payload, dict):
+        return None
+    if not payload.get("available"):
+        reason = str(payload.get("reason") or "").strip()
+        return {
+            "available": False,
+            "reason": reason or "No active education programme is available today.",
+        }
+    programme = payload.get("programme") if isinstance(payload.get("programme"), dict) else {}
+    lesson = payload.get("lesson") if isinstance(payload.get("lesson"), dict) else {}
+    content = lesson.get("content") if isinstance(lesson.get("content"), dict) else {}
+    avatar = content.get("avatar") if isinstance(content.get("avatar"), dict) else {}
+    quiz = payload.get("quiz") if isinstance(payload.get("quiz"), dict) else {}
+    progress = payload.get("progress") if isinstance(payload.get("progress"), dict) else {}
+    questions = quiz.get("questions") if isinstance(quiz.get("questions"), list) else []
+    duration_days = _safe_int(programme.get("duration_days"))
+    return {
+        "available": True,
+        "programme_name": str(programme.get("name") or "").strip() or None,
+        "programme_code": str(programme.get("code") or "").strip() or None,
+        "pillar_key": str(payload.get("pillar_key") or "").strip() or None,
+        "pillar_label": str(payload.get("pillar_label") or "").strip() or None,
+        "concept_key": str(payload.get("concept_key") or programme.get("concept_key") or "").strip() or None,
+        "concept_label": str(payload.get("concept_label") or programme.get("concept_label") or "").strip() or None,
+        "day_index": _safe_int(payload.get("day_index")),
+        "duration_days": duration_days,
+        "level": str(payload.get("level") or "").strip() or None,
+        "tracker_signal": str(payload.get("tracker_signal") or "").strip() or None,
+        "tracker_state": str(payload.get("tracker_state") or "").strip() or None,
+        "lesson_title": str(lesson.get("title") or "").strip() or None,
+        "lesson_summary": str(lesson.get("summary") or "").strip() or None,
+        "lesson_goal": str(lesson.get("goal") or "").strip() or None,
+        "action_prompt": str(lesson.get("action_prompt") or content.get("action_prompt") or "").strip() or None,
+        "has_video": bool(
+            str(avatar.get("url") or "").strip()
+            or str(content.get("video_url") or "").strip()
+            or str(content.get("podcast_url") or "").strip()
+        ),
+        "quiz_question_count": len(questions),
+        "completion_status": str(progress.get("completion_status") or "").strip() or None,
+        "watch_pct": _safe_int(progress.get("watch_pct")),
+        "quiz_score_pct": _safe_int(progress.get("quiz_score_pct")),
+        "takeaway": str(payload.get("takeaway") or "").strip() or None,
+    }
+
+
+def _append_education_programme_lines(lines: list[str], tracker_context: dict) -> None:
+    education = tracker_context.get("education_programme")
+    if not isinstance(education, dict):
+        return
+    if not education.get("available"):
+        reason = str(education.get("reason") or "").strip()
+        if reason:
+            lines.append(f"Education programme: unavailable ({reason})")
+        return
+    programme_name = str(education.get("programme_name") or "").strip()
+    concept_label = str(education.get("concept_label") or "").strip()
+    day_index = _safe_int(education.get("day_index"))
+    duration_days = _safe_int(education.get("duration_days"))
+    day_label = (
+        f"Day {day_index} of {duration_days}"
+        if day_index and duration_days
+        else f"Day {day_index}"
+        if day_index
+        else ""
+    )
+    heading_bits = [bit for bit in [programme_name, concept_label, day_label] if bit]
+    lines.append("Education programme: " + " | ".join(heading_bits))
+    lesson_title = str(education.get("lesson_title") or "").strip()
+    lesson_summary = str(education.get("lesson_summary") or "").strip()
+    lesson_goal = str(education.get("lesson_goal") or "").strip()
+    action_prompt = str(education.get("action_prompt") or "").strip()
+    if lesson_title:
+        lines.append(f"- lesson: {lesson_title}")
+    if lesson_summary:
+        lines.append(f"- lesson summary: {lesson_summary}")
+    if lesson_goal:
+        lines.append(f"- lesson goal: {lesson_goal}")
+    if action_prompt:
+        lines.append(f"- education action: {action_prompt}")
+    lines.append(
+        "- lesson assets: "
+        + "; ".join(
+            [
+                f"avatar/video={'available' if education.get('has_video') else 'not available'}",
+                f"quiz_questions={_safe_int(education.get('quiz_question_count')) or 0}",
+                f"completion={str(education.get('completion_status') or 'pending')}",
+            ]
+        )
+    )
+    takeaway = str(education.get("takeaway") or "").strip()
+    if takeaway:
+        lines.append(f"- quiz takeaway: {takeaway}")
+
+
 def _tracker_history_lines(tracker_context: dict) -> list[str]:
     lines: list[str] = []
     tracker_review = tracker_context.get("tracker_review") or []
@@ -417,6 +535,7 @@ def _tracker_history_lines(tracker_context: dict) -> list[str]:
             step_text = str(step or "").strip()
             if step_text:
                 lines.append(f"- {step_text}")
+    _append_education_programme_lines(lines, tracker_context)
     return lines
 
 
@@ -449,6 +568,13 @@ def _support_prompt(
         if isinstance(tracker_snapshot, dict) and isinstance(tracker_snapshot.get("context"), dict)
         else build_daily_tracker_generation_context(int(user.id))
     )
+    if tracker_summary_mode:
+        education_context = _education_programme_context(int(user.id), tracker_context)
+        if education_context:
+            tracker_context = {
+                **tracker_context,
+                "education_programme": education_context,
+            }
     pillar_scores = tracker_context.get("pillar_scores") or []
     combined_score = _combined_score(pillar_scores)
     tracker_focus_date = str(tracker_context.get("tracker_focus_date") or tracker_context.get("plan_date") or "").strip()
@@ -457,6 +583,8 @@ def _support_prompt(
     if tracker_summary_mode:
         extras_parts.append("tracker_priority=today_first_then_yesterday")
         extras_parts.append("tracker_scope=all_pillars")
+        if isinstance(tracker_context.get("education_programme"), dict):
+            extras_parts.append("education_programme=active")
     extras = "; ".join(extras_parts)
     timeframe = f"Week {week_no}" if week_no else "current week"
 

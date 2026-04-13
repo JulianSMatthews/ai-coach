@@ -1119,14 +1119,14 @@ def _get_or_create_active_plan(
         for row in available_programmes
         if _normalize_concept_key(getattr(row, "concept_key", None))
     }
-    preferred_concept = _weakest_assessment_concept_key(
-        assessment,
+    preferred_concept = _weakest_tracker_concept_key(
+        context,
         preferred_pillar,
         allowed=available_concepts or None,
     )
     if preferred_concept is None:
-        preferred_concept = _weakest_tracker_concept_key(
-            context,
+        preferred_concept = _weakest_assessment_concept_key(
+            assessment,
             preferred_pillar,
             allowed=available_concepts or None,
         )
