@@ -1856,6 +1856,20 @@ def edit_education_programme(id: int | None = None):
 
     {delete_form_html}
 
+    <div id="avatar-review-modal" hidden style="position:fixed; inset:0; z-index:999; background:rgba(15,23,42,0.68); padding:20px;">
+      <div style="max-width:900px; margin:40px auto; background:#fff; border-radius:8px; padding:16px; box-shadow:0 18px 48px rgba(15,23,42,0.25);">
+        <div class="stack" style="justify-content:space-between; margin-bottom:12px;">
+          <h3 id="avatar-review-title" class="section-title" style="margin:0;">Review avatar</h3>
+          <button type="button" class="secondary" id="avatar-review-close">Close</button>
+        </div>
+        <video id="avatar-review-video" controls playsinline preload="metadata" style="width:100%; max-height:70vh; background:#000; border-radius:8px;"></video>
+        <div class="stack" style="justify-content:space-between; margin-top:10px;">
+          <a id="avatar-review-open-link" class="button-link" href="#" target="_blank" rel="noopener">Open video in new tab</a>
+          <span id="avatar-review-status" class="subtle"></span>
+        </div>
+      </div>
+    </div>
+
     <script id="education-programme-seed" type="application/json">{_json_script_content(structure_seed)}</script>
     <script id="education-concept-options" type="application/json">{_json_script_content(concept_options)}</script>
     <script id="education-content-options" type="application/json">{_json_script_content(content_options)}</script>
@@ -1870,6 +1884,12 @@ def edit_education_programme(id: int | None = None):
         const programmeConceptInput = document.getElementById('programme_concept_key');
         const programmeConceptLabelInput = document.getElementById('programme_concept_label');
         const pillarDisplayInput = document.getElementById('programme_pillar_display');
+        const avatarReviewModal = document.getElementById('avatar-review-modal');
+        const avatarReviewVideo = document.getElementById('avatar-review-video');
+        const avatarReviewTitle = document.getElementById('avatar-review-title');
+        const avatarReviewStatus = document.getElementById('avatar-review-status');
+        const avatarReviewOpenLink = document.getElementById('avatar-review-open-link');
+        const avatarReviewClose = document.getElementById('avatar-review-close');
 
         function escapeHtml(value) {{
           return String(value ?? '')
@@ -2104,13 +2124,14 @@ def edit_education_programme(id: int | None = None):
             : [emptyQuestion(1), emptyQuestion(2), emptyQuestion(3)];
           const variantId = String(variant.id || '').trim();
           const avatarStatus = String(variant.avatar_status || '').trim();
+          const hasAvatarVideo = Boolean(String(variant.video_url || '').trim());
           return `
             <div class="lesson-variant js-variant">
               <input type="hidden" class="js-variant-id" value="${{escapeHtml(variant.id || '')}}" />
               <div class="stack" style="justify-content:space-between;">
                 <strong>Lesson Variant</strong>
                 <div class="stack">
-                  ${{variantId ? `<button type="button" class="secondary js-generate-avatar">Generate avatar video</button><button type="button" class="secondary js-refresh-avatar">Refresh avatar</button>` : `<span class="subtle">Save this variant before generating avatar video.</span>`}}
+                  ${{variantId ? `<button type="button" class="secondary js-generate-avatar">Generate avatar video</button><button type="button" class="secondary js-refresh-avatar">Refresh avatar</button><button type="button" class="secondary js-review-avatar" ${{hasAvatarVideo ? '' : 'hidden disabled'}}>Review avatar</button>` : `<span class="subtle">Save this variant before generating avatar video.</span>`}}
                   <button type="button" class="danger js-remove-variant">Remove variant</button>
                 </div>
               </div>
@@ -2363,6 +2384,67 @@ def edit_education_programme(id: int | None = None):
           setValue('.js-variant-avatar-generated-at', data.generated_at);
           setValue('.js-variant-avatar-source', data.source);
           setValue('.js-variant-avatar-summary-url', data.summary_url);
+          updateVariantAvatarReviewState(variantEl);
+        }}
+
+        function variantAvatarVideoUrl(variantEl) {{
+          return String(variantEl.querySelector('.js-variant-video-url')?.value || '').trim();
+        }}
+
+        function updateVariantAvatarReviewState(variantEl) {{
+          const button = variantEl.querySelector('.js-review-avatar');
+          if (!button) return;
+          const hasVideo = Boolean(variantAvatarVideoUrl(variantEl));
+          button.hidden = !hasVideo;
+          button.disabled = !hasVideo;
+        }}
+
+        function updateAllVariantAvatarReviewStates() {{
+          for (const variantEl of root.querySelectorAll('.js-variant')) {{
+            updateVariantAvatarReviewState(variantEl);
+          }}
+        }}
+
+        function closeAvatarReview() {{
+          if (!avatarReviewModal || !avatarReviewVideo) return;
+          avatarReviewVideo.pause();
+          avatarReviewVideo.removeAttribute('src');
+          avatarReviewVideo.removeAttribute('poster');
+          avatarReviewVideo.load();
+          avatarReviewModal.hidden = true;
+        }}
+
+        function openAvatarReview(variantEl) {{
+          const videoUrl = variantAvatarVideoUrl(variantEl);
+          if (!videoUrl) {{
+            window.alert('No generated avatar video is available for this lesson yet.');
+            return;
+          }}
+          const title = String(variantEl.querySelector('.js-variant-title')?.value || '').trim() || 'Review avatar';
+          const status = String(variantEl.querySelector('.js-variant-avatar-status')?.value || '').trim();
+          const generatedAt = String(variantEl.querySelector('.js-variant-avatar-generated-at')?.value || '').trim();
+          const posterUrl = String(variantEl.querySelector('.js-variant-poster-url')?.value || '').trim();
+          if (avatarReviewTitle) {{
+            avatarReviewTitle.textContent = title;
+          }}
+          if (avatarReviewStatus) {{
+            avatarReviewStatus.textContent = [status, generatedAt ? `generated ${{generatedAt}}` : ''].filter(Boolean).join(' · ');
+          }}
+          if (avatarReviewOpenLink) {{
+            avatarReviewOpenLink.href = videoUrl;
+          }}
+          if (avatarReviewVideo) {{
+            avatarReviewVideo.src = videoUrl;
+            if (posterUrl) {{
+              avatarReviewVideo.poster = posterUrl;
+            }} else {{
+              avatarReviewVideo.removeAttribute('poster');
+            }}
+            avatarReviewVideo.load();
+          }}
+          if (avatarReviewModal) {{
+            avatarReviewModal.hidden = false;
+          }}
         }}
 
         async function requestVariantAvatar(variantEl, mode) {{
@@ -2473,6 +2555,13 @@ def edit_education_programme(id: int | None = None):
             }}
             return;
           }}
+          if (target.classList.contains('js-review-avatar')) {{
+            const variantEl = target.closest('.js-variant');
+            if (variantEl) {{
+              openAvatarReview(variantEl);
+            }}
+            return;
+          }}
           if (target.classList.contains('js-add-question')) {{
             const variantEl = target.closest('.js-variant');
             if (!variantEl) return;
@@ -2506,11 +2595,34 @@ def edit_education_programme(id: int | None = None):
           }}
           const days = Array.from(root.querySelectorAll(':scope > .js-day')).map((dayEl) => collectDayData(dayEl));
           root.innerHTML = (days.length ? days : [emptyDay(1)]).map((day) => renderDay(day)).join('');
+          updateAllVariantAvatarReviewStates();
         }});
 
         programmeConceptLabelInput?.addEventListener('input', function() {{
           const days = Array.from(root.querySelectorAll(':scope > .js-day')).map((dayEl) => collectDayData(dayEl));
           root.innerHTML = (days.length ? days : [emptyDay(1)]).map((day) => renderDay(day)).join('');
+          updateAllVariantAvatarReviewStates();
+        }});
+
+        root.addEventListener('input', function(event) {{
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          if (target.classList.contains('js-variant-video-url')) {{
+            const variantEl = target.closest('.js-variant');
+            if (variantEl) updateVariantAvatarReviewState(variantEl);
+          }}
+        }});
+
+        avatarReviewClose?.addEventListener('click', closeAvatarReview);
+        avatarReviewModal?.addEventListener('click', function(event) {{
+          if (event.target === avatarReviewModal) {{
+            closeAvatarReview();
+          }}
+        }});
+        document.addEventListener('keydown', function(event) {{
+          if (event.key === 'Escape' && avatarReviewModal && !avatarReviewModal.hidden) {{
+            closeAvatarReview();
+          }}
         }});
 
         form.addEventListener('submit', function(event) {{
@@ -2525,6 +2637,7 @@ def edit_education_programme(id: int | None = None):
         refreshProgrammeConceptChoices();
         programmeConceptInput.dataset.previousLabel = String(programmeConceptLabelInput?.value || '').trim();
         renderInitial();
+        updateAllVariantAvatarReviewStates();
       }})();
     </script>
     <p class='nav' style='margin-top:16px;'><a href="/admin/education-programmes">Back to list</a></p>
