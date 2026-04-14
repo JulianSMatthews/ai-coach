@@ -1098,8 +1098,9 @@ export default function AssessmentChatBox({
       }
       const data = (text ? (JSON.parse(text) as EducationPlanTodayResponse) : {}) as EducationPlanTodayResponse;
       setEducationPlan(data);
-    } catch (error) {
-      setEducationPlanError(error instanceof Error ? error.message : String(error));
+      setEducationPlanError(null);
+    } catch {
+      setEducationPlanError(null);
     }
   }, [userId]);
 

@@ -1512,6 +1512,7 @@ def _lesson_state(
     *,
     user_id: int,
     anchor: date,
+    refresh_avatar_media: bool = True,
 ) -> dict[str, Any]:
     snapshot = build_daily_tracker_generation_context_snapshot(int(user_id))
     context = snapshot.get("context") if isinstance(snapshot.get("context"), dict) else {}
@@ -1562,7 +1563,8 @@ def _lesson_state(
         },
     )
     lesson_variant = _resolve_lesson_variant(session, int(programme_day.id), str(getattr(concept_level, "current_level", "") or "build"))
-    lesson_variant = _refresh_lesson_variant_avatar_media(session, lesson_variant)
+    if refresh_avatar_media:
+        lesson_variant = _refresh_lesson_variant_avatar_media(session, lesson_variant)
     current_level = str(getattr(concept_level, "current_level", "") or "build").strip() or "build"
     previous_lesson = _previous_lesson_payload(
         session,
@@ -1696,7 +1698,12 @@ def record_education_video_progress(
     ensure_education_plan_schema()
     resolved_anchor = _resolve_plan_date(anchor)
     with SessionLocal() as session:
-        state = _lesson_state(session, user_id=int(user_id), anchor=resolved_anchor)
+        state = _lesson_state(
+            session,
+            user_id=int(user_id),
+            anchor=resolved_anchor,
+            refresh_avatar_media=False,
+        )
         if not state.get("available"):
             session.commit()
             return state
@@ -1719,8 +1726,15 @@ def record_education_video_progress(
         plan = session.get(UserEducationPlan, int(state.get("plan_id") or 0))
         if plan is not None:
             _sync_plan_streaks(session, plan)
+        session.flush()
+        state = _lesson_state(
+            session,
+            user_id=int(user_id),
+            anchor=resolved_anchor,
+            refresh_avatar_media=False,
+        )
         session.commit()
-    return get_today_education_plan(int(user_id), anchor=resolved_anchor)
+        return state
 
 
 def submit_education_quiz(
@@ -1732,7 +1746,12 @@ def submit_education_quiz(
     ensure_education_plan_schema()
     resolved_anchor = _resolve_plan_date(anchor)
     with SessionLocal() as session:
-        state = _lesson_state(session, user_id=int(user_id), anchor=resolved_anchor)
+        state = _lesson_state(
+            session,
+            user_id=int(user_id),
+            anchor=resolved_anchor,
+            refresh_avatar_media=False,
+        )
         if not state.get("available"):
             session.commit()
             return state
@@ -1783,5 +1802,12 @@ def submit_education_quiz(
         plan = session.get(UserEducationPlan, int(state.get("plan_id") or 0))
         if plan is not None:
             _sync_plan_streaks(session, plan)
+        session.flush()
+        state = _lesson_state(
+            session,
+            user_id=int(user_id),
+            anchor=resolved_anchor,
+            refresh_avatar_media=False,
+        )
         session.commit()
-    return get_today_education_plan(int(user_id), anchor=resolved_anchor)
+        return state
