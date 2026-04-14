@@ -493,6 +493,13 @@ export type EducationPlanTodayResponse = {
   tracker_signal?: string | null;
   tracker_state?: string | null;
   tracker_day_label?: string | null;
+  previous_lesson?: {
+    programme_day_id?: number | null;
+    day_index?: number | null;
+    title?: string | null;
+    takeaway?: string | null;
+    completed_at?: string | null;
+  } | null;
   lesson?: {
     programme_day_id?: number | null;
     lesson_variant_id?: number | null;

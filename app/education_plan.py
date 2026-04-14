@@ -1436,6 +1436,60 @@ def _quiz_row(session, lesson_variant_id: int | None) -> EducationQuiz | None:
     )
 
 
+def _previous_lesson_payload(
+    session,
+    *,
+    plan: UserEducationPlan,
+    programme: EducationProgramme,
+    current_day_index: int,
+    level: str,
+) -> dict[str, Any] | None:
+    if current_day_index <= 1:
+        return None
+    previous_day = _resolve_programme_day(session, int(programme.id), int(current_day_index) - 1)
+    if previous_day is None:
+        return None
+    previous_variant = _resolve_lesson_variant(
+        session,
+        int(previous_day.id),
+        str(level or "build"),
+    )
+    previous_progress = (
+        session.execute(
+            select(UserEducationDayProgress)
+            .where(
+                UserEducationDayProgress.user_plan_id == int(plan.id),
+                UserEducationDayProgress.programme_day_id == int(previous_day.id),
+            )
+            .order_by(desc(UserEducationDayProgress.updated_at), desc(UserEducationDayProgress.id))
+        )
+        .scalars()
+        .first()
+    )
+    title = (
+        str(getattr(previous_variant, "title", "") or "").strip()
+        or str(getattr(previous_day, "default_title", "") or "").strip()
+        or None
+    )
+    takeaway = (
+        str(getattr(previous_progress, "takeaway_text_shown", "") or "").strip()
+        or str(getattr(previous_variant, "takeaway_default", "") or "").strip()
+        or str(getattr(previous_variant, "summary", "") or "").strip()
+        or str(getattr(previous_day, "default_summary", "") or "").strip()
+        or None
+    )
+    if not title and not takeaway:
+        return None
+    completed_at_val = getattr(previous_progress, "completed_at", None) if previous_progress is not None else None
+    return {
+        "programme_day_id": int(previous_day.id),
+        "day_index": int(getattr(previous_day, "day_index", 0) or 0) or None,
+        "title": title,
+        "takeaway": takeaway,
+        "completed_at": completed_at_val.isoformat() if completed_at_val else None,
+    }
+
+
 def _lesson_state(
     session,
     *,
@@ -1492,6 +1546,14 @@ def _lesson_state(
     )
     lesson_variant = _resolve_lesson_variant(session, int(programme_day.id), str(getattr(concept_level, "current_level", "") or "build"))
     lesson_variant = _refresh_lesson_variant_avatar_media(session, lesson_variant)
+    current_level = str(getattr(concept_level, "current_level", "") or "build").strip() or "build"
+    previous_lesson = _previous_lesson_payload(
+        session,
+        plan=plan,
+        programme=programme,
+        current_day_index=int(getattr(plan, "current_day_index", 0) or 1),
+        level=current_level,
+    )
     quiz = _quiz_row(session, int(getattr(lesson_variant, "id", 0) or 0) or None)
     quiz_questions = _question_rows(session, int(getattr(quiz, "id", 0) or 0) or None)
     content_item = session.get(ContentLibraryItem, int(getattr(lesson_variant, "content_item_id", 0) or 0)) if lesson_variant is not None and getattr(lesson_variant, "content_item_id", None) else None
@@ -1551,6 +1613,7 @@ def _lesson_state(
         "tracker_signal": str(tracker_concept.get("signal") or "").strip() or None,
         "tracker_state": str(tracker_pillar.get("state") or "").strip() or None,
         "tracker_day_label": str(tracker_pillar.get("active_label") or "").strip() or None,
+        "previous_lesson": previous_lesson,
         "lesson": {
             "programme_day_id": int(programme_day.id),
             "lesson_variant_id": int(getattr(lesson_variant, "id", 0) or 0) or None,

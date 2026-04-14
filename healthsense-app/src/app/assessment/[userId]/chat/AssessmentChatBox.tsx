@@ -901,21 +901,22 @@ export default function AssessmentChatBox({
   const educationProgrammeName = String(educationPlan?.programme?.name || "").trim();
   const educationPillarPalette = getPillarPalette(educationPlan?.pillar_key);
   const educationPillarIconSrc = educationPillarPalette.icon;
+  const educationPillarLabel = String(
+    educationPlan?.pillar_label || educationPillarPalette.label || "",
+  ).trim();
   const educationConceptTitle = String(
     educationPlan?.concept_label || educationLesson?.title || educationPlan?.pillar_label || "",
   ).trim();
   const educationDayIndex = Number(educationPlan?.day_index || 0);
   const educationDurationDays = Number(educationPlan?.programme?.duration_days || 0);
+  const educationPreviousLesson = educationPlan?.previous_lesson || null;
+  const educationPreviousLearningTitle = String(educationPreviousLesson?.title || "").trim();
+  const educationPreviousLearningText = String(educationPreviousLesson?.takeaway || "").trim();
   const educationQuizQuestions = useMemo(
     () => (Array.isArray(educationPlan?.quiz?.questions) ? educationPlan.quiz.questions : []),
     [educationPlan?.quiz?.questions],
   );
   const educationCompletionStatus = String(educationPlan?.progress?.completion_status || "").trim().toLowerCase();
-  const educationVideoCompleted = Boolean(
-    educationPlan?.progress?.video_completed_at ||
-      educationCompletionStatus === "video_done" ||
-      educationCompletionStatus === "completed",
-  );
   const educationQuizCompleted = Boolean(
     educationPlan?.progress?.quiz_completed_at ||
       educationCompletionStatus.includes("quiz") ||
@@ -928,13 +929,33 @@ export default function AssessmentChatBox({
   const educationBestStreakDays = Math.max(0, Math.floor(Number(educationPlan?.best_streak_days || 0) || 0));
   const educationStreakLabel = `${educationStreakDays} day${educationStreakDays === 1 ? "" : "s"}`;
   const educationBestStreakLabel = `${educationBestStreakDays} day${educationBestStreakDays === 1 ? "" : "s"}`;
-  const educationStreakStatusText = educationFocusCompleted
-    ? "Today's focus complete"
-    : educationVideoCompleted
-      ? "Complete the quick check to count today."
-      : educationQuizCompleted
-        ? "Watch the video to count today."
-        : "Watch the video and complete the quick check to count today.";
+  const educationCompletedDays = educationDurationDays > 0 && educationDayIndex > 0
+    ? Math.min(
+        educationDurationDays,
+        Math.max(0, educationDayIndex - (educationFocusCompleted ? 0 : 1)),
+      )
+    : null;
+  const educationCompletedDaysLabel =
+    educationCompletedDays !== null && educationDurationDays > 0
+      ? `${educationCompletedDays}/${educationDurationDays} days complete`
+      : educationDayIndex > 0
+        ? `Day ${educationDayIndex}`
+        : "";
+  const educationFocusStreakSummary = [
+    educationCompletedDaysLabel,
+    `${educationStreakLabel} focus streak`,
+    educationBestStreakDays > educationStreakDays ? `Best ${educationBestStreakLabel}` : "",
+  ].filter(Boolean).join(" · ");
+  const educationHeaderMeta = [
+    educationProgrammeName,
+    educationConceptTitle,
+    educationDayIndex > 0
+      ? educationDurationDays > 0
+        ? `Day ${educationDayIndex} of ${educationDurationDays}`
+        : `Day ${educationDayIndex}`
+      : "",
+    educationPlan?.level ? `${educationPlan.level} level` : "",
+  ].filter(Boolean).join(" · ");
   const dailyHabits = useMemo(() => {
     const selected = Array.isArray(dailyHabitPlan?.habits) ? dailyHabitPlan.habits : [];
     const fallback = Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : [];
@@ -2281,13 +2302,43 @@ export default function AssessmentChatBox({
     <section className="-mx-3 overflow-hidden border-y border-[#e7e1d6] bg-white sm:mx-0 sm:rounded-[28px] sm:border sm:shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]">
       <div className={`flex ${homePanelHeightClass} flex-col`}>
         <div className="shrink-0 border-b border-[#efe7db] bg-[#fffaf3] px-4 py-4 sm:px-5">
-          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6b6257]">
-            {homeSurfaceEyebrow}
-          </p>
-          <p className="mt-1 text-lg font-semibold text-[#1e1b16]">{homeSurfaceMeta.title}</p>
-          {homeSurfaceDescription ? (
-            <p className="mt-1 text-sm text-[#6b6257]">{homeSurfaceDescription}</p>
-          ) : null}
+          {homeSurface === "insight" && educationPlan?.available ? (
+            <div className="min-w-0 space-y-1">
+              <div className="flex min-w-0 items-center gap-3">
+                {educationPillarIconSrc ? (
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[#efe7db] bg-[#fffaf3]">
+                    <Image
+                      src={educationPillarIconSrc}
+                      alt=""
+                      aria-hidden="true"
+                      width={24}
+                      height={24}
+                      className="h-6 w-6 object-contain"
+                    />
+                  </span>
+                ) : null}
+                <p className="min-w-0 text-xs uppercase tracking-[0.22em] text-[#6b6257]">
+                  {[educationPillarLabel, homeSurfaceMeta.title].filter(Boolean).join(" · ")}
+                </p>
+              </div>
+              {educationHeaderMeta ? (
+                <p className="text-sm text-[#6b6257]">{educationHeaderMeta}</p>
+              ) : null}
+              {educationFocusStreakSummary ? (
+                <p className="text-xs text-[#8c7f70]">{educationFocusStreakSummary}</p>
+              ) : null}
+            </div>
+          ) : (
+            <>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#6b6257]">
+                {homeSurfaceEyebrow}
+              </p>
+              <p className="mt-1 text-lg font-semibold text-[#1e1b16]">{homeSurfaceMeta.title}</p>
+              {homeSurfaceDescription ? (
+                <p className="mt-1 text-sm text-[#6b6257]">{homeSurfaceDescription}</p>
+              ) : null}
+            </>
+          )}
         </div>
         <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 sm:px-5">
           {homeSurface === "tracking" ? (
@@ -2361,85 +2412,44 @@ export default function AssessmentChatBox({
                   <p className="text-sm text-[#6b6257]">Refreshing today&apos;s lesson…</p>
                 ) : null}
                 <div className="rounded-[20px] border border-[#efe7db] bg-white px-4 py-3">
-                  <div className="flex items-start gap-3">
-                    {educationPillarIconSrc ? (
-                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl border border-[#efe7db] bg-[#fffaf3]">
-                        <Image
-                          src={educationPillarIconSrc}
-                          alt=""
-                          aria-hidden="true"
-                          width={24}
-                          height={24}
-                          className="h-6 w-6 object-contain"
-                        />
-                      </span>
-                    ) : null}
-                    <div className="min-w-0 flex-1">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <p className="min-w-0 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                          {educationProgrammeName || "Education programme"}
-                        </p>
-                        <div
-                          className={`shrink-0 rounded-[8px] border px-3 py-1 text-right ${
-                            educationFocusCompleted
-                              ? "border-[#b7dcc2] bg-[#edf7f0] text-[#317a4d]"
-                              : "border-[#efe7db] bg-[#fffaf3] text-[#6b6257]"
-                          }`}
-                        >
-                          <p className="text-[10px] font-semibold uppercase">
-                            Daily streak
-                          </p>
-                          <p className="text-sm font-semibold">{educationStreakLabel}</p>
-                        </div>
-                      </div>
-                      <p className="mt-2 text-sm font-semibold text-[#1e1b16]">
-                        {educationLesson?.title || educationConceptTitle || "Today's lesson"}
-                      </p>
-                      <p className="mt-1 text-xs uppercase tracking-[0.14em] text-[#8c7f70]">
-                        {[
-                          educationConceptTitle,
-                          educationDayIndex > 0
-                            ? educationDurationDays > 0
-                              ? `Day ${educationDayIndex} of ${educationDurationDays}`
-                              : `Day ${educationDayIndex}`
-                            : "",
-                          educationPlan.level ? `${educationPlan.level} level` : "",
-                        ].filter(Boolean).join(" · ")}
-                      </p>
-                    </div>
-                  </div>
-                  {educationLesson?.summary ? (
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
+                    {educationProgrammeName || "Education programme"}
+                  </p>
+                  <p className="mt-2 text-sm font-semibold text-[#1e1b16]">
+                    {educationLesson?.title || educationConceptTitle || "Today's lesson"}
+                  </p>
+                  <p className="mt-1 text-xs uppercase tracking-[0.14em] text-[#8c7f70]">
+                    {[
+                      educationConceptTitle,
+                      educationDayIndex > 0
+                        ? educationDurationDays > 0
+                          ? `Day ${educationDayIndex} of ${educationDurationDays}`
+                          : `Day ${educationDayIndex}`
+                        : "",
+                      educationPlan.level ? `${educationPlan.level} level` : "",
+                    ].filter(Boolean).join(" · ")}
+                  </p>
+                  {!educationHasVideo && educationLesson?.summary ? (
                     <p className="mt-3 text-sm leading-6 text-[#6b6257]">{educationLesson.summary}</p>
                   ) : null}
-                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-                    <span
-                      className={`rounded-[8px] border px-2.5 py-1 font-semibold ${
-                        educationVideoCompleted
-                          ? "border-[#b7dcc2] bg-[#edf7f0] text-[#317a4d]"
-                          : "border-[#efe7db] bg-[#fffaf3] text-[#6b6257]"
-                      }`}
-                    >
-                      Video {educationVideoCompleted ? "watched" : "to watch"}
-                    </span>
-                    <span
-                      className={`rounded-[8px] border px-2.5 py-1 font-semibold ${
-                        educationQuizCompleted
-                          ? "border-[#b7dcc2] bg-[#edf7f0] text-[#317a4d]"
-                          : "border-[#efe7db] bg-[#fffaf3] text-[#6b6257]"
-                      }`}
-                    >
-                      Quiz {educationQuizCompleted ? "complete" : "to do"}
-                    </span>
-                    {educationBestStreakDays > educationStreakDays ? (
-                      <span className="rounded-[8px] border border-[#efe7db] bg-white px-2.5 py-1 font-semibold text-[#6b6257]">
-                        Best {educationBestStreakLabel}
-                      </span>
+                </div>
+                {educationPreviousLearningTitle || educationPreviousLearningText ? (
+                  <div className="rounded-[20px] border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
+                      What we learnt yesterday
+                    </p>
+                    {educationPreviousLearningTitle ? (
+                      <p className="mt-2 text-sm font-semibold text-[#1e1b16]">
+                        {educationPreviousLearningTitle}
+                      </p>
+                    ) : null}
+                    {educationPreviousLearningText ? (
+                      <p className="mt-2 text-sm leading-6 text-[#6b6257]">
+                        {educationPreviousLearningText}
+                      </p>
                     ) : null}
                   </div>
-                  <p className="mt-2 text-xs font-medium text-[#6b6257]">
-                    {educationStreakStatusText}
-                  </p>
-                </div>
+                ) : null}
                 {educationHasVideo ? (
                   <div className="rounded-[24px] border border-[#efe7db] bg-[#f7f4ee]">
                     <video
