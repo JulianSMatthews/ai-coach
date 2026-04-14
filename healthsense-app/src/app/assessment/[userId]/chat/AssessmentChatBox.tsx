@@ -946,16 +946,6 @@ export default function AssessmentChatBox({
     `${educationStreakLabel} focus streak`,
     educationBestStreakDays > educationStreakDays ? `Best ${educationBestStreakLabel}` : "",
   ].filter(Boolean).join(" · ");
-  const educationHeaderMeta = [
-    educationProgrammeName,
-    educationConceptTitle,
-    educationDayIndex > 0
-      ? educationDurationDays > 0
-        ? `Day ${educationDayIndex} of ${educationDurationDays}`
-        : `Day ${educationDayIndex}`
-      : "",
-    educationPlan?.level ? `${educationPlan.level} level` : "",
-  ].filter(Boolean).join(" · ");
   const dailyHabits = useMemo(() => {
     const selected = Array.isArray(dailyHabitPlan?.habits) ? dailyHabitPlan.habits : [];
     const fallback = Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : [];
@@ -2321,9 +2311,6 @@ export default function AssessmentChatBox({
                   {[educationPillarLabel, homeSurfaceMeta.title].filter(Boolean).join(" · ")}
                 </p>
               </div>
-              {educationHeaderMeta ? (
-                <p className="text-sm text-[#6b6257]">{educationHeaderMeta}</p>
-              ) : null}
               {educationFocusStreakSummary ? (
                 <p className="text-xs text-[#8c7f70]">{educationFocusStreakSummary}</p>
               ) : null}

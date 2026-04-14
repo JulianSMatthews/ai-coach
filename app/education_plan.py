@@ -453,6 +453,16 @@ def _lesson_variant_video_url(row: EducationLessonVariant | None) -> str | None:
     return _normalize_media_url(getattr(row, "video_url", None))
 
 
+def _lesson_variant_has_avatar_media(row: EducationLessonVariant | None) -> bool:
+    if row is None:
+        return False
+    if _lesson_variant_video_url(row) or _avatar_result_url(row):
+        return True
+    job_id = str(getattr(row, "avatar_job_id", "") or "").strip()
+    status = str(getattr(row, "avatar_status", "") or "").strip().lower()
+    return bool(job_id and status not in {"failed", "cancelled", "canceled"})
+
+
 def education_lesson_avatar_payload(row: EducationLessonVariant | None) -> dict[str, Any] | None:
     if row is None:
         return None
@@ -460,6 +470,7 @@ def education_lesson_avatar_payload(row: EducationLessonVariant | None) -> dict[
     title = str(getattr(row, "title", "") or "").strip()
     script = str(getattr(row, "script", "") or "").strip()
     url = _lesson_variant_video_url(row)
+    result_url = _avatar_result_url(row)
     poster_url = _normalize_media_url(getattr(row, "poster_url", None))
     character = str(getattr(row, "avatar_character", "") or "").strip()
     style = str(getattr(row, "avatar_style", "") or "").strip()
@@ -484,11 +495,15 @@ def education_lesson_avatar_payload(row: EducationLessonVariant | None) -> dict[
             source,
             summary_url,
             generated_at,
+            result_url,
         ]
     ):
         return None
     return {
-        "url": url,
+        "url": url or result_url,
+        "video_url": url or result_url,
+        "result_url": result_url,
+        "resultUrl": result_url,
         "title": title or "Education lesson",
         "script": script or None,
         "poster_url": poster_url,
@@ -644,6 +659,7 @@ def _save_education_avatar_generation_result(
     response_payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     resolved_status = str(status or "").strip() or "Running"
+    resolved_status_key = resolved_status.lower()
     if title:
         row.title = title
     if script:
@@ -652,13 +668,13 @@ def _save_education_avatar_generation_result(
     row.avatar_character = str(character or "").strip() or None
     row.avatar_style = str(style or "").strip() or None
     row.avatar_voice = str(voice or "").strip() or None
-    row.avatar_status = resolved_status.lower()
+    row.avatar_status = resolved_status_key
     row.avatar_job_id = str(job_id or "").strip() or None
     row.avatar_error = str(error or "").strip() or None
     row.avatar_source = "azure_batch"
     row.avatar_summary_url = str(summary_url or "").strip() or None
     row.avatar_payload_json = response_payload or None
-    if resolved_status == "Succeeded" and video_bytes:
+    if resolved_status_key == "succeeded" and video_bytes:
         filename = (
             f"education-avatar-{int(getattr(row, 'id', 0) or 0)}-"
             f"{_safe_avatar_asset_token(job_id)}.mp4"
@@ -691,7 +707,8 @@ def _poll_education_avatar_status(
     character = str(avatar_payload.get("character") or "").strip() or str(defaults.get("character") or "lisa")
     style = str(avatar_payload.get("style") or "").strip() or str(defaults.get("style") or "graceful-sitting")
     voice = str(avatar_payload.get("voice") or "").strip() or str(defaults.get("voice") or "en-GB-SoniaNeural")
-    if status == "Succeeded":
+    status_key = status.lower()
+    if status_key == "succeeded":
         result_url = str((outputs or {}).get("result") or "").strip()
         if not result_url:
             return _save_education_avatar_generation_result(
@@ -725,7 +742,7 @@ def _poll_education_avatar_status(
             video_bytes=download_batch_avatar_output(result_url),
             response_payload=status_payload,
         )
-    if status == "Failed":
+    if status_key == "failed":
         props = status_payload.get("properties") if isinstance(status_payload.get("properties"), dict) else {}
         error_detail = str((props or {}).get("error") or status_payload.get("error") or "Azure avatar generation failed.").strip()
         return _save_education_avatar_generation_result(
@@ -773,7 +790,7 @@ def _refresh_lesson_variant_avatar_media(
     if status in {"failed", "cancelled", "canceled"}:
         return row
     result_url = _avatar_result_url(row)
-    if result_url and status in {"", "succeeded"}:
+    if result_url:
         try:
             filename = (
                 f"education-avatar-{int(getattr(row, 'id', 0) or 0)}-"
@@ -1113,23 +1130,23 @@ def _resolve_lesson_variant(
             break
     if selected is None:
         selected = rows[0]
-    if _lesson_variant_video_url(selected):
+    if _lesson_variant_has_avatar_media(selected):
         return selected
-    video_rows = [
+    media_rows = [
         row
         for row in rows
-        if _lesson_variant_video_url(row)
+        if _lesson_variant_has_avatar_media(row)
     ]
-    if not video_rows:
+    if not media_rows:
         return selected
-    video_by_level = {
+    media_by_level = {
         _normalize_level(getattr(row, "level", None)): row
-        for row in video_rows
+        for row in media_rows
     }
     for candidate in _variant_level_candidates(resolved_level):
-        if candidate in video_by_level:
-            return video_by_level[candidate]
-    return video_rows[0]
+        if candidate in media_by_level:
+            return media_by_level[candidate]
+    return media_rows[0]
 
 
 def _get_or_create_concept_level(

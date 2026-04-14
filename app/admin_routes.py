@@ -2826,23 +2826,32 @@ async def save_education_programme(
                 variant_row.summary = str(raw_variant.get("summary") or "").strip() or None
                 variant_row.script = str(raw_variant.get("script") or "").strip() or None
                 variant_row.action_prompt = str(raw_variant.get("action_prompt") or "").strip() or None
-                variant_row.video_url = str(raw_variant.get("video_url") or "").strip() or None
+                def _raw_variant_text(key: str) -> str:
+                    return str(raw_variant.get(key) or "").strip()
+
+                def _preserve_runtime_text(key: str, current: object) -> str | None:
+                    value = _raw_variant_text(key)
+                    if value:
+                        return value
+                    return str(current or "").strip() or None
+
+                variant_row.video_url = _preserve_runtime_text("video_url", getattr(variant_row, "video_url", None))
                 variant_row.poster_url = str(raw_variant.get("poster_url") or "").strip() or None
                 variant_row.avatar_character = str(raw_variant.get("avatar_character") or "").strip() or None
                 variant_row.avatar_style = str(raw_variant.get("avatar_style") or "").strip() or None
                 variant_row.avatar_voice = str(raw_variant.get("avatar_voice") or "").strip() or None
-                variant_row.avatar_status = str(raw_variant.get("avatar_status") or "").strip() or None
-                variant_row.avatar_job_id = str(raw_variant.get("avatar_job_id") or "").strip() or None
+                variant_row.avatar_status = _preserve_runtime_text("avatar_status", getattr(variant_row, "avatar_status", None))
+                variant_row.avatar_job_id = _preserve_runtime_text("avatar_job_id", getattr(variant_row, "avatar_job_id", None))
                 variant_row.avatar_error = str(raw_variant.get("avatar_error") or "").strip() or None
-                variant_row.avatar_source = str(raw_variant.get("avatar_source") or "").strip() or None
-                variant_row.avatar_summary_url = str(raw_variant.get("avatar_summary_url") or "").strip() or None
-                avatar_generated_at = str(raw_variant.get("avatar_generated_at") or "").strip()
+                variant_row.avatar_source = _preserve_runtime_text("avatar_source", getattr(variant_row, "avatar_source", None))
+                variant_row.avatar_summary_url = _preserve_runtime_text("avatar_summary_url", getattr(variant_row, "avatar_summary_url", None))
+                avatar_generated_at = _raw_variant_text("avatar_generated_at")
                 if avatar_generated_at:
                     try:
                         variant_row.avatar_generated_at = datetime.fromisoformat(avatar_generated_at)
                     except Exception:
                         pass
-                else:
+                elif getattr(variant_row, "avatar_generated_at", None) is None:
                     variant_row.avatar_generated_at = None
                 variant_row.content_item_id = int(raw_variant.get("content_item_id")) if raw_variant.get("content_item_id") else None
                 variant_row.takeaway_default = str(raw_variant.get("takeaway_default") or "").strip() or None
