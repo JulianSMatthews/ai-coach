@@ -14,6 +14,7 @@ from sqlalchemy import and_, delete, desc, inspect, or_, select, text
 from .avatar import (
     azure_avatar_defaults,
     azure_avatar_enabled,
+    create_batch_avatar,
     download_batch_avatar_output,
     generate_batch_avatar_video,
     get_batch_avatar,
@@ -820,6 +821,250 @@ def _refresh_lesson_variant_avatar_media(
         return row
 
 
+def _education_avatar_input_payload(
+    row: EducationLessonVariant,
+    payload: dict[str, Any] | None = None,
+) -> dict[str, str | None]:
+    payload = payload if isinstance(payload, dict) else {}
+    defaults = azure_avatar_defaults()
+    return {
+        "title": (
+            str(payload.get("avatar_title") or payload.get("title") or "").strip()
+            or str(getattr(row, "title", "") or "").strip()
+            or "Education lesson"
+        ),
+        "script": (
+            str(payload.get("avatar_script") or payload.get("script") or "").strip()
+            or str(getattr(row, "script", "") or "").strip()
+        ),
+        "poster_url": (
+            str(payload.get("avatar_poster_url") or payload.get("poster_url") or "").strip()
+            or str(getattr(row, "poster_url", "") or "").strip()
+            or None
+        ),
+        "character": (
+            str(payload.get("avatar_character") or "").strip()
+            or str(getattr(row, "avatar_character", "") or "").strip()
+            or str(defaults.get("character") or "lisa")
+        ),
+        "style": (
+            str(payload.get("avatar_style") or "").strip()
+            or str(getattr(row, "avatar_style", "") or "").strip()
+            or str(defaults.get("style") or "graceful-sitting")
+        ),
+        "voice": (
+            str(payload.get("avatar_voice") or "").strip()
+            or str(getattr(row, "avatar_voice", "") or "").strip()
+            or str(defaults.get("voice") or "en-GB-SoniaNeural")
+        ),
+    }
+
+
+def _programme_avatar_variant_rows(session, programme_id: int) -> list[tuple[EducationLessonVariant, EducationProgrammeDay]]:
+    return (
+        session.execute(
+            select(EducationLessonVariant, EducationProgrammeDay)
+            .join(EducationProgrammeDay, EducationLessonVariant.programme_day_id == EducationProgrammeDay.id)
+            .where(
+                EducationProgrammeDay.programme_id == int(programme_id),
+                EducationLessonVariant.is_active.is_(True),
+            )
+            .order_by(
+                EducationProgrammeDay.day_index.asc(),
+                EducationLessonVariant.level.asc(),
+                EducationLessonVariant.id.asc(),
+            )
+        )
+        .all()
+    )
+
+
+def generate_education_programme_avatar_videos(
+    programme_id: int,
+    *,
+    regenerate: bool = False,
+) -> dict[str, Any]:
+    ensure_education_plan_schema()
+    if not azure_avatar_enabled():
+        raise RuntimeError("Azure avatar generation is not enabled.")
+    with SessionLocal() as session:
+        programme = session.get(EducationProgramme, int(programme_id))
+        if programme is None:
+            raise ValueError("Education programme not found.")
+        rows = _programme_avatar_variant_rows(session, int(programme.id))
+        items: list[dict[str, Any]] = []
+        counts = {
+            "started": 0,
+            "ready": 0,
+            "pending": 0,
+            "skipped": 0,
+            "errors": 0,
+        }
+        for row, day in rows:
+            item = {
+                "programme_day_id": int(getattr(day, "id", 0) or 0),
+                "day_index": int(getattr(day, "day_index", 0) or 0),
+                "lesson_variant_id": int(getattr(row, "id", 0) or 0),
+                "level": str(getattr(row, "level", "") or "").strip() or None,
+                "title": str(getattr(row, "title", "") or getattr(day, "default_title", "") or "").strip() or None,
+            }
+            if not regenerate and _lesson_variant_video_url(row):
+                avatar = education_lesson_avatar_payload(row) or {}
+                item.update({"status": "ready", "reason": "Video already exists.", "video_url": avatar.get("url")})
+                counts["ready"] += 1
+                items.append(item)
+                continue
+            status_key = str(getattr(row, "avatar_status", "") or "").strip().lower()
+            job_id = str(getattr(row, "avatar_job_id", "") or "").strip()
+            if not regenerate and _avatar_result_url(row):
+                refreshed = _refresh_lesson_variant_avatar_media(session, row) or row
+                avatar = education_lesson_avatar_payload(refreshed) or {}
+                if _lesson_variant_video_url(refreshed):
+                    item.update({"status": "ready", "avatar_status": avatar.get("status"), "video_url": avatar.get("url")})
+                    counts["ready"] += 1
+                else:
+                    item.update(
+                        {
+                            "status": "pending",
+                            "avatar_status": avatar.get("status"),
+                            "job_id": avatar.get("job_id"),
+                            "reason": avatar.get("error") or "Avatar result exists but is not cached yet.",
+                        }
+                    )
+                    counts["pending"] += 1
+                items.append(item)
+                continue
+            if (
+                not regenerate
+                and job_id
+                and status_key not in {"failed", "cancelled", "canceled", "succeeded"}
+            ):
+                item.update({"status": "pending", "reason": "Avatar job already pending.", "job_id": job_id})
+                counts["pending"] += 1
+                items.append(item)
+                continue
+            avatar_input = _education_avatar_input_payload(row)
+            script = str(avatar_input.get("script") or "").strip()
+            if not script:
+                item.update({"status": "skipped", "reason": "No lesson script available."})
+                counts["skipped"] += 1
+                items.append(item)
+                continue
+            try:
+                result = create_batch_avatar(
+                    script=script,
+                    title=str(avatar_input.get("title") or "Education lesson"),
+                    character=str(avatar_input.get("character") or ""),
+                    style=str(avatar_input.get("style") or ""),
+                    voice=str(avatar_input.get("voice") or ""),
+                )
+                new_job_id = str(result.get("id") or "").strip()
+                if not new_job_id:
+                    raise RuntimeError("Azure avatar generation did not return a job id")
+                status = str(result.get("status") or "").strip() or "Running"
+                outputs = result.get("outputs") if isinstance(result.get("outputs"), dict) else {}
+                summary_url = str((outputs or {}).get("summary") or "").strip() or None
+                avatar = _save_education_avatar_generation_result(
+                    session,
+                    row=row,
+                    title=str(avatar_input.get("title") or "Education lesson"),
+                    script=script,
+                    poster_url=str(avatar_input.get("poster_url") or "").strip() or None,
+                    character=str(avatar_input.get("character") or ""),
+                    style=str(avatar_input.get("style") or ""),
+                    voice=str(avatar_input.get("voice") or ""),
+                    status=status,
+                    job_id=new_job_id,
+                    error=None,
+                    summary_url=summary_url,
+                    response_payload=result,
+                )
+                item.update(
+                    {
+                        "status": "started",
+                        "avatar_status": avatar.get("status") or status,
+                        "job_id": new_job_id,
+                        "video_url": avatar.get("url"),
+                    }
+                )
+                counts["started"] += 1
+            except Exception as exc:
+                counts["errors"] += 1
+                item.update({"status": "error", "reason": str(exc)})
+            items.append(item)
+        return {
+            "ok": counts["errors"] == 0,
+            "programme_id": int(programme.id),
+            "programme_name": str(getattr(programme, "name", "") or "").strip() or None,
+            "regenerate": bool(regenerate),
+            "counts": counts,
+            "items": items,
+        }
+
+
+def refresh_education_programme_avatar_videos(programme_id: int) -> dict[str, Any]:
+    ensure_education_plan_schema()
+    with SessionLocal() as session:
+        programme = session.get(EducationProgramme, int(programme_id))
+        if programme is None:
+            raise ValueError("Education programme not found.")
+        rows = _programme_avatar_variant_rows(session, int(programme.id))
+        items: list[dict[str, Any]] = []
+        counts = {
+            "ready": 0,
+            "pending": 0,
+            "skipped": 0,
+            "errors": 0,
+        }
+        for row, day in rows:
+            item = {
+                "programme_day_id": int(getattr(day, "id", 0) or 0),
+                "day_index": int(getattr(day, "day_index", 0) or 0),
+                "lesson_variant_id": int(getattr(row, "id", 0) or 0),
+                "level": str(getattr(row, "level", "") or "").strip() or None,
+                "title": str(getattr(row, "title", "") or getattr(day, "default_title", "") or "").strip() or None,
+            }
+            if _lesson_variant_video_url(row):
+                avatar = education_lesson_avatar_payload(row) or {}
+                item.update({"status": "ready", "reason": "Video already exists.", "video_url": avatar.get("url")})
+                counts["ready"] += 1
+                items.append(item)
+                continue
+            if not str(getattr(row, "avatar_job_id", "") or "").strip() and not _avatar_result_url(row):
+                item.update({"status": "skipped", "reason": "No avatar job to refresh."})
+                counts["skipped"] += 1
+                items.append(item)
+                continue
+            try:
+                refreshed = _refresh_lesson_variant_avatar_media(session, row) or row
+                avatar = education_lesson_avatar_payload(refreshed) or {}
+                if _lesson_variant_video_url(refreshed):
+                    item.update({"status": "ready", "avatar_status": avatar.get("status"), "video_url": avatar.get("url")})
+                    counts["ready"] += 1
+                else:
+                    item.update(
+                        {
+                            "status": "pending",
+                            "avatar_status": avatar.get("status"),
+                            "job_id": avatar.get("job_id"),
+                            "reason": avatar.get("error") or "Avatar job is still pending.",
+                        }
+                    )
+                    counts["pending"] += 1
+            except Exception as exc:
+                counts["errors"] += 1
+                item.update({"status": "error", "reason": str(exc)})
+            items.append(item)
+        session.commit()
+        return {
+            "ok": counts["errors"] == 0,
+            "programme_id": int(programme.id),
+            "programme_name": str(getattr(programme, "name", "") or "").strip() or None,
+            "counts": counts,
+            "items": items,
+        }
+
+
 def generate_education_lesson_avatar(
     lesson_variant_id: int,
     payload: dict[str, Any] | None = None,
@@ -828,17 +1073,17 @@ def generate_education_lesson_avatar(
     if not azure_avatar_enabled():
         raise RuntimeError("Azure avatar generation is not enabled.")
     payload = payload if isinstance(payload, dict) else {}
-    defaults = azure_avatar_defaults()
     with SessionLocal() as session:
         row = session.get(EducationLessonVariant, int(lesson_variant_id))
         if row is None:
             raise ValueError("Education lesson variant not found.")
-        title = str(payload.get("avatar_title") or payload.get("title") or "").strip() or str(getattr(row, "title", "") or "").strip() or "Education lesson"
-        script = str(payload.get("avatar_script") or payload.get("script") or "").strip() or str(getattr(row, "script", "") or "").strip()
-        poster_url = str(payload.get("avatar_poster_url") or payload.get("poster_url") or "").strip() or str(getattr(row, "poster_url", "") or "").strip() or None
-        character = str(payload.get("avatar_character") or "").strip() or str(getattr(row, "avatar_character", "") or "").strip() or str(defaults.get("character") or "lisa")
-        style = str(payload.get("avatar_style") or "").strip() or str(getattr(row, "avatar_style", "") or "").strip() or str(defaults.get("style") or "graceful-sitting")
-        voice = str(payload.get("avatar_voice") or "").strip() or str(getattr(row, "avatar_voice", "") or "").strip() or str(defaults.get("voice") or "en-GB-SoniaNeural")
+        avatar_input = _education_avatar_input_payload(row, payload)
+        title = str(avatar_input.get("title") or "Education lesson")
+        script = str(avatar_input.get("script") or "").strip()
+        poster_url = str(avatar_input.get("poster_url") or "").strip() or None
+        character = str(avatar_input.get("character") or "")
+        style = str(avatar_input.get("style") or "")
+        voice = str(avatar_input.get("voice") or "")
         if not script:
             raise ValueError("Education lesson avatar script is required.")
         _save_education_avatar_generation_result(

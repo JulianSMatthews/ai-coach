@@ -37,7 +37,9 @@ from .models import User
 from .education_plan import (
     ensure_education_plan_schema,
     generate_education_lesson_avatar,
+    generate_education_programme_avatar_videos,
     refresh_education_lesson_avatar,
+    refresh_education_programme_avatar_videos,
 )
 from .kickoff import _programme_blocks as kickoff_programme_blocks, _okr_by_pillar as kickoff_okr_by_pillar
 from .kickoff import _latest_assessment as kickoff_latest_assessment, _latest_psych as kickoff_latest_psych
@@ -613,6 +615,67 @@ def _json_script_content(value: object) -> str:
         .replace("<", "\\u003c")
         .replace(">", "\\u003e")
     )
+
+
+def _truthy_form_value(value: object) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _education_avatar_bulk_result_page(title: str, result: dict) -> HTMLResponse:
+    programme_id = int(result.get("programme_id") or 0)
+    counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
+    items = result.get("items") if isinstance(result.get("items"), list) else []
+    count_summary = " · ".join(
+        f"{html.escape(str(key).replace('_', ' ').title())}: {html.escape(str(value))}"
+        for key, value in counts.items()
+    )
+    note = (
+        "Generation starts Azure batch jobs. Use Refresh pending videos after a few minutes to pull completed files into Daily Focus."
+        if "generation" in title.lower()
+        else "Refresh checks Azure jobs and stores completed videos for Daily Focus."
+    )
+    rows = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        video_url = str(item.get("video_url") or "").strip()
+        rows.append(
+            "<tr>"
+            f"<td>{html.escape(str(item.get('day_index') or ''))}</td>"
+            f"<td>{html.escape(str(item.get('level') or ''))}</td>"
+            f"<td>{html.escape(str(item.get('title') or ''))}</td>"
+            f"<td>{html.escape(str(item.get('status') or ''))}</td>"
+            f"<td>{html.escape(str(item.get('avatar_status') or item.get('reason') or ''))}</td>"
+            f"<td>{html.escape(str(item.get('job_id') or ''))}</td>"
+            "<td>"
+            + (
+                f"<a href='{html.escape(video_url)}' target='_blank' rel='noopener'>Open video</a>"
+                if video_url
+                else ""
+            )
+            + "</td>"
+            "</tr>"
+        )
+    body = (
+        f"<h2>{html.escape(title)}</h2>"
+        f"{_build_version_label()}"
+        "<div class='card' style='margin-bottom:12px;'>"
+        f"<p><strong>{html.escape(str(result.get('programme_name') or 'Education programme'))}</strong></p>"
+        f"<p class='help'>{count_summary or 'No avatar changes were made.'}</p>"
+        f"<p class='help'>{html.escape(note)}</p>"
+        "<div class='stack'>"
+        f"<a class='button-link' href='/admin/education-programmes/edit?id={programme_id}'>Back to programme</a>"
+        "<a class='button-link' href='/admin/education-programmes'>Back to list</a>"
+        "</div>"
+        "</div>"
+        "<div class='card'>"
+        "<table>"
+        "<tr><th>Day</th><th>Level</th><th>Lesson</th><th>Status</th><th>Detail</th><th>Job ID</th><th>Video</th></tr>"
+        + ("".join(rows) if rows else "<tr><td colspan='7'><em>No active lesson variants found.</em></td></tr>")
+        + "</table>"
+        "</div>"
+    )
+    return _wrap_page(title, body)
 
 
 def _promote_templates_batch(source_state: str, target_state: str, note: str | None = None) -> int:
@@ -1670,6 +1733,18 @@ def list_education_programmes():
             f"<td>{html.escape(str(row.updated_at or ''))}</td>"
             "<td>"
             f"<a href='/admin/education-programmes/edit?id={row_id}'>Edit</a>"
+            "<form method='post' "
+            f"action='/admin/education-programmes/{row_id}/avatar/generate' "
+            "style='display:inline; margin-left:8px;' "
+            "onsubmit=\"return confirm('Start avatar video generation for all active lesson variants without a video?');\">"
+            "<button type='submit' class='secondary' style='padding:6px 10px;'>Generate videos</button>"
+            "</form>"
+            "<form method='post' "
+            f"action='/admin/education-programmes/{row_id}/avatar/refresh' "
+            "style='display:inline; margin-left:8px;' "
+            "onsubmit=\"return confirm('Refresh avatar video jobs for this programme?');\">"
+            "<button type='submit' class='secondary' style='padding:6px 10px;'>Refresh videos</button>"
+            "</form>"
             "<form method='post' action='/admin/education-programmes/delete' "
             "style='display:inline; margin-left:8px;' "
             "onsubmit=\"return confirm('Delete this education programme? This cannot be undone.');\">"
@@ -1731,6 +1806,37 @@ def delete_education_programme(
     return RedirectResponse(url="/admin/education-programmes", status_code=303)
 
 
+@admin.post("/education-programmes/{programme_id}/avatar/generate", response_class=HTMLResponse)
+def generate_education_programme_avatars(
+    programme_id: int,
+    regenerate: str | None = Form(default=None),
+):
+    try:
+        result = generate_education_programme_avatar_videos(
+            int(programme_id),
+            regenerate=_truthy_form_value(regenerate),
+        )
+    except RuntimeError as exc:
+        message = str(exc)
+        status_code = 503 if "not enabled" in message.lower() else 400
+        raise HTTPException(status_code, message)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    title = "Education Programme Avatar Generation"
+    return _education_avatar_bulk_result_page(title, result)
+
+
+@admin.post("/education-programmes/{programme_id}/avatar/refresh", response_class=HTMLResponse)
+def refresh_education_programme_avatars(programme_id: int):
+    try:
+        result = refresh_education_programme_avatar_videos(int(programme_id))
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(400, str(exc))
+    return _education_avatar_bulk_result_page("Education Programme Avatar Refresh", result)
+
+
 @admin.post("/education-programmes/lesson-variants/{variant_id}/avatar/generate")
 async def generate_education_programme_lesson_avatar(variant_id: int, request: Request):
     try:
@@ -1779,7 +1885,30 @@ def edit_education_programme(id: int | None = None):
     )
     structure_seed = {"days": programme_payload.get("days") or []}
     delete_form_html = ""
+    avatar_bulk_html = ""
     if row is not None:
+        programme_id = html.escape(str(programme_payload.get("id") or ""))
+        avatar_bulk_html = (
+            "<div class='card' style='margin-top:12px;'>"
+            "<h3 class='section-title'>Avatar videos</h3>"
+            "<p class='help'>Generate avatar videos for every active lesson variant in this programme. Existing videos are skipped unless you choose regenerate.</p>"
+            "<div class='stack'>"
+            f"<form method='post' action='/admin/education-programmes/{programme_id}/avatar/generate' "
+            "onsubmit=\"return confirm('Start missing avatar videos for every active lesson in this programme?');\">"
+            "<button type='submit' class='secondary'>Generate missing videos</button>"
+            "</form>"
+            f"<form method='post' action='/admin/education-programmes/{programme_id}/avatar/refresh' "
+            "onsubmit=\"return confirm('Refresh all pending avatar jobs for this programme?');\">"
+            "<button type='submit' class='secondary'>Refresh pending videos</button>"
+            "</form>"
+            f"<form method='post' action='/admin/education-programmes/{programme_id}/avatar/generate' "
+            "onsubmit=\"return confirm('Regenerate avatar videos for every active lesson in this programme? This will replace existing generated jobs when the new videos are ready.');\">"
+            "<input type='hidden' name='regenerate' value='1' />"
+            "<button type='submit' class='danger'>Regenerate all videos</button>"
+            "</form>"
+            "</div>"
+            "</div>"
+        )
         delete_form_html = (
             "<form method='post' action='/admin/education-programmes/delete' class='card' style='margin-top:12px;' "
             "onsubmit=\"return confirm('Delete this education programme? This cannot be undone.');\">"
@@ -1853,6 +1982,8 @@ def edit_education_programme(id: int | None = None):
         <a class='button-link' href="/admin/education-programmes">Back to list</a>
       </div>
     </form>
+
+    {avatar_bulk_html}
 
     {delete_form_html}
 
