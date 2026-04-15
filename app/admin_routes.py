@@ -164,6 +164,29 @@ PAGE_STYLE = """
   .section-title { margin: 0 0 6px; font-size: 1.05rem; }
   .subtle { color: var(--muted); font-size: 0.86rem; }
   .programme-day { border: 1px solid var(--border); border-radius: 12px; padding: 14px; background: #fcfdff; margin-bottom: 12px; }
+  .programme-days-shell { display: grid; grid-template-columns: minmax(240px, 320px) minmax(0, 1fr); gap: 14px; align-items: start; }
+  .programme-day-list { display: grid; gap: 8px; position: sticky; top: 12px; }
+  .programme-day-summary {
+    width: 100%;
+    display: block;
+    text-align: left;
+    background: #fff;
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    box-shadow: none;
+  }
+  .programme-day-summary:hover { background: #f8fbff; }
+  .programme-day-summary.is-selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(20, 89, 255, 0.12); }
+  .programme-day-summary-title { display: block; font-weight: 700; margin-bottom: 4px; }
+  .programme-day-summary-meta { display: block; color: var(--muted); font-size: 0.82rem; line-height: 1.35; }
+  .programme-day-summary-status { display: inline-flex; align-items: center; min-height: 22px; margin-top: 8px; border-radius: 999px; padding: 2px 8px; background: #eef4ff; color: #123b8f; font-size: 0.78rem; font-weight: 700; }
+  .programme-day-summary-status.needs-video { background: #fff7ed; color: #9a3412; }
+  .programme-day-summary-status.pending { background: #fef9c3; color: #854d0e; }
+  .programme-day-summary-status.failed { background: #ffe4e6; color: #9f1239; }
+  .programme-day-summary-empty { border: 1px dashed var(--border); border-radius: 8px; padding: 12px; color: var(--muted); background: #fff; }
+  .programme-day-editor { min-width: 0; }
   .lesson-variant { border: 1px solid #d7dfe8; border-radius: 10px; padding: 12px; background: #fff; margin-top: 10px; }
   .quiz-question { border: 1px dashed #c6d1dc; border-radius: 10px; padding: 12px; background: #fbfcfe; margin-top: 10px; }
   .danger { background: #9f1239; }
@@ -172,6 +195,8 @@ PAGE_STYLE = """
   .secondary:hover { background: #cbd5e1; }
   @media (max-width: 860px) {
     .grid-2, .grid-3 { grid-template-columns: 1fr; }
+    .programme-days-shell { grid-template-columns: 1fr; }
+    .programme-day-list { position: static; }
   }
 </style>
 <style>
@@ -1733,18 +1758,6 @@ def list_education_programmes():
             f"<td>{html.escape(str(row.updated_at or ''))}</td>"
             "<td>"
             f"<a href='/admin/education-programmes/edit?id={row_id}'>Edit</a>"
-            "<form method='post' "
-            f"action='/admin/education-programmes/{row_id}/avatar/generate' "
-            "style='display:inline; margin-left:8px;' "
-            "onsubmit=\"return confirm('Start avatar video generation for all active lesson variants without a video?');\">"
-            "<button type='submit' class='secondary' style='padding:6px 10px;'>Generate videos</button>"
-            "</form>"
-            "<form method='post' "
-            f"action='/admin/education-programmes/{row_id}/avatar/refresh' "
-            "style='display:inline; margin-left:8px;' "
-            "onsubmit=\"return confirm('Refresh avatar video jobs for this programme?');\">"
-            "<button type='submit' class='secondary' style='padding:6px 10px;'>Refresh videos</button>"
-            "</form>"
             "<form method='post' action='/admin/education-programmes/delete' "
             "style='display:inline; margin-left:8px;' "
             "onsubmit=\"return confirm('Delete this education programme? This cannot be undone.');\">"
@@ -1889,9 +1902,9 @@ def edit_education_programme(id: int | None = None):
     if row is not None:
         programme_id = html.escape(str(programme_payload.get("id") or ""))
         avatar_bulk_html = (
-            "<div class='card' style='margin-top:12px;'>"
+            "<div class='programme-video-actions' style='margin-top:12px; padding-top:12px; border-top:1px solid var(--border);'>"
             "<h3 class='section-title'>Avatar videos</h3>"
-            "<p class='help'>Generate avatar videos for every active lesson variant in this programme. Existing videos are skipped unless you choose regenerate.</p>"
+            "<p class='help'>Generate and review lesson avatar videos from this programme header. Existing videos are skipped unless you choose regenerate.</p>"
             "<div class='stack'>"
             f"<form method='post' action='/admin/education-programmes/{programme_id}/avatar/generate' "
             "onsubmit=\"return confirm('Start missing avatar videos for every active lesson in this programme?');\">"
@@ -1906,6 +1919,7 @@ def edit_education_programme(id: int | None = None):
             "<input type='hidden' name='regenerate' value='1' />"
             "<button type='submit' class='danger'>Regenerate all videos</button>"
             "</form>"
+            "<button type='button' class='secondary' id='review-selected-day-video-button'>Review selected day video</button>"
             "</div>"
             "</div>"
         )
@@ -1924,6 +1938,7 @@ def edit_education_programme(id: int | None = None):
     {_build_version_label()}
     <div class='card' style='margin-bottom:12px;'>
       <p class='help'>Use this editor to define a concept-based lesson module with levelled video variants, the 3-question quiz, and the takeaway text shown after quiz completion. The user is routed into a programme by concept, and the programme length is derived from the days you configure here.</p>
+      {avatar_bulk_html}
     </div>
     <form method="post" action="/admin/education-programmes/save" id="education-programme-form">
       <input type="hidden" name="id" value="{html.escape(str(programme_payload.get('id') or ''))}" />
@@ -1975,15 +1990,16 @@ def edit_education_programme(id: int | None = None):
         </div>
       </div>
 
-      <div id="programme-days-root"></div>
+      <div class="programme-days-shell">
+        <div id="programme-days-summary" class="programme-day-list"></div>
+        <div id="programme-days-root" class="programme-day-editor"></div>
+      </div>
 
       <div class='actions stack' style='margin-top:16px;'>
         <button type="submit">Save Programme</button>
         <a class='button-link' href="/admin/education-programmes">Back to list</a>
       </div>
     </form>
-
-    {avatar_bulk_html}
 
     {delete_form_html}
 
@@ -2010,17 +2026,20 @@ def edit_education_programme(id: int | None = None):
         const conceptOptions = JSON.parse(document.getElementById('education-concept-options').textContent || '[]');
         const contentOptions = JSON.parse(document.getElementById('education-content-options').textContent || '[]');
         const root = document.getElementById('programme-days-root');
+        const summaryRoot = document.getElementById('programme-days-summary');
         const form = document.getElementById('education-programme-form');
         const structureField = document.getElementById('structure_json');
         const programmeConceptInput = document.getElementById('programme_concept_key');
         const programmeConceptLabelInput = document.getElementById('programme_concept_label');
         const pillarDisplayInput = document.getElementById('programme_pillar_display');
+        const reviewSelectedDayVideoButton = document.getElementById('review-selected-day-video-button');
         const avatarReviewModal = document.getElementById('avatar-review-modal');
         const avatarReviewVideo = document.getElementById('avatar-review-video');
         const avatarReviewTitle = document.getElementById('avatar-review-title');
         const avatarReviewStatus = document.getElementById('avatar-review-status');
         const avatarReviewOpenLink = document.getElementById('avatar-review-open-link');
         const avatarReviewClose = document.getElementById('avatar-review-close');
+        let selectedDayPosition = 0;
 
         function escapeHtml(value) {{
           return String(value ?? '')
@@ -2208,6 +2227,78 @@ def edit_education_programme(id: int | None = None):
           return `<select class="js-variant-content-item">${{empty}}${{items}}</select>`;
         }}
 
+        function currentDayElements() {{
+          return Array.from(root.querySelectorAll(':scope > .js-day'));
+        }}
+
+        function collectAllDaysFromDom() {{
+          return currentDayElements().map((dayEl) => collectDayData(dayEl));
+        }}
+
+        function selectedDayElement() {{
+          return currentDayElements()[selectedDayPosition] || null;
+        }}
+
+        function dayVariantSummary(day) {{
+          const variants = Array.isArray(day.variants) && day.variants.length ? day.variants : [];
+          const activeVariants = variants.filter((variant) => variant.is_active !== false);
+          const readyCount = variants.filter((variant) => String(variant.video_url || '').trim()).length;
+          const pendingCount = variants.filter((variant) => {{
+            const status = String(variant.avatar_status || '').trim().toLowerCase();
+            const jobId = String(variant.avatar_job_id || '').trim();
+            return jobId && !String(variant.video_url || '').trim() && !['failed', 'cancelled', 'canceled'].includes(status);
+          }}).length;
+          const failedCount = variants.filter((variant) => String(variant.avatar_status || '').trim().toLowerCase() === 'failed').length;
+          if (failedCount) return {{ label: `${{failedCount}} failed`, tone: 'failed' }};
+          if (pendingCount) return {{ label: `${{pendingCount}} pending`, tone: 'pending' }};
+          if (readyCount) return {{ label: `${{readyCount}} video${{readyCount === 1 ? '' : 's'}} ready`, tone: 'ready' }};
+          if (activeVariants.length) return {{ label: 'needs video', tone: 'needs-video' }};
+          return {{ label: 'inactive', tone: 'needs-video' }};
+        }}
+
+        function renderDaySummaries() {{
+          if (!summaryRoot) return;
+          const dayEls = currentDayElements();
+          if (!dayEls.length) {{
+            selectedDayPosition = 0;
+            summaryRoot.innerHTML = '<div class="programme-day-summary-empty">No days configured yet.</div>';
+            return;
+          }}
+          selectedDayPosition = Math.min(Math.max(0, selectedDayPosition), dayEls.length - 1);
+          const days = dayEls.map((dayEl) => collectDayData(dayEl));
+          summaryRoot.innerHTML = days.map((day, position) => {{
+            const variants = Array.isArray(day.variants) ? day.variants : [];
+            const levels = variants.map((variant) => String(variant.level || '').trim()).filter(Boolean).join(', ') || 'no variants';
+            const title = String(day.default_title || variants[0]?.title || '').trim() || 'Untitled lesson';
+            const quizCount = variants.reduce((total, variant) => {{
+              const questions = Array.isArray(variant.quiz?.questions) ? variant.quiz.questions : [];
+              return total + questions.length;
+            }}, 0);
+            const status = dayVariantSummary(day);
+            return `
+              <button type="button" class="programme-day-summary js-select-day ${{position === selectedDayPosition ? 'is-selected' : ''}}" data-day-position="${{position}}">
+                <span class="programme-day-summary-title">Day ${{escapeHtml(day.day_index || position + 1)}}: ${{escapeHtml(title)}}</span>
+                <span class="programme-day-summary-meta">${{escapeHtml(levels)}} · ${{quizCount}} quiz question${{quizCount === 1 ? '' : 's'}}</span>
+                <span class="programme-day-summary-status ${{escapeHtml(status.tone)}}">${{escapeHtml(status.label)}}</span>
+              </button>
+            `;
+          }}).join('');
+          dayEls.forEach((dayEl, position) => {{
+            dayEl.hidden = position !== selectedDayPosition;
+          }});
+        }}
+
+        function selectDay(position) {{
+          const dayEls = currentDayElements();
+          if (!dayEls.length) {{
+            selectedDayPosition = 0;
+            renderDaySummaries();
+            return;
+          }}
+          selectedDayPosition = Math.min(Math.max(0, Number(position) || 0), dayEls.length - 1);
+          renderDaySummaries();
+        }}
+
         function renderQuestion(question) {{
           return `
             <div class="quiz-question js-question">
@@ -2255,14 +2346,13 @@ def edit_education_programme(id: int | None = None):
             : [emptyQuestion(1), emptyQuestion(2), emptyQuestion(3)];
           const variantId = String(variant.id || '').trim();
           const avatarStatus = String(variant.avatar_status || '').trim();
-          const hasAvatarVideo = Boolean(String(variant.video_url || '').trim());
           return `
             <div class="lesson-variant js-variant">
               <input type="hidden" class="js-variant-id" value="${{escapeHtml(variant.id || '')}}" />
               <div class="stack" style="justify-content:space-between;">
                 <strong>Lesson Variant</strong>
                 <div class="stack">
-                  ${{variantId ? `<button type="button" class="secondary js-generate-avatar">Generate avatar video</button><button type="button" class="secondary js-refresh-avatar">Refresh avatar</button><button type="button" class="secondary js-review-avatar" ${{hasAvatarVideo ? '' : 'hidden disabled'}}>Review avatar</button>` : `<span class="subtle">Save this variant before generating avatar video.</span>`}}
+                  ${{variantId ? `<span class="subtle">Use the programme header to generate, refresh, or review videos.</span>` : `<span class="subtle">Save this variant before generating avatar video.</span>`}}
                   <button type="button" class="danger js-remove-variant">Remove variant</button>
                 </div>
               </div>
@@ -2516,6 +2606,7 @@ def edit_education_programme(id: int | None = None):
           setValue('.js-variant-avatar-source', data.source);
           setValue('.js-variant-avatar-summary-url', data.summary_url);
           updateVariantAvatarReviewState(variantEl);
+          renderDaySummaries();
         }}
 
         function variantAvatarVideoUrl(variantEl) {{
@@ -2578,6 +2669,21 @@ def edit_education_programme(id: int | None = None):
           }}
         }}
 
+        function openSelectedDayVideoReview() {{
+          const dayEl = selectedDayElement();
+          if (!dayEl) {{
+            window.alert('Select a programme day first.');
+            return;
+          }}
+          const variantWithVideo = Array.from(dayEl.querySelectorAll(':scope .js-variants-root > .js-variant'))
+            .find((variantEl) => Boolean(variantAvatarVideoUrl(variantEl)));
+          if (!variantWithVideo) {{
+            window.alert('The selected day does not have a generated avatar video yet.');
+            return;
+          }}
+          openAvatarReview(variantWithVideo);
+        }}
+
         async function requestVariantAvatar(variantEl, mode) {{
           const variantId = String(variantEl.querySelector('.js-variant-id')?.value || '').trim();
           if (!variantId) {{
@@ -2632,32 +2738,51 @@ def edit_education_programme(id: int | None = None):
           }}
         }}
 
+        function renderDays(days) {{
+          const sortedDays = [...days]
+            .sort((left, right) => Number(left.day_index || 0) - Number(right.day_index || 0));
+          root.innerHTML = sortedDays.map((day) => renderDay(day)).join('');
+          selectedDayPosition = Math.min(Math.max(0, selectedDayPosition), Math.max(0, sortedDays.length - 1));
+          renderDaySummaries();
+          updateAllVariantAvatarReviewStates();
+        }}
+
         function renderInitial() {{
           const days = Array.isArray(seed.days) ? [...seed.days] : [];
-          if (!days.length) {{
-            root.innerHTML = renderDay(emptyDay(1));
-            return;
-          }}
-          root.innerHTML = days
-            .sort((left, right) => Number(left.day_index || 0) - Number(right.day_index || 0))
-            .map((day) => renderDay(day))
-            .join('');
+          renderDays(days.length ? days : [emptyDay(1)]);
         }}
 
         document.getElementById('add-day-button').addEventListener('click', function() {{
-          const dayEls = Array.from(root.querySelectorAll(':scope > .js-day'));
+          const dayEls = currentDayElements();
           const nextIndex = dayEls.reduce((maxValue, dayEl) => {{
             const value = Number(dayEl.querySelector('.js-day-index')?.value || 0);
             return Math.max(maxValue, value);
           }}, 0) + 1;
-          root.insertAdjacentHTML('beforeend', renderDay(emptyDay(nextIndex)));
+          const days = collectAllDaysFromDom();
+          days.push(emptyDay(nextIndex));
+          selectedDayPosition = days.length - 1;
+          renderDays(days);
+        }});
+
+        summaryRoot?.addEventListener('click', function(event) {{
+          const target = event.target;
+          if (!(target instanceof HTMLElement)) return;
+          const button = target.closest('.js-select-day');
+          if (!(button instanceof HTMLElement)) return;
+          selectDay(Number(button.dataset.dayPosition || 0));
         }});
 
         root.addEventListener('click', function(event) {{
           const target = event.target;
           if (!(target instanceof HTMLElement)) return;
           if (target.classList.contains('js-remove-day')) {{
-            target.closest('.js-day')?.remove();
+            const dayEl = target.closest('.js-day');
+            const removedPosition = dayEl ? currentDayElements().indexOf(dayEl) : -1;
+            dayEl?.remove();
+            if (removedPosition >= 0 && selectedDayPosition > removedPosition) {{
+              selectedDayPosition -= 1;
+            }}
+            renderDaySummaries();
             return;
           }}
           if (target.classList.contains('js-add-variant')) {{
@@ -2666,10 +2791,13 @@ def edit_education_programme(id: int | None = None):
             const variantsRoot = dayEl.querySelector('.js-variants-root');
             if (!variantsRoot) return;
             variantsRoot.insertAdjacentHTML('beforeend', renderVariant(collectDayData(dayEl), emptyVariant()));
+            renderDaySummaries();
+            updateAllVariantAvatarReviewStates();
             return;
           }}
           if (target.classList.contains('js-remove-variant')) {{
             target.closest('.js-variant')?.remove();
+            renderDaySummaries();
             return;
           }}
           if (target.classList.contains('js-generate-avatar')) {{
@@ -2704,10 +2832,12 @@ def edit_education_programme(id: int | None = None):
               return;
             }}
             questionsRoot.insertAdjacentHTML('beforeend', renderQuestion(emptyQuestion(existing + 1)));
+            renderDaySummaries();
             return;
           }}
           if (target.classList.contains('js-remove-question')) {{
             target.closest('.js-question')?.remove();
+            renderDaySummaries();
           }}
         }});
 
@@ -2724,15 +2854,13 @@ def edit_education_programme(id: int | None = None):
           if (pillarDisplayInput) {{
             pillarDisplayInput.value = titleCasePillar(selectedProgrammePillar());
           }}
-          const days = Array.from(root.querySelectorAll(':scope > .js-day')).map((dayEl) => collectDayData(dayEl));
-          root.innerHTML = (days.length ? days : [emptyDay(1)]).map((day) => renderDay(day)).join('');
-          updateAllVariantAvatarReviewStates();
+          const days = collectAllDaysFromDom();
+          renderDays(days.length ? days : [emptyDay(1)]);
         }});
 
         programmeConceptLabelInput?.addEventListener('input', function() {{
-          const days = Array.from(root.querySelectorAll(':scope > .js-day')).map((dayEl) => collectDayData(dayEl));
-          root.innerHTML = (days.length ? days : [emptyDay(1)]).map((day) => renderDay(day)).join('');
-          updateAllVariantAvatarReviewStates();
+          const days = collectAllDaysFromDom();
+          renderDays(days.length ? days : [emptyDay(1)]);
         }});
 
         root.addEventListener('input', function(event) {{
@@ -2742,8 +2870,10 @@ def edit_education_programme(id: int | None = None):
             const variantEl = target.closest('.js-variant');
             if (variantEl) updateVariantAvatarReviewState(variantEl);
           }}
+          renderDaySummaries();
         }});
 
+        reviewSelectedDayVideoButton?.addEventListener('click', openSelectedDayVideoReview);
         avatarReviewClose?.addEventListener('click', closeAvatarReview);
         avatarReviewModal?.addEventListener('click', function(event) {{
           if (event.target === avatarReviewModal) {{
