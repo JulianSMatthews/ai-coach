@@ -5,6 +5,7 @@ import html
 import os
 
 import json
+import time
 from datetime import datetime
 from types import SimpleNamespace
 
@@ -16,7 +17,6 @@ from .db import SessionLocal, engine
 from .models import (
     AssessmentRun,
     AssessmentTurn,
-    ContentLibraryItem,
     Concept,
     EducationLessonVariant,
     EducationProgramme,
@@ -30,7 +30,7 @@ from .models import (
     UserEducationPlan,
 )
 from .job_queue import ensure_prompt_settings_schema
-from .prompts import _ensure_llm_prompt_log_schema, _canonical_state
+from .prompts import _ensure_llm_prompt_log_schema, _canonical_state, _coerce_llm_content, log_llm_prompt
 from .prompts import build_prompt
 from . import prompts as prompts_module
 from .models import User
@@ -54,6 +54,22 @@ _PROMPT_TEMPLATE_DEFAULTS = {
 }
 BANNED_BLOCKS = {"developer", "policy", "tool"}
 LIVE_TEMPLATE_ALLOWED_MODELS = {"gpt-5-mini", "gpt-5.1"}
+EDUCATION_DAY_LLM_TOUCHPOINT = "education_programme_day_generator"
+LLM_MODEL_CHOICES = [
+    "gpt-5.2-pro",
+    "gpt-5.2",
+    "gpt-5.1",
+    "gpt-5-mini",
+    "gpt-5-nano",
+    "gpt-4.1",
+    "gpt-4.1-mini",
+    "gpt-4.1-nano",
+    "gpt-4o",
+    "gpt-4o-mini",
+    "o3",
+    "o4-mini",
+    "gpt-3.5-turbo",
+]
 
 
 def _normalize_model_override(raw: str | None) -> str | None:
@@ -132,7 +148,9 @@ PAGE_STYLE = """
     --border: #d9e0e8;
     --text: #0f172a;
     --muted: #475467;
-    --accent: #1459ff;
+    --accent: #c54817;
+    --accent-strong: #a53b13;
+    --accent-soft: #fff0e8;
   }
   * { box-sizing: border-box; }
   body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, -apple-system, sans-serif; }
@@ -142,7 +160,7 @@ PAGE_STYLE = """
   .page { max-width: 1100px; margin: 32px auto; padding: 0 20px 40px; }
   .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; box-shadow: 0 6px 18px rgba(15, 23, 42, 0.04); }
   .meta { color: var(--muted); font-size: 0.95rem; }
-  .admin-menu { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; padding: 10px 12px; background: #eef4ff; border: 1px solid #cfe0ff; border-radius: 12px; }
+  .admin-menu { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; padding: 10px 12px; background: var(--accent-soft); border: 1px solid #efb199; border-radius: 12px; }
   .admin-menu a { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; background: #fff; border: 1px solid #d9e0e8; border-radius: 999px; color: var(--text); text-decoration: none; font-weight: 600; }
   .admin-menu a:hover { background: #f8fbff; text-decoration: none; }
   table { border-collapse: collapse; width: 100%; }
@@ -154,7 +172,7 @@ PAGE_STYLE = """
   .field { margin-bottom: 12px; }
   .actions { margin-top: 14px; }
   button { background: var(--accent); color: #fff; border: none; border-radius: 8px; padding: 10px 14px; font-weight: 600; cursor: pointer; }
-  button:hover { background: #0f47cc; }
+  button:hover { background: var(--accent-strong); }
   .nav { margin-bottom: 12px; }
   .help { color: var(--muted); font-size: 0.9rem; margin: 4px 0 10px; }
   select { width: 100%; border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font-family: 'Inter', system-ui, sans-serif; font-size: 14px; background: #fff; }
@@ -164,11 +182,14 @@ PAGE_STYLE = """
   .section-title { margin: 0 0 6px; font-size: 1.05rem; }
   .subtle { color: var(--muted); font-size: 0.86rem; }
   .programme-day { border: 1px solid var(--border); border-radius: 12px; padding: 14px; background: #fcfdff; margin-bottom: 12px; }
-  .programme-days-shell { display: grid; grid-template-columns: minmax(240px, 320px) minmax(0, 1fr); gap: 14px; align-items: start; }
-  .programme-day-list { display: grid; gap: 8px; position: sticky; top: 12px; }
+  .programme-days-shell { display: grid; gap: 14px; align-items: start; }
+  .programme-day-list { display: grid; gap: 8px; }
   .programme-day-summary {
     width: 100%;
-    display: block;
+    display: grid;
+    grid-template-columns: minmax(5rem, auto) minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
     text-align: left;
     background: #fff;
     color: var(--text);
@@ -177,41 +198,46 @@ PAGE_STYLE = """
     padding: 10px 12px;
     box-shadow: none;
   }
-  .programme-day-summary:hover { background: #f8fbff; }
-  .programme-day-summary.is-selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(20, 89, 255, 0.12); }
+  .programme-day-summary:hover { background: #fff8f3; }
+  .programme-day-summary.is-selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(197, 72, 23, 0.14); }
+  .programme-day-summary-index { color: var(--accent); font-weight: 800; }
   .programme-day-summary-title { display: block; font-weight: 700; margin-bottom: 4px; }
   .programme-day-summary-meta { display: block; color: var(--muted); font-size: 0.82rem; line-height: 1.35; }
-  .programme-day-summary-status { display: inline-flex; align-items: center; min-height: 22px; margin-top: 8px; border-radius: 999px; padding: 2px 8px; background: #eef4ff; color: #123b8f; font-size: 0.78rem; font-weight: 700; }
+  .programme-day-summary-status { display: inline-flex; align-items: center; min-height: 22px; border-radius: 999px; padding: 2px 8px; background: #ecfdf3; color: #027a48; font-size: 0.78rem; font-weight: 700; white-space: nowrap; }
   .programme-day-summary-status.needs-video { background: #fff7ed; color: #9a3412; }
   .programme-day-summary-status.pending { background: #fef9c3; color: #854d0e; }
-  .programme-day-summary-status.failed { background: #ffe4e6; color: #9f1239; }
+  .programme-day-summary-status.failed { background: #fff0e8; color: var(--accent-strong); }
   .programme-day-summary-empty { border: 1px dashed var(--border); border-radius: 8px; padding: 12px; color: var(--muted); background: #fff; }
-  .programme-day-editor { min-width: 0; }
+  .programme-day-detail-card { min-width: 0; scroll-margin-top: 16px; }
+  .programme-day-llm { border: 1px solid #efb199; border-radius: 8px; padding: 12px; background: #fff8f3; margin-top: 12px; }
+  .programme-day-llm summary { cursor: pointer; font-weight: 700; color: var(--accent-strong); }
+  .programme-day-llm[open] summary { margin-bottom: 10px; }
+  .programme-day-llm-status { min-height: 20px; }
+  .programme-day-editor { min-width: 0; margin-top: 12px; }
   .lesson-variant { border: 1px solid #d7dfe8; border-radius: 10px; padding: 12px; background: #fff; margin-top: 10px; }
   .quiz-question { border: 1px dashed #c6d1dc; border-radius: 10px; padding: 12px; background: #fbfcfe; margin-top: 10px; }
-  .danger { background: #9f1239; }
-  .danger:hover { background: #881337; }
-  .secondary { background: #e2e8f0; color: #0f172a; }
-  .secondary:hover { background: #cbd5e1; }
+  .danger { background: var(--accent); }
+  .danger:hover { background: var(--accent-strong); }
+  .secondary { background: var(--accent-soft); color: var(--accent-strong); border: 1px solid #efb199; }
+  .secondary:hover { background: #ffd8c9; }
   @media (max-width: 860px) {
     .grid-2, .grid-3 { grid-template-columns: 1fr; }
-    .programme-days-shell { grid-template-columns: 1fr; }
-    .programme-day-list { position: static; }
+    .programme-day-summary { grid-template-columns: 1fr; }
   }
 </style>
 <style>
   .button-link {
     display: inline-block;
-    background: #e2e8f0;
-    color: #0f172a;
-    border: 1px solid #cbd5e1;
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+    border: 1px solid #efb199;
     border-radius: 8px;
     padding: 8px 12px;
     text-decoration: none;
     font-weight: 600;
   }
   .button-link:hover {
-    background: #cbd5e1;
+    background: #ffd8c9;
   }
 </style>
 """
@@ -598,16 +624,10 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
     }
 
 
-def _education_editor_options(session) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
+def _education_editor_options(session) -> list[dict[str, object]]:
     concept_rows = (
         session.query(Concept)
         .order_by(Concept.pillar_key.asc(), Concept.code.asc())
-        .all()
-    )
-    content_rows = (
-        session.query(ContentLibraryItem)
-        .order_by(ContentLibraryItem.pillar_key.asc(), ContentLibraryItem.concept_code.asc(), ContentLibraryItem.title.asc(), ContentLibraryItem.id.asc())
-        .limit(2000)
         .all()
     )
     concepts = [
@@ -618,18 +638,7 @@ def _education_editor_options(session) -> tuple[list[dict[str, object]], list[di
         }
         for row in concept_rows
     ]
-    contents = [
-        {
-            "id": int(row.id),
-            "pillar_key": str(row.pillar_key or "").strip().lower(),
-            "concept_code": str(row.concept_code or "").strip().lower() or None,
-            "title": str(row.title or "").strip() or f"Content #{row.id}",
-            "level": str(row.level or "").strip().lower() or None,
-            "status": str(row.status or "").strip().lower() or None,
-        }
-        for row in content_rows
-    ]
-    return concepts, contents
+    return concepts
 
 
 def _json_script_content(value: object) -> str:
@@ -640,6 +649,241 @@ def _json_script_content(value: object) -> str:
         .replace("<", "\\u003c")
         .replace(">", "\\u003e")
     )
+
+
+def _llm_model_options_html(default_model_name: str | None = None) -> str:
+    default_label = "Default"
+    if default_model_name:
+        default_label = f"Default (current: {default_model_name})"
+    options = [("", default_label)] + [(model, model) for model in LLM_MODEL_CHOICES]
+    return "".join(
+        f"<option value='{html.escape(value)}'>{html.escape(label)}</option>"
+        for value, label in options
+    )
+
+
+def _trim_llm_context_text(value: object, limit: int = 3000) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit].rstrip() + "..."
+
+
+def _compact_education_day_for_llm(raw_day: object) -> dict[str, object]:
+    if not isinstance(raw_day, dict):
+        return {}
+    variants = []
+    for raw_variant in (raw_day.get("variants") if isinstance(raw_day.get("variants"), list) else [])[:4]:
+        if not isinstance(raw_variant, dict):
+            continue
+        quiz = raw_variant.get("quiz") if isinstance(raw_variant.get("quiz"), dict) else {}
+        questions = []
+        for raw_question in (quiz.get("questions") if isinstance(quiz.get("questions"), list) else [])[:3]:
+            if not isinstance(raw_question, dict):
+                continue
+            questions.append(
+                {
+                    "question_order": raw_question.get("question_order"),
+                    "question_text": _trim_llm_context_text(raw_question.get("question_text"), 500),
+                    "answer_type": raw_question.get("answer_type"),
+                    "options_json": raw_question.get("options_json"),
+                    "correct_answer_json": raw_question.get("correct_answer_json"),
+                    "explanation": _trim_llm_context_text(raw_question.get("explanation"), 500),
+                }
+            )
+        variants.append(
+            {
+                "level": raw_variant.get("level"),
+                "title": _trim_llm_context_text(raw_variant.get("title"), 300),
+                "summary": _trim_llm_context_text(raw_variant.get("summary"), 800),
+                "script": _trim_llm_context_text(raw_variant.get("script"), 3500),
+                "action_prompt": _trim_llm_context_text(raw_variant.get("action_prompt"), 800),
+                "takeaway_default": _trim_llm_context_text(raw_variant.get("takeaway_default"), 800),
+                "takeaway_if_low_score": _trim_llm_context_text(raw_variant.get("takeaway_if_low_score"), 800),
+                "takeaway_if_high_score": _trim_llm_context_text(raw_variant.get("takeaway_if_high_score"), 800),
+                "quiz": {
+                    "pass_score_pct": quiz.get("pass_score_pct"),
+                    "questions": questions,
+                },
+            }
+        )
+    return {
+        "day_index": raw_day.get("day_index"),
+        "concept_key": raw_day.get("concept_key"),
+        "concept_label": raw_day.get("concept_label"),
+        "lesson_goal": _trim_llm_context_text(raw_day.get("lesson_goal"), 800),
+        "default_title": _trim_llm_context_text(raw_day.get("default_title"), 300),
+        "default_summary": _trim_llm_context_text(raw_day.get("default_summary"), 800),
+        "variants": variants,
+    }
+
+
+def _extract_llm_json_object(raw_text: str) -> dict[str, object]:
+    cleaned = str(raw_text or "").strip()
+    if not cleaned:
+        raise ValueError("LLM returned an empty response")
+    if cleaned.startswith("```"):
+        lines = cleaned.splitlines()
+        if lines and lines[0].strip().startswith("```"):
+            lines = lines[1:]
+        if lines and lines[-1].strip().startswith("```"):
+            lines = lines[:-1]
+        cleaned = "\n".join(lines).strip()
+    candidates = [cleaned]
+    first = cleaned.find("{")
+    last = cleaned.rfind("}")
+    if first >= 0 and last > first:
+        candidates.append(cleaned[first : last + 1])
+    last_error: Exception | None = None
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+            if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+                return parsed[0]
+        except Exception as exc:
+            last_error = exc
+    raise ValueError(f"LLM response was not valid JSON: {last_error or 'unknown parse error'}")
+
+
+def _normalise_generated_question(raw_question: object, order: int) -> dict[str, object] | None:
+    if not isinstance(raw_question, dict):
+        return None
+    question_text = str(
+        raw_question.get("question_text")
+        or raw_question.get("question")
+        or raw_question.get("text")
+        or ""
+    ).strip()
+    if not question_text:
+        return None
+    answer_type = str(raw_question.get("answer_type") or "single_choice").strip().lower()
+    if answer_type not in {"single_choice", "multi_choice", "boolean"}:
+        answer_type = "single_choice"
+    options_val = raw_question.get("options_json", raw_question.get("options"))
+    if isinstance(options_val, str):
+        raw_options_text = options_val.strip()
+        if raw_options_text:
+            try:
+                options_val = json.loads(raw_options_text)
+            except Exception:
+                options_val = [line.strip() for line in raw_options_text.splitlines() if line.strip()]
+                if len(options_val) <= 1 and "," in raw_options_text:
+                    options_val = [part.strip() for part in raw_options_text.split(",") if part.strip()]
+        else:
+            options_val = []
+    if not isinstance(options_val, list):
+        options_val = ["True", "False"] if answer_type == "boolean" else []
+    correct_val = raw_question.get(
+        "correct_answer_json",
+        raw_question.get("correct_answer", raw_question.get("answer")),
+    )
+    try:
+        question_order = int(raw_question.get("question_order") or order)
+    except Exception:
+        question_order = order
+    return {
+        "id": None,
+        "question_order": question_order,
+        "question_text": question_text,
+        "answer_type": answer_type,
+        "options_json": options_val,
+        "correct_answer_json": correct_val if correct_val is not None else "",
+        "explanation": str(raw_question.get("explanation") or "").strip(),
+    }
+
+
+def _normalise_generated_education_day(
+    raw_generated: dict[str, object],
+    *,
+    day_index: int,
+    concept_key: str,
+    concept_label: str,
+    existing_level: str,
+) -> dict[str, object]:
+    generated = raw_generated.get("day") if isinstance(raw_generated.get("day"), dict) else raw_generated
+    raw_variants = generated.get("variants") if isinstance(generated.get("variants"), list) else []
+    if not raw_variants and any(generated.get(key) for key in ("title", "summary", "script", "action_prompt", "quiz")):
+        raw_variants = [generated]
+    if not raw_variants:
+        raise ValueError("LLM response did not include any lesson variants")
+
+    variants = []
+    for raw_variant in raw_variants[:4]:
+        if not isinstance(raw_variant, dict):
+            continue
+        quiz = raw_variant.get("quiz") if isinstance(raw_variant.get("quiz"), dict) else {}
+        raw_questions = quiz.get("questions") if isinstance(quiz.get("questions"), list) else []
+        questions = [
+            question
+            for question in (
+                _normalise_generated_question(raw_question, idx + 1)
+                for idx, raw_question in enumerate(raw_questions[:3])
+            )
+            if question is not None
+        ]
+        if not questions:
+            raise ValueError("LLM response did not include quiz questions")
+        try:
+            pass_score_pct = float(quiz.get("pass_score_pct") if quiz.get("pass_score_pct") not in (None, "") else 66.67)
+        except Exception:
+            pass_score_pct = 66.67
+        level = str(raw_variant.get("level") or existing_level or "build").strip().lower() or "build"
+        if level not in {"support", "foundation", "build", "perform"}:
+            level = existing_level if existing_level in {"support", "foundation", "build", "perform"} else "build"
+        is_active_raw = raw_variant.get("is_active", True)
+        is_active = str(is_active_raw).strip().lower() not in {"0", "false", "no", "off"}
+        variants.append(
+            {
+                "id": None,
+                "level": level,
+                "title": str(raw_variant.get("title") or raw_variant.get("default_title") or "").strip(),
+                "summary": str(raw_variant.get("summary") or raw_variant.get("default_summary") or "").strip(),
+                "script": str(raw_variant.get("script") or raw_variant.get("body") or "").strip(),
+                "action_prompt": str(raw_variant.get("action_prompt") or raw_variant.get("daily_action") or "").strip(),
+                "video_url": "",
+                "poster_url": "",
+                "avatar_character": str(raw_variant.get("avatar_character") or "").strip(),
+                "avatar_style": str(raw_variant.get("avatar_style") or "").strip(),
+                "avatar_voice": str(raw_variant.get("avatar_voice") or "").strip(),
+                "avatar_status": "",
+                "avatar_job_id": "",
+                "avatar_error": "",
+                "avatar_generated_at": "",
+                "avatar_source": "",
+                "avatar_summary_url": "",
+                "content_item_id": None,
+                "reset_avatar_media": True,
+                "takeaway_default": str(raw_variant.get("takeaway_default") or "").strip(),
+                "takeaway_if_low_score": str(raw_variant.get("takeaway_if_low_score") or "").strip(),
+                "takeaway_if_high_score": str(raw_variant.get("takeaway_if_high_score") or "").strip(),
+                "is_active": is_active,
+                "quiz": {
+                    "id": None,
+                    "pass_score_pct": pass_score_pct,
+                    "questions": questions,
+                },
+            }
+        )
+    if not variants:
+        raise ValueError("LLM response did not include usable lesson variants")
+    default_title = str(generated.get("default_title") or "").strip() or str(variants[0].get("title") or "").strip()
+    default_summary = str(generated.get("default_summary") or "").strip() or str(variants[0].get("summary") or "").strip()
+    try:
+        generated_day_index = int(generated.get("day_index") or day_index or 1)
+    except Exception:
+        generated_day_index = int(day_index or 1)
+    return {
+        "id": None,
+        "day_index": generated_day_index,
+        "concept_key": concept_key,
+        "concept_label": concept_label,
+        "lesson_goal": str(generated.get("lesson_goal") or "").strip(),
+        "default_title": default_title,
+        "default_summary": default_summary,
+        "variants": variants,
+    }
 
 
 def _truthy_form_value(value: object) -> bool:
@@ -1876,6 +2120,160 @@ async def refresh_education_programme_lesson_avatar(variant_id: int):
         raise HTTPException(400, str(exc))
 
 
+@admin.post("/education-programmes/day/llm-generate")
+async def generate_education_programme_day_with_llm(request: Request):
+    ensure_education_plan_schema()
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(400, f"Invalid JSON payload: {exc}")
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "JSON payload must be an object")
+
+    brief = str(payload.get("brief") or "").strip()
+    if not brief:
+        raise HTTPException(400, "brief is required")
+    existing_day = payload.get("existing_day") if isinstance(payload.get("existing_day"), dict) else {}
+    try:
+        day_index = int(payload.get("day_index") or existing_day.get("day_index") or 1)
+    except Exception:
+        day_index = 1
+    raw_existing_variants = existing_day.get("variants") if isinstance(existing_day.get("variants"), list) else []
+    existing_level = ""
+    if raw_existing_variants and isinstance(raw_existing_variants[0], dict):
+        existing_level = str(raw_existing_variants[0].get("level") or "").strip().lower()
+    if existing_level not in {"support", "foundation", "build", "perform"}:
+        existing_level = "build"
+
+    model_override = _normalize_model_override(str(payload.get("model_override") or ""))
+    concept_key = str(payload.get("programme_concept_key") or existing_day.get("concept_key") or "").strip().lower()
+    concept_label = str(payload.get("programme_concept_label") or existing_day.get("concept_label") or "").strip()
+    programme_context = {
+        "programme_name": str(payload.get("programme_name") or "").strip(),
+        "programme_code": str(payload.get("programme_code") or "").strip(),
+        "pillar_key": str(payload.get("pillar_key") or "").strip().lower(),
+        "programme_concept_key": concept_key,
+        "programme_concept_label": concept_label,
+        "selected_day_index": day_index,
+        "existing_day": _compact_education_day_for_llm(existing_day),
+        "task_description": brief,
+    }
+    output_schema = {
+        "day_index": day_index,
+        "lesson_goal": "string",
+        "default_title": "string",
+        "default_summary": "string",
+        "variants": [
+            {
+                "level": existing_level,
+                "title": "string",
+                "summary": "string",
+                "script": "string",
+                "action_prompt": "string",
+                "poster_url": "",
+                "avatar_character": "",
+                "avatar_style": "",
+                "avatar_voice": "",
+                "takeaway_default": "string",
+                "takeaway_if_low_score": "string",
+                "takeaway_if_high_score": "string",
+                "is_active": True,
+                "quiz": {
+                    "pass_score_pct": 66.67,
+                    "questions": [
+                        {
+                            "question_order": 1,
+                            "question_text": "string",
+                            "answer_type": "single_choice",
+                            "options_json": ["string", "string", "string", "string"],
+                            "correct_answer_json": "one exact option string",
+                            "explanation": "string",
+                        }
+                    ],
+                },
+            }
+        ],
+    }
+    prompt = (
+        "You are creating a HealthSense education programme day for the admin editor.\n"
+        "Return a single valid JSON object only. Do not use markdown, code fences, comments, or prose outside JSON.\n\n"
+        "Task:\n"
+        "- Regenerate the selected day entirely from the task_description.\n"
+        "- Use the existing day only for continuity with the programme; replace the lesson goal, title, summary, script, daily action, takeaways, and quiz.\n"
+        "- Generate one active variant unless the task_description explicitly asks for multiple variants.\n"
+        f"- Use the existing level '{existing_level}' unless the task_description explicitly asks for another level.\n"
+        "- Include exactly 3 quiz questions for each variant.\n"
+        "- Use answer_type='single_choice' unless the task_description clearly requires boolean or multi_choice.\n"
+        "- For single_choice questions, options_json must be an array of 4 short answer options.\n"
+        "- correct_answer_json must exactly match the correct option string for single_choice questions.\n"
+        "- Leave video_url, avatar_status, avatar_job_id, avatar_error, avatar_generated_at, avatar_source, and avatar_summary_url absent or empty.\n"
+        "- Use UK English, clear coaching language, and avoid diagnosis or medical claims.\n\n"
+        "CONTEXT_JSON:\n"
+        f"{json.dumps(programme_context, ensure_ascii=False, default=str)}\n\n"
+        "OUTPUT_SCHEMA_JSON:\n"
+        f"{json.dumps(output_schema, ensure_ascii=False)}\n"
+    )
+
+    try:
+        from . import llm as shared_llm
+
+        t0 = time.perf_counter()
+        resolved_model = shared_llm.resolve_model_name_for_touchpoint(
+            touchpoint=EDUCATION_DAY_LLM_TOUCHPOINT,
+            model_override=model_override,
+        )
+        client = shared_llm.get_llm_client(
+            touchpoint=EDUCATION_DAY_LLM_TOUCHPOINT,
+            model_override=model_override,
+        )
+        response = client.invoke(prompt)
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        content = _coerce_llm_content(getattr(response, "content", None)).strip()
+    except Exception as exc:
+        raise HTTPException(500, f"LLM day generation failed: {exc}")
+
+    try:
+        raw_generated = _extract_llm_json_object(content)
+        generated_day = _normalise_generated_education_day(
+            raw_generated,
+            day_index=day_index,
+            concept_key=concept_key,
+            concept_label=concept_label,
+            existing_level=existing_level,
+        )
+    except Exception as exc:
+        raise HTTPException(502, f"LLM response could not be used: {exc}")
+
+    try:
+        log_llm_prompt(
+            user_id=None,
+            touchpoint=EDUCATION_DAY_LLM_TOUCHPOINT,
+            prompt_text=prompt,
+            model=resolved_model,
+            duration_ms=duration_ms,
+            response_preview=content[:4000],
+            context_meta={
+                "programme_name": programme_context["programme_name"],
+                "programme_code": programme_context["programme_code"],
+                "pillar_key": programme_context["pillar_key"],
+                "programme_concept_key": concept_key,
+                "day_index": day_index,
+                "model_override": model_override,
+            },
+            prompt_variant="admin_editor",
+            task_label=brief[:160],
+            prompt_blocks={
+                "context": json.dumps(programme_context, ensure_ascii=False, default=str),
+                "task": brief,
+            },
+            block_order=["context", "task"],
+        )
+    except Exception:
+        pass
+
+    return {"ok": True, "model": resolved_model, "day": generated_day}
+
+
 @admin.get("/education-programmes/edit", response_class=HTMLResponse)
 def edit_education_programme(id: int | None = None):
     ensure_education_plan_schema()
@@ -1886,7 +2284,13 @@ def edit_education_programme(id: int | None = None):
             if row is None:
                 raise HTTPException(404, "Education programme not found")
         programme_payload = _education_programme_payload(s, row)
-        concept_options, content_options = _education_editor_options(s)
+        concept_options = _education_editor_options(s)
+    try:
+        from . import llm as shared_llm
+        default_day_llm_model = shared_llm.resolve_model_name_for_touchpoint(EDUCATION_DAY_LLM_TOUCHPOINT)
+    except Exception:
+        default_day_llm_model = "default"
+    day_llm_model_options_html = _llm_model_options_html(default_day_llm_model)
     title = "Edit Education Programme" if row is not None else "Create Education Programme"
     title += f": {html.escape(str(getattr(row, 'name', '') or '').strip())}" if row is not None else ""
     current_pillar = str(programme_payload.get("pillar_key") or "").strip().lower()
@@ -1978,21 +2382,49 @@ def edit_education_programme(id: int | None = None):
         </div>
       </div>
 
-      <div class='card' style='margin-bottom:12px;'>
-        <div class='stack' style='justify-content:space-between;'>
-          <div>
-            <h3 class='section-title'>Programme Days</h3>
-            <div class='subtle'>Each day inherits the programme concept. Add as many days as needed; the total programme length is derived from the configured day indexes.</div>
-          </div>
-          <div class='stack'>
-            <button type="button" class="secondary" id="add-day-button">Add Day</button>
-          </div>
-        </div>
-      </div>
-
       <div class="programme-days-shell">
-        <div id="programme-days-summary" class="programme-day-list"></div>
-        <div id="programme-days-root" class="programme-day-editor"></div>
+        <div class="card">
+          <div class='stack' style='justify-content:space-between; margin-bottom:12px;'>
+            <div>
+              <h3 class='section-title'>Programme days</h3>
+              <div class='subtle'>Review the programme as a day list. Select a day to open its edit card.</div>
+            </div>
+            <button type="button" class="secondary" id="add-day-button">Add day</button>
+          </div>
+          <div id="programme-days-summary" class="programme-day-list"></div>
+        </div>
+        <div class="card programme-day-detail-card" id="programme-day-detail-card">
+          <div class="stack" style="justify-content:space-between;">
+            <div>
+              <h3 class="section-title" id="programme-day-detail-title">Selected day</h3>
+              <div class="subtle" id="programme-day-detail-meta"></div>
+            </div>
+            <button type="button" class="secondary" id="programme-day-list-focus">Back to days</button>
+          </div>
+          <details class="programme-day-llm" id="programme-day-llm">
+            <summary>Regenerate selected day with LLM</summary>
+            <p class="help">Use a task description to draft the whole selected day again, including the lesson script, daily action, takeaways, and quiz questions. Review the draft in the editor, then save the programme.</p>
+            <div class="grid-2">
+              <div class="field">
+                <label>Model<br/>
+                  <select id="day-llm-model">
+                    {day_llm_model_options_html}
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="field">
+              <label>Task description<br/>
+                <textarea id="day-llm-brief" rows="4" placeholder="Example: Regenerate this day around sleep pressure and a consistent wake time for a build-level recovery programme."></textarea>
+              </label>
+            </div>
+            <div class="stack">
+              <button type="button" id="generate-selected-day-llm">Generate day draft</button>
+              <span class="subtle programme-day-llm-status" id="day-llm-status"></span>
+            </div>
+          </details>
+          <div id="programme-days-root" class="programme-day-editor"></div>
+        </div>
       </div>
 
       <div class='actions stack' style='margin-top:16px;'>
@@ -2019,14 +2451,20 @@ def edit_education_programme(id: int | None = None):
 
     <script id="education-programme-seed" type="application/json">{_json_script_content(structure_seed)}</script>
     <script id="education-concept-options" type="application/json">{_json_script_content(concept_options)}</script>
-    <script id="education-content-options" type="application/json">{_json_script_content(content_options)}</script>
     <script>
       (function() {{
         const seed = JSON.parse(document.getElementById('education-programme-seed').textContent || '{{}}');
         const conceptOptions = JSON.parse(document.getElementById('education-concept-options').textContent || '[]');
-        const contentOptions = JSON.parse(document.getElementById('education-content-options').textContent || '[]');
         const root = document.getElementById('programme-days-root');
         const summaryRoot = document.getElementById('programme-days-summary');
+        const dayDetailCard = document.getElementById('programme-day-detail-card');
+        const dayDetailTitle = document.getElementById('programme-day-detail-title');
+        const dayDetailMeta = document.getElementById('programme-day-detail-meta');
+        const dayListFocusButton = document.getElementById('programme-day-list-focus');
+        const dayLlmBrief = document.getElementById('day-llm-brief');
+        const dayLlmModel = document.getElementById('day-llm-model');
+        const dayLlmButton = document.getElementById('generate-selected-day-llm');
+        const dayLlmStatus = document.getElementById('day-llm-status');
         const form = document.getElementById('education-programme-form');
         const structureField = document.getElementById('structure_json');
         const programmeConceptInput = document.getElementById('programme_concept_key');
@@ -2090,6 +2528,7 @@ def edit_education_programme(id: int | None = None):
             avatar_source: '',
             avatar_summary_url: '',
             content_item_id: null,
+            reset_avatar_media: false,
             takeaway_default: '',
             takeaway_if_low_score: '',
             takeaway_if_high_score: '',
@@ -2183,48 +2622,8 @@ def edit_education_programme(id: int | None = None):
           }}
         }}
 
-        function contentChoices(pillarKey, conceptKey, selectedId) {{
-          const pillarToken = String(pillarKey || '').trim().toLowerCase();
-          const conceptToken = String(conceptKey || '').trim().toLowerCase();
-          const selectedToken = selectedId ? Number(selectedId) : null;
-          const matched = [];
-          const fallback = [];
-          for (const item of contentOptions) {{
-            const samePillar = String(item.pillar_key || '').toLowerCase() === pillarToken;
-            const sameConcept = conceptToken && String(item.concept_code || '').toLowerCase() === conceptToken;
-            if (samePillar && (sameConcept || selectedToken === Number(item.id))) {{
-              matched.push(item);
-            }} else if (samePillar) {{
-              fallback.push(item);
-            }}
-          }}
-          const combined = [...matched];
-          for (const item of fallback) {{
-            if (!combined.some((candidate) => Number(candidate.id) === Number(item.id))) {{
-              combined.push(item);
-            }}
-          }}
-          return combined;
-        }}
-
-        function dayConceptKey(day) {{
-          return selectedProgrammeConceptKey() || String(day?.concept_key || '').trim().toLowerCase();
-        }}
-
         function dayConceptLabel(day) {{
           return resolvedProgrammeConceptLabel() || String(day?.concept_label || '').trim();
-        }}
-
-        function renderContentSelect(day, variant) {{
-          const current = variant.content_item_id ? Number(variant.content_item_id) : null;
-          const options = contentChoices(selectedProgrammePillar(), dayConceptKey(day), current);
-          const empty = "<option value=''>No library fallback</option>";
-          const items = options.map((item) => {{
-            const selected = current === Number(item.id) ? 'selected' : '';
-            const label = `#${{item.id}} · ${{item.title}}${{item.level ? ` · ${{item.level}}` : ''}}${{item.status ? ` · ${{item.status}}` : ''}}`;
-            return `<option value="${{Number(item.id)}}" ${{selected}}>${{escapeHtml(label)}}</option>`;
-          }}).join('');
-          return `<select class="js-variant-content-item">${{empty}}${{items}}</select>`;
         }}
 
         function currentDayElements() {{
@@ -2262,10 +2661,22 @@ def edit_education_programme(id: int | None = None):
           if (!dayEls.length) {{
             selectedDayPosition = 0;
             summaryRoot.innerHTML = '<div class="programme-day-summary-empty">No days configured yet.</div>';
+            if (dayDetailCard) dayDetailCard.hidden = true;
             return;
           }}
+          if (dayDetailCard) dayDetailCard.hidden = false;
           selectedDayPosition = Math.min(Math.max(0, selectedDayPosition), dayEls.length - 1);
           const days = dayEls.map((dayEl) => collectDayData(dayEl));
+          const selectedDay = days[selectedDayPosition] || days[0];
+          if (dayDetailTitle && selectedDay) {{
+            const title = String(selectedDay.default_title || selectedDay.variants?.[0]?.title || '').trim() || 'Untitled lesson';
+            dayDetailTitle.textContent = `Day ${{selectedDay.day_index || selectedDayPosition + 1}} · ${{title}}`;
+          }}
+          if (dayDetailMeta && selectedDay) {{
+            const variantCount = Array.isArray(selectedDay.variants) ? selectedDay.variants.length : 0;
+            const concept = String(selectedDay.concept_label || resolvedProgrammeConceptLabel() || '').trim();
+            dayDetailMeta.textContent = [concept, `${{variantCount}} variant${{variantCount === 1 ? '' : 's'}}`].filter(Boolean).join(' · ');
+          }}
           summaryRoot.innerHTML = days.map((day, position) => {{
             const variants = Array.isArray(day.variants) ? day.variants : [];
             const levels = variants.map((variant) => String(variant.level || '').trim()).filter(Boolean).join(', ') || 'no variants';
@@ -2277,8 +2688,11 @@ def edit_education_programme(id: int | None = None):
             const status = dayVariantSummary(day);
             return `
               <button type="button" class="programme-day-summary js-select-day ${{position === selectedDayPosition ? 'is-selected' : ''}}" data-day-position="${{position}}">
-                <span class="programme-day-summary-title">Day ${{escapeHtml(day.day_index || position + 1)}}: ${{escapeHtml(title)}}</span>
-                <span class="programme-day-summary-meta">${{escapeHtml(levels)}} · ${{quizCount}} quiz question${{quizCount === 1 ? '' : 's'}}</span>
+                <span class="programme-day-summary-index">Day ${{escapeHtml(day.day_index || position + 1)}}</span>
+                <span>
+                  <span class="programme-day-summary-title">${{escapeHtml(title)}}</span>
+                  <span class="programme-day-summary-meta">${{escapeHtml(levels)}} · ${{quizCount}} quiz question${{quizCount === 1 ? '' : 's'}}</span>
+                </span>
                 <span class="programme-day-summary-status ${{escapeHtml(status.tone)}}">${{escapeHtml(status.label)}}</span>
               </button>
             `;
@@ -2297,6 +2711,7 @@ def edit_education_programme(id: int | None = None):
           }}
           selectedDayPosition = Math.min(Math.max(0, Number(position) || 0), dayEls.length - 1);
           renderDaySummaries();
+          dayDetailCard?.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
         }}
 
         function renderQuestion(question) {{
@@ -2349,6 +2764,7 @@ def edit_education_programme(id: int | None = None):
           return `
             <div class="lesson-variant js-variant">
               <input type="hidden" class="js-variant-id" value="${{escapeHtml(variant.id || '')}}" />
+              <input type="hidden" class="js-variant-reset-avatar-media" value="${{variant.reset_avatar_media ? '1' : ''}}" />
               <div class="stack" style="justify-content:space-between;">
                 <strong>Lesson Variant</strong>
                 <div class="stack">
@@ -2434,14 +2850,6 @@ def edit_education_programme(id: int | None = None):
                   </div>
                 </div>
               </div>
-
-              <details class="card" style="margin-top:10px; padding:12px 14px;">
-                <summary><strong>Legacy library fallback</strong></summary>
-                <p class="help">Optional fallback for old programmes. New education programmes should store their script and video on this lesson variant.</p>
-                <div class="field">
-                  <label>Library content fallback<br/>${{renderContentSelect(day, variant)}}</label>
-                </div>
-              </details>
 
               <div class="grid-3">
                 <div class="field">
@@ -2542,7 +2950,8 @@ def edit_education_programme(id: int | None = None):
                 avatar_generated_at: String(variantEl.querySelector('.js-variant-avatar-generated-at')?.value || '').trim(),
                 avatar_source: String(variantEl.querySelector('.js-variant-avatar-source')?.value || '').trim(),
                 avatar_summary_url: String(variantEl.querySelector('.js-variant-avatar-summary-url')?.value || '').trim(),
-                content_item_id: variantEl.querySelector('.js-variant-content-item')?.value ? Number(variantEl.querySelector('.js-variant-content-item').value) : null,
+                content_item_id: null,
+                reset_avatar_media: String(variantEl.querySelector('.js-variant-reset-avatar-media')?.value || '').trim() === '1',
                 takeaway_default: String(variantEl.querySelector('.js-variant-takeaway-default')?.value || '').trim(),
                 takeaway_if_low_score: String(variantEl.querySelector('.js-variant-takeaway-low')?.value || '').trim(),
                 takeaway_if_high_score: String(variantEl.querySelector('.js-variant-takeaway-high')?.value || '').trim(),
@@ -2571,20 +2980,8 @@ def edit_education_programme(id: int | None = None):
           const dayEls = Array.from(root.querySelectorAll(':scope > .js-day'));
           const days = dayEls
             .map((dayEl) => collectDayData(dayEl))
-            .filter((day) => day.day_index > 0 || day.default_title || day.lesson_goal || day.variants.some((variant) => variant.title || variant.script || variant.action_prompt || variant.video_url || variant.content_item_id || variant.takeaway_default));
+            .filter((day) => day.day_index > 0 || day.default_title || day.lesson_goal || day.variants.some((variant) => variant.title || variant.script || variant.action_prompt || variant.video_url || variant.takeaway_default));
           return {{ days }};
-        }}
-
-        function refreshContentSelectsWithinDay(dayEl) {{
-          const day = collectDayData(dayEl);
-          for (const variantEl of dayEl.querySelectorAll(':scope .js-variants-root > .js-variant')) {{
-            const select = variantEl.querySelector('.js-variant-content-item');
-            if (!select) continue;
-            const variant = {{
-              content_item_id: select.value ? Number(select.value) : null,
-            }};
-            select.outerHTML = renderContentSelect(day, variant);
-          }}
         }}
 
         function updateVariantAvatarFields(variantEl, avatar) {{
@@ -2738,6 +3135,179 @@ def edit_education_programme(id: int | None = None):
           }}
         }}
 
+        function normaliseGeneratedQuestions(generatedQuestions, existingQuestions) {{
+          const questions = Array.isArray(generatedQuestions) ? generatedQuestions : [];
+          const existing = Array.isArray(existingQuestions) ? existingQuestions : [];
+          return questions.slice(0, 3).map((question, index) => {{
+            const existingQuestion = existing[index] || {{}};
+            let options = question?.options_json;
+            if (options === undefined) options = question?.options;
+            if (typeof options === 'string') {{
+              try {{
+                options = JSON.parse(options);
+              }} catch (_err) {{
+                options = options.split('\\n').map((item) => item.trim()).filter(Boolean);
+              }}
+            }}
+            if (!Array.isArray(options)) {{
+              options = [];
+            }}
+            let correct = question?.correct_answer_json;
+            if (correct === undefined) correct = question?.correct_answer;
+            if (correct === undefined) correct = question?.answer;
+            return {{
+              id: existingQuestion.id || null,
+              question_order: Number(question?.question_order || index + 1),
+              question_text: String(question?.question_text || question?.question || question?.text || '').trim(),
+              answer_type: String(question?.answer_type || 'single_choice').trim() || 'single_choice',
+              options_json: options,
+              correct_answer_json: correct ?? '',
+              explanation: String(question?.explanation || '').trim(),
+            }};
+          }}).filter((question) => question.question_text);
+        }}
+
+        function normaliseGeneratedVariant(generatedVariant, existingVariant) {{
+          const generated = generatedVariant && typeof generatedVariant === 'object' ? generatedVariant : {{}};
+          const existing = existingVariant && typeof existingVariant === 'object' ? existingVariant : {{}};
+          const generatedQuiz = generated.quiz && typeof generated.quiz === 'object' ? generated.quiz : {{}};
+          const existingQuiz = existing.quiz && typeof existing.quiz === 'object' ? existing.quiz : {{}};
+          const existingQuestions = Array.isArray(existingQuiz.questions) ? existingQuiz.questions : [];
+          const generatedQuestions = Array.isArray(generatedQuiz.questions) ? generatedQuiz.questions : [];
+          const questions = normaliseGeneratedQuestions(generatedQuestions, existingQuestions);
+          const level = String(generated.level || existing.level || 'build').trim().toLowerCase() || 'build';
+          return {{
+            id: existing.id || null,
+            level,
+            title: String(generated.title || generated.default_title || '').trim(),
+            summary: String(generated.summary || generated.default_summary || '').trim(),
+            script: String(generated.script || generated.body || '').trim(),
+            action_prompt: String(generated.action_prompt || generated.daily_action || '').trim(),
+            video_url: '',
+            poster_url: '',
+            avatar_character: String(generated.avatar_character || existing.avatar_character || '').trim(),
+            avatar_style: String(generated.avatar_style || existing.avatar_style || '').trim(),
+            avatar_voice: String(generated.avatar_voice || existing.avatar_voice || '').trim(),
+            avatar_status: '',
+            avatar_job_id: '',
+            avatar_error: '',
+            avatar_generated_at: '',
+            avatar_source: '',
+            avatar_summary_url: '',
+            content_item_id: null,
+            reset_avatar_media: true,
+            takeaway_default: String(generated.takeaway_default || '').trim(),
+            takeaway_if_low_score: String(generated.takeaway_if_low_score || '').trim(),
+            takeaway_if_high_score: String(generated.takeaway_if_high_score || '').trim(),
+            is_active: generated.is_active === false ? false : true,
+            quiz: {{
+              id: existingQuiz.id || null,
+              pass_score_pct: generatedQuiz.pass_score_pct ?? existingQuiz.pass_score_pct ?? 66.67,
+              questions: questions.length ? questions : [emptyQuestion(1), emptyQuestion(2), emptyQuestion(3)],
+            }},
+          }};
+        }}
+
+        function normaliseGeneratedDayForEditor(generatedDay, existingDay) {{
+          const generated = generatedDay && typeof generatedDay === 'object' ? generatedDay : {{}};
+          const existing = existingDay && typeof existingDay === 'object' ? existingDay : {{}};
+          let generatedVariants = Array.isArray(generated.variants) ? generated.variants : [];
+          if (!generatedVariants.length && (generated.title || generated.summary || generated.script || generated.action_prompt || generated.quiz)) {{
+            generatedVariants = [generated];
+          }}
+          const existingVariants = Array.isArray(existing.variants) ? existing.variants : [];
+          const variants = generatedVariants.length
+            ? generatedVariants.map((variant, index) => normaliseGeneratedVariant(variant, existingVariants[index] || null))
+            : [normaliseGeneratedVariant({{}}, existingVariants[0] || emptyVariant())];
+          return {{
+            id: existing.id || null,
+            day_index: Number(generated.day_index || existing.day_index || selectedDayPosition + 1),
+            concept_key: selectedProgrammeConceptKey(),
+            concept_label: resolvedProgrammeConceptLabel(),
+            lesson_goal: String(generated.lesson_goal || '').trim(),
+            default_title: String(generated.default_title || variants[0]?.title || '').trim(),
+            default_summary: String(generated.default_summary || variants[0]?.summary || '').trim(),
+            variants,
+          }};
+        }}
+
+        function replaceSelectedDayWithGenerated(generatedDay) {{
+          const dayEl = selectedDayElement();
+          if (!dayEl) {{
+            window.alert('Select a programme day first.');
+            return;
+          }}
+          const existingDay = collectDayData(dayEl);
+          const replacement = normaliseGeneratedDayForEditor(generatedDay, existingDay);
+          dayEl.outerHTML = renderDay(replacement);
+          renderDaySummaries();
+          updateAllVariantAvatarReviewStates();
+          selectDay(selectedDayPosition);
+        }}
+
+        async function requestSelectedDayLlmGeneration() {{
+          const dayEl = selectedDayElement();
+          if (!dayEl) {{
+            window.alert('Select a programme day first.');
+            return;
+          }}
+          const brief = String(dayLlmBrief?.value || '').trim();
+          if (!brief) {{
+            window.alert('Add a task description before generating a day draft.');
+            dayLlmBrief?.focus();
+            return;
+          }}
+          const existingDay = collectDayData(dayEl);
+          const payload = {{
+            brief,
+            model_override: String(dayLlmModel?.value || '').trim(),
+            programme_name: String(form.querySelector('input[name="name"]')?.value || '').trim(),
+            programme_code: String(form.querySelector('input[name="code"]')?.value || '').trim(),
+            pillar_key: selectedProgrammePillar(),
+            programme_concept_key: selectedProgrammeConceptKey(),
+            programme_concept_label: resolvedProgrammeConceptLabel(),
+            day_index: existingDay.day_index || selectedDayPosition + 1,
+            existing_day: existingDay,
+          }};
+          const previousText = dayLlmButton ? dayLlmButton.textContent : '';
+          if (dayLlmButton) {{
+            dayLlmButton.disabled = true;
+            dayLlmButton.textContent = 'Generating...';
+          }}
+          if (dayLlmStatus) {{
+            dayLlmStatus.textContent = 'Generating day draft...';
+          }}
+          try {{
+            const response = await fetch('/admin/education-programmes/day/llm-generate', {{
+              method: 'POST',
+              headers: {{ 'Content-Type': 'application/json' }},
+              body: JSON.stringify(payload),
+            }});
+            const result = await response.json().catch(() => ({{}}));
+            if (!response.ok || result.ok === false) {{
+              throw new Error(String(result.error || result.detail || 'LLM day generation failed.'));
+            }}
+            if (!result.day) {{
+              throw new Error('LLM response did not include a day draft.');
+            }}
+            replaceSelectedDayWithGenerated(result.day);
+            if (dayLlmStatus) {{
+              dayLlmStatus.textContent = `Generated with ${{result.model || 'selected model'}}. Review the draft, then save.`;
+            }}
+          }} catch (err) {{
+            const message = err instanceof Error ? err.message : String(err);
+            if (dayLlmStatus) {{
+              dayLlmStatus.textContent = message;
+            }}
+            window.alert(message);
+          }} finally {{
+            if (dayLlmButton) {{
+              dayLlmButton.disabled = false;
+              dayLlmButton.textContent = previousText || 'Generate day draft';
+            }}
+          }}
+        }}
+
         function renderDays(days) {{
           const sortedDays = [...days]
             .sort((left, right) => Number(left.day_index || 0) - Number(right.day_index || 0));
@@ -2770,6 +3340,10 @@ def edit_education_programme(id: int | None = None):
           const button = target.closest('.js-select-day');
           if (!(button instanceof HTMLElement)) return;
           selectDay(Number(button.dataset.dayPosition || 0));
+        }});
+
+        dayListFocusButton?.addEventListener('click', function() {{
+          summaryRoot?.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
         }});
 
         root.addEventListener('click', function(event) {{
@@ -2871,6 +3445,10 @@ def edit_education_programme(id: int | None = None):
             if (variantEl) updateVariantAvatarReviewState(variantEl);
           }}
           renderDaySummaries();
+        }});
+
+        dayLlmButton?.addEventListener('click', function() {{
+          void requestSelectedDayLlmGeneration();
         }});
 
         reviewSelectedDayVideoButton?.addEventListener('click', openSelectedDayVideoReview);
@@ -3096,18 +3674,32 @@ async def save_education_programme(
                         return value
                     return str(current or "").strip() or None
 
-                variant_row.video_url = _preserve_runtime_text("video_url", getattr(variant_row, "video_url", None))
+                reset_avatar_media = _truthy_form_value(raw_variant.get("reset_avatar_media"))
+                if reset_avatar_media:
+                    variant_row.video_url = _raw_variant_text("video_url") or None
+                else:
+                    variant_row.video_url = _preserve_runtime_text("video_url", getattr(variant_row, "video_url", None))
                 variant_row.poster_url = str(raw_variant.get("poster_url") or "").strip() or None
                 variant_row.avatar_character = str(raw_variant.get("avatar_character") or "").strip() or None
                 variant_row.avatar_style = str(raw_variant.get("avatar_style") or "").strip() or None
                 variant_row.avatar_voice = str(raw_variant.get("avatar_voice") or "").strip() or None
-                variant_row.avatar_status = _preserve_runtime_text("avatar_status", getattr(variant_row, "avatar_status", None))
-                variant_row.avatar_job_id = _preserve_runtime_text("avatar_job_id", getattr(variant_row, "avatar_job_id", None))
+                if reset_avatar_media:
+                    variant_row.avatar_status = _raw_variant_text("avatar_status") or None
+                    variant_row.avatar_job_id = _raw_variant_text("avatar_job_id") or None
+                else:
+                    variant_row.avatar_status = _preserve_runtime_text("avatar_status", getattr(variant_row, "avatar_status", None))
+                    variant_row.avatar_job_id = _preserve_runtime_text("avatar_job_id", getattr(variant_row, "avatar_job_id", None))
                 variant_row.avatar_error = str(raw_variant.get("avatar_error") or "").strip() or None
-                variant_row.avatar_source = _preserve_runtime_text("avatar_source", getattr(variant_row, "avatar_source", None))
-                variant_row.avatar_summary_url = _preserve_runtime_text("avatar_summary_url", getattr(variant_row, "avatar_summary_url", None))
+                if reset_avatar_media:
+                    variant_row.avatar_source = _raw_variant_text("avatar_source") or None
+                    variant_row.avatar_summary_url = _raw_variant_text("avatar_summary_url") or None
+                else:
+                    variant_row.avatar_source = _preserve_runtime_text("avatar_source", getattr(variant_row, "avatar_source", None))
+                    variant_row.avatar_summary_url = _preserve_runtime_text("avatar_summary_url", getattr(variant_row, "avatar_summary_url", None))
                 avatar_generated_at = _raw_variant_text("avatar_generated_at")
-                if avatar_generated_at:
+                if reset_avatar_media:
+                    variant_row.avatar_generated_at = None
+                elif avatar_generated_at:
                     try:
                         variant_row.avatar_generated_at = datetime.fromisoformat(avatar_generated_at)
                     except Exception:
