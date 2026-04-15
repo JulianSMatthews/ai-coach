@@ -993,15 +993,28 @@ def upsert_apple_health_resting_hr_samples(
             or sample.get("heartRateVariabilityMs")
         )
         steps = _coerce_int(sample.get("steps"))
+        active_minutes = None
+        for active_minutes_key in (
+            "active_minutes",
+            "activeMinutes",
+            "active_cardio_minutes",
+            "activeCardioMinutes",
+            "appleExerciseMinutes",
+        ):
+            if sample.get(active_minutes_key) is not None:
+                active_minutes = _coerce_int(sample.get(active_minutes_key))
+                break
         if not metric_date or (
             (resting_hr_bpm is None or resting_hr_bpm <= 0)
             and (hrv_ms is None or hrv_ms <= 0)
             and steps is None
+            and active_minutes is None
         ):
             continue
         normalized_bpm = round(float(resting_hr_bpm), 2) if resting_hr_bpm is not None and resting_hr_bpm > 0 else None
         normalized_hrv = round(float(hrv_ms), 2) if hrv_ms is not None and hrv_ms > 0 else None
         normalized_steps = int(max(0, steps)) if steps is not None else None
+        normalized_active_minutes = int(max(0, active_minutes)) if active_minutes is not None else None
         _merge_day_patch(
             day_map,
             metric_date=metric_date,
@@ -1011,11 +1024,13 @@ def upsert_apple_health_resting_hr_samples(
                 "resting_hr_bpm": normalized_bpm,
                 "hrv_ms": normalized_hrv,
                 "steps": normalized_steps,
+                "active_minutes": normalized_active_minutes,
             },
             patch={
                 "resting_hr_bpm": normalized_bpm,
                 "hrv_ms": normalized_hrv,
                 "steps": normalized_steps,
+                "active_minutes": normalized_active_minutes,
             },
         )
     _mark_native_connection_connected(connection, native_source="ios_healthkit", last_sync_at=synced_at)
@@ -1161,6 +1176,18 @@ def get_apple_health_resting_hr_summary(
         .all()
     )
     latest_step_row = step_rows[0] if step_rows else None
+    active_minutes_rows = (
+        session.query(WearableDailyMetric)
+        .filter(
+            WearableDailyMetric.user_id == int(user_id),
+            WearableDailyMetric.provider == APPLE_HEALTH_PROVIDER,
+            WearableDailyMetric.active_minutes.isnot(None),
+        )
+        .order_by(WearableDailyMetric.metric_date.desc())
+        .limit(7)
+        .all()
+    )
+    latest_active_minutes_row = active_minutes_rows[0] if active_minutes_rows else None
     today_row = (
         session.query(WearableDailyMetric)
         .filter(
@@ -1183,6 +1210,20 @@ def get_apple_health_resting_hr_summary(
         if today_row and getattr(today_row, "steps", None) is not None and getattr(today_row, "metric_date", None)
         else latest_step_row.metric_date.isoformat()
         if latest_step_row and getattr(latest_step_row, "metric_date", None)
+        else None
+    )
+    active_minutes_today = (
+        int(today_row.active_minutes)
+        if today_row and getattr(today_row, "active_minutes", None) is not None
+        else int(latest_active_minutes_row.active_minutes)
+        if latest_active_minutes_row and getattr(latest_active_minutes_row, "active_minutes", None) is not None
+        else None
+    )
+    active_minutes_metric_date = (
+        today_row.metric_date.isoformat()
+        if today_row and getattr(today_row, "active_minutes", None) is not None and getattr(today_row, "metric_date", None)
+        else latest_active_minutes_row.metric_date.isoformat()
+        if latest_active_minutes_row and getattr(latest_active_minutes_row, "metric_date", None)
         else None
     )
     history = [
@@ -1257,6 +1298,14 @@ def get_apple_health_resting_hr_summary(
         for row in reversed(step_rows[:7])
         if getattr(row, "metric_date", None) is not None and getattr(row, "steps", None) is not None
     ]
+    active_minutes_history = [
+        {
+            "metric_date": row.metric_date.isoformat() if getattr(row, "metric_date", None) else None,
+            "active_minutes": int(row.active_minutes) if getattr(row, "active_minutes", None) is not None else None,
+        }
+        for row in reversed(active_minutes_rows[:7])
+        if getattr(row, "metric_date", None) is not None and getattr(row, "active_minutes", None) is not None
+    ]
     return {
         "provider": APPLE_HEALTH_PROVIDER,
         "connected": connected,
@@ -1269,7 +1318,12 @@ def get_apple_health_resting_hr_summary(
         "trend_status": trend_status if latest_row else None,
         "trend_label": trend_label if latest_row else None,
         "synced_at": latest_row.synced_at.isoformat() if latest_row and latest_row.synced_at else None,
-        "available": latest_row is not None or latest_hrv_row is not None or latest_step_row is not None,
+        "available": (
+            latest_row is not None
+            or latest_hrv_row is not None
+            or latest_step_row is not None
+            or latest_active_minutes_row is not None
+        ),
         "hrv_metric_date": latest_hrv_row.metric_date.isoformat() if latest_hrv_row else None,
         "hrv_ms": latest_hrv_value,
         "baseline_hrv_ms": hrv_baseline_value,
@@ -1279,9 +1333,12 @@ def get_apple_health_resting_hr_summary(
         "hrv_synced_at": latest_hrv_row.synced_at.isoformat() if latest_hrv_row and latest_hrv_row.synced_at else None,
         "steps_today": steps_today,
         "steps_metric_date": steps_metric_date,
+        "active_minutes_today": active_minutes_today,
+        "active_minutes_metric_date": active_minutes_metric_date,
         "history": history,
         "hrv_history": hrv_history,
         "steps_history": steps_history,
+        "active_minutes_history": active_minutes_history,
     }
 
 

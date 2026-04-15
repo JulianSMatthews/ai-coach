@@ -37,8 +37,9 @@ type MorningSequenceState = "idle" | "in_progress" | "completed";
 type DisplayTheme = "light" | "dark";
 type ObjectivesSectionKey = "nutrition" | "training" | "resilience" | "recovery" | "wellbeing";
 type UrineCaptureState = "ready" | "timing" | "saving" | "queued" | "analysed" | "review" | "error";
-type BiomarkerExplanationKey = "rhr" | "hrv" | "steps" | "urine";
+type BiomarkerExplanationKey = "rhr" | "hrv" | "active_minutes" | "steps" | "urine";
 type BiomarkerExplanationTone = "purple" | "green" | "amber" | "red" | "neutral";
+type TrainingReadinessStatus = "ready" | "moderate" | "low";
 type BiomarkerExplanationScaleRow = {
   marker: string;
   status: string;
@@ -172,6 +173,87 @@ function formatFullStepCount(value?: number | null): string | null {
   const resolved = Number(value);
   if (!Number.isFinite(resolved) || resolved < 0) return null;
   return Math.round(resolved).toLocaleString("en-GB");
+}
+
+function formatActiveMinutes(value?: number | null): string {
+  const resolved = Number(value);
+  if (!Number.isFinite(resolved) || resolved < 0) return "—";
+  return String(Math.round(resolved));
+}
+
+function resolveActiveMinutesStatus(value?: number | null): StepsStatus {
+  const resolved = Number(value);
+  if (!Number.isFinite(resolved) || resolved < 10) return null;
+  if (resolved >= 30) return "optimal";
+  if (resolved >= 20) return "strong";
+  return "base";
+}
+
+function resolveActiveMinutesStatusDescription(status: StepsStatus): string {
+  if (status === "optimal") return "optimal";
+  if (status === "strong") return "strong";
+  if (status === "base") return "base";
+  return "below base";
+}
+
+function formatFullActiveMinutes(value?: number | null): string | null {
+  const resolved = Number(value);
+  if (!Number.isFinite(resolved) || resolved < 0) return null;
+  return Math.round(resolved).toLocaleString("en-GB");
+}
+
+function resolveTrainingReadinessStatus(
+  hrvStatus?: string | null,
+  restingHeartRateStatus?: string | null,
+): TrainingReadinessStatus {
+  const resolvedHrvStatus = String(hrvStatus || "").trim().toLowerCase();
+  const resolvedRestingHeartRateStatus = String(restingHeartRateStatus || "").trim().toLowerCase();
+  const hrvAboveNormal = resolvedHrvStatus === "optimum";
+  const hrvDown = resolvedHrvStatus === "elevated";
+  const restingHeartRateAtOrBelowNormal =
+    resolvedRestingHeartRateStatus === "optimum" || resolvedRestingHeartRateStatus === "normal";
+  const restingHeartRateElevated = resolvedRestingHeartRateStatus === "elevated";
+  if (hrvAboveNormal && restingHeartRateAtOrBelowNormal) return "ready";
+  if (hrvDown && restingHeartRateElevated) return "low";
+  return "moderate";
+}
+
+function resolveTrainingReadinessLabel(status: TrainingReadinessStatus): string {
+  if (status === "ready") return "Ready";
+  if (status === "low") return "Low";
+  return "Moderate";
+}
+
+function resolveTrainingReadinessAction(status: TrainingReadinessStatus): string {
+  if (status === "ready") return "Push intensity";
+  if (status === "low") return "Recover / avoid intensity";
+  return "Train, but control intensity";
+}
+
+function resolveTrainingReadinessTone(theme: DisplayTheme, status: TrainingReadinessStatus): string {
+  if (status === "ready") {
+    return theme === "dark"
+      ? "border-[#405b35] bg-[#1f2b1d] text-[#d9f0c5]"
+      : "border-[#cfe7ba] bg-[#f2fae8] text-[#335f16]";
+  }
+  if (status === "low") {
+    return theme === "dark"
+      ? "border-[#4f3f84] bg-[#211a35] text-[#d8c9ff]"
+      : "border-[#ded4ff] bg-[#f5f0ff] text-[#5a3da7]";
+  }
+  return theme === "dark"
+    ? "border-[#6b5133] bg-[#2e241a] text-[#ffd3ad]"
+    : "border-[#f2dccb] bg-[#fff4ea] text-[#8a5a1a]";
+}
+
+function resolveTrainingReadinessDot(theme: DisplayTheme, status: TrainingReadinessStatus): string {
+  if (status === "ready") {
+    return theme === "dark" ? "bg-[#d9f0c5]" : "bg-[#69a23a]";
+  }
+  if (status === "low") {
+    return theme === "dark" ? "bg-[#c7b0ff]" : "bg-[#6b4cc2]";
+  }
+  return theme === "dark" ? "bg-[#ffd3ad]" : "bg-[#f0b35f]";
 }
 
 function resolveUrineCaptureTone(theme: DisplayTheme, state: UrineCaptureState): string {
@@ -1091,6 +1173,7 @@ export default function LatestAssessmentPanel({
   const restingHeartRateValue = resolveRestingHeartRateValue(restingHeartRate?.resting_hr_bpm);
   const heartRateVariabilityValue = resolveHeartRateVariabilityValue(restingHeartRate?.hrv_ms);
   const latestHrvMetricDate = String(restingHeartRate?.hrv_metric_date || "").trim();
+  const latestActiveMinutesMetricDate = String(restingHeartRate?.active_minutes_metric_date || "").trim();
   const latestStepsMetricDate = String(restingHeartRate?.steps_metric_date || "").trim();
   const restingHeartRateHistory = useMemo(
     () =>
@@ -1126,6 +1209,18 @@ export default function LatestAssessmentPanel({
         : [],
     [restingHeartRate?.steps_history],
   );
+  const activeMinutesHistory = useMemo(
+    () =>
+      Array.isArray(restingHeartRate?.active_minutes_history)
+        ? restingHeartRate.active_minutes_history.filter(
+            (item) =>
+              Boolean(String(item?.metric_date || "").trim()) &&
+              Number.isFinite(Number(item?.active_minutes)) &&
+              Number(item?.active_minutes) >= 0,
+          )
+        : [],
+    [restingHeartRate?.active_minutes_history],
+  );
   const resolvedLatestHrvMetricDate = useMemo(() => {
     if (latestHrvMetricDate) return latestHrvMetricDate;
     const latestHrvEntry = [...heartRateVariabilityHistory]
@@ -1138,6 +1233,12 @@ export default function LatestAssessmentPanel({
       .sort((left, right) => String(right?.metric_date || "").localeCompare(String(left?.metric_date || "")))[0];
     return String(latestStepEntry?.metric_date || "").trim();
   }, [latestStepsMetricDate, stepsHistory]);
+  const resolvedLatestActiveMinutesMetricDate = useMemo(() => {
+    if (latestActiveMinutesMetricDate) return latestActiveMinutesMetricDate;
+    const latestActiveMinutesEntry = [...activeMinutesHistory]
+      .sort((left, right) => String(right?.metric_date || "").localeCompare(String(left?.metric_date || "")))[0];
+    return String(latestActiveMinutesEntry?.metric_date || "").trim();
+  }, [activeMinutesHistory, latestActiveMinutesMetricDate]);
   const restingHeartRateWeek = useMemo(
     () => buildBiometricWeek(restingHeartRateHistory, restingHeartRate?.metric_date),
     [restingHeartRate?.metric_date, restingHeartRateHistory],
@@ -1156,6 +1257,20 @@ export default function LatestAssessmentPanel({
       null,
     [heartRateVariabilityHistory, resolvedLatestHrvMetricDate],
   );
+  const activeMinutesWeek = useMemo(
+    () => buildBiometricWeek(activeMinutesHistory, resolvedLatestActiveMinutesMetricDate),
+    [activeMinutesHistory, resolvedLatestActiveMinutesMetricDate],
+  );
+  const latestActiveMinutesItem = useMemo(
+    () =>
+      activeMinutesHistory.find(
+        (item) => String(item?.metric_date || "").trim() === resolvedLatestActiveMinutesMetricDate,
+      ) ||
+      [...activeMinutesHistory]
+        .sort((left, right) => String(right?.metric_date || "").localeCompare(String(left?.metric_date || "")))[0] ||
+      null,
+    [activeMinutesHistory, resolvedLatestActiveMinutesMetricDate],
+  );
   const stepsWeek = useMemo(
     () => buildBiometricWeek(stepsHistory, resolvedLatestStepsMetricDate),
     [resolvedLatestStepsMetricDate, stepsHistory],
@@ -1171,6 +1286,12 @@ export default function LatestAssessmentPanel({
     [resolvedLatestStepsMetricDate, stepsHistory],
   );
   const restingHeartRateBoxToneClassName = resolveRestingHeartRateBoxTone(displayTheme);
+  const trainingReadinessStatus = resolveTrainingReadinessStatus(
+    latestHrvItem?.trend_status || restingHeartRate?.hrv_trend_status,
+    restingHeartRate?.trend_status,
+  );
+  const trainingReadinessToneClassName = resolveTrainingReadinessTone(displayTheme, trainingReadinessStatus);
+  const trainingReadinessDotClassName = resolveTrainingReadinessDot(displayTheme, trainingReadinessStatus);
   const urineMarkers = useMemo(
     () => normalizeUrineMarkers(urineTest?.markers),
     [urineTest?.markers],
@@ -1222,6 +1343,11 @@ export default function LatestAssessmentPanel({
   const hrvExplanationResult = latestHrvValue
     ? `Latest result: ${latestHrvValue} ms, currently shown as ${resolveRestingHeartRateTrendLabel(latestHrvItem?.trend_label || restingHeartRate?.hrv_trend_label)}. HRV is compared with your own 7-14 day baseline; higher than your recent pattern usually suggests better recovery, while a suppressed reading can reflect stress, illness, poor sleep, alcohol, dehydration, or training load.`
     : "Latest result: no current HRV is available yet. Once Apple Health syncs enough readings, this section will compare HRV with your recent 7-14 day baseline.";
+  const latestActiveMinutesValue = formatFullActiveMinutes(latestActiveMinutesItem?.active_minutes);
+  const latestActiveMinutesStatus = resolveActiveMinutesStatus(latestActiveMinutesItem?.active_minutes);
+  const activeMinutesExplanationResult = latestActiveMinutesValue
+    ? `Latest result: ${latestActiveMinutesValue} minutes, currently shown as ${resolveActiveMinutesStatusDescription(latestActiveMinutesStatus)}. Active cardio minutes show deliberate higher-effort movement from Apple Health exercise time.`
+    : "Latest result: no recent active cardio minutes are available yet. Once Apple Health syncs exercise time, this section shows daily training minutes.";
   const latestStepsValue = formatFullStepCount(latestStepsItem?.steps);
   const latestStepsStatus = resolveStepsStatus(latestStepsItem?.steps);
   const stepsExplanationResult = latestStepsValue
@@ -1271,6 +1397,32 @@ export default function LatestAssessmentPanel({
       status: "Suppressed",
       tone: "amber",
       meaning: "Lower than usual; consider sleep, stress, hydration, illness, alcohol, or training load.",
+    },
+  ];
+  const activeMinutesExplanationScaleRows: BiomarkerExplanationScaleRow[] = [
+    {
+      marker: "Active cardio",
+      status: "Optimal",
+      tone: "purple",
+      meaning: "30+ minutes; strong deliberate training volume for the day.",
+    },
+    {
+      marker: "Active cardio",
+      status: "Strong",
+      tone: "green",
+      meaning: "20-29 minutes; a solid training or conditioning day.",
+    },
+    {
+      marker: "Active cardio",
+      status: "Base",
+      tone: "amber",
+      meaning: "10-19 minutes; some useful higher-effort movement.",
+    },
+    {
+      marker: "Active cardio",
+      status: "Below",
+      tone: "neutral",
+      meaning: "Below 10 minutes; useful context for training consistency rather than a score by itself.",
     },
   ];
   const stepsExplanationScaleRows: BiomarkerExplanationScaleRow[] = [
@@ -1451,6 +1603,14 @@ export default function LatestAssessmentPanel({
             description: "HRV is heart rate variability, measured in milliseconds. HealthSense compares it with your own recent 7-14 day baseline rather than using one fixed target.",
             result: hrvExplanationResult,
             scaleRows: hrvExplanationScaleRows,
+            showMarkerColumn: false,
+          }
+      : activeBiomarkerExplanation === "active_minutes"
+        ? {
+            title: "Active cardio minutes",
+            description: "Active cardio minutes come from Apple Health exercise time. They show higher-effort movement and sit alongside steps as training-volume context.",
+            result: activeMinutesExplanationResult,
+            scaleRows: activeMinutesExplanationScaleRows,
             showMarkerColumn: false,
           }
       : activeBiomarkerExplanation === "steps"
@@ -2503,64 +2663,138 @@ export default function LatestAssessmentPanel({
                   </div>
                 ) : (
                   <>
-                    <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-[#1e1b16]">Resting HR</p>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setActiveBiomarkerExplanation((current) => (current === "rhr" ? null : "rhr"))
-                        }
-                        className={biomarkerExplanationButtonClassName}
-                      >
-                        Explain
-                      </button>
-                      <p className="text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
-                        Last 7 days
-                      </p>
-                    </div>
-                  </div>
-                  {restingHeartRateHistory.length ? (
-                    <div className="mt-4 grid grid-cols-7 gap-2">
-                      {restingHeartRateWeek.map(({ metric_date: metricDate, item }) => {
-                        const value = resolveRestingHeartRateValue(item?.resting_hr_bpm);
-                        const metricToneClassName = resolveRestingHeartRateMetricTone(
-                          displayTheme,
-                          item?.trend_status,
-                        );
-                        return (
-                          <div
-                            key={`resting-hr-${metricDate}`}
-                            className={`rounded-xl border px-2 py-2 text-center text-[11px] ${restingHeartRateBoxToneClassName}`}
-                          >
-                            <p className="font-semibold opacity-80">{formatBiometricDayLabel(metricDate)}</p>
-                            <p className="mt-1 opacity-65">{formatBiometricDayNumber(metricDate)}</p>
-                            <p className={`mt-3 text-sm font-semibold leading-none ${metricToneClassName}`}>
-                              {value || "—"}
-                            </p>
-                            <p className={`mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] ${metricToneClassName}`}>
-                              {value ? resolveRestingHeartRateCompactTrendLabel(item?.trend_label) : "—"}
+                    <div className="rounded-[24px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">
+                            Training readiness status
+                          </p>
+                          <p className="mt-1 text-sm text-[#6b6257]">
+                            HRV and Resting HR set today&apos;s intensity guide.
+                          </p>
+                        </div>
+                        <div className={`rounded-2xl border px-4 py-3 ${trainingReadinessToneClassName}`}>
+                          <div className="flex items-center gap-2">
+                            <span className={`h-2.5 w-2.5 rounded-full ${trainingReadinessDotClassName}`} />
+                            <p className="text-sm font-semibold">{resolveTrainingReadinessLabel(trainingReadinessStatus)}</p>
+                          </div>
+                          <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em]">
+                            {resolveTrainingReadinessAction(trainingReadinessStatus)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 border-t border-[#efe7db] pt-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-[#1e1b16]">Resting HR</p>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setActiveBiomarkerExplanation((current) => (current === "rhr" ? null : "rhr"))
+                              }
+                              className={biomarkerExplanationButtonClassName}
+                            >
+                              Explain
+                            </button>
+                            <p className="text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
+                              Last 7 days
                             </p>
                           </div>
-                        );
-                      })}
+                        </div>
+                        {restingHeartRateHistory.length ? (
+                          <div className="mt-4 grid grid-cols-7 gap-2">
+                            {restingHeartRateWeek.map(({ metric_date: metricDate, item }) => {
+                              const value = resolveRestingHeartRateValue(item?.resting_hr_bpm);
+                              const metricToneClassName = resolveRestingHeartRateMetricTone(
+                                displayTheme,
+                                item?.trend_status,
+                              );
+                              return (
+                                <div
+                                  key={`resting-hr-${metricDate}`}
+                                  className={`rounded-xl border px-2 py-2 text-center text-[11px] ${restingHeartRateBoxToneClassName}`}
+                                >
+                                  <p className="font-semibold opacity-80">{formatBiometricDayLabel(metricDate)}</p>
+                                  <p className="mt-1 opacity-65">{formatBiometricDayNumber(metricDate)}</p>
+                                  <p className={`mt-3 text-sm font-semibold leading-none ${metricToneClassName}`}>
+                                    {value || "—"}
+                                  </p>
+                                  <p className={`mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] ${metricToneClassName}`}>
+                                    {value ? resolveRestingHeartRateCompactTrendLabel(item?.trend_label) : "—"}
+                                  </p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-sm text-[#6b6257]">
+                            Daily history will appear here once recent biometrics have been synced.
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="mt-5 border-t border-[#efe7db] pt-4">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-semibold text-[#1e1b16]">HRV</p>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setActiveBiomarkerExplanation((current) => (current === "hrv" ? null : "hrv"))
+                              }
+                              className={biomarkerExplanationButtonClassName}
+                            >
+                              Explain
+                            </button>
+                            <p className="text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
+                              Last 7 days
+                            </p>
+                          </div>
+                        </div>
+                        {heartRateVariabilityHistory.length ? (
+                          <div className="mt-4 grid grid-cols-7 gap-2">
+                            {heartRateVariabilityWeek.map(({ metric_date: metricDate, item }) => {
+                              const value = resolveHeartRateVariabilityValue(item?.hrv_ms);
+                              const metricToneClassName = resolveRestingHeartRateMetricTone(
+                                displayTheme,
+                                item?.trend_status,
+                              );
+                              return (
+                                <div
+                                  key={`hrv-${metricDate}`}
+                                  className={`rounded-xl border px-2 py-2 text-center text-[11px] ${restingHeartRateBoxToneClassName}`}
+                                >
+                                  <p className="font-semibold opacity-80">{formatBiometricDayLabel(metricDate)}</p>
+                                  <p className="mt-1 opacity-65">{formatBiometricDayNumber(metricDate)}</p>
+                                  <p className={`mt-3 text-sm font-semibold leading-none ${metricToneClassName}`}>
+                                    {value || "—"}
+                                  </p>
+                                  <p className={`mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] ${metricToneClassName}`}>
+                                    {value ? resolveRestingHeartRateCompactTrendLabel(item?.trend_label) : "—"}
+                                  </p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="mt-3 text-sm text-[#6b6257]">
+                            Daily HRV history will appear here once recent biometrics have been synced.
+                          </p>
+                        )}
+                      </div>
                     </div>
-                  ) : (
-                    <p className="mt-3 text-sm text-[#6b6257]">
-                      Daily history will appear here once recent biometrics have been synced.
-                    </p>
-                  )}
-                </div>
 
                 <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-[#1e1b16]">HRV</p>
+                    <p className="text-sm font-semibold text-[#1e1b16]">Active cardio mins</p>
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() =>
-                          setActiveBiomarkerExplanation((current) => (current === "hrv" ? null : "hrv"))
+                          setActiveBiomarkerExplanation((current) =>
+                            current === "active_minutes" ? null : "active_minutes",
+                          )
                         }
                         className={biomarkerExplanationButtonClassName}
                       >
@@ -2571,26 +2805,25 @@ export default function LatestAssessmentPanel({
                       </p>
                     </div>
                   </div>
-                  {heartRateVariabilityHistory.length ? (
+                  {activeMinutesHistory.length ? (
                     <div className="mt-4 grid grid-cols-7 gap-2">
-                      {heartRateVariabilityWeek.map(({ metric_date: metricDate, item }) => {
-                        const value = resolveHeartRateVariabilityValue(item?.hrv_ms);
-                        const metricToneClassName = resolveRestingHeartRateMetricTone(
-                          displayTheme,
-                          item?.trend_status,
-                        );
+                      {activeMinutesWeek.map(({ metric_date: metricDate, item }) => {
+                        const rawActiveMinutes = Number(item?.active_minutes);
+                        const value = formatActiveMinutes(item?.active_minutes);
+                        const activeMinutesStatus = resolveActiveMinutesStatus(rawActiveMinutes);
+                        const metricToneClassName = resolveStepsMetricTone(displayTheme, activeMinutesStatus);
                         return (
                           <div
-                            key={`hrv-${metricDate}`}
+                            key={`active-minutes-${metricDate}`}
                             className={`rounded-xl border px-2 py-2 text-center text-[11px] ${restingHeartRateBoxToneClassName}`}
                           >
                             <p className="font-semibold opacity-80">{formatBiometricDayLabel(metricDate)}</p>
                             <p className="mt-1 opacity-65">{formatBiometricDayNumber(metricDate)}</p>
-                            <p className={`mt-3 text-sm font-semibold leading-none ${metricToneClassName}`}>
-                              {value || "—"}
+                            <p className={`mt-3 whitespace-nowrap text-[12px] font-semibold leading-none ${metricToneClassName}`}>
+                              {value}
                             </p>
-                            <p className={`mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] ${metricToneClassName}`}>
-                              {value ? resolveRestingHeartRateCompactTrendLabel(item?.trend_label) : "—"}
+                            <p className={`mt-2 min-h-[0.75rem] text-[10px] font-semibold uppercase tracking-[0.12em] ${metricToneClassName}`}>
+                              {resolveCompactStepsStatusLabel(activeMinutesStatus)}
                             </p>
                           </div>
                         );
@@ -2598,7 +2831,7 @@ export default function LatestAssessmentPanel({
                     </div>
                   ) : (
                     <p className="mt-3 text-sm text-[#6b6257]">
-                      Daily HRV history will appear here once recent biometrics have been synced.
+                      Daily active cardio minutes will appear here once recent biometrics have been synced.
                     </p>
                   )}
                 </div>

@@ -17,6 +17,7 @@ export type AppleHealthRestingHeartRateSample = {
   restingHeartRateBpm?: number;
   heartRateVariabilityMs?: number;
   steps?: number;
+  activeCardioMinutes?: number;
 };
 
 type AppleHealthPlugin = {
@@ -91,13 +92,18 @@ export async function syncAppleHealthRestingHeartRate(
             sample?.steps === null || sample?.steps === undefined
               ? null
               : Number(sample?.steps),
+          active_minutes:
+            sample?.activeCardioMinutes === null || sample?.activeCardioMinutes === undefined
+              ? null
+              : Number(sample?.activeCardioMinutes),
         }))
         .filter(
           (sample) =>
             Boolean(sample.metric_date) &&
             ((Number.isFinite(Number(sample.resting_hr_bpm)) && Number(sample.resting_hr_bpm) > 0) ||
               (Number.isFinite(Number(sample.hrv_ms)) && Number(sample.hrv_ms) > 0) ||
-              (Number.isFinite(Number(sample.steps)) && Number(sample.steps) >= 0)),
+              (Number.isFinite(Number(sample.steps)) && Number(sample.steps) >= 0) ||
+              (Number.isFinite(Number(sample.active_minutes)) && Number(sample.active_minutes) >= 0)),
         )
     : [];
   if (!samples.length) return null;

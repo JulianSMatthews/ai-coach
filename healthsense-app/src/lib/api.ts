@@ -123,6 +123,8 @@ export type AppleHealthRestingHeartRateResponse = {
   hrv_ms?: number | null;
   steps_today?: number | null;
   steps_metric_date?: string | null;
+  active_minutes_today?: number | null;
+  active_minutes_metric_date?: string | null;
   baseline_resting_hr_bpm?: number | null;
   baseline_hrv_ms?: number | null;
   baseline_window_days?: number | null;
@@ -151,6 +153,10 @@ export type AppleHealthRestingHeartRateResponse = {
   steps_history?: Array<{
     metric_date?: string | null;
     steps?: number | null;
+  }>;
+  active_minutes_history?: Array<{
+    metric_date?: string | null;
+    active_minutes?: number | null;
   }>;
   ok?: boolean;
   sync?: {

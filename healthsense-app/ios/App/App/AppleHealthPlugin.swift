@@ -27,6 +27,10 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
         HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)
     }
 
+    private var activeCardioMinutesType: HKQuantityType? {
+        HKObjectType.quantityType(forIdentifier: .appleExerciseTime)
+    }
+
     private func restingHeartRateUnit() -> HKUnit {
         HKUnit.count().unitDivided(by: HKUnit.minute())
     }
@@ -37,6 +41,10 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
 
     private func heartRateVariabilityUnit() -> HKUnit {
         HKUnit.secondUnit(with: .milli)
+    }
+
+    private func activeCardioMinutesUnit() -> HKUnit {
+        HKUnit.minute()
     }
 
     private func isoDayString(_ value: Date) -> String {
@@ -105,7 +113,8 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
     private func mergeBiometricSamples(
         restingHeartRateSamples: [JSObject],
         heartRateVariabilitySamples: [JSObject],
-        stepSamples: [JSObject]
+        stepSamples: [JSObject],
+        activeCardioMinutesSamples: [JSObject]
     ) -> [JSObject] {
         var byDay: [String: JSObject] = [:]
 
@@ -131,6 +140,16 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
             var row = byDay[metricDate] ?? ["metricDate": metricDate]
             if let steps = sample["steps"] {
                 row["steps"] = steps
+            }
+            byDay[metricDate] = row
+        }
+
+        for sample in activeCardioMinutesSamples {
+            let metricDate = String(sample["metricDate"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !metricDate.isEmpty else { continue }
+            var row = byDay[metricDate] ?? ["metricDate": metricDate]
+            if let activeCardioMinutes = sample["activeCardioMinutes"] {
+                row["activeCardioMinutes"] = activeCardioMinutes
             }
             byDay[metricDate] = row
         }
@@ -222,8 +241,46 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
         healthStore.execute(query)
     }
 
+    private func fetchActiveCardioMinutesSamples(
+        quantityType: HKQuantityType,
+        predicate: NSPredicate?,
+        startDate: Date,
+        endDate: Date,
+        completion: @escaping ([JSObject]?, Error?) -> Void
+    ) {
+        let interval = DateComponents(day: 1)
+        let anchorDate = Calendar.autoupdatingCurrent.startOfDay(for: endDate)
+        let query = HKStatisticsCollectionQuery(
+            quantityType: quantityType,
+            quantitySamplePredicate: predicate,
+            options: [.cumulativeSum],
+            anchorDate: anchorDate,
+            intervalComponents: interval
+        )
+        query.initialResultsHandler = { _, results, error in
+            if let error {
+                completion(nil, error)
+                return
+            }
+            var samples: [JSObject] = []
+            results?.enumerateStatistics(from: startDate, to: endDate) { statistics, _ in
+                guard let quantity = statistics.sumQuantity() else {
+                    return
+                }
+                let activeCardioMinutes = Int(round(quantity.doubleValue(for: self.activeCardioMinutesUnit())))
+                guard activeCardioMinutes >= 0 else { return }
+                samples.append([
+                    "metricDate": self.isoDayString(statistics.startDate),
+                    "activeCardioMinutes": activeCardioMinutes,
+                ])
+            }
+            completion(samples, nil)
+        }
+        healthStore.execute(query)
+    }
+
     private func resolveAuthorizationState(completion: @escaping (String) -> Void) {
-        let quantityTypes = [restingHeartRateType, stepCountType, heartRateVariabilityType].compactMap { $0 }
+        let quantityTypes = [restingHeartRateType, stepCountType, heartRateVariabilityType, activeCardioMinutesType].compactMap { $0 }
         guard HKHealthStore.isHealthDataAvailable(), !quantityTypes.isEmpty else {
             completion("unsupported")
             return
@@ -251,7 +308,7 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func authorizationPayload(status: String) -> JSObject {
-        let available = HKHealthStore.isHealthDataAvailable() && (restingHeartRateType != nil || stepCountType != nil || heartRateVariabilityType != nil)
+        let available = HKHealthStore.isHealthDataAvailable() && (restingHeartRateType != nil || stepCountType != nil || heartRateVariabilityType != nil || activeCardioMinutesType != nil)
         return [
             "available": available,
             "status": status,
@@ -265,7 +322,7 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func requestAuthorization(_ call: CAPPluginCall) {
-        let quantityTypes = [restingHeartRateType, stepCountType, heartRateVariabilityType].compactMap { $0 }
+        let quantityTypes = [restingHeartRateType, stepCountType, heartRateVariabilityType, activeCardioMinutesType].compactMap { $0 }
         guard HKHealthStore.isHealthDataAvailable(), !quantityTypes.isEmpty else {
             call.resolve(authorizationPayload(status: "unsupported"))
             return
@@ -300,7 +357,8 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
         let restingType = restingHeartRateType
         let hrvType = heartRateVariabilityType
         let stepType = stepCountType
-        guard HKHealthStore.isHealthDataAvailable(), restingType != nil || hrvType != nil || stepType != nil else {
+        let activeType = activeCardioMinutesType
+        guard HKHealthStore.isHealthDataAvailable(), restingType != nil || hrvType != nil || stepType != nil || activeType != nil else {
             call.resolve([
                 "samples": [],
                 "latestMetricDate": NSNull(),
@@ -327,16 +385,45 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
         ]
         let completeRestingHeartRateSamples = { (resolvedRestingSamples: [JSObject]) in
             let completeHeartRateVariabilitySamples = { (resolvedHrvSamples: [JSObject]) in
+                let completeStepSamples = { (resolvedStepSamples: [JSObject]) in
+                    guard let activeType = activeType else {
+                        let merged = self.mergeBiometricSamples(
+                            restingHeartRateSamples: resolvedRestingSamples,
+                            heartRateVariabilitySamples: resolvedHrvSamples,
+                            stepSamples: resolvedStepSamples,
+                            activeCardioMinutesSamples: []
+                        )
+                        call.resolve([
+                            "samples": merged,
+                            "latestMetricDate": (merged.last?["metricDate"] as? String) ?? NSNull(),
+                        ])
+                        return
+                    }
+                    self.fetchActiveCardioMinutesSamples(
+                        quantityType: activeType,
+                        predicate: predicate,
+                        startDate: startDate,
+                        endDate: endDate
+                    ) { activeCardioMinutesSamples, activeCardioMinutesError in
+                        if let activeCardioMinutesError {
+                            call.reject("Apple Health active cardio minutes query failed: \(activeCardioMinutesError.localizedDescription)")
+                            return
+                        }
+                        let merged = self.mergeBiometricSamples(
+                            restingHeartRateSamples: resolvedRestingSamples,
+                            heartRateVariabilitySamples: resolvedHrvSamples,
+                            stepSamples: resolvedStepSamples,
+                            activeCardioMinutesSamples: activeCardioMinutesSamples ?? []
+                        )
+                        call.resolve([
+                            "samples": merged,
+                            "latestMetricDate": (merged.last?["metricDate"] as? String) ?? NSNull(),
+                        ])
+                    }
+                }
+
                 guard let stepType = stepType else {
-                    let merged = self.mergeBiometricSamples(
-                        restingHeartRateSamples: resolvedRestingSamples,
-                        heartRateVariabilitySamples: resolvedHrvSamples,
-                        stepSamples: []
-                    )
-                    call.resolve([
-                        "samples": merged,
-                        "latestMetricDate": (merged.last?["metricDate"] as? String) ?? NSNull(),
-                    ])
+                    completeStepSamples([])
                     return
                 }
                 self.fetchStepSamples(
@@ -349,15 +436,7 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
                         call.reject("Apple Health step query failed: \(stepError.localizedDescription)")
                         return
                     }
-                    let merged = self.mergeBiometricSamples(
-                        restingHeartRateSamples: resolvedRestingSamples,
-                        heartRateVariabilitySamples: resolvedHrvSamples,
-                        stepSamples: stepSamples ?? []
-                    )
-                    call.resolve([
-                        "samples": merged,
-                        "latestMetricDate": (merged.last?["metricDate"] as? String) ?? NSNull(),
-                    ])
+                    completeStepSamples(stepSamples ?? [])
                 }
             }
 
