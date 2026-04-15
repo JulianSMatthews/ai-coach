@@ -454,14 +454,12 @@ def _lesson_variant_video_url(row: EducationLessonVariant | None) -> str | None:
     return _normalize_media_url(getattr(row, "video_url", None))
 
 
-def _lesson_variant_has_avatar_media(row: EducationLessonVariant | None) -> bool:
-    if row is None:
-        return False
-    if _lesson_variant_video_url(row) or _avatar_result_url(row):
-        return True
-    job_id = str(getattr(row, "avatar_job_id", "") or "").strip()
-    status = str(getattr(row, "avatar_status", "") or "").strip().lower()
-    return bool(job_id and status not in {"failed", "cancelled", "canceled"})
+def _lesson_variant_playable_media_url(row: EducationLessonVariant | None) -> str | None:
+    return _lesson_variant_video_url(row) or _avatar_result_url(row)
+
+
+def _lesson_variant_has_playable_media(row: EducationLessonVariant | None) -> bool:
+    return bool(_lesson_variant_playable_media_url(row))
 
 
 def education_lesson_avatar_payload(row: EducationLessonVariant | None) -> dict[str, Any] | None:
@@ -549,7 +547,7 @@ def _content_payload(
     summary = str(getattr(lesson_variant, "summary", "") or "").strip()
     script = str(getattr(lesson_variant, "script", "") or "").strip()
     action_prompt = str(getattr(lesson_variant, "action_prompt", "") or "").strip()
-    video_url = _lesson_variant_video_url(lesson_variant)
+    video_url = _lesson_variant_playable_media_url(lesson_variant)
     poster_url = _normalize_media_url(getattr(lesson_variant, "poster_url", None))
     avatar = education_lesson_avatar_payload(lesson_variant) or legacy.get("avatar")
     body = script or str(legacy.get("body") or "").strip()
@@ -1414,11 +1412,11 @@ def _resolve_programme_day(session, programme_id: int, day_index: int) -> Educat
     )
 
 
-def _resolve_lesson_variant(
+def _ordered_lesson_variants_for_level(
     session,
     programme_day_id: int,
     resolved_level: str,
-) -> EducationLessonVariant | None:
+) -> list[EducationLessonVariant]:
     rows = (
         session.execute(
             select(EducationLessonVariant)
@@ -1432,35 +1430,46 @@ def _resolve_lesson_variant(
         .all()
     )
     if not rows:
+        return []
+    by_level: dict[str, EducationLessonVariant] = {}
+    for row in rows:
+        level_key = _normalize_level(getattr(row, "level", None))
+        if level_key not in by_level:
+            by_level[level_key] = row
+    ordered: list[EducationLessonVariant] = []
+    seen: set[int] = set()
+
+    def _add(row: EducationLessonVariant | None) -> None:
+        if row is None:
+            return
+        marker = int(getattr(row, "id", 0) or 0) or id(row)
+        if marker in seen:
+            return
+        seen.add(marker)
+        ordered.append(row)
+
+    for candidate in _variant_level_candidates(resolved_level):
+        _add(by_level.get(candidate))
+    for row in rows:
+        _add(row)
+    return ordered
+
+
+def _resolve_lesson_variant(
+    session,
+    programme_day_id: int,
+    resolved_level: str,
+) -> EducationLessonVariant | None:
+    rows = _ordered_lesson_variants_for_level(session, programme_day_id, resolved_level)
+    if not rows:
         return None
-    by_level = {
-        _normalize_level(getattr(row, "level", None)): row
-        for row in rows
-    }
-    selected: EducationLessonVariant | None = None
-    for candidate in _variant_level_candidates(resolved_level):
-        if candidate in by_level:
-            selected = by_level[candidate]
-            break
-    if selected is None:
-        selected = rows[0]
-    if _lesson_variant_has_avatar_media(selected):
+    selected = rows[0]
+    if _lesson_variant_has_playable_media(selected):
         return selected
-    media_rows = [
-        row
-        for row in rows
-        if _lesson_variant_has_avatar_media(row)
-    ]
-    if not media_rows:
-        return selected
-    media_by_level = {
-        _normalize_level(getattr(row, "level", None)): row
-        for row in media_rows
-    }
-    for candidate in _variant_level_candidates(resolved_level):
-        if candidate in media_by_level:
-            return media_by_level[candidate]
-    return media_rows[0]
+    for row in rows[1:]:
+        if _lesson_variant_has_playable_media(row):
+            return row
+    return selected
 
 
 def _get_or_create_concept_level(
@@ -1876,10 +1885,19 @@ def _lesson_state(
             "active_label": tracker_pillar.get("active_label"),
         },
     )
-    lesson_variant = _resolve_lesson_variant(session, int(programme_day.id), str(getattr(concept_level, "current_level", "") or "build"))
+    current_level = str(getattr(concept_level, "current_level", "") or "build").strip() or "build"
+    lesson_variant = _resolve_lesson_variant(session, int(programme_day.id), current_level)
     if refresh_avatar_media:
         lesson_variant = _refresh_lesson_variant_avatar_media(session, lesson_variant)
-    current_level = str(getattr(concept_level, "current_level", "") or "build").strip() or "build"
+        if not _lesson_variant_has_playable_media(lesson_variant):
+            selected_id = int(getattr(lesson_variant, "id", 0) or 0) if lesson_variant is not None else 0
+            for fallback_variant in _ordered_lesson_variants_for_level(session, int(programme_day.id), current_level):
+                if selected_id and int(getattr(fallback_variant, "id", 0) or 0) == selected_id:
+                    continue
+                refreshed_fallback = _refresh_lesson_variant_avatar_media(session, fallback_variant)
+                if _lesson_variant_has_playable_media(refreshed_fallback):
+                    lesson_variant = refreshed_fallback
+                    break
     previous_lesson = _previous_lesson_payload(
         session,
         plan=plan,
