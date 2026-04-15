@@ -781,6 +781,8 @@ def _poll_education_avatar_status(
 def _refresh_lesson_variant_avatar_media(
     session,
     row: EducationLessonVariant | None,
+    *,
+    raise_errors: bool = False,
 ) -> EducationLessonVariant | None:
     if row is None:
         return None
@@ -818,6 +820,8 @@ def _refresh_lesson_variant_avatar_media(
         return session.get(EducationLessonVariant, int(getattr(row, "id", 0) or 0)) or row
     except Exception as exc:
         print(f"[education] avatar refresh skipped for lesson_variant={getattr(row, 'id', None)}: {exc}")
+        if raise_errors:
+            raise
         return row
 
 
@@ -858,6 +862,32 @@ def _education_avatar_input_payload(
             or str(defaults.get("voice") or "en-GB-SoniaNeural")
         ),
     }
+
+
+def _avatar_job_reference_time(row: EducationLessonVariant) -> datetime | None:
+    for attr in ("updated_at", "created_at"):
+        value = getattr(row, attr, None)
+        if not isinstance(value, datetime):
+            continue
+        if value.tzinfo is not None:
+            return value.astimezone().replace(tzinfo=None, microsecond=0)
+        return value.replace(microsecond=0)
+    return None
+
+
+def _avatar_job_is_stale(row: EducationLessonVariant) -> bool:
+    job_id = str(getattr(row, "avatar_job_id", "") or "").strip()
+    if not job_id:
+        return False
+    status_key = str(getattr(row, "avatar_status", "") or "").strip().lower()
+    if status_key in {"failed", "cancelled", "canceled", "succeeded"}:
+        return False
+    reference = _avatar_job_reference_time(row)
+    if reference is None:
+        return False
+    ttl_hours = int(azure_avatar_defaults().get("time_to_live_hours") or 48)
+    stale_after = timedelta(hours=max(1, ttl_hours) + 1)
+    return (_now_utc() - reference) > stale_after
 
 
 def _programme_avatar_variant_rows(session, programme_id: int) -> list[tuple[EducationLessonVariant, EducationProgrammeDay]]:
@@ -917,32 +947,71 @@ def generate_education_programme_avatar_videos(
             status_key = str(getattr(row, "avatar_status", "") or "").strip().lower()
             job_id = str(getattr(row, "avatar_job_id", "") or "").strip()
             if not regenerate and _avatar_result_url(row):
-                refreshed = _refresh_lesson_variant_avatar_media(session, row) or row
-                avatar = education_lesson_avatar_payload(refreshed) or {}
-                if _lesson_variant_video_url(refreshed):
-                    item.update({"status": "ready", "avatar_status": avatar.get("status"), "video_url": avatar.get("url")})
-                    counts["ready"] += 1
-                else:
-                    item.update(
-                        {
-                            "status": "pending",
-                            "avatar_status": avatar.get("status"),
-                            "job_id": avatar.get("job_id"),
-                            "reason": avatar.get("error") or "Avatar result exists but is not cached yet.",
-                        }
-                    )
-                    counts["pending"] += 1
+                try:
+                    refreshed = _refresh_lesson_variant_avatar_media(session, row, raise_errors=True) or row
+                    avatar = education_lesson_avatar_payload(refreshed) or {}
+                    if _lesson_variant_video_url(refreshed):
+                        item.update({"status": "ready", "avatar_status": avatar.get("status"), "video_url": avatar.get("url")})
+                        counts["ready"] += 1
+                    else:
+                        item.update(
+                            {
+                                "status": "pending",
+                                "avatar_status": avatar.get("status"),
+                                "job_id": avatar.get("job_id"),
+                                "reason": avatar.get("error") or "Avatar result exists but is not cached yet.",
+                            }
+                        )
+                        counts["pending"] += 1
+                except Exception as exc:
+                    counts["errors"] += 1
+                    item.update({"status": "error", "reason": str(exc), "job_id": job_id or None})
                 items.append(item)
                 continue
             if (
                 not regenerate
                 and job_id
                 and status_key not in {"failed", "cancelled", "canceled", "succeeded"}
+                and not _avatar_job_is_stale(row)
             ):
-                item.update({"status": "pending", "reason": "Avatar job already pending.", "job_id": job_id})
-                counts["pending"] += 1
+                try:
+                    refreshed = _refresh_lesson_variant_avatar_media(session, row, raise_errors=True) or row
+                    avatar = education_lesson_avatar_payload(refreshed) or {}
+                    if _lesson_variant_video_url(refreshed):
+                        item.update({"status": "ready", "avatar_status": avatar.get("status"), "video_url": avatar.get("url")})
+                        counts["ready"] += 1
+                    else:
+                        item.update(
+                            {
+                                "status": "pending",
+                                "avatar_status": avatar.get("status"),
+                                "reason": avatar.get("error") or "Avatar job already pending.",
+                                "job_id": avatar.get("job_id") or job_id,
+                            }
+                        )
+                        counts["pending"] += 1
+                except Exception as exc:
+                    counts["errors"] += 1
+                    item.update({"status": "error", "reason": str(exc), "job_id": job_id})
                 items.append(item)
                 continue
+            if (
+                not regenerate
+                and job_id
+                and status_key not in {"failed", "cancelled", "canceled", "succeeded"}
+                and _avatar_job_is_stale(row)
+            ):
+                item["previous_job_id"] = job_id
+                item["reason"] = "Previous avatar job was stale; starting a new job."
+                row.avatar_status = "failed"
+                row.avatar_error = "Previous avatar job expired before a video was cached; starting a replacement job."
+                row.avatar_job_id = None
+                session.add(row)
+                session.flush()
+                job_id = ""
+                status_key = "failed"
+            if not regenerate and status_key == "failed" and str(getattr(row, "avatar_error", "") or "").strip():
+                item["previous_error"] = str(getattr(row, "avatar_error", "") or "").strip()
             avatar_input = _education_avatar_input_payload(row)
             script = str(avatar_input.get("script") or "").strip()
             if not script:
@@ -1036,7 +1105,7 @@ def refresh_education_programme_avatar_videos(programme_id: int) -> dict[str, An
                 items.append(item)
                 continue
             try:
-                refreshed = _refresh_lesson_variant_avatar_media(session, row) or row
+                refreshed = _refresh_lesson_variant_avatar_media(session, row, raise_errors=True) or row
                 avatar = education_lesson_avatar_payload(refreshed) or {}
                 if _lesson_variant_video_url(refreshed):
                     item.update({"status": "ready", "avatar_status": avatar.get("status"), "video_url": avatar.get("url")})

@@ -9,13 +9,15 @@ from typing import Any
 from sqlalchemy import desc, select
 
 from .db import SessionLocal, engine
-from .models import DailyCoachHabitPlan, OKRKeyResult, OKRKrHabitStep, OKRObjective, User
+from .models import DailyCoachHabitPlan, DailyPillarTrackerEntry, OKRKeyResult, OKRKrHabitStep, OKRObjective, User
 from .okr import _guess_concept_from_description, _normalize_concept_key
 from .pillar_tracker import (
     _wellbeing_weekly_targets,
     get_pillar_tracker_detail,
     get_pillar_tracker_summary,
     get_recent_tracker_save_focus,
+    tracker_concepts_for_pillar,
+    tracker_now,
     tracker_today,
 )
 from .prompts import build_prompt, ensure_builtin_prompt_templates, run_llm_prompt
@@ -30,6 +32,7 @@ _DAY_MOMENT_SEQUENCE = (
     ("afternoon", "Afternoon"),
     ("evening", "Evening"),
 )
+_MORNING_PLAN_END_HOUR = 12
 
 
 def ensure_daily_habit_plan_schema() -> None:
@@ -75,6 +78,124 @@ def _normalize_plan_scope_key(value: Any) -> str | None:
 
 def _today_iso() -> str:
     return tracker_today().isoformat()
+
+
+def _is_morning_plan_window() -> bool:
+    try:
+        current = tracker_now()
+        return 0 <= int(current.hour) < _MORNING_PLAN_END_HOUR
+    except Exception:
+        return False
+
+
+def _join_labels(labels: list[str]) -> str:
+    cleaned = [str(label or "").strip() for label in labels if str(label or "").strip()]
+    if not cleaned:
+        return ""
+    if len(cleaned) == 1:
+        return cleaned[0]
+    return f"{', '.join(cleaned[:-1])} and {cleaned[-1]}"
+
+
+def _tracker_binary_value_is_positive(value_num: Any, value_label: Any) -> bool:
+    try:
+        if value_num is not None:
+            return float(value_num) > 0
+    except Exception:
+        pass
+    token = str(value_label or "").strip().lower()
+    return token in {"1", "yes", "y", "true", "done", "planned"}
+
+
+def _value_label_from_definition(concept_key: str, value_num: Any, definitions: dict[str, Any]) -> str | None:
+    defn = definitions.get(str(concept_key or "").strip().lower())
+    try:
+        raw_value = float(value_num)
+    except Exception:
+        return None
+    for option in getattr(defn, "options", ()) or ():
+        try:
+            if float(getattr(option, "value", None)) == raw_value:
+                label = str(getattr(option, "label", "") or "").strip()
+                return label or None
+        except Exception:
+            continue
+    return None
+
+
+def _load_morning_training_plan(user_id: int, today: date) -> dict[str, Any] | None:
+    if not _is_morning_plan_window():
+        return None
+
+    try:
+        definitions_list = tracker_concepts_for_pillar("training", user_id=int(user_id))
+    except Exception:
+        definitions_list = ()
+    definitions = {str(item.concept_key or "").strip().lower(): item for item in definitions_list}
+    order = {str(item.concept_key or "").strip().lower(): index for index, item in enumerate(definitions_list)}
+
+    with SessionLocal() as s:
+        rows = (
+            s.execute(
+                select(DailyPillarTrackerEntry)
+                .where(
+                    DailyPillarTrackerEntry.user_id == int(user_id),
+                    DailyPillarTrackerEntry.score_date == today,
+                    DailyPillarTrackerEntry.pillar_key == "training",
+                )
+                .order_by(DailyPillarTrackerEntry.id.asc())
+            )
+            .scalars()
+            .all()
+        )
+
+    if not rows:
+        return None
+
+    entries: list[dict[str, Any]] = []
+    for row in sorted(rows, key=lambda item: order.get(str(getattr(item, "concept_key", "") or "").strip().lower(), 999)):
+        concept_key = str(getattr(row, "concept_key", "") or "").strip().lower()
+        if not concept_key:
+            continue
+        defn = definitions.get(concept_key)
+        label = str(getattr(defn, "label", "") or "").strip() or concept_key.replace("_", " ").title()
+        value_label = str(getattr(row, "value_label", "") or "").strip() or _value_label_from_definition(
+            concept_key,
+            getattr(row, "value_num", None),
+            definitions,
+        )
+        planned = _tracker_binary_value_is_positive(getattr(row, "value_num", None), value_label)
+        entries.append(
+            {
+                "concept_key": concept_key,
+                "label": label,
+                "value_label": value_label or ("Yes" if planned else "No"),
+                "planned": bool(planned),
+            }
+        )
+
+    if not entries:
+        return None
+
+    planned_labels = [str(item.get("label") or "").strip() for item in entries if item.get("planned")]
+    not_planned_labels = [str(item.get("label") or "").strip() for item in entries if not item.get("planned")]
+    if planned_labels:
+        planned_text = _join_labels(planned_labels)
+        if not_planned_labels:
+            summary = f"Today's morning training record has {planned_text} planned; {_join_labels(not_planned_labels)} not planned."
+        else:
+            summary = f"Today's morning training record has {planned_text} planned."
+    else:
+        summary = "Today's morning training record has no training session planned."
+    return {
+        "source": "today_morning_training_record",
+        "date": today.isoformat(),
+        "assumption": "Treat these training entries as the user's planned training for today, not as completed or missed outcomes.",
+        "summary": summary,
+        "entries": entries,
+        "planned_labels": planned_labels,
+        "not_planned_labels": not_planned_labels,
+    }
 
 
 def _load_user_name(user_id: int) -> str:
@@ -747,33 +868,62 @@ def _primary_tracker_issue(snapshots: dict[str, dict[str, Any]]) -> dict[str, An
     return ordered[0] if ordered else None
 
 
-def _build_tracker_review(snapshots: dict[str, dict[str, Any]]) -> list[dict[str, Any]]:
+def _build_tracker_review(
+    snapshots: dict[str, dict[str, Any]],
+    *,
+    planned_training: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    planned_training = planned_training if isinstance(planned_training, dict) else {}
+    planned_training_lookup = {
+        _normalize_concept_token(item.get("concept_key")): item
+        for item in (planned_training.get("entries") or [])
+        if isinstance(item, dict) and _normalize_concept_token(item.get("concept_key"))
+    }
     review: list[dict[str, Any]] = []
     for pillar_key in _PILLAR_ORDER:
         snapshot = snapshots.get(pillar_key)
         if not isinstance(snapshot, dict):
             continue
-        concepts = [
-            {
+        concepts: list[dict[str, Any]] = []
+        for item in (snapshot.get("review_concepts") or []):
+            if not isinstance(item, dict) or not str(item.get("label") or "").strip():
+                continue
+            concept_key = _normalize_concept_token(item.get("concept_key"))
+            signal = str(item.get("signal") or "").strip() or None
+            planned_entry = (
+                planned_training_lookup.get(concept_key)
+                if pillar_key == "training" and concept_key
+                else None
+            )
+            payload = {
                 "concept_key": str(item.get("concept_key") or "").strip() or None,
                 "label": str(item.get("label") or "").strip() or None,
                 "helper": str(item.get("helper") or "").strip() or None,
-                "signal": str(item.get("signal") or "").strip() or None,
+                "signal": signal,
                 "target_label": str(item.get("target_label") or "").strip() or None,
                 "latest_value": str(item.get("latest_value") or "").strip() or None,
                 "score": _safe_int(item.get("score")),
                 "anchor_date": str(item.get("anchor_date") or "").strip() or None,
             }
-            for item in (snapshot.get("review_concepts") or [])
-            if isinstance(item, dict) and str(item.get("label") or "").strip()
-        ]
+            if planned_entry:
+                payload["signal"] = "planned_today" if planned_entry.get("planned") else "not_planned_today"
+                payload["planned_for_today"] = bool(planned_entry.get("planned"))
+                payload["plan_context"] = "today_morning_training_record"
+            concepts.append(payload)
+        review_state = _latest_daily_guidance_state(snapshot, pillar_key)
+        if pillar_key == "training" and planned_training_lookup:
+            review_state = (
+                "planned"
+                if any(bool(item.get("planned")) for item in planned_training_lookup.values())
+                else "not_planned"
+            )
         review.append(
             {
                 "pillar_key": pillar_key,
                 "pillar_label": str(snapshot.get("label") or pillar_key.title()).strip() or pillar_key.title(),
                 "active_date": str(snapshot.get("active_date") or "").strip() or None,
                 "active_label": str(snapshot.get("active_label") or "").strip() or None,
-                "state": _latest_daily_guidance_state(snapshot, pillar_key),
+                "state": review_state,
                 "score": _safe_int(snapshot.get("score")),
                 "concepts": concepts,
             }
@@ -787,6 +937,7 @@ def _build_key_moments(
     readiness: dict[str, str],
     snapshots: dict[str, dict[str, Any]],
     wellbeing_targets: dict[str, Any] | None = None,
+    planned_training: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     nutrition_snapshot = snapshots.get("nutrition") or {}
     training_snapshot = snapshots.get("training") or {}
@@ -808,6 +959,14 @@ def _build_key_moments(
     alcohol_tracking = str(wellbeing_targets.get("alcohol_tracking") or "off").strip().lower()
     fasting_active = fasting_mode != "off" and _snapshot_concept(nutrition_snapshot, "fasting_adherence") is not None
     alcohol_active = alcohol_tracking == "on" and _snapshot_concept(nutrition_snapshot, "alcohol_units") is not None
+    planned_training = planned_training if isinstance(planned_training, dict) else {}
+    planned_training_entries = [item for item in (planned_training.get("entries") or []) if isinstance(item, dict)]
+    planned_training_labels = [
+        str(item.get("label") or "").strip()
+        for item in planned_training_entries
+        if item.get("planned") and str(item.get("label") or "").strip()
+    ]
+    planned_training_text = _join_labels(planned_training_labels).lower()
 
     morning_title = "Set the day early"
     if fasting_active:
@@ -887,7 +1046,34 @@ def _build_key_moments(
         )
 
     exercise_state = str(readiness.get("exercise_state") or "steady").strip().lower()
-    if exercise_state == "push":
+    if planned_training_entries:
+        if planned_training_labels:
+            if exercise_state == "recover":
+                afternoon_title = "Scale the planned session"
+                afternoon_detail = (
+                    f"{_join_labels(planned_training_labels)} is planned, but keep it very easy or shorten it if recovery is dragging."
+                )
+            elif exercise_state == "light":
+                afternoon_title = "Keep planned training light"
+                afternoon_detail = (
+                    f"Use the {planned_training_text} you set this morning, but keep the effort easy and stop before it bites."
+                )
+            else:
+                afternoon_title = "Use your planned training"
+                if fasting_active:
+                    afternoon_detail = (
+                        f"Follow the {planned_training_text} you set this morning and fit it cleanly around your {fasting_mode} window."
+                    )
+                else:
+                    afternoon_detail = (
+                        f"Follow the {planned_training_text} you set this morning and keep the session purposeful rather than adding extras."
+                    )
+        else:
+            afternoon_title = "Respect the no-training plan"
+            afternoon_detail = (
+                "Today's record has no training session set, so keep movement optional, easy, and supportive."
+            )
+    elif exercise_state == "push":
         afternoon_title = "Train with intent"
         if fasting_active:
             afternoon_detail = (
@@ -982,7 +1168,18 @@ def _build_key_moments(
     ]
 
 
-def _day_plan_title(readiness: dict[str, str]) -> str:
+def _day_plan_title(readiness: dict[str, str], planned_training: dict[str, Any] | None = None) -> str:
+    planned_training = planned_training if isinstance(planned_training, dict) else {}
+    planned_entries = [item for item in (planned_training.get("entries") or []) if isinstance(item, dict)]
+    if planned_entries:
+        planned_labels = [
+            str(item.get("label") or "").strip()
+            for item in planned_entries
+            if item.get("planned") and str(item.get("label") or "").strip()
+        ]
+        if planned_labels:
+            return "Planned training day"
+        return "No training planned today"
     exercise_state = str(readiness.get("exercise_state") or "steady").strip().lower()
     return {
         "push": "Strong training day",
@@ -997,6 +1194,8 @@ def _build_day_brief(
     user_id: int,
     summary: dict[str, Any],
     today: date,
+    planned_training: dict[str, Any] | None = None,
+    planned_training_loaded: bool = False,
 ) -> dict[str, Any]:
     snapshots: dict[str, dict[str, Any]] = {}
     for pillar_row in (summary.get("pillars") or []):
@@ -1016,17 +1215,43 @@ def _build_day_brief(
         "alcohol_tracking": alcohol_tracking,
         "alcohol_goal_units": alcohol_goal_units,
     }
+    if not planned_training_loaded:
+        planned_training = _load_morning_training_plan(user_id, today)
+    planned_training_entries = [
+        item for item in ((planned_training or {}).get("entries") or []) if isinstance(item, dict)
+    ]
+    planned_training_labels = [
+        str(item.get("label") or "").strip()
+        for item in planned_training_entries
+        if item.get("planned") and str(item.get("label") or "").strip()
+    ]
+    planned_training_text = _join_labels(planned_training_labels).lower()
     readiness = _exercise_readiness(
         nutrition_snapshot=nutrition_snapshot,
         recovery_snapshot=recovery_snapshot,
         resilience_snapshot=resilience_snapshot,
     )
+    if planned_training_entries and not planned_training_labels:
+        readiness = {
+            **readiness,
+            "exercise_state": "not_planned",
+            "exercise_reason": "Today's morning training record has no session planned, so the day plan should not add a training session.",
+        }
     recovery_profile = _recovery_signal_profile(recovery_snapshot)
     strength_row = _latest_tracker_strength(snapshots) or {}
     strength_label = str(strength_row.get("label") or "The basics").strip() or "The basics"
     strength_text = f"{strength_label} looks the steadiest in the latest tracking."
     primary_issue = _primary_tracker_issue(snapshots)
-    if recovery_profile.get("rested_today"):
+    if planned_training_entries:
+        if planned_training_labels:
+            carry_over_issue = (
+                f"Today's morning training record already has {planned_training_text} planned, so the day plan should work around that session."
+            )
+        else:
+            carry_over_issue = (
+                "Today's morning training record has no session planned, so do not treat the morning No entries as missed sessions."
+            )
+    elif recovery_profile.get("rested_today"):
         carry_over_issue = "You did not wake up well rested today, so this needs to be a more recovery-aware day rather than a push day."
     elif recovery_profile.get("sleep_today"):
         carry_over_issue = "Sleep came up short, so today needs to stay more protective and less aggressive."
@@ -1036,7 +1261,19 @@ def _build_day_brief(
             fallback_label="today's tracking",
         )
     exercise_state = str(readiness.get("exercise_state") or "steady").strip().lower()
-    if exercise_state == "push":
+    if planned_training_entries:
+        if planned_training_labels:
+            if exercise_state in {"recover", "light"}:
+                today_aim = (
+                    f"Use the planned {planned_training_text}, but keep it scaled to today's recovery and nutrition."
+                )
+            else:
+                today_aim = (
+                    f"Follow the planned {planned_training_text} and keep food, fluids, and recovery steady around it."
+                )
+        else:
+            today_aim = "Respect the no-training plan already set for today and keep movement easy if it helps."
+    elif exercise_state == "push":
         today_aim = "Use the good base you have, train properly if planned, and keep the rest of the day steady around it."
     elif exercise_state == "steady":
         today_aim = "Keep the day controlled, train with intent if planned, and do not let the basics drift."
@@ -1049,12 +1286,25 @@ def _build_day_brief(
         readiness=readiness,
         snapshots=snapshots,
         wellbeing_targets=wellbeing_targets,
+        planned_training=planned_training,
     )
     today_priority = "The main job today is to match training, food, recovery, and headspace rather than let one area drag the rest off line."
-    if recovery_profile.get("rested_today"):
+    if planned_training_entries:
+        if planned_training_labels:
+            today_priority = (
+                f"The main job today is to fit the planned {planned_training_text} around food, fluids, and recovery rather than inventing a different session."
+            )
+        else:
+            today_priority = "The main job today is to respect the no-training plan and keep the basics steady."
+    elif recovery_profile.get("rested_today"):
         today_priority = "The main job today is to protect energy, keep training lighter, and set tonight up so recovery can catch back up."
     elif recovery_profile.get("sleep_today"):
         today_priority = "The main job today is to steady the basics, avoid forcing intensity, and give recovery a better chance tonight."
+    plan_summary_parts = [
+        str((planned_training or {}).get("summary") or "").strip(),
+        str(readiness.get("exercise_reason") or "").strip(),
+        today_aim,
+    ]
     return {
         "two_day_read": {
             "strength": strength_text,
@@ -1062,11 +1312,12 @@ def _build_day_brief(
             "today_priority": today_priority,
         },
         "readiness": readiness,
+        "planned_training": planned_training,
         "wellbeing_targets": wellbeing_targets,
         "key_moments": key_moments,
         "today_aim": today_aim,
-        "plan_title": _day_plan_title(readiness),
-        "plan_summary": f"{readiness.get('exercise_reason')} {today_aim}".strip(),
+        "plan_title": _day_plan_title(readiness, planned_training),
+        "plan_summary": " ".join(part for part in plan_summary_parts if part).strip(),
     }
 
 
@@ -1082,7 +1333,8 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
         if not pillar_key:
             continue
         snapshots[pillar_key] = _pillar_day_snapshot(user_id, pillar_row, today)
-    tracker_review = _build_tracker_review(snapshots)
+    planned_training = _load_morning_training_plan(user_id, today)
+    tracker_review = _build_tracker_review(snapshots, planned_training=planned_training)
     selected_pillar_key = str(weakest.get("pillar_key") or "nutrition").strip().lower() or "nutrition"
     selected_pillar_label = str(weakest.get("label") or selected_pillar_key.title()).strip() or selected_pillar_key.title()
     okr_context: dict[str, Any] = {}
@@ -1094,6 +1346,8 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
         user_id=user_id,
         summary=summary,
         today=today,
+        planned_training=planned_training,
+        planned_training_loaded=True,
     )
     pillars_payload = [
         {

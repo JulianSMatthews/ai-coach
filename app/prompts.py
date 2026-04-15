@@ -98,6 +98,7 @@ BUILTIN_PROMPT_TEMPLATE_DEFAULTS: Dict[str, Dict[str, Any]] = {
             "{\"title\":\"...\",\"summary\":\"...\",\"moments\":[{\"moment\":\"morning|midday|afternoon|evening\",\"title\":\"...\",\"detail\":\"...\"}]}. "
             "Return exactly 4 moments for the day: morning, midday, afternoon, and evening. "
             "Use the provided two-day tracker read, exercise readiness, and key moments framework to make this feel like a practical schedule for today. "
+            "If today's morning training record is supplied, treat it as what the member has planned for today, not as completed or missed training. "
             "Take the whole programme into account: training, nutrition, resilience, and recovery. Build this around the day as a whole rather than one selected concept. "
             "Keep every moment specific, brief, and low-friction. Each title should be short. Each detail should be one sentence and under 18 words. "
             "Use British English. Do not mention JSON, scores, data tables, or being an AI."
@@ -503,6 +504,27 @@ def _coach_home_history_lines(
                 lines.append(f"- carry-over issue: {carry}")
             if priority:
                 lines.append(f"- today priority: {priority}")
+
+        planned_training = day_brief.get("planned_training") if isinstance(day_brief.get("planned_training"), dict) else {}
+        if planned_training:
+            summary = str(planned_training.get("summary") or "").strip()
+            assumption = str(planned_training.get("assumption") or "").strip()
+            entries: List[str] = []
+            for item in planned_training.get("entries") or []:
+                if not isinstance(item, dict):
+                    continue
+                label = str(item.get("label") or item.get("concept_key") or "").strip()
+                value = str(item.get("value_label") or "").strip()
+                planned = "planned" if item.get("planned") else "not planned"
+                if label:
+                    entries.append(f"{label}={value or planned} ({planned})")
+            lines.append("Planned training from today's morning record:")
+            if summary:
+                lines.append(f"- summary: {summary}")
+            if entries:
+                lines.append(f"- entries: {'; '.join(entries)}")
+            if assumption:
+                lines.append(f"- assumption: {assumption}")
 
         readiness = day_brief.get("readiness") if isinstance(day_brief.get("readiness"), dict) else {}
         if readiness:
@@ -1777,6 +1799,7 @@ def build_prompt(
                         "Return only {title, summary, moments} or {title, summary, habits}. "
                         "Provide exactly 4 time-anchored moments for today: morning, midday, afternoon, and evening. "
                         "Use the supplied two-day read, exercise readiness, and key moments framework so this feels like a practical daily schedule. "
+                        "If today's morning training record is supplied, treat it as what the member has planned for today, not as completed or missed training. "
                         "Review all available daily tracking across the tracked pillars rather than narrowing in on one selected concept. "
                         "Take the whole programme into account: training, nutrition, resilience, and recovery. "
                         "Build the plan around the day as a whole rather than one selected concept. "
