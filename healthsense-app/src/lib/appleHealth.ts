@@ -15,6 +15,7 @@ export type AppleHealthAuthorizationResponse = {
 export type AppleHealthRestingHeartRateSample = {
   metricDate: string;
   restingHeartRateBpm?: number;
+  heartRateVariabilityMs?: number;
   steps?: number;
 };
 
@@ -82,6 +83,10 @@ export async function syncAppleHealthRestingHeartRate(
             sample?.restingHeartRateBpm === null || sample?.restingHeartRateBpm === undefined
               ? null
               : Number(sample?.restingHeartRateBpm),
+          hrv_ms:
+            sample?.heartRateVariabilityMs === null || sample?.heartRateVariabilityMs === undefined
+              ? null
+              : Number(sample?.heartRateVariabilityMs),
           steps:
             sample?.steps === null || sample?.steps === undefined
               ? null
@@ -91,6 +96,7 @@ export async function syncAppleHealthRestingHeartRate(
           (sample) =>
             Boolean(sample.metric_date) &&
             ((Number.isFinite(Number(sample.resting_hr_bpm)) && Number(sample.resting_hr_bpm) > 0) ||
+              (Number.isFinite(Number(sample.hrv_ms)) && Number(sample.hrv_ms) > 0) ||
               (Number.isFinite(Number(sample.steps)) && Number(sample.steps) >= 0)),
         )
     : [];

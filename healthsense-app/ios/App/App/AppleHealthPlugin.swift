@@ -23,12 +23,20 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
         HKObjectType.quantityType(forIdentifier: .stepCount)
     }
 
+    private var heartRateVariabilityType: HKQuantityType? {
+        HKObjectType.quantityType(forIdentifier: .heartRateVariabilitySDNN)
+    }
+
     private func restingHeartRateUnit() -> HKUnit {
         HKUnit.count().unitDivided(by: HKUnit.minute())
     }
 
     private func stepCountUnit() -> HKUnit {
         HKUnit.count()
+    }
+
+    private func heartRateVariabilityUnit() -> HKUnit {
+        HKUnit.secondUnit(with: .milli)
     }
 
     private func isoDayString(_ value: Date) -> String {
@@ -67,8 +75,36 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
             }
     }
 
+    private func aggregateHeartRateVariabilitySamples(_ quantitySamples: [HKQuantitySample]) -> [JSObject] {
+        var totalsByDay: [String: Double] = [:]
+        var countsByDay: [String: Int] = [:]
+
+        for sample in quantitySamples {
+            let metricDate = isoDayString(sample.endDate)
+            let hrvMs = sample.quantity.doubleValue(for: heartRateVariabilityUnit())
+            guard hrvMs > 0 else { continue }
+            totalsByDay[metricDate, default: 0] += hrvMs
+            countsByDay[metricDate, default: 0] += 1
+        }
+
+        return totalsByDay.keys
+            .sorted()
+            .compactMap { metricDate in
+                guard let total = totalsByDay[metricDate], let count = countsByDay[metricDate], count > 0 else {
+                    return nil
+                }
+                let average = round((total / Double(count)) * 10) / 10
+                guard average > 0 else { return nil }
+                return [
+                    "metricDate": metricDate,
+                    "heartRateVariabilityMs": average,
+                ]
+            }
+    }
+
     private func mergeBiometricSamples(
         restingHeartRateSamples: [JSObject],
+        heartRateVariabilitySamples: [JSObject],
         stepSamples: [JSObject]
     ) -> [JSObject] {
         var byDay: [String: JSObject] = [:]
@@ -77,6 +113,16 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
             let metricDate = String(sample["metricDate"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !metricDate.isEmpty else { continue }
             byDay[metricDate] = sample
+        }
+
+        for sample in heartRateVariabilitySamples {
+            let metricDate = String(sample["metricDate"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !metricDate.isEmpty else { continue }
+            var row = byDay[metricDate] ?? ["metricDate": metricDate]
+            if let hrvMs = sample["heartRateVariabilityMs"] {
+                row["heartRateVariabilityMs"] = hrvMs
+            }
+            byDay[metricDate] = row
         }
 
         for sample in stepSamples {
@@ -111,6 +157,29 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
             }
             let quantitySamples = (results as? [HKQuantitySample]) ?? []
             completion(self.aggregateRestingHeartRateSamples(quantitySamples), nil)
+        }
+        healthStore.execute(query)
+    }
+
+    private func fetchHeartRateVariabilitySamples(
+        quantityType: HKQuantityType,
+        predicate: NSPredicate?,
+        sortDescriptors: [NSSortDescriptor],
+        limit: Int,
+        completion: @escaping ([JSObject]?, Error?) -> Void
+    ) {
+        let query = HKSampleQuery(
+            sampleType: quantityType,
+            predicate: predicate,
+            limit: limit,
+            sortDescriptors: sortDescriptors
+        ) { _, results, error in
+            if let error {
+                completion(nil, error)
+                return
+            }
+            let quantitySamples = (results as? [HKQuantitySample]) ?? []
+            completion(self.aggregateHeartRateVariabilitySamples(quantitySamples), nil)
         }
         healthStore.execute(query)
     }
@@ -154,7 +223,7 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func resolveAuthorizationState(completion: @escaping (String) -> Void) {
-        let quantityTypes = [restingHeartRateType, stepCountType].compactMap { $0 }
+        let quantityTypes = [restingHeartRateType, stepCountType, heartRateVariabilityType].compactMap { $0 }
         guard HKHealthStore.isHealthDataAvailable(), !quantityTypes.isEmpty else {
             completion("unsupported")
             return
@@ -182,7 +251,7 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     private func authorizationPayload(status: String) -> JSObject {
-        let available = HKHealthStore.isHealthDataAvailable() && (restingHeartRateType != nil || stepCountType != nil)
+        let available = HKHealthStore.isHealthDataAvailable() && (restingHeartRateType != nil || stepCountType != nil || heartRateVariabilityType != nil)
         return [
             "available": available,
             "status": status,
@@ -196,7 +265,7 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func requestAuthorization(_ call: CAPPluginCall) {
-        let quantityTypes = [restingHeartRateType, stepCountType].compactMap { $0 }
+        let quantityTypes = [restingHeartRateType, stepCountType, heartRateVariabilityType].compactMap { $0 }
         guard HKHealthStore.isHealthDataAvailable(), !quantityTypes.isEmpty else {
             call.resolve(authorizationPayload(status: "unsupported"))
             return
@@ -228,7 +297,10 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     @objc func getRecentRestingHeartRate(_ call: CAPPluginCall) {
-        guard HKHealthStore.isHealthDataAvailable(), let quantityType = restingHeartRateType else {
+        let restingType = restingHeartRateType
+        let hrvType = heartRateVariabilityType
+        let stepType = stepCountType
+        guard HKHealthStore.isHealthDataAvailable(), restingType != nil || hrvType != nil || stepType != nil else {
             call.resolve([
                 "samples": [],
                 "latestMetricDate": NSNull(),
@@ -253,21 +325,17 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
         let ascendingSort = [
             NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: true)
         ]
-        self.fetchRestingHeartRateSamples(
-            quantityType: quantityType,
-            predicate: predicate,
-            sortDescriptors: ascendingSort,
-            limit: HKObjectQueryNoLimit
-        ) { samples, error in
-            if let error {
-                call.reject("Apple Health resting heart rate query failed: \(error.localizedDescription)")
-                return
-            }
-            let completeRestingHeartRateSamples = { (resolvedSamples: [JSObject]) in
-                guard let stepType = self.stepCountType else {
+        let completeRestingHeartRateSamples = { (resolvedRestingSamples: [JSObject]) in
+            let completeHeartRateVariabilitySamples = { (resolvedHrvSamples: [JSObject]) in
+                guard let stepType = stepType else {
+                    let merged = self.mergeBiometricSamples(
+                        restingHeartRateSamples: resolvedRestingSamples,
+                        heartRateVariabilitySamples: resolvedHrvSamples,
+                        stepSamples: []
+                    )
                     call.resolve([
-                        "samples": resolvedSamples,
-                        "latestMetricDate": (resolvedSamples.last?["metricDate"] as? String) ?? NSNull(),
+                        "samples": merged,
+                        "latestMetricDate": (merged.last?["metricDate"] as? String) ?? NSNull(),
                     ])
                     return
                 }
@@ -282,7 +350,8 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
                         return
                     }
                     let merged = self.mergeBiometricSamples(
-                        restingHeartRateSamples: resolvedSamples,
+                        restingHeartRateSamples: resolvedRestingSamples,
+                        heartRateVariabilitySamples: resolvedHrvSamples,
                         stepSamples: stepSamples ?? []
                     )
                     call.resolve([
@@ -292,6 +361,38 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
             }
 
+            guard let hrvType = hrvType else {
+                completeHeartRateVariabilitySamples([])
+                return
+            }
+            self.fetchHeartRateVariabilitySamples(
+                quantityType: hrvType,
+                predicate: predicate,
+                sortDescriptors: ascendingSort,
+                limit: HKObjectQueryNoLimit
+            ) { hrvSamples, hrvError in
+                if let hrvError {
+                    call.reject("Apple Health HRV query failed: \(hrvError.localizedDescription)")
+                    return
+                }
+                completeHeartRateVariabilitySamples(hrvSamples ?? [])
+            }
+        }
+
+        guard let restingType = restingType else {
+            completeRestingHeartRateSamples([])
+            return
+        }
+        self.fetchRestingHeartRateSamples(
+            quantityType: restingType,
+            predicate: predicate,
+            sortDescriptors: ascendingSort,
+            limit: HKObjectQueryNoLimit
+        ) { samples, error in
+            if let error {
+                call.reject("Apple Health resting heart rate query failed: \(error.localizedDescription)")
+                return
+            }
             let recentSamples = samples ?? []
             if !recentSamples.isEmpty {
                 completeRestingHeartRateSamples(recentSamples)
@@ -302,7 +403,7 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
             ]
             self.fetchRestingHeartRateSamples(
-                quantityType: quantityType,
+                quantityType: restingType,
                 predicate: nil,
                 sortDescriptors: descendingSort,
                 limit: 90

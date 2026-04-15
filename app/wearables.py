@@ -40,10 +40,12 @@ DEFAULT_OURA_LOOKBACK_DAYS = 30
 DEFAULT_WHOOP_LOOKBACK_DAYS = 30
 DEFAULT_FITBIT_LOOKBACK_DAYS = 30
 APPLE_HEALTH_PROVIDER = "apple_health"
-APPLE_HEALTH_BASELINE_DAYS = 7
-APPLE_HEALTH_BASELINE_MIN_POINTS = 3
+APPLE_HEALTH_BASELINE_DAYS = 14
+APPLE_HEALTH_BASELINE_MIN_POINTS = 7
 APPLE_HEALTH_OPTIMUM_DELTA_BPM = -2.0
 APPLE_HEALTH_ELEVATED_DELTA_BPM = 3.0
+APPLE_HEALTH_HRV_MIN_DELTA_MS = 5.0
+APPLE_HEALTH_HRV_DELTA_RATIO = 0.10
 
 WEARABLE_METRIC_FIELDS = (
     "sleep_seconds",
@@ -984,13 +986,21 @@ def upsert_apple_health_resting_hr_samples(
             or sample.get("restingHeartRateBpm")
             or sample.get("value")
         )
+        hrv_ms = _coerce_float(
+            sample.get("hrv_ms")
+            or sample.get("hrvMs")
+            or sample.get("heart_rate_variability_ms")
+            or sample.get("heartRateVariabilityMs")
+        )
         steps = _coerce_int(sample.get("steps"))
         if not metric_date or (
             (resting_hr_bpm is None or resting_hr_bpm <= 0)
+            and (hrv_ms is None or hrv_ms <= 0)
             and steps is None
         ):
             continue
         normalized_bpm = round(float(resting_hr_bpm), 2) if resting_hr_bpm is not None and resting_hr_bpm > 0 else None
+        normalized_hrv = round(float(hrv_ms), 2) if hrv_ms is not None and hrv_ms > 0 else None
         normalized_steps = int(max(0, steps)) if steps is not None else None
         _merge_day_patch(
             day_map,
@@ -999,10 +1009,12 @@ def upsert_apple_health_resting_hr_samples(
             record={
                 "metric_date": metric_date.isoformat(),
                 "resting_hr_bpm": normalized_bpm,
+                "hrv_ms": normalized_hrv,
                 "steps": normalized_steps,
             },
             patch={
                 "resting_hr_bpm": normalized_bpm,
+                "hrv_ms": normalized_hrv,
                 "steps": normalized_steps,
             },
         )
@@ -1037,6 +1049,23 @@ def _apple_health_resting_hr_status(
     return "normal", "Normal"
 
 
+def _apple_health_hrv_status(
+    latest_value: float | None,
+    baseline_value: float | None,
+) -> tuple[str, str]:
+    if latest_value is None:
+        return "normal", "Normal"
+    if baseline_value is None or baseline_value <= 0:
+        return "normal", "Normal"
+    delta = float(latest_value) - float(baseline_value)
+    threshold = max(APPLE_HEALTH_HRV_MIN_DELTA_MS, abs(float(baseline_value)) * APPLE_HEALTH_HRV_DELTA_RATIO)
+    if delta >= threshold:
+        return "optimum", "Optimal"
+    if delta <= -threshold:
+        return "elevated", "Suppressed"
+    return "normal", "Normal"
+
+
 def get_apple_health_resting_hr_summary(
     session,
     *,
@@ -1062,6 +1091,17 @@ def get_apple_health_resting_hr_summary(
         .limit(max(APPLE_HEALTH_BASELINE_DAYS + 1, 7))
         .all()
     )
+    hrv_rows = (
+        session.query(WearableDailyMetric)
+        .filter(
+            WearableDailyMetric.user_id == int(user_id),
+            WearableDailyMetric.provider == APPLE_HEALTH_PROVIDER,
+            WearableDailyMetric.hrv_ms.isnot(None),
+        )
+        .order_by(WearableDailyMetric.metric_date.desc())
+        .limit(max(APPLE_HEALTH_BASELINE_DAYS + 1, 14))
+        .all()
+    )
     latest_row = rows[0] if rows else None
     latest_value = (
         round(float(latest_row.resting_hr_bpm), 1)
@@ -1082,6 +1122,28 @@ def get_apple_health_resting_hr_summary(
     delta_bpm = (
         round(float(latest_value) - float(baseline_value), 1)
         if latest_value is not None and baseline_value is not None
+        else None
+    )
+    latest_hrv_row = hrv_rows[0] if hrv_rows else None
+    latest_hrv_value = (
+        round(float(latest_hrv_row.hrv_ms), 1)
+        if latest_hrv_row and latest_hrv_row.hrv_ms is not None
+        else None
+    )
+    hrv_baseline_values = [
+        float(row.hrv_ms)
+        for row in hrv_rows[1 : APPLE_HEALTH_BASELINE_DAYS + 1]
+        if row.hrv_ms is not None
+    ]
+    hrv_baseline_value = (
+        round(float(median(hrv_baseline_values)), 1)
+        if len(hrv_baseline_values) >= APPLE_HEALTH_BASELINE_MIN_POINTS
+        else None
+    )
+    hrv_trend_status, hrv_trend_label = _apple_health_hrv_status(latest_hrv_value, hrv_baseline_value)
+    hrv_delta_ms = (
+        round(float(latest_hrv_value) - float(hrv_baseline_value), 1)
+        if latest_hrv_value is not None and hrv_baseline_value is not None
         else None
     )
     connected = bool(
@@ -1155,6 +1217,38 @@ def get_apple_health_resting_hr_summary(
         for row in reversed(rows[:7])
         if getattr(row, "metric_date", None) is not None and getattr(row, "resting_hr_bpm", None) is not None
     ]
+    hrv_history = [
+        {
+            "metric_date": row.metric_date.isoformat() if getattr(row, "metric_date", None) else None,
+            "hrv_ms": (
+                round(float(row.hrv_ms), 1)
+                if getattr(row, "hrv_ms", None) is not None
+                else None
+            ),
+            "trend_status": (
+                _apple_health_hrv_status(
+                    round(float(row.hrv_ms), 1)
+                    if getattr(row, "hrv_ms", None) is not None
+                    else None,
+                    hrv_baseline_value,
+                )[0]
+                if getattr(row, "hrv_ms", None) is not None
+                else None
+            ),
+            "trend_label": (
+                _apple_health_hrv_status(
+                    round(float(row.hrv_ms), 1)
+                    if getattr(row, "hrv_ms", None) is not None
+                    else None,
+                    hrv_baseline_value,
+                )[1]
+                if getattr(row, "hrv_ms", None) is not None
+                else None
+            ),
+        }
+        for row in reversed(hrv_rows[:7])
+        if getattr(row, "metric_date", None) is not None and getattr(row, "hrv_ms", None) is not None
+    ]
     steps_history = [
         {
             "metric_date": row.metric_date.isoformat() if getattr(row, "metric_date", None) else None,
@@ -1169,14 +1263,24 @@ def get_apple_health_resting_hr_summary(
         "metric_date": latest_row.metric_date.isoformat() if latest_row else None,
         "resting_hr_bpm": latest_value,
         "baseline_resting_hr_bpm": baseline_value,
+        "baseline_window_days": APPLE_HEALTH_BASELINE_DAYS,
+        "baseline_min_points": APPLE_HEALTH_BASELINE_MIN_POINTS,
         "delta_bpm": delta_bpm,
         "trend_status": trend_status if latest_row else None,
         "trend_label": trend_label if latest_row else None,
         "synced_at": latest_row.synced_at.isoformat() if latest_row and latest_row.synced_at else None,
-        "available": latest_row is not None,
+        "available": latest_row is not None or latest_hrv_row is not None or latest_step_row is not None,
+        "hrv_metric_date": latest_hrv_row.metric_date.isoformat() if latest_hrv_row else None,
+        "hrv_ms": latest_hrv_value,
+        "baseline_hrv_ms": hrv_baseline_value,
+        "hrv_delta_ms": hrv_delta_ms,
+        "hrv_trend_status": hrv_trend_status if latest_hrv_row else None,
+        "hrv_trend_label": hrv_trend_label if latest_hrv_row else None,
+        "hrv_synced_at": latest_hrv_row.synced_at.isoformat() if latest_hrv_row and latest_hrv_row.synced_at else None,
         "steps_today": steps_today,
         "steps_metric_date": steps_metric_date,
         "history": history,
+        "hrv_history": hrv_history,
         "steps_history": steps_history,
     }
 

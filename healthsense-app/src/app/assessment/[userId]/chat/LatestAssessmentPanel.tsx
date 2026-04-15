@@ -37,7 +37,7 @@ type MorningSequenceState = "idle" | "in_progress" | "completed";
 type DisplayTheme = "light" | "dark";
 type ObjectivesSectionKey = "nutrition" | "training" | "resilience" | "recovery" | "wellbeing";
 type UrineCaptureState = "ready" | "timing" | "saving" | "queued" | "analysed" | "review" | "error";
-type BiomarkerExplanationKey = "rhr" | "steps" | "urine";
+type BiomarkerExplanationKey = "rhr" | "hrv" | "steps" | "urine";
 type BiomarkerExplanationTone = "purple" | "green" | "amber" | "red" | "neutral";
 type BiomarkerExplanationScaleRow = {
   marker: string;
@@ -87,6 +87,12 @@ function resolveRestingHeartRateValue(value?: number | null): string | null {
   return String(Math.round(resolved));
 }
 
+function resolveHeartRateVariabilityValue(value?: number | null): string | null {
+  const resolved = Number(value);
+  if (!Number.isFinite(resolved) || resolved <= 0) return null;
+  return String(Math.round(resolved));
+}
+
 function resolveRestingHeartRateTrendLabel(label?: string | null): string {
   const resolved = String(label || "").trim();
   if (!resolved) return "normal";
@@ -97,6 +103,7 @@ function resolveRestingHeartRateCompactTrendLabel(label?: string | null): string
   const resolved = resolveRestingHeartRateTrendLabel(label);
   if (resolved === "optimal") return "opt";
   if (resolved === "elevated") return "elev";
+  if (resolved === "suppressed") return "supp";
   return "norm";
 }
 
@@ -1082,6 +1089,8 @@ export default function LatestAssessmentPanel({
   );
   const appleHealthSupported = canUseAppleHealth();
   const restingHeartRateValue = resolveRestingHeartRateValue(restingHeartRate?.resting_hr_bpm);
+  const heartRateVariabilityValue = resolveHeartRateVariabilityValue(restingHeartRate?.hrv_ms);
+  const latestHrvMetricDate = String(restingHeartRate?.hrv_metric_date || "").trim();
   const latestStepsMetricDate = String(restingHeartRate?.steps_metric_date || "").trim();
   const restingHeartRateHistory = useMemo(
     () =>
@@ -1093,6 +1102,17 @@ export default function LatestAssessmentPanel({
           )
         : [],
     [restingHeartRate?.history],
+  );
+  const heartRateVariabilityHistory = useMemo(
+    () =>
+      Array.isArray(restingHeartRate?.hrv_history)
+        ? restingHeartRate.hrv_history.filter(
+            (item) =>
+              Boolean(String(item?.metric_date || "").trim()) &&
+              Number.isFinite(Number(item?.hrv_ms)),
+          )
+        : [],
+    [restingHeartRate?.hrv_history],
   );
   const stepsHistory = useMemo(
     () =>
@@ -1106,6 +1126,12 @@ export default function LatestAssessmentPanel({
         : [],
     [restingHeartRate?.steps_history],
   );
+  const resolvedLatestHrvMetricDate = useMemo(() => {
+    if (latestHrvMetricDate) return latestHrvMetricDate;
+    const latestHrvEntry = [...heartRateVariabilityHistory]
+      .sort((left, right) => String(right?.metric_date || "").localeCompare(String(left?.metric_date || "")))[0];
+    return String(latestHrvEntry?.metric_date || "").trim();
+  }, [heartRateVariabilityHistory, latestHrvMetricDate]);
   const resolvedLatestStepsMetricDate = useMemo(() => {
     if (latestStepsMetricDate) return latestStepsMetricDate;
     const latestStepEntry = [...stepsHistory]
@@ -1115,6 +1141,20 @@ export default function LatestAssessmentPanel({
   const restingHeartRateWeek = useMemo(
     () => buildBiometricWeek(restingHeartRateHistory, restingHeartRate?.metric_date),
     [restingHeartRate?.metric_date, restingHeartRateHistory],
+  );
+  const heartRateVariabilityWeek = useMemo(
+    () => buildBiometricWeek(heartRateVariabilityHistory, resolvedLatestHrvMetricDate),
+    [heartRateVariabilityHistory, resolvedLatestHrvMetricDate],
+  );
+  const latestHrvItem = useMemo(
+    () =>
+      heartRateVariabilityHistory.find(
+        (item) => String(item?.metric_date || "").trim() === resolvedLatestHrvMetricDate,
+      ) ||
+      [...heartRateVariabilityHistory]
+        .sort((left, right) => String(right?.metric_date || "").localeCompare(String(left?.metric_date || "")))[0] ||
+      null,
+    [heartRateVariabilityHistory, resolvedLatestHrvMetricDate],
   );
   const stepsWeek = useMemo(
     () => buildBiometricWeek(stepsHistory, resolvedLatestStepsMetricDate),
@@ -1176,8 +1216,12 @@ export default function LatestAssessmentPanel({
   const biomarkerExplanationButtonClassName =
     "rounded-full border border-[#d9cdbb] bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#5d5348]";
   const rhrExplanationResult = restingHeartRateValue
-    ? `Latest result: ${restingHeartRateValue} bpm, currently shown as ${resolveRestingHeartRateTrendLabel(restingHeartRate?.trend_label)}. Resting HR is a recovery and load signal; lower than your usual range often suggests better recovery, while elevated can reflect stress, illness, poor sleep, dehydration, alcohol, or training load.`
-    : "Latest result: no current Resting HR is available yet. Once Apple Health syncs a value, this section will compare it with your recent pattern.";
+    ? `Latest result: ${restingHeartRateValue} bpm, currently shown as ${resolveRestingHeartRateTrendLabel(restingHeartRate?.trend_label)}. Resting HR is compared with your own 7-14 day baseline; lower than your usual range often suggests better recovery, while elevated can reflect stress, illness, poor sleep, dehydration, alcohol, or training load.`
+    : "Latest result: no current Resting HR is available yet. Once Apple Health syncs enough readings, this section will compare it with your recent 7-14 day baseline.";
+  const latestHrvValue = resolveHeartRateVariabilityValue(latestHrvItem?.hrv_ms);
+  const hrvExplanationResult = latestHrvValue
+    ? `Latest result: ${latestHrvValue} ms, currently shown as ${resolveRestingHeartRateTrendLabel(latestHrvItem?.trend_label || restingHeartRate?.hrv_trend_label)}. HRV is compared with your own 7-14 day baseline; higher than your recent pattern usually suggests better recovery, while a suppressed reading can reflect stress, illness, poor sleep, alcohol, dehydration, or training load.`
+    : "Latest result: no current HRV is available yet. Once Apple Health syncs enough readings, this section will compare HRV with your recent 7-14 day baseline.";
   const latestStepsValue = formatFullStepCount(latestStepsItem?.steps);
   const latestStepsStatus = resolveStepsStatus(latestStepsItem?.steps);
   const stepsExplanationResult = latestStepsValue
@@ -1194,7 +1238,7 @@ export default function LatestAssessmentPanel({
       marker: "Resting HR",
       status: "Optimum",
       tone: "purple",
-      meaning: "Lower than your recent pattern, which usually suggests recovery/load is moving in the right direction.",
+      meaning: "Lower than your recent 7-14 day pattern, which usually suggests recovery/load is moving in the right direction.",
     },
     {
       marker: "Resting HR",
@@ -1207,6 +1251,26 @@ export default function LatestAssessmentPanel({
       status: "Elevated",
       tone: "amber",
       meaning: "Higher than usual; consider sleep, stress, hydration, illness, alcohol, or training load.",
+    },
+  ];
+  const hrvExplanationScaleRows: BiomarkerExplanationScaleRow[] = [
+    {
+      marker: "HRV",
+      status: "Optimum",
+      tone: "purple",
+      meaning: "Higher than your recent 7-14 day pattern, which usually suggests recovery is moving in the right direction.",
+    },
+    {
+      marker: "HRV",
+      status: "Normal",
+      tone: "green",
+      meaning: "Broadly in your expected recent range.",
+    },
+    {
+      marker: "HRV",
+      status: "Suppressed",
+      tone: "amber",
+      meaning: "Lower than usual; consider sleep, stress, hydration, illness, alcohol, or training load.",
     },
   ];
   const stepsExplanationScaleRows: BiomarkerExplanationScaleRow[] = [
@@ -1376,11 +1440,19 @@ export default function LatestAssessmentPanel({
     activeBiomarkerExplanation === "rhr"
       ? {
           title: "Resting HR",
-          description: "Resting HR is your heart rate at rest. HealthSense compares it with your recent pattern rather than using one fixed target.",
+          description: "Resting HR is your heart rate at rest. HealthSense compares it with your own recent 7-14 day baseline rather than using one fixed target.",
           result: rhrExplanationResult,
           scaleRows: rhrExplanationScaleRows,
           showMarkerColumn: false,
         }
+      : activeBiomarkerExplanation === "hrv"
+        ? {
+            title: "HRV",
+            description: "HRV is heart rate variability, measured in milliseconds. HealthSense compares it with your own recent 7-14 day baseline rather than using one fixed target.",
+            result: hrvExplanationResult,
+            scaleRows: hrvExplanationScaleRows,
+            showMarkerColumn: false,
+          }
       : activeBiomarkerExplanation === "steps"
         ? {
             title: "Steps",
@@ -1491,6 +1563,7 @@ export default function LatestAssessmentPanel({
     if (
       appleHealthSupported &&
       !restingHeartRateValue &&
+      !heartRateVariabilityValue &&
       !restingHeartRateLoading &&
       !restingHeartRateEnabling &&
       appleHealthAuthStatus !== "denied"
@@ -1500,6 +1573,7 @@ export default function LatestAssessmentPanel({
   }, [
     appleHealthAuthStatus,
     appleHealthSupported,
+    heartRateVariabilityValue,
     restingHeartRateEnabling,
     restingHeartRateLoading,
     restingHeartRateValue,
@@ -2475,6 +2549,56 @@ export default function LatestAssessmentPanel({
                   ) : (
                     <p className="mt-3 text-sm text-[#6b6257]">
                       Daily history will appear here once recent biometrics have been synced.
+                    </p>
+                  )}
+                </div>
+
+                <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-[#1e1b16]">HRV</p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActiveBiomarkerExplanation((current) => (current === "hrv" ? null : "hrv"))
+                        }
+                        className={biomarkerExplanationButtonClassName}
+                      >
+                        Explain
+                      </button>
+                      <p className="text-xs uppercase tracking-[0.16em] text-[#8c7f70]">
+                        Last 7 days
+                      </p>
+                    </div>
+                  </div>
+                  {heartRateVariabilityHistory.length ? (
+                    <div className="mt-4 grid grid-cols-7 gap-2">
+                      {heartRateVariabilityWeek.map(({ metric_date: metricDate, item }) => {
+                        const value = resolveHeartRateVariabilityValue(item?.hrv_ms);
+                        const metricToneClassName = resolveRestingHeartRateMetricTone(
+                          displayTheme,
+                          item?.trend_status,
+                        );
+                        return (
+                          <div
+                            key={`hrv-${metricDate}`}
+                            className={`rounded-xl border px-2 py-2 text-center text-[11px] ${restingHeartRateBoxToneClassName}`}
+                          >
+                            <p className="font-semibold opacity-80">{formatBiometricDayLabel(metricDate)}</p>
+                            <p className="mt-1 opacity-65">{formatBiometricDayNumber(metricDate)}</p>
+                            <p className={`mt-3 text-sm font-semibold leading-none ${metricToneClassName}`}>
+                              {value || "—"}
+                            </p>
+                            <p className={`mt-2 text-[10px] font-semibold uppercase tracking-[0.12em] ${metricToneClassName}`}>
+                              {value ? resolveRestingHeartRateCompactTrendLabel(item?.trend_label) : "—"}
+                            </p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-sm text-[#6b6257]">
+                      Daily HRV history will appear here once recent biometrics have been synced.
                     </p>
                   )}
                 </div>

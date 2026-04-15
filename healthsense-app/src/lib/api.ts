@@ -119,17 +119,32 @@ export type AppleHealthRestingHeartRateResponse = {
   connected?: boolean;
   metric_date?: string | null;
   resting_hr_bpm?: number | null;
+  hrv_metric_date?: string | null;
+  hrv_ms?: number | null;
   steps_today?: number | null;
   steps_metric_date?: string | null;
   baseline_resting_hr_bpm?: number | null;
+  baseline_hrv_ms?: number | null;
+  baseline_window_days?: number | null;
+  baseline_min_points?: number | null;
   delta_bpm?: number | null;
+  hrv_delta_ms?: number | null;
   trend_status?: "optimum" | "normal" | "elevated" | null;
   trend_label?: string | null;
+  hrv_trend_status?: "optimum" | "normal" | "elevated" | null;
+  hrv_trend_label?: string | null;
   synced_at?: string | null;
+  hrv_synced_at?: string | null;
   available?: boolean;
   history?: Array<{
     metric_date?: string | null;
     resting_hr_bpm?: number | null;
+    trend_status?: "optimum" | "normal" | "elevated" | null;
+    trend_label?: string | null;
+  }>;
+  hrv_history?: Array<{
+    metric_date?: string | null;
+    hrv_ms?: number | null;
     trend_status?: "optimum" | "normal" | "elevated" | null;
     trend_label?: string | null;
   }>;
