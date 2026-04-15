@@ -21,6 +21,7 @@ from .pillar_tracker import (
     tracker_today,
 )
 from .prompts import build_prompt, ensure_builtin_prompt_templates, run_llm_prompt
+from .wearables import get_apple_health_resting_hr_summary
 
 _DAILY_HABITS_SCHEMA_READY = False
 _PILLAR_ORDER = ("nutrition", "training", "resilience", "recovery")
@@ -1321,6 +1322,52 @@ def _build_day_brief(
     }
 
 
+def _build_biometrics_context(user_id: int) -> dict[str, Any] | None:
+    try:
+        with SessionLocal() as s:
+            summary = get_apple_health_resting_hr_summary(s, user_id=int(user_id))
+    except Exception:
+        return None
+    if not isinstance(summary, dict) or not summary.get("available"):
+        return None
+    readiness_history = []
+    for item in (summary.get("readiness_activity_history") or [])[-7:]:
+        if not isinstance(item, dict):
+            continue
+        readiness_history.append(
+            {
+                "metric_date": item.get("metric_date"),
+                "training_readiness_status": item.get("training_readiness_status"),
+                "training_readiness_label": item.get("training_readiness_label"),
+                "activity_status": item.get("activity_status"),
+                "activity_label": item.get("activity_label"),
+                "alignment_status": item.get("alignment_status"),
+                "alignment_label": item.get("alignment_label"),
+                "steps": item.get("steps"),
+                "active_minutes": item.get("active_minutes"),
+            }
+        )
+    return {
+        "provider": summary.get("provider"),
+        "connected": bool(summary.get("connected")),
+        "training_readiness_status": summary.get("training_readiness_status"),
+        "training_readiness_label": summary.get("training_readiness_label"),
+        "training_readiness_action": summary.get("training_readiness_action"),
+        "activity_status": summary.get("activity_status"),
+        "activity_status_label": summary.get("activity_status_label"),
+        "activity_alignment_status": summary.get("activity_alignment_status"),
+        "activity_alignment_label": summary.get("activity_alignment_label"),
+        "metric_date": summary.get("metric_date"),
+        "hrv_metric_date": summary.get("hrv_metric_date"),
+        "activity_metric_date": summary.get("activity_metric_date"),
+        "resting_hr_bpm": summary.get("resting_hr_bpm"),
+        "hrv_ms": summary.get("hrv_ms"),
+        "steps_today": summary.get("steps_today"),
+        "active_minutes_today": summary.get("active_minutes_today"),
+        "history": readiness_history,
+    }
+
+
 def _build_generation_context(user_id: int, *, selected_concept_key: str | None = None) -> dict[str, Any]:
     today = tracker_today()
     summary = get_pillar_tracker_summary(user_id, anchor=today)
@@ -1349,6 +1396,7 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
         planned_training=planned_training,
         planned_training_loaded=True,
     )
+    biometrics_context = _build_biometrics_context(user_id)
     pillars_payload = [
         {
             "pillar_key": str(item.get("pillar_key") or "").strip(),
@@ -1381,6 +1429,7 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
         "okr_context": okr_context,
         "tracker_review": tracker_review,
         "day_brief": day_brief,
+        "biometrics": biometrics_context,
     }
 
 

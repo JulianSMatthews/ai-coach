@@ -1081,6 +1081,58 @@ def _apple_health_hrv_status(
     return "normal", "Normal"
 
 
+def _apple_health_training_readiness_status(
+    hrv_status: str | None,
+    resting_hr_status: str | None,
+) -> tuple[str, str, str, int | None]:
+    resolved_hrv = str(hrv_status or "").strip().lower()
+    resolved_rhr = str(resting_hr_status or "").strip().lower()
+    if resolved_hrv not in {"optimum", "normal", "elevated"} or resolved_rhr not in {
+        "optimum",
+        "normal",
+        "elevated",
+    }:
+        return "unknown", "No data", "Sync HRV and Resting HR", None
+    if resolved_hrv == "optimum" and resolved_rhr in {"optimum", "normal"}:
+        return "ready", "Ready", "Push intensity", 3
+    if resolved_hrv == "elevated" and resolved_rhr == "elevated":
+        return "low", "Low", "Recover / avoid intensity", 1
+    return "moderate", "Moderate", "Train, but control intensity", 2
+
+
+def _apple_health_activity_status(
+    *,
+    steps: int | None,
+    active_minutes: int | None,
+) -> tuple[str, str, int | None]:
+    resolved_steps = int(steps) if steps is not None else None
+    resolved_active_minutes = int(active_minutes) if active_minutes is not None else None
+    if resolved_steps is None and resolved_active_minutes is None:
+        return "unknown", "No data", None
+    if (resolved_active_minutes is not None and resolved_active_minutes >= 30) or (
+        resolved_steps is not None and resolved_steps >= 10000
+    ):
+        return "high", "High", 3
+    if (resolved_active_minutes is not None and resolved_active_minutes >= 20) or (
+        resolved_steps is not None and resolved_steps >= 7500
+    ):
+        return "moderate", "Moderate", 2
+    return "low", "Low", 1
+
+
+def _apple_health_readiness_activity_alignment(
+    readiness_level: int | None,
+    activity_level: int | None,
+) -> tuple[str, str]:
+    if readiness_level is None or activity_level is None:
+        return "unknown", "No alignment yet"
+    if int(readiness_level) == int(activity_level):
+        return "aligned", "Aligned"
+    if int(activity_level) > int(readiness_level):
+        return "above_readiness", "Activity above readiness"
+    return "below_readiness", "Activity below readiness"
+
+
 def get_apple_health_resting_hr_summary(
     session,
     *,
@@ -1161,6 +1213,12 @@ def get_apple_health_resting_hr_summary(
         if latest_hrv_value is not None and hrv_baseline_value is not None
         else None
     )
+    training_readiness_status, training_readiness_label, training_readiness_action, training_readiness_level = (
+        _apple_health_training_readiness_status(
+            hrv_trend_status if latest_hrv_row else None,
+            trend_status if latest_row else None,
+        )
+    )
     connected = bool(
         connection and str(getattr(connection, "status", "") or "").strip().lower() == "connected"
     )
@@ -1226,6 +1284,32 @@ def get_apple_health_resting_hr_summary(
         if latest_active_minutes_row and getattr(latest_active_minutes_row, "metric_date", None)
         else None
     )
+    step_by_day = {
+        row.metric_date: int(row.steps)
+        for row in step_rows
+        if getattr(row, "metric_date", None) is not None and getattr(row, "steps", None) is not None
+    }
+    active_minutes_by_day = {
+        row.metric_date: int(row.active_minutes)
+        for row in active_minutes_rows
+        if getattr(row, "metric_date", None) is not None and getattr(row, "active_minutes", None) is not None
+    }
+    activity_dates = sorted(set(step_by_day.keys()) | set(active_minutes_by_day.keys()))
+    latest_activity_date = (
+        date.today()
+        if date.today() in activity_dates
+        else activity_dates[-1]
+        if activity_dates
+        else None
+    )
+    activity_status, activity_status_label, activity_level = _apple_health_activity_status(
+        steps=step_by_day.get(latest_activity_date) if latest_activity_date else None,
+        active_minutes=active_minutes_by_day.get(latest_activity_date) if latest_activity_date else None,
+    )
+    activity_alignment_status, activity_alignment_label = _apple_health_readiness_activity_alignment(
+        training_readiness_level,
+        activity_level,
+    )
     history = [
         {
             "metric_date": row.metric_date.isoformat() if getattr(row, "metric_date", None) else None,
@@ -1290,6 +1374,44 @@ def get_apple_health_resting_hr_summary(
         for row in reversed(hrv_rows[:7])
         if getattr(row, "metric_date", None) is not None and getattr(row, "hrv_ms", None) is not None
     ]
+    resting_hr_by_day = {
+        row.metric_date: round(float(row.resting_hr_bpm), 1)
+        for row in rows
+        if getattr(row, "metric_date", None) is not None and getattr(row, "resting_hr_bpm", None) is not None
+    }
+    hrv_by_day = {
+        row.metric_date: round(float(row.hrv_ms), 1)
+        for row in hrv_rows
+        if getattr(row, "metric_date", None) is not None and getattr(row, "hrv_ms", None) is not None
+    }
+    readiness_dates = sorted(set(resting_hr_by_day.keys()) | set(hrv_by_day.keys()))[-7:]
+    training_readiness_history = []
+    for metric_day in readiness_dates:
+        day_resting_hr = resting_hr_by_day.get(metric_day)
+        day_hrv = hrv_by_day.get(metric_day)
+        day_rhr_status, day_rhr_label = _apple_health_resting_hr_status(day_resting_hr, baseline_value)
+        day_hrv_status, day_hrv_label = _apple_health_hrv_status(day_hrv, hrv_baseline_value)
+        day_readiness_status, day_readiness_label, day_readiness_action, day_readiness_level = (
+            _apple_health_training_readiness_status(
+                day_hrv_status if day_hrv is not None else None,
+                day_rhr_status if day_resting_hr is not None else None,
+            )
+        )
+        training_readiness_history.append(
+            {
+                "metric_date": metric_day.isoformat(),
+                "status": day_readiness_status,
+                "label": day_readiness_label,
+                "action": day_readiness_action,
+                "level": day_readiness_level,
+                "resting_hr_bpm": day_resting_hr,
+                "resting_hr_status": day_rhr_status if day_resting_hr is not None else None,
+                "resting_hr_label": day_rhr_label if day_resting_hr is not None else None,
+                "hrv_ms": day_hrv,
+                "hrv_status": day_hrv_status if day_hrv is not None else None,
+                "hrv_label": day_hrv_label if day_hrv is not None else None,
+            }
+        )
     steps_history = [
         {
             "metric_date": row.metric_date.isoformat() if getattr(row, "metric_date", None) else None,
@@ -1306,6 +1428,52 @@ def get_apple_health_resting_hr_summary(
         for row in reversed(active_minutes_rows[:7])
         if getattr(row, "metric_date", None) is not None and getattr(row, "active_minutes", None) is not None
     ]
+    readiness_history_by_day: dict[date, dict[str, Any]] = {}
+    for item in training_readiness_history:
+        if not isinstance(item, dict):
+            continue
+        metric_day = _coerce_date(item.get("metric_date"))
+        if metric_day:
+            readiness_history_by_day[metric_day] = item
+    activity_dates_for_history = sorted(
+        set(step_by_day.keys()) | set(active_minutes_by_day.keys()) | set(readiness_history_by_day.keys())
+    )[-7:]
+    activity_status_history = []
+    readiness_activity_history = []
+    for metric_day in activity_dates_for_history:
+        day_activity_status, day_activity_label, day_activity_level = _apple_health_activity_status(
+            steps=step_by_day.get(metric_day),
+            active_minutes=active_minutes_by_day.get(metric_day),
+        )
+        readiness_item = readiness_history_by_day.get(metric_day) or {}
+        day_alignment_status, day_alignment_label = _apple_health_readiness_activity_alignment(
+            _coerce_int(readiness_item.get("level")) if isinstance(readiness_item, dict) else None,
+            day_activity_level,
+        )
+        activity_item = {
+            "metric_date": metric_day.isoformat(),
+            "status": day_activity_status,
+            "label": day_activity_label,
+            "level": day_activity_level,
+            "steps": step_by_day.get(metric_day),
+            "active_minutes": active_minutes_by_day.get(metric_day),
+        }
+        activity_status_history.append(activity_item)
+        readiness_activity_history.append(
+            {
+                "metric_date": metric_day.isoformat(),
+                "training_readiness_status": readiness_item.get("status") if isinstance(readiness_item, dict) else None,
+                "training_readiness_label": readiness_item.get("label") if isinstance(readiness_item, dict) else None,
+                "training_readiness_level": readiness_item.get("level") if isinstance(readiness_item, dict) else None,
+                "activity_status": day_activity_status,
+                "activity_label": day_activity_label,
+                "activity_level": day_activity_level,
+                "alignment_status": day_alignment_status,
+                "alignment_label": day_alignment_label,
+                "steps": step_by_day.get(metric_day),
+                "active_minutes": active_minutes_by_day.get(metric_day),
+            }
+        )
     return {
         "provider": APPLE_HEALTH_PROVIDER,
         "connected": connected,
@@ -1331,14 +1499,27 @@ def get_apple_health_resting_hr_summary(
         "hrv_trend_status": hrv_trend_status if latest_hrv_row else None,
         "hrv_trend_label": hrv_trend_label if latest_hrv_row else None,
         "hrv_synced_at": latest_hrv_row.synced_at.isoformat() if latest_hrv_row and latest_hrv_row.synced_at else None,
+        "training_readiness_status": training_readiness_status,
+        "training_readiness_label": training_readiness_label,
+        "training_readiness_action": training_readiness_action,
+        "training_readiness_level": training_readiness_level,
         "steps_today": steps_today,
         "steps_metric_date": steps_metric_date,
         "active_minutes_today": active_minutes_today,
         "active_minutes_metric_date": active_minutes_metric_date,
+        "activity_metric_date": latest_activity_date.isoformat() if latest_activity_date else None,
+        "activity_status": activity_status,
+        "activity_status_label": activity_status_label,
+        "activity_level": activity_level,
+        "activity_alignment_status": activity_alignment_status,
+        "activity_alignment_label": activity_alignment_label,
         "history": history,
         "hrv_history": hrv_history,
+        "training_readiness_history": training_readiness_history,
         "steps_history": steps_history,
         "active_minutes_history": active_minutes_history,
+        "activity_status_history": activity_status_history,
+        "readiness_activity_history": readiness_activity_history,
     }
 
 

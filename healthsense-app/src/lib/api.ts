@@ -125,6 +125,7 @@ export type AppleHealthRestingHeartRateResponse = {
   steps_metric_date?: string | null;
   active_minutes_today?: number | null;
   active_minutes_metric_date?: string | null;
+  activity_metric_date?: string | null;
   baseline_resting_hr_bpm?: number | null;
   baseline_hrv_ms?: number | null;
   baseline_window_days?: number | null;
@@ -137,6 +138,15 @@ export type AppleHealthRestingHeartRateResponse = {
   hrv_trend_label?: string | null;
   synced_at?: string | null;
   hrv_synced_at?: string | null;
+  training_readiness_status?: "ready" | "moderate" | "low" | "unknown" | null;
+  training_readiness_label?: string | null;
+  training_readiness_action?: string | null;
+  training_readiness_level?: number | null;
+  activity_status?: "high" | "moderate" | "low" | "unknown" | null;
+  activity_status_label?: string | null;
+  activity_level?: number | null;
+  activity_alignment_status?: "aligned" | "above_readiness" | "below_readiness" | "unknown" | null;
+  activity_alignment_label?: string | null;
   available?: boolean;
   history?: Array<{
     metric_date?: string | null;
@@ -150,12 +160,46 @@ export type AppleHealthRestingHeartRateResponse = {
     trend_status?: "optimum" | "normal" | "elevated" | null;
     trend_label?: string | null;
   }>;
+  training_readiness_history?: Array<{
+    metric_date?: string | null;
+    status?: "ready" | "moderate" | "low" | "unknown" | null;
+    label?: string | null;
+    action?: string | null;
+    level?: number | null;
+    resting_hr_bpm?: number | null;
+    resting_hr_status?: "optimum" | "normal" | "elevated" | null;
+    resting_hr_label?: string | null;
+    hrv_ms?: number | null;
+    hrv_status?: "optimum" | "normal" | "elevated" | null;
+    hrv_label?: string | null;
+  }>;
   steps_history?: Array<{
     metric_date?: string | null;
     steps?: number | null;
   }>;
   active_minutes_history?: Array<{
     metric_date?: string | null;
+    active_minutes?: number | null;
+  }>;
+  activity_status_history?: Array<{
+    metric_date?: string | null;
+    status?: "high" | "moderate" | "low" | "unknown" | null;
+    label?: string | null;
+    level?: number | null;
+    steps?: number | null;
+    active_minutes?: number | null;
+  }>;
+  readiness_activity_history?: Array<{
+    metric_date?: string | null;
+    training_readiness_status?: "ready" | "moderate" | "low" | "unknown" | null;
+    training_readiness_label?: string | null;
+    training_readiness_level?: number | null;
+    activity_status?: "high" | "moderate" | "low" | "unknown" | null;
+    activity_label?: string | null;
+    activity_level?: number | null;
+    alignment_status?: "aligned" | "above_readiness" | "below_readiness" | "unknown" | null;
+    alignment_label?: string | null;
+    steps?: number | null;
     active_minutes?: number | null;
   }>;
   ok?: boolean;

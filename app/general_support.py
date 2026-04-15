@@ -529,6 +529,47 @@ def _tracker_history_lines(tracker_context: dict) -> list[str]:
         today_aim = str(day_brief.get("today_aim") or "").strip()
         if today_aim:
             lines.append(f"Today aim: {today_aim}")
+    biometrics = tracker_context.get("biometrics") if isinstance(tracker_context.get("biometrics"), dict) else {}
+    if biometrics:
+        bits = []
+        readiness_label = str(biometrics.get("training_readiness_label") or "").strip()
+        readiness_action = str(biometrics.get("training_readiness_action") or "").strip()
+        activity_label = str(biometrics.get("activity_status_label") or "").strip()
+        alignment_label = str(biometrics.get("activity_alignment_label") or "").strip()
+        if readiness_label:
+            bits.append(f"readiness={readiness_label}")
+        if readiness_action:
+            bits.append(f"guidance={readiness_action}")
+        if activity_label:
+            bits.append(f"activity={activity_label}")
+        if alignment_label:
+            bits.append(f"alignment={alignment_label}")
+        for key, label in (
+            ("resting_hr_bpm", "RHR"),
+            ("hrv_ms", "HRV"),
+            ("steps_today", "steps"),
+            ("active_minutes_today", "active_cardio_min"),
+        ):
+            value = biometrics.get(key)
+            if value is not None and str(value).strip() != "":
+                bits.append(f"{label}={value}")
+        if bits:
+            lines.append("Biometrics readiness/activity: " + "; ".join(bits))
+        history = biometrics.get("history") if isinstance(biometrics.get("history"), list) else []
+        history_bits = []
+        for item in history[-7:]:
+            if not isinstance(item, dict):
+                continue
+            metric_date = str(item.get("metric_date") or "").strip()
+            readiness = str(item.get("training_readiness_label") or "").strip()
+            activity = str(item.get("activity_label") or "").strip()
+            alignment = str(item.get("alignment_label") or "").strip()
+            if metric_date and (readiness or activity or alignment):
+                history_bits.append(
+                    f"{metric_date}: readiness={readiness or 'n/a'}, activity={activity or 'n/a'}, alignment={alignment or 'n/a'}"
+                )
+        if history_bits:
+            lines.append("Seven-day readiness/activity alignment: " + " | ".join(history_bits))
     if (okr_context or {}).get("habit_steps"):
         lines.append("Active KR habit steps:")
         for step in (okr_context.get("habit_steps") or [])[:5]:
