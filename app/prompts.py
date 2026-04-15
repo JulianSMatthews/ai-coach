@@ -585,7 +585,7 @@ def _coach_home_history_lines(
             ("resting_hr_bpm", "RHR"),
             ("hrv_ms", "HRV"),
             ("steps_today", "steps"),
-            ("active_minutes_today", "active_cardio_min"),
+            ("active_minutes_today", "exercise_minutes"),
         ):
             value = biometrics.get(key)
             if value is not None and str(value).strip() != "":
