@@ -594,6 +594,26 @@ def _coach_home_history_lines(
             bits.append("; ".join(raw_bits))
         if bits:
             lines.append("Biometrics readiness/activity: " + "; ".join(bits))
+        sources = biometrics.get("biometric_sources") if isinstance(biometrics.get("biometric_sources"), dict) else {}
+        source_bits: List[str] = []
+        for metric_key, label in (
+            ("resting_hr", "RHR"),
+            ("hrv", "HRV"),
+            ("steps", "steps"),
+            ("exercise_minutes", "exercise_minutes"),
+        ):
+            item = sources.get(metric_key) if isinstance(sources.get(metric_key), dict) else {}
+            if not item:
+                continue
+            if item.get("enabled") is False:
+                source_bits.append(f"{label}=excluded")
+                continue
+            confidence = str(item.get("confidence_label") or item.get("confidence") or "").strip()
+            device = str(item.get("device_label") or item.get("source_label") or "").strip()
+            if confidence or device:
+                source_bits.append(f"{label}={confidence or 'unknown'} via {device or 'unknown'}")
+        if source_bits:
+            lines.append("Biometrics source confidence: " + "; ".join(source_bits))
         history = biometrics.get("history") if isinstance(biometrics.get("history"), list) else []
         history_bits = []
         for item in history[-7:]:

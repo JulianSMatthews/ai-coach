@@ -189,6 +189,7 @@ from .wearables import (
     apply_token_payload as apply_wearable_token_payload,
     ensure_wearables_schema,
     exchange_code_for_tokens as exchange_wearable_code_for_tokens,
+    get_biometrics_preferences,
     get_apple_health_resting_hr_summary,
     get_provider_definition as get_wearable_provider_definition,
     list_provider_definitions,
@@ -197,6 +198,7 @@ from .wearables import (
     parse_wearable_oauth_state,
     provider_configured as wearable_provider_configured,
     provider_enabled as wearable_provider_enabled,
+    save_biometrics_preferences,
     upsert_apple_health_resting_hr_samples,
 )
 from .urine_tests import (
@@ -8706,6 +8708,55 @@ def api_user_wearables(
         "user_id": int(user_id),
         "providers": providers,
         "connected_count": int(connected_count),
+    }
+
+
+@api_v1.get("/users/{user_id}/wearables/biometrics/preferences")
+def api_user_biometrics_preferences(
+    user_id: int,
+    request: Request,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    ensure_wearables_schema()
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    with SessionLocal() as s:
+        user = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="user not found")
+        return {
+            "user_id": int(user_id),
+            "biometric_preferences": get_biometrics_preferences(s, user_id=int(user_id)),
+        }
+
+
+@api_v1.post("/users/{user_id}/wearables/biometrics/preferences")
+def api_user_biometrics_preferences_save(
+    user_id: int,
+    request: Request,
+    payload: dict | None = Body(default=None),
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    ensure_wearables_schema()
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    if _is_readonly_admin_preview_request(
+        request,
+        x_admin_token=x_admin_token,
+        x_admin_user_id=x_admin_user_id,
+    ):
+        raise HTTPException(status_code=403, detail="Admin app preview is read-only")
+    body = payload if isinstance(payload, dict) else {}
+    with SessionLocal() as s:
+        user = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="user not found")
+        save_biometrics_preferences(s, user_id=int(user_id), payload=body)
+        s.commit()
+        summary = get_apple_health_resting_hr_summary(s, user_id=int(user_id))
+    return {
+        "ok": True,
+        **summary,
     }
 
 

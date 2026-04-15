@@ -47,6 +47,108 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
         HKUnit.minute()
     }
 
+    private func sourceObject(source: HKSource, sourceRevision: HKSourceRevision? = nil, device: HKDevice? = nil) -> JSObject {
+        var object: JSObject = [
+            "name": source.name,
+            "bundleIdentifier": source.bundleIdentifier,
+        ]
+        if let productType = sourceRevision?.productType, !productType.isEmpty {
+            object["productType"] = productType
+        }
+        if let version = sourceRevision?.version, !version.isEmpty {
+            object["version"] = version
+        }
+        if let device = device {
+            var deviceObject: JSObject = [:]
+            if let name = device.name, !name.isEmpty {
+                deviceObject["name"] = name
+            }
+            if let manufacturer = device.manufacturer, !manufacturer.isEmpty {
+                deviceObject["manufacturer"] = manufacturer
+            }
+            if let model = device.model, !model.isEmpty {
+                deviceObject["model"] = model
+            }
+            if let hardwareVersion = device.hardwareVersion, !hardwareVersion.isEmpty {
+                deviceObject["hardwareVersion"] = hardwareVersion
+            }
+            if let softwareVersion = device.softwareVersion, !softwareVersion.isEmpty {
+                deviceObject["softwareVersion"] = softwareVersion
+            }
+            if !deviceObject.isEmpty {
+                object["device"] = deviceObject
+            }
+        }
+        return object
+    }
+
+    private func sourceKey(_ source: JSObject) -> String {
+        let device = source["device"] as? JSObject
+        return [
+            source["name"] as? String,
+            source["bundleIdentifier"] as? String,
+            source["productType"] as? String,
+            device?["name"] as? String,
+            device?["model"] as? String,
+        ]
+            .compactMap { value in
+                guard let value else { return nil }
+                let token = value.trimmingCharacters(in: .whitespacesAndNewlines)
+                return token.isEmpty ? nil : token
+            }
+            .joined(separator: "|")
+    }
+
+    private func recordSource(
+        _ source: JSObject,
+        metricDate: String,
+        value: Double,
+        valueKey: String,
+        weight: Double,
+        sourcesByDay: inout [String: [String: JSObject]]
+    ) {
+        let key = sourceKey(source)
+        guard !key.isEmpty else { return }
+        var daySources = sourcesByDay[metricDate] ?? [:]
+        var row = daySources[key] ?? source
+        let sampleCount = (row["sampleCount"] as? Int ?? 0) + 1
+        let totalValue = (row["totalValue"] as? Double ?? 0) + value
+        let sortValue = (row["sortValue"] as? Double ?? 0) + weight
+        row["sampleCount"] = sampleCount
+        row["totalValue"] = totalValue
+        row["sortValue"] = sortValue
+        row[valueKey] = round(totalValue * 10) / 10
+        daySources[key] = row
+        sourcesByDay[metricDate] = daySources
+    }
+
+    private func publicSourceObject(_ source: JSObject) -> JSObject {
+        var object = source
+        object.removeValue(forKey: "totalValue")
+        object.removeValue(forKey: "sortValue")
+        return object
+    }
+
+    private func sourceSummary(metricDate: String, sourcesByDay: [String: [String: JSObject]]) -> JSObject? {
+        guard let daySources = sourcesByDay[metricDate], !daySources.isEmpty else {
+            return nil
+        }
+        let sources = daySources.values.sorted { left, right in
+            let leftValue = left["sortValue"] as? Double ?? Double(left["sampleCount"] as? Int ?? 0)
+            let rightValue = right["sortValue"] as? Double ?? Double(right["sampleCount"] as? Int ?? 0)
+            return leftValue > rightValue
+        }
+        let publicSources = sources.map { publicSourceObject($0) }
+        guard let primary = publicSources.first else {
+            return nil
+        }
+        return [
+            "primary": primary,
+            "sources": publicSources,
+            "sourceCount": publicSources.count,
+        ]
+    }
+
     private func isoDayString(_ value: Date) -> String {
         let formatter = DateFormatter()
         formatter.calendar = Calendar.autoupdatingCurrent
@@ -59,6 +161,7 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
     private func aggregateRestingHeartRateSamples(_ quantitySamples: [HKQuantitySample]) -> [JSObject] {
         var totalsByDay: [String: Double] = [:]
         var countsByDay: [String: Int] = [:]
+        var sourcesByDay: [String: [String: JSObject]] = [:]
 
         for sample in quantitySamples {
             let metricDate = isoDayString(sample.endDate)
@@ -66,6 +169,14 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
             guard bpm > 0 else { continue }
             totalsByDay[metricDate, default: 0] += bpm
             countsByDay[metricDate, default: 0] += 1
+            recordSource(
+                sourceObject(source: sample.sourceRevision.source, sourceRevision: sample.sourceRevision, device: sample.device),
+                metricDate: metricDate,
+                value: bpm,
+                valueKey: "restingHeartRateBpm",
+                weight: 1,
+                sourcesByDay: &sourcesByDay
+            )
         }
 
         return totalsByDay.keys
@@ -76,16 +187,21 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
                 let average = round((total / Double(count)) * 10) / 10
                 guard average > 0 else { return nil }
-                return [
+                var row: JSObject = [
                     "metricDate": metricDate,
                     "restingHeartRateBpm": average,
                 ]
+                if let summary = sourceSummary(metricDate: metricDate, sourcesByDay: sourcesByDay) {
+                    row["restingHeartRateSource"] = summary
+                }
+                return row
             }
     }
 
     private func aggregateHeartRateVariabilitySamples(_ quantitySamples: [HKQuantitySample]) -> [JSObject] {
         var totalsByDay: [String: Double] = [:]
         var countsByDay: [String: Int] = [:]
+        var sourcesByDay: [String: [String: JSObject]] = [:]
 
         for sample in quantitySamples {
             let metricDate = isoDayString(sample.endDate)
@@ -93,6 +209,14 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
             guard hrvMs > 0 else { continue }
             totalsByDay[metricDate, default: 0] += hrvMs
             countsByDay[metricDate, default: 0] += 1
+            recordSource(
+                sourceObject(source: sample.sourceRevision.source, sourceRevision: sample.sourceRevision, device: sample.device),
+                metricDate: metricDate,
+                value: hrvMs,
+                valueKey: "heartRateVariabilityMs",
+                weight: 1,
+                sourcesByDay: &sourcesByDay
+            )
         }
 
         return totalsByDay.keys
@@ -103,10 +227,14 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 }
                 let average = round((total / Double(count)) * 10) / 10
                 guard average > 0 else { return nil }
-                return [
+                var row: JSObject = [
                     "metricDate": metricDate,
                     "heartRateVariabilityMs": average,
                 ]
+                if let summary = sourceSummary(metricDate: metricDate, sourcesByDay: sourcesByDay) {
+                    row["heartRateVariabilitySource"] = summary
+                }
+                return row
             }
     }
 
@@ -131,6 +259,9 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
             if let hrvMs = sample["heartRateVariabilityMs"] {
                 row["heartRateVariabilityMs"] = hrvMs
             }
+            if let source = sample["heartRateVariabilitySource"] {
+                row["heartRateVariabilitySource"] = source
+            }
             byDay[metricDate] = row
         }
 
@@ -141,6 +272,9 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
             if let steps = sample["steps"] {
                 row["steps"] = steps
             }
+            if let source = sample["stepsSource"] {
+                row["stepsSource"] = source
+            }
             byDay[metricDate] = row
         }
 
@@ -150,6 +284,9 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
             var row = byDay[metricDate] ?? ["metricDate": metricDate]
             if let activeCardioMinutes = sample["activeCardioMinutes"] {
                 row["activeCardioMinutes"] = activeCardioMinutes
+            }
+            if let source = sample["activeCardioMinutesSource"] {
+                row["activeCardioMinutesSource"] = source
             }
             byDay[metricDate] = row
         }
@@ -212,10 +349,11 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
     ) {
         let interval = DateComponents(day: 1)
         let anchorDate = Calendar.autoupdatingCurrent.startOfDay(for: endDate)
+        var sourcesByDay: [String: [String: JSObject]] = [:]
         let query = HKStatisticsCollectionQuery(
             quantityType: quantityType,
             quantitySamplePredicate: predicate,
-            options: [.cumulativeSum],
+            options: [.cumulativeSum, .separateBySource],
             anchorDate: anchorDate,
             intervalComponents: interval
         )
@@ -229,12 +367,32 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 guard let quantity = statistics.sumQuantity() else {
                     return
                 }
+                let metricDate = self.isoDayString(statistics.startDate)
                 let steps = Int(round(quantity.doubleValue(for: self.stepCountUnit())))
                 guard steps >= 0 else { return }
-                samples.append([
-                    "metricDate": self.isoDayString(statistics.startDate),
+                if let sources = statistics.sources {
+                    for source in sources {
+                        guard let sourceQuantity = statistics.sumQuantity(for: source) else { continue }
+                        let sourceSteps = sourceQuantity.doubleValue(for: self.stepCountUnit())
+                        guard sourceSteps > 0 else { continue }
+                        self.recordSource(
+                            self.sourceObject(source: source),
+                            metricDate: metricDate,
+                            value: sourceSteps,
+                            valueKey: "steps",
+                            weight: sourceSteps,
+                            sourcesByDay: &sourcesByDay
+                        )
+                    }
+                }
+                var row: JSObject = [
+                    "metricDate": metricDate,
                     "steps": steps,
-                ])
+                ]
+                if let summary = self.sourceSummary(metricDate: metricDate, sourcesByDay: sourcesByDay) {
+                    row["stepsSource"] = summary
+                }
+                samples.append(row)
             }
             completion(samples, nil)
         }
@@ -250,10 +408,11 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
     ) {
         let interval = DateComponents(day: 1)
         let anchorDate = Calendar.autoupdatingCurrent.startOfDay(for: endDate)
+        var sourcesByDay: [String: [String: JSObject]] = [:]
         let query = HKStatisticsCollectionQuery(
             quantityType: quantityType,
             quantitySamplePredicate: predicate,
-            options: [.cumulativeSum],
+            options: [.cumulativeSum, .separateBySource],
             anchorDate: anchorDate,
             intervalComponents: interval
         )
@@ -267,12 +426,32 @@ public class AppleHealthPlugin: CAPPlugin, CAPBridgedPlugin {
                 guard let quantity = statistics.sumQuantity() else {
                     return
                 }
+                let metricDate = self.isoDayString(statistics.startDate)
                 let activeCardioMinutes = Int(round(quantity.doubleValue(for: self.activeCardioMinutesUnit())))
                 guard activeCardioMinutes >= 0 else { return }
-                samples.append([
-                    "metricDate": self.isoDayString(statistics.startDate),
+                if let sources = statistics.sources {
+                    for source in sources {
+                        guard let sourceQuantity = statistics.sumQuantity(for: source) else { continue }
+                        let sourceMinutes = sourceQuantity.doubleValue(for: self.activeCardioMinutesUnit())
+                        guard sourceMinutes > 0 else { continue }
+                        self.recordSource(
+                            self.sourceObject(source: source),
+                            metricDate: metricDate,
+                            value: sourceMinutes,
+                            valueKey: "activeCardioMinutes",
+                            weight: sourceMinutes,
+                            sourcesByDay: &sourcesByDay
+                        )
+                    }
+                }
+                var row: JSObject = [
+                    "metricDate": metricDate,
                     "activeCardioMinutes": activeCardioMinutes,
-                ])
+                ]
+                if let summary = self.sourceSummary(metricDate: metricDate, sourcesByDay: sourcesByDay) {
+                    row["activeCardioMinutesSource"] = summary
+                }
+                samples.append(row)
             }
             completion(samples, nil)
         }

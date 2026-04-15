@@ -17,7 +17,7 @@ import requests
 from sqlalchemy import inspect, text
 
 from .db import engine
-from .models import WearableConnection, WearableDailyMetric, WearableSyncRun
+from .models import UserPreference, WearableConnection, WearableDailyMetric, WearableSyncRun
 
 
 OURA_AUTHORIZE_URL = "https://cloud.ouraring.com/oauth/authorize"
@@ -46,6 +46,50 @@ APPLE_HEALTH_OPTIMUM_DELTA_BPM = -2.0
 APPLE_HEALTH_ELEVATED_DELTA_BPM = 3.0
 APPLE_HEALTH_HRV_MIN_DELTA_MS = 5.0
 APPLE_HEALTH_HRV_DELTA_RATIO = 0.10
+BIOMETRICS_PREF_KEY = "biometrics_preferences"
+BIOMETRIC_METRIC_KEYS = ("resting_hr", "hrv", "steps", "exercise_minutes")
+BIOMETRIC_DEVICE_OPTIONS = (
+    "auto",
+    "apple_watch",
+    "iphone",
+    "garmin",
+    "whoop",
+    "fitbit",
+    "oura",
+    "none",
+)
+BIOMETRIC_DEVICE_LABELS = {
+    "auto": "Auto-detect",
+    "apple_watch": "Apple Watch",
+    "iphone": "iPhone",
+    "garmin": "Garmin",
+    "whoop": "WHOOP",
+    "fitbit": "Fitbit",
+    "oura": "Oura",
+    "none": "Do not assume a device",
+}
+BIOMETRIC_METRIC_DEFINITIONS = {
+    "resting_hr": {
+        "label": "Resting HR",
+        "preference_key": "use_resting_hr",
+        "default_enabled": True,
+    },
+    "hrv": {
+        "label": "HRV",
+        "preference_key": "use_hrv",
+        "default_enabled": True,
+    },
+    "steps": {
+        "label": "Steps",
+        "preference_key": "use_steps",
+        "default_enabled": True,
+    },
+    "exercise_minutes": {
+        "label": "Exercise minutes",
+        "preference_key": "use_exercise_minutes",
+        "default_enabled": True,
+    },
+}
 
 WEARABLE_METRIC_FIELDS = (
     "sleep_seconds",
@@ -178,6 +222,129 @@ PROVIDER_DEFINITIONS: dict[str, WearableProviderDefinition] = {
         default_note="Requires a native iPhone app or wrapper to read HealthKit data.",
     ),
 }
+
+
+def _default_biometrics_preferences() -> dict[str, Any]:
+    return {
+        "device": "auto",
+        "metrics": {
+            metric_key: {"enabled": bool(definition.get("default_enabled", True))}
+            for metric_key, definition in BIOMETRIC_METRIC_DEFINITIONS.items()
+        },
+    }
+
+
+def _coerce_pref_bool(value: Any, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return bool(default)
+    token = str(value).strip().lower()
+    if token in {"1", "true", "yes", "on", "enabled", "include"}:
+        return True
+    if token in {"0", "false", "no", "off", "disabled", "exclude"}:
+        return False
+    return bool(default)
+
+
+def _normalise_biometrics_preferences_payload(
+    payload: dict[str, Any] | None,
+    *,
+    base: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    source = payload if isinstance(payload, dict) else {}
+    current = base if isinstance(base, dict) else _default_biometrics_preferences()
+    current_metrics = current.get("metrics") if isinstance(current.get("metrics"), dict) else {}
+    raw_device = (
+        source.get("device")
+        or source.get("biometric_device")
+        or current.get("device")
+        or "auto"
+    )
+    device = str(raw_device or "auto").strip().lower()
+    if device not in BIOMETRIC_DEVICE_OPTIONS:
+        device = "auto"
+
+    metrics_payload = source.get("metrics") if isinstance(source.get("metrics"), dict) else {}
+    metrics: dict[str, Any] = {}
+    for metric_key, definition in BIOMETRIC_METRIC_DEFINITIONS.items():
+        current_metric = current_metrics.get(metric_key) if isinstance(current_metrics.get(metric_key), dict) else {}
+        default_enabled = bool(definition.get("default_enabled", True))
+        current_enabled = _coerce_pref_bool(current_metric.get("enabled"), default_enabled)
+        raw_metric_payload = metrics_payload.get(metric_key)
+        raw_enabled: Any = None
+        if isinstance(raw_metric_payload, dict):
+            raw_enabled = raw_metric_payload.get("enabled")
+        elif raw_metric_payload is not None:
+            raw_enabled = raw_metric_payload
+        preference_key = str(definition.get("preference_key") or "").strip()
+        if preference_key and preference_key in source:
+            raw_enabled = source.get(preference_key)
+        metrics[metric_key] = {"enabled": _coerce_pref_bool(raw_enabled, current_enabled)}
+
+    return {
+        "device": device,
+        "device_label": BIOMETRIC_DEVICE_LABELS.get(device, "Auto-detect"),
+        "metrics": metrics,
+    }
+
+
+def get_biometrics_preferences(session, *, user_id: int) -> dict[str, Any]:
+    row = (
+        session.query(UserPreference)
+        .filter(UserPreference.user_id == int(user_id), UserPreference.key == BIOMETRICS_PREF_KEY)
+        .one_or_none()
+    )
+    payload: dict[str, Any] = {}
+    if row and getattr(row, "value", None):
+        try:
+            parsed = json.loads(str(row.value or ""))
+            payload = parsed if isinstance(parsed, dict) else {}
+        except Exception:
+            payload = {}
+    preferences = _normalise_biometrics_preferences_payload(payload)
+    if row and getattr(row, "updated_at", None):
+        preferences["updated_at"] = row.updated_at.isoformat()
+    return preferences
+
+
+def save_biometrics_preferences(
+    session,
+    *,
+    user_id: int,
+    payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    current = get_biometrics_preferences(session, user_id=int(user_id))
+    preferences = _normalise_biometrics_preferences_payload(payload, base=current)
+    stored_preferences = {
+        "device": preferences.get("device") or "auto",
+        "metrics": preferences.get("metrics") if isinstance(preferences.get("metrics"), dict) else {},
+    }
+    row = (
+        session.query(UserPreference)
+        .filter(UserPreference.user_id == int(user_id), UserPreference.key == BIOMETRICS_PREF_KEY)
+        .one_or_none()
+    )
+    if row is None:
+        session.add(
+            UserPreference(
+                user_id=int(user_id),
+                key=BIOMETRICS_PREF_KEY,
+                value=json.dumps(stored_preferences, separators=(",", ":"), sort_keys=True),
+            )
+        )
+    else:
+        row.value = json.dumps(stored_preferences, separators=(",", ":"), sort_keys=True)
+        session.add(row)
+    return preferences
+
+
+def biometric_metric_enabled(preferences: dict[str, Any] | None, metric_key: str) -> bool:
+    prefs = preferences if isinstance(preferences, dict) else {}
+    metrics = prefs.get("metrics") if isinstance(prefs.get("metrics"), dict) else {}
+    metric = metrics.get(metric_key) if isinstance(metrics.get(metric_key), dict) else {}
+    default_enabled = bool((BIOMETRIC_METRIC_DEFINITIONS.get(metric_key) or {}).get("default_enabled", True))
+    return _coerce_pref_bool(metric.get("enabled"), default_enabled)
 
 
 def _env_flag(name: str, default: bool = False) -> bool:
@@ -850,6 +1017,317 @@ def _coerce_float(value: Any) -> float | None:
         return None
 
 
+def _clean_source_token(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _compact_source_dict(value: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        return {}
+    compact: dict[str, Any] = {}
+    for key, raw_value in value.items():
+        if raw_value is None:
+            continue
+        if isinstance(raw_value, dict):
+            nested = _compact_source_dict(raw_value)
+            if nested:
+                compact[str(key)] = nested
+            continue
+        if isinstance(raw_value, list):
+            items = [
+                _compact_source_dict(item) if isinstance(item, dict) else item
+                for item in raw_value
+                if item not in (None, "")
+            ]
+            if items:
+                compact[str(key)] = items
+            continue
+        token = str(raw_value).strip() if isinstance(raw_value, str) else raw_value
+        if token != "":
+            compact[str(key)] = token
+    return compact
+
+
+def _normalise_metric_source_payload(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+    primary = _compact_source_dict(value.get("primary") if isinstance(value.get("primary"), dict) else {})
+    raw_sources = value.get("sources") if isinstance(value.get("sources"), list) else []
+    sources = [
+        _compact_source_dict(item)
+        for item in raw_sources
+        if isinstance(item, dict) and _compact_source_dict(item)
+    ]
+    if not primary and sources:
+        primary = sources[0]
+    source_count = _coerce_int(value.get("sourceCount") or value.get("source_count"))
+    payload = {
+        "primary": primary or None,
+        "sources": sources,
+        "source_count": source_count if source_count is not None else len(sources) if sources else None,
+    }
+    compact = _compact_source_dict(payload)
+    return compact or None
+
+
+def _sample_metric_sources(sample: dict[str, Any]) -> dict[str, Any]:
+    source_specs = {
+        "resting_hr": ("resting_hr_source", "restingHeartRateSource"),
+        "hrv": ("hrv_source", "heartRateVariabilitySource"),
+        "steps": ("steps_source", "stepsSource"),
+        "exercise_minutes": (
+            "exercise_minutes_source",
+            "active_minutes_source",
+            "activeCardioMinutesSource",
+        ),
+    }
+    sources: dict[str, Any] = {}
+    raw_sources = sample.get("sources") if isinstance(sample.get("sources"), dict) else {}
+    for metric_key, sample_keys in source_specs.items():
+        raw_value = raw_sources.get(metric_key)
+        for sample_key in sample_keys:
+            if raw_value is not None:
+                break
+            raw_value = sample.get(sample_key)
+        source_payload = _normalise_metric_source_payload(raw_value)
+        if source_payload:
+            sources[metric_key] = source_payload
+    return sources
+
+
+def _apple_health_record_from_row(row: WearableDailyMetric | None) -> dict[str, Any]:
+    raw_payload = getattr(row, "raw_payload", None) if row is not None else None
+    if not isinstance(raw_payload, dict):
+        return {}
+    record = raw_payload.get(APPLE_HEALTH_PROVIDER)
+    return record if isinstance(record, dict) else {}
+
+
+def _metric_source_payload_from_rows(
+    rows: list[WearableDailyMetric],
+    *,
+    metric_key: str,
+) -> dict[str, Any] | None:
+    for row in rows:
+        record = _apple_health_record_from_row(row)
+        sources = record.get("sources") if isinstance(record.get("sources"), dict) else {}
+        source_payload = _normalise_metric_source_payload(sources.get(metric_key))
+        if source_payload:
+            return source_payload
+    return None
+
+
+def _source_strings_from_payload(payload: dict[str, Any] | None) -> list[str]:
+    if not isinstance(payload, dict):
+        return []
+    values: list[str] = []
+
+    def collect(value: Any) -> None:
+        if isinstance(value, dict):
+            for nested in value.values():
+                collect(nested)
+            return
+        if isinstance(value, list):
+            for item in value:
+                collect(item)
+            return
+        token = _clean_source_token(value)
+        if token:
+            values.append(token.lower())
+
+    collect(payload)
+    return values
+
+
+def _detect_biometric_source_device(payload: dict[str, Any] | None) -> str:
+    haystack = " ".join(_source_strings_from_payload(payload))
+    if not haystack:
+        return "unknown"
+    if "apple watch" in haystack or "watch" in haystack:
+        return "apple_watch"
+    if "iphone" in haystack:
+        return "iphone"
+    if "garmin" in haystack:
+        return "garmin"
+    if "whoop" in haystack:
+        return "whoop"
+    if "fitbit" in haystack:
+        return "fitbit"
+    if "oura" in haystack:
+        return "oura"
+    if "apple" in haystack or "health" in haystack:
+        return "apple_health"
+    return "unknown"
+
+
+def _source_primary_label(payload: dict[str, Any] | None, *, fallback_device: str | None = None) -> str:
+    primary = payload.get("primary") if isinstance(payload, dict) and isinstance(payload.get("primary"), dict) else {}
+    device = primary.get("device") if isinstance(primary.get("device"), dict) else {}
+    for value in (
+        device.get("name"),
+        device.get("model"),
+        primary.get("name"),
+        primary.get("bundleIdentifier"),
+        primary.get("bundle_identifier"),
+    ):
+        token = _clean_source_token(value)
+        if token:
+            return token
+    if fallback_device and fallback_device in BIOMETRIC_DEVICE_LABELS:
+        return BIOMETRIC_DEVICE_LABELS[fallback_device]
+    return "No source detected"
+
+
+def _confidence_label(confidence: str) -> str:
+    if confidence == "high":
+        return "Good"
+    if confidence == "medium":
+        return "OK"
+    if confidence == "low":
+        return "Limited"
+    return "Unknown"
+
+
+def _biometric_source_confidence(
+    metric_key: str,
+    *,
+    has_data: bool,
+    resolved_device: str,
+) -> str:
+    if not has_data:
+        return "unknown"
+    if metric_key == "resting_hr":
+        if resolved_device in {"apple_watch", "garmin", "whoop", "fitbit", "oura"}:
+            return "high"
+        if resolved_device in {"iphone", "apple_health", "unknown"}:
+            return "medium"
+    if metric_key == "hrv":
+        if resolved_device == "apple_watch":
+            return "high"
+        if resolved_device in {"garmin", "whoop", "fitbit", "oura"}:
+            return "medium"
+        return "low"
+    if metric_key == "steps":
+        if resolved_device in {"apple_watch", "iphone", "apple_health", "garmin", "fitbit", "oura"}:
+            return "high"
+        return "medium"
+    if metric_key == "exercise_minutes":
+        if resolved_device == "apple_watch":
+            return "high"
+        if resolved_device in {"garmin", "whoop", "fitbit", "oura"}:
+            return "medium"
+        return "low"
+    return "unknown"
+
+
+def _biometric_connection_options(metric_key: str) -> list[dict[str, Any]]:
+    recommended = {
+        "resting_hr": ("oura", "whoop", "fitbit"),
+        "hrv": ("oura", "whoop"),
+        "steps": ("fitbit", "oura", "garmin"),
+        "exercise_minutes": ("fitbit", "whoop", "garmin"),
+    }.get(metric_key, ("oura", "whoop", "fitbit"))
+    options: list[dict[str, Any]] = []
+    for provider_key in recommended:
+        definition = PROVIDER_DEFINITIONS.get(provider_key)
+        if definition is None:
+            continue
+        options.append(
+            {
+                "provider": provider_key,
+                "label": definition.label,
+                "connectable": bool(definition.connect_implemented),
+                "availability": definition.availability,
+                "note": definition.default_note,
+            }
+        )
+    return options
+
+
+def _biometric_source_advice(
+    metric_key: str,
+    *,
+    enabled: bool,
+    has_data: bool,
+    confidence: str,
+    resolved_device: str,
+) -> str:
+    if not enabled:
+        return "Excluded from Gia's biometrics mix until this is switched back on."
+    if not has_data:
+        return "No recent Apple Health value has been retrieved for this biometric."
+    if metric_key == "resting_hr":
+        return "Apple Health Resting HR is reliable enough to use when present; a watch or direct wearable connection improves traceability."
+    if metric_key == "hrv":
+        if resolved_device == "apple_watch" and confidence == "high":
+            return "HRV is suitable for readiness when Apple Health is fed by Apple Watch."
+        return "HRV is only dependable through Apple Health when the source is Apple Watch; otherwise use a direct wearable connection."
+    if metric_key == "steps":
+        return "Steps from Apple Health are suitable for activity status from iPhone or Apple Watch."
+    if metric_key == "exercise_minutes":
+        if resolved_device == "apple_watch" and confidence == "high":
+            return "Exercise minutes are suitable when Apple Health Exercise Time is fed by Apple Watch."
+        return "Exercise minutes are harder to confirm unless Apple Watch is the source; use a direct wearable connection for stronger training-load context."
+    return "Use source confidence to decide whether Gia should include this biometric."
+
+
+def _build_biometric_source_summaries(
+    *,
+    preferences: dict[str, Any],
+    metric_rows: dict[str, list[WearableDailyMetric]],
+) -> dict[str, Any]:
+    selected_device = str(preferences.get("device") or "auto").strip().lower()
+    if selected_device not in BIOMETRIC_DEVICE_OPTIONS:
+        selected_device = "auto"
+    summaries: dict[str, Any] = {}
+    for metric_key, definition in BIOMETRIC_METRIC_DEFINITIONS.items():
+        rows = metric_rows.get(metric_key) or []
+        source_payload = _metric_source_payload_from_rows(rows, metric_key=metric_key)
+        detected_device = _detect_biometric_source_device(source_payload)
+        fallback_device = selected_device if selected_device not in {"auto", "none"} else None
+        resolved_device = detected_device if detected_device != "unknown" else fallback_device or "unknown"
+        detection_method = (
+            "apple_health_source"
+            if detected_device != "unknown"
+            else "user_selected"
+            if fallback_device
+            else "unknown"
+        )
+        has_data = bool(rows)
+        enabled = biometric_metric_enabled(preferences, metric_key)
+        confidence = _biometric_source_confidence(
+            metric_key,
+            has_data=has_data,
+            resolved_device=resolved_device,
+        )
+        latest_row = rows[0] if rows else None
+        summaries[metric_key] = {
+            "metric": metric_key,
+            "label": definition.get("label") or metric_key.replace("_", " "),
+            "enabled": enabled,
+            "has_data": has_data,
+            "metric_date": latest_row.metric_date.isoformat() if latest_row and latest_row.metric_date else None,
+            "source_label": _source_primary_label(source_payload, fallback_device=fallback_device),
+            "detected_device": detected_device,
+            "selected_device": selected_device,
+            "resolved_device": resolved_device,
+            "device_label": BIOMETRIC_DEVICE_LABELS.get(resolved_device, "Unknown"),
+            "detection_method": detection_method,
+            "confidence": confidence,
+            "confidence_label": _confidence_label(confidence),
+            "advice": _biometric_source_advice(
+                metric_key,
+                enabled=enabled,
+                has_data=has_data,
+                confidence=confidence,
+                resolved_device=resolved_device,
+            ),
+            "source": source_payload,
+            "connection_options": _biometric_connection_options(metric_key),
+        }
+    return summaries
+
+
 def _merge_day_patch(
     day_map: dict[date, dict[str, Any]],
     *,
@@ -1015,6 +1493,7 @@ def upsert_apple_health_resting_hr_samples(
         normalized_hrv = round(float(hrv_ms), 2) if hrv_ms is not None and hrv_ms > 0 else None
         normalized_steps = int(max(0, steps)) if steps is not None else None
         normalized_active_minutes = int(max(0, active_minutes)) if active_minutes is not None else None
+        metric_sources = _sample_metric_sources(sample)
         _merge_day_patch(
             day_map,
             metric_date=metric_date,
@@ -1025,6 +1504,7 @@ def upsert_apple_health_resting_hr_samples(
                 "hrv_ms": normalized_hrv,
                 "steps": normalized_steps,
                 "active_minutes": normalized_active_minutes,
+                "sources": metric_sources,
             },
             patch={
                 "resting_hr_bpm": normalized_bpm,
@@ -1139,6 +1619,11 @@ def get_apple_health_resting_hr_summary(
     user_id: int,
 ) -> dict[str, Any]:
     ensure_wearables_schema()
+    biometric_preferences = get_biometrics_preferences(session, user_id=int(user_id))
+    use_resting_hr = biometric_metric_enabled(biometric_preferences, "resting_hr")
+    use_hrv = biometric_metric_enabled(biometric_preferences, "hrv")
+    use_steps = biometric_metric_enabled(biometric_preferences, "steps")
+    use_exercise_minutes = biometric_metric_enabled(biometric_preferences, "exercise_minutes")
     connection = (
         session.query(WearableConnection)
         .filter(
@@ -1147,7 +1632,7 @@ def get_apple_health_resting_hr_summary(
         )
         .one_or_none()
     )
-    rows = (
+    resting_hr_rows = (
         session.query(WearableDailyMetric)
         .filter(
             WearableDailyMetric.user_id == int(user_id),
@@ -1158,7 +1643,8 @@ def get_apple_health_resting_hr_summary(
         .limit(max(APPLE_HEALTH_BASELINE_DAYS + 1, 7))
         .all()
     )
-    hrv_rows = (
+    rows = resting_hr_rows if use_resting_hr else []
+    raw_hrv_rows = (
         session.query(WearableDailyMetric)
         .filter(
             WearableDailyMetric.user_id == int(user_id),
@@ -1169,6 +1655,7 @@ def get_apple_health_resting_hr_summary(
         .limit(max(APPLE_HEALTH_BASELINE_DAYS + 1, 14))
         .all()
     )
+    hrv_rows = raw_hrv_rows if use_hrv else []
     latest_row = rows[0] if rows else None
     latest_value = (
         round(float(latest_row.resting_hr_bpm), 1)
@@ -1222,7 +1709,7 @@ def get_apple_health_resting_hr_summary(
     connected = bool(
         connection and str(getattr(connection, "status", "") or "").strip().lower() == "connected"
     )
-    step_rows = (
+    raw_step_rows = (
         session.query(WearableDailyMetric)
         .filter(
             WearableDailyMetric.user_id == int(user_id),
@@ -1233,8 +1720,9 @@ def get_apple_health_resting_hr_summary(
         .limit(7)
         .all()
     )
+    step_rows = raw_step_rows if use_steps else []
     latest_step_row = step_rows[0] if step_rows else None
-    active_minutes_rows = (
+    raw_active_minutes_rows = (
         session.query(WearableDailyMetric)
         .filter(
             WearableDailyMetric.user_id == int(user_id),
@@ -1245,7 +1733,17 @@ def get_apple_health_resting_hr_summary(
         .limit(7)
         .all()
     )
+    active_minutes_rows = raw_active_minutes_rows if use_exercise_minutes else []
     latest_active_minutes_row = active_minutes_rows[0] if active_minutes_rows else None
+    biometric_sources = _build_biometric_source_summaries(
+        preferences=biometric_preferences,
+        metric_rows={
+            "resting_hr": resting_hr_rows,
+            "hrv": raw_hrv_rows,
+            "steps": raw_step_rows,
+            "exercise_minutes": raw_active_minutes_rows,
+        },
+    )
     today_row = (
         session.query(WearableDailyMetric)
         .filter(
@@ -1258,30 +1756,30 @@ def get_apple_health_resting_hr_summary(
     )
     steps_today = (
         int(today_row.steps)
-        if today_row and getattr(today_row, "steps", None) is not None
+        if use_steps and today_row and getattr(today_row, "steps", None) is not None
         else int(latest_step_row.steps)
-        if latest_step_row and getattr(latest_step_row, "steps", None) is not None
+        if use_steps and latest_step_row and getattr(latest_step_row, "steps", None) is not None
         else None
     )
     steps_metric_date = (
         today_row.metric_date.isoformat()
-        if today_row and getattr(today_row, "steps", None) is not None and getattr(today_row, "metric_date", None)
+        if use_steps and today_row and getattr(today_row, "steps", None) is not None and getattr(today_row, "metric_date", None)
         else latest_step_row.metric_date.isoformat()
-        if latest_step_row and getattr(latest_step_row, "metric_date", None)
+        if use_steps and latest_step_row and getattr(latest_step_row, "metric_date", None)
         else None
     )
     active_minutes_today = (
         int(today_row.active_minutes)
-        if today_row and getattr(today_row, "active_minutes", None) is not None
+        if use_exercise_minutes and today_row and getattr(today_row, "active_minutes", None) is not None
         else int(latest_active_minutes_row.active_minutes)
-        if latest_active_minutes_row and getattr(latest_active_minutes_row, "active_minutes", None) is not None
+        if use_exercise_minutes and latest_active_minutes_row and getattr(latest_active_minutes_row, "active_minutes", None) is not None
         else None
     )
     active_minutes_metric_date = (
         today_row.metric_date.isoformat()
-        if today_row and getattr(today_row, "active_minutes", None) is not None and getattr(today_row, "metric_date", None)
+        if use_exercise_minutes and today_row and getattr(today_row, "active_minutes", None) is not None and getattr(today_row, "metric_date", None)
         else latest_active_minutes_row.metric_date.isoformat()
-        if latest_active_minutes_row and getattr(latest_active_minutes_row, "metric_date", None)
+        if use_exercise_minutes and latest_active_minutes_row and getattr(latest_active_minutes_row, "metric_date", None)
         else None
     )
     step_by_day = {
@@ -1477,6 +1975,8 @@ def get_apple_health_resting_hr_summary(
     return {
         "provider": APPLE_HEALTH_PROVIDER,
         "connected": connected,
+        "biometric_preferences": biometric_preferences,
+        "biometric_sources": biometric_sources,
         "metric_date": latest_row.metric_date.isoformat() if latest_row else None,
         "resting_hr_bpm": latest_value,
         "baseline_resting_hr_bpm": baseline_value,

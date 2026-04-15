@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import type {
   AppleHealthRestingHeartRateResponse,
+  BiometricMetricKey,
+  BiometricSourceSummary,
   // Keep tracker responses local to this panel.
   PillarTrackerDetailResponse,
   PillarTrackerPillar,
@@ -56,6 +58,18 @@ const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
 const URINE_CAPTURE_TIMER_SECONDS = 60;
 const URINE_RECENT_CAPTURE_WINDOW_MS = 5 * 60 * 1000;
 const URINE_TEST_MAX_PHOTO_BYTES = 8 * 1024 * 1024;
+const BIOMETRIC_SOURCE_ORDER: Array<{ key: BiometricMetricKey; label: string }> = [
+  { key: "resting_hr", label: "Resting HR" },
+  { key: "hrv", label: "HRV" },
+  { key: "steps", label: "Steps" },
+  { key: "exercise_minutes", label: "Exercise minutes" },
+];
+const BIOMETRIC_CONNECT_OPTIONS = [
+  { provider: "oura", label: "Oura", connectable: true },
+  { provider: "whoop", label: "WHOOP", connectable: true },
+  { provider: "fitbit", label: "Fitbit", connectable: true },
+  { provider: "garmin", label: "Garmin", connectable: false },
+];
 const URINE_SCREENING_MARKERS = [
   { key: "concentration", label: "Hydration" },
   { key: "uti", label: "UTI Signs" },
@@ -202,6 +216,63 @@ function formatFullActiveMinutes(value?: number | null): string | null {
   const resolved = Number(value);
   if (!Number.isFinite(resolved) || resolved < 0) return null;
   return Math.round(resolved).toLocaleString("en-GB");
+}
+
+function normalizeBiometricSourceRows(
+  sources?: Partial<Record<BiometricMetricKey, BiometricSourceSummary>> | null,
+): Array<{ key: BiometricMetricKey; label: string; source: BiometricSourceSummary }> {
+  return BIOMETRIC_SOURCE_ORDER.map((item) => ({
+    ...item,
+    source: (sources?.[item.key] || {
+      metric: item.key,
+      label: item.label,
+      enabled: true,
+      has_data: false,
+      confidence: "unknown",
+      connection_options: BIOMETRIC_CONNECT_OPTIONS,
+    }) as BiometricSourceSummary,
+  }));
+}
+
+function resolveBiometricSourceTone(theme: DisplayTheme, source?: BiometricSourceSummary | null): string {
+  if (source?.enabled === false) {
+    return theme === "dark"
+      ? "border-[var(--border)] bg-[var(--surface-muted)] text-[var(--text-muted)]"
+      : "border-[#e7e1d6] bg-[#f7f1e8] text-[#6b6257]";
+  }
+  const confidence = String(source?.confidence || "").trim().toLowerCase();
+  if (confidence === "high") {
+    return theme === "dark"
+      ? "border-[#6f9f52] bg-[#182417] text-[#d9f0c5]"
+      : "border-[#cfe5c4] bg-[#f4fbf0] text-[#3f7a2a]";
+  }
+  if (confidence === "medium") {
+    return theme === "dark"
+      ? "border-[#b98138] bg-[#2b2114] text-[#ffd3ad]"
+      : "border-[#f0d4ad] bg-[#fff8ef] text-[#9b5b18]";
+  }
+  if (confidence === "low") {
+    return theme === "dark"
+      ? "border-[#b98138] bg-[#2b2114] text-[#ffd3ad]"
+      : "border-[#f0d4ad] bg-[#fff8ef] text-[#9b5b18]";
+  }
+  return theme === "dark"
+    ? "border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)]"
+    : "border-[#e7e1d6] bg-white text-[#5d5348]";
+}
+
+function shouldShowBiometricConnectionOptions(source?: BiometricSourceSummary | null): boolean {
+  if (!source || source.enabled === false) return false;
+  const confidence = String(source.confidence || "").trim().toLowerCase();
+  return source.has_data === false || confidence === "low" || confidence === "unknown" || !confidence;
+}
+
+function formatBiometricSourceLabel(source?: BiometricSourceSummary | null): string {
+  const label = String(source?.source_label || "").trim();
+  if (label) return label;
+  const device = String(source?.device_label || "").trim();
+  if (device) return device;
+  return "No source detected";
 }
 
 function resolveTrainingReadinessStatus(
@@ -1186,6 +1257,9 @@ export default function LatestAssessmentPanel({
   const [activeBiomarkerExplanation, setActiveBiomarkerExplanation] = useState<BiomarkerExplanationKey | null>(null);
   const [restingHeartRateLoading, setRestingHeartRateLoading] = useState(false);
   const [restingHeartRateEnabling, setRestingHeartRateEnabling] = useState(false);
+  const [biometricPreferenceSaving, setBiometricPreferenceSaving] = useState<string | null>(null);
+  const [biometricsActionError, setBiometricsActionError] = useState<string | null>(null);
+  const [wearableConnectPending, setWearableConnectPending] = useState<string | null>(null);
   const [appleHealthAuthStatus, setAppleHealthAuthStatus] = useState<AppleHealthAuthorizationState>("unsupported");
   const [urineTest, setUrineTest] = useState<UrineTestResponse | null>(null);
   const [urineTestLoading, setUrineTestLoading] = useState(false);
@@ -1296,6 +1370,10 @@ export default function LatestAssessmentPanel({
     [wellbeingObjectiveItems],
   );
   const appleHealthSupported = canUseAppleHealth();
+  const biometricSourceRows = useMemo(
+    () => normalizeBiometricSourceRows(restingHeartRate?.biometric_sources),
+    [restingHeartRate?.biometric_sources],
+  );
   const restingHeartRateValue = resolveRestingHeartRateValue(restingHeartRate?.resting_hr_bpm);
   const latestHrvMetricDate = String(restingHeartRate?.hrv_metric_date || "").trim();
   const latestActiveMinutesMetricDate = String(restingHeartRate?.active_minutes_metric_date || "").trim();
@@ -2020,6 +2098,7 @@ export default function LatestAssessmentPanel({
   const handleReviewBiometricsPress = useCallback(() => {
     setActiveBiomarkerExplanation(null);
     setUrineTestFlowOpen(false);
+    setBiometricsActionError(null);
     setBiometricsModalOpen(true);
     if (
       appleHealthSupported &&
@@ -2263,9 +2342,82 @@ export default function LatestAssessmentPanel({
     }
   }, [applyWeeklyObjectivesPayload, userId]);
 
+  const saveBiometricPreference = useCallback(
+    async (metricKey: BiometricMetricKey, enabled: boolean) => {
+      setBiometricPreferenceSaving(metricKey);
+      setBiometricsActionError(null);
+      try {
+        const res = await fetch("/api/biometrics/preferences", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            metrics: {
+              [metricKey]: { enabled },
+            },
+          }),
+        });
+        const text = await res.text().catch(() => "");
+        if (!res.ok) {
+          throw new Error(normalizeError(text, "Failed to save biometrics preference."));
+        }
+        const payload = (text ? (JSON.parse(text) as AppleHealthRestingHeartRateResponse) : {}) as AppleHealthRestingHeartRateResponse;
+        setRestingHeartRate(payload);
+        await loadWeeklyObjectives().catch(() => undefined);
+      } catch (error) {
+        setBiometricsActionError(error instanceof Error ? error.message : String(error));
+      } finally {
+        setBiometricPreferenceSaving(null);
+      }
+    },
+    [loadWeeklyObjectives, userId],
+  );
+
+  const startBiometricWearableConnection = useCallback(
+    async (provider: string | undefined) => {
+      const key = String(provider || "").trim().toLowerCase();
+      if (!key) return;
+      setWearableConnectPending(key);
+      setBiometricsActionError(null);
+      try {
+        const redirectPath =
+          typeof window !== "undefined"
+            ? `${window.location.pathname}${window.location.search || ""}`
+            : `/assessment/${userId}/chat`;
+        const res = await fetch(`/api/wearables/${key}/connect`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            userId,
+            redirect_path: redirectPath,
+          }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          message?: string;
+          auth_url?: string;
+        };
+        if (!res.ok) {
+          throw new Error(String(data.error || data.message || `Failed to connect ${key}`));
+        }
+        const authUrl = String(data.auth_url || "").trim();
+        if (!authUrl) {
+          throw new Error("Connect URL missing from wearable response.");
+        }
+        window.location.assign(authUrl);
+      } catch (error) {
+        setBiometricsActionError(error instanceof Error ? error.message : String(error));
+      } finally {
+        setWearableConnectPending(null);
+      }
+    },
+    [userId],
+  );
+
   const openObjectivesModal = useCallback(async () => {
     setObjectivesModalOpen(true);
     setSelectedObjectivesSection(null);
+    setBiometricsActionError(null);
     await loadWeeklyObjectives();
   }, [loadWeeklyObjectives]);
 
@@ -2274,6 +2426,7 @@ export default function LatestAssessmentPanel({
     setSelectedObjectivesSection(null);
     setWeeklyObjectivesError(null);
     setWeeklyObjectivesSaving(false);
+    setBiometricsActionError(null);
   }, []);
 
   const saveObjectivesSection = useCallback(async () => {
@@ -2960,6 +3113,101 @@ export default function LatestAssessmentPanel({
                   </div>
                 ) : (
                   <>
+                      <div className="rounded-[24px] border border-[#e7e1d6] bg-white px-4 py-4">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="space-y-1">
+                            <p className="text-sm font-semibold text-[#1e1b16]">Biometric sources</p>
+                            <p className="text-sm text-[#6b6257]">
+                              Apple Health source data is used where available. Excluded metrics are not used by Gia.
+                            </p>
+                          </div>
+                          <span className="rounded-full border border-[#f0d4ad] bg-[#fff8ef] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9b5b18]">
+                            {restingHeartRateLoading || restingHeartRateEnabling ? "Syncing" : "Source check"}
+                          </span>
+                        </div>
+                        {biometricsActionError ? (
+                          <p className="mt-3 rounded-2xl border border-[#f0d4ad] bg-[#fff8ef] px-3 py-2 text-xs text-[#9b5b18]">
+                            {biometricsActionError}
+                          </p>
+                        ) : null}
+                        <div className="mt-4 space-y-3">
+                          {biometricSourceRows.map(({ key, label, source }) => {
+                            const enabled = source?.enabled !== false;
+                            const confidenceLabel = enabled
+                              ? String(source?.confidence_label || source?.confidence || "Unknown")
+                              : "Excluded";
+                            const sourceToneClassName = resolveBiometricSourceTone(displayTheme, source);
+                            const showConnections = shouldShowBiometricConnectionOptions(source);
+                            const connectionOptions = Array.isArray(source?.connection_options)
+                              ? source.connection_options
+                              : [];
+                            return (
+                              <div
+                                key={`source-${key}`}
+                                className={`rounded-2xl border px-3 py-3 ${sourceToneClassName}`}
+                              >
+                                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                  <div className="min-w-0 space-y-1">
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <p className="text-sm font-semibold">{label}</p>
+                                      <span className="rounded-full border border-current/20 bg-white/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.12em]">
+                                        {confidenceLabel}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs opacity-80">
+                                      Source: {formatBiometricSourceLabel(source)}
+                                    </p>
+                                    {source?.advice ? (
+                                      <p className="text-xs leading-5 opacity-90">{source.advice}</p>
+                                    ) : null}
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => void saveBiometricPreference(key, !enabled)}
+                                    disabled={biometricPreferenceSaving === key}
+                                    className={`shrink-0 rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-60 ${
+                                      enabled
+                                        ? "border-[#c54817] bg-[#c54817] text-white"
+                                        : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                                    }`}
+                                  >
+                                    {biometricPreferenceSaving === key ? "Saving" : enabled ? "Included" : "Excluded"}
+                                  </button>
+                                </div>
+                                {showConnections && connectionOptions.length ? (
+                                  <div className="mt-3 flex flex-wrap gap-2">
+                                    {connectionOptions.map((option) => {
+                                      const provider = String(option?.provider || "").trim().toLowerCase();
+                                      const canConnect = Boolean(option?.connectable);
+                                      const pending = wearableConnectPending === provider;
+                                      return (
+                                        <button
+                                          key={`${key}-${provider || option?.label || "provider"}`}
+                                          type="button"
+                                          onClick={() => void startBiometricWearableConnection(provider)}
+                                          disabled={!canConnect || pending || Boolean(wearableConnectPending)}
+                                          className={`rounded-full border px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] disabled:cursor-not-allowed disabled:opacity-55 ${
+                                            canConnect
+                                              ? "border-[#c54817] bg-[#c54817] text-white"
+                                              : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                                          }`}
+                                        >
+                                          {pending
+                                            ? "Opening"
+                                            : canConnect
+                                              ? `Connect ${option?.label || provider}`
+                                              : `${option?.label || provider} pending`}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
                       <div className="rounded-[24px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4">
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-2">
@@ -3465,6 +3713,43 @@ export default function LatestAssessmentPanel({
 
               {!weeklyObjectivesLoading && selectedObjectivesSection === "wellbeing" ? (
                 <div className="space-y-3">
+                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
+                    <div className="space-y-1">
+                      <p className="text-sm font-semibold text-[#1e1b16]">Wearable connection</p>
+                      <p className="text-xs text-[#6b6257]">
+                        Connect a direct source where Apple Health cannot confirm HRV or exercise minutes reliably.
+                      </p>
+                    </div>
+                    {biometricsActionError ? (
+                      <p className="mt-3 rounded-2xl border border-[#f0d4ad] bg-[#fff8ef] px-3 py-2 text-xs text-[#9b5b18]">
+                        {biometricsActionError}
+                      </p>
+                    ) : null}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {BIOMETRIC_CONNECT_OPTIONS.map((option) => {
+                        const pending = wearableConnectPending === option.provider;
+                        return (
+                          <button
+                            key={`general-connect-${option.provider}`}
+                            type="button"
+                            onClick={() => void startBiometricWearableConnection(option.provider)}
+                            disabled={!option.connectable || pending || Boolean(wearableConnectPending)}
+                            className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] disabled:cursor-not-allowed disabled:opacity-55 ${
+                              option.connectable
+                                ? "border-[#c54817] bg-[#c54817] text-white"
+                                : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                            }`}
+                          >
+                            {pending
+                              ? "Opening"
+                              : option.connectable
+                                ? `Connect ${option.label}`
+                                : `${option.label} pending`}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                   {wellbeingObjectiveItems.map((item) => {
                     const itemKey = String(item?.key || "").trim();
                     const selectedValue = String(wellbeingObjectiveDraft[itemKey] || item?.value || "off").trim() || "off";

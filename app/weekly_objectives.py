@@ -16,6 +16,14 @@ from .pillar_tracker import (
     tracker_concepts_for_pillar,
     tracker_today,
 )
+from .wearables import (
+    BIOMETRIC_DEVICE_LABELS,
+    BIOMETRIC_DEVICE_OPTIONS,
+    BIOMETRIC_METRIC_DEFINITIONS,
+    biometric_metric_enabled,
+    get_biometrics_preferences,
+    save_biometrics_preferences,
+)
 
 PILLAR_ORDER: tuple[str, ...] = ("nutrition", "training", "resilience", "recovery")
 WELLBEING_KEY = "wellbeing"
@@ -242,6 +250,10 @@ def _wellbeing_payload(user_id: int) -> dict[str, Any]:
         ketogenic_diet = (_pref_value(s, int(user_id), KETOGENIC_DIET_PREF_KEY) or "off").lower()
         if ketogenic_diet not in {"on", "off"}:
             ketogenic_diet = "off"
+        biometric_preferences = get_biometrics_preferences(s, user_id=int(user_id))
+    biometric_device = str(biometric_preferences.get("device") or "auto").strip().lower()
+    if biometric_device not in BIOMETRIC_DEVICE_OPTIONS:
+        biometric_device = "auto"
     items = [
         {
             "key": "fasting_mode",
@@ -264,13 +276,38 @@ def _wellbeing_payload(user_id: int) -> dict[str, Any]:
             "value": ketogenic_diet,
             "options": [{"value": value, "label": label} for value, label in BOOLEAN_TOGGLE_OPTIONS],
         },
+        {
+            "key": "biometric_device",
+            "label": "Biometric device",
+            "helper": "Used when Apple Health source data does not clearly show the device.",
+            "value": biometric_device,
+            "options": [
+                {"value": value, "label": BIOMETRIC_DEVICE_LABELS.get(value, value.replace("_", " ").title())}
+                for value in BIOMETRIC_DEVICE_OPTIONS
+            ],
+        },
     ]
+    for metric_key, definition in BIOMETRIC_METRIC_DEFINITIONS.items():
+        preference_key = str(definition.get("preference_key") or "").strip()
+        if not preference_key:
+            continue
+        items.append(
+            {
+                "key": preference_key,
+                "label": f"Use {definition.get('label') or metric_key.replace('_', ' ')}",
+                "helper": "Include this biometric in Gia's readiness and activity mix.",
+                "value": "on" if biometric_metric_enabled(biometric_preferences, metric_key) else "off",
+                "options": [{"value": value, "label": label} for value, label in BOOLEAN_TOGGLE_OPTIONS],
+            }
+        )
     configured_count = sum(
         1
         for item in items
         if (item["key"] == "fasting_mode" and item["value"] != "off")
         or (item["key"] == "alcohol_tracking" and item["value"] == "on")
         or (item["key"] == "ketogenic_diet" and item["value"] == "on")
+        or (item["key"] == "biometric_device" and item["value"] != "auto")
+        or (str(item["key"]).startswith("use_") and item["value"] == "off")
     )
     return {
         "title": "Wellbeing objectives",
@@ -346,10 +383,30 @@ def save_weekly_objectives_config(
         ketogenic_diet = str(values.get("ketogenic_diet") or "off").strip().lower()
         if ketogenic_diet not in {"on", "off"}:
             raise ValueError("Invalid ketogenic diet value")
+        biometric_device = str(values.get("biometric_device") or "auto").strip().lower()
+        if biometric_device not in BIOMETRIC_DEVICE_OPTIONS:
+            raise ValueError("Invalid biometric device value")
+        biometric_metrics: dict[str, Any] = {}
+        for metric_key, definition in BIOMETRIC_METRIC_DEFINITIONS.items():
+            preference_key = str(definition.get("preference_key") or "").strip()
+            if not preference_key:
+                continue
+            raw_metric_value = str(values.get(preference_key) or "on").strip().lower()
+            if raw_metric_value not in {"on", "off"}:
+                raise ValueError(f"Invalid {definition.get('label') or metric_key} value")
+            biometric_metrics[metric_key] = {"enabled": raw_metric_value == "on"}
         with SessionLocal() as s:
             _set_pref_value(s, int(user_id), FASTING_MODE_PREF_KEY, fasting_mode)
             _set_pref_value(s, int(user_id), ALCOHOL_TRACKING_PREF_KEY, alcohol_tracking)
             _set_pref_value(s, int(user_id), KETOGENIC_DIET_PREF_KEY, ketogenic_diet)
+            save_biometrics_preferences(
+                s,
+                user_id=int(user_id),
+                payload={
+                    "device": biometric_device,
+                    "metrics": biometric_metrics,
+                },
+            )
             s.commit()
         return get_weekly_objectives_config(int(user_id))
 

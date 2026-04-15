@@ -114,9 +114,47 @@ export type WearablesResponse = {
   providers?: WearableProviderState[];
 };
 
+export type BiometricMetricKey = "resting_hr" | "hrv" | "steps" | "exercise_minutes";
+
+export type BiometricPreferences = {
+  device?: string;
+  device_label?: string;
+  metrics?: Partial<Record<BiometricMetricKey, { enabled?: boolean }>>;
+  updated_at?: string | null;
+};
+
+export type BiometricConnectionOption = {
+  provider?: string;
+  label?: string;
+  connectable?: boolean;
+  availability?: string | null;
+  note?: string | null;
+};
+
+export type BiometricSourceSummary = {
+  metric?: BiometricMetricKey | string;
+  label?: string;
+  enabled?: boolean;
+  has_data?: boolean;
+  metric_date?: string | null;
+  source_label?: string | null;
+  detected_device?: string | null;
+  selected_device?: string | null;
+  resolved_device?: string | null;
+  device_label?: string | null;
+  detection_method?: string | null;
+  confidence?: "high" | "medium" | "low" | "unknown" | string;
+  confidence_label?: string | null;
+  advice?: string | null;
+  source?: Record<string, unknown> | null;
+  connection_options?: BiometricConnectionOption[];
+};
+
 export type AppleHealthRestingHeartRateResponse = {
   provider?: string;
   connected?: boolean;
+  biometric_preferences?: BiometricPreferences | null;
+  biometric_sources?: Partial<Record<BiometricMetricKey, BiometricSourceSummary>>;
   metric_date?: string | null;
   resting_hr_bpm?: number | null;
   hrv_metric_date?: string | null;
@@ -367,6 +405,7 @@ export type WeeklyObjectiveWellbeingItem = {
   key?: string;
   label?: string;
   helper?: string | null;
+  type?: string | null;
   value?: string | null;
   options?: WeeklyObjectiveOption[];
 };

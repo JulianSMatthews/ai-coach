@@ -12,12 +12,23 @@ export type AppleHealthAuthorizationResponse = {
   status?: AppleHealthAuthorizationState;
 };
 
+export type AppleHealthSourceSummary = {
+  primary?: Record<string, unknown>;
+  sources?: Array<Record<string, unknown>>;
+  sourceCount?: number;
+  [key: string]: unknown;
+};
+
 export type AppleHealthRestingHeartRateSample = {
   metricDate: string;
   restingHeartRateBpm?: number;
+  restingHeartRateSource?: AppleHealthSourceSummary;
   heartRateVariabilityMs?: number;
+  heartRateVariabilitySource?: AppleHealthSourceSummary;
   steps?: number;
+  stepsSource?: AppleHealthSourceSummary;
   activeCardioMinutes?: number;
+  activeCardioMinutesSource?: AppleHealthSourceSummary;
 };
 
 type AppleHealthPlugin = {
@@ -96,6 +107,12 @@ export async function syncAppleHealthRestingHeartRate(
             sample?.activeCardioMinutes === null || sample?.activeCardioMinutes === undefined
               ? null
               : Number(sample?.activeCardioMinutes),
+          sources: {
+            resting_hr: sample?.restingHeartRateSource,
+            hrv: sample?.heartRateVariabilitySource,
+            steps: sample?.stepsSource,
+            exercise_minutes: sample?.activeCardioMinutesSource,
+          },
         }))
         .filter(
           (sample) =>

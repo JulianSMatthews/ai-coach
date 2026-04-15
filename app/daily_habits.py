@@ -1364,6 +1364,8 @@ def _build_biometrics_context(user_id: int) -> dict[str, Any] | None:
         "hrv_ms": summary.get("hrv_ms"),
         "steps_today": summary.get("steps_today"),
         "active_minutes_today": summary.get("active_minutes_today"),
+        "biometric_sources": summary.get("biometric_sources"),
+        "biometric_preferences": summary.get("biometric_preferences"),
         "history": readiness_history,
     }
 
