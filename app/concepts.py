@@ -7,15 +7,18 @@ from sqlalchemy import text as sa_text
 from .db import engine, _table_exists
 
 CONCEPT_MEASURE_LABELS: dict[str, str] = {
+    "alcohol_units": "units/week",
     "bedtime_consistency": "nights/week",
     "cardio_frequency": "days/week",
     "cold_exposure": "sessions/week",
     "creatine": "days/week",
     "emotional_regulation": "days/week",
+    "fasting_adherence": "days/week",
     "flexibility_mobility": "days/week",
     "fruit_veg": "portions/day",
     "heat_exposure": "sessions/week",
     "hydration": "litres/day",
+    "ketogenic_diet": "context marker",
     "magnesium": "days/week",
     "omega_3": "days/week",
     "optimism_perspective": "days/week",

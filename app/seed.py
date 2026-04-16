@@ -105,6 +105,18 @@ CONCEPTS: Dict[str, Dict[str, str]] = {
     },
 }
 
+OPTIONAL_EDUCATION_CONCEPTS: Dict[str, Dict[str, str]] = {
+    "nutrition": {
+        "fasting_adherence": "Fasting",
+        "alcohol_units": "Alcohol",
+        "ketogenic_diet": "Ketogenic / low-carb diet",
+    },
+    "recovery": {
+        "heat_exposure": "Heat exposure",
+        "cold_exposure": "Cold exposure",
+    },
+}
+
 CONCEPT_QUESTIONS = {
     "nutrition": {
         "protein_intake": {
@@ -1306,31 +1318,33 @@ def upsert_pillars(session: Session) -> int:
 
 def upsert_concepts(session: Session) -> int:
     created = 0
-    for pillar_key, mapping in CONCEPTS.items():
-        for code, name in mapping.items():
-            row = session.execute(
-                select(Concept).where(Concept.pillar_key == pillar_key, Concept.code == code)
-            ).scalar_one_or_none()
-            bounds = (CONCEPT_SCORE_BOUNDS.get(pillar_key, {}) or {}).get(code)
-            measure_label = CONCEPT_MEASURE_LABELS.get(code)
-            if not row:
-                session.add(Concept(
-                    pillar_key=pillar_key,
-                    code=code,
-                    name=name,
-                    description=measure_label,
-                    created_at=datetime.utcnow(),
-                    zero_score=(bounds or {}).get("zero_score"),
-                    max_score=(bounds or {}).get("max_score"),
-                ))
-                created += 1
-            else:
-                if (row.name or "").strip() != name:
-                    row.name = name
-                row.description = measure_label
-                if bounds:
-                    row.zero_score = bounds.get("zero_score")
-                    row.max_score  = bounds.get("max_score")
+    concept_groups: list[Dict[str, Dict[str, str]]] = [CONCEPTS, OPTIONAL_EDUCATION_CONCEPTS]
+    for group in concept_groups:
+        for pillar_key, mapping in group.items():
+            for code, name in mapping.items():
+                row = session.execute(
+                    select(Concept).where(Concept.pillar_key == pillar_key, Concept.code == code)
+                ).scalar_one_or_none()
+                bounds = (CONCEPT_SCORE_BOUNDS.get(pillar_key, {}) or {}).get(code)
+                measure_label = CONCEPT_MEASURE_LABELS.get(code)
+                if not row:
+                    session.add(Concept(
+                        pillar_key=pillar_key,
+                        code=code,
+                        name=name,
+                        description=measure_label,
+                        created_at=datetime.utcnow(),
+                        zero_score=(bounds or {}).get("zero_score"),
+                        max_score=(bounds or {}).get("max_score"),
+                    ))
+                    created += 1
+                else:
+                    if (row.name or "").strip() != name:
+                        row.name = name
+                    row.description = measure_label
+                    if bounds:
+                        row.zero_score = bounds.get("zero_score")
+                        row.max_score  = bounds.get("max_score")
     session.commit(); return created
 
 def upsert_concept_questions(session: Session) -> int:
@@ -2082,6 +2096,165 @@ def _supplement_education_programme(
     }
 
 
+def _guided_concept_education_programme(
+    *,
+    pillar_key: str,
+    concept_key: str,
+    concept_label: str,
+    code: str,
+    name: str,
+    opening_line: str,
+    concept_focus: str,
+    tracking_answer: str,
+    why_hard: str,
+    friction_answer: str,
+    support_answer: str,
+    body_effect: str,
+    pattern_answer: str,
+    action_line: str,
+    weekly_plan: str,
+    safety_line: str = "",
+) -> dict[str, Any]:
+    label_lower = concept_label.lower()
+    safety_script = f"\n\n{safety_line}" if safety_line else ""
+    return {
+        "pillar_key": pillar_key,
+        "concept_key": concept_key,
+        "concept_label": concept_label,
+        "code": code,
+        "name": name,
+        "level": "build",
+        "pass_score_pct": 66.67,
+        "is_active": True,
+        "doc": {
+            "title": f"HealthSense - {concept_label} Education Programme (4 Days)",
+            "days": [
+                {
+                    "day_index": 1,
+                    "title": f"Awareness: Understanding {concept_label}",
+                    "summary": opening_line,
+                    "questions": [
+                        {
+                            "text": f"What is HealthSense using {concept_label} to track?",
+                            "options": [tracking_answer, "Perfection", "A diagnosis", "A rule for everyone"],
+                            "correct": tracking_answer,
+                        },
+                        {
+                            "text": "What matters most at the start?",
+                            "options": ["A simple repeatable action", "A complicated plan", "Doing everything at once", "Ignoring context"],
+                            "correct": "A simple repeatable action",
+                        },
+                        {
+                            "text": "How should the record be used?",
+                            "options": ["As pattern information", "As a judgement", "As medical advice", "As a fixed prescription"],
+                            "correct": "As pattern information",
+                        },
+                    ],
+                    "script": (
+                        f"{opening_line}\n\n"
+                        f"{concept_focus}\n\n"
+                        "The useful record is whether the behaviour happened in the way you intended, not whether the day was perfect."
+                        f"{safety_script}\n\n"
+                        "The aim is to make the pattern visible so your plan can respond to what is actually happening."
+                    ),
+                    "action_prompt": action_line,
+                    "takeaway": f"{concept_label} improves when the behaviour is visible and repeatable.",
+                },
+                {
+                    "day_index": 2,
+                    "title": "Why It's Hard: Friction Points",
+                    "summary": f"Today is about why {label_lower} can slip even when the intention is clear.",
+                    "questions": [
+                        {
+                            "text": "Why can this habit slip?",
+                            "options": [friction_answer, "Too much clarity", "Too much recovery", "Perfect conditions"],
+                            "correct": friction_answer,
+                        },
+                        {
+                            "text": "What helps most?",
+                            "options": [support_answer, "A random approach", "More pressure", "Skipping the record"],
+                            "correct": support_answer,
+                        },
+                        {
+                            "text": "What should you change first?",
+                            "options": ["The smallest practical barrier", "Everything at once", "The whole week", "Nothing"],
+                            "correct": "The smallest practical barrier",
+                        },
+                    ],
+                    "script": (
+                        f"Today is about why {label_lower} can slip even when the intention is clear.\n\n"
+                        f"{why_hard}\n\n"
+                        "The practical move is to remove one barrier and make the next action easier to start.\n\n"
+                        "A useful tracker is not there to add pressure. It is there to show where the routine needs support."
+                    ),
+                    "action_prompt": "Remove one friction point before your next opportunity to practise.",
+                    "takeaway": "Most habits improve when the next step is easier to start.",
+                },
+                {
+                    "day_index": 3,
+                    "title": "What It's Doing: Pattern Awareness",
+                    "summary": f"Today you'll learn what the {label_lower} record makes visible.",
+                    "questions": [
+                        {
+                            "text": "What does this record make visible?",
+                            "options": [pattern_answer, "Only motivation", "A guaranteed outcome", "A diagnosis"],
+                            "correct": pattern_answer,
+                        },
+                        {
+                            "text": "What should guide the response?",
+                            "options": ["Daily record signals", "Whether it is optional", "The loudest concept", "A fixed script"],
+                            "correct": "Daily record signals",
+                        },
+                        {
+                            "text": "What is the goal of tracking?",
+                            "options": ["Better decisions", "More pressure", "Perfect days", "Ignoring patterns"],
+                            "correct": "Better decisions",
+                        },
+                    ],
+                    "script": (
+                        f"Today you'll learn what the {label_lower} record makes visible.\n\n"
+                        f"{body_effect}\n\n"
+                        "The record helps HealthSense review all concepts equally and decide what matters from the daily signals.\n\n"
+                        "That prevents any one concept from being promoted just because it exists in the plan."
+                    ),
+                    "action_prompt": "Look for one pattern from the last few records.",
+                    "takeaway": "Daily signals should decide what gets attention.",
+                },
+                {
+                    "day_index": 4,
+                    "title": "What To Do: Build the Weekly Rhythm",
+                    "summary": f"Now it is about making {label_lower} realistic across the week.",
+                    "questions": [
+                        {
+                            "text": "Best weekly target?",
+                            "options": ["Realistic and reviewable", "Always maximum", "Random", "Untracked"],
+                            "correct": "Realistic and reviewable",
+                        },
+                        {
+                            "text": "What should you review?",
+                            "options": ["What actually happened", "Only perfect days", "Someone else's routine", "Nothing"],
+                            "correct": "What actually happened",
+                        },
+                        {
+                            "text": "What matters most?",
+                            "options": ["A repeatable rhythm", "Complexity", "Pressure", "Guessing"],
+                            "correct": "A repeatable rhythm",
+                        },
+                    ],
+                    "script": (
+                        f"Now it is about making {label_lower} realistic across the week.\n\n"
+                        f"{weekly_plan}\n\n"
+                        "At review time, use the record to decide whether to continue, simplify, or change the next step.\n\n"
+                        "The right focus is the concept with the clearest signal, not the concept that happens to be newest or optional."
+                    ),
+                    "action_prompt": f"Set one realistic weekly rhythm for {label_lower}.",
+                    "takeaway": "A realistic rhythm gives the plan something useful to learn from.",
+                },
+            ],
+        },
+    }
+
+
 BUILTIN_EDUCATION_PROGRAMMES: list[dict[str, Any]] = [
     {
         "pillar_key": "nutrition",
@@ -2677,6 +2850,187 @@ BUILTIN_EDUCATION_PROGRAMMES.extend(
             code="magnesium_consistency_4d",
             name="Magnesium Consistency",
             context_line="Magnesium is commonly used as part of evening, relaxation, or recovery-support routines.",
+        ),
+    ]
+)
+
+
+BUILTIN_EDUCATION_PROGRAMMES.extend(
+    [
+        _guided_concept_education_programme(
+            pillar_key="resilience",
+            concept_key="emotional_regulation",
+            concept_label="Calm & Control",
+            code="emotional_regulation_awareness_4d",
+            name="Calm & Control Awareness",
+            opening_line="Today you'll learn how Calm & Control works as a practical skill for noticing emotion and choosing the next response.",
+            concept_focus="The focus is not suppressing emotion. It is creating a pause between the trigger and the response so you can act deliberately.",
+            tracking_answer="Calm response practice",
+            why_hard="It often slips when stress is high, sleep is poor, or the day moves too fast to pause.",
+            friction_answer="Stress and speed",
+            support_answer="A short pause cue",
+            body_effect="A brief pause can reduce reactive decisions and make it easier to choose a calmer next step.",
+            pattern_answer="Triggers and responses",
+            action_line="Use one pause before replying or reacting today.",
+            weekly_plan="Choose a simple daily cue: one breath before a hard conversation, naming the feeling, or stepping away for 60 seconds.",
+        ),
+        _guided_concept_education_programme(
+            pillar_key="resilience",
+            concept_key="positive_connection",
+            concept_label="Enjoyment / Restoration",
+            code="positive_connection_awareness_4d",
+            name="Enjoyment & Restoration Awareness",
+            opening_line="Today you'll learn how Enjoyment / Restoration supports resilience by making recovery moments visible.",
+            concept_focus="The focus is small, deliberate moments that refill energy: connection, play, nature, quiet time, music, hobbies, or another restorative action.",
+            tracking_answer="Restorative moments",
+            why_hard="It often slips because restorative actions look optional when the day is crowded.",
+            friction_answer="Crowded schedules",
+            support_answer="A planned small moment",
+            body_effect="Restorative moments can make stress feel more manageable and show which actions genuinely help you reset.",
+            pattern_answer="What restores energy",
+            action_line="Schedule one restorative moment today.",
+            weekly_plan="Pick two or three simple restoration actions and place them in the week before the gaps disappear.",
+        ),
+        _guided_concept_education_programme(
+            pillar_key="resilience",
+            concept_key="stress_recovery",
+            concept_label="Stress Recovery",
+            code="stress_recovery_awareness_4d",
+            name="Stress Recovery Awareness",
+            opening_line="Today you'll learn how Stress Recovery turns the period after pressure into a deliberate reset.",
+            concept_focus="The focus is the transition after stress: downshifting, breathing, movement, journalling, quiet time, or another reset that helps you return to baseline.",
+            tracking_answer="Decompression practice",
+            why_hard="It often slips because people move from one demand straight into the next without a recovery bridge.",
+            friction_answer="No recovery bridge",
+            support_answer="A short decompression cue",
+            body_effect="A recovery cue can make the end of a stressful block clearer and reduce the chance that stress spills into the rest of the day.",
+            pattern_answer="Stress and reset patterns",
+            action_line="Add one short reset after a demanding block today.",
+            weekly_plan="Choose one reliable decompression cue after work, training, conflict, or any demanding period.",
+        ),
+        _guided_concept_education_programme(
+            pillar_key="resilience",
+            concept_key="optimism_perspective",
+            concept_label="Perspective",
+            code="optimism_perspective_awareness_4d",
+            name="Perspective Awareness",
+            opening_line="Today you'll learn how Perspective helps you step back from a problem and choose a more useful interpretation.",
+            concept_focus="The focus is balanced thinking, not forced positivity. It means checking the story, finding what is still controllable, and choosing the next useful step.",
+            tracking_answer="Perspective practice",
+            why_hard="It often slips when stress narrows attention and the first interpretation starts to feel like the only interpretation.",
+            friction_answer="Narrowed attention",
+            support_answer="A reframing question",
+            body_effect="A perspective check can make problems feel more workable by separating facts, assumptions, and the next controllable action.",
+            pattern_answer="Thought patterns",
+            action_line="Ask: what is one other reasonable way to view this?",
+            weekly_plan="Use one simple reframing question on the days where stress or frustration is strongest.",
+        ),
+        _guided_concept_education_programme(
+            pillar_key="resilience",
+            concept_key="support_openness",
+            concept_label="Support",
+            code="support_openness_awareness_4d",
+            name="Support Awareness",
+            opening_line="Today you'll learn how Support works as a resilience skill rather than a last resort.",
+            concept_focus="The focus is being open enough to ask, share, or delegate before pressure becomes harder to manage.",
+            tracking_answer="Support-seeking actions",
+            why_hard="It often slips because people wait until they are overwhelmed before asking for help.",
+            friction_answer="Waiting too long",
+            support_answer="A specific ask",
+            body_effect="A clear support action can reduce load, improve follow-through, and make difficult weeks less isolated.",
+            pattern_answer="Support and load",
+            action_line="Make one specific support ask or check-in today.",
+            weekly_plan="Identify who can help with advice, accountability, practical support, or simple connection this week.",
+        ),
+        _guided_concept_education_programme(
+            pillar_key="nutrition",
+            concept_key="fasting_adherence",
+            concept_label="Fasting",
+            code="fasting_adherence_consistency_4d",
+            name="Fasting Consistency",
+            opening_line="Today you'll learn how fasting works as an optional nutrition record for a plan you have chosen.",
+            concept_focus="The focus is whether the chosen eating window fits the day, not whether fasting is better than other nutrition approaches.",
+            tracking_answer="Planned fasting days",
+            why_hard="It often slips when social meals, training load, hunger, sleep, or work routines clash with the planned window.",
+            friction_answer="Routine disruption",
+            support_answer="A clear eating window",
+            body_effect="The record shows whether the fasting plan fits energy, training, recovery, mood, and the rest of the week.",
+            pattern_answer="Fit between plan and day",
+            action_line="Check whether today's eating window is realistic before the day gets busy.",
+            weekly_plan="Set the number of fasting days that fits the week, then review whether the record supports keeping, reducing, or changing it.",
+            safety_line="Fasting is not suitable for everyone; avoid it when it conflicts with medical advice, a history of disordered eating, pregnancy, illness, or your own safety needs.",
+        ),
+        _guided_concept_education_programme(
+            pillar_key="nutrition",
+            concept_key="alcohol_units",
+            concept_label="Alcohol",
+            code="alcohol_units_awareness_4d",
+            name="Alcohol Awareness",
+            opening_line="Today you'll learn how Alcohol tracking makes intake visible without turning it into a moral judgement.",
+            concept_focus="The focus is units, timing, and context so the daily record can show how alcohol relates to sleep, recovery, mood, and training.",
+            tracking_answer="Alcohol units",
+            why_hard="It often slips because pours are hard to estimate, social cues are strong, and the effect is usually seen the next day.",
+            friction_answer="Social cues and unclear measures",
+            support_answer="A planned limit",
+            body_effect="The record can show patterns between alcohol and next-day energy, sleep quality, appetite, mood, and readiness.",
+            pattern_answer="Units and next-day signals",
+            action_line="Decide your planned alcohol limit before the first drink today.",
+            weekly_plan="Choose a weekly limit that is realistic, record units honestly, and review what the next-day signals suggest.",
+            safety_line="If alcohol feels difficult to control, use that as a signal to seek qualified support rather than relying on tracking alone.",
+        ),
+        _guided_concept_education_programme(
+            pillar_key="nutrition",
+            concept_key="ketogenic_diet",
+            concept_label="Ketogenic / low-carb diet",
+            code="ketogenic_diet_context_4d",
+            name="Ketogenic / Low-Carb Context",
+            opening_line="Today you'll learn how the ketogenic or low-carb setting gives HealthSense context for interpreting ketone signals.",
+            concept_focus="The focus is context. This setting does not recommend a diet; it tells the system that low carbohydrate intake may be intentional.",
+            tracking_answer="Low-carb context",
+            why_hard="It can become confusing when meal patterns, training demands, fasting, illness, or glucose readings change the meaning of ketone signals.",
+            friction_answer="Mixed context",
+            support_answer="Clear context notes",
+            body_effect="The context helps ketone readings make more sense without assuming they are automatically good or bad.",
+            pattern_answer="Diet context and ketone signals",
+            action_line="Check whether your low-carb context is still accurate for this week.",
+            weekly_plan="Keep the setting aligned with what you are actually doing, then review ketone signals alongside glucose, hydration, energy, and symptoms.",
+            safety_line="Ketogenic and low-carb diets are not suitable for everyone; use appropriate clinical guidance if you have diabetes, take glucose-lowering medication, are pregnant, or have other medical considerations.",
+        ),
+        _guided_concept_education_programme(
+            pillar_key="recovery",
+            concept_key="heat_exposure",
+            concept_label="Heat exposure",
+            code="heat_exposure_consistency_4d",
+            name="Heat Exposure Consistency",
+            opening_line="Today you'll learn how Heat exposure works as an optional recovery record for sessions you have chosen.",
+            concept_focus="The focus is session consistency and how heat fits into recovery, hydration, sleep, and training load.",
+            tracking_answer="Planned heat sessions",
+            why_hard="It often slips when sessions are not scheduled, the setup takes effort, or hydration and timing are not planned.",
+            friction_answer="Unplanned sessions",
+            support_answer="A scheduled session",
+            body_effect="The record shows whether heat sessions are happening as planned and whether they appear to support or clash with recovery signals.",
+            pattern_answer="Sessions and recovery signals",
+            action_line="Plan the next heat session time before the week fills up.",
+            weekly_plan="Choose realistic minutes per session and sessions per week, then review how they fit sleep, hydration, energy, and training.",
+            safety_line="Avoid heat exposure if it conflicts with medical advice or if you feel unwell, overheated, dizzy, dehydrated, or unsafe.",
+        ),
+        _guided_concept_education_programme(
+            pillar_key="recovery",
+            concept_key="cold_exposure",
+            concept_label="Cold exposure",
+            code="cold_exposure_consistency_4d",
+            name="Cold Exposure Consistency",
+            opening_line="Today you'll learn how Cold exposure works as an optional recovery record for sessions you have chosen.",
+            concept_focus="The focus is session consistency and whether cold exposure fits recovery, energy, training load, and comfort.",
+            tracking_answer="Planned cold sessions",
+            why_hard="It often slips because the first step feels uncomfortable, the timing is unclear, or the session is too ambitious.",
+            friction_answer="Too much discomfort",
+            support_answer="A small planned session",
+            body_effect="The record shows whether cold sessions are happening as planned and how they relate to recovery, energy, and training signals.",
+            pattern_answer="Sessions and recovery signals",
+            action_line="Choose the smallest cold exposure session you can complete safely.",
+            weekly_plan="Choose realistic minutes per session and sessions per week, then review whether the record supports continuing, reducing, or changing it.",
+            safety_line="Avoid cold exposure if it conflicts with medical advice or if you feel unwell, unsafe, numb, dizzy, or unable to warm up properly.",
         ),
     ]
 )
