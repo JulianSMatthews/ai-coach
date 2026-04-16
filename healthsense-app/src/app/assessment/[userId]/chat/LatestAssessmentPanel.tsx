@@ -1253,6 +1253,7 @@ export default function LatestAssessmentPanel({
   const [wellbeingObjectiveDraft, setWellbeingObjectiveDraft] = useState<Record<string, string>>({});
   const [restingHeartRate, setRestingHeartRate] = useState<AppleHealthRestingHeartRateResponse | null>(null);
   const [biometricsModalOpen, setBiometricsModalOpen] = useState(false);
+  const [biometricSourceCheckOpen, setBiometricSourceCheckOpen] = useState(false);
   const [urineTestFlowOpen, setUrineTestFlowOpen] = useState(false);
   const [activeBiomarkerExplanation, setActiveBiomarkerExplanation] = useState<BiomarkerExplanationKey | null>(null);
   const [restingHeartRateLoading, setRestingHeartRateLoading] = useState(false);
@@ -1651,6 +1652,8 @@ export default function LatestAssessmentPanel({
   const urineCaptureToneClassName = resolveUrineCaptureTone(displayTheme, urineCaptureState);
   const biomarkerExplanationButtonClassName =
     "rounded-full border border-[#d9cdbb] bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#5d5348]";
+  const biometricSourceCheckButtonClassName =
+    "shrink-0 rounded-full border border-[var(--accent)] bg-[var(--accent)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white shadow-[0_10px_24px_-18px_var(--shadow-strong)]";
   const latestHrvValue = resolveHeartRateVariabilityValue(latestHrvItem?.hrv_ms);
   const latestActiveMinutesValue = formatFullActiveMinutes(latestActiveMinutesItem?.active_minutes);
   const latestActiveMinutesStatus = resolveActiveMinutesStatus(latestActiveMinutesItem?.active_minutes);
@@ -2097,6 +2100,7 @@ export default function LatestAssessmentPanel({
 
   const handleReviewBiometricsPress = useCallback(() => {
     setActiveBiomarkerExplanation(null);
+    setBiometricSourceCheckOpen(false);
     setUrineTestFlowOpen(false);
     setBiometricsActionError(null);
     setBiometricsModalOpen(true);
@@ -2167,6 +2171,7 @@ export default function LatestAssessmentPanel({
       setUrineCaptureStartedAt(null);
       setUrineTimerSecondsLeft(0);
       setActiveBiomarkerExplanation(null);
+      setBiometricSourceCheckOpen(false);
       setUrineTestFlowOpen(false);
       setBiometricsModalOpen(true);
     } catch (error) {
@@ -2946,6 +2951,8 @@ export default function LatestAssessmentPanel({
                       ? activeBiomarkerExplanationDetail.title
                       : urineTestFlowOpen
                         ? "Urine test"
+                        : biometricSourceCheckOpen
+                          ? "Source check"
                         : "Biometrics"}
                   </p>
                   <p className="text-sm text-[#6b6257]">
@@ -2953,15 +2960,21 @@ export default function LatestAssessmentPanel({
                       ? "Understand what this biomarker means, your latest result, and the scale."
                       : urineTestFlowOpen
                       ? "Follow the 60-second HealthSense capture flow before taking the photo."
+                      : biometricSourceCheckOpen
+                      ? "Review where each biometric comes from and what Gia can use."
                       : "Review your latest biometric measurements."}
                   </p>
                 </div>
-                {urineTestFlowOpen || activeBiomarkerExplanationDetail ? (
+                {urineTestFlowOpen || activeBiomarkerExplanationDetail || biometricSourceCheckOpen ? (
                   <button
                     type="button"
                     onClick={() => {
                       if (activeBiomarkerExplanationDetail) {
                         setActiveBiomarkerExplanation(null);
+                        return;
+                      }
+                      if (biometricSourceCheckOpen) {
+                        setBiometricSourceCheckOpen(false);
                         return;
                       }
                       setUrineTestFlowOpen(false);
@@ -2970,7 +2983,19 @@ export default function LatestAssessmentPanel({
                   >
                     {activeBiomarkerExplanationDetail ? "Close" : "Back"}
                   </button>
-                ) : null}
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveBiomarkerExplanation(null);
+                      setUrineTestFlowOpen(false);
+                      setBiometricSourceCheckOpen(true);
+                    }}
+                    className={biometricSourceCheckButtonClassName}
+                  >
+                    {restingHeartRateLoading || restingHeartRateEnabling ? "Syncing" : "Source check"}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -3111,9 +3136,8 @@ export default function LatestAssessmentPanel({
                       </p>
                     ) : null}
                   </div>
-                ) : (
-                  <>
-                      <div className="rounded-[24px] border border-[#e7e1d6] bg-white px-4 py-4">
+                ) : biometricSourceCheckOpen ? (
+                  <div className="rounded-[24px] border border-[#e7e1d6] bg-white px-4 py-4">
                         <div className="flex items-start justify-between gap-3">
                           <div className="space-y-1">
                             <p className="text-sm font-semibold text-[#1e1b16]">Biometric sources</p>
@@ -3206,9 +3230,10 @@ export default function LatestAssessmentPanel({
                             );
                           })}
                         </div>
-                      </div>
-
-                      <div className="rounded-[24px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4">
+                  </div>
+                ) : (
+                  <>
+                    <div className="rounded-[24px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4">
                         <div className="flex items-center justify-between gap-3">
                           <div className="flex items-center gap-2">
                             <p className="text-sm font-semibold text-[#1e1b16]">Training readiness</p>
@@ -3567,6 +3592,7 @@ export default function LatestAssessmentPanel({
                     return;
                   }
                   setActiveBiomarkerExplanation(null);
+                  setBiometricSourceCheckOpen(false);
                   setUrineTestFlowOpen(false);
                   setBiometricsModalOpen(false);
                 }}
