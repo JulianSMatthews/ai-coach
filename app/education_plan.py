@@ -18,6 +18,7 @@ from .avatar import (
     download_batch_avatar_output,
     generate_batch_avatar_video,
     get_batch_avatar,
+    wait_for_batch_avatar,
 )
 from .coach_insight import _library_avatar_payload
 from .daily_habits import build_daily_tracker_generation_context_snapshot
@@ -926,10 +927,43 @@ def _merge_avatar_counts(target: dict[str, int], source: dict[str, Any] | None) 
         target[str(key)] = int(target.get(str(key), 0) or 0) + numeric_value
 
 
+def _education_avatar_batch_default_max_starts() -> int:
+    raw = (
+        os.getenv("EDUCATION_AVATAR_BATCH_MAX_STARTS")
+        or os.getenv("AZURE_AVATAR_BATCH_MAX_STARTS")
+        or "2"
+    )
+    try:
+        value = int(float(str(raw).strip() or "2"))
+    except Exception:
+        value = 2
+    return max(1, min(value, 50))
+
+
+def _avatar_generation_quota_error(exc: Exception) -> bool:
+    text = str(exc or "").strip().lower()
+    return any(
+        marker in text
+        for marker in (
+            "429",
+            "rate-limited",
+            "rate limited",
+            "too many",
+            "quota",
+            "limit",
+            "concurrent",
+            "throttle",
+        )
+    )
+
+
 def generate_education_programme_avatar_videos(
     programme_id: int,
     *,
     regenerate: bool = False,
+    max_new_jobs: int | None = None,
+    stop_on_quota: bool = False,
+    wait_for_completion: bool = False,
 ) -> dict[str, Any]:
     ensure_education_plan_schema()
     if not azure_avatar_enabled():
@@ -942,11 +976,21 @@ def generate_education_programme_avatar_videos(
         items: list[dict[str, Any]] = []
         counts = {
             "started": 0,
+            "completed": 0,
             "ready": 0,
             "pending": 0,
             "skipped": 0,
+            "deferred": 0,
             "errors": 0,
         }
+        started_this_run = 0
+        generation_halted_reason: str | None = None
+        quota_limited = False
+        if max_new_jobs is not None:
+            try:
+                max_new_jobs = max(0, int(max_new_jobs))
+            except Exception:
+                max_new_jobs = None
         for row, day in rows:
             item = {
                 "programme_day_id": int(getattr(day, "id", 0) or 0),
@@ -1036,6 +1080,16 @@ def generate_education_programme_avatar_videos(
                 counts["skipped"] += 1
                 items.append(item)
                 continue
+            if generation_halted_reason:
+                item.update({"status": "deferred", "reason": generation_halted_reason})
+                counts["deferred"] += 1
+                items.append(item)
+                continue
+            if max_new_jobs is not None and started_this_run >= max_new_jobs:
+                item.update({"status": "deferred", "reason": "Batch start limit reached; run generation again after pending jobs complete."})
+                counts["deferred"] += 1
+                items.append(item)
+                continue
             try:
                 result = create_batch_avatar(
                     script=script,
@@ -1065,24 +1119,125 @@ def generate_education_programme_avatar_videos(
                     summary_url=summary_url,
                     response_payload=result,
                 )
+                if wait_for_completion:
+                    latest = wait_for_batch_avatar(new_job_id)
+                    latest_status = str(latest.get("status") or "").strip() or status
+                    latest_outputs = latest.get("outputs") if isinstance(latest.get("outputs"), dict) else {}
+                    latest_summary_url = str((latest_outputs or {}).get("summary") or summary_url or "").strip() or None
+                    result_url = str((latest_outputs or {}).get("result") or "").strip() or None
+                    if latest_status.lower() == "succeeded" and result_url:
+                        avatar = _save_education_avatar_generation_result(
+                            session,
+                            row=row,
+                            title=str(avatar_input.get("title") or "Education lesson"),
+                            script=script,
+                            poster_url=str(avatar_input.get("poster_url") or "").strip() or None,
+                            character=str(avatar_input.get("character") or ""),
+                            style=str(avatar_input.get("style") or ""),
+                            voice=str(avatar_input.get("voice") or ""),
+                            status=latest_status,
+                            job_id=new_job_id,
+                            error=None,
+                            summary_url=latest_summary_url,
+                            video_bytes=download_batch_avatar_output(result_url),
+                            response_payload=latest,
+                        )
+                        item.update(
+                            {
+                                "status": "ready",
+                                "avatar_status": avatar.get("status") or latest_status,
+                                "job_id": new_job_id,
+                                "video_url": avatar.get("url"),
+                            }
+                        )
+                        counts["ready"] += 1
+                        counts["completed"] += 1
+                    elif bool(latest.get("_timed_out")):
+                        avatar = _save_education_avatar_generation_result(
+                            session,
+                            row=row,
+                            title=str(avatar_input.get("title") or "Education lesson"),
+                            script=script,
+                            poster_url=str(avatar_input.get("poster_url") or "").strip() or None,
+                            character=str(avatar_input.get("character") or ""),
+                            style=str(avatar_input.get("style") or ""),
+                            voice=str(avatar_input.get("voice") or ""),
+                            status=latest_status,
+                            job_id=new_job_id,
+                            error=None,
+                            summary_url=latest_summary_url,
+                            response_payload=latest,
+                        )
+                        item.update(
+                            {
+                                "status": "pending",
+                                "avatar_status": avatar.get("status") or latest_status,
+                                "job_id": new_job_id,
+                                "reason": "Avatar job is still running after the wait timeout.",
+                            }
+                        )
+                        counts["pending"] += 1
+                        generation_halted_reason = (
+                            "Previous avatar job is still running; refresh pending videos later before starting another."
+                        )
+                    else:
+                        error_detail = "Azure avatar generation failed."
+                        props = latest.get("properties") if isinstance(latest.get("properties"), dict) else {}
+                        if isinstance(props, dict):
+                            error_detail = str(props.get("error") or error_detail).strip() or error_detail
+                        avatar = _save_education_avatar_generation_result(
+                            session,
+                            row=row,
+                            title=str(avatar_input.get("title") or "Education lesson"),
+                            script=script,
+                            poster_url=str(avatar_input.get("poster_url") or "").strip() or None,
+                            character=str(avatar_input.get("character") or ""),
+                            style=str(avatar_input.get("style") or ""),
+                            voice=str(avatar_input.get("voice") or ""),
+                            status=latest_status,
+                            job_id=new_job_id,
+                            error=error_detail,
+                            summary_url=latest_summary_url,
+                            response_payload=latest,
+                        )
+                        item.update({"status": "error", "avatar_status": avatar.get("status") or latest_status, "job_id": new_job_id, "reason": error_detail})
+                        counts["errors"] += 1
+                else:
+                    item.update(
+                        {
+                            "status": "started",
+                            "avatar_status": avatar.get("status") or status,
+                            "job_id": new_job_id,
+                            "video_url": avatar.get("url"),
+                        }
+                    )
                 item.update(
-                    {
-                        "status": "started",
-                        "avatar_status": avatar.get("status") or status,
-                        "job_id": new_job_id,
-                        "video_url": avatar.get("url"),
-                    }
+                    {"job_id": new_job_id}
                 )
                 counts["started"] += 1
+                started_this_run += 1
             except Exception as exc:
-                counts["errors"] += 1
-                item.update({"status": "error", "reason": str(exc)})
+                if stop_on_quota and _avatar_generation_quota_error(exc):
+                    quota_limited = True
+                    generation_halted_reason = (
+                        "Azure avatar job quota or rate limit reached; refresh pending videos later, then run generation again."
+                    )
+                    item.update({"status": "deferred", "reason": generation_halted_reason})
+                    counts["deferred"] += 1
+                else:
+                    counts["errors"] += 1
+                    item.update({"status": "error", "reason": str(exc)})
             items.append(item)
         return {
             "ok": counts["errors"] == 0,
             "programme_id": int(programme.id),
             "programme_name": str(getattr(programme, "name", "") or "").strip() or None,
             "regenerate": bool(regenerate),
+            "max_new_jobs": max_new_jobs,
+            "wait_for_completion": bool(wait_for_completion),
+            "generation_halted": bool(generation_halted_reason),
+            "halt_reason": generation_halted_reason,
+            "quota_limited": bool(quota_limited),
             "counts": counts,
             "items": items,
         }
@@ -1092,26 +1247,48 @@ def generate_all_education_programme_avatar_videos(
     *,
     regenerate: bool = False,
     active_only: bool = True,
+    max_new_jobs: int | None = None,
+    wait_for_completion: bool = False,
 ) -> dict[str, Any]:
     ensure_education_plan_schema()
     if not azure_avatar_enabled():
         raise RuntimeError("Azure avatar generation is not enabled.")
+    if max_new_jobs is None and not wait_for_completion:
+        max_new_jobs = _education_avatar_batch_default_max_starts()
+    if max_new_jobs is not None:
+        try:
+            max_new_jobs = max(0, int(max_new_jobs))
+        except Exception:
+            max_new_jobs = _education_avatar_batch_default_max_starts()
     programme_ids = _education_avatar_programme_ids(active_only=active_only)
     counts: dict[str, int] = {
         "started": 0,
+        "completed": 0,
         "ready": 0,
         "pending": 0,
         "skipped": 0,
+        "deferred": 0,
         "errors": 0,
     }
     programmes: list[dict[str, Any]] = []
+    quota_limited = False
     for programme_id in programme_ids:
+        remaining_starts = None
+        if max_new_jobs is not None:
+            remaining_starts = max(0, int(max_new_jobs) - int(counts.get("started", 0) or 0))
         try:
             result = generate_education_programme_avatar_videos(
                 int(programme_id),
                 regenerate=bool(regenerate),
+                max_new_jobs=remaining_starts,
+                stop_on_quota=True,
+                wait_for_completion=bool(wait_for_completion),
             )
             _merge_avatar_counts(counts, result.get("counts") if isinstance(result, dict) else None)
+            if bool(result.get("generation_halted")):
+                max_new_jobs = int(counts.get("started", 0) or 0)
+            if bool(result.get("quota_limited")):
+                quota_limited = True
             programmes.append(result)
         except Exception as exc:
             counts["errors"] += 1
@@ -1121,6 +1298,7 @@ def generate_all_education_programme_avatar_videos(
                     "programme_id": int(programme_id),
                     "programme_name": None,
                     "regenerate": bool(regenerate),
+                    "max_new_jobs": remaining_starts,
                     "counts": {"errors": 1},
                     "items": [{"status": "error", "reason": str(exc)}],
                 }
@@ -1131,6 +1309,10 @@ def generate_all_education_programme_avatar_videos(
         "programme_count": len(programme_ids),
         "active_only": bool(active_only),
         "regenerate": bool(regenerate),
+        "max_new_jobs": int(max_new_jobs) if max_new_jobs is not None else None,
+        "wait_for_completion": bool(wait_for_completion),
+        "generation_halted": any(bool(item.get("generation_halted")) for item in programmes),
+        "quota_limited": bool(quota_limited),
         "counts": counts,
         "programmes": programmes,
     }

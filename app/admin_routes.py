@@ -906,6 +906,17 @@ def _truthy_form_value(value: object) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _optional_positive_int(value: object) -> int | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = int(float(raw))
+    except Exception:
+        return None
+    return parsed if parsed > 0 else None
+
+
 def _education_avatar_bulk_result_page(title: str, result: dict) -> HTMLResponse:
     programme_id = int(result.get("programme_id") or 0)
     counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
@@ -972,7 +983,7 @@ def _education_avatar_all_result_page(title: str, result: dict) -> HTMLResponse:
     )
     is_generation = "generation" in title.lower()
     note = (
-        "Generation starts Azure batch jobs for missing videos across active programmes. Use Refresh pending videos for all programmes after a few minutes."
+        "Sequential generation starts one Azure job, waits for it to complete, caches the video, then moves to the next lesson. For web requests, the safe default is one new video per run."
         if is_generation
         else "Refresh checks pending Azure jobs across active programmes and stores completed videos for Daily Focus."
     )
@@ -2128,17 +2139,25 @@ def list_education_programmes():
         "<div class='nav'><a href='/admin/education-programmes/edit'>Create new programme</a></div>"
         "<div class='card'>"
         "<h3 class='section-title'>Avatar video batch</h3>"
-        "<p class='help'>Run avatar video jobs across every active education programme. Existing videos are skipped by the generation batch.</p>"
+        "<p class='help'>Run avatar video jobs across every active education programme. The safe batch completes one video before starting the next.</p>"
         "<div class='stack'>"
         "<form method='post' action='/admin/education-programmes/avatar/generate-all' "
-        "onsubmit=\"return confirm('Start missing avatar videos for every active education programme?');\">"
+        "onsubmit=\"return confirm('Generate the next missing avatar video and wait for it to complete before returning?');\">"
         "<input type='hidden' name='active_only' value='1' />"
-        "<button type='submit' class='secondary'>Generate missing videos for all active programmes</button>"
+        "<input type='hidden' name='wait_for_completion' value='1' />"
+        "<input type='hidden' name='max_new_jobs' value='1' />"
+        "<button type='submit' class='secondary'>Generate next missing video safely</button>"
         "</form>"
         "<form method='post' action='/admin/education-programmes/avatar/refresh-all' "
         "onsubmit=\"return confirm('Refresh all pending avatar jobs for every active education programme?');\">"
         "<input type='hidden' name='active_only' value='1' />"
         "<button type='submit' class='secondary'>Refresh pending videos for all active programmes</button>"
+        "</form>"
+        "<form method='post' action='/admin/education-programmes/avatar/generate-all' "
+        "onsubmit=\"return confirm('Start up to two missing Azure jobs without waiting? Use this only if Azure quota allows concurrent jobs.');\">"
+        "<input type='hidden' name='active_only' value='1' />"
+        "<input type='hidden' name='max_new_jobs' value='2' />"
+        "<button type='submit' class='secondary'>Start up to 2 jobs without waiting</button>"
         "</form>"
         "</div>"
         "</div>"
@@ -2193,11 +2212,15 @@ def delete_education_programme(
 def generate_all_education_programme_avatars(
     active_only: str | None = Form(default="1"),
     regenerate: str | None = Form(default=None),
+    max_new_jobs: str | None = Form(default=None),
+    wait_for_completion: str | None = Form(default=None),
 ):
     try:
         result = generate_all_education_programme_avatar_videos(
             regenerate=_truthy_form_value(regenerate),
             active_only=_truthy_form_value(active_only),
+            max_new_jobs=_optional_positive_int(max_new_jobs),
+            wait_for_completion=_truthy_form_value(wait_for_completion),
         )
     except RuntimeError as exc:
         message = str(exc)

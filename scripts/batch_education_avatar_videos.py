@@ -56,7 +56,7 @@ def main() -> int:
     parser.add_argument(
         "mode",
         choices=("generate", "refresh"),
-        help="generate starts missing Azure avatar jobs; refresh caches completed jobs.",
+        help="generate creates missing videos one at a time; refresh caches completed jobs.",
     )
     parser.add_argument(
         "--include-inactive",
@@ -69,6 +69,17 @@ def main() -> int:
         help="Generate mode only: start new jobs even when videos already exist.",
     )
     parser.add_argument(
+        "--start-only",
+        action="store_true",
+        help="Generate mode only: start Azure jobs without waiting for each one to complete.",
+    )
+    parser.add_argument(
+        "--max-new-jobs",
+        type=int,
+        default=None,
+        help="Generate mode only: maximum new videos/jobs to process in this run.",
+    )
+    parser.add_argument(
         "--json",
         action="store_true",
         help="Print the full result as JSON instead of a compact summary.",
@@ -79,10 +90,16 @@ def main() -> int:
         result = generate_all_education_programme_avatar_videos(
             regenerate=bool(args.regenerate),
             active_only=not bool(args.include_inactive),
+            max_new_jobs=args.max_new_jobs,
+            wait_for_completion=not bool(args.start_only),
         )
     else:
         if args.regenerate:
             parser.error("--regenerate can only be used with generate")
+        if args.start_only:
+            parser.error("--start-only can only be used with generate")
+        if args.max_new_jobs is not None:
+            parser.error("--max-new-jobs can only be used with generate")
         result = refresh_all_education_programme_avatar_videos(
             active_only=not bool(args.include_inactive),
         )
