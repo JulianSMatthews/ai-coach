@@ -24,6 +24,10 @@ FASTING_GOAL_DAYS_PREF_KEY = "weekly_objectives_fasting_goal_days"
 ALCOHOL_TRACKING_PREF_KEY = "weekly_objectives_alcohol_tracking"
 ALCOHOL_GOAL_UNITS_PREF_KEY = "weekly_objectives_alcohol_goal_units"
 KETOGENIC_DIET_PREF_KEY = "weekly_objectives_ketogenic_diet"
+HEAT_EXPOSURE_MINUTES_PREF_KEY = "weekly_objectives_heat_exposure_minutes"
+HEAT_EXPOSURE_SESSIONS_PREF_KEY = "weekly_objectives_heat_exposure_sessions"
+COLD_EXPOSURE_MINUTES_PREF_KEY = "weekly_objectives_cold_exposure_minutes"
+COLD_EXPOSURE_SESSIONS_PREF_KEY = "weekly_objectives_cold_exposure_sessions"
 
 FASTING_MODE_OPTIONS: tuple[tuple[str, str], ...] = (
     ("off", "Off"),
@@ -53,6 +57,11 @@ ALCOHOL_GOAL_UNITS_OPTIONS: tuple[tuple[str, str], ...] = (
     ("21", "21"),
     ("28", "28"),
 )
+EXPOSURE_SESSION_OPTIONS: tuple[tuple[str, str], ...] = tuple(
+    ("0", "Off") if value == 0 else (str(value), str(value)) for value in range(0, 8)
+)
+HEAT_EXPOSURE_MINUTE_OPTIONS: tuple[tuple[str, str], ...] = tuple((str(value), str(value)) for value in (10, 15, 20, 25, 30))
+COLD_EXPOSURE_MINUTE_OPTIONS: tuple[tuple[str, str], ...] = tuple((str(value), str(value)) for value in (1, 2, 3, 5, 10))
 
 
 def _display_unit_label(unit: str | None) -> str | None:
@@ -231,6 +240,12 @@ def _set_pref_value(session, user_id: int, key: str, value: str) -> None:
     session.add(row)
 
 
+def _normalise_option_value(raw: Any, options: tuple[tuple[str, str], ...], default: str) -> str:
+    token = str(raw or "").strip()
+    allowed = {str(value) for value, _label in options}
+    return token if token in allowed else str(default)
+
+
 def _wellbeing_payload(user_id: int) -> dict[str, Any]:
     with SessionLocal() as s:
         fasting_mode = (_pref_value(s, int(user_id), FASTING_MODE_PREF_KEY) or "off").lower()
@@ -242,6 +257,26 @@ def _wellbeing_payload(user_id: int) -> dict[str, Any]:
         ketogenic_diet = (_pref_value(s, int(user_id), KETOGENIC_DIET_PREF_KEY) or "off").lower()
         if ketogenic_diet not in {"on", "off"}:
             ketogenic_diet = "off"
+        heat_minutes = _normalise_option_value(
+            _pref_value(s, int(user_id), HEAT_EXPOSURE_MINUTES_PREF_KEY),
+            HEAT_EXPOSURE_MINUTE_OPTIONS,
+            "20",
+        )
+        heat_sessions = _normalise_option_value(
+            _pref_value(s, int(user_id), HEAT_EXPOSURE_SESSIONS_PREF_KEY),
+            EXPOSURE_SESSION_OPTIONS,
+            "0",
+        )
+        cold_minutes = _normalise_option_value(
+            _pref_value(s, int(user_id), COLD_EXPOSURE_MINUTES_PREF_KEY),
+            COLD_EXPOSURE_MINUTE_OPTIONS,
+            "3",
+        )
+        cold_sessions = _normalise_option_value(
+            _pref_value(s, int(user_id), COLD_EXPOSURE_SESSIONS_PREF_KEY),
+            EXPOSURE_SESSION_OPTIONS,
+            "0",
+        )
     items = [
         {
             "key": "fasting_mode",
@@ -264,6 +299,46 @@ def _wellbeing_payload(user_id: int) -> dict[str, Any]:
             "value": ketogenic_diet,
             "options": [{"value": value, "label": label} for value, label in BOOLEAN_TOGGLE_OPTIONS],
         },
+        {
+            "key": "heat_exposure",
+            "label": "Heat exposure",
+            "helper": "Adds heat exposure to your Recovery daily record.",
+            "value": "on" if int(heat_sessions) > 0 else "off",
+            "fields": [
+                {
+                    "key": HEAT_EXPOSURE_MINUTES_PREF_KEY,
+                    "label": "Minutes per session",
+                    "value": heat_minutes,
+                    "options": [{"value": value, "label": label} for value, label in HEAT_EXPOSURE_MINUTE_OPTIONS],
+                },
+                {
+                    "key": HEAT_EXPOSURE_SESSIONS_PREF_KEY,
+                    "label": "Sessions per week",
+                    "value": heat_sessions,
+                    "options": [{"value": value, "label": label} for value, label in EXPOSURE_SESSION_OPTIONS],
+                },
+            ],
+        },
+        {
+            "key": "cold_exposure",
+            "label": "Cold exposure",
+            "helper": "Adds cold exposure to your Recovery daily record.",
+            "value": "on" if int(cold_sessions) > 0 else "off",
+            "fields": [
+                {
+                    "key": COLD_EXPOSURE_MINUTES_PREF_KEY,
+                    "label": "Minutes per session",
+                    "value": cold_minutes,
+                    "options": [{"value": value, "label": label} for value, label in COLD_EXPOSURE_MINUTE_OPTIONS],
+                },
+                {
+                    "key": COLD_EXPOSURE_SESSIONS_PREF_KEY,
+                    "label": "Sessions per week",
+                    "value": cold_sessions,
+                    "options": [{"value": value, "label": label} for value, label in EXPOSURE_SESSION_OPTIONS],
+                },
+            ],
+        },
     ]
     configured_count = sum(
         1
@@ -271,6 +346,8 @@ def _wellbeing_payload(user_id: int) -> dict[str, Any]:
         if (item["key"] == "fasting_mode" and item["value"] != "off")
         or (item["key"] == "alcohol_tracking" and item["value"] == "on")
         or (item["key"] == "ketogenic_diet" and item["value"] == "on")
+        or (item["key"] == "heat_exposure" and item["value"] == "on")
+        or (item["key"] == "cold_exposure" and item["value"] == "on")
     )
     return {
         "title": "Wellbeing objectives",
@@ -346,10 +423,34 @@ def save_weekly_objectives_config(
         ketogenic_diet = str(values.get("ketogenic_diet") or "off").strip().lower()
         if ketogenic_diet not in {"on", "off"}:
             raise ValueError("Invalid ketogenic diet value")
+        heat_minutes = _normalise_option_value(
+            values.get(HEAT_EXPOSURE_MINUTES_PREF_KEY),
+            HEAT_EXPOSURE_MINUTE_OPTIONS,
+            "20",
+        )
+        heat_sessions = _normalise_option_value(
+            values.get(HEAT_EXPOSURE_SESSIONS_PREF_KEY),
+            EXPOSURE_SESSION_OPTIONS,
+            "0",
+        )
+        cold_minutes = _normalise_option_value(
+            values.get(COLD_EXPOSURE_MINUTES_PREF_KEY),
+            COLD_EXPOSURE_MINUTE_OPTIONS,
+            "3",
+        )
+        cold_sessions = _normalise_option_value(
+            values.get(COLD_EXPOSURE_SESSIONS_PREF_KEY),
+            EXPOSURE_SESSION_OPTIONS,
+            "0",
+        )
         with SessionLocal() as s:
             _set_pref_value(s, int(user_id), FASTING_MODE_PREF_KEY, fasting_mode)
             _set_pref_value(s, int(user_id), ALCOHOL_TRACKING_PREF_KEY, alcohol_tracking)
             _set_pref_value(s, int(user_id), KETOGENIC_DIET_PREF_KEY, ketogenic_diet)
+            _set_pref_value(s, int(user_id), HEAT_EXPOSURE_MINUTES_PREF_KEY, heat_minutes)
+            _set_pref_value(s, int(user_id), HEAT_EXPOSURE_SESSIONS_PREF_KEY, heat_sessions)
+            _set_pref_value(s, int(user_id), COLD_EXPOSURE_MINUTES_PREF_KEY, cold_minutes)
+            _set_pref_value(s, int(user_id), COLD_EXPOSURE_SESSIONS_PREF_KEY, cold_sessions)
             s.commit()
         return get_weekly_objectives_config(int(user_id))
 

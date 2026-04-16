@@ -408,6 +408,12 @@ export type WeeklyObjectiveWellbeingItem = {
   type?: string | null;
   value?: string | null;
   options?: WeeklyObjectiveOption[];
+  fields?: Array<{
+    key?: string;
+    label?: string;
+    value?: string | number | null;
+    options?: WeeklyObjectiveOption[];
+  }>;
 };
 
 export type WeeklyObjectivesResponse = {

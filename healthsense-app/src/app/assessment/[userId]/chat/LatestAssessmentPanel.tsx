@@ -2324,6 +2324,11 @@ export default function LatestAssessmentPanel({
       const itemKey = String(item?.key || "").trim();
       if (!itemKey) return;
       nextWellbeingDraft[itemKey] = String(item?.value || "").trim() || "off";
+      (item?.fields || []).forEach((field) => {
+        const fieldKey = String(field?.key || "").trim();
+        if (!fieldKey) return;
+        nextWellbeingDraft[fieldKey] = String(field?.value ?? "").trim();
+      });
     });
     setWellbeingObjectiveDraft(nextWellbeingDraft);
   }, []);
@@ -3742,37 +3747,82 @@ export default function LatestAssessmentPanel({
                   {wellbeingObjectiveItems.map((item) => {
                     const itemKey = String(item?.key || "").trim();
                     const selectedValue = String(wellbeingObjectiveDraft[itemKey] || item?.value || "off").trim() || "off";
+                    const itemFields = Array.isArray(item?.fields) ? item.fields : [];
                     return (
                       <div key={itemKey} className="rounded-2xl border border-[#efe7db] bg-white px-4 py-4">
                         <div className="space-y-1">
                           <p className="text-sm font-semibold text-[#1e1b16]">{item?.label}</p>
                           <p className="text-xs text-[#6b6257]">{item?.helper}</p>
                         </div>
-                        <div className="mt-3 flex flex-wrap gap-2">
-                          {(item?.options || []).map((option) => {
-                            const optionValue = String(option?.value || "").trim();
-                            const isActive = optionValue === selectedValue;
-                            return (
-                              <button
-                                key={`${itemKey}-${optionValue}`}
-                                type="button"
-                                onClick={() =>
-                                  setWellbeingObjectiveDraft((current) => ({
-                                    ...current,
-                                    [itemKey]: optionValue,
-                                  }))
-                                }
-                                className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
-                                  isActive
-                                    ? "border-[var(--accent)] bg-[var(--accent)] text-white"
-                                    : "border-[#d9cdbb] bg-white text-[#5d5348]"
-                                }`}
-                              >
-                                {option?.label}
-                              </button>
-                            );
-                          })}
-                        </div>
+                        {itemFields.length ? (
+                          <div className="mt-4 space-y-4">
+                            {itemFields.map((field) => {
+                              const fieldKey = String(field?.key || "").trim();
+                              if (!fieldKey) return null;
+                              const fieldValue = String(
+                                wellbeingObjectiveDraft[fieldKey] ?? field?.value ?? "",
+                              ).trim();
+                              return (
+                                <div key={`${itemKey}-${fieldKey}`} className="space-y-2">
+                                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#8c7f70]">
+                                    {field?.label}
+                                  </p>
+                                  <div className="flex flex-wrap gap-2">
+                                    {(field?.options || []).map((option) => {
+                                      const optionValue = String(option?.value ?? "").trim();
+                                      const isActive = optionValue === fieldValue;
+                                      return (
+                                        <button
+                                          key={`${fieldKey}-${optionValue}`}
+                                          type="button"
+                                          onClick={() =>
+                                            setWellbeingObjectiveDraft((current) => ({
+                                              ...current,
+                                              [fieldKey]: optionValue,
+                                            }))
+                                          }
+                                          className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
+                                            isActive
+                                              ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                                              : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                                          }`}
+                                        >
+                                          {option?.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            {(item?.options || []).map((option) => {
+                              const optionValue = String(option?.value || "").trim();
+                              const isActive = optionValue === selectedValue;
+                              return (
+                                <button
+                                  key={`${itemKey}-${optionValue}`}
+                                  type="button"
+                                  onClick={() =>
+                                    setWellbeingObjectiveDraft((current) => ({
+                                      ...current,
+                                      [itemKey]: optionValue,
+                                    }))
+                                  }
+                                  className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${
+                                    isActive
+                                      ? "border-[var(--accent)] bg-[var(--accent)] text-white"
+                                      : "border-[#d9cdbb] bg-white text-[#5d5348]"
+                                  }`}
+                                >
+                                  {option?.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

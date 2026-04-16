@@ -832,6 +832,8 @@ _GUIDE: dict[str, dict[str, dict[str, str]]] = {
         "bedtime_consistency": {"label": "consistent bedtimes", "unit": "nights/week", "low": "increase", "high": "maintain"},
         "sleep_duration":      {"label": "nights with 7+ hours sleep", "unit": "nights/week", "low": "increase", "high": "maintain"},
         "sleep_quality":       {"label": "nights waking refreshed", "unit": "nights/week", "low": "increase", "high": "maintain"},
+        "heat_exposure":       {"label": "heat exposure sessions", "unit": "sessions/week", "low": "increase", "high": "maintain"},
+        "cold_exposure":       {"label": "cold exposure sessions", "unit": "sessions/week", "low": "increase", "high": "maintain"},
     },
 }
 

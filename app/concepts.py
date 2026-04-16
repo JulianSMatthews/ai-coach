@@ -9,9 +9,11 @@ from .db import engine, _table_exists
 CONCEPT_MEASURE_LABELS: dict[str, str] = {
     "bedtime_consistency": "nights/week",
     "cardio_frequency": "days/week",
+    "cold_exposure": "sessions/week",
     "emotional_regulation": "days/week",
     "flexibility_mobility": "days/week",
     "fruit_veg": "portions/day",
+    "heat_exposure": "sessions/week",
     "hydration": "litres/day",
     "optimism_perspective": "days/week",
     "positive_connection": "days/week",

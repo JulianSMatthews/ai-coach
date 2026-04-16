@@ -19,7 +19,13 @@ _FASTING_MODE_PREF_KEY = "weekly_objectives_fasting_mode"
 _FASTING_GOAL_DAYS_PREF_KEY = "weekly_objectives_fasting_goal_days"
 _ALCOHOL_TRACKING_PREF_KEY = "weekly_objectives_alcohol_tracking"
 _ALCOHOL_GOAL_UNITS_PREF_KEY = "weekly_objectives_alcohol_goal_units"
+_HEAT_EXPOSURE_MINUTES_PREF_KEY = "weekly_objectives_heat_exposure_minutes"
+_HEAT_EXPOSURE_SESSIONS_PREF_KEY = "weekly_objectives_heat_exposure_sessions"
+_COLD_EXPOSURE_MINUTES_PREF_KEY = "weekly_objectives_cold_exposure_minutes"
+_COLD_EXPOSURE_SESSIONS_PREF_KEY = "weekly_objectives_cold_exposure_sessions"
 _LATEST_TRACKER_FOCUS_PREF_KEY = "coach_home_latest_tracker_focus"
+_HEAT_EXPOSURE_MINUTE_OPTIONS = {10, 15, 20, 25, 30}
+_COLD_EXPOSURE_MINUTE_OPTIONS = {1, 2, 3, 5, 10}
 try:
     _TRACKER_YESTERDAY_GRACE_HOUR = int((os.getenv("PILLAR_TRACKER_YESTERDAY_GRACE_HOUR") or "12").strip() or "12")
 except Exception:
@@ -427,6 +433,14 @@ def _wellbeing_weekly_targets(user_id: int) -> tuple[str, str, int, int]:
     return fasting_mode, alcohol_tracking, fasting_goal_days, alcohol_goal_units
 
 
+def _parse_int_choice(raw: str | None, *, allowed: set[int], default: int) -> int:
+    try:
+        value = int(float(str(raw or "").strip() or str(default)))
+    except Exception:
+        value = int(default)
+    return value if value in allowed else int(default)
+
+
 def _optional_nutrition_tracker_concepts(user_id: int) -> tuple[PillarTrackerConceptDefinition, ...]:
     fasting_mode, alcohol_tracking = _wellbeing_tracking_settings(int(user_id))
     concepts: list[PillarTrackerConceptDefinition] = []
@@ -452,6 +466,56 @@ def _optional_nutrition_tracker_concepts(user_id: int) -> tuple[PillarTrackerCon
                 concept_key="fasting_adherence",
                 label="Fasting",
                 helper=f"Follow your {fasting_mode} plan today?",
+                options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
+                target_value=1,
+                target_direction="gte",
+                score_mode="binary",
+            )
+        )
+    return tuple(concepts)
+
+
+def _recovery_exposure_settings(user_id: int) -> dict[str, dict[str, int]]:
+    with SessionLocal() as s:
+        heat_minutes_raw = _user_pref_value(s, int(user_id), _HEAT_EXPOSURE_MINUTES_PREF_KEY)
+        heat_sessions_raw = _user_pref_value(s, int(user_id), _HEAT_EXPOSURE_SESSIONS_PREF_KEY)
+        cold_minutes_raw = _user_pref_value(s, int(user_id), _COLD_EXPOSURE_MINUTES_PREF_KEY)
+        cold_sessions_raw = _user_pref_value(s, int(user_id), _COLD_EXPOSURE_SESSIONS_PREF_KEY)
+    return {
+        "heat_exposure": {
+            "minutes": _parse_int_choice(heat_minutes_raw, allowed=_HEAT_EXPOSURE_MINUTE_OPTIONS, default=20),
+            "sessions": _parse_int_choice(heat_sessions_raw, allowed=set(range(0, 8)), default=0),
+        },
+        "cold_exposure": {
+            "minutes": _parse_int_choice(cold_minutes_raw, allowed=_COLD_EXPOSURE_MINUTE_OPTIONS, default=3),
+            "sessions": _parse_int_choice(cold_sessions_raw, allowed=set(range(0, 8)), default=0),
+        },
+    }
+
+
+def _optional_recovery_tracker_concepts(user_id: int) -> tuple[PillarTrackerConceptDefinition, ...]:
+    settings = _recovery_exposure_settings(int(user_id))
+    concepts: list[PillarTrackerConceptDefinition] = []
+    heat = settings["heat_exposure"]
+    if heat["sessions"] > 0:
+        concepts.append(
+            PillarTrackerConceptDefinition(
+                concept_key="heat_exposure",
+                label="Heat Exposure",
+                helper=f"{heat['minutes']}+ mins today",
+                options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
+                target_value=1,
+                target_direction="gte",
+                score_mode="binary",
+            )
+        )
+    cold = settings["cold_exposure"]
+    if cold["sessions"] > 0:
+        concepts.append(
+            PillarTrackerConceptDefinition(
+                concept_key="cold_exposure",
+                label="Cold Exposure",
+                helper=f"{cold['minutes']}+ mins today",
                 options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
                 target_value=1,
                 target_direction="gte",
@@ -538,6 +602,8 @@ def tracker_concepts_for_pillar(pillar_key: str, user_id: int | None = None) -> 
         raise ValueError(f"Unknown pillar: {pillar_key}")
     if key == "nutrition" and user_id is not None:
         return concepts + _optional_nutrition_tracker_concepts(int(user_id))
+    if key == "recovery" and user_id is not None:
+        return concepts + _optional_recovery_tracker_concepts(int(user_id))
     return concepts
 
 
@@ -1062,6 +1128,24 @@ def _default_resolved_target_for_user(
             target_period="week",
             target_label=label,
             metric_label="fasting adherence",
+            success_value=1.0,
+            success_direction="gte",
+            start_date=None,
+        )
+    if key == "recovery" and defn.concept_key in {"heat_exposure", "cold_exposure"}:
+        settings = _recovery_exposure_settings(int(user_id))
+        exposure = settings.get(defn.concept_key, {})
+        sessions = int(exposure.get("sessions") or 0)
+        minutes = int(exposure.get("minutes") or 0)
+        label = "heat exposure" if defn.concept_key == "heat_exposure" else "cold exposure"
+        return PillarTrackerResolvedTarget(
+            source="default",
+            target_value=float(sessions),
+            target_direction="gte",
+            target_unit="sessions/week",
+            target_period="week",
+            target_label=f"Hit {sessions} {label} sessions of {minutes}+ mins this week",
+            metric_label=f"{label} sessions",
             success_value=1.0,
             success_direction="gte",
             start_date=None,
