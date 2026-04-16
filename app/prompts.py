@@ -59,7 +59,8 @@ APP_TRACKER_SUMMARY_TASK_BLOCK = (
     "Do not add new habits, times, or tasks beyond the supplied education action.\n\n"
     "Identify the clearest overall pattern, explain what level of exercise makes sense today based on recovery and nutrition, "
     "mention the Today's focus lesson once when it is available, include the supplied education action, and close with the single "
-    "main priority to carry into the plan the member has already seen.\n\n"
+    "main priority to carry into the plan the member has already seen. Treat every configured tracker concept equally; choose what "
+    "to mention from the daily record signals, not from whether the concept is optional or standard.\n\n"
     "Keep it to 2-3 short paragraphs. Use plain British English. Avoid OKR/KR jargon and system terms like pillar, drill, or resilience work. "
     "Do not ask a question and do not invite a reply."
 )
@@ -99,6 +100,7 @@ BUILTIN_PROMPT_TEMPLATE_DEFAULTS: Dict[str, Dict[str, Any]] = {
             "Return exactly 4 moments for the day: morning, midday, afternoon, and evening. "
             "Use the provided two-day tracker read, exercise readiness, and key moments framework to make this feel like a practical schedule for today. "
             "If today's morning training record is supplied, treat it as what the member has planned for today, not as completed or missed training. "
+            "Use the full tracker review to decide which concepts matter today; do not favour fasting, alcohol, heat exposure, cold exposure, or any optional item by default. "
             "Take the whole programme into account: training, nutrition, resilience, and recovery. Build this around the day as a whole rather than one selected concept. "
             "Keep every moment specific, brief, and low-friction. Each title should be short. Each detail should be one sentence and under 18 words. "
             "Use British English. Do not mention JSON, scores, data tables, or being an AI."
@@ -457,6 +459,9 @@ def _coach_home_history_lines(
             return (day_rank, state_rank, label)
 
         lines.append("Daily tracker review:")
+        lines.append(
+            "Concept selection rule: review all listed concepts equally and choose mentions from the daily record signals, not from whether a concept is optional or standard."
+        )
         for pillar in sorted((item for item in tracker_review if isinstance(item, dict)), key=_pillar_sort_key)[:4]:
             pillar_label = str(pillar.get("pillar_label") or pillar.get("pillar_key") or "").strip()
             if not pillar_label:
@@ -469,7 +474,7 @@ def _coach_home_history_lines(
             if state:
                 pillar_bits.append(f"state={state}")
             concept_summaries: List[str] = []
-            for item in (pillar.get("concepts") or [])[:5]:
+            for item in pillar.get("concepts") or []:
                 if not isinstance(item, dict):
                     continue
                 label = str(item.get("label") or item.get("concept_key") or "").strip()
@@ -1810,6 +1815,7 @@ def build_prompt(
                         (
                             "Keep it to 2-3 short paragraphs, warm, calm, and practical. "
                             "Base the reply on the tracker context when it is available; do not give a generic encouragement message. "
+                            "Choose concept mentions from the tracker signals; do not favour fasting, alcohol, heat exposure, cold exposure, or any optional item just because it is configured. "
                             "Use plain language, avoid OKR/KR jargon, and avoid system terms like pillar, drill, or resilience work. "
                             "When an education programme lesson is available, mention its concept or lesson title once and include the supplied education action without replacing the lesson content. "
                             "Use the key moments from the day plan only as context; do not rewrite them as a schedule, do not use a morning/midday/evening list, and do not add new habits, times, or tasks beyond the supplied education action. "
@@ -1866,6 +1872,7 @@ def build_prompt(
                         "Use the supplied two-day read, exercise readiness, and key moments framework so this feels like a practical daily schedule. "
                         "If today's morning training record is supplied, treat it as what the member has planned for today, not as completed or missed training. "
                         "Review all available daily tracking across the tracked pillars rather than narrowing in on one selected concept. "
+                        "Use the tracker signals to decide which concepts matter today; do not favour fasting, alcohol, heat exposure, cold exposure, or any optional item by default. "
                         "Take the whole programme into account: training, nutrition, resilience, and recovery. "
                         "Build the plan around the day as a whole rather than one selected concept. "
                         "Keep the title and summary aligned to the day as a whole rather than a single narrow task."

@@ -452,6 +452,9 @@ def _tracker_history_lines(tracker_context: dict) -> list[str]:
             return (day_rank, state_rank, label)
 
         lines.append("Daily tracker review:")
+        lines.append(
+            "Concept selection rule: review all listed concepts equally and choose mentions from the daily record signals, not from whether a concept is optional or standard."
+        )
         for pillar in sorted((item for item in tracker_review if isinstance(item, dict)), key=_pillar_sort_key)[:4]:
             if not isinstance(pillar, dict):
                 continue
@@ -466,7 +469,7 @@ def _tracker_history_lines(tracker_context: dict) -> list[str]:
             if state:
                 pillar_bits.append(f"state={state}")
             concept_summaries: list[str] = []
-            for item in (pillar.get("concepts") or [])[:5]:
+            for item in pillar.get("concepts") or []:
                 if not isinstance(item, dict):
                     continue
                 label = str(item.get("label") or item.get("concept_key") or "").strip()
