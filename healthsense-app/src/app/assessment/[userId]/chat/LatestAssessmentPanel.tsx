@@ -388,32 +388,6 @@ function resolveActivityAlignmentStatusFromLevels(
   return activityLevel > readinessLevel ? "above_readiness" : "below_readiness";
 }
 
-function resolveTrainingReadinessDot(theme: DisplayTheme, status: TrainingReadinessStatus): string {
-  if (status === "ready") {
-    return theme === "dark" ? "bg-[#d9f0c5]" : "bg-[#69a23a]";
-  }
-  if (status === "low") {
-    return theme === "dark" ? "bg-[#c7b0ff]" : "bg-[#6b4cc2]";
-  }
-  if (status === "unknown") {
-    return theme === "dark" ? "bg-[#8c7f70]" : "bg-[#d8d0c5]";
-  }
-  return theme === "dark" ? "bg-[#ffd3ad]" : "bg-[#f0b35f]";
-}
-
-function resolveActivityDot(theme: DisplayTheme, status: ActivityStatus): string {
-  if (status === "high") {
-    return theme === "dark" ? "bg-[#c7b0ff]" : "bg-[#6b4cc2]";
-  }
-  if (status === "moderate") {
-    return theme === "dark" ? "bg-[#d9f0c5]" : "bg-[#69a23a]";
-  }
-  if (status === "low") {
-    return theme === "dark" ? "bg-[#ffd3ad]" : "bg-[#f0b35f]";
-  }
-  return theme === "dark" ? "bg-[#8c7f70]" : "bg-[#d8d0c5]";
-}
-
 function resolveTrainingReadinessCircleTone(theme: DisplayTheme, status?: string | null): string {
   const resolved = normalizeTrainingReadinessStatus(status);
   if (resolved === "ready") {
@@ -1598,7 +1572,6 @@ export default function LatestAssessmentPanel({
           latestHrvItem?.trend_status || restingHeartRate?.hrv_trend_status,
           restingHeartRate?.trend_status,
         );
-  const trainingReadinessDotClassName = resolveTrainingReadinessDot(displayTheme, trainingReadinessStatus);
   const normalizedActivityStatus = normalizeActivityStatus(
     latestActivityStatusItem?.status || latestReadinessActivityItem?.activity_status || restingHeartRate?.activity_status,
   );
@@ -1609,7 +1582,6 @@ export default function LatestAssessmentPanel({
           steps: latestStepsItem?.steps ?? restingHeartRate?.steps_today,
           active_minutes: latestActiveMinutesItem?.active_minutes ?? restingHeartRate?.active_minutes_today,
         });
-  const activityDotClassName = resolveActivityDot(displayTheme, activityStatus);
   const normalizedActivityAlignmentStatus = normalizeActivityAlignmentStatus(
     latestReadinessActivityItem?.alignment_status || restingHeartRate?.activity_alignment_status,
   );
@@ -3252,14 +3224,7 @@ export default function LatestAssessmentPanel({
                   <>
                     <div className="rounded-[24px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4">
                         <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-semibold text-[#1e1b16]">Training readiness</p>
-                            <span
-                              aria-label={resolveTrainingReadinessLabel(trainingReadinessStatus)}
-                              className={`h-3 w-3 rounded-full ${trainingReadinessDotClassName}`}
-                              role="img"
-                            />
-                          </div>
+                          <p className="text-sm font-semibold text-[#1e1b16]">Training readiness</p>
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
@@ -3401,14 +3366,7 @@ export default function LatestAssessmentPanel({
 
                       <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
                         <div className="flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-semibold text-[#1e1b16]">Activity status</p>
-                            <span
-                              aria-label={resolveActivityStatusLabel(activityStatus)}
-                              className={`h-3 w-3 rounded-full ${activityDotClassName}`}
-                              role="img"
-                            />
-                          </div>
+                          <p className="text-sm font-semibold text-[#1e1b16]">Activity status</p>
                           <div className="flex items-center gap-2">
                             <button
                               type="button"
