@@ -23,9 +23,50 @@ _HEAT_EXPOSURE_MINUTES_PREF_KEY = "weekly_objectives_heat_exposure_minutes"
 _HEAT_EXPOSURE_SESSIONS_PREF_KEY = "weekly_objectives_heat_exposure_sessions"
 _COLD_EXPOSURE_MINUTES_PREF_KEY = "weekly_objectives_cold_exposure_minutes"
 _COLD_EXPOSURE_SESSIONS_PREF_KEY = "weekly_objectives_cold_exposure_sessions"
+_OMEGA_3_DAYS_PREF_KEY = "weekly_objectives_omega_3_days"
+_VITAMIN_D_DAYS_PREF_KEY = "weekly_objectives_vitamin_d_days"
+_CREATINE_DAYS_PREF_KEY = "weekly_objectives_creatine_days"
+_MAGNESIUM_DAYS_PREF_KEY = "weekly_objectives_magnesium_days"
 _LATEST_TRACKER_FOCUS_PREF_KEY = "coach_home_latest_tracker_focus"
 _HEAT_EXPOSURE_MINUTE_OPTIONS = {10, 15, 20, 25, 30}
 _COLD_EXPOSURE_MINUTE_OPTIONS = {1, 2, 3, 5, 10}
+_SUPPLEMENT_TRACKER_CONFIG: tuple[dict[str, str], ...] = (
+    {
+        "pillar_key": "nutrition",
+        "concept_key": "omega_3",
+        "label": "Omega 3",
+        "helper": "Taken today?",
+        "pref_key": _OMEGA_3_DAYS_PREF_KEY,
+        "target_label": "omega 3",
+    },
+    {
+        "pillar_key": "nutrition",
+        "concept_key": "vitamin_d",
+        "label": "Vitamin D",
+        "helper": "Taken today?",
+        "pref_key": _VITAMIN_D_DAYS_PREF_KEY,
+        "target_label": "vitamin D",
+    },
+    {
+        "pillar_key": "training",
+        "concept_key": "creatine",
+        "label": "Creatine",
+        "helper": "Taken today?",
+        "pref_key": _CREATINE_DAYS_PREF_KEY,
+        "target_label": "creatine",
+    },
+    {
+        "pillar_key": "recovery",
+        "concept_key": "magnesium",
+        "label": "Magnesium",
+        "helper": "Taken today?",
+        "pref_key": _MAGNESIUM_DAYS_PREF_KEY,
+        "target_label": "magnesium",
+    },
+)
+_SUPPLEMENT_TRACKER_BY_CONCEPT = {
+    str(item["concept_key"]): item for item in _SUPPLEMENT_TRACKER_CONFIG
+}
 try:
     _TRACKER_YESTERDAY_GRACE_HOUR = int((os.getenv("PILLAR_TRACKER_YESTERDAY_GRACE_HOUR") or "12").strip() or "12")
 except Exception:
@@ -441,6 +482,18 @@ def _parse_int_choice(raw: str | None, *, allowed: set[int], default: int) -> in
     return value if value in allowed else int(default)
 
 
+def _supplement_tracking_settings(user_id: int) -> dict[str, int]:
+    with SessionLocal() as s:
+        return {
+            str(item["concept_key"]): _parse_int_choice(
+                _user_pref_value(s, int(user_id), item["pref_key"]),
+                allowed=set(range(0, 8)),
+                default=0,
+            )
+            for item in _SUPPLEMENT_TRACKER_CONFIG
+        }
+
+
 def _optional_nutrition_tracker_concepts(user_id: int) -> tuple[PillarTrackerConceptDefinition, ...]:
     fasting_mode, alcohol_tracking = _wellbeing_tracking_settings(int(user_id))
     concepts: list[PillarTrackerConceptDefinition] = []
@@ -466,6 +519,29 @@ def _optional_nutrition_tracker_concepts(user_id: int) -> tuple[PillarTrackerCon
                 concept_key="fasting_adherence",
                 label="Fasting",
                 helper=f"Follow your {fasting_mode} plan today?",
+                options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
+                target_value=1,
+                target_direction="gte",
+                score_mode="binary",
+            )
+        )
+    return tuple(concepts)
+
+
+def _optional_supplement_tracker_concepts(user_id: int, pillar_key: str) -> tuple[PillarTrackerConceptDefinition, ...]:
+    key = str(pillar_key or "").strip().lower()
+    settings = _supplement_tracking_settings(int(user_id))
+    concepts: list[PillarTrackerConceptDefinition] = []
+    for item in _SUPPLEMENT_TRACKER_CONFIG:
+        if str(item["pillar_key"]) != key:
+            continue
+        if int(settings.get(str(item["concept_key"]), 0) or 0) <= 0:
+            continue
+        concepts.append(
+            PillarTrackerConceptDefinition(
+                concept_key=str(item["concept_key"]),
+                label=str(item["label"]),
+                helper=str(item["helper"]),
                 options=(PillarTrackerOption(0, "No"), PillarTrackerOption(1, "Yes")),
                 target_value=1,
                 target_direction="gte",
@@ -601,9 +677,19 @@ def tracker_concepts_for_pillar(pillar_key: str, user_id: int | None = None) -> 
     if not concepts:
         raise ValueError(f"Unknown pillar: {pillar_key}")
     if key == "nutrition" and user_id is not None:
-        return concepts + _optional_nutrition_tracker_concepts(int(user_id))
+        return (
+            concepts
+            + _optional_nutrition_tracker_concepts(int(user_id))
+            + _optional_supplement_tracker_concepts(int(user_id), key)
+        )
+    if key == "training" and user_id is not None:
+        return concepts + _optional_supplement_tracker_concepts(int(user_id), key)
     if key == "recovery" and user_id is not None:
-        return concepts + _optional_recovery_tracker_concepts(int(user_id))
+        return (
+            concepts
+            + _optional_recovery_tracker_concepts(int(user_id))
+            + _optional_supplement_tracker_concepts(int(user_id), key)
+        )
     return concepts
 
 
@@ -1146,6 +1232,23 @@ def _default_resolved_target_for_user(
             target_period="week",
             target_label=f"Hit {sessions} {label} sessions of {minutes}+ mins this week",
             metric_label=f"{label} sessions",
+            success_value=1.0,
+            success_direction="gte",
+            start_date=None,
+        )
+    supplement = _SUPPLEMENT_TRACKER_BY_CONCEPT.get(str(defn.concept_key or "").strip().lower())
+    if supplement and key == str(supplement.get("pillar_key") or "").strip().lower():
+        settings = _supplement_tracking_settings(int(user_id))
+        days = int(settings.get(defn.concept_key, 0) or 0)
+        label = str(supplement.get("target_label") or defn.label).strip()
+        return PillarTrackerResolvedTarget(
+            source="default",
+            target_value=float(days),
+            target_direction="gte",
+            target_unit="days/week",
+            target_period="week",
+            target_label=f"Take {label} {days} days this week",
+            metric_label=f"{label} adherence",
             success_value=1.0,
             success_direction="gte",
             start_date=None,

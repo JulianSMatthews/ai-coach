@@ -10,11 +10,14 @@ CONCEPT_MEASURE_LABELS: dict[str, str] = {
     "bedtime_consistency": "nights/week",
     "cardio_frequency": "days/week",
     "cold_exposure": "sessions/week",
+    "creatine": "days/week",
     "emotional_regulation": "days/week",
     "flexibility_mobility": "days/week",
     "fruit_veg": "portions/day",
     "heat_exposure": "sessions/week",
     "hydration": "litres/day",
+    "magnesium": "days/week",
+    "omega_3": "days/week",
     "optimism_perspective": "days/week",
     "positive_connection": "days/week",
     "processed_food": "portions/day",
@@ -24,6 +27,7 @@ CONCEPT_MEASURE_LABELS: dict[str, str] = {
     "strength_training": "sessions/week",
     "stress_recovery": "days/week",
     "support_openness": "days/week",
+    "vitamin_d": "days/week",
 }
 
 _CONCEPT_METADATA_READY = False

@@ -813,11 +813,14 @@ _GUIDE: dict[str, dict[str, dict[str, str]]] = {
     "nutrition": {
         "fruit_veg":      {"label": "fruit & vegetable portions", "unit": "portions/day", "low": "increase", "high": "maintain"},
         "hydration":      {"label": "daily hydration",            "unit": "L/day",        "low": "increase", "high": "maintain"},
+        "omega_3":        {"label": "omega 3 adherence",          "unit": "days/week",    "low": "increase", "high": "maintain"},
         "processed_food": {"label": "processed food intake",      "unit": "portions/day", "low": "reduce",   "high": "reduce"},
         "protein_intake": {"label": "protein intake",             "unit": "portions/day", "low": "increase", "high": "maintain"},
+        "vitamin_d":      {"label": "vitamin D adherence",        "unit": "days/week",    "low": "increase", "high": "maintain"},
     },
     "training": {
         "cardio_frequency":     {"label": "cardio sessions",           "unit": "sessions/week", "low": "increase", "high": "maintain"},
+        "creatine":             {"label": "creatine adherence",        "unit": "days/week",     "low": "increase", "high": "maintain"},
         "strength_training":    {"label": "strength sessions",         "unit": "sessions/week", "low": "increase", "high": "maintain"},
         "flexibility_mobility": {"label": "mobility/flexibility work", "unit": "sessions/week", "low": "increase", "high": "maintain"},
     },
@@ -834,6 +837,7 @@ _GUIDE: dict[str, dict[str, dict[str, str]]] = {
         "sleep_quality":       {"label": "nights waking refreshed", "unit": "nights/week", "low": "increase", "high": "maintain"},
         "heat_exposure":       {"label": "heat exposure sessions", "unit": "sessions/week", "low": "increase", "high": "maintain"},
         "cold_exposure":       {"label": "cold exposure sessions", "unit": "sessions/week", "low": "increase", "high": "maintain"},
+        "magnesium":           {"label": "magnesium adherence", "unit": "days/week", "low": "increase", "high": "maintain"},
     },
 }
 

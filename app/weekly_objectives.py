@@ -28,6 +28,10 @@ HEAT_EXPOSURE_MINUTES_PREF_KEY = "weekly_objectives_heat_exposure_minutes"
 HEAT_EXPOSURE_SESSIONS_PREF_KEY = "weekly_objectives_heat_exposure_sessions"
 COLD_EXPOSURE_MINUTES_PREF_KEY = "weekly_objectives_cold_exposure_minutes"
 COLD_EXPOSURE_SESSIONS_PREF_KEY = "weekly_objectives_cold_exposure_sessions"
+OMEGA_3_DAYS_PREF_KEY = "weekly_objectives_omega_3_days"
+VITAMIN_D_DAYS_PREF_KEY = "weekly_objectives_vitamin_d_days"
+CREATINE_DAYS_PREF_KEY = "weekly_objectives_creatine_days"
+MAGNESIUM_DAYS_PREF_KEY = "weekly_objectives_magnesium_days"
 
 FASTING_MODE_OPTIONS: tuple[tuple[str, str], ...] = (
     ("off", "Off"),
@@ -60,8 +64,37 @@ ALCOHOL_GOAL_UNITS_OPTIONS: tuple[tuple[str, str], ...] = (
 EXPOSURE_SESSION_OPTIONS: tuple[tuple[str, str], ...] = tuple(
     ("0", "Off") if value == 0 else (str(value), str(value)) for value in range(0, 8)
 )
+SUPPLEMENT_DAY_OPTIONS: tuple[tuple[str, str], ...] = tuple(
+    ("0", "Off") if value == 0 else (str(value), str(value)) for value in range(0, 8)
+)
 HEAT_EXPOSURE_MINUTE_OPTIONS: tuple[tuple[str, str], ...] = tuple((str(value), str(value)) for value in (10, 15, 20, 25, 30))
 COLD_EXPOSURE_MINUTE_OPTIONS: tuple[tuple[str, str], ...] = tuple((str(value), str(value)) for value in (1, 2, 3, 5, 10))
+SUPPLEMENT_OBJECTIVES: tuple[dict[str, str], ...] = (
+    {
+        "key": "omega_3",
+        "label": "Omega 3",
+        "pillar": "Nutrition",
+        "pref_key": OMEGA_3_DAYS_PREF_KEY,
+    },
+    {
+        "key": "vitamin_d",
+        "label": "Vitamin D",
+        "pillar": "Nutrition",
+        "pref_key": VITAMIN_D_DAYS_PREF_KEY,
+    },
+    {
+        "key": "creatine",
+        "label": "Creatine",
+        "pillar": "Training",
+        "pref_key": CREATINE_DAYS_PREF_KEY,
+    },
+    {
+        "key": "magnesium",
+        "label": "Magnesium",
+        "pillar": "Recovery",
+        "pref_key": MAGNESIUM_DAYS_PREF_KEY,
+    },
+)
 
 
 def _display_unit_label(unit: str | None) -> str | None:
@@ -277,6 +310,14 @@ def _wellbeing_payload(user_id: int) -> dict[str, Any]:
             EXPOSURE_SESSION_OPTIONS,
             "0",
         )
+        supplement_days = {
+            item["key"]: _normalise_option_value(
+                _pref_value(s, int(user_id), item["pref_key"]),
+                SUPPLEMENT_DAY_OPTIONS,
+                "0",
+            )
+            for item in SUPPLEMENT_OBJECTIVES
+        }
     items = [
         {
             "key": "fasting_mode",
@@ -340,6 +381,25 @@ def _wellbeing_payload(user_id: int) -> dict[str, Any]:
             ],
         },
     ]
+    for supplement in SUPPLEMENT_OBJECTIVES:
+        days_value = supplement_days.get(supplement["key"], "0")
+        items.append(
+            {
+                "key": supplement["key"],
+                "label": supplement["label"],
+                "helper": f"Adds {supplement['label']} to your {supplement['pillar']} daily record.",
+                "value": "on" if int(days_value) > 0 else "off",
+                "fields": [
+                    {
+                        "key": supplement["pref_key"],
+                        "label": "Days per week",
+                        "value": days_value,
+                        "options": [{"value": value, "label": label} for value, label in SUPPLEMENT_DAY_OPTIONS],
+                    },
+                ],
+            }
+        )
+    supplement_keys = {item["key"] for item in SUPPLEMENT_OBJECTIVES}
     configured_count = sum(
         1
         for item in items
@@ -348,6 +408,7 @@ def _wellbeing_payload(user_id: int) -> dict[str, Any]:
         or (item["key"] == "ketogenic_diet" and item["value"] == "on")
         or (item["key"] == "heat_exposure" and item["value"] == "on")
         or (item["key"] == "cold_exposure" and item["value"] == "on")
+        or (item["key"] in supplement_keys and item["value"] == "on")
     )
     return {
         "title": "Wellbeing objectives",
@@ -443,6 +504,14 @@ def save_weekly_objectives_config(
             EXPOSURE_SESSION_OPTIONS,
             "0",
         )
+        supplement_days = {
+            item["pref_key"]: _normalise_option_value(
+                values.get(item["pref_key"]),
+                SUPPLEMENT_DAY_OPTIONS,
+                "0",
+            )
+            for item in SUPPLEMENT_OBJECTIVES
+        }
         with SessionLocal() as s:
             _set_pref_value(s, int(user_id), FASTING_MODE_PREF_KEY, fasting_mode)
             _set_pref_value(s, int(user_id), ALCOHOL_TRACKING_PREF_KEY, alcohol_tracking)
@@ -451,6 +520,8 @@ def save_weekly_objectives_config(
             _set_pref_value(s, int(user_id), HEAT_EXPOSURE_SESSIONS_PREF_KEY, heat_sessions)
             _set_pref_value(s, int(user_id), COLD_EXPOSURE_MINUTES_PREF_KEY, cold_minutes)
             _set_pref_value(s, int(user_id), COLD_EXPOSURE_SESSIONS_PREF_KEY, cold_sessions)
+            for pref_key, pref_value in supplement_days.items():
+                _set_pref_value(s, int(user_id), pref_key, pref_value)
             s.commit()
         return get_weekly_objectives_config(int(user_id))
 

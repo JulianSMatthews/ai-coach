@@ -81,11 +81,14 @@ CONCEPTS: Dict[str, Dict[str, str]] = {
         "fruit_veg":        "Fruit & vegetables",
         "hydration":        "Hydration",
         "processed_food":   "Processed food",
+        "omega_3":          "Omega 3",
+        "vitamin_d":        "Vitamin D",
     },
     "training": {
         "cardio_frequency":     "Cardio frequency",
         "strength_training":    "Strength training",
         "flexibility_mobility": "Flexibility & mobility",
+        "creatine":             "Creatine",
     },
     "resilience": {
         "emotional_regulation":   "Calm & Control",
@@ -98,6 +101,7 @@ CONCEPTS: Dict[str, Dict[str, str]] = {
         "sleep_duration":       "Sleep duration",
         "sleep_quality":        "Sleep quality",
         "bedtime_consistency":  "Bedtime consistency",
+        "magnesium":            "Magnesium",
     },
 }
 
@@ -1253,11 +1257,14 @@ CONCEPT_SCORE_BOUNDS = {
         "fruit_veg":      {"zero_score": 0, "max_score": 5},
         "hydration":      {"zero_score": 0, "max_score": 4},
         "processed_food": {"zero_score": 4, "max_score": 0},  # days/week; reverse (7 days bad=0, 0 days best=100)
+        "omega_3":        {"zero_score": 0, "max_score": 7},
+        "vitamin_d":      {"zero_score": 0, "max_score": 7},
     },
     "training": {
         "cardio_frequency":     {"zero_score": 0, "max_score": 3},
         "strength_training":    {"zero_score": 0, "max_score": 4},
         "flexibility_mobility": {"zero_score": 0, "max_score": 4},
+        "creatine":             {"zero_score": 0, "max_score": 7},
     },
     "resilience": {
         "emotional_regulation":   {"zero_score": 0, "max_score": 7},
@@ -1270,6 +1277,7 @@ CONCEPT_SCORE_BOUNDS = {
         "sleep_duration":      {"zero_score": 0, "max_score": 7},
         "sleep_quality":       {"zero_score": 0, "max_score": 7},
         "bedtime_consistency": {"zero_score": 0, "max_score": 7},
+        "magnesium":           {"zero_score": 0, "max_score": 7},
     },
 }
 
@@ -1899,6 +1907,154 @@ def parse_education_programme_docx(path: str) -> dict[str, Any]:
     return {"title": programme_title, "days": days}
 
 
+def _supplement_education_programme(
+    *,
+    pillar_key: str,
+    concept_key: str,
+    concept_label: str,
+    code: str,
+    name: str,
+    context_line: str,
+) -> dict[str, Any]:
+    label_lower = concept_label.lower()
+    return {
+        "pillar_key": pillar_key,
+        "concept_key": concept_key,
+        "concept_label": concept_label,
+        "code": code,
+        "name": name,
+        "level": "build",
+        "pass_score_pct": 66.67,
+        "is_active": True,
+        "doc": {
+            "title": f"HealthSense - {concept_label} Consistency Programme (4 Days)",
+            "days": [
+                {
+                    "day_index": 1,
+                    "title": f"Awareness: Tracking {concept_label}",
+                    "summary": f"Today you'll learn how to treat {concept_label} as a simple consistency habit.",
+                    "questions": [
+                        {
+                            "text": f"What are we tracking for {concept_label}?",
+                            "options": ["Daily consistency", "A prescribed dose", "A medical result", "Perfection"],
+                            "correct": "Daily consistency",
+                        },
+                        {
+                            "text": "What should guide supplement use?",
+                            "options": ["Guesswork", "Your agreed plan or product guidance", "Random timing", "More is always better"],
+                            "correct": "Your agreed plan or product guidance",
+                        },
+                        {
+                            "text": "What matters most for this tracker?",
+                            "options": ["Consistency", "Complexity", "Changing daily", "Skipping records"],
+                            "correct": "Consistency",
+                        },
+                    ],
+                    "script": (
+                        f"Today you'll learn how to treat {concept_label} as a simple consistency habit.\n\n"
+                        f"{context_line}\n\n"
+                        "HealthSense is tracking whether it was taken as planned, not recommending a dose or telling you whether you should take it.\n\n"
+                        "Use the plan agreed with a clinician or the product guidance that is appropriate for you.\n\n"
+                        "The goal is simple: make the routine visible so it is easier to repeat."
+                    ),
+                    "action_prompt": f"Choose the daily moment when {label_lower} fits most naturally.",
+                    "takeaway": f"{concept_label} tracking is about consistency, not dose advice.",
+                },
+                {
+                    "day_index": 2,
+                    "title": "Why It's Hard: Routine Gaps",
+                    "summary": "Yesterday you set the supplement as a consistency habit. Today is about why it slips.",
+                    "questions": [
+                        {
+                            "text": "Why do supplement routines often slip?",
+                            "options": ["No trigger", "Too much water", "Too much sleep", "Too much planning"],
+                            "correct": "No trigger",
+                        },
+                        {
+                            "text": "What helps most?",
+                            "options": ["A fixed cue", "A random time", "Willpower only", "Changing bottles"],
+                            "correct": "A fixed cue",
+                        },
+                        {
+                            "text": "What should the record capture?",
+                            "options": ["Taken or not taken", "A diagnosis", "A guarantee", "A new dose"],
+                            "correct": "Taken or not taken",
+                        },
+                    ],
+                    "script": (
+                        f"Yesterday you set {label_lower} as a simple consistency habit. Today is about why it can slip.\n\n"
+                        "Most supplement routines fail because they are not attached to a stable cue.\n\n"
+                        "Common friction points are travel, busy mornings, unclear storage, and not knowing whether it was already taken.\n\n"
+                        "A fixed cue makes the behaviour easier: with breakfast, after brushing teeth, beside an existing medication box, or another routine that already happens."
+                    ),
+                    "action_prompt": f"Place {label_lower} next to the routine cue you want to use.",
+                    "takeaway": "A clear cue makes the habit easier to repeat.",
+                },
+                {
+                    "day_index": 3,
+                    "title": "What It's Doing: Reducing Decision Load",
+                    "summary": "Today you'll learn why a simple tracking habit reduces decision load.",
+                    "questions": [
+                        {
+                            "text": "What does a simple tracker reduce?",
+                            "options": ["Decision load", "All uncertainty", "Need for sleep", "Need for food"],
+                            "correct": "Decision load",
+                        },
+                        {
+                            "text": "What should you avoid?",
+                            "options": ["Changing the plan daily", "Using a cue", "Tracking honestly", "Keeping it visible"],
+                            "correct": "Changing the plan daily",
+                        },
+                        {
+                            "text": "What is the useful question?",
+                            "options": ["Did I follow my plan?", "Did I take more?", "Was it perfect?", "Can I ignore it?"],
+                            "correct": "Did I follow my plan?",
+                        },
+                    ],
+                    "script": (
+                        "Today you'll learn why a simple tracking habit reduces decision load.\n\n"
+                        f"When {label_lower} has a clear place in the day, you do not need to rethink it every time.\n\n"
+                        "The tracker gives a clean answer: did I follow the plan today?\n\n"
+                        "That makes it easier to spot patterns without turning the habit into something complicated."
+                    ),
+                    "action_prompt": f"Record {label_lower} as soon as it is taken today.",
+                    "takeaway": "Simple tracking turns uncertainty into a clear daily record.",
+                },
+                {
+                    "day_index": 4,
+                    "title": "What To Do: Build the Weekly Rhythm",
+                    "summary": "Now it's about making the weekly rhythm realistic.",
+                    "questions": [
+                        {
+                            "text": "Best weekly target?",
+                            "options": ["Realistic and repeatable", "Always maximum", "Random", "Untracked"],
+                            "correct": "Realistic and repeatable",
+                        },
+                        {
+                            "text": "What should you review?",
+                            "options": ["Missed cues", "Only perfect days", "Nothing", "Other people's routines"],
+                            "correct": "Missed cues",
+                        },
+                        {
+                            "text": "What matters most?",
+                            "options": ["Consistency", "Complexity", "Pressure", "Guessing"],
+                            "correct": "Consistency",
+                        },
+                    ],
+                    "script": (
+                        "Now it's about making the weekly rhythm realistic.\n\n"
+                        "Choose a weekly target that matches your actual plan and keep the routine simple.\n\n"
+                        "If you miss a day, use the record as information. Was the cue unclear? Was the supplement out of sight? Did the timing clash with the rest of the day?\n\n"
+                        "The aim is not pressure. The aim is a reliable routine."
+                    ),
+                    "action_prompt": f"Set the weekly {label_lower} target you can realistically repeat.",
+                    "takeaway": "A realistic weekly rhythm is easier to sustain.",
+                },
+            ],
+        },
+    }
+
+
 BUILTIN_EDUCATION_PROGRAMMES: list[dict[str, Any]] = [
     {
         "pillar_key": "nutrition",
@@ -2458,6 +2614,44 @@ BUILTIN_EDUCATION_PROGRAMMES.extend(
     {'pillar_key': 'recovery', 'concept_key': 'sleep_duration', 'concept_label': 'Sleep duration', 'code': 'sleep_duration_awareness_4d', 'name': 'Sleep Duration Awareness', 'level': 'build', 'pass_score_pct': 66.67, 'is_active': True, 'doc': {'title': 'HealthSense - Sleep Duration Education Programme (4 Days)', 'days': [{'day_index': 1, 'title': 'Awareness: Why Sleep Duration Matters', 'summary': "Today you'll learn why sleep duration is one of the most important drivers of health, performance, and recovery.", 'questions': [{'text': 'What is the primary role of sleep?', 'options': ['Entertainment', 'Recovery and restoration', 'Digestion', 'Hydration'], 'correct': 'Recovery and restoration'}, {'text': 'How much sleep do most adults need?', 'options': ['4-5 hours', '7-9 hours', '10-12 hours', '3 hours'], 'correct': '7-9 hours'}, {'text': 'What does lack of sleep affect?', 'options': ['Only energy', 'Energy, focus, mood', 'Height', 'Hair'], 'correct': 'Energy, focus, mood'}], 'script': "Today you'll learn why sleep duration is one of the most important drivers of health, performance, and recovery.\n\nSleep is when your body restores itself - physically and mentally. During sleep, your body repairs tissue, regulates hormones, and consolidates memory.\n\nMost adults need around 7-9 hours of sleep per night, although individual needs vary.\n\nEven small reductions in sleep can impact:\n\n- energy\n\n- focus\n\n- mood\n\n- decision-making\n\nSleep is not a luxury - it's a foundation.", 'action_prompt': 'Track how many hours you sleep tonight.', 'takeaway': 'Sleep duration is a core pillar of health.'}, {'day_index': 2, 'title': "Why It's Hard: Modern Disruption", 'summary': 'Yesterday you learned how important sleep is.', 'questions': [{'text': 'What disrupts sleep most?', 'options': ['Exercise', 'Screens and late routines', 'Water intake', 'Walking'], 'correct': 'Screens and late routines'}, {'text': 'What is the circadian rhythm?', 'options': ['Digestion cycle', 'Internal body clock', 'Muscle system', 'Breathing pattern'], 'correct': 'Internal body clock'}, {'text': 'What happens with disruption?', 'options': ['Better sleep', 'Harder to sleep', 'Faster recovery', 'More energy'], 'correct': 'Harder to sleep'}], 'script': "Yesterday you learned how important sleep is. Today you'll understand why it's often disrupted.\n\nModern life works against sleep:\n\n- screens and blue light\n\n- late meals\n\n- stress\n\n- inconsistent schedules\n\nThese disrupt your body's internal clock, known as the circadian rhythm.\n\nWhen this rhythm is disrupted, it becomes harder to fall asleep and stay asleep.", 'action_prompt': 'Avoid screens for 30 minutes before bed tonight.', 'takeaway': 'Modern habits disrupt natural sleep rhythms.'}, {'day_index': 3, 'title': "What It's Doing: Energy, Hormones & Recovery", 'summary': "Today you'll learn how sleep duration affects your body.", 'questions': [{'text': 'What does poor sleep increase?', 'options': ['Muscle growth', 'Hunger and cravings', 'Hydration', 'Flexibility'], 'correct': 'Hunger and cravings'}, {'text': 'What does sleep support?', 'options': ['Only rest', 'Recovery and hormones', 'Height', 'Hair'], 'correct': 'Recovery and hormones'}, {'text': 'What happens to energy with poor sleep?', 'options': ['Increases', 'Decreases', 'No change', 'Doubles'], 'correct': 'Decreases'}], 'script': "Today you'll learn how sleep duration affects your body.\n\nSleep impacts hormones that regulate hunger and energy, including ghrelin and leptin.\n\nLack of sleep increases hunger and cravings, particularly for high-calorie foods.\n\nIt also affects recovery, immune function, and mental performance.\n\nPoor sleep = higher stress, lower energy, and reduced resilience.", 'action_prompt': 'Notice how your energy and cravings feel after different sleep durations.', 'takeaway': 'Sleep directly affects hormones, energy, and recovery.'}, {'day_index': 4, 'title': 'What To Do: Improve Sleep Duration', 'summary': "Now it's about building a simple approach to better sleep.", 'questions': [{'text': 'Best sleep strategy?', 'options': ['Random sleep times', 'Consistent schedule', 'Less sleep', 'Late nights'], 'correct': 'Consistent schedule'}, {'text': 'What helps sleep?', 'options': ['Bright lights', 'Dark cool room', 'Noise', 'Screens'], 'correct': 'Dark cool room'}, {'text': 'What is important?', 'options': ['Perfection', 'Consistency', 'Speed', 'Intensity'], 'correct': 'Consistency'}], 'script': "Now it's about building a simple approach to better sleep.\n\nFocus on consistency:\n\n- go to bed at the same time\n\n- wake up at the same time\n\n- create a wind-down routine\n\nSimple strategies:\n\n- reduce light before bed\n\n- keep your room cool and dark\n\n- avoid heavy meals late\n\nConsistency improves sleep quality and duration.", 'action_prompt': 'Set a consistent bedtime tonight.', 'takeaway': 'Consistency is key to improving sleep duration.'}]}},
     {'pillar_key': 'recovery', 'concept_key': 'sleep_quality', 'concept_label': 'Sleep quality', 'code': 'sleep_quality_awareness_4d', 'name': 'Sleep Quality Awareness', 'level': 'build', 'pass_score_pct': 66.67, 'is_active': True, 'doc': {'title': 'HealthSense - Sleep Quality Education Programme (4 Days)', 'days': [{'day_index': 1, 'title': 'Awareness: What Sleep Quality Means', 'summary': "Today you'll learn what sleep quality actually means and why it matters just as much as sleep duration.", 'questions': [{'text': 'What is sleep quality?', 'options': ['Time asleep only', 'How well you sleep', 'Sleep location', 'Sleep timing'], 'correct': 'How well you sleep'}, {'text': 'What happens during deep sleep?', 'options': ['Nothing', 'Recovery', 'Digestion only', 'Movement'], 'correct': 'Recovery'}, {'text': 'Can you feel tired after 8 hours sleep?', 'options': ['No', 'Yes, if quality is poor', 'Only sometimes', 'Never'], 'correct': 'Yes, if quality is poor'}], 'script': "Today you'll learn what sleep quality actually means and why it matters just as much as sleep duration.\n\nSleep quality refers to how well you sleep - not just how long. Good quality sleep means:\n\n- falling asleep easily\n\n- staying asleep\n\n- reaching deeper stages of sleep\n\nDeep sleep is where recovery happens - physically and mentally.\n\nEven if you sleep 7-8 hours, poor quality sleep can leave you feeling tired.", 'action_prompt': 'Rate your sleep quality this morning from 1-5.', 'takeaway': 'Sleep quality matters as much as duration.'}, {'day_index': 2, 'title': "Why It's Hard: Fragmented Sleep", 'summary': 'Yesterday you learned what sleep quality is.', 'questions': [{'text': 'What disrupts sleep quality?', 'options': ['Exercise', 'Light and noise', 'Water', 'Walking'], 'correct': 'Light and noise'}, {'text': 'What reduces deep sleep?', 'options': ['Consistency', 'Interruptions', 'Darkness', 'Quiet'], 'correct': 'Interruptions'}, {'text': 'Can you wake without remembering?', 'options': ['No', 'Yes', 'Only at night', 'Rarely'], 'correct': 'Yes'}], 'script': "Yesterday you learned what sleep quality is. Today you'll understand why it's often poor.\n\nSleep is often disrupted by:\n\n- stress\n\n- noise\n\n- light\n\n- temperature\n\n- late eating or alcohol\n\nThese interruptions reduce time spent in deep sleep.\n\nEven brief awakenings can reduce sleep quality without you remembering them.", 'action_prompt': 'Reduce one disruption tonight (light, noise, or temperature).', 'takeaway': 'Small disruptions reduce sleep quality.'}, {'day_index': 3, 'title': "What It's Doing: Recovery & Brain Function", 'summary': "Today you'll learn how sleep quality affects your body and mind.", 'questions': [{'text': 'What does good sleep support?', 'options': ['Only rest', 'Recovery and memory', 'Height', 'Hair'], 'correct': 'Recovery and memory'}, {'text': 'What does poor sleep cause?', 'options': ['More energy', 'Fatigue', 'Faster recovery', 'Strength gain'], 'correct': 'Fatigue'}, {'text': 'What else is affected?', 'options': ['Vision', 'Focus and resilience', 'Hearing', 'Taste'], 'correct': 'Focus and resilience'}], 'script': "Today you'll learn how sleep quality affects your body and mind.\n\nGood sleep quality supports:\n\n- memory consolidation\n\n- hormone balance\n\n- physical recovery\n\nPoor sleep quality leads to:\n\n- fatigue\n\n- poor focus\n\n- slower recovery\n\nIt also increases stress and reduces resilience.", 'action_prompt': "Notice your focus and energy today based on last night's sleep.", 'takeaway': 'Sleep quality drives recovery and mental performance.'}, {'day_index': 4, 'title': 'What To Do: Improve Sleep Quality', 'summary': "Now it's about improving sleep quality.", 'questions': [{'text': 'What improves sleep quality?', 'options': ['Bright light', 'Dark cool room', 'Noise', 'Screens'], 'correct': 'Dark cool room'}, {'text': 'What helps before bed?', 'options': ['Screens', 'Wind-down routine', 'Exercise', 'Work'], 'correct': 'Wind-down routine'}, {'text': 'What matters most?', 'options': ['Perfection', 'Consistency', 'Speed', 'Effort'], 'correct': 'Consistency'}], 'script': "Now it's about improving sleep quality.\n\nFocus on your environment:\n\n- dark room\n\n- cool temperature\n\n- minimal noise\n\nBuild a wind-down routine:\n\n- reduce screens\n\n- relax before bed\n\nConsistency improves both quality and duration.", 'action_prompt': 'Create a simple 10-minute wind-down routine tonight.', 'takeaway': 'Environment and routine improve sleep quality.'}]}}
 ]
+)
+
+
+BUILTIN_EDUCATION_PROGRAMMES.extend(
+    [
+        _supplement_education_programme(
+            pillar_key="nutrition",
+            concept_key="omega_3",
+            concept_label="Omega 3",
+            code="omega_3_consistency_4d",
+            name="Omega 3 Consistency",
+            context_line="Omega 3 is commonly used to support dietary omega-3 intake when oily fish intake is low.",
+        ),
+        _supplement_education_programme(
+            pillar_key="nutrition",
+            concept_key="vitamin_d",
+            concept_label="Vitamin D",
+            code="vitamin_d_consistency_4d",
+            name="Vitamin D Consistency",
+            context_line="Vitamin D is commonly used to support vitamin D intake, especially when sunlight exposure is low.",
+        ),
+        _supplement_education_programme(
+            pillar_key="training",
+            concept_key="creatine",
+            concept_label="Creatine",
+            code="creatine_consistency_4d",
+            name="Creatine Consistency",
+            context_line="Creatine is commonly used as part of strength, power, and training-support routines.",
+        ),
+        _supplement_education_programme(
+            pillar_key="recovery",
+            concept_key="magnesium",
+            concept_label="Magnesium",
+            code="magnesium_consistency_4d",
+            name="Magnesium Consistency",
+            context_line="Magnesium is commonly used as part of evening, relaxation, or recovery-support routines.",
+        ),
+    ]
 )
 
 
