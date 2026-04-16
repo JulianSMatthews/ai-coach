@@ -1358,6 +1358,19 @@ export default function LatestAssessmentPanel({
     () => normalizeBiometricSourceRows(restingHeartRate?.biometric_sources),
     [restingHeartRate?.biometric_sources],
   );
+  const biometricSourceEnabled = useMemo(
+    () =>
+      Object.fromEntries(
+        biometricSourceRows.map(({ key, source }) => [key, source?.enabled !== false]),
+      ) as Record<BiometricMetricKey, boolean>,
+    [biometricSourceRows],
+  );
+  const showRestingHeartRateMetric = biometricSourceEnabled.resting_hr;
+  const showHrvMetric = biometricSourceEnabled.hrv;
+  const showStepsMetric = biometricSourceEnabled.steps;
+  const showActiveMinutesMetric = biometricSourceEnabled.exercise_minutes;
+  const showTrainingReadinessCard = showRestingHeartRateMetric || showHrvMetric;
+  const showActivityStatusCard = showStepsMetric || showActiveMinutesMetric;
   const restingHeartRateValue = resolveRestingHeartRateValue(restingHeartRate?.resting_hr_bpm);
   const latestHrvMetricDate = String(restingHeartRate?.hrv_metric_date || "").trim();
   const latestActiveMinutesMetricDate = String(restingHeartRate?.active_minutes_metric_date || "").trim();
@@ -3222,7 +3235,8 @@ export default function LatestAssessmentPanel({
                   </div>
                 ) : (
                   <>
-                    <div className="rounded-[24px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4">
+                    {showTrainingReadinessCard ? (
+                      <div className="rounded-[24px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4">
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-sm font-semibold text-[#1e1b16]">Training readiness</p>
                           <div className="flex items-center gap-2">
@@ -3263,7 +3277,8 @@ export default function LatestAssessmentPanel({
                           })}
                         </div>
 
-                        <div className="mt-5 border-t border-[#efe7db] pt-4">
+                        {showRestingHeartRateMetric ? (
+                          <div className="mt-5 border-t border-[#efe7db] pt-4">
                           <div className="flex items-center justify-between gap-3">
                             <p className="text-sm font-semibold text-[#1e1b16]">Resting HR</p>
                             <div className="flex items-center gap-2">
@@ -3311,9 +3326,11 @@ export default function LatestAssessmentPanel({
                               Daily history will appear here once recent biometrics have been synced.
                             </p>
                           )}
-                        </div>
+                          </div>
+                        ) : null}
 
-                        <div className="mt-5 border-t border-[#efe7db] pt-4">
+                        {showHrvMetric ? (
+                          <div className="mt-5 border-t border-[#efe7db] pt-4">
                           <div className="flex items-center justify-between gap-3">
                             <p className="text-sm font-semibold text-[#1e1b16]">HRV</p>
                             <div className="flex items-center gap-2">
@@ -3361,9 +3378,12 @@ export default function LatestAssessmentPanel({
                               Daily HRV history will appear here once recent biometrics have been synced.
                             </p>
                           )}
-                        </div>
+                          </div>
+                        ) : null}
                       </div>
+                    ) : null}
 
+                    {showActivityStatusCard ? (
                       <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
                         <div className="flex items-center justify-between gap-3">
                           <p className="text-sm font-semibold text-[#1e1b16]">Activity status</p>
@@ -3402,7 +3422,8 @@ export default function LatestAssessmentPanel({
                           })}
                         </div>
 
-                        <div className="mt-5 border-t border-[#efe7db] pt-4">
+                        {showActiveMinutesMetric ? (
+                          <div className="mt-5 border-t border-[#efe7db] pt-4">
                           <div className="flex items-center justify-between gap-3">
                             <p className="text-sm font-semibold text-[#1e1b16]">Exercise minutes</p>
                             <div className="flex items-center gap-2">
@@ -3451,9 +3472,11 @@ export default function LatestAssessmentPanel({
                               Daily exercise minutes will appear here once recent biometrics have been synced.
                             </p>
                           )}
-                        </div>
+                          </div>
+                        ) : null}
 
-                        <div className="mt-5 border-t border-[#efe7db] pt-4">
+                        {showStepsMetric ? (
+                          <div className="mt-5 border-t border-[#efe7db] pt-4">
                           <div className="flex items-center justify-between gap-3">
                             <p className="text-sm font-semibold text-[#1e1b16]">Steps (000s)</p>
                             <div className="flex items-center gap-2">
@@ -3500,8 +3523,10 @@ export default function LatestAssessmentPanel({
                               Daily step history will appear here once recent biometrics have been synced.
                             </p>
                           )}
-                        </div>
+                          </div>
+                        ) : null}
                       </div>
+                    ) : null}
 
                     <div className="rounded-[24px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4">
                       <div className="flex items-center justify-between gap-3">
