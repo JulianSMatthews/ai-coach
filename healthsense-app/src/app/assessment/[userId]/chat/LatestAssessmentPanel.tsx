@@ -281,11 +281,20 @@ function resolveTrainingReadinessStatus(
 ): TrainingReadinessStatus {
   const resolvedHrvStatus = String(hrvStatus || "").trim().toLowerCase();
   const resolvedRestingHeartRateStatus = String(restingHeartRateStatus || "").trim().toLowerCase();
-  if (
-    !["optimum", "normal", "elevated"].includes(resolvedHrvStatus) ||
-    !["optimum", "normal", "elevated"].includes(resolvedRestingHeartRateStatus)
-  ) {
+  const hrvAvailable = ["optimum", "normal", "elevated"].includes(resolvedHrvStatus);
+  const restingHeartRateAvailable = ["optimum", "normal", "elevated"].includes(resolvedRestingHeartRateStatus);
+  if (!hrvAvailable && !restingHeartRateAvailable) {
     return "unknown";
+  }
+  if (!hrvAvailable) {
+    if (resolvedRestingHeartRateStatus === "optimum") return "ready";
+    if (resolvedRestingHeartRateStatus === "elevated") return "low";
+    return "moderate";
+  }
+  if (!restingHeartRateAvailable) {
+    if (resolvedHrvStatus === "optimum") return "ready";
+    if (resolvedHrvStatus === "elevated") return "low";
+    return "moderate";
   }
   const hrvAboveNormal = resolvedHrvStatus === "optimum";
   const hrvDown = resolvedHrvStatus === "elevated";
@@ -1659,6 +1668,14 @@ export default function LatestAssessmentPanel({
   const latestActiveMinutesStatus = resolveActiveMinutesStatus(latestActiveMinutesItem?.active_minutes);
   const latestStepsValue = formatFullStepCount(latestStepsItem?.steps);
   const latestStepsStatus = resolveStepsStatus(latestStepsItem?.steps);
+  const trainingReadinessSignalSummary =
+    latestHrvValue && restingHeartRateValue
+      ? `This combines HRV ${latestHrvValue} ms and Resting HR ${restingHeartRateValue} bpm against your recent 7-14 day baseline.`
+      : restingHeartRateValue
+        ? `This is based on Resting HR ${restingHeartRateValue} bpm against your recent 7-14 day baseline.`
+        : latestHrvValue
+          ? `This is based on HRV ${latestHrvValue} ms against your recent 7-14 day baseline.`
+          : "Once HRV or Resting HR syncs, this section compares recovery capacity with activity status.";
   const rhrExplanationResult = restingHeartRateValue
     ? `Latest result: ${restingHeartRateValue} bpm, currently shown as ${resolveRestingHeartRateTrendLabel(restingHeartRate?.trend_label)}. Resting HR is compared with your own 7-14 day baseline; lower than your usual range often suggests better recovery, while elevated can reflect stress, illness, poor sleep, dehydration, alcohol, or training load.`
     : "Latest result: no current Resting HR is available yet. Once Apple Health syncs enough readings, this section will compare it with your recent 7-14 day baseline.";
@@ -1673,8 +1690,8 @@ export default function LatestAssessmentPanel({
     : "Latest result: no recent step count is available yet. Once steps sync, this section shows your daily movement volume.";
   const trainingReadinessExplanationResult =
     trainingReadinessStatus !== "unknown"
-      ? `Latest status: ${resolveTrainingReadinessLabel(trainingReadinessStatus)}. ${resolveTrainingReadinessAction(trainingReadinessStatus)}. This combines HRV ${latestHrvValue ? `${latestHrvValue} ms` : "not available"} and Resting HR ${restingHeartRateValue ? `${restingHeartRateValue} bpm` : "not available"} against your recent 7-14 day baseline.`
-      : "Latest status: no current training readiness is available yet. Once HRV and Resting HR sync, this section compares recovery capacity with activity status.";
+      ? `Latest status: ${resolveTrainingReadinessLabel(trainingReadinessStatus)}. ${resolveTrainingReadinessAction(trainingReadinessStatus)}. ${trainingReadinessSignalSummary}`
+      : `Latest status: no current training readiness is available yet. ${trainingReadinessSignalSummary}`;
   const activityStatusExplanationResult =
     activityStatus !== "unknown"
       ? `Latest status: ${resolveActivityStatusLabel(activityStatus)}. ${resolveActivityAlignmentLabel(activityAlignmentStatus)}. This combines ${latestStepsValue ? `${latestStepsValue} steps` : "no step count"} and ${latestActiveMinutesValue ? `${latestActiveMinutesValue} exercise minutes` : "no exercise minutes"} so Gia can compare activity load with readiness.`
@@ -2952,7 +2969,7 @@ export default function LatestAssessmentPanel({
                       : urineTestFlowOpen
                         ? "Urine test"
                         : biometricSourceCheckOpen
-                          ? "Source check"
+                          ? "Config"
                         : "Biometrics"}
                   </p>
                   <p className="text-sm text-[#6b6257]">
@@ -2993,7 +3010,7 @@ export default function LatestAssessmentPanel({
                     }}
                     className={biometricSourceCheckButtonClassName}
                   >
-                    {restingHeartRateLoading || restingHeartRateEnabling ? "Syncing" : "Source check"}
+                    {restingHeartRateLoading || restingHeartRateEnabling ? "Syncing" : "Config"}
                   </button>
                 )}
               </div>
@@ -3146,7 +3163,7 @@ export default function LatestAssessmentPanel({
                             </p>
                           </div>
                           <span className="rounded-full border border-[#f0d4ad] bg-[#fff8ef] px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#9b5b18]">
-                            {restingHeartRateLoading || restingHeartRateEnabling ? "Syncing" : "Source check"}
+                            {restingHeartRateLoading || restingHeartRateEnabling ? "Syncing" : "Config"}
                           </span>
                         </div>
                         {biometricsActionError ? (
@@ -3739,43 +3756,6 @@ export default function LatestAssessmentPanel({
 
               {!weeklyObjectivesLoading && selectedObjectivesSection === "wellbeing" ? (
                 <div className="space-y-3">
-                  <div className="rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-4">
-                    <div className="space-y-1">
-                      <p className="text-sm font-semibold text-[#1e1b16]">Wearable connection</p>
-                      <p className="text-xs text-[#6b6257]">
-                        Connect a direct source where Apple Health cannot confirm HRV or exercise minutes reliably.
-                      </p>
-                    </div>
-                    {biometricsActionError ? (
-                      <p className="mt-3 rounded-2xl border border-[#f0d4ad] bg-[#fff8ef] px-3 py-2 text-xs text-[#9b5b18]">
-                        {biometricsActionError}
-                      </p>
-                    ) : null}
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {BIOMETRIC_CONNECT_OPTIONS.map((option) => {
-                        const pending = wearableConnectPending === option.provider;
-                        return (
-                          <button
-                            key={`general-connect-${option.provider}`}
-                            type="button"
-                            onClick={() => void startBiometricWearableConnection(option.provider)}
-                            disabled={!option.connectable || pending || Boolean(wearableConnectPending)}
-                            className={`rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] disabled:cursor-not-allowed disabled:opacity-55 ${
-                              option.connectable
-                                ? "border-[#c54817] bg-[#c54817] text-white"
-                                : "border-[#d9cdbb] bg-white text-[#5d5348]"
-                            }`}
-                          >
-                            {pending
-                              ? "Opening"
-                              : option.connectable
-                                ? `Connect ${option.label}`
-                                : `${option.label} pending`}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
                   {wellbeingObjectiveItems.map((item) => {
                     const itemKey = String(item?.key || "").trim();
                     const selectedValue = String(wellbeingObjectiveDraft[itemKey] || item?.value || "off").trim() || "off";

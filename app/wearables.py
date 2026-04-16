@@ -1567,12 +1567,22 @@ def _apple_health_training_readiness_status(
 ) -> tuple[str, str, str, int | None]:
     resolved_hrv = str(hrv_status or "").strip().lower()
     resolved_rhr = str(resting_hr_status or "").strip().lower()
-    if resolved_hrv not in {"optimum", "normal", "elevated"} or resolved_rhr not in {
-        "optimum",
-        "normal",
-        "elevated",
-    }:
+    hrv_available = resolved_hrv in {"optimum", "normal", "elevated"}
+    rhr_available = resolved_rhr in {"optimum", "normal", "elevated"}
+    if not hrv_available and not rhr_available:
         return "unknown", "No data", "Sync HRV and Resting HR", None
+    if not hrv_available:
+        if resolved_rhr == "optimum":
+            return "ready", "Ready", "Push intensity", 3
+        if resolved_rhr == "elevated":
+            return "low", "Low", "Recover / avoid intensity", 1
+        return "moderate", "Moderate", "Train, but control intensity", 2
+    if not rhr_available:
+        if resolved_hrv == "optimum":
+            return "ready", "Ready", "Push intensity", 3
+        if resolved_hrv == "elevated":
+            return "low", "Low", "Recover / avoid intensity", 1
+        return "moderate", "Moderate", "Train, but control intensity", 2
     if resolved_hrv == "optimum" and resolved_rhr in {"optimum", "normal"}:
         return "ready", "Ready", "Push intensity", 3
     if resolved_hrv == "elevated" and resolved_rhr == "elevated":
