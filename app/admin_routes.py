@@ -42,8 +42,10 @@ from . import prompts as prompts_module
 from .models import User
 from .education_plan import (
     ensure_education_plan_schema,
+    generate_all_education_programme_avatar_videos,
     generate_education_lesson_avatar,
     generate_education_programme_avatar_videos,
+    refresh_all_education_programme_avatar_videos,
     refresh_education_lesson_avatar,
     refresh_education_programme_avatar_videos,
 )
@@ -955,6 +957,99 @@ def _education_avatar_bulk_result_page(title: str, result: dict) -> HTMLResponse
         "<table>"
         "<tr><th>Day</th><th>Level</th><th>Lesson</th><th>Status</th><th>Detail</th><th>Job ID</th><th>Video</th></tr>"
         + ("".join(rows) if rows else "<tr><td colspan='7'><em>No active lesson variants found.</em></td></tr>")
+        + "</table>"
+        "</div>"
+    )
+    return _wrap_page(title, body)
+
+
+def _education_avatar_all_result_page(title: str, result: dict) -> HTMLResponse:
+    counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
+    programmes = result.get("programmes") if isinstance(result.get("programmes"), list) else []
+    count_summary = " · ".join(
+        f"{html.escape(str(key).replace('_', ' ').title())}: {html.escape(str(value))}"
+        for key, value in counts.items()
+    )
+    is_generation = "generation" in title.lower()
+    note = (
+        "Generation starts Azure batch jobs for missing videos across active programmes. Use Refresh pending videos for all programmes after a few minutes."
+        if is_generation
+        else "Refresh checks pending Azure jobs across active programmes and stores completed videos for Daily Focus."
+    )
+    programme_rows = []
+    detail_rows = []
+    for programme in programmes:
+        if not isinstance(programme, dict):
+            continue
+        programme_id = int(programme.get("programme_id") or 0)
+        raw_programme_name = str(programme.get("programme_name") or "").strip()
+        programme_name = raw_programme_name or (f"Programme {programme_id}" if programme_id else "Programme")
+        programme_counts = programme.get("counts") if isinstance(programme.get("counts"), dict) else {}
+        programme_summary = " · ".join(
+            f"{html.escape(str(key).replace('_', ' ').title())}: {html.escape(str(value))}"
+            for key, value in programme_counts.items()
+        )
+        programme_rows.append(
+            "<tr>"
+            f"<td>{html.escape(str(programme_id or ''))}</td>"
+            f"<td>{html.escape(programme_name)}</td>"
+            f"<td>{'✓' if bool(programme.get('ok')) else '✕'}</td>"
+            f"<td>{programme_summary or html.escape(str(programme.get('error') or ''))}</td>"
+            "<td>"
+            + (
+                f"<a href='/admin/education-programmes/edit?id={programme_id}'>Open programme</a>"
+                if programme_id
+                else ""
+            )
+            + "</td>"
+            "</tr>"
+        )
+        for item in programme.get("items") or []:
+            if not isinstance(item, dict):
+                continue
+            video_url = str(item.get("video_url") or "").strip()
+            detail_rows.append(
+                "<tr>"
+                f"<td>{html.escape(str(programme_id or ''))}</td>"
+                f"<td>{html.escape(programme_name)}</td>"
+                f"<td>{html.escape(str(item.get('day_index') or ''))}</td>"
+                f"<td>{html.escape(str(item.get('level') or ''))}</td>"
+                f"<td>{html.escape(str(item.get('title') or ''))}</td>"
+                f"<td>{html.escape(str(item.get('status') or ''))}</td>"
+                f"<td>{html.escape(str(item.get('avatar_status') or item.get('reason') or ''))}</td>"
+                f"<td>{html.escape(str(item.get('job_id') or ''))}</td>"
+                "<td>"
+                + (
+                    f"<a href='{html.escape(video_url)}' target='_blank' rel='noopener'>Open video</a>"
+                    if video_url
+                    else ""
+                )
+                + "</td>"
+                "</tr>"
+            )
+    body = (
+        f"<h2>{html.escape(title)}</h2>"
+        f"{_build_version_label()}"
+        "<div class='card' style='margin-bottom:12px;'>"
+        f"<p><strong>{html.escape(str(result.get('programme_count') or 0))} programme(s)</strong></p>"
+        f"<p class='help'>{count_summary or 'No avatar changes were made.'}</p>"
+        f"<p class='help'>{html.escape(note)}</p>"
+        "<div class='stack'>"
+        "<a class='button-link' href='/admin/education-programmes'>Back to education programmes</a>"
+        "</div>"
+        "</div>"
+        "<div class='card' style='margin-bottom:12px;'>"
+        "<h3 class='section-title'>Programmes</h3>"
+        "<table>"
+        "<tr><th>ID</th><th>Programme</th><th>OK</th><th>Counts</th><th>Action</th></tr>"
+        + ("".join(programme_rows) if programme_rows else "<tr><td colspan='5'><em>No programmes found.</em></td></tr>")
+        + "</table>"
+        "</div>"
+        "<div class='card'>"
+        "<h3 class='section-title'>Lesson variants</h3>"
+        "<table>"
+        "<tr><th>Programme ID</th><th>Programme</th><th>Day</th><th>Level</th><th>Lesson</th><th>Status</th><th>Detail</th><th>Job ID</th><th>Video</th></tr>"
+        + ("".join(detail_rows) if detail_rows else "<tr><td colspan='9'><em>No active lesson variants found.</em></td></tr>")
         + "</table>"
         "</div>"
     )
@@ -2032,6 +2127,22 @@ def list_education_programmes():
         f"{_build_version_label()}"
         "<div class='nav'><a href='/admin/education-programmes/edit'>Create new programme</a></div>"
         "<div class='card'>"
+        "<h3 class='section-title'>Avatar video batch</h3>"
+        "<p class='help'>Run avatar video jobs across every active education programme. Existing videos are skipped by the generation batch.</p>"
+        "<div class='stack'>"
+        "<form method='post' action='/admin/education-programmes/avatar/generate-all' "
+        "onsubmit=\"return confirm('Start missing avatar videos for every active education programme?');\">"
+        "<input type='hidden' name='active_only' value='1' />"
+        "<button type='submit' class='secondary'>Generate missing videos for all active programmes</button>"
+        "</form>"
+        "<form method='post' action='/admin/education-programmes/avatar/refresh-all' "
+        "onsubmit=\"return confirm('Refresh all pending avatar jobs for every active education programme?');\">"
+        "<input type='hidden' name='active_only' value='1' />"
+        "<button type='submit' class='secondary'>Refresh pending videos for all active programmes</button>"
+        "</form>"
+        "</div>"
+        "</div>"
+        "<div class='card'>"
         "<table>"
         "<tr><th>ID</th><th>Concept</th><th>Derived Pillar</th><th>Code</th><th>Name</th><th>Days</th><th>Active</th><th>Updated</th><th>Action</th></tr>"
         + ("".join(items) if items else "<tr><td colspan='9'><em>No education programmes configured yet.</em></td></tr>")
@@ -2076,6 +2187,36 @@ def delete_education_programme(
         s.delete(row)
         s.commit()
     return RedirectResponse(url="/admin/education-programmes", status_code=303)
+
+
+@admin.post("/education-programmes/avatar/generate-all", response_class=HTMLResponse)
+def generate_all_education_programme_avatars(
+    active_only: str | None = Form(default="1"),
+    regenerate: str | None = Form(default=None),
+):
+    try:
+        result = generate_all_education_programme_avatar_videos(
+            regenerate=_truthy_form_value(regenerate),
+            active_only=_truthy_form_value(active_only),
+        )
+    except RuntimeError as exc:
+        message = str(exc)
+        status_code = 503 if "not enabled" in message.lower() else 400
+        raise HTTPException(status_code, message)
+    return _education_avatar_all_result_page("Education Programme Avatar Generation Batch", result)
+
+
+@admin.post("/education-programmes/avatar/refresh-all", response_class=HTMLResponse)
+def refresh_all_education_programme_avatars(
+    active_only: str | None = Form(default="1"),
+):
+    try:
+        result = refresh_all_education_programme_avatar_videos(
+            active_only=_truthy_form_value(active_only),
+        )
+    except RuntimeError as exc:
+        raise HTTPException(400, str(exc))
+    return _education_avatar_all_result_page("Education Programme Avatar Refresh Batch", result)
 
 
 @admin.post("/education-programmes/{programme_id}/avatar/generate", response_class=HTMLResponse)

@@ -907,6 +907,25 @@ def _programme_avatar_variant_rows(session, programme_id: int) -> list[tuple[Edu
     )
 
 
+def _education_avatar_programme_ids(*, active_only: bool = True) -> list[int]:
+    with SessionLocal() as session:
+        stmt = select(EducationProgramme.id).order_by(EducationProgramme.updated_at.desc(), EducationProgramme.id.desc())
+        if active_only:
+            stmt = stmt.where(EducationProgramme.is_active.is_(True))
+        return [int(programme_id) for programme_id in session.execute(stmt).scalars().all() if programme_id is not None]
+
+
+def _merge_avatar_counts(target: dict[str, int], source: dict[str, Any] | None) -> None:
+    if not isinstance(source, dict):
+        return
+    for key, value in source.items():
+        try:
+            numeric_value = int(value or 0)
+        except Exception:
+            numeric_value = 0
+        target[str(key)] = int(target.get(str(key), 0) or 0) + numeric_value
+
+
 def generate_education_programme_avatar_videos(
     programme_id: int,
     *,
@@ -1069,6 +1088,54 @@ def generate_education_programme_avatar_videos(
         }
 
 
+def generate_all_education_programme_avatar_videos(
+    *,
+    regenerate: bool = False,
+    active_only: bool = True,
+) -> dict[str, Any]:
+    ensure_education_plan_schema()
+    if not azure_avatar_enabled():
+        raise RuntimeError("Azure avatar generation is not enabled.")
+    programme_ids = _education_avatar_programme_ids(active_only=active_only)
+    counts: dict[str, int] = {
+        "started": 0,
+        "ready": 0,
+        "pending": 0,
+        "skipped": 0,
+        "errors": 0,
+    }
+    programmes: list[dict[str, Any]] = []
+    for programme_id in programme_ids:
+        try:
+            result = generate_education_programme_avatar_videos(
+                int(programme_id),
+                regenerate=bool(regenerate),
+            )
+            _merge_avatar_counts(counts, result.get("counts") if isinstance(result, dict) else None)
+            programmes.append(result)
+        except Exception as exc:
+            counts["errors"] += 1
+            programmes.append(
+                {
+                    "ok": False,
+                    "programme_id": int(programme_id),
+                    "programme_name": None,
+                    "regenerate": bool(regenerate),
+                    "counts": {"errors": 1},
+                    "items": [{"status": "error", "reason": str(exc)}],
+                }
+            )
+    return {
+        "ok": counts.get("errors", 0) == 0,
+        "scope": "all_active_programmes" if active_only else "all_programmes",
+        "programme_count": len(programme_ids),
+        "active_only": bool(active_only),
+        "regenerate": bool(regenerate),
+        "counts": counts,
+        "programmes": programmes,
+    }
+
+
 def refresh_education_programme_avatar_videos(programme_id: int) -> dict[str, Any]:
     ensure_education_plan_schema()
     with SessionLocal() as session:
@@ -1130,6 +1197,45 @@ def refresh_education_programme_avatar_videos(programme_id: int) -> dict[str, An
             "counts": counts,
             "items": items,
         }
+
+
+def refresh_all_education_programme_avatar_videos(
+    *,
+    active_only: bool = True,
+) -> dict[str, Any]:
+    ensure_education_plan_schema()
+    programme_ids = _education_avatar_programme_ids(active_only=active_only)
+    counts: dict[str, int] = {
+        "ready": 0,
+        "pending": 0,
+        "skipped": 0,
+        "errors": 0,
+    }
+    programmes: list[dict[str, Any]] = []
+    for programme_id in programme_ids:
+        try:
+            result = refresh_education_programme_avatar_videos(int(programme_id))
+            _merge_avatar_counts(counts, result.get("counts") if isinstance(result, dict) else None)
+            programmes.append(result)
+        except Exception as exc:
+            counts["errors"] += 1
+            programmes.append(
+                {
+                    "ok": False,
+                    "programme_id": int(programme_id),
+                    "programme_name": None,
+                    "counts": {"errors": 1},
+                    "items": [{"status": "error", "reason": str(exc)}],
+                }
+            )
+    return {
+        "ok": counts.get("errors", 0) == 0,
+        "scope": "all_active_programmes" if active_only else "all_programmes",
+        "programme_count": len(programme_ids),
+        "active_only": bool(active_only),
+        "counts": counts,
+        "programmes": programmes,
+    }
 
 
 def generate_education_lesson_avatar(
