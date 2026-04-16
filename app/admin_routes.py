@@ -30,7 +30,13 @@ from .models import (
     UserEducationPlan,
 )
 from .job_queue import ensure_prompt_settings_schema
-from .prompts import _ensure_llm_prompt_log_schema, _canonical_state, _coerce_llm_content, log_llm_prompt
+from .prompts import (
+    RETIRED_PROMPT_TOUCHPOINTS,
+    _ensure_llm_prompt_log_schema,
+    _canonical_state,
+    _coerce_llm_content,
+    log_llm_prompt,
+)
 from .prompts import build_prompt
 from . import prompts as prompts_module
 from .models import User
@@ -332,6 +338,14 @@ def _ensure_prompt_template_table():
         pass
     try:
         PromptTemplateVersionLog.__table__.create(bind=engine, checkfirst=True)
+    except Exception:
+        pass
+    try:
+        with SessionLocal() as s:
+            s.query(PromptTemplate).filter(
+                PromptTemplate.touchpoint.in_(sorted(RETIRED_PROMPT_TOUCHPOINTS))
+            ).delete(synchronize_session=False)
+            s.commit()
     except Exception:
         pass
     _PROMPT_SCHEMA_READY = True
@@ -1164,6 +1178,7 @@ def list_prompt_templates(state: str | None = None, q: str | None = None, active
     with SessionLocal() as s:
         version_filter = (version or "").strip().lower()
         query = s.query(PromptTemplate)
+        query = query.filter(~PromptTemplate.touchpoint.in_(sorted(RETIRED_PROMPT_TOUCHPOINTS)))
         if state_filter:
             query = query.filter(PromptTemplate.state == state_filter)
         if q:

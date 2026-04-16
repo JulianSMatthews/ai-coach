@@ -22,7 +22,6 @@ export type UserStatusResponse = {
     auto_prompts?: string;
     note?: string;
     voice?: string;
-    schedule?: Record<string, string>;
     text_scale?: string;
     theme?: string;
     training_objective?: string;

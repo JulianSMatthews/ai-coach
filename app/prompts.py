@@ -3,15 +3,11 @@ Prompt helpers for LLM interactions (structured, data-in/data-out; no DB calls).
 
 Sections:
 1) Structured prompt blocks (coach/user/context/OKR/scores/habit readiness/task)
-2) Podcast prompts (kickoff/weekstart) built from blocks
-3) Message prompts (weekstart support/actions, assessment/OKR/psych, assessor)
+2) Tracker/Gia, assessment, OKR, habit-step, and support prompts built from blocks
+3) Message prompts for general support, assessment/OKR/psych, assessor
 
 Index (helper → purpose → used by):
-- podcast_prompt: kickoff, weekstart, Thursday, Friday podcast transcripts → kickoff.py, monday.py, thursday.py, friday.py
-- coaching_prompt: unified coaching text prompts (weekstart_support, kickoff_support, weekstart_actions, midweek, tuesday, saturday, sunday)
-- weekstart_support_prompt (legacy): weekstart support chat → monday.py
-- kickoff_support_prompt (legacy): kickoff support chat → kickoff.py
-- weekstart_actions_prompt (legacy): actions summary from podcast transcript → monday.py
+- retired scheduled prompt helpers: old weekday/podcast touchpoints raise if requested
 - habit_steps_generator: weekly habit-step options (structured text) → habit_steps.py/sunday.py
 - initial_habit_steps_generator: assessment-complete week-1 habit steps (JSON) → okr.py
 - current_krs_context + helpers: fetch current focused KRs and derive payloads (list, primary, okrs_by_pillar) for all prompts
@@ -52,6 +48,19 @@ from .usage import log_usage_event, estimate_tokens, estimate_llm_cost
 
 PROMPT_STATE_ALIASES = {"production": "live", "stage": "beta"}
 PROMPT_STATE_ORDER = ["live", "beta", "develop"]
+RETIRED_PROMPT_TOUCHPOINTS = {
+    "podcast_kickoff",
+    "podcast_weekstart",
+    "podcast_first_day",
+    "weekstart_support",
+    "tuesday",
+    "saturday",
+    "weekstart_actions",
+    "midweek",
+    "sunday_daily",
+    "podcast_thursday",
+    "podcast_friday",
+}
 APP_TRACKER_SUMMARY_TASK_BLOCK = (
     "Task: write a concise one-way daily briefing for the member. Bring together their daily tracking from today and yesterday, "
     "biometric/readiness signals, the existing Today's plan, and the current Today's focus lesson.\n\n"
@@ -1475,29 +1484,18 @@ def build_prompt(
 ) -> PromptAssembly:
     """
     Central prompt builder. touchpoint options:
-    - podcast_weekstart
-    - podcast_first_day
-    - podcast_thursday
-    - podcast_friday
-    - weekstart_support
     - general_support
-    - kickoff_support
     - habit_steps_generator
-    - weekstart_actions
     - initial_habit_steps_generator
     - assessment_okr_structured
     - daily_habit_plan
-    - sunday_daily
-    - sunday_actions (legacy alias)
-    - tuesday
-    - midweek
-    - saturday
-    - sunday
     """
     tp = touchpoint.lower()
     # Legacy alias: keep old touchpoint key working while live templates are migrated.
     if tp == "sunday_actions":
         tp = "sunday_daily"
+    if tp in RETIRED_PROMPT_TOUCHPOINTS:
+        raise ValueError(f"Prompt touchpoint is retired: {tp}")
     settings = _load_prompt_settings()
     preferred_state = _canonical_state(use_state or "live")
     if preferred_state in {"live", None}:

@@ -303,6 +303,21 @@ Identify the clearest overall pattern, explain what level of exercise makes sens
 Keep it to 2-3 short paragraphs. Use plain British English. Avoid OKR/KR jargon and system terms like pillar, drill, or resilience work. Do not ask a question and do not invite a reply."""
 
 
+RETIRED_PROMPT_TOUCHPOINTS = {
+    "podcast_kickoff",
+    "podcast_weekstart",
+    "podcast_first_day",
+    "weekstart_support",
+    "tuesday",
+    "saturday",
+    "weekstart_actions",
+    "midweek",
+    "sunday_daily",
+    "podcast_thursday",
+    "podcast_friday",
+}
+
+
 DEFAULT_PROMPT_TEMPLATES = [
     {
         "touchpoint": 'podcast_kickoff',
@@ -1431,6 +1446,11 @@ def seed_prompt_templates(session: Session) -> int:
         PromptTemplateVersionLog.__table__.create(bind=session.bind, checkfirst=True)
     except Exception:
         pass
+    active_default_prompt_templates = [
+        tpl
+        for tpl in DEFAULT_PROMPT_TEMPLATES
+        if str(tpl.get("touchpoint") or "").strip() not in RETIRED_PROMPT_TOUCHPOINTS
+    ]
     # Ensure a singleton settings row exists with defaults
     settings = session.execute(select(PromptSettings)).scalar_one_or_none()
     if not settings:
@@ -1438,7 +1458,7 @@ def seed_prompt_templates(session: Session) -> int:
             PromptSettings(
                 system_block="Tone: supportive, conversational; speak directly to the user as their coach. Do not mention background music or sound effects. Do not read out section headers or labels; speak naturally as a flowing message. Do not read or say emoji names; ignore emoji.",
                 locale_block="Use British English: UK spelling (favour, programme, behaviour), light British phrasing (have a think, check in, crack on), warm, calm, supportive tone; avoid Americanisms (vacation, sidewalk, awesome, mom); no US cultural refs.",
-                default_block_order=DEFAULT_PROMPT_TEMPLATES[0].get("block_order"),
+                default_block_order=active_default_prompt_templates[0].get("block_order"),
                 monitoring_llm_interactive_p50_warn_ms=DEFAULT_MONITORING_LLM_INTERACTIVE_P50_WARN_MS,
                 monitoring_llm_interactive_p50_critical_ms=DEFAULT_MONITORING_LLM_INTERACTIVE_P50_CRITICAL_MS,
                 monitoring_llm_interactive_p95_warn_ms=DEFAULT_MONITORING_LLM_INTERACTIVE_P95_WARN_MS,
@@ -1472,7 +1492,14 @@ def seed_prompt_templates(session: Session) -> int:
             settings.monitoring_llm_worker_p95_critical_ms = DEFAULT_MONITORING_LLM_WORKER_P95_CRITICAL_MS
     created = 0
     TARGET_STATES = ["develop", "beta", "live"]
-    for tpl in DEFAULT_PROMPT_TEMPLATES:
+    try:
+        session.query(PromptTemplate).filter(
+            PromptTemplate.touchpoint.in_(sorted(RETIRED_PROMPT_TOUCHPOINTS))
+        ).delete(synchronize_session=False)
+        session.flush()
+    except Exception:
+        pass
+    for tpl in active_default_prompt_templates:
         base = dict(tpl)
         base_state = base.pop("state", None)  # legacy; ignored for multi-state seeding
         base_version = base.pop("version", 1)

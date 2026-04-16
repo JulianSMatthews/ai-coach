@@ -18,7 +18,7 @@ from app.job_queue import (
     enqueue_job_once,
     queue_requeue_delay_seconds,
 )
-from app import scheduler, assessor, monday, kickoff, thursday, friday
+from app import scheduler, assessor
 from app.prompts import run_llm_prompt
 from app.usage import ensure_usage_schema
 from app.prompts import _ensure_llm_prompt_log_schema
@@ -249,45 +249,19 @@ def _process_llm_prompt(payload: dict) -> dict:
 
 
 def _process_weekstart_flow(payload: dict) -> None:
-    user_id = payload.get("user_id")
-    if not user_id:
-        raise ValueError("weekstart_flow requires user_id")
-    user = _load_user(int(user_id))
-    monday.start_weekstart(
-        user,
-        notes=payload.get("notes"),
-        debug=bool(payload.get("debug", False)),
-        set_state=bool(payload.get("set_state", True)),
-        week_no=payload.get("week_no"),
-    )
+    return None
 
 
 def _process_kickoff_flow(payload: dict) -> None:
-    user_id = payload.get("user_id")
-    if not user_id:
-        raise ValueError("kickoff_flow requires user_id")
-    user = _load_user(int(user_id))
-    kickoff.start_kickoff(
-        user,
-        notes=payload.get("notes"),
-        debug=bool(payload.get("debug", False)),
-    )
+    return None
 
 
 def _process_thursday_flow(payload: dict) -> None:
-    user_id = payload.get("user_id")
-    if not user_id:
-        raise ValueError("thursday_flow requires user_id")
-    user = _load_user(int(user_id))
-    thursday.send_thursday_boost(user, week_no=payload.get("week_no"))
+    return None
 
 
 def _process_friday_flow(payload: dict) -> None:
-    user_id = payload.get("user_id")
-    if not user_id:
-        raise ValueError("friday_flow requires user_id")
-    user = _load_user(int(user_id))
-    friday.send_boost(user, week_no=payload.get("week_no"))
+    return None
 
 
 def _process_wearable_sync(payload: dict) -> dict:
@@ -315,9 +289,8 @@ def _process_coach_home_tracker_refresh(payload: dict) -> dict:
 
 
 def process_job(kind: str, payload: dict) -> dict:
-    if kind == "day_prompt":
-        _process_day_prompt(payload)
-        return {"ok": True}
+    if kind in {"day_prompt", "weekstart_flow", "kickoff_flow", "thursday_flow", "friday_flow"}:
+        return {"ok": True, "retired": True, "kind": kind}
     if kind == "assessment_start":
         _process_assessment_start(payload)
         return {"ok": True}
@@ -338,18 +311,6 @@ def process_job(kind: str, payload: dict) -> dict:
         return _process_assessment_week1_habit_seed(payload)
     if kind == "llm_prompt":
         return _process_llm_prompt(payload)
-    if kind == "weekstart_flow":
-        _process_weekstart_flow(payload)
-        return {"ok": True}
-    if kind == "kickoff_flow":
-        _process_kickoff_flow(payload)
-        return {"ok": True}
-    if kind == "thursday_flow":
-        _process_thursday_flow(payload)
-        return {"ok": True}
-    if kind == "friday_flow":
-        _process_friday_flow(payload)
-        return {"ok": True}
     if kind == "wearable_sync":
         return _process_wearable_sync(payload)
     if kind == "coach_home_tracker_refresh":

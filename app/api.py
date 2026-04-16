@@ -79,7 +79,6 @@ from .models import (
     OKRKrHabitStep,
     OKRFocusStack,
     TwilioTemplate,
-    GlobalPromptSchedule,
     MessagingSettings,
     Concept,
     ConceptQuestion,
@@ -112,7 +111,7 @@ from .models import (
     WearableDailyMetric,
     DailyPillarTrackerEntry,
 )  # ensure model registered for metadata
-from . import monday, wednesday, thursday, friday, saturday, weekflow, tuesday, sunday, kickoff, admin_routes, general_support, habit_selector
+from . import monday, sunday, kickoff, admin_routes, general_support, habit_selector
 from . import psych
 from . import coachmycoach
 from . import scheduler
@@ -385,20 +384,10 @@ ADMIN_USAGE = (
     "admin progress [phone]\n"
     "admin llm-review [phone] [limit]\n"
     "admin detailed [phone]\n"
-    "admin coaching [phone] on|off|faston|reset    # toggle scheduled coaching prompts (faston=every 2m test; reset clears jobs)\n"
+    "admin coaching [phone] on|off|reset           # toggle Gia/coaching access; reset clears legacy jobs\n"
     "admin vdate [phone] <YYYY-MM-DD|today|clear>  # set/clear virtual date for fast testing\n"
-    "admin schedule [phone]           # show scheduled coaching prompts for user (HTML + summary)\n"
     "admin beta [phone] [live|beta|develop|clear]   # set prompt state override for testing\n"
     "admin prompt-audit [phone] <YYYY-MM-DD> [state] # generate prompt audit report for that user/date\n"
-    "\nWeekly touchpoints (by day):\n"
-    "admin monday [phone]\n"
-    "admin tuesday [phone]\n"
-    "admin wednesday [phone]\n"
-    "admin thursday [phone]\n"
-    "admin friday [phone]\n"
-    "admin saturday [phone]\n"
-    "admin sunday [phone]\n"
-    "admin week [phone] <week_no>      # run full week flow (includes Sunday)\n"
     "\nReports:\n"
     "admin summary [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
     "admin okr-summary [today|last7d|last30d|thisweek|YYYY-MM-DD YYYY-MM-DD]\n"
@@ -857,10 +846,6 @@ def on_startup():
                     _run_auth_email_startup_diagnostic()
             except Exception as e:
                 print(f"⚠️  Could not start auth email diagnostic: {e!r}")
-            try:
-                scheduler.ensure_global_schedule_defaults()
-            except Exception as e:
-                print(f"⚠️  Could not init global prompt schedule defaults: {e!r}")
             print("[startup] end")
         finally:
             try:
@@ -1950,80 +1935,43 @@ def _is_greeting_message(body: str) -> bool:
 
 def _handle_pending_coaching_day_resume(user: User, body: str) -> bool:
     """
-    When a scheduled day prompt was deferred due to the 24h WhatsApp window,
-    run it as soon as we receive the next inbound from this user.
+    Clear stale pending weekday prompt state.
     """
-    day_key: str | None = None
-    current_day = _coaching_day_key_for_user(int(user.id))
     with SessionLocal() as s:
         if not _coaching_enabled_for_user(s, int(user.id)):
             return False
         raw_day = (_pref_value(s, int(user.id), COACHING_PENDING_DAY_PREF_KEY) or "").strip().lower()
         if raw_day not in {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}:
             return False
-        if raw_day != current_day:
-            _set_pref_value(s, int(user.id), COACHING_PENDING_DAY_PREF_KEY, "")
-            _set_pref_value(s, int(user.id), COACHING_PENDING_DAY_SET_AT_PREF_KEY, "")
-            s.add(
-                JobAudit(
-                    job_name="pending_day_prompt_expired",
-                    status="done",
-                    payload={
-                        "user_id": int(user.id),
-                        "day": raw_day,
-                        "current_day": current_day,
-                        "reason": "day_changed",
-                        "inbound_text": str(body or "")[:80],
-                    },
-                )
-            )
-            s.commit()
-            return False
-        day_key = raw_day
-        # Clear pending marker before dispatch to avoid duplicate sends if user replies again quickly.
-        _set_pref_value(s, int(user.id), COACHING_PENDING_DAY_PREF_KEY, "")
-        _set_pref_value(s, int(user.id), COACHING_PENDING_DAY_SET_AT_PREF_KEY, "")
-        _set_pref_value(s, int(user.id), COACHING_OUT_OF_SESSION_DAY_SEND_COUNT_PREF_KEY, "0")
+        _delete_pref_keys(
+            s,
+            int(user.id),
+            (
+                COACHING_PENDING_DAY_PREF_KEY,
+                COACHING_PENDING_DAY_SET_AT_PREF_KEY,
+                COACHING_OUT_OF_SESSION_DAY_SEND_COUNT_PREF_KEY,
+            ),
+        )
         s.add(
             JobAudit(
-                job_name="pending_day_prompt_resumed",
-                status="ok",
+                job_name="pending_day_prompt_retired",
+                status="done",
                 payload={
                     "user_id": int(user.id),
-                    "day": day_key,
+                    "day": raw_day,
                     "inbound_text": str(body or "")[:80],
+                    "mode": "tracker_driven",
                 },
             )
         )
         s.commit()
-    try:
-        scheduler._run_day_prompt(int(user.id), str(day_key))  # type: ignore[attr-defined]
-        return True
-    except Exception as e:
-        # Restore pending marker so the user can retry.
-        try:
-            with SessionLocal() as s:
-                _set_pref_value(s, int(user.id), COACHING_PENDING_DAY_PREF_KEY, str(day_key or ""))
-                _set_pref_value(s, int(user.id), COACHING_PENDING_DAY_SET_AT_PREF_KEY, _utc_now_iso())
-                s.add(
-                    JobAudit(
-                        job_name="pending_day_prompt_resumed",
-                        status="error",
-                        payload={"user_id": int(user.id), "day": day_key},
-                        error=repr(e),
-                    )
-                )
-                s.commit()
-        except Exception:
-            pass
     return False
 
 
 def _handle_coaching_greeting(user: User, body: str) -> bool:
     """
     Coaching greeting behavior:
-    - If today's day flow has not been sent yet: send today's day flow.
-    - If already sent: route to general coach mode.
+    - route to general coach mode. Weekday scheduled day flows are retired.
     Returns True when handled.
     """
     if not _is_greeting_message(body):
@@ -2036,21 +1984,9 @@ def _handle_coaching_greeting(user: User, body: str) -> bool:
     if not coaching_enabled:
         return False
 
-    day_key = _coaching_day_key_for_user(int(user.id))
-    if not _coaching_touchpoint_sent_today(int(user.id), day_key):
-        try:
-            scheduler._run_day_prompt(int(user.id), day_key)  # type: ignore[attr-defined]
-            return True
-        except Exception as e:
-            try:
-                print(f"[coaching] greeting day prompt failed user_id={user.id} day={day_key} err={e!r}")
-            except Exception:
-                pass
-
-    # Today's flow already sent (or fallback path): move into general coach mode.
     try:
         if not general_support.has_active_state(int(user.id)):
-            general_support.activate(int(user.id), source=day_key, week_no=None, send_intro=False)
+            general_support.activate(int(user.id), source="greeting", week_no=None, send_intro=False)
         general_support.handle_message(user, body)
         return True
     except Exception as e:
@@ -2120,87 +2056,47 @@ def _handle_app_chat_non_assessment(user: User, body: str) -> bool:
 
     if sunday.has_active_state(user.id):
         try:
-            sunday.handle_message(user, body)
-        except Exception as e:
-            send_coaching_text(user=user, text=f"Sunday review failed: {e}", source="app_chat")
-        return True
+            with SessionLocal() as s:
+                rows = (
+                    s.query(UserPreference)
+                    .filter(UserPreference.user_id == int(user.id), UserPreference.key == "sunday_state")
+                    .all()
+                )
+                for row in rows:
+                    s.delete(row)
+                s.commit()
+        except Exception:
+            pass
+        return _handle_app_general_support_message(user, body, source="retired_sunday_state")
 
-    if lower_body.startswith("kickoff"):
-        send_coaching_text(
-            user=user,
-            text="Kickoff has been retired. We’ll continue with your standard weekly coaching flow.",
-            source="app_chat",
-        )
-        return True
-
-    if lower_body.startswith("midweek") or lower_body.startswith("wednesday"):
+    first_token = lower_body.split(maxsplit=1)[0] if lower_body else ""
+    if first_token in {
+        "kickoff",
+        "midweek",
+        "wednesday",
+        "week",
+        "sunday",
+        "tuesday",
+        "thursday",
+        "saturday",
+        "weekstart",
+        "monday",
+        "boost",
+        "friday",
+    } or monday.has_active_state(user.id):
         try:
-            scheduler._run_day_prompt(int(user.id), "wednesday")  # type: ignore[attr-defined]
-        except Exception as e:
-            send_coaching_text(user=user, text=f"Midweek failed: {e}", source="app_chat")
-        return True
-
-    if lower_body.startswith("week"):
-        parts = lower_body.split()
-        week_no = 1
-        if len(parts) > 1:
-            try:
-                week_no = int(parts[1])
-            except Exception:
-                week_no = 1
-        try:
-            weekflow.run_week_flow(user, week_no=week_no)
-        except Exception as e:
-            send_coaching_text(user=user, text=f"Week flow failed: {e}", source="app_chat")
-        return True
-
-    if lower_body.startswith("sunday"):
-        try:
-            scheduler._run_day_prompt(int(user.id), "sunday")  # type: ignore[attr-defined]
-        except Exception as e:
-            send_coaching_text(user=user, text=f"Sunday review failed: {e}", source="app_chat")
-        return True
-
-    if lower_body.startswith("tuesday"):
-        try:
-            scheduler._run_day_prompt(int(user.id), "tuesday")  # type: ignore[attr-defined]
-        except Exception as e:
-            send_coaching_text(user=user, text=f"Tuesday check failed: {e}", source="app_chat")
-        return True
-
-    if lower_body.startswith("thursday"):
-        try:
-            scheduler._run_day_prompt(int(user.id), "thursday")  # type: ignore[attr-defined]
-        except Exception as e:
-            send_coaching_text(user=user, text=f"Thursday boost failed: {e}", source="app_chat")
-        return True
-
-    if lower_body.startswith("saturday"):
-        try:
-            scheduler._run_day_prompt(int(user.id), "saturday")  # type: ignore[attr-defined]
-        except Exception as e:
-            send_coaching_text(user=user, text=f"Saturday keepalive failed: {e}", source="app_chat")
-        return True
-
-    if lower_body.startswith("weekstart") or lower_body.startswith("monday") or monday.has_active_state(user.id):
-        if (lower_body.startswith("weekstart") or lower_body.startswith("monday")) and not monday.has_active_state(user.id):
-            try:
-                if not habit_selector.ensure_habit_steps_ready_for_day(user, "monday"):
-                    return True
-            except Exception:
-                pass
-        try:
-            monday.handle_message(user, body)
-        except Exception as e:
-            send_coaching_text(user=user, text=f"Monday flow failed: {e}", source="app_chat")
-        return True
-
-    if lower_body.startswith("boost") or lower_body.startswith("friday"):
-        try:
-            scheduler._run_day_prompt(int(user.id), "friday")  # type: ignore[attr-defined]
-        except Exception as e:
-            send_coaching_text(user=user, text=f"Boost failed: {e}", source="app_chat")
-        return True
+            with SessionLocal() as s:
+                rows = (
+                    s.query(UserPreference)
+                    .filter(UserPreference.user_id == int(user.id), UserPreference.key == "weekstart_state")
+                    .all()
+                )
+                for row in rows:
+                    s.delete(row)
+                s.commit()
+        except Exception:
+            pass
+        return _handle_app_general_support_message(user, body, source="retired_schedule_command")
 
     if lower_body in {"menu", "help", "options"}:
         send_menu_options(user)
@@ -4095,84 +3991,29 @@ def _handle_admin_command(admin_user: User, text: str, *, source_phone: str | No
             except Exception as e:
                 send_whatsapp(to=admin_user.phone, text=f"Failed to generate LLM prompt log report: {e}")
             return True
-        elif cmd in {"weekstart", "monday"}:
-            # Usage: admin weekstart <phone> [notes] — auto-select top KRs
-            target_phone, note_parts = _resolve_admin_target_phone(admin_user, args, allow_notes=True)
-            notes = " ".join(note_parts).strip() if note_parts else ""
-            notes = notes or None
-
-            try:
-                with SessionLocal() as s:
-                    u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
-                if not u:
-                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
-                    send_whatsapp(
-                        to=admin_user.phone,
-                        text=f"User with phone {target_phone} not found{scope_txt}."
-                    )
-                    return True
-
-                # Trigger weekstart for that user via scheduler day runner so
-                # habit-step gating is consistently enforced.
-                scheduler._run_day_prompt(int(u.id), "monday")  # type: ignore[attr-defined]
-            except Exception as e:
-                send_whatsapp(to=admin_user.phone, text=f"Failed to plan weekstart: {e}")
-            return True
-        elif cmd == "kickoff":
+        elif cmd in {
+            "weekstart",
+            "monday",
+            "kickoff",
+            "schedule",
+            "jobs",
+            "midweek",
+            "wednesday",
+            "tuesday",
+            "boost",
+            "friday",
+            "saturday",
+            "sunday",
+            "thursday",
+            "week",
+        }:
             send_whatsapp(
                 to=admin_user.phone,
-                text="Kickoff flow is retired and no longer available.",
+                text=(
+                    "Scheduled weekday prompt commands are retired. "
+                    "Gia now works from daily records, general objectives, and coach-home tracker refreshes."
+                ),
             )
-            return True
-        elif cmd in {"schedule", "jobs"}:
-            target_phone, _ = _resolve_admin_target_phone(admin_user, args)
-            with SessionLocal() as s:
-                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
-                if not u:
-                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
-                    send_whatsapp(
-                        to=admin_user.phone,
-                        text=f"User with phone {target_phone} not found{scope_txt}."
-                    )
-                    return True
-            rows = user_schedule_report(u.id)
-            if not rows:
-                send_whatsapp(to=admin_user.phone, text=f"No scheduled jobs found for {target_phone}.")
-                return True
-            link = None
-            try:
-                link = generate_schedule_report_html(u.id)
-            except Exception:
-                link = None
-            lines = []
-            for row in rows[:15]:
-                nid = row.get("id") or ""
-                nxt_local = row.get("next_run_local") or "n/a"
-                nxt_utc = row.get("next_run_utc") or "n/a"
-                lines.append(f"- {nid}: local {nxt_local}, utc {nxt_utc}")
-            body = "*Schedule* for {phone}:\n{lines}".format(
-                phone=target_phone,
-                lines="\n".join(lines),
-            )
-            if link:
-                body += f"\n\nHTML: {link}"
-            send_whatsapp(to=admin_user.phone, text=body)
-            return True
-        elif cmd in {"midweek", "wednesday"}:
-            target_phone, _ = _resolve_admin_target_phone(admin_user, args)
-            with SessionLocal() as s:
-                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
-                if not u:
-                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
-                    send_whatsapp(
-                        to=admin_user.phone,
-                        text=f"User with phone {target_phone} not found{scope_txt}."
-                    )
-                    return True
-            try:
-                scheduler._run_day_prompt(int(u.id), "wednesday")  # type: ignore[attr-defined]
-            except Exception as e:
-                send_whatsapp(to=admin_user.phone, text=f"Failed to send midweek: {e}")
             return True
         elif cmd in {"autoprompts", "coaching"}:
             default_target_phone = _norm_phone(source_phone or admin_user.phone)
@@ -4183,11 +4024,11 @@ def _handle_admin_command(admin_user: User, text: str, *, source_phone: str | No
                 target_phone = default_target_phone
                 toggle_parts = args
             if not toggle_parts:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin coaching [phone] on|off|faston|reset")
+                send_whatsapp(to=admin_user.phone, text="Usage: admin coaching [phone] on|off|reset")
                 return True
             toggle = toggle_parts[0].lower()
-            if toggle not in {"on", "off", "faston", "reset"}:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin coaching [phone] on|off|faston|reset")
+            if toggle not in {"on", "off", "reset"}:
+                send_whatsapp(to=admin_user.phone, text="Usage: admin coaching [phone] on|off|reset")
                 return True
             with SessionLocal() as s:
                 u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
@@ -4199,24 +4040,19 @@ def _handle_admin_command(admin_user: User, text: str, *, source_phone: str | No
                     )
                     return True
             ok = False
-            fast_minutes = 2 if toggle == "faston" else None
             if toggle == "reset":
                 ok = scheduler.reset_coaching_jobs(u.id)
             elif toggle == "on":
-                ok = scheduler.enable_coaching(u.id, fast_minutes=fast_minutes)
-            elif toggle == "faston":
-                ok = scheduler.enable_coaching(u.id, fast_minutes=fast_minutes)
+                ok = scheduler.enable_coaching(u.id)
             else:
                 ok = scheduler.disable_coaching(u.id)
             if ok:
-                msg = f"Coaching prompts turned {toggle} for {target_phone}."
-                if toggle == "faston":
-                    msg += f" (every {fast_minutes} minutes for testing)"
+                msg = f"Coaching access turned {toggle} for {target_phone}."
                 if toggle == "reset":
-                    msg = f"Coaching prompt jobs cleared for {target_phone} (preference unchanged)."
+                    msg = f"Legacy coaching prompt jobs cleared for {target_phone} (preference unchanged)."
                 send_whatsapp(to=admin_user.phone, text=msg)
             else:
-                send_whatsapp(to=admin_user.phone, text="Failed to update coaching prompts (check AUTO_DAILY_PROMPTS env).")
+                send_whatsapp(to=admin_user.phone, text="Failed to update coaching access.")
             return True
         elif cmd in {"vdate", "virtualdate", "virtual-date"}:
             target_phone, v_args = _resolve_admin_target_phone(admin_user, args)
@@ -4259,111 +4095,6 @@ def _handle_admin_command(admin_user: User, text: str, *, source_phone: str | No
                 to=admin_user.phone,
                 text=f"Virtual date set for {target_phone}: {(current or chosen).isoformat()}",
             )
-            return True
-        elif cmd in {"tuesday"}:
-            target_phone, _ = _resolve_admin_target_phone(admin_user, args)
-            with SessionLocal() as s:
-                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
-                if not u:
-                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
-                    send_whatsapp(
-                        to=admin_user.phone,
-                        text=f"User with phone {target_phone} not found{scope_txt}."
-                    )
-                    return True
-            try:
-                scheduler._run_day_prompt(int(u.id), "tuesday")  # type: ignore[attr-defined]
-            except Exception as e:
-                send_whatsapp(to=admin_user.phone, text=f"Failed to send Tuesday check: {e}")
-            return True
-        elif cmd in {"boost", "friday"}:
-            target_phone, _ = _resolve_admin_target_phone(admin_user, args)
-            with SessionLocal() as s:
-                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
-                if not u:
-                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
-                    send_whatsapp(
-                        to=admin_user.phone,
-                        text=f"User with phone {target_phone} not found{scope_txt}."
-                    )
-                    return True
-            try:
-                scheduler._run_day_prompt(int(u.id), "friday")  # type: ignore[attr-defined]
-            except Exception as e:
-                send_whatsapp(to=admin_user.phone, text=f"Failed to send boost: {e}")
-            return True
-        elif cmd in {"saturday"}:
-            target_phone, _ = _resolve_admin_target_phone(admin_user, args)
-            with SessionLocal() as s:
-                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
-                if not u:
-                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
-                    send_whatsapp(
-                        to=admin_user.phone,
-                        text=f"User with phone {target_phone} not found{scope_txt}."
-                    )
-                    return True
-            try:
-                scheduler._run_day_prompt(int(u.id), "saturday")  # type: ignore[attr-defined]
-            except Exception as e:
-                send_whatsapp(to=admin_user.phone, text=f"Failed to send Saturday keepalive: {e}")
-            return True
-        elif cmd in {"sunday"}:
-            target_phone, _ = _resolve_admin_target_phone(admin_user, args)
-            with SessionLocal() as s:
-                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
-                if not u:
-                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
-                    send_whatsapp(
-                        to=admin_user.phone,
-                        text=f"User with phone {target_phone} not found{scope_txt}."
-                    )
-                    return True
-            try:
-                scheduler._run_day_prompt(int(u.id), "sunday")  # type: ignore[attr-defined]
-            except Exception as e:
-                send_whatsapp(to=admin_user.phone, text=f"Failed to send Sunday review: {e}")
-            return True
-        elif cmd in {"thursday"}:
-            target_phone, _ = _resolve_admin_target_phone(admin_user, args)
-            with SessionLocal() as s:
-                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
-                if not u:
-                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
-                    send_whatsapp(
-                        to=admin_user.phone,
-                        text=f"User with phone {target_phone} not found{scope_txt}."
-                    )
-                    return True
-            try:
-                scheduler._run_day_prompt(int(u.id), "thursday")  # type: ignore[attr-defined]
-            except Exception as e:
-                send_whatsapp(to=admin_user.phone, text=f"Failed to send Thursday boost: {e}")
-            return True
-        elif cmd == "week":
-            target_phone, week_args = _resolve_admin_target_phone(admin_user, args)
-            if not week_args:
-                send_whatsapp(to=admin_user.phone, text="Usage: admin week <phone> <week_no>")
-                return True
-            try:
-                week_no = int(week_args[0])
-            except Exception:
-                send_whatsapp(to=admin_user.phone, text="Week number must be an integer.")
-                return True
-            with SessionLocal() as s:
-                u = _admin_lookup_user_by_phone(s, target_phone, admin_user)
-                if not u:
-                    scope_txt = " in your club" if getattr(admin_user, "club_id", None) is not None else ""
-                    send_whatsapp(
-                        to=admin_user.phone,
-                        text=f"User with phone {target_phone} not found{scope_txt}."
-                    )
-                    return True
-            try:
-                weekflow.run_week_flow(u, week_no=week_no)
-                send_whatsapp(to=admin_user.phone, text=f"Week flow triggered for week {week_no} (includes Sunday review).")
-            except Exception as e:
-                send_whatsapp(to=admin_user.phone, text=f"Failed to run week flow: {e}")
             return True
         elif cmd == "start":
             target_phone, _ = _resolve_admin_target_phone(admin_user, args)
@@ -4901,79 +4632,58 @@ async def twilio_inbound(request: Request):
 
         if sunday.has_active_state(user.id):
             try:
-                sunday.handle_message(user, body)
+                with SessionLocal() as s:
+                    rows = (
+                        s.query(UserPreference)
+                        .filter(UserPreference.user_id == int(user.id), UserPreference.key == "sunday_state")
+                        .all()
+                    )
+                    for row in rows:
+                        s.delete(row)
+                    s.commit()
+            except Exception:
+                pass
+            try:
+                if not general_support.has_active_state(int(user.id)):
+                    general_support.activate(int(user.id), source="retired_sunday_state", week_no=None, send_intro=False)
+                general_support.handle_message(user, body)
             except Exception as e:
-                send_whatsapp(to=user.phone, text=f"Sunday review failed: {e}")
+                send_whatsapp(to=user.phone, text=f"Coaching support failed: {e}")
             return Response(content="", media_type="text/plain", status_code=200)
 
-        if lower_body.startswith("kickoff"):
-            send_whatsapp(
-                to=user.phone,
-                text="Kickoff has been retired. We’ll continue with your standard weekly coaching flow.",
-            )
-            return Response(content="", media_type="text/plain", status_code=200)
-
-        if lower_body.startswith("midweek") or lower_body.startswith("wednesday"):
+        first_token = lower_body.split(maxsplit=1)[0] if lower_body else ""
+        if first_token in {
+            "kickoff",
+            "midweek",
+            "wednesday",
+            "week",
+            "sunday",
+            "tuesday",
+            "thursday",
+            "saturday",
+            "weekstart",
+            "monday",
+            "boost",
+            "friday",
+        } or monday.has_active_state(user.id):
             try:
-                scheduler._run_day_prompt(int(user.id), "wednesday")  # type: ignore[attr-defined]
-            except Exception as e:
-                send_whatsapp(to=user.phone, text=f"Midweek failed: {e}")
-            return Response(content="", media_type="text/plain", status_code=200)
-        if lower_body.startswith("week"):
-            parts = lower_body.split()
-            week_no = 1
-            if len(parts) > 1:
-                try:
-                    week_no = int(parts[1])
-                except Exception:
-                    week_no = 1
+                with SessionLocal() as s:
+                    rows = (
+                        s.query(UserPreference)
+                        .filter(UserPreference.user_id == int(user.id), UserPreference.key == "weekstart_state")
+                        .all()
+                    )
+                    for row in rows:
+                        s.delete(row)
+                    s.commit()
+            except Exception:
+                pass
             try:
-                weekflow.run_week_flow(user, week_no=week_no)
+                if not general_support.has_active_state(int(user.id)):
+                    general_support.activate(int(user.id), source="retired_schedule_command", week_no=None, send_intro=False)
+                general_support.handle_message(user, body)
             except Exception as e:
-                send_whatsapp(to=user.phone, text=f"Week flow failed: {e}")
-            return Response(content="", media_type="text/plain", status_code=200)
-        if lower_body.startswith("sunday"):
-            try:
-                scheduler._run_day_prompt(int(user.id), "sunday")  # type: ignore[attr-defined]
-            except Exception as e:
-                send_whatsapp(to=user.phone, text=f"Sunday review failed: {e}")
-            return Response(content="", media_type="text/plain", status_code=200)
-        if lower_body.startswith("tuesday"):
-            try:
-                scheduler._run_day_prompt(int(user.id), "tuesday")  # type: ignore[attr-defined]
-            except Exception as e:
-                send_whatsapp(to=user.phone, text=f"Tuesday check failed: {e}")
-            return Response(content="", media_type="text/plain", status_code=200)
-        if lower_body.startswith("thursday"):
-            try:
-                scheduler._run_day_prompt(int(user.id), "thursday")  # type: ignore[attr-defined]
-            except Exception as e:
-                send_whatsapp(to=user.phone, text=f"Thursday boost failed: {e}")
-            return Response(content="", media_type="text/plain", status_code=200)
-        if lower_body.startswith("saturday"):
-            try:
-                scheduler._run_day_prompt(int(user.id), "saturday")  # type: ignore[attr-defined]
-            except Exception as e:
-                send_whatsapp(to=user.phone, text=f"Saturday keepalive failed: {e}")
-            return Response(content="", media_type="text/plain", status_code=200)
-
-        if lower_body.startswith("weekstart") or lower_body.startswith("monday") or monday.has_active_state(user.id):
-            if (lower_body.startswith("weekstart") or lower_body.startswith("monday")) and not monday.has_active_state(user.id):
-                try:
-                    if not habit_selector.ensure_habit_steps_ready_for_day(user, "monday"):
-                        return Response(content="", media_type="text/plain", status_code=200)
-                except Exception:
-                    pass
-            try:
-                monday.handle_message(user, body)
-            except Exception as e:
-                send_whatsapp(to=user.phone, text=f"Monday flow failed: {e}")
-            return Response(content="", media_type="text/plain", status_code=200)
-        if lower_body.startswith("boost") or lower_body.startswith("friday"):
-            try:
-                scheduler._run_day_prompt(int(user.id), "friday")  # type: ignore[attr-defined]
-            except Exception as e:
-                send_whatsapp(to=user.phone, text=f"Boost failed: {e}")
+                send_whatsapp(to=user.phone, text=f"Coaching support failed: {e}")
             return Response(content="", media_type="text/plain", status_code=200)
         # Interactive menu commands
         if lower_body in {"menu", "help", "options"}:
@@ -5642,6 +5352,19 @@ def _set_pref_value(
         return True
     session.add(UserPreference(user_id=user_id, key=key, value=value))
     return True
+
+
+def _delete_pref_keys(session, user_id: int, keys: list[str] | tuple[str, ...]) -> None:
+    rows = (
+        session.query(UserPreference)
+        .filter(UserPreference.user_id == int(user_id), UserPreference.key.in_(list(keys)))
+        .all()
+    )
+    for row in rows:
+        try:
+            session.delete(row)
+        except Exception:
+            pass
 
 
 def _coaching_enabled_for_user(session, user_id: int) -> bool:
@@ -8174,13 +7897,6 @@ def api_user_status_v1(
                         "tts_voice_pref",
                         "coaching",
                         "auto_daily_prompts",
-                        "coach_schedule_monday",
-                        "coach_schedule_tuesday",
-                        "coach_schedule_wednesday",
-                        "coach_schedule_thursday",
-                        "coach_schedule_friday",
-                        "coach_schedule_saturday",
-                        "coach_schedule_sunday",
                         "text_scale",
                         "preferred_channel",
                         "marketing_opt_in",
@@ -8207,18 +7923,6 @@ def api_user_status_v1(
             auto_status = "off"
         else:
             auto_status = "not configured"
-        schedule = {}
-        for key in (
-            "coach_schedule_monday",
-            "coach_schedule_tuesday",
-            "coach_schedule_wednesday",
-            "coach_schedule_thursday",
-            "coach_schedule_friday",
-            "coach_schedule_saturday",
-            "coach_schedule_sunday",
-        ):
-            if key in pref_map and pref_map[key]:
-                schedule[key.replace("coach_schedule_", "")] = pref_map[key]
         training_objective = (
             s.query(OKRObjective)
             .filter(OKRObjective.owner_user_id == user_id, OKRObjective.pillar_key == "training")
@@ -8249,7 +7953,6 @@ def api_user_status_v1(
             "auto_prompts": auto_status,
             "note": pref_map.get("coachmycoach_note", ""),
             "voice": pref_map.get("tts_voice_pref", ""),
-            "schedule": schedule,
             "text_scale": pref_map.get("text_scale", ""),
             "theme": pref_map.get("theme", "system"),
             "training_objective": training_objective.objective if training_objective else "",
@@ -8308,9 +8011,8 @@ def api_user_preferences_update(
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
 ):
     """
-    Update coaching preferences for a user (note, voice, auto prompts, schedule).
+    Update coaching preferences for a user (note, voice, coaching access, channel, display).
     """
-    allowed_days = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
     allowed_channels = {"whatsapp", "app", "sms", "email"}
     allowed_themes = {"light", "dark", "system"}
     _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
@@ -8370,35 +8072,26 @@ def api_user_preferences_update(
                 if pref:
                     s.delete(pref)
 
-        schedule = payload.get("schedule") if isinstance(payload, dict) else None
-        if isinstance(schedule, dict):
-            for day, value in schedule.items():
-                day_key = str(day).strip().lower()
-                if day_key not in allowed_days:
-                    raise HTTPException(status_code=400, detail=f"invalid schedule day: {day}")
-                time_val = ("" if value is None else str(value)).strip()
-                pref_key = f"coach_schedule_{day_key}"
-                pref = (
-                    s.query(UserPreference)
-                    .filter(UserPreference.user_id == user_id, UserPreference.key == pref_key)
-                    .one_or_none()
-                )
-                if time_val:
-                    try:
-                        hh, mm = time_val.split(":")
-                        hh_i = int(hh); mm_i = int(mm)
-                        if not (0 <= hh_i <= 23 and 0 <= mm_i <= 59):
-                            raise ValueError()
-                    except Exception:
-                        raise HTTPException(status_code=400, detail=f"invalid time for {day_key}: {time_val}")
-                    val = f"{hh_i:02d}:{mm_i:02d}"
-                    if pref:
-                        pref.value = val
-                    else:
-                        s.add(UserPreference(user_id=user_id, key=pref_key, value=val))
-                else:
-                    if pref:
-                        s.delete(pref)
+        legacy_schedule_rows = (
+            s.query(UserPreference)
+            .filter(
+                UserPreference.user_id == user_id,
+                UserPreference.key.in_(
+                    (
+                        "coach_schedule_monday",
+                        "coach_schedule_tuesday",
+                        "coach_schedule_wednesday",
+                        "coach_schedule_thursday",
+                        "coach_schedule_friday",
+                        "coach_schedule_saturday",
+                        "coach_schedule_sunday",
+                    )
+                ),
+            )
+            .all()
+        )
+        for pref in legacy_schedule_rows:
+            s.delete(pref)
 
         auto_prompts = payload.get("auto_prompts") if isinstance(payload, dict) else None
         if auto_prompts is not None:
@@ -16467,8 +16160,7 @@ def admin_touchpoint_history_filter_touchpoints(
 @admin.get("/coaching/today-drilldown")
 def admin_coaching_today_drilldown(admin_user: User = Depends(_require_admin)):
     """
-    Drill-down payload for today's coaching ratio:
-    to_be_sent : sent_day_message : deferred_outside_24h : replied_to_day_reopen : replied_to_day_message
+    Drill-down payload for today's tracker-driven Gia flow.
     """
     club_scope_id = getattr(admin_user, "club_id", None)
     now_uk = datetime.now(UK_TZ)
@@ -16477,6 +16169,7 @@ def admin_coaching_today_drilldown(admin_user: User = Depends(_require_admin)):
     day_end_uk = day_start_uk + timedelta(days=1)
     start_utc = day_start_uk.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
     end_utc = day_end_uk.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+    score_day = now_uk.date()
 
     def _safe_user_name(u: User | None) -> str | None:
         if not u:
@@ -16486,347 +16179,170 @@ def admin_coaching_today_drilldown(admin_user: User = Depends(_require_admin)):
         name = f"{first} {last}".strip()
         return name or None
 
-    def _first_inbound_between(
-        inbound_by_user: dict[int, list[datetime]],
-        user_id: int,
-        start_at: datetime,
-        end_at: datetime,
-    ) -> datetime | None:
-        stamps = inbound_by_user.get(user_id) or []
-        if not stamps:
-            return None
-        pos = bisect.bisect_left(stamps, start_at)
-        if pos < len(stamps) and stamps[pos] < end_at:
-            return stamps[pos]
-        return None
-
     with SessionLocal() as s:
-        tp_q = (
-            s.query(
-                Touchpoint.id,
-                Touchpoint.user_id,
-                Touchpoint.type,
-                Touchpoint.generated_text,
-                Touchpoint.sent_at,
-                Touchpoint.created_at,
-            )
-            .filter(func.lower(Touchpoint.type) == day_key)
-            .filter(func.coalesce(Touchpoint.sent_at, Touchpoint.created_at) >= start_utc)
-            .filter(func.coalesce(Touchpoint.sent_at, Touchpoint.created_at) < end_utc)
-        )
+        users_q = s.query(User)
         if club_scope_id is not None:
-            tp_q = tp_q.join(User, Touchpoint.user_id == User.id).filter(User.club_id == club_scope_id)
-        tp_rows = tp_q.all()
+            users_q = users_q.filter(User.club_id == club_scope_id)
+        users = users_q.order_by(User.id.asc()).all()
+        users_by_id = {int(u.id): u for u in users if getattr(u, "id", None) is not None}
+        user_ids = list(users_by_id.keys())
 
-        day_touchpoints: list[dict[str, object]] = []
-        sent_user_ids: set[int] = set()
-        for tp_id, user_id, tp_type, generated_text, sent_at, created_at in tp_rows:
-            if user_id is None:
-                continue
-            try:
-                uid = int(user_id)
-            except Exception:
-                continue
-            ts = sent_at or created_at
-            if ts is None:
-                continue
-            day_touchpoints.append(
-                {
-                    "id": int(tp_id),
-                    "user_id": uid,
-                    "type": str(tp_type or "").strip().lower(),
-                    "ts": ts,
-                    "text": str(generated_text or "").strip() or None,
-                }
-            )
-            sent_user_ids.add(uid)
-
-        deferred_q = (
-            s.query(JobAudit.created_at, JobAudit.payload)
-            .filter(JobAudit.job_name == f"auto_prompt_{day_key}_deferred_out_of_session")
-            .filter(JobAudit.created_at >= start_utc, JobAudit.created_at < end_utc)
-        )
-        resumed_q = (
-            s.query(JobAudit.created_at, JobAudit.payload, JobAudit.status)
-            .filter(JobAudit.job_name == "pending_day_prompt_resumed")
-            .filter(JobAudit.created_at >= start_utc, JobAudit.created_at < end_utc)
-        )
-        deferred_rows = deferred_q.all()
-        resumed_rows = resumed_q.all()
-
-        club_user_ids: set[int] | None = None
-        if club_scope_id is not None:
-            club_user_ids = {
-                int(uid)
-                for (uid,) in s.query(User.id).filter(User.club_id == club_scope_id).all()
-                if uid is not None
-            }
-
-        deferred_user_ids: set[int] = set()
-        deferred_template_sent_by_user: dict[int, bool] = {}
-        deferred_at_by_user: dict[int, datetime] = {}
-        for created_at, payload in deferred_rows:
-            body = _as_payload_dict(payload)
-            raw_uid = body.get("user_id")
-            try:
-                uid = int(raw_uid) if raw_uid is not None else 0
-            except Exception:
-                uid = 0
-            if uid <= 0:
-                continue
-            if club_user_ids is not None and uid not in club_user_ids:
-                continue
-            deferred_user_ids.add(uid)
-            sent_flag = bool(body.get("template_sent"))
-            if uid not in deferred_template_sent_by_user:
-                deferred_template_sent_by_user[uid] = sent_flag
-            else:
-                deferred_template_sent_by_user[uid] = deferred_template_sent_by_user[uid] or sent_flag
-            prev_at = deferred_at_by_user.get(uid)
-            if prev_at is None or (isinstance(created_at, datetime) and created_at > prev_at):
-                if isinstance(created_at, datetime):
-                    deferred_at_by_user[uid] = created_at
-
-        resumed_user_ids: set[int] = set()
-        resumed_at_by_user: dict[int, datetime] = {}
-        for created_at, payload, status in resumed_rows:
-            if str(status or "").strip().lower() == "error":
-                continue
-            body = _as_payload_dict(payload)
-            if str(body.get("day") or "").strip().lower() != day_key:
-                continue
-            raw_uid = body.get("user_id")
-            try:
-                uid = int(raw_uid) if raw_uid is not None else 0
-            except Exception:
-                uid = 0
-            if uid <= 0:
-                continue
-            if club_user_ids is not None and uid not in club_user_ids:
-                continue
-            resumed_user_ids.add(uid)
-            prev_at = resumed_at_by_user.get(uid)
-            if prev_at is None or (isinstance(created_at, datetime) and created_at > prev_at):
-                if isinstance(created_at, datetime):
-                    resumed_at_by_user[uid] = created_at
-
-        # Resolve day-message replies by scanning inbound after each touchpoint send.
-        day_touchpoints.sort(key=lambda row: (int(row["user_id"]), row["ts"], int(row["id"])))
-        next_ts_by_touchpoint_id: dict[int, datetime | None] = {}
-        for idx, row in enumerate(day_touchpoints):
-            next_ts = None
-            if idx + 1 < len(day_touchpoints) and int(day_touchpoints[idx + 1]["user_id"]) == int(row["user_id"]):
-                next_ts = day_touchpoints[idx + 1]["ts"]
-            next_ts_by_touchpoint_id[int(row["id"])] = next_ts
-
-        inbound_by_user: dict[int, list[datetime]] = {}
-        all_candidate_user_ids = set(sent_user_ids) | set(deferred_user_ids) | set(resumed_user_ids)
-        if all_candidate_user_ids:
-            in_q = (
-                s.query(MessageLog.user_id, MessageLog.created_at)
-                .filter(MessageLog.direction == "inbound")
-                .filter(MessageLog.user_id.in_(list(all_candidate_user_ids)))
-                .filter(MessageLog.created_at >= start_utc)
-                .filter(MessageLog.created_at < (end_utc + timedelta(days=1)))
-            )
-            in_rows = in_q.all()
-            for uid, created_at in in_rows:
-                if uid is None or created_at is None:
-                    continue
-                try:
-                    uid_i = int(uid)
-                except Exception:
-                    continue
-                inbound_by_user.setdefault(uid_i, []).append(created_at)
-            for uid_i in list(inbound_by_user.keys()):
-                inbound_by_user[uid_i].sort()
-
-        replied_day_user_ids: set[int] = set()
-        day_reply_at_by_user: dict[int, datetime] = {}
-        for row in day_touchpoints:
-            uid = int(row["user_id"])
-            start_at = row["ts"]
-            end_at = start_at + timedelta(hours=24)
-            next_ts = next_ts_by_touchpoint_id.get(int(row["id"]))
-            if next_ts is not None and next_ts < end_at:
-                end_at = next_ts
-            first_inbound = _first_inbound_between(inbound_by_user, uid, start_at, end_at)
-            if first_inbound is None:
-                continue
-            replied_day_user_ids.add(uid)
-            prev_at = day_reply_at_by_user.get(uid)
-            if prev_at is None or first_inbound < prev_at:
-                day_reply_at_by_user[uid] = first_inbound
-
-        # Pull message rows for message previews/status.
-        message_rows = []
-        if all_candidate_user_ids:
-            msg_q = (
+        tracker_rows = []
+        job_rows = []
+        refresh_pref_rows = []
+        if user_ids:
+            tracker_rows = (
                 s.query(
-                    MessageLog.id,
-                    MessageLog.user_id,
-                    MessageLog.direction,
-                    MessageLog.text,
-                    MessageLog.meta,
-                    MessageLog.created_at,
+                    DailyPillarTrackerEntry.user_id,
+                    func.count(DailyPillarTrackerEntry.id),
+                    func.max(DailyPillarTrackerEntry.updated_at),
                 )
-                .filter(MessageLog.user_id.in_(list(all_candidate_user_ids)))
-                .filter(MessageLog.created_at >= start_utc)
-                .filter(MessageLog.created_at < (end_utc + timedelta(days=1)))
-                .order_by(MessageLog.created_at.desc(), MessageLog.id.desc())
+                .filter(DailyPillarTrackerEntry.user_id.in_(user_ids))
+                .filter(DailyPillarTrackerEntry.score_date == score_day)
+                .group_by(DailyPillarTrackerEntry.user_id)
+                .all()
             )
-            message_rows = msg_q.all()
+            job_rows = (
+                s.query(BackgroundJob.user_id, BackgroundJob.status, BackgroundJob.created_at, BackgroundJob.updated_at, BackgroundJob.error)
+                .filter(BackgroundJob.user_id.in_(user_ids))
+                .filter(BackgroundJob.kind == "coach_home_tracker_refresh")
+                .filter(BackgroundJob.created_at >= start_utc)
+                .filter(BackgroundJob.created_at < end_utc)
+                .order_by(desc(BackgroundJob.updated_at), desc(BackgroundJob.id))
+                .all()
+            )
+            refresh_pref_rows = (
+                s.query(UserPreference.user_id, UserPreference.value)
+                .filter(UserPreference.user_id.in_(user_ids))
+                .filter(UserPreference.key == "coach_home_refresh_state")
+                .all()
+            )
 
-        day_message_by_user: dict[int, dict[str, object]] = {}
-        reopen_message_by_user: dict[int, dict[str, object]] = {}
-        latest_inbound_by_user: dict[int, dict[str, object]] = {}
-        for msg_id, raw_uid, direction, text, meta, created_at in message_rows:
-            if raw_uid is None:
-                continue
-            try:
-                uid = int(raw_uid)
-            except Exception:
-                continue
-            direction_val = str(direction or "").strip().lower()
-            text_val = str(text or "").strip()
-            if direction_val == "inbound" and uid not in latest_inbound_by_user:
-                latest_inbound_by_user[uid] = {
-                    "id": int(msg_id),
-                    "at": created_at.isoformat() if isinstance(created_at, datetime) else None,
-                    "text": text_val or None,
-                }
-            if direction_val != "outbound":
-                continue
-            meta_obj = _as_payload_dict(meta)
-            category = str(meta_obj.get("category") or "").strip().lower()
-            if category in {"day-reopen", "day_reopen"} and uid not in reopen_message_by_user:
-                delivery = _message_delivery_from_meta(meta)
-                reopen_message_by_user[uid] = {
-                    "id": int(msg_id),
-                    "at": created_at.isoformat() if isinstance(created_at, datetime) else None,
-                    "text": text_val or None,
-                    "delivery_state": delivery.get("delivery_state"),
-                    "delivery_status": delivery.get("delivery_status"),
-                    "delivery_error_code": delivery.get("delivery_error_code"),
-                    "delivery_error_description": delivery.get("delivery_error_description"),
-                }
-                continue
-            if _coaching_day_from_message_text(text_val) == day_key and uid not in day_message_by_user:
-                delivery = _message_delivery_from_meta(meta)
-                day_message_by_user[uid] = {
-                    "id": int(msg_id),
-                    "at": created_at.isoformat() if isinstance(created_at, datetime) else None,
-                    "text": text_val or None,
-                    "delivery_state": delivery.get("delivery_state"),
-                    "delivery_status": delivery.get("delivery_status"),
-                    "delivery_error_code": delivery.get("delivery_error_code"),
-                    "delivery_error_description": delivery.get("delivery_error_description"),
-                }
-
-        # Backfill day message details from touchpoints when message logs are missing.
-        latest_day_tp_by_user: dict[int, dict[str, object]] = {}
-        for row in day_touchpoints:
-            uid = int(row["user_id"])
-            prev = latest_day_tp_by_user.get(uid)
-            ts_val = row["ts"]
-            if prev is None or ts_val > prev["ts"]:
-                latest_day_tp_by_user[uid] = {"ts": ts_val, "text": row.get("text")}
-        for uid, fallback in latest_day_tp_by_user.items():
-            if uid in day_message_by_user:
-                continue
-            day_message_by_user[uid] = {
-                "id": None,
-                "at": fallback["ts"].isoformat(),
-                "text": fallback.get("text"),
-                "delivery_state": "unknown",
-                "delivery_status": None,
-                "delivery_error_code": None,
-                "delivery_error_description": None,
-            }
-
-        all_user_ids = sorted(set(sent_user_ids) | set(deferred_user_ids) | set(resumed_user_ids) | set(replied_day_user_ids))
-        users_by_id: dict[int, User] = {}
-        if all_user_ids:
-            uq = s.query(User).filter(User.id.in_(all_user_ids))
-            if club_scope_id is not None:
-                uq = uq.filter(User.club_id == club_scope_id)
-            for u in uq.all():
-                users_by_id[int(u.id)] = u
-
-    # Build user entries once, reuse across categories.
-    user_entry_by_id: dict[int, dict[str, object]] = {}
-    for uid in all_user_ids:
-        u = users_by_id.get(uid)
-        user_entry_by_id[uid] = {
-            "user_id": uid,
-            "user_name": _safe_user_name(u),
-            "phone": getattr(u, "phone", None) if u else None,
-            "day_message": day_message_by_user.get(uid),
-            "day_reopen_message": reopen_message_by_user.get(uid),
-            "latest_inbound": latest_inbound_by_user.get(uid),
-            "reply_to_day_message_at": day_reply_at_by_user.get(uid).isoformat() if day_reply_at_by_user.get(uid) else None,
-            "reply_to_day_reopen_at": resumed_at_by_user.get(uid).isoformat() if resumed_at_by_user.get(uid) else None,
-            "deferred_template_sent": bool(deferred_template_sent_by_user.get(uid, False)),
-            "deferred_at": deferred_at_by_user.get(uid).isoformat() if deferred_at_by_user.get(uid) else None,
+    tracked_by_user: dict[int, dict[str, object]] = {}
+    for uid_raw, count_raw, updated_at in tracker_rows:
+        if uid_raw is None:
+            continue
+        tracked_by_user[int(uid_raw)] = {
+            "tracker_entries_today": int(count_raw or 0),
+            "last_tracker_entry_at": updated_at.isoformat() if isinstance(updated_at, datetime) else None,
         }
 
-    def _entries_for(user_ids: set[int]) -> list[dict[str, object]]:
-        entries = [user_entry_by_id[uid] for uid in sorted(user_ids)]
-        entries.sort(key=lambda row: ((str(row.get("user_name") or "") or "~").lower(), int(row.get("user_id") or 0)))
-        return entries
+    latest_job_by_user: dict[int, dict[str, object]] = {}
+    job_status_counts: dict[str, int] = {}
+    for uid_raw, status_raw, created_at, updated_at, error in job_rows:
+        if uid_raw is None:
+            continue
+        uid = int(uid_raw)
+        status_val = str(status_raw or "unknown").strip().lower() or "unknown"
+        job_status_counts[status_val] = job_status_counts.get(status_val, 0) + 1
+        if uid not in latest_job_by_user:
+            latest_job_by_user[uid] = {
+                "status": status_val,
+                "created_at": created_at.isoformat() if isinstance(created_at, datetime) else None,
+                "updated_at": updated_at.isoformat() if isinstance(updated_at, datetime) else None,
+                "error": str(error or "").strip() or None,
+            }
 
-    users_to_be_sent = set(sent_user_ids) | set(deferred_user_ids)
+    refresh_state_by_user: dict[int, dict[str, object]] = {}
+    for uid_raw, value_raw in refresh_pref_rows:
+        if uid_raw is None:
+            continue
+        try:
+            parsed = json.loads(str(value_raw or "{}"))
+            if isinstance(parsed, dict):
+                refresh_state_by_user[int(uid_raw)] = parsed
+        except Exception:
+            continue
+
+    def _entry(uid: int) -> dict[str, object]:
+        user = users_by_id.get(uid)
+        refresh_state = refresh_state_by_user.get(uid) or {}
+        job = latest_job_by_user.get(uid)
+        tracked = tracked_by_user.get(uid) or {}
+        return {
+            "user_id": uid,
+            "user_name": _safe_user_name(user),
+            "phone": getattr(user, "phone", None) if user else None,
+            "tracker_entries_today": int(tracked.get("tracker_entries_today") or 0),
+            "last_tracker_entry_at": tracked.get("last_tracker_entry_at"),
+            "refresh_status": refresh_state.get("status"),
+            "refresh_updated_at": refresh_state.get("updated_at"),
+            "refresh_plan_date": refresh_state.get("plan_date"),
+            "gia_ready": bool(refresh_state.get("gia_ready")),
+            "habits_ready": bool(refresh_state.get("habits_ready")),
+            "insight_ready": bool(refresh_state.get("insight_ready")),
+            "latest_refresh_job": job,
+        }
+
+    tracked_user_ids = set(tracked_by_user.keys())
+    active_job_user_ids = {
+        uid
+        for uid, job in latest_job_by_user.items()
+        if str(job.get("status") or "").lower() in {"pending", "running", "retry"}
+    }
+    failed_job_user_ids = {
+        uid
+        for uid, job in latest_job_by_user.items()
+        if str(job.get("status") or "").lower() == "error"
+    }
+    gia_ready_user_ids = {
+        uid
+        for uid, state in refresh_state_by_user.items()
+        if bool(state.get("gia_ready")) and str(state.get("plan_date") or "") == score_day.isoformat()
+    }
+
+    def _entries_for(ids: set[int]) -> list[dict[str, object]]:
+        rows = [_entry(uid) for uid in sorted(ids)]
+        rows.sort(key=lambda row: ((str(row.get("user_name") or "") or "~").lower(), int(row.get("user_id") or 0)))
+        return rows
+
     categories = [
         {
-            "key": "to_be_sent",
-            "label": "Users to be sent",
-            "description": f"Users targeted for today's {day_key.capitalize()} flow (sent now or deferred outside 24h).",
-            "total": len(users_to_be_sent),
-            "users": _entries_for(users_to_be_sent),
+            "key": "tracked_today",
+            "label": "Daily records submitted today",
+            "description": "Members with at least one daily recovery/training/nutrition record for today.",
+            "total": len(tracked_user_ids),
+            "users": _entries_for(tracked_user_ids),
         },
         {
-            "key": "sent_day_message",
-            "label": "Users sent day message",
-            "description": f"Users who received the {day_key.capitalize()} day-flow message.",
-            "total": len(sent_user_ids),
-            "users": _entries_for(sent_user_ids),
+            "key": "refresh_queued_or_running",
+            "label": "Coach-home refresh queued or running",
+            "description": "Tracker refresh jobs still pending, running, or retrying.",
+            "total": len(active_job_user_ids),
+            "users": _entries_for(active_job_user_ids),
         },
         {
-            "key": "outside_24h_deferred",
-            "label": "Users outside 24h (day-reopen path)",
-            "description": "Users deferred because they were outside the 24h window (day-reopen attempted).",
-            "total": len(deferred_user_ids),
-            "users": _entries_for(deferred_user_ids),
+            "key": "gia_ready",
+            "label": "Gia message ready today",
+            "description": "Members whose tracker refresh has a Gia message ready for today's plan date.",
+            "total": len(gia_ready_user_ids),
+            "users": _entries_for(gia_ready_user_ids),
         },
         {
-            "key": "replied_day_reopen",
-            "label": "Replies to day-reopen",
-            "description": "Users who replied and resumed a deferred day prompt.",
-            "total": len(resumed_user_ids),
-            "users": _entries_for(resumed_user_ids),
-        },
-        {
-            "key": "replied_day_message",
-            "label": "Replies to day message",
-            "description": "Users who replied within 24h of the day message.",
-            "total": len(replied_day_user_ids),
-            "users": _entries_for(replied_day_user_ids),
+            "key": "refresh_failed",
+            "label": "Coach-home refresh failed",
+            "description": "Tracker refresh jobs that ended in error today.",
+            "total": len(failed_job_user_ids),
+            "users": _entries_for(failed_job_user_ids),
         },
     ]
 
     return {
         "as_of_utc": datetime.utcnow().isoformat(),
+        "mode": "tracker_driven",
+        "retired": True,
         "day_key": day_key,
+        "score_date": score_day.isoformat(),
         "day_start_uk": day_start_uk.isoformat(),
         "day_end_uk": day_end_uk.isoformat(),
         "ratio": {
-            "users_to_be_sent": len(users_to_be_sent),
-            "users_sent_day_message": len(sent_user_ids),
-            "users_outside_24h_deferred": len(deferred_user_ids),
-            "users_replied_day_reopen": len(resumed_user_ids),
-            "users_replied_day_message": len(replied_day_user_ids),
-            "display": f"{len(users_to_be_sent)}:{len(sent_user_ids)}:{len(deferred_user_ids)}:{len(resumed_user_ids)}:{len(replied_day_user_ids)}",
+            "tracked_today": len(tracked_user_ids),
+            "refresh_queued_or_running": len(active_job_user_ids),
+            "gia_ready": len(gia_ready_user_ids),
+            "refresh_failed": len(failed_job_user_ids),
+            "display": f"{len(tracked_user_ids)}:{len(active_job_user_ids)}:{len(gia_ready_user_ids)}:{len(failed_job_user_ids)}",
         },
+        "job_status_counts": job_status_counts,
         "categories": categories,
     }
 
@@ -16839,53 +16355,12 @@ def admin_coaching_scheduled(
     admin_user: User = Depends(_require_admin),
 ):
     """
-    Return per-user coaching schedule rows (Mon-Sun) with next-run status.
-    Uses APScheduler jobs (auto_prompt_<day>_<user_id>) as source of truth.
+    Return per-user tracker-driven coaching status.
     """
     max_limit = max(1, min(int(limit), 1000))
     club_scope_id = getattr(admin_user, "club_id", None)
-    day_order = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+    score_day = datetime.now(UK_TZ).date()
     auto_pref_keys = tuple(getattr(scheduler, "AUTO_PROMPT_PREF_KEYS", ("coaching", "auto_daily_prompts")))
-    first_day_sent_pref_key = str(
-        getattr(scheduler, "FIRST_DAY_SENT_AT_PREF_KEY", "coaching_first_day_sent_at")
-    ).strip() or "coaching_first_day_sent_at"
-    day_plan_map: dict[str, dict[str, str]] = {
-        "monday": {
-            "touchpoint": "podcast_weekstart",
-            "delivery": "podcast+text",
-            "message": "Weekstart podcast and Monday check-in for this week's focus.",
-        },
-        "tuesday": {
-            "touchpoint": "tuesday",
-            "delivery": "text",
-            "message": "Tuesday check-in message with quick-reply options.",
-        },
-        "wednesday": {
-            "touchpoint": "midweek",
-            "delivery": "text",
-            "message": "Midweek progress check and support prompt.",
-        },
-        "thursday": {
-            "touchpoint": "podcast_thursday",
-            "delivery": "podcast+text",
-            "message": "Thursday boost podcast followed by a short check-in.",
-        },
-        "friday": {
-            "touchpoint": "podcast_friday",
-            "delivery": "podcast+text",
-            "message": "Friday boost podcast and end-of-week check-in.",
-        },
-        "saturday": {
-            "touchpoint": "saturday",
-            "delivery": "text",
-            "message": "Saturday keepalive check-in with quick replies.",
-        },
-        "sunday": {
-            "touchpoint": "sunday",
-            "delivery": "text",
-            "message": "Sunday review and habit-step setup flow.",
-        },
-    }
 
     with SessionLocal() as s:
         users_q = s.query(User)
@@ -16894,176 +16369,98 @@ def admin_coaching_scheduled(
         if user_id:
             users_q = users_q.filter(User.id == int(user_id))
         users = users_q.order_by(User.id.asc()).limit(max_limit).all()
-
-        if not users:
-            return {"items": [], "summary": {"users": 0, "enabled_users": 0, "rows": 0, "scheduled_rows": 0, "missing_rows": 0}}
-
         user_ids = [int(u.id) for u in users if getattr(u, "id", None) is not None]
-        user_id_set = set(user_ids)
 
-        pref_keys = (
-            list(auto_pref_keys)
-            + [f"coach_schedule_{day}" for day in day_order]
-            + ["coaching_fast_minutes", first_day_sent_pref_key]
-        )
-        pref_rows = (
-            s.query(UserPreference.user_id, UserPreference.key, UserPreference.value, UserPreference.updated_at)
-            .filter(UserPreference.user_id.in_(user_ids))
-            .filter(UserPreference.key.in_(pref_keys))
-            .order_by(UserPreference.user_id.asc(), UserPreference.updated_at.desc())
-            .all()
-        )
-
-        global_schedule_rows = (
-            s.query(GlobalPromptSchedule.day_key, GlobalPromptSchedule.time_local, GlobalPromptSchedule.enabled)
-            .filter(GlobalPromptSchedule.day_key.in_(day_order))
-            .all()
-        )
-        recent_outbound_rows = (
-            s.query(MessageLog.user_id, MessageLog.created_at, MessageLog.text, MessageLog.meta)
-            .filter(MessageLog.user_id.in_(user_ids))
-            .filter(MessageLog.direction == "outbound")
-            .filter(MessageLog.created_at >= (datetime.utcnow() - timedelta(days=30)))
-            .order_by(desc(MessageLog.created_at))
-            .limit(max_limit * 200)
-            .all()
-        )
+        pref_rows = []
+        tracker_rows = []
+        job_rows = []
+        if user_ids:
+            pref_rows = (
+                s.query(UserPreference.user_id, UserPreference.key, UserPreference.value, UserPreference.updated_at)
+                .filter(UserPreference.user_id.in_(user_ids))
+                .filter(UserPreference.key.in_(list(auto_pref_keys) + ["coach_home_refresh_state"]))
+                .order_by(UserPreference.user_id.asc(), UserPreference.updated_at.desc())
+                .all()
+            )
+            tracker_rows = (
+                s.query(
+                    DailyPillarTrackerEntry.user_id,
+                    func.count(DailyPillarTrackerEntry.id),
+                    func.max(DailyPillarTrackerEntry.updated_at),
+                )
+                .filter(DailyPillarTrackerEntry.user_id.in_(user_ids))
+                .filter(DailyPillarTrackerEntry.score_date == score_day)
+                .group_by(DailyPillarTrackerEntry.user_id)
+                .all()
+            )
+            job_rows = (
+                s.query(
+                    BackgroundJob.id,
+                    BackgroundJob.user_id,
+                    BackgroundJob.status,
+                    BackgroundJob.created_at,
+                    BackgroundJob.updated_at,
+                    BackgroundJob.error,
+                )
+                .filter(BackgroundJob.user_id.in_(user_ids))
+                .filter(BackgroundJob.kind == "coach_home_tracker_refresh")
+                .order_by(desc(BackgroundJob.updated_at), desc(BackgroundJob.id))
+                .limit(max_limit * 5)
+                .all()
+            )
 
     coaching_enabled_map: dict[int, bool] = {}
-    day_pref_map: dict[tuple[int, str], str | None] = {}
-    fast_minutes_map: dict[int, int | None] = {}
-    first_day_sent_at_map: dict[int, str | None] = {}
-    first_day_pending_map: dict[int, bool] = {}
+    refresh_state_by_user: dict[int, dict[str, object]] = {}
     seen_auto_pref: set[int] = set()
-
     for uid_raw, key_raw, value_raw, _updated_at in pref_rows:
         if uid_raw is None:
             continue
         uid = int(uid_raw)
         key = str(key_raw or "").strip().lower()
         val = str(value_raw or "").strip()
-
         if key in auto_pref_keys and uid not in seen_auto_pref:
             coaching_enabled_map[uid] = val == "1"
             seen_auto_pref.add(uid)
             continue
-
-        if key == "coaching_fast_minutes" and uid not in fast_minutes_map:
+        if key == "coach_home_refresh_state" and uid not in refresh_state_by_user:
             try:
-                fast_minutes_map[uid] = max(1, int(val))
+                parsed = json.loads(val or "{}")
+                if isinstance(parsed, dict):
+                    refresh_state_by_user[uid] = parsed
             except Exception:
-                fast_minutes_map[uid] = None
-            continue
-        if key == first_day_sent_pref_key and uid not in first_day_sent_at_map:
-            first_day_sent_at_map[uid] = val or None
-            continue
+                refresh_state_by_user[uid] = {}
 
-        if key.startswith("coach_schedule_"):
-            day = key.replace("coach_schedule_", "", 1).strip().lower()
-            if day in day_order and (uid, day) not in day_pref_map:
-                day_pref_map[(uid, day)] = val or None
-
-    for uid in user_id_set:
-        coaching_enabled_map.setdefault(uid, False)
-        fast_minutes_map.setdefault(uid, None)
-        first_day_sent_at_map.setdefault(uid, None)
-    first_day_applicable_map: dict[int, bool] = {}
-    for u in users:
-        uid = int(u.id)
-        tz_name = str(getattr(u, "tz", "") or "UTC")
-        try:
-            user_tz = ZoneInfo(tz_name)
-        except Exception:
-            user_tz = ZoneInfo("UTC")
-        anchor_raw = getattr(u, "first_assessment_completed", None) or getattr(u, "created_on", None)
-        anchor_day = None
-        if isinstance(anchor_raw, datetime):
-            try:
-                anchor_day = anchor_raw.astimezone(user_tz).date()
-            except Exception:
-                anchor_day = anchor_raw.date()
-        elif isinstance(anchor_raw, date):
-            anchor_day = anchor_raw
-        if anchor_day is None:
-            first_day_applicable_map[uid] = False
-            continue
-        expected_day = anchor_day + timedelta(days=1)
-        first_day_applicable_map[uid] = expected_day.weekday() != 6
-    for uid in user_id_set:
-        first_day_pending_map[uid] = bool(
-            coaching_enabled_map.get(uid)
-            and first_day_applicable_map.get(uid, False)
-            and not first_day_sent_at_map.get(uid)
-        )
-
-    global_schedule_map: dict[str, dict[str, object]] = {}
-    for day_key_raw, time_local, enabled in global_schedule_rows:
-        day_key = str(day_key_raw or "").strip().lower()
-        if day_key in day_order:
-            global_schedule_map[day_key] = {"time_local": (time_local or None), "enabled": bool(enabled)}
-
-    latest_delivery_by_user_day: dict[tuple[int, str], dict[str, object]] = {}
-    for uid_raw, created_at, text, meta in recent_outbound_rows:
+    tracker_by_user: dict[int, dict[str, object]] = {}
+    for uid_raw, count_raw, updated_at in tracker_rows:
         if uid_raw is None:
             continue
-        try:
-            uid = int(uid_raw)
-        except Exception:
-            continue
-        day_key = _coaching_day_from_message_text(text)
-        if not day_key:
-            continue
-        key = (uid, day_key)
-        if key in latest_delivery_by_user_day:
-            continue
-        delivery = _message_delivery_from_meta(meta)
-        latest_delivery_by_user_day[key] = {
-            "last_message_at": created_at.isoformat() if isinstance(created_at, datetime) else None,
-            "last_delivery_state": delivery.get("delivery_state"),
-            "last_delivery_status": delivery.get("delivery_status"),
-            "last_delivery_error_code": delivery.get("delivery_error_code"),
-            "last_delivery_error_description": delivery.get("delivery_error_description"),
-            "last_delivery_last_callback_at": delivery.get("delivery_last_callback_at"),
+        tracker_by_user[int(uid_raw)] = {
+            "tracker_entries_today": int(count_raw or 0),
+            "last_tracker_entry_at": updated_at.isoformat() if isinstance(updated_at, datetime) else None,
         }
 
-    jobs_by_user_day: dict[tuple[int, str], dict[str, object]] = {}
-    first_day_catchup_by_user: dict[int, dict[str, object]] = {}
-    try:
-        scheduler.ensure_apscheduler_tables()
-        for job in scheduler.scheduler.get_jobs():
-            job_id = str(getattr(job, "id", "") or "")
-            m_catchup = re.match(r"^auto_prompt_first_day_catchup_(\d+)$", job_id)
-            if m_catchup:
-                uid = int(m_catchup.group(1))
-                if uid in user_id_set:
-                    first_day_catchup_by_user[uid] = {
-                        "job_id": job_id,
-                        "next_run_time": getattr(job, "next_run_time", None),
-                        "trigger": str(getattr(job, "trigger", "") or ""),
-                    }
-                continue
-            m = re.match(r"^auto_prompt_(monday|tuesday|wednesday|thursday|friday|saturday|sunday)_(\d+)$", job_id)
-            if not m:
-                continue
-            day = m.group(1)
-            uid = int(m.group(2))
-            if uid not in user_id_set:
-                continue
-            next_run = getattr(job, "next_run_time", None)
-            jobs_by_user_day[(uid, day)] = {
-                "job_id": job_id,
-                "next_run_time": next_run,
-                "trigger": str(getattr(job, "trigger", "") or ""),
-            }
-    except Exception:
-        jobs_by_user_day = {}
-        first_day_catchup_by_user = {}
+    latest_job_by_user: dict[int, dict[str, object]] = {}
+    active_jobs = 0
+    for job_id, uid_raw, status_raw, created_at, updated_at, error in job_rows:
+        if uid_raw is None:
+            continue
+        uid = int(uid_raw)
+        status_val = str(status_raw or "unknown").strip().lower() or "unknown"
+        if status_val in {"pending", "running", "retry"}:
+            active_jobs += 1
+        if uid in latest_job_by_user:
+            continue
+        latest_job_by_user[uid] = {
+            "id": int(job_id),
+            "status": status_val,
+            "created_at": created_at.isoformat() if isinstance(created_at, datetime) else None,
+            "updated_at": updated_at.isoformat() if isinstance(updated_at, datetime) else None,
+            "error": str(error or "").strip() or None,
+        }
 
     items: list[dict[str, object]] = []
     enabled_users = 0
-    scheduled_rows = 0
-    missing_rows = 0
-
+    tracker_entries_today = 0
     for u in users:
         uid = int(u.id)
         enabled = bool(coaching_enabled_map.get(uid, False))
@@ -17071,170 +16468,65 @@ def admin_coaching_scheduled(
             continue
         if enabled:
             enabled_users += 1
-        tz_name = str(getattr(u, "tz", "") or "UTC")
-        try:
-            user_tz = ZoneInfo(tz_name)
-        except Exception:
-            tz_name = "UTC"
-            user_tz = ZoneInfo("UTC")
-        user_name = " ".join(
+        name = " ".join(
             [str(getattr(u, "first_name", "") or "").strip(), str(getattr(u, "surname", "") or "").strip()]
         ).strip() or None
-        fast_minutes = fast_minutes_map.get(uid)
-        schedule_mode = "fast" if fast_minutes else "weekly"
-
-        for day in day_order:
-            job = jobs_by_user_day.get((uid, day))
-            has_job = job is not None
-            if has_job:
-                scheduled_rows += 1
-            elif enabled:
-                missing_rows += 1
-
-            next_run = job.get("next_run_time") if job else None
-            next_run_utc = None
-            next_run_local = None
-            if isinstance(next_run, datetime):
-                try:
-                    next_run_utc = next_run.astimezone(ZoneInfo("UTC")).isoformat()
-                except Exception:
-                    next_run_utc = next_run.isoformat()
-                try:
-                    next_run_local = next_run.astimezone(user_tz).isoformat()
-                except Exception:
-                    next_run_local = next_run.isoformat()
-
-            if enabled and has_job:
-                status_val = "scheduled"
-            elif enabled and not has_job:
-                status_val = "missing_job"
-            elif (not enabled) and has_job:
-                status_val = "scheduled_while_disabled"
-            else:
-                status_val = "disabled"
-
-            day_override = day_pref_map.get((uid, day))
-            global_day = global_schedule_map.get(day) or {}
-            plan = day_plan_map.get(day) or {}
-            latest_delivery = latest_delivery_by_user_day.get((uid, day)) or {}
-            items.append(
-                {
-                    "user_id": uid,
-                    "user_name": user_name,
-                    "phone": getattr(u, "phone", None),
-                    "day_key": day,
-                    "coaching_enabled": enabled,
-                    "schedule_mode": schedule_mode,
-                    "fast_minutes": int(fast_minutes) if fast_minutes else None,
-                    "schedule_source": "user_override" if day_override else "global_default",
-                    "time_local": day_override or global_day.get("time_local"),
-                    "global_day_enabled": bool(global_day.get("enabled", True)),
-                    "job_id": job.get("job_id") if job else None,
-                    "job_trigger": job.get("trigger") if job else None,
-                    "next_run_utc": next_run_utc,
-                    "next_run_local": next_run_local,
-                    "timezone": tz_name,
-                    "status": status_val,
-                    "has_job": has_job,
-                    "planned_touchpoint": plan.get("touchpoint"),
-                    "planned_delivery": plan.get("delivery"),
-                    "planned_message": plan.get("message"),
-                    "first_day_pending": bool(first_day_pending_map.get(uid, False)),
-                    "first_day_sent_at": first_day_sent_at_map.get(uid),
-                    "first_day_override": False,
-                    "last_message_at": latest_delivery.get("last_message_at"),
-                    "last_delivery_state": latest_delivery.get("last_delivery_state"),
-                    "last_delivery_status": latest_delivery.get("last_delivery_status"),
-                    "last_delivery_error_code": latest_delivery.get("last_delivery_error_code"),
-                    "last_delivery_error_description": latest_delivery.get("last_delivery_error_description"),
-                    "last_delivery_last_callback_at": latest_delivery.get("last_delivery_last_callback_at"),
-                }
-            )
-
-    # If first-day coaching is pending, the user's next non-Sunday scheduled run is replaced once
-    # by first-day coaching content (welcome podcast + habit-step intro).
-    earliest_row_idx_by_user: dict[int, tuple[datetime, int]] = {}
-    for idx, row in enumerate(items):
-        uid_raw = row.get("user_id")
-        next_run_raw = row.get("next_run_utc")
-        if uid_raw is None or not next_run_raw:
-            continue
-        try:
-            uid = int(uid_raw)
-        except Exception:
-            continue
-        try:
-            next_run_dt = datetime.fromisoformat(str(next_run_raw))
-        except Exception:
-            continue
-        current = earliest_row_idx_by_user.get(uid)
-        if current is None or next_run_dt < current[0]:
-            earliest_row_idx_by_user[uid] = (next_run_dt, idx)
-
-    for uid, pending in first_day_pending_map.items():
-        if not pending:
-            continue
-        soonest = earliest_row_idx_by_user.get(uid)
-        if not soonest:
-            continue
-        idx = soonest[1]
-        row = items[idx]
-        day = str(row.get("day_key") or "").strip().lower()
-        if day == "sunday":
-            continue
-        row["planned_touchpoint"] = "podcast_first_day"
-        row["planned_delivery"] = "podcast+text"
-        row["planned_message"] = "First day of coaching welcome podcast and habit-step summary."
-        row["first_day_override"] = True
-        first_day_delivery = latest_delivery_by_user_day.get((uid, "first_day")) or {}
-        if first_day_delivery:
-            row["last_message_at"] = first_day_delivery.get("last_message_at")
-            row["last_delivery_state"] = first_day_delivery.get("last_delivery_state")
-            row["last_delivery_status"] = first_day_delivery.get("last_delivery_status")
-            row["last_delivery_error_code"] = first_day_delivery.get("last_delivery_error_code")
-            row["last_delivery_error_description"] = first_day_delivery.get("last_delivery_error_description")
-            row["last_delivery_last_callback_at"] = first_day_delivery.get("last_delivery_last_callback_at")
-        catchup_job = first_day_catchup_by_user.get(uid)
-        catchup_next = catchup_job.get("next_run_time") if catchup_job else None
-        if isinstance(catchup_next, datetime):
-            try:
-                row["next_run_utc"] = catchup_next.astimezone(ZoneInfo("UTC")).isoformat()
-            except Exception:
-                row["next_run_utc"] = catchup_next.isoformat()
-            try:
-                row_tz = ZoneInfo(str(row.get("timezone") or "UTC"))
-            except Exception:
-                row_tz = ZoneInfo("UTC")
-            try:
-                row["next_run_local"] = catchup_next.astimezone(row_tz).isoformat()
-            except Exception:
-                row["next_run_local"] = catchup_next.isoformat()
-            row["job_id"] = catchup_job.get("job_id")
-            row["job_trigger"] = catchup_job.get("trigger")
-            row["status"] = "scheduled"
-            row["first_day_catchup"] = True
-        else:
-            row["first_day_catchup"] = False
+        tracker = tracker_by_user.get(uid) or {}
+        refresh_state = refresh_state_by_user.get(uid) or {}
+        job = latest_job_by_user.get(uid)
+        tracker_entries = int(tracker.get("tracker_entries_today") or 0)
+        tracker_entries_today += tracker_entries
+        status_val = str(refresh_state.get("status") or "").strip() or ("tracked_today" if tracker_entries else "waiting_for_daily_record")
+        items.append(
+            {
+                "user_id": uid,
+                "user_name": name,
+                "phone": getattr(u, "phone", None),
+                "coaching_enabled": enabled,
+                "mode": "tracker_driven",
+                "status": status_val,
+                "tracker_entries_today": tracker_entries,
+                "last_tracker_entry_at": tracker.get("last_tracker_entry_at"),
+                "coach_home_refresh_status": refresh_state.get("status"),
+                "coach_home_refresh_trigger": refresh_state.get("trigger"),
+                "coach_home_refresh_plan_date": refresh_state.get("plan_date"),
+                "coach_home_refresh_updated_at": refresh_state.get("updated_at"),
+                "gia_ready": bool(refresh_state.get("gia_ready")),
+                "habits_ready": bool(refresh_state.get("habits_ready")),
+                "insight_ready": bool(refresh_state.get("insight_ready")),
+                "active_refresh_job_id": job.get("id") if job else None,
+                "active_refresh_job_status": job.get("status") if job else None,
+                "active_refresh_job_updated_at": job.get("updated_at") if job else None,
+                "active_refresh_job_error": job.get("error") if job else None,
+                "next_run_utc": None,
+                "next_run_local": None,
+            }
+        )
 
     items.sort(
         key=lambda row: (
+            0 if row.get("coaching_enabled") else 1,
             str(row.get("status") or ""),
-            str(row.get("next_run_utc") or "9999-12-31T23:59:59+00:00"),
+            str(row.get("user_name") or "~").lower(),
             int(row.get("user_id") or 0),
-            str(row.get("day_key") or ""),
         )
     )
 
     return {
+        "mode": "tracker_driven",
+        "retired": True,
         "items": items,
         "summary": {
             "users": len({int(r.get("user_id") or 0) for r in items if r.get("user_id") is not None}),
             "enabled_users": int(enabled_users),
             "rows": len(items),
-            "scheduled_rows": int(scheduled_rows),
-            "missing_rows": int(missing_rows),
+            "scheduled_rows": 0,
+            "missing_rows": 0,
+            "tracker_entries_today": int(tracker_entries_today),
+            "queued_refresh_jobs": int(active_jobs),
         },
     }
+
 
 @admin.post("/prompts/settings")
 def admin_prompt_settings_update(
@@ -17615,69 +16907,26 @@ def admin_sync_twilio_templates(admin_user: User = Depends(_require_admin)):
 
 @admin.get("/messaging/schedule")
 def admin_get_global_schedule(admin_user: User = Depends(_require_admin)):
-    try:
-        scheduler.ensure_global_schedule_defaults()
-    except Exception:
-        pass
-    with SessionLocal() as s:
-        rows = s.query(GlobalPromptSchedule).order_by(GlobalPromptSchedule.day_key.asc()).all()
-    items = []
-    for row in rows:
-        items.append(
-            {
-                "id": row.id,
-                "day_key": row.day_key,
-                "time_local": row.time_local,
-                "enabled": bool(row.enabled),
-                "updated_at": row.updated_at.isoformat() if row.updated_at else None,
-            }
-        )
-    return {"items": items}
+    return {
+        "items": [],
+        "mode": "tracker_driven",
+        "retired": True,
+        "message": "Global weekday prompt schedules are retired. Gia updates from daily records and coach-home tracker refreshes.",
+    }
 
 
 @admin.post("/messaging/schedule")
 def admin_update_global_schedule(payload: dict, admin_user: User = Depends(_require_admin)):
-    items = payload.get("items") if isinstance(payload, dict) else None
-    if not items:
-        raise HTTPException(status_code=400, detail="items required")
-    valid_days = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
-    with SessionLocal() as s:
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            day_key = (item.get("day_key") or "").strip().lower()
-            if day_key not in valid_days:
-                continue
-            row = (
-                s.query(GlobalPromptSchedule)
-                .filter(GlobalPromptSchedule.day_key == day_key)
-                .first()
-            )
-            if not row:
-                row = GlobalPromptSchedule(day_key=day_key)
-            if "time_local" in item:
-                time_val = (item.get("time_local") or "").strip()
-                if time_val:
-                    try:
-                        hh, mm = time_val.split(":")
-                        hh_i = int(hh); mm_i = int(mm)
-                        if not (0 <= hh_i <= 23 and 0 <= mm_i <= 59):
-                            raise ValueError()
-                        time_val = f"{hh_i:02d}:{mm_i:02d}"
-                    except Exception:
-                        raise HTTPException(status_code=400, detail=f"invalid time for {day_key}: {time_val}")
-                    row.time_local = time_val
-                else:
-                    row.time_local = None
-            if "enabled" in item:
-                row.enabled = bool(item.get("enabled"))
-            s.add(row)
-        s.commit()
     try:
         scheduler.schedule_auto_daily_prompts()
     except Exception:
         pass
-    return {"ok": True}
+    return {
+        "ok": True,
+        "mode": "tracker_driven",
+        "retired": True,
+        "message": "Global weekday prompt schedules are retired; legacy jobs were cleared.",
+    }
 
 
 @admin.get("/content/settings")
@@ -21253,7 +20502,6 @@ def admin_list_users(
         active_users: set[int] = set()
         prompt_overrides: dict[int, str] = {}
         coaching_pref: dict[int, tuple[datetime | None, str]] = {}
-        coaching_fast_minutes: dict[int, int] = {}
         last_template_sent: dict[int, datetime | None] = {}
         if user_ids:
             run_rows = s.execute(
@@ -21292,14 +20540,6 @@ def admin_list_users(
                     UserPreference.key.in_(("coaching", "auto_daily_prompts")),
                 )
             ).all()
-            fast_rows = s.execute(
-                select(UserPreference.user_id, UserPreference.value, UserPreference.updated_at)
-                .where(
-                    UserPreference.user_id.in_(user_ids),
-                    UserPreference.key == "coaching_fast_minutes",
-                )
-                .order_by(UserPreference.user_id.asc(), UserPreference.updated_at.desc())
-            ).all()
             for uid, val, updated_at in coaching_rows:
                 if not uid:
                     continue
@@ -21307,18 +20547,6 @@ def admin_list_users(
                 if existing and existing[0] and updated_at and updated_at <= existing[0]:
                     continue
                 coaching_pref[int(uid)] = (updated_at, str(val or ""))
-            for uid, val, _updated_at in fast_rows:
-                if not uid:
-                    continue
-                uid_i = int(uid)
-                if uid_i in coaching_fast_minutes:
-                    continue
-                try:
-                    parsed = int(str(val or "").strip())
-                    if parsed > 0:
-                        coaching_fast_minutes[uid_i] = parsed
-                except Exception:
-                    continue
             template_rows = s.execute(
                 select(UsageEvent.user_id, func.max(UsageEvent.created_at))
                 .where(
@@ -21332,34 +20560,6 @@ def admin_list_users(
             last_template_sent = {int(uid): ts for uid, ts in template_rows if uid}
 
     next_scheduled_map: dict[int, datetime] = {}
-    if user_id_set:
-        try:
-            scheduler.ensure_apscheduler_tables()
-            for job in scheduler.scheduler.get_jobs():
-                job_id = str(getattr(job, "id", "") or "")
-                uid = None
-                m_day = re.match(
-                    r"^auto_prompt_(monday|tuesday|wednesday|thursday|friday|saturday|sunday)_(\d+)$",
-                    job_id,
-                )
-                if m_day:
-                    uid = int(m_day.group(2))
-                else:
-                    m_first_day = re.match(r"^auto_prompt_first_day_catchup_(\d+)$", job_id)
-                    if m_first_day:
-                        uid = int(m_first_day.group(1))
-                if uid is None:
-                    continue
-                if uid not in user_id_set:
-                    continue
-                next_run = getattr(job, "next_run_time", None)
-                if not isinstance(next_run, datetime):
-                    continue
-                current = next_scheduled_map.get(uid)
-                if current is None or next_run < current:
-                    next_scheduled_map[uid] = next_run
-        except Exception:
-            next_scheduled_map = {}
 
     payload = []
     for u in users:
@@ -21404,7 +20604,6 @@ def admin_list_users(
                 "admin_role": getattr(u, "admin_role", None),
                 "prompt_state_override": prompt_overrides.get(u.id, ""),
                 "coaching_enabled": (coaching_pref.get(u.id, (None, "0"))[1].strip() == "1"),
-                "coaching_fast_minutes": coaching_fast_minutes.get(u.id),
             }
         )
 

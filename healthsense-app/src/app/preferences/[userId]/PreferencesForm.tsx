@@ -9,20 +9,9 @@ type PreferencesFormProps = {
   initialEmail?: string;
   initialNote?: string;
   initialVoice?: string;
-  initialSchedule?: Record<string, string>;
   initialTextScale?: string;
   initialTheme?: string;
   initialTrainingObjective?: string;
-};
-
-const DAYS = ["monday", "tuesday", "wednesday", "thursday", "friday", "sunday"];
-const DEFAULT_TIMES: Record<string, string> = {
-  sunday: "18:00",
-  monday: "08:00",
-  tuesday: "19:00",
-  wednesday: "08:00",
-  thursday: "19:00",
-  friday: "08:00",
 };
 
 export default function PreferencesForm({
@@ -30,7 +19,6 @@ export default function PreferencesForm({
   initialEmail = "",
   initialNote = "",
   initialVoice = "",
-  initialSchedule = {},
   initialTextScale = DEFAULT_TEXT_SCALE_STRING,
   initialTheme = "dark",
   initialTrainingObjective = "",
@@ -44,13 +32,6 @@ export default function PreferencesForm({
   const [changePassword, setChangePassword] = useState(false);
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
-  const [schedule, setSchedule] = useState<Record<string, string>>(() => {
-    const next: Record<string, string> = {};
-    DAYS.forEach((day) => {
-      next[day] = initialSchedule[day] || DEFAULT_TIMES[day] || "";
-    });
-    return next;
-  });
   const [status, setStatus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -75,7 +56,6 @@ export default function PreferencesForm({
         email,
         note,
         voice: voice || "",
-        schedule,
         text_scale: textScale,
         theme,
         training_objective: trainingObjective,
@@ -243,23 +223,6 @@ export default function PreferencesForm({
           disabled={!changePassword}
         />
         <p className="mt-2 text-xs text-[#6b6257]">Minimum 8 characters.</p>
-      </div>
-
-      <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
-        <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Prompt times (24h)</label>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          {DAYS.map((day) => (
-            <div key={day} className="flex items-center justify-between gap-3">
-              <span className="text-sm text-[#3c332b]">{day}</span>
-              <input
-                type="time"
-                className="w-28 rounded-lg border border-[#efe7db] px-2 py-1 text-sm"
-                value={schedule[day] || ""}
-                onChange={(e) => setSchedule((prev) => ({ ...prev, [day]: e.target.value }))}
-              />
-            </div>
-          ))}
-        </div>
       </div>
 
       <div className="flex items-center gap-3">

@@ -19,9 +19,6 @@ def _note_key() -> str:
 def _voice_key() -> str:
     return "tts_voice_pref"
 
-def _time_key(day: str) -> str:
-    return f"coach_schedule_{day.lower()}"
-
 
 def _get_note(session, user_id: int) -> str:
     pref = (
@@ -76,7 +73,6 @@ def handle(user: User, body: str) -> None:
     - "coachmycoach" -> show current note/voice and instructions
     - "coachmycoach clear" -> remove note
     - "coachmycoach male|female" -> set podcast voice preference
-    - "coachmycoach time <day> <HH:MM>" -> set daily prompt time for that day
     - "coachmycoach <note>" -> save note
     """
     parts = body.split(maxsplit=1)
@@ -109,55 +105,6 @@ def handle(user: User, body: str) -> None:
                     source="coachmycoach",
                 )
                 return
-            if low.startswith("time "):
-                # Format: coachmycoach time <day> <HH:MM>
-                tokens = low.split()
-                if len(tokens) != 3:
-                    send_coaching_text(
-                        user=user,
-                        text="Usage: coachmycoach time <day> <HH:MM> (e.g., coachmycoach time monday 08:00)",
-                        source="coachmycoach",
-                    )
-                    return
-                _, day, hhmm = tokens
-                day = day.lower()
-                valid_days = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"}
-                if day not in valid_days:
-                    send_coaching_text(
-                        user=user,
-                        text=f"Day must be one of: {', '.join(sorted(valid_days))}",
-                        source="coachmycoach",
-                    )
-                    return
-                try:
-                    hh, mm = hhmm.split(":")
-                    hh_int = int(hh); mm_int = int(mm)
-                    if not (0 <= hh_int <= 23 and 0 <= mm_int <= 59):
-                        raise ValueError()
-                except Exception:
-                    send_coaching_text(
-                        user=user,
-                        text="Time must be HH:MM in 24h format (e.g., 08:00 or 19:00).",
-                        source="coachmycoach",
-                    )
-                    return
-                pref = (
-                    s.query(UserPreference)
-                    .filter(UserPreference.user_id == user.id, UserPreference.key == _time_key(day))
-                    .one_or_none()
-                )
-                val = f"{hh_int:02d}:{mm_int:02d}"
-                if pref:
-                    pref.value = val
-                else:
-                    s.add(UserPreference(user_id=user.id, key=_time_key(day), value=val))
-                s.commit()
-                send_coaching_text(
-                    user=user,
-                    text=f"Set your {day.title()} prompt time to {val} (24h).",
-                    source="coachmycoach",
-                )
-                return
             _set_note(s, user.id, arg)
             s.commit()
             send_coaching_text(
@@ -181,22 +128,8 @@ def handle(user: User, body: str) -> None:
         reply += f"\n\nVoice preference: {vp}"
         auto_status = _auto_prompt_status(s, user.id)
         reply += f"\nCoaching: {auto_status}"
-        # Show any custom prompt times
-        times = {}
-        for d in ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"):
-            pref = (
-                s.query(UserPreference)
-                .filter(UserPreference.user_id == user.id, UserPreference.key == _time_key(d))
-                .one_or_none()
-            )
-            if pref and pref.value:
-                times[d] = pref.value
-        if times:
-            pretty = ", ".join(f"{d.title()}: {t}" for d, t in sorted(times.items()))
-            reply += f"\n\nCustom prompt times: {pretty}"
         reply += (
             "\n\nSend 'coachmycoach <note>' to set a note, 'coachmycoach clear' to remove it, "
-            "'coachmycoach male' / 'coachmycoach female' for voice, or "
-            "'coachmycoach time <day> <HH:MM>' to set a daily prompt time. Auto prompts can be turned on/off by your coach."
+            "or 'coachmycoach male' / 'coachmycoach female' for voice."
         )
         send_coaching_text(user=user, text=reply, source="coachmycoach")

@@ -56,7 +56,6 @@ export default async function PreferencesPage(props: PageProps) {
               initialEmail={user.email || ""}
               initialNote={prefs.note || ""}
               initialVoice={prefs.voice || ""}
-              initialSchedule={prefs.schedule || {}}
               initialTextScale={prefs.text_scale || DEFAULT_TEXT_SCALE_STRING}
               initialTheme={themePreference}
               initialTrainingObjective={prefs.training_objective || ""}

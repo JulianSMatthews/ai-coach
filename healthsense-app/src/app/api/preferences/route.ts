@@ -40,7 +40,6 @@ export async function POST(request: Request) {
       note: body.note ?? undefined,
       voice: body.voice ?? undefined,
       auto_prompts: body.auto_prompts ?? undefined,
-      schedule: body.schedule ?? undefined,
       text_scale: body.text_scale ?? undefined,
       theme: body.theme ?? undefined,
       training_objective: body.training_objective ?? undefined,
