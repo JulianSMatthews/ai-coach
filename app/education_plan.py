@@ -908,6 +908,68 @@ def _programme_avatar_variant_rows(session, programme_id: int) -> list[tuple[Edu
     )
 
 
+def _wait_and_cache_education_avatar_job(
+    session,
+    row: EducationLessonVariant,
+    *,
+    job_id: str,
+    avatar_input: dict[str, Any],
+    status_fallback: str = "Running",
+    summary_url: str | None = None,
+) -> tuple[dict[str, Any], str, str | None]:
+    latest = wait_for_batch_avatar(job_id)
+    latest_status = str(latest.get("status") or "").strip() or status_fallback or "Running"
+    latest_outputs = latest.get("outputs") if isinstance(latest.get("outputs"), dict) else {}
+    latest_summary_url = str((latest_outputs or {}).get("summary") or summary_url or "").strip() or None
+    result_url = str((latest_outputs or {}).get("result") or "").strip() or None
+    common = {
+        "title": str(avatar_input.get("title") or "Education lesson"),
+        "script": str(avatar_input.get("script") or "").strip(),
+        "poster_url": str(avatar_input.get("poster_url") or "").strip() or None,
+        "character": str(avatar_input.get("character") or ""),
+        "style": str(avatar_input.get("style") or ""),
+        "voice": str(avatar_input.get("voice") or ""),
+        "job_id": job_id,
+        "summary_url": latest_summary_url,
+    }
+    if latest_status.lower() == "succeeded" and result_url:
+        avatar = _save_education_avatar_generation_result(
+            session,
+            row=row,
+            status=latest_status,
+            error=None,
+            video_bytes=download_batch_avatar_output(result_url),
+            response_payload=latest,
+            **common,
+        )
+        return avatar, "ready", None
+    if bool(latest.get("_timed_out")):
+        avatar = _save_education_avatar_generation_result(
+            session,
+            row=row,
+            status=latest_status,
+            error=None,
+            response_payload=latest,
+            **common,
+        )
+        return avatar, "pending", "Avatar job is still running after the wait timeout."
+    error_detail = "Azure avatar generation failed."
+    props = latest.get("properties") if isinstance(latest.get("properties"), dict) else {}
+    if isinstance(props, dict):
+        error_detail = str(props.get("error") or error_detail).strip() or error_detail
+    if latest.get("error"):
+        error_detail = str(latest.get("error") or error_detail).strip() or error_detail
+    avatar = _save_education_avatar_generation_result(
+        session,
+        row=row,
+        status=latest_status,
+        error=error_detail,
+        response_payload=latest,
+        **common,
+    )
+    return avatar, "error", error_detail
+
+
 def _education_avatar_programme_ids(*, active_only: bool = True) -> list[int]:
     with SessionLocal() as session:
         stmt = select(EducationProgramme.id).order_by(EducationProgramme.updated_at.desc(), EducationProgramme.id.desc())
@@ -1029,6 +1091,11 @@ def generate_education_programme_avatar_videos(
                     item.update({"status": "error", "reason": str(exc), "job_id": job_id or None})
                 items.append(item)
                 continue
+            if generation_halted_reason:
+                item.update({"status": "deferred", "reason": generation_halted_reason})
+                counts["deferred"] += 1
+                items.append(item)
+                continue
             if (
                 not regenerate
                 and job_id
@@ -1036,21 +1103,60 @@ def generate_education_programme_avatar_videos(
                 and not _avatar_job_is_stale(row)
             ):
                 try:
-                    refreshed = _refresh_lesson_variant_avatar_media(session, row, raise_errors=True) or row
-                    avatar = education_lesson_avatar_payload(refreshed) or {}
-                    if _lesson_variant_video_url(refreshed):
-                        item.update({"status": "ready", "avatar_status": avatar.get("status"), "video_url": avatar.get("url")})
-                        counts["ready"] += 1
-                    else:
-                        item.update(
-                            {
-                                "status": "pending",
-                                "avatar_status": avatar.get("status"),
-                                "reason": avatar.get("error") or "Avatar job already pending.",
-                                "job_id": avatar.get("job_id") or job_id,
-                            }
+                    if wait_for_completion:
+                        avatar_input = _education_avatar_input_payload(row)
+                        avatar, wait_status, wait_reason = _wait_and_cache_education_avatar_job(
+                            session,
+                            row,
+                            job_id=job_id,
+                            avatar_input=avatar_input,
+                            status_fallback=str(getattr(row, "avatar_status", "") or "Running"),
                         )
-                        counts["pending"] += 1
+                        refreshed = session.get(EducationLessonVariant, int(getattr(row, "id", 0) or 0)) or row
+                        if wait_status == "ready" and _lesson_variant_video_url(refreshed):
+                            item.update({"status": "ready", "avatar_status": avatar.get("status"), "video_url": avatar.get("url"), "job_id": job_id})
+                            counts["ready"] += 1
+                        elif wait_status == "pending":
+                            item.update(
+                                {
+                                    "status": "pending",
+                                    "avatar_status": avatar.get("status"),
+                                    "reason": wait_reason or "Avatar job is still pending.",
+                                    "job_id": job_id,
+                                }
+                            )
+                            counts["pending"] += 1
+                            generation_halted_reason = (
+                                "Previous avatar job is still running; refresh pending videos later before starting another."
+                            )
+                        else:
+                            reason = wait_reason or avatar.get("error") or "Avatar job failed."
+                            if stop_on_quota and _avatar_generation_quota_error(RuntimeError(str(reason))):
+                                quota_limited = True
+                                generation_halted_reason = (
+                                    "Azure avatar job quota or rate limit reached; refresh pending videos later, then run generation again."
+                                )
+                                item.update({"status": "deferred", "avatar_status": avatar.get("status"), "reason": generation_halted_reason, "job_id": job_id})
+                                counts["deferred"] += 1
+                            else:
+                                item.update({"status": "error", "avatar_status": avatar.get("status"), "reason": reason, "job_id": job_id})
+                                counts["errors"] += 1
+                    else:
+                        refreshed = _refresh_lesson_variant_avatar_media(session, row, raise_errors=True) or row
+                        avatar = education_lesson_avatar_payload(refreshed) or {}
+                        if _lesson_variant_video_url(refreshed):
+                            item.update({"status": "ready", "avatar_status": avatar.get("status"), "video_url": avatar.get("url")})
+                            counts["ready"] += 1
+                        else:
+                            item.update(
+                                {
+                                    "status": "pending",
+                                    "avatar_status": avatar.get("status"),
+                                    "reason": avatar.get("error") or "Avatar job already pending.",
+                                    "job_id": avatar.get("job_id") or job_id,
+                                }
+                            )
+                            counts["pending"] += 1
                 except Exception as exc:
                     counts["errors"] += 1
                     item.update({"status": "error", "reason": str(exc), "job_id": job_id})
@@ -1120,60 +1226,25 @@ def generate_education_programme_avatar_videos(
                     response_payload=result,
                 )
                 if wait_for_completion:
-                    latest = wait_for_batch_avatar(new_job_id)
-                    latest_status = str(latest.get("status") or "").strip() or status
-                    latest_outputs = latest.get("outputs") if isinstance(latest.get("outputs"), dict) else {}
-                    latest_summary_url = str((latest_outputs or {}).get("summary") or summary_url or "").strip() or None
-                    result_url = str((latest_outputs or {}).get("result") or "").strip() or None
-                    if latest_status.lower() == "succeeded" and result_url:
-                        avatar = _save_education_avatar_generation_result(
-                            session,
-                            row=row,
-                            title=str(avatar_input.get("title") or "Education lesson"),
-                            script=script,
-                            poster_url=str(avatar_input.get("poster_url") or "").strip() or None,
-                            character=str(avatar_input.get("character") or ""),
-                            style=str(avatar_input.get("style") or ""),
-                            voice=str(avatar_input.get("voice") or ""),
-                            status=latest_status,
-                            job_id=new_job_id,
-                            error=None,
-                            summary_url=latest_summary_url,
-                            video_bytes=download_batch_avatar_output(result_url),
-                            response_payload=latest,
-                        )
-                        item.update(
-                            {
-                                "status": "ready",
-                                "avatar_status": avatar.get("status") or latest_status,
-                                "job_id": new_job_id,
-                                "video_url": avatar.get("url"),
-                            }
-                        )
+                    avatar, wait_status, wait_reason = _wait_and_cache_education_avatar_job(
+                        session,
+                        row,
+                        job_id=new_job_id,
+                        avatar_input=avatar_input,
+                        status_fallback=status,
+                        summary_url=summary_url,
+                    )
+                    if wait_status == "ready":
+                        item.update({"status": "ready", "avatar_status": avatar.get("status"), "video_url": avatar.get("url")})
                         counts["ready"] += 1
                         counts["completed"] += 1
-                    elif bool(latest.get("_timed_out")):
-                        avatar = _save_education_avatar_generation_result(
-                            session,
-                            row=row,
-                            title=str(avatar_input.get("title") or "Education lesson"),
-                            script=script,
-                            poster_url=str(avatar_input.get("poster_url") or "").strip() or None,
-                            character=str(avatar_input.get("character") or ""),
-                            style=str(avatar_input.get("style") or ""),
-                            voice=str(avatar_input.get("voice") or ""),
-                            status=latest_status,
-                            job_id=new_job_id,
-                            error=None,
-                            summary_url=latest_summary_url,
-                            response_payload=latest,
-                        )
+                    elif wait_status == "pending":
                         item.update(
                             {
                                 "status": "pending",
-                                "avatar_status": avatar.get("status") or latest_status,
+                                "avatar_status": avatar.get("status"),
                                 "job_id": new_job_id,
-                                "reason": "Avatar job is still running after the wait timeout.",
+                                "reason": wait_reason or "Avatar job is still running after the wait timeout.",
                             }
                         )
                         counts["pending"] += 1
@@ -1181,27 +1252,17 @@ def generate_education_programme_avatar_videos(
                             "Previous avatar job is still running; refresh pending videos later before starting another."
                         )
                     else:
-                        error_detail = "Azure avatar generation failed."
-                        props = latest.get("properties") if isinstance(latest.get("properties"), dict) else {}
-                        if isinstance(props, dict):
-                            error_detail = str(props.get("error") or error_detail).strip() or error_detail
-                        avatar = _save_education_avatar_generation_result(
-                            session,
-                            row=row,
-                            title=str(avatar_input.get("title") or "Education lesson"),
-                            script=script,
-                            poster_url=str(avatar_input.get("poster_url") or "").strip() or None,
-                            character=str(avatar_input.get("character") or ""),
-                            style=str(avatar_input.get("style") or ""),
-                            voice=str(avatar_input.get("voice") or ""),
-                            status=latest_status,
-                            job_id=new_job_id,
-                            error=error_detail,
-                            summary_url=latest_summary_url,
-                            response_payload=latest,
-                        )
-                        item.update({"status": "error", "avatar_status": avatar.get("status") or latest_status, "job_id": new_job_id, "reason": error_detail})
-                        counts["errors"] += 1
+                        reason = wait_reason or avatar.get("error") or "Avatar job failed."
+                        if stop_on_quota and _avatar_generation_quota_error(RuntimeError(str(reason))):
+                            quota_limited = True
+                            generation_halted_reason = (
+                                "Azure avatar job quota or rate limit reached; refresh pending videos later, then run generation again."
+                            )
+                            item.update({"status": "deferred", "avatar_status": avatar.get("status"), "job_id": new_job_id, "reason": generation_halted_reason})
+                            counts["deferred"] += 1
+                        else:
+                            item.update({"status": "error", "avatar_status": avatar.get("status"), "job_id": new_job_id, "reason": reason})
+                            counts["errors"] += 1
                 else:
                     item.update(
                         {

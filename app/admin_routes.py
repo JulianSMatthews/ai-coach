@@ -29,7 +29,7 @@ from .models import (
     PromptTemplateVersionLog,
     UserEducationPlan,
 )
-from .job_queue import ensure_prompt_settings_schema
+from .job_queue import enqueue_job_once, ensure_job_table, ensure_prompt_settings_schema
 from .prompts import (
     RETIRED_PROMPT_TOUCHPOINTS,
     _ensure_llm_prompt_log_schema,
@@ -983,7 +983,7 @@ def _education_avatar_all_result_page(title: str, result: dict) -> HTMLResponse:
     )
     is_generation = "generation" in title.lower()
     note = (
-        "Sequential generation starts one Azure job, waits for it to complete, caches the video, then moves to the next lesson. For web requests, the safe default is one new video per run."
+        "Sequential generation starts one Azure job, waits for it to complete, caches the video, then moves to the next missing lesson."
         if is_generation
         else "Refresh checks pending Azure jobs across active programmes and stores completed videos for Daily Focus."
     )
@@ -1065,6 +1065,25 @@ def _education_avatar_all_result_page(title: str, result: dict) -> HTMLResponse:
         "</div>"
     )
     return _wrap_page(title, body)
+
+
+def _education_avatar_batch_queued_page(job_id: int, *, created: bool, active_only: bool, regenerate: bool) -> HTMLResponse:
+    status = "queued" if created else "already queued or running"
+    scope = "active programmes" if active_only else "all programmes"
+    body = (
+        "<h2>Education Avatar Batch Queued</h2>"
+        f"{_build_version_label()}"
+        "<div class='card'>"
+        f"<p><strong>Job {html.escape(str(job_id))}</strong> is {html.escape(status)}.</p>"
+        f"<p class='help'>The worker will generate missing avatar videos across {html.escape(scope)} one at a time. "
+        "Each video is started, waited for, cached, and then the next missing video is attempted.</p>"
+        f"<p class='help'>Regenerate existing videos: {'yes' if regenerate else 'no'}.</p>"
+        "<div class='stack'>"
+        "<a class='button-link' href='/admin/education-programmes'>Back to education programmes</a>"
+        "</div>"
+        "</div>"
+    )
+    return _wrap_page("Education Avatar Batch Queued", body)
 
 
 def _promote_templates_batch(source_state: str, target_state: str, note: str | None = None) -> int:
@@ -2142,11 +2161,11 @@ def list_education_programmes():
         "<p class='help'>Run avatar video jobs across every active education programme. The safe batch completes one video before starting the next.</p>"
         "<div class='stack'>"
         "<form method='post' action='/admin/education-programmes/avatar/generate-all' "
-        "onsubmit=\"return confirm('Generate the next missing avatar video and wait for it to complete before returning?');\">"
+        "onsubmit=\"return confirm('Generate all missing avatar videos sequentially? This can take a long time because each video must complete before the next starts.');\">"
         "<input type='hidden' name='active_only' value='1' />"
         "<input type='hidden' name='wait_for_completion' value='1' />"
-        "<input type='hidden' name='max_new_jobs' value='1' />"
-        "<button type='submit' class='secondary'>Generate next missing video safely</button>"
+        "<input type='hidden' name='enqueue' value='1' />"
+        "<button type='submit' class='secondary'>Generate all missing videos sequentially</button>"
         "</form>"
         "<form method='post' action='/admin/education-programmes/avatar/refresh-all' "
         "onsubmit=\"return confirm('Refresh all pending avatar jobs for every active education programme?');\">"
@@ -2214,13 +2233,43 @@ def generate_all_education_programme_avatars(
     regenerate: str | None = Form(default=None),
     max_new_jobs: str | None = Form(default=None),
     wait_for_completion: str | None = Form(default=None),
+    enqueue: str | None = Form(default=None),
 ):
+    active_only_flag = _truthy_form_value(active_only)
+    regenerate_flag = _truthy_form_value(regenerate)
+    wait_for_completion_flag = _truthy_form_value(wait_for_completion)
+    max_new_jobs_value = _optional_positive_int(max_new_jobs)
+    if _truthy_form_value(enqueue):
+        ensure_job_table()
+        payload = {
+            "active_only": active_only_flag,
+            "regenerate": regenerate_flag,
+            "max_new_jobs": max_new_jobs_value,
+            "wait_for_completion": True,
+            "trigger": "admin_education_avatar_generate_all",
+        }
+        job_id, created = enqueue_job_once(
+            "education_avatar_generate_all",
+            payload,
+            payload_match={
+                "trigger": "admin_education_avatar_generate_all",
+                "active_only": active_only_flag,
+                "regenerate": regenerate_flag,
+            },
+            running_stale_minutes=240,
+        )
+        return _education_avatar_batch_queued_page(
+            int(job_id),
+            created=bool(created),
+            active_only=active_only_flag,
+            regenerate=regenerate_flag,
+        )
     try:
         result = generate_all_education_programme_avatar_videos(
-            regenerate=_truthy_form_value(regenerate),
-            active_only=_truthy_form_value(active_only),
-            max_new_jobs=_optional_positive_int(max_new_jobs),
-            wait_for_completion=_truthy_form_value(wait_for_completion),
+            regenerate=regenerate_flag,
+            active_only=active_only_flag,
+            max_new_jobs=max_new_jobs_value,
+            wait_for_completion=wait_for_completion_flag,
         )
     except RuntimeError as exc:
         message = str(exc)
