@@ -125,6 +125,15 @@ def _redirect(request: Request, path: str) -> RedirectResponse:
     return RedirectResponse(_href(request, path), status_code=303)
 
 
+def _sms_error_text(error: object) -> str:
+    return str(error or "").strip() or error.__class__.__name__
+
+
+def _sms_error_path(error: object) -> str:
+    message = _sms_error_text(error)
+    return "/admin/sms-diagnostics" + (f"?{urlencode({'error': message})}" if message else "")
+
+
 def _token_input(request: Request) -> str:
     token = request.query_params.get("token")
     return f'<input type="hidden" name="token" value="{_esc(token)}">' if token else ""
@@ -395,6 +404,8 @@ def _member_matches_list_filters(
     has_mobile = bool(member_contact_phone(member))
     has_email = _member_has_email(member)
     latest = latest_survey_for_member(session, int(member.id), flow_key)
+    latest_status = str(getattr(latest, "status", "") or "").strip().lower() if latest is not None else ""
+    was_sent = latest is not None and latest_status != "send_failed"
     if mobile_filter == "present" and not has_mobile:
         return False
     if mobile_filter == "missing" and has_mobile:
@@ -403,9 +414,9 @@ def _member_matches_list_filters(
         return False
     if email_filter == "missing" and has_email:
         return False
-    if sent_filter == "not_sent" and latest is not None:
+    if sent_filter == "not_sent" and was_sent:
         return False
-    if sent_filter == "sent" and latest is None:
+    if sent_filter == "sent" and not was_sent:
         return False
     return True
 
@@ -466,7 +477,10 @@ def _segment_table(
     for member in members:
         flow_survey = latest_survey_for_member(session, int(member.id), default_flow)
         active = active_conversation_for_member(session, int(member.id))
-        if flow_survey is not None:
+        flow_status = str(getattr(flow_survey, "status", "") or "").strip().lower() if flow_survey is not None else ""
+        if flow_survey is not None and flow_status == "send_failed":
+            action = _survey_action(request, member, default_flow)
+        elif flow_survey is not None:
             action = f'<a class="button secondary" href="{_href(request, f"/admin/surveys/{flow_survey.id}")}">Open survey</a>'
         elif active is not None:
             action = '<span class="muted">Survey already active</span>'
@@ -495,6 +509,11 @@ def _segment_survey_status(request: Request, conversation: Conversation | None) 
         return '<span class="pill">Not sent</span>'
     sent = _datetime(conversation.created_at)
     status = str(conversation.status or "").strip().lower()
+    if status == "send_failed":
+        return (
+            f'<a href="{_href(request, "/admin/sms-diagnostics")}"><span class="error">Send failed</span></a>'
+            f'<br><span class="muted">Attempted {sent}. Review SMS diagnostics.</span>'
+        )
     if status == "completed":
         response_status = "Member completed the survey"
     elif status == "active":
@@ -516,21 +535,30 @@ def _send_segment(
     flow_key: str,
     *,
     limit: int,
-) -> int:
+) -> tuple[int, int, str]:
     sent = 0
+    failed = 0
+    first_error = ""
     max_to_send = max(min(int(limit or 0), 500), 1)
     for member in members:
         if sent >= max_to_send:
             break
-        if latest_survey_for_member(session, int(member.id), flow_key):
+        latest = latest_survey_for_member(session, int(member.id), flow_key)
+        if latest is not None and str(latest.status or "").strip().lower() != "send_failed":
             continue
         if not member_contact_phone(member):
             continue
         if active_conversation_for_member(session, int(member.id)):
             continue
-        _start_and_send_survey_link(request, session, member, flow_key)
+        try:
+            _start_and_send_survey_link(request, session, member, flow_key)
+        except Exception as exc:
+            failed += 1
+            if not first_error:
+                first_error = _sms_error_text(exc)
+            break
         sent += 1
-    return sent
+    return sent, failed, first_error
 
 
 def _datetime(value) -> str:
@@ -556,7 +584,13 @@ def _start_and_send_survey_link(
     flow_key: str,
 ) -> Conversation:
     conversation = start_conversation(session, member, flow_key, send_intro=False, commit=False)
-    send_survey_link_to_member(session, member, conversation, _app_survey_url(request, conversation))
+    try:
+        send_survey_link_to_member(session, member, conversation, _app_survey_url(request, conversation))
+    except Exception:
+        conversation.status = "send_failed"
+        session.add(conversation)
+        session.commit()
+        raise
     return conversation
 
 
@@ -1098,7 +1132,7 @@ def _sms_status_hint(status: str | None, raw_payload: object | None) -> str:
         return "Dry run is on, so no SMS was sent to Twilio."
     if value == "failed":
         return f"Send failed before or during Twilio request. {error}".strip()
-    if value in {"undelivered", "failed"}:
+    if value == "undelivered":
         return f"Twilio/carrier did not deliver the message. {error}".strip()
     if value == "delivered":
         return "Delivered according to Twilio status callback."
@@ -1110,7 +1144,12 @@ def _sms_status_hint(status: str | None, raw_payload: object | None) -> str:
 
 
 @router.get("/admin/sms-diagnostics", response_class=HTMLResponse)
-def sms_diagnostics(request: Request, session: Session = Depends(get_session), _: None = Depends(require_admin)):
+def sms_diagnostics(
+    request: Request,
+    error: str = "",
+    session: Session = Depends(get_session),
+    _: None = Depends(require_admin),
+):
     issues = []
     if config.DRY_RUN_MESSAGES:
         issues.append("MEMBERSENSE_DRY_RUN is on, so SMS messages are only printed in logs and are not sent.")
@@ -1195,10 +1234,12 @@ def sms_diagnostics(request: Request, session: Session = Depends(get_session), _
         if issues
         else '<p><span class="pill">No obvious configuration issues found.</span></p>'
     )
+    error_html = f'<p class="error">{_esc(error)}</p>' if str(error or "").strip() else ""
     body = f"""
 <section>
   <h2>SMS Diagnostics</h2>
   <p class="muted">Use this page when a member has not received a survey link. It shows the live SMS configuration and recent Twilio statuses.</p>
+  {error_html}
   {issue_html}
 </section>
 <section>
@@ -1641,7 +1682,10 @@ def start_member_survey(
         raise HTTPException(status_code=404, detail="Member not found")
     if not member_contact_phone(member):
         raise HTTPException(status_code=400, detail="Member does not have a mobile number for SMS")
-    _start_and_send_survey_link(request, session, member, flow_key)
+    try:
+        _start_and_send_survey_link(request, session, member, flow_key)
+    except Exception as exc:
+        return _redirect(request, _sms_error_path(exc))
     return _redirect(request, "/admin/members")
 
 
@@ -1680,6 +1724,10 @@ def inactive(
     sent_new: int | None = None,
     sent_inactive: int | None = None,
     sent_expired: int | None = None,
+    failed_new: int | None = None,
+    failed_inactive: int | None = None,
+    failed_expired: int | None = None,
+    error: str = "",
     session: Session = Depends(get_session),
     _: None = Depends(require_admin),
 ):
@@ -1754,7 +1802,21 @@ def inactive(
         notices.append(f"Inactive surveys sent: {int(sent_inactive)}.")
     if sent_expired is not None:
         notices.append(f"Exit surveys sent: {int(sent_expired)}.")
-    notice_html = f'<section><h2>Batch Result</h2><p>{" ".join(_esc(notice) for notice in notices)}</p></section>' if notices else ""
+    if failed_new is not None:
+        notices.append(f"New member survey failures: {int(failed_new)}.")
+    if failed_inactive is not None:
+        notices.append(f"Inactive survey failures: {int(failed_inactive)}.")
+    if failed_expired is not None:
+        notices.append(f"Exit survey failures: {int(failed_expired)}.")
+    if error:
+        notices.append(f"SMS error: {error}")
+    notice_class = "error" if any(value is not None for value in [failed_new, failed_inactive, failed_expired]) or error else ""
+    notice_attr = f' class="{notice_class}"' if notice_class else ""
+    notice_html = (
+        f'<section><h2>Batch Result</h2><p{notice_attr}>{" ".join(_esc(notice) for notice in notices)}</p></section>'
+        if notices
+        else ""
+    )
 
     base_params = {
         "new_min_days": new_min_days,
@@ -1922,21 +1984,23 @@ def send_new_member_surveys(
         email_filter=email_filter,
         sent_filter=sent_filter,
     )
-    sent = _send_segment(request, session, members, "new_member", limit=requested)
+    sent, failed, error = _send_segment(request, session, members, "new_member", limit=requested)
+    params = {
+        "tab": "new",
+        "new_min_days": min_days,
+        "new_max_days": max_days,
+        "mobile_filter": mobile_filter,
+        "email_filter": email_filter,
+        "sent_filter": sent_filter,
+        "sent_new": sent,
+    }
+    if failed:
+        params["failed_new"] = failed
+    if error:
+        params["error"] = error
     return _redirect(
         request,
-        "/admin/inactive?"
-        + urlencode(
-            {
-                "tab": "new",
-                "new_min_days": min_days,
-                "new_max_days": max_days,
-                "mobile_filter": mobile_filter,
-                "email_filter": email_filter,
-                "sent_filter": sent_filter,
-                "sent_new": sent,
-            }
-        ),
+        "/admin/inactive?" + urlencode(params),
     )
 
 
@@ -1966,21 +2030,23 @@ def send_inactive_surveys(
         email_filter=email_filter,
         sent_filter=sent_filter,
     )
-    sent = _send_segment(request, session, members, "inactive", limit=requested)
+    sent, failed, error = _send_segment(request, session, members, "inactive", limit=requested)
+    params = {
+        "tab": "inactive",
+        "visit_min_days": min_days,
+        "visit_max_days": max_days,
+        "mobile_filter": mobile_filter,
+        "email_filter": email_filter,
+        "sent_filter": sent_filter,
+        "sent_inactive": sent,
+    }
+    if failed:
+        params["failed_inactive"] = failed
+    if error:
+        params["error"] = error
     return _redirect(
         request,
-        "/admin/inactive?"
-        + urlencode(
-            {
-                "tab": "inactive",
-                "visit_min_days": min_days,
-                "visit_max_days": max_days,
-                "mobile_filter": mobile_filter,
-                "email_filter": email_filter,
-                "sent_filter": sent_filter,
-                "sent_inactive": sent,
-            }
-        ),
+        "/admin/inactive?" + urlencode(params),
     )
 
 
@@ -2010,21 +2076,23 @@ def send_expired_surveys(
         email_filter=email_filter,
         sent_filter=sent_filter,
     )
-    sent = _send_segment(request, session, members, "exit", limit=requested)
+    sent, failed, error = _send_segment(request, session, members, "exit", limit=requested)
+    params = {
+        "tab": "expired",
+        "expired_min_days": min_days,
+        "expired_max_days": max_days,
+        "mobile_filter": mobile_filter,
+        "email_filter": email_filter,
+        "sent_filter": sent_filter,
+        "sent_expired": sent,
+    }
+    if failed:
+        params["failed_expired"] = failed
+    if error:
+        params["error"] = error
     return _redirect(
         request,
-        "/admin/inactive?"
-        + urlencode(
-            {
-                "tab": "expired",
-                "expired_min_days": min_days,
-                "expired_max_days": max_days,
-                "mobile_filter": mobile_filter,
-                "email_filter": email_filter,
-                "sent_filter": sent_filter,
-                "sent_expired": sent,
-            }
-        ),
+        "/admin/inactive?" + urlencode(params),
     )
 
 
