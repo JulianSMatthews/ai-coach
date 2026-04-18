@@ -21,12 +21,12 @@ from .auth import (
     staff_from_request,
 )
 from .db import SessionLocal
-from .models import Conversation, Member, StaffTask, StaffUser
+from .models import Conversation, Member, MessageLog, StaffTask, StaffUser
 from .surveys import flow_for_key, question_options
 from .services import (
     active_conversation_for_member,
     continue_app_conversation,
-    current_member_count,
+    current_member_rows,
     days_since,
     ensure_app_link_token,
     expired_member_candidates,
@@ -139,6 +139,7 @@ def _layout(request: Request, title: str, body: str) -> HTMLResponse:
             ("/admin/members", "Members"),
             ("/admin/inactive", "Member lists"),
             ("/admin/reports/visits", "Visit report"),
+            ("/admin/sms-diagnostics", "SMS"),
             ("/admin/tasks", "Tasks"),
             ("/admin/surveys", "Surveys"),
             ("/admin/import", "Import"),
@@ -960,23 +961,181 @@ def logout():
 
 @router.get("/admin", response_class=HTMLResponse)
 def dashboard(request: Request, session: Session = Depends(get_session), _: None = Depends(require_admin)):
-    member_count = session.scalar(select(func.count()).select_from(Member)) or 0
-    active_members = current_member_count(session)
-    open_tasks = session.scalar(select(func.count()).select_from(StaffTask).where(StaffTask.status == "open")) or 0
-    active_conversations = (
-        session.scalar(select(func.count()).select_from(Conversation).where(Conversation.status == "active")) or 0
+    today = date.today()
+    current_members = current_member_rows(session, today=today)
+    current_count = len(current_members)
+    active_cutoff = today - timedelta(days=21)
+    active_21_count = sum(
+        1 for member in current_members if member.last_visit_date is not None and member.last_visit_date >= active_cutoff
     )
+    inactive_21_count = sum(
+        1 for member in current_members if member.last_visit_date is None or member.last_visit_date < active_cutoff
+    )
+    expired_cutoff = today - timedelta(days=30)
+    expired_30_count = (
+        session.scalar(
+            select(func.count())
+            .select_from(Member)
+            .where(
+                Member.expiry_date.is_not(None),
+                Member.expiry_date >= expired_cutoff,
+                Member.expiry_date <= today,
+            )
+        )
+        or 0
+    )
+    open_tasks = session.scalar(select(func.count()).select_from(StaffTask).where(StaffTask.status == "open")) or 0
     body = f"""
 <section>
   <h2>Dashboard</h2>
   <div class="grid">
-    <div class="metric"><strong>{member_count}</strong><span>Total members</span></div>
-    <div class="metric"><strong>{active_members}</strong><span>Current members</span></div>
+    <div class="metric"><strong>{current_count}</strong><span>Current members</span></div>
+    <div class="metric"><strong>{active_21_count}</strong><span>Active members, visited in last 21 days</span></div>
+    <div class="metric"><strong>{inactive_21_count}</strong><span>Inactive over 21 days</span></div>
+    <div class="metric"><strong>{expired_30_count}</strong><span>Expired members in last 30 days</span></div>
     <div class="metric"><strong>{open_tasks}</strong><span>Open staff tasks</span></div>
-    <div class="metric"><strong>{active_conversations}</strong><span>Active surveys</span></div>
   </div>
 </section>"""
     return _layout(request, "Dashboard", body)
+
+
+def _configured(value: object) -> str:
+    return "Configured" if str(value or "").strip() else "Not configured"
+
+
+def _sms_status_hint(status: str | None, raw_payload: object | None) -> str:
+    value = str(status or "").strip().lower()
+    raw = raw_payload if isinstance(raw_payload, dict) else {}
+    error = str(raw.get("error") or raw.get("ErrorMessage") or raw.get("ErrorCode") or "").strip()
+    if value == "dry_run":
+        return "Dry run is on, so no SMS was sent to Twilio."
+    if value == "failed":
+        return f"Send failed before or during Twilio request. {error}".strip()
+    if value in {"undelivered", "failed"}:
+        return f"Twilio/carrier did not deliver the message. {error}".strip()
+    if value == "delivered":
+        return "Delivered according to Twilio status callback."
+    if value in {"accepted", "queued", "sending", "sent"}:
+        return "Twilio accepted the message. Wait for delivered or undelivered status callback."
+    if not value:
+        return "No status recorded yet."
+    return "Review Twilio message logs for this status."
+
+
+@router.get("/admin/sms-diagnostics", response_class=HTMLResponse)
+def sms_diagnostics(request: Request, session: Session = Depends(get_session), _: None = Depends(require_admin)):
+    issues = []
+    if config.DRY_RUN_MESSAGES:
+        issues.append("MEMBERSENSE_DRY_RUN is on, so SMS messages are only printed in logs and are not sent.")
+    if not config.TWILIO_ACCOUNT_SID or not config.TWILIO_AUTH_TOKEN:
+        issues.append("Twilio Account SID or Auth Token is missing.")
+    if not config.TWILIO_FROM and not config.TWILIO_MESSAGING_SERVICE_SID:
+        issues.append("No SMS sender is configured. Set MEMBERSENSE_TWILIO_FROM or MEMBERSENSE_TWILIO_MESSAGING_SERVICE_SID.")
+    if str(config.TWILIO_FROM or "").lower().startswith("whatsapp:"):
+        issues.append("MEMBERSENSE_TWILIO_FROM still has a whatsapp: prefix. Use an SMS number like +447447196400.")
+    if not config.PUBLIC_BASE_URL:
+        issues.append("MEMBERSENSE_PUBLIC_BASE_URL or RENDER_EXTERNAL_URL is missing, so survey links/status callbacks may use the request host.")
+
+    config_rows = [
+        ("Dry run", "On" if config.DRY_RUN_MESSAGES else "Off"),
+        ("Twilio Account SID", _configured(config.TWILIO_ACCOUNT_SID)),
+        ("Twilio Auth Token", _configured(config.TWILIO_AUTH_TOKEN)),
+        ("SMS from number", str(config.TWILIO_FROM or "").strip() or "Not configured"),
+        ("Messaging Service SID", _configured(config.TWILIO_MESSAGING_SERVICE_SID)),
+        ("Public base URL", str(config.PUBLIC_BASE_URL or "").strip() or "Using request host"),
+        (
+            "Status callback",
+            f"{config.TWILIO_STATUS_CALLBACK_BASE.rstrip('/')}/webhooks/twilio-status"
+            if config.TWILIO_STATUS_CALLBACK_BASE
+            else "Not configured",
+        ),
+        ("Inbound webhook", f"{_public_base_url(request)}/webhooks/twilio"),
+    ]
+    config_html = "".join(f"<tr><td>{_esc(label)}</td><td>{_esc(value)}</td></tr>" for label, value in config_rows)
+
+    outbound = (
+        session.execute(
+            select(MessageLog)
+            .where(MessageLog.channel == "sms", MessageLog.direction == "outbound")
+            .order_by(desc(MessageLog.id))
+            .limit(50)
+        )
+        .scalars()
+        .all()
+    )
+    outbound_rows = []
+    for message in outbound:
+        member = session.get(Member, int(message.member_id)) if message.member_id else None
+        raw = message.raw_payload if isinstance(message.raw_payload, dict) else {}
+        error_text = str(raw.get("error") or raw.get("ErrorMessage") or raw.get("ErrorCode") or "").strip()
+        hint = _sms_status_hint(message.status, raw)
+        outbound_rows.append(
+            "<tr>"
+            f"<td>{_esc(_datetime(message.created_at))}</td>"
+            f"<td>{_esc(member_name(member) if member else 'No member')}</td>"
+            f"<td>{_esc(message.phone_e164 or '')}</td>"
+            f"<td><span class=\"pill\">{_esc(message.status or 'unknown')}</span></td>"
+            f"<td>{_esc(message.provider_sid or '')}</td>"
+            f"<td>{_esc((message.body or '')[:160])}</td>"
+            f"<td>{_esc(error_text or hint)}</td>"
+            "</tr>"
+        )
+
+    inbound = (
+        session.execute(
+            select(MessageLog)
+            .where(MessageLog.channel == "sms", MessageLog.direction == "inbound")
+            .order_by(desc(MessageLog.id))
+            .limit(20)
+        )
+        .scalars()
+        .all()
+    )
+    inbound_rows = []
+    for message in inbound:
+        member = session.get(Member, int(message.member_id)) if message.member_id else None
+        inbound_rows.append(
+            "<tr>"
+            f"<td>{_esc(_datetime(message.created_at))}</td>"
+            f"<td>{_esc(member_name(member) if member else 'No member')}</td>"
+            f"<td>{_esc(message.phone_e164 or '')}</td>"
+            f"<td>{_esc((message.body or '')[:180])}</td>"
+            "</tr>"
+        )
+
+    issue_html = (
+        "<ul>" + "".join(f"<li>{_esc(issue)}</li>" for issue in issues) + "</ul>"
+        if issues
+        else '<p><span class="pill">No obvious configuration issues found.</span></p>'
+    )
+    body = f"""
+<section>
+  <h2>SMS Diagnostics</h2>
+  <p class="muted">Use this page when a member has not received a survey link. It shows the live SMS configuration and recent Twilio statuses.</p>
+  {issue_html}
+</section>
+<section>
+  <h2>Configuration</h2>
+  <table>
+    <thead><tr><th>Setting</th><th>Status</th></tr></thead>
+    <tbody>{config_html}</tbody>
+  </table>
+</section>
+<section>
+  <h2>Recent Outbound SMS</h2>
+  <table>
+    <thead><tr><th>Sent</th><th>Member</th><th>To</th><th>Status</th><th>Twilio SID</th><th>Message</th><th>Diagnosis</th></tr></thead>
+    <tbody>{''.join(outbound_rows) or '<tr><td colspan="7">No outbound SMS has been logged yet.</td></tr>'}</tbody>
+  </table>
+</section>
+<section>
+  <h2>Recent Inbound SMS</h2>
+  <table>
+    <thead><tr><th>Received</th><th>Member</th><th>From</th><th>Message</th></tr></thead>
+    <tbody>{''.join(inbound_rows) or '<tr><td colspan="4">No inbound SMS has been logged yet.</td></tr>'}</tbody>
+  </table>
+</section>"""
+    return _layout(request, "SMS Diagnostics", body)
 
 
 @router.get("/admin/staff", response_class=HTMLResponse)
@@ -1101,7 +1260,7 @@ def staff_toggle(
 @router.get("/admin/reports/visits", response_class=HTMLResponse)
 def visit_report(request: Request, session: Session = Depends(get_session), _: None = Depends(require_admin)):
     today = date.today()
-    members = session.execute(select(Member)).scalars().all()
+    members = current_member_rows(session, today=today)
     total = len(members)
 
     rows: list[dict[str, object]] = []
@@ -1167,7 +1326,7 @@ def visit_report(request: Request, session: Session = Depends(get_session), _: N
     <h2>Visit Report</h2>
     <a class="button secondary" href="{_href(request, '/admin/members')}">View members</a>
   </div>
-  <p class="muted">Based on {total} MemberSense members. Report date: {_date(today)}.</p>
+  <p class="muted">Based on {total} current members only. Ex-members are excluded. Report date: {_date(today)}.</p>
   <div class="bar-chart">
     {''.join(chart_rows)}
   </div>

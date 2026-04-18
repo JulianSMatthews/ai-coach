@@ -222,7 +222,21 @@ def send_to_member(
     contact_phone = member_contact_phone(member)
     if not contact_phone:
         raise ValueError("Member does not have a mobile number for SMS")
-    result = send_sms(contact_phone, text)
+    try:
+        result = send_sms(contact_phone, text)
+    except Exception as exc:
+        log_message(
+            session,
+            member=member,
+            conversation=conversation,
+            direction="outbound",
+            channel="sms",
+            body=text,
+            status="failed",
+            raw_payload={"error": str(exc), "type": exc.__class__.__name__},
+        )
+        session.commit()
+        raise
     log_message(
         session,
         member=member,
@@ -402,6 +416,11 @@ def current_member_count(session: Session) -> int:
     return int(
         session.scalar(select(func.count()).select_from(Member).where(*_current_member_filters(date.today()))) or 0
     )
+
+
+def current_member_rows(session: Session, *, today: date | None = None) -> list[Member]:
+    base = today or date.today()
+    return list(session.execute(select(Member).where(*_current_member_filters(base))).scalars().all())
 
 
 def days_since(value: date | None, *, today: date | None = None) -> int | None:
