@@ -22,15 +22,18 @@ from .auth import (
 )
 from .db import SessionLocal
 from .models import Conversation, Member, MessageLog, StaffTask, StaffUser
-from .surveys import flow_for_key, question_options
+from .surveys import SURVEY_FLOWS, flow_for_key, question_options
 from .services import (
     active_conversation_for_member,
     continue_app_conversation,
     current_member_rows,
     days_since,
+    editable_survey_payload,
+    effective_survey_flow,
     ensure_app_link_token,
     expired_member_candidates,
     find_conversation_by_app_token,
+    generate_survey_avatar_video,
     import_members_csv,
     last_visit_range_candidates,
     latest_survey_for_member,
@@ -39,8 +42,11 @@ from .services import (
     member_contact_phone,
     member_name,
     new_member_candidates,
+    refresh_survey_avatar_video,
+    save_survey_config,
     send_survey_link_to_member,
     start_conversation,
+    survey_avatar_defaults,
     survey_intro_for_member,
     survey_options,
     upsert_member,
@@ -151,6 +157,7 @@ def _layout(request: Request, title: str, body: str) -> HTMLResponse:
             ("/admin/sms-diagnostics", "SMS"),
             ("/admin/tasks", "Tasks"),
             ("/admin/surveys", "Surveys"),
+            ("/admin/survey-config", "Survey setup"),
             ("/admin/import", "Import"),
             ("/admin/staff", "Staff"),
         ]
@@ -327,9 +334,9 @@ def _layout(request: Request, title: str, body: str) -> HTMLResponse:
     return HTMLResponse(html)
 
 
-def _survey_select(selected: str = "new_member") -> str:
+def _survey_select(selected: str = "new_member", session: Session | None = None) -> str:
     options = []
-    for option in survey_options():
+    for option in survey_options(session):
         choice = _esc(option["key"])
         label = _esc(option["label"])
         is_selected = " selected" if option["key"] == selected else ""
@@ -337,15 +344,25 @@ def _survey_select(selected: str = "new_member") -> str:
     return '<select name="flow_key">' + "".join(options) + "</select>"
 
 
-def _start_survey_form(request: Request, member_id: int, default_flow: str = "new_member") -> str:
+def _start_survey_form(
+    request: Request,
+    member_id: int,
+    default_flow: str = "new_member",
+    session: Session | None = None,
+) -> str:
     return f"""
 <form method="post" action="{_post_action(request, f'/admin/members/{member_id}/start')}" class="inline">
-  {_survey_select(default_flow)}
+  {_survey_select(default_flow, session)}
   <button type="submit">Send SMS link</button>
 </form>"""
 
 
-def _app_link_form(request: Request, member: Member, default_flow: str = "new_member") -> str:
+def _app_link_form(
+    request: Request,
+    member: Member,
+    default_flow: str = "new_member",
+    session: Session | None = None,
+) -> str:
     email_note = (
         f'<span class="muted">Can send by email to {_esc(member.email)}</span>'
         if str(getattr(member, "email", "") or "").strip()
@@ -353,19 +370,24 @@ def _app_link_form(request: Request, member: Member, default_flow: str = "new_me
     )
     return f"""
 <form method="post" action="{_post_action(request, f'/admin/members/{int(member.id)}/app-link')}" class="inline">
-  {_survey_select(default_flow)}
+  {_survey_select(default_flow, session)}
   <button type="submit" class="secondary">Create app link</button>
   {email_note}
 </form>"""
 
 
-def _survey_action(request: Request, member: Member, default_flow: str = "new_member") -> str:
+def _survey_action(
+    request: Request,
+    member: Member,
+    default_flow: str = "new_member",
+    session: Session | None = None,
+) -> str:
     actions = []
     if member_contact_phone(member):
-        actions.append(_start_survey_form(request, int(member.id), default_flow))
+        actions.append(_start_survey_form(request, int(member.id), default_flow, session))
     else:
         actions.append('<span class="muted">No mobile for SMS</span>')
-    actions.append(_app_link_form(request, member, default_flow))
+    actions.append(_app_link_form(request, member, default_flow, session))
     return '<div class="stack">' + "".join(actions) + "</div>"
 
 
@@ -479,13 +501,13 @@ def _segment_table(
         active = active_conversation_for_member(session, int(member.id))
         flow_status = str(getattr(flow_survey, "status", "") or "").strip().lower() if flow_survey is not None else ""
         if flow_survey is not None and flow_status == "send_failed":
-            action = _survey_action(request, member, default_flow)
+            action = _survey_action(request, member, default_flow, session)
         elif flow_survey is not None:
             action = f'<a class="button secondary" href="{_href(request, f"/admin/surveys/{flow_survey.id}")}">Open survey</a>'
         elif active is not None:
             action = '<span class="muted">Survey already active</span>'
         else:
-            action = _survey_action(request, member, default_flow)
+            action = _survey_action(request, member, default_flow, session)
         member_url = _href(request, f"/admin/members/{member.id}")
         raw_date = getattr(member, date_attr, None)
         age = days_since(raw_date)
@@ -608,21 +630,23 @@ def _survey_mailto(member: Member | None, link: str, label: str) -> str:
     return "mailto:" + email + "?" + urlencode({"subject": subject, "body": body})
 
 
-def _survey_flow(conversation: Conversation):
+def _survey_flow(conversation: Conversation, session: Session | None = None):
     try:
+        if session is not None:
+            return effective_survey_flow(session, conversation.flow_key)
         return flow_for_key(conversation.flow_key)
     except Exception:
         return None
 
 
-def _survey_label(conversation: Conversation) -> str:
-    flow = _survey_flow(conversation)
+def _survey_label(conversation: Conversation, session: Session | None = None) -> str:
+    flow = _survey_flow(conversation, session)
     return flow.label if flow else str(conversation.flow_key or "Survey")
 
 
-def _survey_progress(conversation: Conversation) -> str:
+def _survey_progress(conversation: Conversation, session: Session | None = None) -> str:
     answers = dict(conversation.answers or {})
-    flow = _survey_flow(conversation)
+    flow = _survey_flow(conversation, session)
     if flow:
         answered = sum(1 for question in flow.questions if str(answers.get(question.key) or "").strip())
         return f"{answered}/{len(flow.questions)}"
@@ -640,9 +664,9 @@ def _survey_outcome(conversation: Conversation) -> str:
     return conversation.summary or ""
 
 
-def _survey_answer_rows(conversation: Conversation) -> str:
+def _survey_answer_rows(conversation: Conversation, session: Session | None = None) -> str:
     answers = dict(conversation.answers or {})
-    flow = _survey_flow(conversation)
+    flow = _survey_flow(conversation, session)
     used_keys: set[str] = set()
     rows = []
     if flow:
@@ -680,6 +704,18 @@ def _classification_rows(classification: dict | None) -> str:
             "</tr>"
         )
     return "".join(rows) or '<tr><td colspan="2">No classification yet.</td></tr>'
+
+
+def _survey_avatar_html(flow) -> str:
+    video_url = str(getattr(flow, "avatar_video_url", "") or "").strip()
+    if not video_url:
+        return ""
+    poster_url = str(getattr(flow, "avatar_poster_url", "") or "").strip()
+    poster_attr = f' poster="{_esc(poster_url)}"' if poster_url else ""
+    return f"""
+<div class="avatar-video">
+  <video src="{_esc(video_url)}"{poster_attr} controls playsinline preload="metadata"></video>
+</div>"""
 
 
 def _public_survey_layout(title: str, body: str) -> HTMLResponse:
@@ -748,6 +784,19 @@ def _public_survey_layout(title: str, body: str) -> HTMLResponse:
       background: var(--accent);
       border-radius: 999px;
     }}
+    .avatar-video {{
+      margin: 18px 0;
+      overflow: hidden;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #111;
+    }}
+    .avatar-video video {{
+      display: block;
+      width: 100%;
+      max-height: 420px;
+      object-fit: cover;
+    }}
     form {{ display: grid; gap: 12px; margin-top: 22px; }}
     label.option {{
       display: flex;
@@ -797,11 +846,12 @@ def _public_survey_layout(title: str, body: str) -> HTMLResponse:
 def _public_survey_response(
     conversation: Conversation,
     member: Member | None,
+    session: Session,
     error: str = "",
     *,
     show_intro: bool = False,
 ) -> HTMLResponse:
-    flow = _survey_flow(conversation)
+    flow = _survey_flow(conversation, session)
     if flow is None:
         raise HTTPException(status_code=404, detail="Survey not found")
     answers = dict(conversation.answers or {})
@@ -812,6 +862,7 @@ def _public_survey_response(
         body = f"""
 <p class="eyebrow">{_esc(config.GYM_NAME)}</p>
 <h1>Thanks, {_esc(member_name(member))}</h1>
+{_survey_avatar_html(flow)}
 <p class="muted">{_esc(flow.completion)}</p>
 <div class="progress"><span style="width: 100%"></span></div>
 <p>Your answers have been recorded.</p>"""
@@ -833,6 +884,7 @@ def _public_survey_response(
         body = f"""
 <p class="eyebrow">{_esc(config.GYM_NAME)}</p>
 <h1>{_esc(greeting)}</h1>
+{_survey_avatar_html(flow)}
 <p class="muted">{_esc(intro)}</p>
 <div class="progress"><span style="width: 0%"></span></div>
 <form method="get">
@@ -870,7 +922,7 @@ def public_survey(token: str, start: str = "", session: Session = Depends(get_se
     if conversation is None:
         raise HTTPException(status_code=404, detail="Survey not found")
     member = session.get(Member, conversation.member_id)
-    return _public_survey_response(conversation, member, show_intro=not str(start or "").strip())
+    return _public_survey_response(conversation, member, session, show_intro=not str(start or "").strip())
 
 
 @router.post("/s/{token}", response_class=HTMLResponse)
@@ -888,9 +940,9 @@ def public_survey_submit(
     try:
         continue_app_conversation(session, member, conversation, answer)
     except ValueError as exc:
-        return _public_survey_response(conversation, member, str(exc))
+        return _public_survey_response(conversation, member, session, str(exc))
     session.refresh(conversation)
-    return _public_survey_response(conversation, member)
+    return _public_survey_response(conversation, member, session)
 
 
 def _auth_layout(title: str, body: str) -> HTMLResponse:
@@ -1509,7 +1561,7 @@ def members(
             f"<td>{_esc(_date(member.last_visit_date))}</td>"
             f"<td>{_esc(_date(member.expiry_date))}</td>"
             f"<td>{active_text}</td>"
-            f"<td>{_survey_action(request, member)}</td>"
+            f"<td>{_survey_action(request, member, session=session)}</td>"
             "</tr>"
         )
     token_input = (
@@ -1581,9 +1633,9 @@ def member_detail(
     for row in conversations:
         conversation_rows.append(
             "<tr>"
-            f"<td><a href=\"{_href(request, f'/admin/surveys/{row.id}')}\">{_esc(_survey_label(row))}</a></td>"
+            f"<td><a href=\"{_href(request, f'/admin/surveys/{row.id}')}\">{_esc(_survey_label(row, session))}</a></td>"
             f"<td><span class=\"pill\">{_esc(row.status)}</span></td>"
-            f"<td>{_esc(_survey_progress(row))}</td>"
+            f"<td>{_esc(_survey_progress(row, session))}</td>"
             f"<td>{_esc(_datetime(row.created_at))}</td>"
             f"<td><a class=\"button secondary\" href=\"{_href(request, f'/admin/surveys/{row.id}')}\">Open survey</a></td>"
             "</tr>"
@@ -1615,7 +1667,7 @@ def member_detail(
     <div><strong>Source</strong><br>{_esc(member.source or '')}</div>
   </div>
   <h3>Send Survey</h3>
-  {_survey_action(request, member)}
+  {_survey_action(request, member, session=session)}
 </section>
 <section>
   <h2>Surveys</h2>
@@ -2218,6 +2270,206 @@ def complete_task(
     return _redirect(request, "/admin/tasks")
 
 
+def _survey_config_notice(saved: int | None, generated: int | None, refreshed: int | None, error: str) -> str:
+    parts = []
+    if saved is not None:
+        parts.append("Survey setup saved.")
+    if generated is not None:
+        parts.append("Avatar generation requested.")
+    if refreshed is not None:
+        parts.append("Avatar status refreshed.")
+    if error:
+        parts.append(str(error))
+    if not parts:
+        return ""
+    notice_class = "error" if error else "pill"
+    return f'<p><span class="{notice_class}">{_esc(" ".join(parts))}</span></p>'
+
+
+def _survey_config_questions_from_form(form, flow_key: str) -> list[dict[str, str]]:
+    flow = flow_for_key(flow_key)
+    questions = []
+    for question in flow.questions:
+        questions.append(
+            {
+                "key": question.key,
+                "text": str(form.get(f"question_text_{question.key}") or "").strip(),
+                "helper": str(form.get(f"question_helper_{question.key}") or "").strip(),
+                "options": str(form.get(f"question_options_{question.key}") or "").strip(),
+            }
+        )
+    return questions
+
+
+def _survey_config_path(flow_key: str, **params: object) -> str:
+    query = {key: value for key, value in params.items() if value is not None and str(value) != ""}
+    suffix = f"?{urlencode(query)}" if query else ""
+    return f"/admin/survey-config/{flow_key}{suffix}"
+
+
+@router.get("/admin/survey-config", response_class=HTMLResponse)
+def survey_config_index(
+    request: Request,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_admin),
+):
+    rows = []
+    for key in SURVEY_FLOWS:
+        flow = effective_survey_flow(session, key)
+        avatar_state = str(flow.avatar_status or "").strip()
+        if flow.avatar_video_url:
+            avatar_state = avatar_state or "video ready"
+        else:
+            avatar_state = avatar_state or "not configured"
+        rows.append(
+            "<tr>"
+            f"<td>{_esc(flow.label)}<br><span class=\"muted\">{_esc(key)}</span></td>"
+            f"<td>{len(flow.questions)}</td>"
+            f"<td><span class=\"pill\">{_esc(avatar_state)}</span></td>"
+            f"<td><a class=\"button secondary\" href=\"{_href(request, f'/admin/survey-config/{key}')}\">Configure</a></td>"
+            "</tr>"
+        )
+    body = f"""
+<section>
+  <h2>Survey Setup</h2>
+  <p class="muted">Edit the text, multiple-choice answers, intro and completion message for each survey. Avatar videos use the same Azure avatar defaults as HealthSense when generation is enabled.</p>
+  <table>
+    <thead><tr><th>Survey</th><th>Questions</th><th>Avatar</th><th>Action</th></tr></thead>
+    <tbody>{''.join(rows)}</tbody>
+  </table>
+</section>"""
+    return _layout(request, "Survey Setup", body)
+
+
+@router.get("/admin/survey-config/{flow_key}", response_class=HTMLResponse)
+def survey_config_edit(
+    request: Request,
+    flow_key: str,
+    saved: int | None = None,
+    generated: int | None = None,
+    refreshed: int | None = None,
+    error: str = "",
+    session: Session = Depends(get_session),
+    _: None = Depends(require_admin),
+):
+    if str(flow_key or "").strip().lower() not in SURVEY_FLOWS:
+        raise HTTPException(status_code=404, detail="Survey setup not found")
+    payload = editable_survey_payload(session, flow_key)
+    flow = effective_survey_flow(session, flow_key)
+    defaults = survey_avatar_defaults()
+    notice_html = _survey_config_notice(saved, generated, refreshed, error)
+    question_fields = []
+    for index, question in enumerate(flow.questions, start=1):
+        options_text = "\n".join(question.options)
+        question_fields.append(
+            f"""
+<div class="stack" style="border-top: 1px solid var(--line); padding-top: 12px;">
+  <h3>Question {index}</h3>
+  <p class="muted">Key: {_esc(question.key)}</p>
+  <label><span>Question text</span><textarea name="question_text_{_esc(question.key)}">{_esc(question.text)}</textarea></label>
+  <label><span>Answer options, one per line</span><textarea name="question_options_{_esc(question.key)}">{_esc(options_text)}</textarea></label>
+</div>"""
+        )
+    video_url = str(payload.get("avatar_video_url") or "").strip()
+    video_html = (
+        f'<p><a class="button secondary" href="{_esc(video_url)}" target="_blank" rel="noreferrer">Open avatar video</a></p>'
+        if video_url
+        else '<p class="muted">No avatar video URL saved yet.</p>'
+    )
+    status_lines = [
+        ("Generation enabled", "Yes" if defaults.get("enabled") else "No"),
+        ("Default character", defaults.get("character") or "lisa"),
+        ("Default style", defaults.get("style") or "graceful-sitting"),
+        ("Default voice", defaults.get("voice") or "en-GB-SoniaNeural"),
+        ("Avatar status", payload.get("avatar_status") or "Not generated"),
+        ("Avatar job", payload.get("avatar_job_id") or ""),
+        ("Generated", payload.get("avatar_generated_at") or ""),
+    ]
+    if payload.get("avatar_error"):
+        status_lines.append(("Avatar error", payload.get("avatar_error")))
+    avatar_status_rows = "".join(
+        f"<tr><td>{_esc(label)}</td><td>{_esc(value)}</td></tr>" for label, value in status_lines
+    )
+    token_input = _token_input(request)
+    body = f"""
+<section>
+  <div class="inline" style="justify-content: space-between;">
+    <h2>{_esc(flow.label)}</h2>
+    <a class="button secondary" href="{_href(request, '/admin/survey-config')}">Back to survey setup</a>
+  </div>
+  {notice_html}
+  <form method="post" action="{_post_action(request, f'/admin/survey-config/{flow.key}')}" class="stack">
+    {token_input}
+    <label><span>Survey label</span><input name="label" value="{_esc(flow.label)}"></label>
+    <label><span>Intro message</span><textarea name="intro">{_esc(flow.intro)}</textarea></label>
+    <label><span>Completion message</span><textarea name="completion">{_esc(flow.completion)}</textarea></label>
+    <h3>Questions And Answers</h3>
+    {''.join(question_fields)}
+    <h3>Avatar Video</h3>
+    <p class="muted">Provide a script for the avatar. The generator uses the same HealthSense defaults unless you override character, style, or voice below. You can also paste an existing video URL.</p>
+    {video_html}
+    <label><span>Avatar script</span><textarea name="avatar_script">{_esc(payload.get('avatar_script') or flow.intro)}</textarea></label>
+    <label><span>Avatar video URL</span><input name="avatar_video_url" value="{_esc(video_url)}" placeholder="https://... or /membersense-media/..."></label>
+    <label><span>Poster image URL</span><input name="avatar_poster_url" value="{_esc(payload.get('avatar_poster_url') or '')}"></label>
+    <div class="grid">
+      <label><span>Character</span><input name="avatar_character" value="{_esc(payload.get('avatar_character') or defaults.get('character') or 'lisa')}"></label>
+      <label><span>Style</span><input name="avatar_style" value="{_esc(payload.get('avatar_style') or defaults.get('style') or 'graceful-sitting')}"></label>
+      <label><span>Voice</span><input name="avatar_voice" value="{_esc(payload.get('avatar_voice') or defaults.get('voice') or 'en-GB-SoniaNeural')}"></label>
+    </div>
+    <div class="inline">
+      <button type="submit" name="action" value="save">Save survey setup</button>
+      <button type="submit" name="action" value="generate" class="secondary">Save and generate avatar video</button>
+      <button type="submit" name="action" value="refresh" class="secondary">Refresh avatar job</button>
+    </div>
+  </form>
+</section>
+<section>
+  <h2>Avatar Settings</h2>
+  <table>
+    <thead><tr><th>Setting</th><th>Value</th></tr></thead>
+    <tbody>{avatar_status_rows}</tbody>
+  </table>
+</section>"""
+    return _layout(request, f"Configure {flow.label}", body)
+
+
+@router.post("/admin/survey-config/{flow_key}")
+async def survey_config_update(
+    request: Request,
+    flow_key: str,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_admin),
+):
+    if str(flow_key or "").strip().lower() not in SURVEY_FLOWS:
+        raise HTTPException(status_code=404, detail="Survey setup not found")
+    form = await request.form()
+    action = str(form.get("action") or "save").strip().lower()
+    try:
+        save_survey_config(
+            session,
+            flow_key,
+            label=str(form.get("label") or ""),
+            intro=str(form.get("intro") or ""),
+            completion=str(form.get("completion") or ""),
+            questions=_survey_config_questions_from_form(form, flow_key),
+            avatar_script=str(form.get("avatar_script") or ""),
+            avatar_video_url=str(form.get("avatar_video_url") or ""),
+            avatar_poster_url=str(form.get("avatar_poster_url") or ""),
+            avatar_character=str(form.get("avatar_character") or ""),
+            avatar_style=str(form.get("avatar_style") or ""),
+            avatar_voice=str(form.get("avatar_voice") or ""),
+        )
+        if action == "generate":
+            generate_survey_avatar_video(session, flow_key)
+            return _redirect(request, _survey_config_path(flow_key, generated=1, saved=1))
+        if action == "refresh":
+            refresh_survey_avatar_video(session, flow_key)
+            return _redirect(request, _survey_config_path(flow_key, refreshed=1, saved=1))
+        return _redirect(request, _survey_config_path(flow_key, saved=1))
+    except Exception as exc:
+        return _redirect(request, _survey_config_path(flow_key, error=str(exc)))
+
+
 @router.get("/admin/conversations/{conversation_id}", response_class=HTMLResponse)
 @router.get("/admin/surveys/{conversation_id}", response_class=HTMLResponse)
 def conversation_detail(
@@ -2249,7 +2501,7 @@ def conversation_detail(
             "</tr>"
         )
     app_link = _app_survey_url(request, row)
-    mailto = _survey_mailto(member, app_link, _survey_label(row))
+    mailto = _survey_mailto(member, app_link, _survey_label(row, session))
     link_notice = '<p><strong>App link created.</strong></p>' if link_created else ""
     if app_link:
         email_action = (
@@ -2279,13 +2531,13 @@ def conversation_detail(
     body = f"""
 <section>
   <div class="inline" style="justify-content: space-between;">
-    <h2>{_esc(_survey_label(row))}</h2>
+    <h2>{_esc(_survey_label(row, session))}</h2>
     <a class="button secondary" href="{_href(request, '/admin/surveys')}">Back to surveys</a>
   </div>
   <div class="grid">
     <div><strong>Member</strong><br><a href="{_href(request, f'/admin/members/{row.member_id}')}">{_esc(member_name(member))}</a></div>
     <div><strong>Status</strong><br><span class="pill">{_esc(row.status)}</span></div>
-    <div><strong>Answers</strong><br>{_esc(_survey_progress(row))}</div>
+    <div><strong>Answers</strong><br>{_esc(_survey_progress(row, session))}</div>
     <div><strong>Started</strong><br>{_esc(_datetime(row.created_at))}</div>
     <div><strong>Updated</strong><br>{_esc(_datetime(row.updated_at))}</div>
     <div><strong>Completed</strong><br>{_esc(_datetime(row.completed_at))}</div>
@@ -2296,7 +2548,7 @@ def conversation_detail(
   <h2>Questions And Answers</h2>
   <table>
     <thead><tr><th>No.</th><th>Question</th><th>Answer</th></tr></thead>
-    <tbody>{_survey_answer_rows(row)}</tbody>
+    <tbody>{_survey_answer_rows(row, session)}</tbody>
   </table>
 </section>
 <section>
@@ -2356,9 +2608,9 @@ def surveys(
             "<tr>"
             f"<td>{_esc(_datetime(row.created_at))}</td>"
             f"<td><a href=\"{_href(request, f'/admin/members/{row.member_id}')}\">{_esc(member_name(member))}</a></td>"
-            f"<td>{_esc(_survey_label(row))}</td>"
+            f"<td>{_esc(_survey_label(row, session))}</td>"
             f"<td><span class=\"pill\">{_esc(row.status)}</span></td>"
-            f"<td>{_esc(_survey_progress(row))}</td>"
+            f"<td>{_esc(_survey_progress(row, session))}</td>"
             f"<td>{_esc(_survey_outcome(row))}</td>"
             f"<td><a class=\"button secondary\" href=\"{_href(request, f'/admin/surveys/{row.id}')}\">Open survey</a></td>"
             "</tr>"
@@ -2369,13 +2621,16 @@ def surveys(
         for value, label in [("", "All statuses"), ("active", "Active"), ("completed", "Completed"), ("superseded", "Superseded")]
     )
     flow_options = ['<option value="">All surveys</option>']
-    for option in survey_options():
+    for option in survey_options(session):
         value = _esc(option["key"])
         selected = " selected" if selected_flow == option["key"] else ""
         flow_options.append(f'<option value="{value}"{selected}>{_esc(option["label"])}</option>')
     body = f"""
 <section>
-  <h2>Recent Surveys</h2>
+  <div class="inline" style="justify-content: space-between;">
+    <h2>Recent Surveys</h2>
+    <a class="button secondary" href="{_href(request, '/admin/survey-config')}">Configure surveys</a>
+  </div>
   <form method="get" action="/admin/surveys" class="inline" style="margin-bottom: 12px;">
     {token_input}
     <label><span>Status</span><select name="status">{status_options}</select></label>

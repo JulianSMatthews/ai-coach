@@ -21,6 +21,16 @@ class SurveyFlow:
     intro: str
     questions: tuple[SurveyQuestion, ...]
     completion: str
+    avatar_script: str = ""
+    avatar_video_url: str = ""
+    avatar_poster_url: str = ""
+    avatar_character: str = ""
+    avatar_style: str = ""
+    avatar_voice: str = ""
+    avatar_status: str = ""
+    avatar_job_id: str = ""
+    avatar_error: str = ""
+    avatar_summary_url: str = ""
 
 
 SURVEY_FLOWS: dict[str, SurveyFlow] = {
@@ -71,6 +81,88 @@ def flow_for_key(flow_key: str) -> SurveyFlow:
     if key not in SURVEY_FLOWS:
         raise ValueError(f"Unknown survey flow: {flow_key}")
     return SURVEY_FLOWS[key]
+
+
+def _clean_text(value: object) -> str:
+    return str(value or "").strip()
+
+
+def _question_options_from_payload(raw: object, fallback: tuple[str, ...]) -> tuple[str, ...]:
+    if isinstance(raw, str):
+        values = [line.strip() for line in raw.replace("|", "\n").splitlines()]
+    elif isinstance(raw, (list, tuple)):
+        values = [str(item or "").strip() for item in raw]
+    else:
+        values = []
+    cleaned = tuple(value for value in values if value)[:3]
+    return cleaned or fallback
+
+
+def flow_from_config(flow_key: str, payload: dict[str, Any] | None) -> SurveyFlow:
+    base = flow_for_key(flow_key)
+    data = payload if isinstance(payload, dict) else {}
+    question_payloads = data.get("questions") if isinstance(data.get("questions"), list) else []
+    by_key = {
+        _clean_text(item.get("key")): item
+        for item in question_payloads
+        if isinstance(item, dict) and _clean_text(item.get("key"))
+    }
+    questions = []
+    for question in base.questions:
+        item = by_key.get(question.key, {})
+        questions.append(
+            SurveyQuestion(
+                key=question.key,
+                text=_clean_text(item.get("text")) or question.text,
+                helper=_clean_text(item.get("helper")) or question.helper,
+                options=_question_options_from_payload(item.get("options"), question.options),
+            )
+        )
+    return SurveyFlow(
+        key=base.key,
+        label=_clean_text(data.get("label")) or base.label,
+        intro=_clean_text(data.get("intro")) or base.intro,
+        questions=tuple(questions),
+        completion=_clean_text(data.get("completion")) or base.completion,
+        avatar_script=_clean_text(data.get("avatar_script")),
+        avatar_video_url=_clean_text(data.get("avatar_video_url")),
+        avatar_poster_url=_clean_text(data.get("avatar_poster_url")),
+        avatar_character=_clean_text(data.get("avatar_character")),
+        avatar_style=_clean_text(data.get("avatar_style")),
+        avatar_voice=_clean_text(data.get("avatar_voice")),
+        avatar_status=_clean_text(data.get("avatar_status")),
+        avatar_job_id=_clean_text(data.get("avatar_job_id")),
+        avatar_error=_clean_text(data.get("avatar_error")),
+        avatar_summary_url=_clean_text(data.get("avatar_summary_url")),
+    )
+
+
+def flow_config_payload(flow: SurveyFlow) -> dict[str, Any]:
+    return {
+        "key": flow.key,
+        "label": flow.label,
+        "intro": flow.intro,
+        "completion": flow.completion,
+        "questions": [
+            {
+                "key": question.key,
+                "text": question.text,
+                "helper": question.helper,
+                "options": list(question.options),
+            }
+            for question in flow.questions
+        ],
+        "avatar_script": flow.avatar_script,
+        "avatar_video_url": flow.avatar_video_url,
+        "avatar_poster_url": flow.avatar_poster_url,
+        "avatar_character": flow.avatar_character,
+        "avatar_style": flow.avatar_style,
+        "avatar_voice": flow.avatar_voice,
+        "avatar_status": flow.avatar_status,
+        "avatar_job_id": flow.avatar_job_id,
+        "avatar_error": flow.avatar_error,
+        "avatar_summary_url": flow.avatar_summary_url,
+    }
 
 
 def question_options(question: SurveyQuestion | None) -> list[str]:
@@ -199,11 +291,15 @@ def classify_response(flow_key: str, answers: dict[str, Any]) -> dict[str, Any]:
 
 def response_summary(flow_key: str, answers: dict[str, Any], classification: dict[str, Any]) -> str:
     flow = flow_for_key(flow_key)
+    return response_summary_for_flow(flow, answers, classification)
+
+
+def response_summary_for_flow(flow: SurveyFlow, answers: dict[str, Any], classification: dict[str, Any]) -> str:
     parts = [f"{flow.label} completed."]
     for question in flow.questions:
         answer = _answer_text(answers, question.key)
         if answer:
-            parts.append(f"{question.key}: {answer}")
+            parts.append(f"{question.text}: {answer}")
     action = str((classification or {}).get("recommended_action") or "").strip()
     if action:
         parts.append(f"Recommended action: {action}")

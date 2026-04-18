@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import csv
 import io
+import os
+import re
 import secrets
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import desc, func, or_, select
@@ -11,8 +14,19 @@ from sqlalchemy.orm import Session
 
 from . import config
 from .messaging import normalize_phone, send_sms
-from .models import Conversation, ImportBatch, Member, MessageLog, StaffTask
-from .surveys import SURVEY_FLOWS, classify_response, flow_for_key, normalize_option_answer, question_options, response_summary
+from .models import Conversation, ImportBatch, Member, MessageLog, StaffTask, SurveyConfig
+from .surveys import (
+    SURVEY_FLOWS,
+    SurveyFlow,
+    classify_response,
+    flow_config_payload,
+    flow_for_key,
+    flow_from_config,
+    normalize_option_answer,
+    question_options,
+    response_summary,
+    response_summary_for_flow,
+)
 
 
 def _parse_date(raw: str | None) -> date | None:
@@ -317,6 +331,250 @@ def ensure_app_link_token(session: Session, conversation: Conversation, *, commi
     return str(conversation.app_link_token)
 
 
+def survey_config_row(session: Session, flow_key: str) -> SurveyConfig | None:
+    key = str(flow_key or "").strip().lower()
+    if not key:
+        return None
+    return session.execute(select(SurveyConfig).where(SurveyConfig.flow_key == key)).scalar_one_or_none()
+
+
+def _survey_config_payload(row: SurveyConfig | None) -> dict[str, Any]:
+    if row is None:
+        return {}
+    return {
+        "label": row.label,
+        "intro": row.intro,
+        "completion": row.completion,
+        "questions": row.questions,
+        "avatar_script": row.avatar_script,
+        "avatar_video_url": row.avatar_video_url,
+        "avatar_poster_url": row.avatar_poster_url,
+        "avatar_character": row.avatar_character,
+        "avatar_style": row.avatar_style,
+        "avatar_voice": row.avatar_voice,
+        "avatar_status": row.avatar_status,
+        "avatar_job_id": row.avatar_job_id,
+        "avatar_error": row.avatar_error,
+        "avatar_summary_url": row.avatar_summary_url,
+    }
+
+
+def effective_survey_flow(session: Session, flow_key: str) -> SurveyFlow:
+    key = str(flow_key or "").strip().lower()
+    row = survey_config_row(session, key)
+    return flow_from_config(key, _survey_config_payload(row))
+
+
+def editable_survey_payload(session: Session, flow_key: str) -> dict[str, Any]:
+    flow = effective_survey_flow(session, flow_key)
+    payload = flow_config_payload(flow)
+    row = survey_config_row(session, flow.key)
+    if row is not None:
+        payload.update(
+            {
+                "avatar_source": row.avatar_source,
+                "avatar_payload": row.avatar_payload,
+                "avatar_generated_at": row.avatar_generated_at.isoformat() if row.avatar_generated_at else "",
+            }
+        )
+    return payload
+
+
+def save_survey_config(
+    session: Session,
+    flow_key: str,
+    *,
+    label: str | None = None,
+    intro: str | None = None,
+    completion: str | None = None,
+    questions: list[dict[str, Any]] | None = None,
+    avatar_script: str | None = None,
+    avatar_video_url: str | None = None,
+    avatar_poster_url: str | None = None,
+    avatar_character: str | None = None,
+    avatar_style: str | None = None,
+    avatar_voice: str | None = None,
+) -> SurveyConfig:
+    base = flow_for_key(flow_key)
+    row = survey_config_row(session, base.key)
+    if row is None:
+        row = SurveyConfig(flow_key=base.key)
+        session.add(row)
+        session.flush()
+    row.label = str(label or "").strip() or base.label
+    row.intro = str(intro or "").strip() or base.intro
+    row.completion = str(completion or "").strip() or base.completion
+    by_key = {
+        str(item.get("key") or "").strip(): item
+        for item in (questions or [])
+        if isinstance(item, dict) and str(item.get("key") or "").strip()
+    }
+    stored_questions = []
+    for base_question in base.questions:
+        item = by_key.get(base_question.key, {})
+        raw_options = item.get("options")
+        if isinstance(raw_options, str):
+            option_values = [part.strip() for part in raw_options.replace("|", "\n").splitlines()]
+        elif isinstance(raw_options, (list, tuple)):
+            option_values = [str(part or "").strip() for part in raw_options]
+        else:
+            option_values = []
+        options = [option for option in option_values if option][:3] or list(base_question.options)
+        stored_questions.append(
+            {
+                "key": base_question.key,
+                "text": str(item.get("text") or "").strip() or base_question.text,
+                "helper": str(item.get("helper") or "").strip() or base_question.helper,
+                "options": options,
+            }
+        )
+    row.questions = stored_questions
+    row.avatar_script = str(avatar_script or "").strip() or None
+    row.avatar_video_url = str(avatar_video_url or "").strip() or None
+    row.avatar_poster_url = str(avatar_poster_url or "").strip() or None
+    row.avatar_character = str(avatar_character or "").strip() or None
+    row.avatar_style = str(avatar_style or "").strip() or None
+    row.avatar_voice = str(avatar_voice or "").strip() or None
+    row.updated_at = datetime.utcnow()
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+def membersense_media_root() -> Path:
+    root = Path(os.getenv("MEMBERSENSE_MEDIA_DIR") or Path.cwd() / "public" / "membersense-media")
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _safe_asset_token(value: str | None) -> str:
+    token = re.sub(r"[^A-Za-z0-9_-]+", "-", str(value or "").strip()).strip("-_")
+    return token[:48] or secrets.token_hex(6)
+
+
+def _write_survey_avatar_video(flow_key: str, job_id: str | None, video_bytes: bytes) -> str:
+    safe_flow = _safe_asset_token(flow_key)
+    safe_job = _safe_asset_token(job_id)
+    rel_path = Path("survey-avatars") / f"{safe_flow}-{safe_job}.mp4"
+    out_path = membersense_media_root() / rel_path
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_bytes(bytes(video_bytes or b""))
+    return "/membersense-media/" + str(rel_path).replace(os.sep, "/")
+
+
+def survey_avatar_defaults() -> dict[str, Any]:
+    try:
+        from app.avatar import azure_avatar_defaults, azure_avatar_enabled
+
+        defaults = azure_avatar_defaults()
+        return {
+            "enabled": bool(azure_avatar_enabled()),
+            "character": str(defaults.get("character") or "lisa"),
+            "style": str(defaults.get("style") or "graceful-sitting"),
+            "voice": str(defaults.get("voice") or "en-GB-SoniaNeural"),
+        }
+    except Exception as exc:
+        return {
+            "enabled": False,
+            "character": "lisa",
+            "style": "graceful-sitting",
+            "voice": "en-GB-SoniaNeural",
+            "error": str(exc),
+        }
+
+
+def generate_survey_avatar_video(session: Session, flow_key: str) -> SurveyConfig:
+    try:
+        from app.avatar import azure_avatar_enabled, generate_batch_avatar_video
+    except Exception as exc:
+        raise RuntimeError(f"Azure avatar tools are not available: {exc}") from exc
+    if not azure_avatar_enabled():
+        raise RuntimeError("Azure avatar generation is not enabled. Set USE_AZURE_AVATAR=1 and the Azure avatar credentials.")
+    row = survey_config_row(session, flow_key)
+    if row is None:
+        base = flow_for_key(flow_key)
+        row = save_survey_config(session, base.key, label=base.label, intro=base.intro, completion=base.completion)
+    flow = effective_survey_flow(session, row.flow_key)
+    defaults = survey_avatar_defaults()
+    script = str(row.avatar_script or flow.avatar_script or flow.intro or "").strip()
+    if not script:
+        raise RuntimeError("Avatar script is required.")
+    character = str(row.avatar_character or defaults.get("character") or "lisa").strip()
+    style = str(row.avatar_style or defaults.get("style") or "graceful-sitting").strip()
+    voice = str(row.avatar_voice or defaults.get("voice") or "en-GB-SoniaNeural").strip()
+    row.avatar_status = "running"
+    row.avatar_error = None
+    row.avatar_source = "azure_batch"
+    row.updated_at = datetime.utcnow()
+    session.add(row)
+    session.commit()
+    try:
+        result = generate_batch_avatar_video(
+            script=script,
+            title=f"{flow.label} avatar",
+            character=character,
+            style=style,
+            voice=voice,
+        )
+        status = str(result.get("status") or "").strip() or "Running"
+        row.avatar_status = status.lower()
+        row.avatar_job_id = str(result.get("job_id") or "").strip() or None
+        row.avatar_summary_url = str(result.get("summary_url") or "").strip() or None
+        row.avatar_error = None
+        row.avatar_payload = result.get("response") if isinstance(result.get("response"), dict) else None
+        video_bytes = result.get("video_bytes")
+        if status == "Succeeded" and isinstance(video_bytes, (bytes, bytearray)) and video_bytes:
+            row.avatar_video_url = _write_survey_avatar_video(row.flow_key, row.avatar_job_id, bytes(video_bytes))
+            row.avatar_generated_at = datetime.utcnow()
+        elif status == "Failed":
+            row.avatar_error = str(result.get("response") or "Azure avatar generation failed.")[:1000]
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        return row
+    except Exception as exc:
+        row.avatar_status = "failed"
+        row.avatar_error = str(exc)
+        row.updated_at = datetime.utcnow()
+        session.add(row)
+        session.commit()
+        session.refresh(row)
+        raise
+
+
+def refresh_survey_avatar_video(session: Session, flow_key: str) -> SurveyConfig:
+    try:
+        from app.avatar import download_batch_avatar_output, get_batch_avatar
+    except Exception as exc:
+        raise RuntimeError(f"Azure avatar tools are not available: {exc}") from exc
+    row = survey_config_row(session, flow_key)
+    if row is None or not str(row.avatar_job_id or "").strip():
+        raise RuntimeError("No avatar job is pending for this survey.")
+    payload = get_batch_avatar(str(row.avatar_job_id))
+    status = str(payload.get("status") or "").strip() or "Running"
+    outputs = payload.get("outputs") if isinstance(payload.get("outputs"), dict) else {}
+    result_url = str((outputs or {}).get("result") or "").strip()
+    row.avatar_status = status.lower()
+    row.avatar_summary_url = str((outputs or {}).get("summary") or "").strip() or None
+    row.avatar_payload = payload
+    row.avatar_error = None
+    if status == "Succeeded" and result_url:
+        row.avatar_video_url = _write_survey_avatar_video(
+            row.flow_key,
+            row.avatar_job_id,
+            download_batch_avatar_output(result_url),
+        )
+        row.avatar_generated_at = datetime.utcnow()
+    elif status == "Failed":
+        row.avatar_error = str(payload or "Azure avatar generation failed.")[:1000]
+    row.updated_at = datetime.utcnow()
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
 def member_first_name(member: Member | None) -> str:
     return str(getattr(member, "first_name", "") or "").strip().split(" ")[0] if member is not None else ""
 
@@ -356,18 +614,22 @@ def send_survey_link_to_member(
     if not link:
         raise ValueError("Survey link is missing")
     ensure_app_link_token(session, conversation, commit=False)
-    text = survey_link_invite_text(member, conversation.flow_key, link)
+    flow = effective_survey_flow(session, conversation.flow_key)
+    first_name = member_first_name(member)
+    greeting = f"Hi {first_name}," if first_name else "Hi,"
+    text = f"{greeting} please complete this quick {flow.label.lower()} for {config.GYM_NAME}: {link}"
     return send_to_member(session, member, text, conversation)
 
 
 def _question_text(
+    session: Session,
     flow_key: str,
     step_index: int,
     *,
     include_intro: bool = False,
     member: Member | None = None,
 ) -> tuple[str, list[str]]:
-    flow = flow_for_key(flow_key)
+    flow = effective_survey_flow(session, flow_key)
     question = flow.questions[step_index]
     total = len(flow.questions)
     prefix = f"Question {step_index + 1} of {total}: "
@@ -508,7 +770,7 @@ def start_conversation(
     send_intro: bool = False,
     commit: bool = True,
 ) -> Conversation:
-    flow = flow_for_key(flow_key)
+    flow = effective_survey_flow(session, flow_key)
     for row in session.execute(
         select(Conversation).where(Conversation.member_id == int(member.id), Conversation.status == "active")
     ).scalars():
@@ -525,7 +787,7 @@ def start_conversation(
     session.add(conversation)
     session.flush()
     if send_intro:
-        message, options = _question_text(flow.key, 0, include_intro=True, member=member)
+        message, options = _question_text(session, flow.key, 0, include_intro=True, member=member)
         send_to_member(session, member, message, conversation, quick_replies=options)
     elif commit:
         session.commit()
@@ -535,7 +797,7 @@ def start_conversation(
 def _create_staff_task(session: Session, member: Member, conversation: Conversation, classification: dict[str, Any]) -> None:
     if not bool((classification or {}).get("task_required")):
         return
-    flow = flow_for_key(conversation.flow_key)
+    flow = effective_survey_flow(session, conversation.flow_key)
     title = f"{flow.label}: follow up with {member_name(member)}"
     detail = str((classification or {}).get("recommended_action") or conversation.summary or "").strip()
     priority = str((classification or {}).get("priority") or "normal").strip().lower() or "normal"
@@ -562,7 +824,7 @@ def find_conversation_by_app_token(session: Session, token: str | None) -> Conve
 def continue_app_conversation(session: Session, member: Member, conversation: Conversation, inbound_text: str) -> Conversation:
     if conversation.status != "active":
         return conversation
-    flow = flow_for_key(conversation.flow_key)
+    flow = effective_survey_flow(session, conversation.flow_key)
     answers = dict(conversation.answers or {})
     step_index = int(conversation.step_index or 0)
     if step_index >= len(flow.questions):
@@ -583,7 +845,7 @@ def continue_app_conversation(session: Session, member: Member, conversation: Co
     if step_index >= len(flow.questions):
         classification = classify_response(conversation.flow_key, answers)
         conversation.classification = classification
-        conversation.summary = response_summary(conversation.flow_key, answers, classification)
+        conversation.summary = response_summary_for_flow(flow, answers, classification)
         conversation.status = "completed"
         conversation.completed_at = datetime.utcnow()
         session.add(conversation)
@@ -595,14 +857,14 @@ def continue_app_conversation(session: Session, member: Member, conversation: Co
 
 
 def continue_conversation(session: Session, member: Member, conversation: Conversation, inbound_text: str) -> Conversation:
-    flow = flow_for_key(conversation.flow_key)
+    flow = effective_survey_flow(session, conversation.flow_key)
     answers = dict(conversation.answers or {})
     step_index = int(conversation.step_index or 0)
     if step_index < len(flow.questions):
         question = flow.questions[step_index]
         answer = normalize_option_answer(question, inbound_text)
         if answer is None:
-            message, options = _question_text(conversation.flow_key, step_index)
+            message, options = _question_text(session, conversation.flow_key, step_index)
             send_to_member(
                 session,
                 member,
@@ -619,7 +881,7 @@ def continue_conversation(session: Session, member: Member, conversation: Conver
     if step_index >= len(flow.questions):
         classification = classify_response(conversation.flow_key, answers)
         conversation.classification = classification
-        conversation.summary = response_summary(conversation.flow_key, answers, classification)
+        conversation.summary = response_summary_for_flow(flow, answers, classification)
         conversation.status = "completed"
         conversation.completed_at = datetime.utcnow()
         session.add(conversation)
@@ -629,7 +891,7 @@ def continue_conversation(session: Session, member: Member, conversation: Conver
         return conversation
     session.add(conversation)
     session.flush()
-    message, options = _question_text(conversation.flow_key, step_index)
+    message, options = _question_text(session, conversation.flow_key, step_index)
     send_to_member(session, member, message, conversation, quick_replies=options)
     return conversation
 
@@ -734,8 +996,10 @@ def import_members_csv(
     return batch
 
 
-def survey_options() -> list[dict[str, str]]:
-    return [{"key": key, "label": flow.label} for key, flow in SURVEY_FLOWS.items()]
+def survey_options(session: Session | None = None) -> list[dict[str, str]]:
+    if session is None:
+        return [{"key": key, "label": flow.label} for key, flow in SURVEY_FLOWS.items()]
+    return [{"key": key, "label": effective_survey_flow(session, key).label} for key in SURVEY_FLOWS]
 
 
 def mark_task_done(session: Session, task_id: int) -> bool:

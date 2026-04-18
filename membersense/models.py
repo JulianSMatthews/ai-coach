@@ -74,6 +74,32 @@ class MessageLog(Base):
     conversation = relationship("Conversation", back_populates="messages")
 
 
+class SurveyConfig(Base):
+    __tablename__ = "membersense_survey_configs"
+
+    id = Column(Integer, primary_key=True)
+    flow_key = Column(String(64), nullable=False, unique=True, index=True)
+    label = Column(String(180), nullable=True)
+    intro = Column(Text, nullable=True)
+    completion = Column(Text, nullable=True)
+    questions = Column(JSONType, nullable=True)
+    avatar_script = Column(Text, nullable=True)
+    avatar_video_url = Column(Text, nullable=True)
+    avatar_poster_url = Column(Text, nullable=True)
+    avatar_character = Column(String(80), nullable=True)
+    avatar_style = Column(String(120), nullable=True)
+    avatar_voice = Column(String(160), nullable=True)
+    avatar_status = Column(String(32), nullable=True)
+    avatar_job_id = Column(String(128), nullable=True)
+    avatar_error = Column(Text, nullable=True)
+    avatar_summary_url = Column(Text, nullable=True)
+    avatar_source = Column(String(64), nullable=True)
+    avatar_payload = Column(JSONType, nullable=True)
+    avatar_generated_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
 class StaffTask(Base):
     __tablename__ = "membersense_staff_tasks"
 
