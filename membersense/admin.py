@@ -391,6 +391,20 @@ def _survey_action(
     return '<div class="stack">' + "".join(actions) + "</div>"
 
 
+def _visit_survey_form(request: Request, member: Member) -> str:
+    if member_contact_phone(member):
+        button_text = "Confirm visit and send visit survey"
+        helper = '<span class="muted">Records today as the last visit and sends the member an SMS survey link.</span>'
+    else:
+        button_text = "Confirm visit and create visit link"
+        helper = '<span class="muted">Records today as the last visit and creates a browser survey link.</span>'
+    return f"""
+<form method="post" action="{_post_action(request, f'/admin/members/{int(member.id)}/visit-survey')}" class="inline">
+  <button type="submit">{_esc(button_text)}</button>
+  {helper}
+</form>"""
+
+
 def _coerce_range(min_days: int, max_days: int) -> tuple[int, int]:
     low = max(int(min_days or 0), 0)
     high = max(int(max_days or low), low)
@@ -1552,6 +1566,7 @@ def members(
         active = active_conversation_for_member(session, int(member.id))
         active_text = f'<span class="pill">{_esc(active.flow_key)}</span>' if active else ""
         member_url = _href(request, f"/admin/members/{member.id}")
+        action_html = '<div class="stack">' + _visit_survey_form(request, member) + _survey_action(request, member, session=session) + "</div>"
         table.append(
             "<tr>"
             f"<td><a href=\"{member_url}\">{_esc(member_name(member))}</a><br><span class=\"muted\">{_esc(_mobile_label(member))}</span></td>"
@@ -1561,7 +1576,7 @@ def members(
             f"<td>{_esc(_date(member.last_visit_date))}</td>"
             f"<td>{_esc(_date(member.expiry_date))}</td>"
             f"<td>{active_text}</td>"
-            f"<td>{_survey_action(request, member, session=session)}</td>"
+            f"<td>{action_html}</td>"
             "</tr>"
         )
     token_input = (
@@ -1603,6 +1618,8 @@ def members(
 def member_detail(
     request: Request,
     member_id: int,
+    visit_survey_sent: int | None = None,
+    visit_recorded: int | None = None,
     session: Session = Depends(get_session),
     _: None = Depends(require_admin),
 ):
@@ -1650,12 +1667,19 @@ def member_detail(
             f"<td><span class=\"pill\">{_esc(row.status)}</span></td>"
             "</tr>"
         )
+    notice_parts = []
+    if visit_survey_sent is not None:
+        notice_parts.append("Visit recorded and visit survey link sent.")
+    if visit_recorded is not None:
+        notice_parts.append("Visit recorded.")
+    notice_html = f'<p><span class="pill">{_esc(" ".join(notice_parts))}</span></p>' if notice_parts else ""
     body = f"""
 <section>
   <div class="inline" style="justify-content: space-between;">
     <h2>{_esc(member_name(member))}</h2>
     <a class="button secondary" href="{_href(request, '/admin/members')}">Back to members</a>
   </div>
+  {notice_html}
   <div class="grid">
     <div><strong>Member number</strong><br>{_esc(member.external_member_id or '')}</div>
     <div><strong>Mobile</strong><br>{_esc(_mobile_label(member))}</div>
@@ -1666,6 +1690,8 @@ def member_detail(
     <div><strong>Expiry</strong><br>{_esc(_date(member.expiry_date))}</div>
     <div><strong>Source</strong><br>{_esc(member.source or '')}</div>
   </div>
+  <h3>Visit Survey</h3>
+  {_visit_survey_form(request, member)}
   <h3>Send Survey</h3>
   {_survey_action(request, member, session=session)}
 </section>
@@ -1739,6 +1765,30 @@ def start_member_survey(
     except Exception as exc:
         return _redirect(request, _sms_error_path(exc))
     return _redirect(request, "/admin/members")
+
+
+@router.post("/admin/members/{member_id}/visit-survey")
+def confirm_visit_and_send_survey(
+    request: Request,
+    member_id: int,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_admin),
+):
+    member = session.get(Member, int(member_id))
+    if member is None:
+        raise HTTPException(status_code=404, detail="Member not found")
+    member.last_visit_date = date.today()
+    session.add(member)
+    session.commit()
+    if not member_contact_phone(member):
+        conversation = start_conversation(session, member, "visit", send_intro=False)
+        ensure_app_link_token(session, conversation)
+        return _redirect(request, f"/admin/surveys/{conversation.id}?link_created=1&visit_recorded=1")
+    try:
+        _start_and_send_survey_link(request, session, member, "visit")
+    except Exception as exc:
+        return _redirect(request, _sms_error_path(exc))
+    return _redirect(request, f"/admin/members/{member.id}?visit_survey_sent=1")
 
 
 @router.post("/admin/members/{member_id}/app-link")
@@ -2476,6 +2526,7 @@ def conversation_detail(
     request: Request,
     conversation_id: int,
     link_created: int | None = None,
+    visit_recorded: int | None = None,
     session: Session = Depends(get_session),
     _: None = Depends(require_admin),
 ):
@@ -2502,7 +2553,12 @@ def conversation_detail(
         )
     app_link = _app_survey_url(request, row)
     mailto = _survey_mailto(member, app_link, _survey_label(row, session))
-    link_notice = '<p><strong>App link created.</strong></p>' if link_created else ""
+    link_notice_parts = []
+    if visit_recorded is not None:
+        link_notice_parts.append("Visit recorded.")
+    if link_created is not None:
+        link_notice_parts.append("App link created.")
+    link_notice = f'<p><strong>{_esc(" ".join(link_notice_parts))}</strong></p>' if link_notice_parts else ""
     if app_link:
         email_action = (
             f'<a class="button secondary" href="{_esc(mailto)}">Email link to member</a>'

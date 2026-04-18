@@ -73,6 +73,19 @@ SURVEY_FLOWS: dict[str, SurveyFlow] = {
         ),
         completion="Thank you. Your feedback helps the gym improve.",
     ),
+    "visit": SurveyFlow(
+        key="visit",
+        label="Visit follow-up survey",
+        intro=(
+            f"Thanks for visiting {GYM_NAME}. Could we ask a few quick questions about today's visit so the team can support your next session?"
+        ),
+        questions=(
+            SurveyQuestion("experience", "How did your visit feel today?", options=("Good", "Okay", "Difficult")),
+            SurveyQuestion("support", "Would support from the team help before your next visit?", options=("Yes", "Maybe", "No")),
+            SurveyQuestion("next_step", "What would help most for your next session?", options=("Training plan", "Technique help", "Class or booking")),
+        ),
+        completion="Thanks. The team has your feedback and will follow up if support would help.",
+    ),
 }
 
 
@@ -285,6 +298,25 @@ def classify_response(flow_key: str, answers: dict[str, Any]) -> dict[str, Any]:
                 else "Record feedback for trend reporting."
             ),
             "task_required": save or urgent,
+        }
+    if flow.key == "visit":
+        experience = _answer_text(answers, "experience")
+        support = _answer_text(answers, "support")
+        next_step = _answer_text(answers, "next_step")
+        needs_support = _yesish(support) or _maybeish(support) or _contains_any(
+            f"{experience} {next_step}",
+            ("difficult", "hard", "pain", "injury", "help", "plan", "technique", "class"),
+        )
+        priority = "high" if _contains_any(experience, ("difficult", "hard", "pain", "injury")) else "normal"
+        return {
+            "visit_experience": experience or "not recorded",
+            "priority": priority if needs_support else "low",
+            "recommended_action": (
+                "Follow up with a clear next-session option."
+                if needs_support
+                else "Record positive visit feedback."
+            ),
+            "task_required": needs_support,
         }
     return {"task_required": False, "priority": "normal", "recommended_action": "Review response."}
 
