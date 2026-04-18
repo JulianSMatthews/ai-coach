@@ -180,7 +180,49 @@ services:
       - key: NEXT_PUBLIC_HSAPP_BASE_URL
         sync: false
 
+  - type: web
+    name: membersense
+    env: python
+    plan: starter
+    region: oregon
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "uvicorn membersense.main:app --host 0.0.0.0 --port $PORT"
+    healthCheckPath: /healthz
+    envVars:
+      - key: ENV
+        value: "production"
+      - key: MEMBERSENSE_GYM_NAME
+        value: "Anytime Fitness High Wycombe"
+      - key: MEMBERSENSE_DATABASE_URL
+        fromDatabase:
+          name: membersense-db
+          property: connectionString
+      - key: MEMBERSENSE_DEFAULT_COUNTRY_CODE
+        value: "44"
+      - key: MEMBERSENSE_SESSION_SECRET
+        generateValue: true
+      - key: MEMBERSENSE_SESSION_COOKIE_SECURE
+        value: "1"
+      - key: MEMBERSENSE_ADMIN_TOKEN
+        generateValue: true
+      - key: MEMBERSENSE_DRY_RUN
+        value: "1"
+      - key: MEMBERSENSE_NGROK
+        value: "0"
+      - key: MEMBERSENSE_TWILIO_ACCOUNT_SID
+        sync: false
+      - key: MEMBERSENSE_TWILIO_AUTH_TOKEN
+        sync: false
+      - key: MEMBERSENSE_TWILIO_FROM
+        sync: false
+      - key: MEMBERSENSE_TWILIO_MESSAGING_SERVICE_SID
+        sync: false
+
 databases:
   - name: healthsense-db
     plan: basic-1gb
+    region: oregon
+
+  - name: membersense-db
+    plan: basic-256mb
     region: oregon
