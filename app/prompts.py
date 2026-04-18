@@ -66,6 +66,7 @@ APP_TRACKER_SUMMARY_TASK_BLOCK = (
     "biometric/readiness signals, the existing Today's plan, and the current Today's focus lesson.\n\n"
     "Do not create a new plan for the day. Do not rewrite the plan as a schedule. Do not use a morning/midday/evening list. "
     "Do not add new habits, times, or tasks beyond the supplied education action.\n\n"
+    "If a fasting plan is enabled, respect it: do not recommend breakfast or early eating, and refer to the eating window or first planned meal instead.\n\n"
     "Identify the clearest overall pattern, explain what level of exercise makes sense today based on recovery and nutrition, "
     "mention the Today's focus lesson once when it is available, include the supplied education action, and close with the single "
     "main priority to carry into the plan the member has already seen. Treat every configured tracker concept equally; choose what "
@@ -109,6 +110,7 @@ BUILTIN_PROMPT_TEMPLATE_DEFAULTS: Dict[str, Dict[str, Any]] = {
             "Return exactly 4 moments for the day: morning, midday, afternoon, and evening. "
             "Use the provided two-day tracker read, exercise readiness, and key moments framework to make this feel like a practical schedule for today. "
             "If today's morning training record is supplied, treat it as what the member has planned for today, not as completed or missed training. "
+            "If a fasting plan is enabled, protect the fasting window: do not recommend breakfast or early eating, and refer to fluids, first planned meal, or eating window instead. "
             "Use the full tracker review to decide which concepts matter today; do not favour fasting, alcohol, heat exposure, cold exposure, or any optional item by default. "
             "Take the whole programme into account: training, nutrition, resilience, and recovery. Build this around the day as a whole rather than one selected concept. "
             "Keep every moment specific, brief, and low-friction. Each title should be short. Each detail should be one sentence and under 18 words. "
@@ -506,6 +508,21 @@ def _coach_home_history_lines(
             lines.append(f"- {pillar_label}{pillar_suffix}: {payload}")
 
     if isinstance(day_brief, dict):
+        fasting = day_brief.get("fasting") if isinstance(day_brief.get("fasting"), dict) else tracker_context.get("fasting")
+        if isinstance(fasting, dict) and fasting.get("enabled"):
+            mode = str(fasting.get("mode") or "").strip()
+            goal_days = str(fasting.get("goal_days") or "").strip()
+            note = str(fasting.get("planning_note") or "").strip()
+            bits = []
+            if mode:
+                bits.append(f"mode={mode}")
+            if goal_days:
+                bits.append(f"goal_days={goal_days}")
+            if note:
+                bits.append(note)
+            if bits:
+                lines.append("Fasting plan: " + "; ".join(bits))
+
         two_day_read = day_brief.get("two_day_read") if isinstance(day_brief.get("two_day_read"), dict) else {}
         if two_day_read:
             lines.append("Two-day read:")
@@ -1817,6 +1834,7 @@ def build_prompt(
                             "Use plain language, avoid OKR/KR jargon, and avoid system terms like pillar, drill, or resilience work. "
                             "When an education programme lesson is available, mention its concept or lesson title once and include the supplied education action without replacing the lesson content. "
                             "Use the key moments from the day plan only as context; do not rewrite them as a schedule, do not use a morning/midday/evening list, and do not add new habits, times, or tasks beyond the supplied education action. "
+                            "If a fasting plan is enabled, respect it: do not recommend breakfast or early eating, and refer to the eating window or first planned meal instead. "
                             "Make the exercise guidance proportionate to recovery and nutrition, then end with one clear practical aim that ties the programme, plan, and biometrics together. Do not ask a question and do not invite a reply."
                             if tracker_summary_mode
                             else "Keep it concise (2-4 short sentences), warm, calm, supportive. "
@@ -1869,6 +1887,7 @@ def build_prompt(
                         "Provide exactly 4 time-anchored moments for today: morning, midday, afternoon, and evening. "
                         "Use the supplied two-day read, exercise readiness, and key moments framework so this feels like a practical daily schedule. "
                         "If today's morning training record is supplied, treat it as what the member has planned for today, not as completed or missed training. "
+                        "If a fasting plan is enabled, protect the fasting window: do not recommend breakfast or early eating, and refer to fluids, first planned meal, or eating window instead. "
                         "Review all available daily tracking across the tracked pillars rather than narrowing in on one selected concept. "
                         "Use the tracker signals to decide which concepts matter today; do not favour fasting, alcohol, heat exposure, cold exposure, or any optional item by default. "
                         "Take the whole programme into account: training, nutrition, resilience, and recovery. "

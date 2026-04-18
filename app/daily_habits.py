@@ -12,6 +12,7 @@ from .db import SessionLocal, engine
 from .models import DailyCoachHabitPlan, DailyPillarTrackerEntry, OKRKeyResult, OKRKrHabitStep, OKRObjective, User
 from .okr import _guess_concept_from_description, _normalize_concept_key
 from .pillar_tracker import (
+    _wellbeing_weekly_targets,
     get_pillar_tracker_detail,
     get_pillar_tracker_summary,
     get_recent_tracker_save_focus,
@@ -24,7 +25,7 @@ from .wearables import get_apple_health_resting_hr_summary
 
 _DAILY_HABITS_SCHEMA_READY = False
 _PILLAR_ORDER = ("nutrition", "training", "resilience", "recovery")
-_CURRENT_HABIT_PLAN_VERSION = 10
+_CURRENT_HABIT_PLAN_VERSION = 11
 _DAY_PLAN_SCOPE_KEY = "__day_plan__"
 _DAY_MOMENT_SEQUENCE = (
     ("morning", "Morning"),
@@ -203,6 +204,76 @@ def _load_user_name(user_id: int) -> str:
         user = s.get(User, int(user_id))
         first_name = str(getattr(user, "first_name", "") or "").strip() if user else ""
     return first_name or "User"
+
+
+def _load_fasting_context(user_id: int) -> dict[str, Any]:
+    try:
+        fasting_mode, _alcohol_tracking, fasting_goal_days, _alcohol_goal_units = _wellbeing_weekly_targets(int(user_id))
+    except Exception:
+        fasting_mode, fasting_goal_days = "off", 0
+    fasting_mode = str(fasting_mode or "off").strip().lower()
+    enabled = fasting_mode not in {"", "off"}
+    return {
+        "enabled": bool(enabled),
+        "mode": fasting_mode if enabled else "off",
+        "goal_days": int(fasting_goal_days or 0) if enabled else 0,
+        "planning_note": (
+            f"Fasting is enabled ({fasting_mode}). Do not recommend breakfast or early eating as a default; "
+            "use fluids, a steady start, and the member's first planned meal or eating window instead."
+            if enabled
+            else None
+        ),
+    }
+
+
+def _fasting_is_enabled(fasting: dict[str, Any] | None) -> bool:
+    return bool(isinstance(fasting, dict) and fasting.get("enabled") and str(fasting.get("mode") or "off").strip().lower() != "off")
+
+
+def _protect_fasting_language(text: str, fasting: dict[str, Any] | None) -> str:
+    value = str(text or "")
+    if not value or not _fasting_is_enabled(fasting):
+        return value
+    replacements = (
+        (r"\bbreakfast\b", "your first planned meal"),
+        (r"\bbreakfasts\b", "first planned meals"),
+        (r"\bearly eating\b", "your eating window"),
+        (r"\beat early\b", "place your first meal inside your eating window"),
+        (r"\bfirst proper meal early\b", "first planned meal inside your eating window"),
+    )
+    for pattern, replacement in replacements:
+        value = re.sub(pattern, replacement, value, flags=re.IGNORECASE)
+    return value
+
+
+def _protect_fasting_habit_item(item: dict[str, Any], fasting: dict[str, Any] | None) -> dict[str, Any]:
+    if not _fasting_is_enabled(fasting):
+        return dict(item)
+    protected = {
+        **item,
+        "title": _protect_fasting_language(str(item.get("title") or ""), fasting),
+        "detail": _protect_fasting_language(str(item.get("detail") or ""), fasting),
+    }
+    protected["id"] = _habit_item_id(
+        title=str(protected.get("title") or ""),
+        detail=str(protected.get("detail") or ""),
+        concept_key=str(protected.get("concept_key") or "") or None,
+        pillar_key=str(protected.get("pillar_key") or "") or None,
+        moment_key=str(protected.get("moment_key") or "") or None,
+    )
+    return protected
+
+
+def _protect_fasting_option_sets(
+    option_sets: dict[str, list[dict[str, Any]]],
+    fasting: dict[str, Any] | None,
+) -> dict[str, list[dict[str, Any]]]:
+    if not _fasting_is_enabled(fasting):
+        return option_sets
+    return {
+        str(concept_key): [_protect_fasting_habit_item(item, fasting) for item in items if isinstance(item, dict)]
+        for concept_key, items in (option_sets or {}).items()
+    }
 
 
 def _habit_item_id(
@@ -912,6 +983,7 @@ def _build_key_moments(
     readiness: dict[str, str],
     snapshots: dict[str, dict[str, Any]],
     planned_training: dict[str, Any] | None = None,
+    fasting: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     nutrition_snapshot = snapshots.get("nutrition") or {}
     training_snapshot = snapshots.get("training") or {}
@@ -932,31 +1004,58 @@ def _build_key_moments(
         if item.get("planned") and str(item.get("label") or "").strip()
     ]
     planned_training_text = _join_labels(planned_training_labels).lower()
+    fasting_enabled = _fasting_is_enabled(fasting)
+    fasting_mode = str((fasting or {}).get("mode") or "").strip()
 
     morning_title = "Set the day early"
     if nutrition_state == "weak":
         morning_title = "Set nutrition up early"
-        morning_detail = (
-            f"Plan the first proper meal early so {nutrition_focus_label} does not drift once the day speeds up."
-        )
+        if fasting_enabled:
+            morning_detail = (
+                f"Start with fluids and plan your first meal inside your {fasting_mode} eating window so {nutrition_focus_label} does not drift."
+            )
+        else:
+            morning_detail = (
+                f"Plan the first proper meal early so {nutrition_focus_label} does not drift once the day speeds up."
+            )
     elif recovery_state == "weak":
-        morning_detail = (
-            f"Start with food, fluids, and a calmer pace so {recovery_focus_label} has a better base."
-        )
+        if fasting_enabled:
+            morning_detail = (
+                f"Start with fluids and a calmer pace, then keep your first meal inside your {fasting_mode} window."
+            )
+        else:
+            morning_detail = (
+                f"Start with food, fluids, and a calmer pace so {recovery_focus_label} has a better base."
+            )
     elif nutrition_state == "fair" or recovery_state == "fair":
-        morning_detail = (
-            "Start with food, fluids, and a calmer pace so you are not trying to rescue energy later on."
-        )
+        if fasting_enabled:
+            morning_detail = (
+                "Start with fluids and a calmer pace so you are not trying to rescue energy later on."
+            )
+        else:
+            morning_detail = (
+                "Start with food, fluids, and a calmer pace so you are not trying to rescue energy later on."
+            )
     else:
-        morning_detail = (
-            "Get food, fluids, and a steady start in early so the rest of the day has a solid base."
-        )
+        if fasting_enabled:
+            morning_detail = (
+                "Get fluids and a steady start in early, then place food inside your planned eating window."
+            )
+        else:
+            morning_detail = (
+                "Get food, fluids, and a steady start in early so the rest of the day has a solid base."
+            )
 
     midday_title = "Keep the middle steady"
     if nutrition_state == "weak":
-        midday_detail = (
-            f"Do not let {nutrition_focus_label} drift at lunch, and top fluids up before the afternoon gets busy."
-        )
+        if fasting_enabled:
+            midday_detail = (
+                f"Use your eating window deliberately, keep {nutrition_focus_label} steady, and top fluids up."
+            )
+        else:
+            midday_detail = (
+                f"Do not let {nutrition_focus_label} drift at lunch, and top fluids up before the afternoon gets busy."
+            )
     elif recovery_state == "weak":
         midday_detail = (
             f"Keep the middle of the day steady so {recovery_focus_label} has a better chance to recover."
@@ -966,9 +1065,14 @@ def _build_key_moments(
             f"Use the middle of the day for a short reset so {resilience_focus_label} does not slide later on."
         )
     else:
-        midday_detail = (
-            f"Check food, fluids, and your headspace around midday so the second half of the day stays controlled."
-        )
+        if fasting_enabled:
+            midday_detail = (
+                "Check your eating window, fluids, and headspace around midday so the second half stays controlled."
+            )
+        else:
+            midday_detail = (
+                f"Check food, fluids, and your headspace around midday so the second half of the day stays controlled."
+            )
 
     exercise_state = str(readiness.get("exercise_state") or "steady").strip().lower()
     if planned_training_entries:
@@ -1033,10 +1137,30 @@ def _build_key_moments(
         )
 
     return [
-        {"moment_key": "morning", "moment_label": "Morning", "title": morning_title, "detail": morning_detail[:180]},
-        {"moment_key": "midday", "moment_label": "Midday", "title": midday_title, "detail": midday_detail[:180]},
-        {"moment_key": "afternoon", "moment_label": "Afternoon", "title": afternoon_title, "detail": afternoon_detail[:180]},
-        {"moment_key": "evening", "moment_label": "Evening", "title": evening_title, "detail": evening_detail[:180]},
+        {
+            "moment_key": "morning",
+            "moment_label": "Morning",
+            "title": morning_title,
+            "detail": _protect_fasting_language(morning_detail, fasting)[:180],
+        },
+        {
+            "moment_key": "midday",
+            "moment_label": "Midday",
+            "title": midday_title,
+            "detail": _protect_fasting_language(midday_detail, fasting)[:180],
+        },
+        {
+            "moment_key": "afternoon",
+            "moment_label": "Afternoon",
+            "title": afternoon_title,
+            "detail": _protect_fasting_language(afternoon_detail, fasting)[:180],
+        },
+        {
+            "moment_key": "evening",
+            "moment_label": "Evening",
+            "title": evening_title,
+            "detail": _protect_fasting_language(evening_detail, fasting)[:180],
+        },
     ]
 
 
@@ -1068,6 +1192,7 @@ def _build_day_brief(
     today: date,
     planned_training: dict[str, Any] | None = None,
     planned_training_loaded: bool = False,
+    fasting: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     snapshots: dict[str, dict[str, Any]] = {}
     for pillar_row in (summary.get("pillars") or []):
@@ -1082,6 +1207,8 @@ def _build_day_brief(
     resilience_snapshot = snapshots.get("resilience") or {"state": "unknown", "label": "Resilience"}
     if not planned_training_loaded:
         planned_training = _load_morning_training_plan(user_id, today)
+    if fasting is None:
+        fasting = _load_fasting_context(user_id)
     planned_training_entries = [
         item for item in ((planned_training or {}).get("entries") or []) if isinstance(item, dict)
     ]
@@ -1146,6 +1273,7 @@ def _build_day_brief(
         readiness=readiness,
         snapshots=snapshots,
         planned_training=planned_training,
+        fasting=fasting,
     )
     today_priority = "The main job today is to match training, food, recovery, and headspace rather than let one area drag the rest off line."
     if planned_training_entries:
@@ -1168,6 +1296,7 @@ def _build_day_brief(
         },
         "readiness": readiness,
         "planned_training": planned_training,
+        "fasting": fasting if _fasting_is_enabled(fasting) else {"enabled": False, "mode": "off", "goal_days": 0},
         "key_moments": key_moments,
         "today_aim": today_aim,
         "plan_title": _day_plan_title(readiness, planned_training),
@@ -1236,6 +1365,7 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
             continue
         snapshots[pillar_key] = _pillar_day_snapshot(user_id, pillar_row, today)
     planned_training = _load_morning_training_plan(user_id, today)
+    fasting_context = _load_fasting_context(user_id)
     tracker_review = _build_tracker_review(snapshots, planned_training=planned_training)
     selected_pillar_key = str(weakest.get("pillar_key") or "nutrition").strip().lower() or "nutrition"
     selected_pillar_label = str(weakest.get("label") or selected_pillar_key.title()).strip() or selected_pillar_key.title()
@@ -1250,6 +1380,7 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
         today=today,
         planned_training=planned_training,
         planned_training_loaded=True,
+        fasting=fasting_context,
     )
     biometrics_context = _build_biometrics_context(user_id)
     pillars_payload = [
@@ -1284,6 +1415,7 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
         "okr_context": okr_context,
         "tracker_review": tracker_review,
         "day_brief": day_brief,
+        "fasting": fasting_context,
         "biometrics": biometrics_context,
     }
 
@@ -1834,6 +1966,7 @@ def _fallback_habit_options_for_concept(concept: dict[str, Any], pillar_key: str
 
 def _fallback_plan(context: dict[str, Any]) -> dict[str, Any]:
     day_brief = context.get("day_brief") or {}
+    fasting = day_brief.get("fasting") if isinstance(day_brief.get("fasting"), dict) else context.get("fasting")
     moments = [
         item
         for item in (
@@ -1856,7 +1989,11 @@ def _fallback_plan(context: dict[str, Any]) -> dict[str, Any]:
             _normalize_habit_plan_item(
                 {
                     "title": "Keep the middle steady",
-                    "detail": "Use lunch and the middle of the day to keep food, fluids, and focus under control.",
+                    "detail": (
+                        "Use your eating window and the middle of the day to keep fluids and focus under control."
+                        if _fasting_is_enabled(fasting)
+                        else "Use lunch and the middle of the day to keep food, fluids, and focus under control."
+                    ),
                     "moment_key": "midday",
                 },
                 default_concept=None,
@@ -1879,10 +2016,16 @@ def _fallback_plan(context: dict[str, Any]) -> dict[str, Any]:
             ),
         ]
         moments = _items_with_day_moments([item for item in fallback_items if item])
+    protected_moments = []
+    for item in moments:
+        protected_moments.append(_protect_fasting_habit_item(item, fasting))
     return {
-        "title": str(day_brief.get("plan_title") or "Today's plan").strip() or "Today's plan",
-        "summary": str(day_brief.get("plan_summary") or "Use these key moments to keep the day steady and practical.").strip()[:500],
-        "habits": moments[:5],
+        "title": _protect_fasting_language(str(day_brief.get("plan_title") or "Today's plan").strip() or "Today's plan", fasting),
+        "summary": _protect_fasting_language(
+            str(day_brief.get("plan_summary") or "Use these key moments to keep the day steady and practical.").strip()[:500],
+            fasting,
+        ),
+        "habits": protected_moments[:5],
         "source": "fallback",
     }
 
@@ -1977,13 +2120,15 @@ def _generate_plan_from_llm(user_id: int, context: dict[str, Any]) -> dict[str, 
         if len(habits) < len(_DAY_MOMENT_SEQUENCE):
             return None
         day_brief = context.get("day_brief") or {}
+        fasting = day_brief.get("fasting") if isinstance(day_brief.get("fasting"), dict) else context.get("fasting")
+        habits = [_protect_fasting_habit_item(item, fasting) for item in habits]
         title = str(parsed.get("title") or "").strip() or str(day_brief.get("plan_title") or "Today's plan").strip()
         summary = str(parsed.get("summary") or "").strip() or str(
             day_brief.get("plan_summary") or "Use these key moments to keep the day steady and practical."
         ).strip()
         return {
-            "title": title[:200],
-            "summary": summary[:500],
+            "title": _protect_fasting_language(title, fasting)[:200],
+            "summary": _protect_fasting_language(summary, fasting)[:500],
             "habits": habits,
             "source": "llm",
         }
@@ -2139,6 +2284,8 @@ def get_or_generate_daily_habit_plan(
             context = _build_generation_context(user_id, selected_concept_key=None)
         if not hash_value:
             hash_value = _context_hash(context)
+        day_brief = context.get("day_brief") if isinstance(context.get("day_brief"), dict) else {}
+        fasting_context = day_brief.get("fasting") if isinstance(day_brief.get("fasting"), dict) else context.get("fasting")
         available_concepts: list[dict[str, Any]] = []
         option_sets = _habit_option_sets_from_state(
             seed_payload,
@@ -2146,6 +2293,7 @@ def get_or_generate_daily_habit_plan(
             legacy_habits=(getattr(carryover, "habits", None) if carryover is not None else None),
             default_selected_concept=None,
         )
+        option_sets = _protect_fasting_option_sets(option_sets, fasting_context)
         selected_ids_by_concept = _selected_ids_by_concept(
             seed_payload,
             row=carryover,
@@ -2153,6 +2301,7 @@ def get_or_generate_daily_habit_plan(
             option_sets=option_sets,
         )
         selected_habits = _selected_habits_from_option_sets(option_sets, selected_ids_by_concept)
+        selected_habits = [_protect_fasting_habit_item(item, fasting_context) for item in selected_habits]
         plan_scope_key = _DAY_PLAN_SCOPE_KEY
         existing_options_for_concept = option_sets.get(plan_scope_key, [])
         if (
@@ -2220,6 +2369,8 @@ def get_or_generate_daily_habit_plan(
                     force=True,
                 )
         row = existing or DailyCoachHabitPlan(user_id=int(user_id), plan_date=today)
+        option_sets = _protect_fasting_option_sets(option_sets, fasting_context)
+        selected_habits = [_protect_fasting_habit_item(item, fasting_context) for item in selected_habits]
         row.pillar_key = str((context.get("selected_pillar") or {}).get("pillar_key") or "").strip() or None
         row.pillar_label = str((context.get("selected_pillar") or {}).get("label") or "").strip() or None
         row.title = str(generated.get("title") or "").strip() or None

@@ -310,6 +310,8 @@ APP_TRACKER_SUMMARY_TASK_BLOCK = """Task: write a concise one-way daily briefing
 
 Do not create a new plan for the day. Do not rewrite the plan as a schedule. Do not use a morning/midday/evening list. Do not add new habits, times, or tasks beyond the supplied education action.
 
+If a fasting plan is enabled, respect it: do not recommend breakfast or early eating, and refer to the eating window or first planned meal instead.
+
 Identify the clearest overall pattern, explain what level of exercise makes sense today based on recovery and nutrition, mention the Today's focus lesson once when it is available, include the supplied education action, and close with the single main priority to carry into the plan the member has already seen. Treat every configured tracker concept equally; choose what to mention from the daily record signals, not from whether the concept is optional or standard.
 
 Keep it to 2-3 short paragraphs. Use plain British English. Avoid OKR/KR jargon and system terms like pillar, drill, or resilience work. Do not ask a question and do not invite a reply."""

@@ -1673,63 +1673,46 @@ def _select_programme(
     session,
     pillar_key: str | None,
     concept_key: str | None = None,
+    *,
+    exclude_programme_ids: set[int] | None = None,
 ) -> EducationProgramme | None:
     pillar_token = str(pillar_key or "").strip().lower()
     concept_token = _normalize_concept_key(concept_key)
+    excluded = {int(item) for item in (exclude_programme_ids or set()) if item}
     concept_programme = and_(
         EducationProgramme.concept_key.isnot(None),
         EducationProgramme.concept_key != "",
     )
-    if concept_token and not pillar_token:
-        row = (
-            session.execute(
-                select(EducationProgramme)
-                .where(
-                    EducationProgramme.is_active.is_(True),
-                    concept_programme,
-                    EducationProgramme.concept_key == concept_token,
-                )
-                .order_by(desc(EducationProgramme.updated_at), desc(EducationProgramme.id))
-            )
+    def _select_with_filters(*filters: Any) -> EducationProgramme | None:
+        stmt = select(EducationProgramme).where(
+            EducationProgramme.is_active.is_(True),
+            concept_programme,
+            *filters,
+        )
+        if excluded:
+            stmt = stmt.where(EducationProgramme.id.notin_(sorted(excluded)))
+        return (
+            session.execute(stmt.order_by(desc(EducationProgramme.updated_at), desc(EducationProgramme.id)))
             .scalars()
             .first()
         )
+
+    if concept_token and not pillar_token:
+        row = _select_with_filters(EducationProgramme.concept_key == concept_token)
         if row is not None:
             return row
     if pillar_token and concept_token:
-        row = (
-            session.execute(
-                select(EducationProgramme)
-                .where(
-                    EducationProgramme.is_active.is_(True),
-                    concept_programme,
-                    EducationProgramme.pillar_key == pillar_token,
-                    EducationProgramme.concept_key == concept_token,
-                )
-                .order_by(desc(EducationProgramme.updated_at), desc(EducationProgramme.id))
-            )
-            .scalars()
-            .first()
+        row = _select_with_filters(
+            EducationProgramme.pillar_key == pillar_token,
+            EducationProgramme.concept_key == concept_token,
         )
         if row is not None:
             return row
     if pillar_token:
-        row = (
-            session.execute(
-                select(EducationProgramme)
-                .where(
-                    EducationProgramme.is_active.is_(True),
-                    EducationProgramme.pillar_key == pillar_token,
-                    concept_programme,
-                )
-                .order_by(desc(EducationProgramme.updated_at), desc(EducationProgramme.id))
-            )
-            .scalars()
-            .first()
-        )
+        row = _select_with_filters(EducationProgramme.pillar_key == pillar_token)
         if row is not None:
             return row
-    return None
+    return _select_with_filters()
 
 
 def _resolve_programme_day(session, programme_id: int, day_index: int) -> EducationProgrammeDay | None:
@@ -1870,6 +1853,61 @@ def _get_or_create_concept_level(
     return row
 
 
+def _completed_programme_ids_for_user(session, user_id: int) -> set[int]:
+    rows = (
+        session.execute(
+            select(UserEducationPlan.programme_id)
+            .where(
+                UserEducationPlan.user_id == int(user_id),
+                UserEducationPlan.status == "completed",
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {int(row) for row in rows if row}
+
+
+def _plan_last_programme_day_completed(
+    session,
+    *,
+    plan: UserEducationPlan,
+    programme: EducationProgramme,
+) -> bool:
+    duration_days = _programme_duration_days(session, programme)
+    final_day = _resolve_programme_day(session, int(programme.id), int(duration_days))
+    if final_day is None:
+        return False
+    return bool(
+        session.execute(
+            select(UserEducationDayProgress.id)
+            .where(
+                UserEducationDayProgress.user_plan_id == int(plan.id),
+                UserEducationDayProgress.programme_day_id == int(final_day.id),
+                UserEducationDayProgress.completed_at.isnot(None),
+            )
+            .limit(1)
+        ).scalar_one_or_none()
+    )
+
+
+def _plan_ready_for_next_programme(
+    session,
+    *,
+    plan: UserEducationPlan,
+    programme: EducationProgramme,
+    plan_date: date,
+) -> bool:
+    starts_on = getattr(plan, "starts_on", None)
+    if not isinstance(starts_on, date):
+        return False
+    duration_days = _programme_duration_days(session, programme)
+    final_lesson_date = starts_on + timedelta(days=max(int(duration_days), 1) - 1)
+    if plan_date <= final_lesson_date:
+        return False
+    return _plan_last_programme_day_completed(session, plan=plan, programme=programme)
+
+
 def _get_or_create_active_plan(
     session,
     *,
@@ -1922,7 +1960,6 @@ def _get_or_create_active_plan(
         preferred_concept,
         context=context,
     )
-    preferred_programme = _select_programme(session, preferred_pillar or None, preferred_concept)
     existing = (
         session.execute(
             select(UserEducationPlan)
@@ -1935,11 +1972,51 @@ def _get_or_create_active_plan(
         .scalars()
         .first()
     )
+    completed_programme_ids = _completed_programme_ids_for_user(session, int(user_id))
+    existing_programme_for_rollover = (
+        session.get(EducationProgramme, int(existing.programme_id))
+        if existing is not None and getattr(existing, "programme_id", None)
+        else None
+    )
+    if (
+        existing is not None
+        and existing_programme_for_rollover is not None
+        and bool(getattr(existing_programme_for_rollover, "is_active", False))
+        and _plan_ready_for_next_programme(
+            session,
+            plan=existing,
+            programme=existing_programme_for_rollover,
+            plan_date=plan_date,
+        )
+    ):
+        completed_programme_ids.add(int(existing_programme_for_rollover.id))
+    preferred_programme = _select_programme(
+        session,
+        preferred_pillar or None,
+        preferred_concept,
+        exclude_programme_ids=completed_programme_ids,
+    )
     programme: EducationProgramme | None = None
     if existing is not None:
         programme = session.get(EducationProgramme, int(existing.programme_id))
         if programme is None or not bool(getattr(programme, "is_active", False)):
             existing.status = "paused"
+            session.add(existing)
+            session.flush()
+            existing = None
+            programme = None
+        elif (
+            _plan_ready_for_next_programme(
+                session,
+                plan=existing,
+                programme=programme,
+                plan_date=plan_date,
+            )
+            and preferred_programme is not None
+            and int(getattr(preferred_programme, "id", 0) or 0) != int(existing.programme_id)
+        ):
+            existing.status = "completed"
+            _sync_plan_streaks(session, existing)
             session.add(existing)
             session.flush()
             existing = None
@@ -1977,7 +2054,12 @@ def _get_or_create_active_plan(
             session.add(existing)
             session.flush()
     if existing is None:
-        programme = preferred_programme or _select_programme(session, preferred_pillar or None, preferred_concept)
+        programme = preferred_programme or _select_programme(
+            session,
+            preferred_pillar or None,
+            preferred_concept,
+            exclude_programme_ids=completed_programme_ids,
+        )
         if programme is None:
             return None, None
         run = assessment.get("run")
