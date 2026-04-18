@@ -96,6 +96,7 @@ class StaffUser(Base):
     __tablename__ = "membersense_staff_users"
 
     id = Column(Integer, primary_key=True)
+    username = Column(String(80), nullable=True, unique=True, index=True)
     email = Column(String(255), nullable=False, unique=True, index=True)
     name = Column(String(160), nullable=False)
     password_hash = Column(String(255), nullable=False)

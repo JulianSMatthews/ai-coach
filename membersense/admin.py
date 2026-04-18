@@ -849,7 +849,7 @@ def _login_form(*, next_path: str = "/admin", error: str = "") -> HTMLResponse:
 {error_html}
 <form method="post" action="/admin/login">
   <input type="hidden" name="next" value="{_esc(next_path)}">
-  <label><span>Email</span><input name="email" type="email" autocomplete="username" required></label>
+  <label><span>Username or email</span><input name="email" autocomplete="username" required></label>
   <label><span>Password</span><input name="password" type="password" autocomplete="current-password" required></label>
   <button type="submit">Sign in</button>
 </form>"""
@@ -864,6 +864,7 @@ def _setup_form(request: Request, *, error: str = "") -> HTMLResponse:
 {error_html}
 <form method="post" action="{_post_action(request, '/admin/setup')}">
   <label><span>Name</span><input name="name" autocomplete="name" required></label>
+  <label><span>Username</span><input name="username" autocomplete="username"></label>
   <label><span>Email</span><input name="email" type="email" autocomplete="username" required></label>
   <label><span>Password</span><input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
   <button type="submit">Create staff account</button>
@@ -890,6 +891,7 @@ def staff_setup(request: Request, session: Session = Depends(get_session)):
 def staff_setup_save(
     request: Request,
     name: str = Form(...),
+    username: str = Form(""),
     email: str = Form(...),
     password: str = Form(...),
     session: Session = Depends(get_session),
@@ -899,7 +901,15 @@ def staff_setup_save(
     if config.ADMIN_TOKEN and not _legacy_token_allowed(request):
         return _setup_form(request, error="First staff setup requires the admin token.")
     try:
-        staff = create_staff_user(session, email=email, name=name, password=password, role="owner", is_active=True)
+        staff = create_staff_user(
+            session,
+            username=username or None,
+            email=email,
+            name=name,
+            password=password,
+            role="owner",
+            is_active=True,
+        )
         session.commit()
         session.refresh(staff)
     except ValueError as exc:
@@ -930,7 +940,7 @@ def login_save(
     next_path = safe_next_path(next)
     if staff_count(session) <= 0:
         return RedirectResponse("/admin/setup", status_code=303)
-    staff = authenticate_staff(session, email=email, password=password)
+    staff = authenticate_staff(session, login=email, password=password)
     if staff is None:
         session.rollback()
         return _login_form(next_path=next_path, error="Email or password is incorrect.")
@@ -1004,7 +1014,7 @@ def staff_admin(
         )
         table_rows.append(
             "<tr>"
-            f"<td>{_esc(row.name)}<br><span class=\"muted\">{_esc(row.email)}</span></td>"
+            f"<td>{_esc(row.name)}<br><span class=\"muted\">{_esc(row.username or '')}</span><br><span class=\"muted\">{_esc(row.email)}</span></td>"
             f"<td><span class=\"pill\">{_esc(row.role)}</span></td>"
             f"<td>{_esc(status)}</td>"
             f"<td>{_esc(_datetime(row.last_login_at)) or 'Not yet'}</td>"
@@ -1020,6 +1030,7 @@ def staff_admin(
   <form method="post" action="{_post_action(request, '/admin/staff')}" class="stack">
     <div class="grid">
       <label><span>Name</span><input name="name" required></label>
+      <label><span>Username</span><input name="username"></label>
       <label><span>Email</span><input name="email" type="email" required></label>
       <label><span>Password</span><input name="password" type="password" minlength="8" required></label>
       <label><span>Role</span><select name="role">
@@ -1045,6 +1056,7 @@ def staff_admin(
 def staff_create(
     request: Request,
     name: str = Form(...),
+    username: str = Form(""),
     email: str = Form(...),
     password: str = Form(...),
     role: str = Form("staff"),
@@ -1052,7 +1064,15 @@ def staff_create(
     _: None = Depends(require_admin),
 ):
     try:
-        create_staff_user(session, email=email, name=name, password=password, role=role, is_active=True)
+        create_staff_user(
+            session,
+            username=username or None,
+            email=email,
+            name=name,
+            password=password,
+            role=role,
+            is_active=True,
+        )
         session.commit()
     except ValueError as exc:
         session.rollback()

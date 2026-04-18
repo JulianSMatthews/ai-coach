@@ -98,7 +98,7 @@ On first deploy:
 2. Keep `MEMBERSENSE_DRY_RUN=1` until the SMS sender is configured.
 3. Add either an SMS-capable `MEMBERSENSE_TWILIO_FROM` number or `MEMBERSENSE_TWILIO_MESSAGING_SERVICE_SID`.
 4. Set the Twilio SMS inbound webhook to `https://your-membersense-url.onrender.com/webhooks/twilio`.
-5. Copy `MEMBERSENSE_ADMIN_TOKEN` from the Render environment and open `/admin/setup?token=...` to create the first staff account.
+5. Set `MEMBERSENSE_BOOTSTRAP_STAFF_PASSWORD` to create the default `jsm` owner login on startup.
 6. After a successful SMS test, change `MEMBERSENSE_DRY_RUN` to `0`.
 
 Render sets `RENDER_EXTERNAL_URL` automatically, and MemberSense uses it for survey links unless `MEMBERSENSE_PUBLIC_BASE_URL` is set manually for a custom domain.

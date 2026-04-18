@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from sqlalchemy import create_engine
-from sqlalchemy import text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 from .config import DATABASE_URL
@@ -18,6 +17,7 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     _migrate_members_table()
+    _migrate_staff_users_table()
 
 
 def _migrate_members_table() -> None:
@@ -63,3 +63,24 @@ def _migrate_members_table() -> None:
             "UPDATE membersense_members SET membership_status = 'current' "
             "WHERE lower(trim(membership_status)) IN ('not setup', 'not set up', 'active')"
         )
+
+
+def _migrate_staff_users_table() -> None:
+    table_name = "membersense_staff_users"
+    dialect = engine.dialect.name
+    with engine.begin() as conn:
+        if dialect == "sqlite":
+            columns = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table_name})").fetchall()}
+            if not columns:
+                return
+            if "username" not in columns:
+                conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN username VARCHAR(80)")
+            conn.exec_driver_sql(
+                f"CREATE UNIQUE INDEX IF NOT EXISTS ix_{table_name}_username ON {table_name} (username)"
+            )
+            return
+        if dialect == "postgresql":
+            conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS username VARCHAR(80)")
+            conn.exec_driver_sql(
+                f"CREATE UNIQUE INDEX IF NOT EXISTS ix_{table_name}_username ON {table_name} (username)"
+            )

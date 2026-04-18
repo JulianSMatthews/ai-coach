@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse, RedirectResponse, Response
 
 from . import config
 from .admin import router as admin_router
+from .auth import bootstrap_staff_user
 from .db import SessionLocal, init_db
 from .services import handle_inbound_sms, update_message_status
 
@@ -16,6 +17,8 @@ app.include_router(admin_router)
 @app.on_event("startup")
 def startup() -> None:
     init_db()
+    with SessionLocal() as session:
+        bootstrap_staff_user(session)
 
 
 @app.get("/")

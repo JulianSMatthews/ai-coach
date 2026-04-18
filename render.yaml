@@ -205,6 +205,14 @@ services:
         value: "1"
       - key: MEMBERSENSE_ADMIN_TOKEN
         generateValue: true
+      - key: MEMBERSENSE_BOOTSTRAP_STAFF_USERNAME
+        value: "jsm"
+      - key: MEMBERSENSE_BOOTSTRAP_STAFF_NAME
+        value: "JSM"
+      - key: MEMBERSENSE_BOOTSTRAP_STAFF_EMAIL
+        value: "jsm@membersense.local"
+      - key: MEMBERSENSE_BOOTSTRAP_STAFF_PASSWORD
+        sync: false
       - key: MEMBERSENSE_DRY_RUN
         value: "1"
       - key: MEMBERSENSE_NGROK

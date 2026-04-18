@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import Request
 from fastapi.responses import RedirectResponse
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from . import config
@@ -24,6 +24,16 @@ PASSWORD_ITERATIONS = 180_000
 
 def normalize_email(value: str | None) -> str:
     return str(value or "").strip().lower()
+
+
+def normalize_username(value: str | None) -> str:
+    raw = str(value or "").strip().lower()
+    return "".join(ch for ch in raw if ch.isalnum() or ch in {"_", "-", "."})
+
+
+def default_staff_email(username: str) -> str:
+    key = normalize_username(username)
+    return f"{key or 'staff'}@membersense.local"
 
 
 def staff_count(session: Session) -> int:
@@ -76,26 +86,34 @@ def verify_password(password: str, stored_hash: str | None) -> bool:
 def create_staff_user(
     session: Session,
     *,
-    email: str,
+    email: str | None = None,
+    username: str | None = None,
     name: str,
     password: str,
     role: str = "staff",
     is_active: bool = True,
 ) -> StaffUser:
-    normalized_email = normalize_email(email)
-    display_name = str(name or "").strip() or normalized_email
+    normalized_username = normalize_username(username)
+    normalized_email = normalize_email(email) or default_staff_email(normalized_username)
+    display_name = str(name or "").strip() or normalized_username or normalized_email
     password_text = str(password or "")
     role_key = str(role or "staff").strip().lower()
     if role_key not in {"owner", "admin", "staff"}:
         role_key = "staff"
+    if username is not None and not normalized_username:
+        raise ValueError("Enter a valid staff username.")
     if not normalized_email or "@" not in normalized_email:
         raise ValueError("Enter a valid staff email address.")
     if len(password_text) < 8:
         raise ValueError("Password must be at least 8 characters.")
-    existing = session.execute(select(StaffUser).where(StaffUser.email == normalized_email)).scalar_one_or_none()
+    duplicate_checks = [StaffUser.email == normalized_email]
+    if normalized_username:
+        duplicate_checks.append(StaffUser.username == normalized_username)
+    existing = session.execute(select(StaffUser).where(or_(*duplicate_checks))).scalar_one_or_none()
     if existing is not None:
-        raise ValueError("A staff account already exists for that email.")
+        raise ValueError("A staff account already exists for that username or email.")
     row = StaffUser(
+        username=normalized_username or None,
         email=normalized_email,
         name=display_name,
         password_hash=hash_password(password_text),
@@ -107,8 +125,13 @@ def create_staff_user(
     return row
 
 
-def authenticate_staff(session: Session, email: str, password: str) -> StaffUser | None:
-    row = session.execute(select(StaffUser).where(StaffUser.email == normalize_email(email))).scalar_one_or_none()
+def authenticate_staff(session: Session, login: str, password: str) -> StaffUser | None:
+    normalized_email = normalize_email(login)
+    normalized_username = normalize_username(login)
+    checks = [StaffUser.email == normalized_email]
+    if normalized_username:
+        checks.append(StaffUser.username == normalized_username)
+    row = session.execute(select(StaffUser).where(or_(*checks))).scalar_one_or_none()
     if row is None or not bool(getattr(row, "is_active", False)):
         return None
     if not verify_password(password, getattr(row, "password_hash", None)):
@@ -116,6 +139,34 @@ def authenticate_staff(session: Session, email: str, password: str) -> StaffUser
     row.last_login_at = datetime.utcnow().replace(microsecond=0)
     session.add(row)
     session.flush()
+    return row
+
+
+def bootstrap_staff_user(session: Session) -> StaffUser | None:
+    username = normalize_username(getattr(config, "BOOTSTRAP_STAFF_USERNAME", ""))
+    password = str(getattr(config, "BOOTSTRAP_STAFF_PASSWORD", "") or "")
+    if not username or not password:
+        return None
+    email = normalize_email(getattr(config, "BOOTSTRAP_STAFF_EMAIL", "")) or default_staff_email(username)
+    existing = (
+        session.execute(
+            select(StaffUser).where(or_(StaffUser.username == username, StaffUser.email == email))
+        )
+        .scalars()
+        .first()
+    )
+    if existing is not None:
+        return existing
+    row = create_staff_user(
+        session,
+        username=username,
+        email=email,
+        name=str(getattr(config, "BOOTSTRAP_STAFF_NAME", "") or username).strip(),
+        password=password,
+        role="owner",
+        is_active=True,
+    )
+    session.commit()
     return row
 
 
