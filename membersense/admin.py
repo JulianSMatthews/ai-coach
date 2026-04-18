@@ -366,6 +366,93 @@ def _coerce_range(min_days: int, max_days: int) -> tuple[int, int]:
     return low, high
 
 
+def _filter_choice(value: str, allowed: set[str], default: str = "any") -> str:
+    selected = str(value or default).strip().lower().replace("-", "_")
+    return selected if selected in allowed else default
+
+
+def _filter_select(name: str, selected: str, options: list[tuple[str, str]]) -> str:
+    items = []
+    for value, label in options:
+        active = " selected" if value == selected else ""
+        items.append(f'<option value="{_esc(value)}"{active}>{_esc(label)}</option>')
+    return f'<select name="{_esc(name)}">' + "".join(items) + "</select>"
+
+
+def _member_has_email(member: Member) -> bool:
+    return bool(str(getattr(member, "email", "") or "").strip())
+
+
+def _member_matches_list_filters(
+    session: Session,
+    member: Member,
+    *,
+    flow_key: str,
+    mobile_filter: str = "any",
+    email_filter: str = "any",
+    sent_filter: str = "any",
+) -> bool:
+    has_mobile = bool(member_contact_phone(member))
+    has_email = _member_has_email(member)
+    latest = latest_survey_for_member(session, int(member.id), flow_key)
+    if mobile_filter == "present" and not has_mobile:
+        return False
+    if mobile_filter == "missing" and has_mobile:
+        return False
+    if email_filter == "present" and not has_email:
+        return False
+    if email_filter == "missing" and has_email:
+        return False
+    if sent_filter == "not_sent" and latest is not None:
+        return False
+    if sent_filter == "sent" and latest is None:
+        return False
+    return True
+
+
+def _apply_list_filters(
+    session: Session,
+    members: list[Member],
+    *,
+    flow_key: str,
+    mobile_filter: str = "any",
+    email_filter: str = "any",
+    sent_filter: str = "any",
+) -> list[Member]:
+    return [
+        member
+        for member in members
+        if _member_matches_list_filters(
+            session,
+            member,
+            flow_key=flow_key,
+            mobile_filter=mobile_filter,
+            email_filter=email_filter,
+            sent_filter=sent_filter,
+        )
+    ]
+
+
+def _filter_fetch_limit(limit: int) -> int:
+    return max(min(int(limit or 200) * 5, 2500), int(limit or 200), 1)
+
+
+def _list_filter_fields(mobile_filter: str, email_filter: str, sent_filter: str) -> str:
+    return f"""
+    <label><span>Mobile</span>{_filter_select('mobile_filter', mobile_filter, [('any', 'Any'), ('present', 'Mobile present'), ('missing', 'No mobile')])}</label>
+    <label><span>Email</span>{_filter_select('email_filter', email_filter, [('any', 'Any'), ('present', 'Email present'), ('missing', 'No email')])}</label>
+    <label><span>Survey</span>{_filter_select('sent_filter', sent_filter, [('any', 'Any'), ('not_sent', 'Not sent'), ('sent', 'Sent')])}</label>
+"""
+
+
+def _hidden_list_filters(mobile_filter: str, email_filter: str, sent_filter: str) -> str:
+    return f"""
+      <input type="hidden" name="mobile_filter" value="{_esc(mobile_filter)}">
+      <input type="hidden" name="email_filter" value="{_esc(email_filter)}">
+      <input type="hidden" name="sent_filter" value="{_esc(sent_filter)}">
+"""
+
+
 def _segment_table(
     request: Request,
     session: Session,
@@ -1578,6 +1665,9 @@ def create_member_app_link(
 def inactive(
     request: Request,
     tab: str = "new",
+    mobile_filter: str = "any",
+    email_filter: str = "any",
+    sent_filter: str = "any",
     new_min_days: int = 0,
     new_max_days: int = 7,
     new_limit: int = 200,
@@ -1596,6 +1686,9 @@ def inactive(
     new_min_days, new_max_days = _coerce_range(new_min_days, new_max_days)
     visit_min_days, visit_max_days = _coerce_range(visit_min_days, visit_max_days)
     expired_min_days, expired_max_days = _coerce_range(expired_min_days, expired_max_days)
+    mobile_filter = _filter_choice(mobile_filter, {"any", "present", "missing"})
+    email_filter = _filter_choice(email_filter, {"any", "present", "missing"})
+    sent_filter = _filter_choice(sent_filter, {"any", "not_sent", "sent"})
     new_limit = max(min(int(new_limit or 200), 500), 1)
     visit_limit = max(min(int(visit_limit or 200), 500), 1)
     expired_limit = max(min(int(expired_limit or 200), 500), 1)
@@ -1616,21 +1709,42 @@ def inactive(
     visit_rows: list[Member] = []
     expired_rows: list[Member] = []
     if selected_tab == "new":
-        new_rows = new_member_candidates(session, min_days=new_min_days, max_days=new_max_days, limit=new_limit)
+        new_rows = _apply_list_filters(
+            session,
+            new_member_candidates(session, min_days=new_min_days, max_days=new_max_days, limit=_filter_fetch_limit(new_limit)),
+            flow_key="new_member",
+            mobile_filter=mobile_filter,
+            email_filter=email_filter,
+            sent_filter=sent_filter,
+        )[:new_limit]
     elif selected_tab == "inactive":
-        visit_rows = last_visit_range_candidates(
+        visit_rows = _apply_list_filters(
             session,
-            min_days=visit_min_days,
-            max_days=visit_max_days,
-            limit=visit_limit,
-        )
+            last_visit_range_candidates(
+                session,
+                min_days=visit_min_days,
+                max_days=visit_max_days,
+                limit=_filter_fetch_limit(visit_limit),
+            ),
+            flow_key="inactive",
+            mobile_filter=mobile_filter,
+            email_filter=email_filter,
+            sent_filter=sent_filter,
+        )[:visit_limit]
     elif selected_tab == "expired":
-        expired_rows = expired_member_candidates(
+        expired_rows = _apply_list_filters(
             session,
-            min_days=expired_min_days,
-            max_days=expired_max_days,
-            limit=expired_limit,
-        )
+            expired_member_candidates(
+                session,
+                min_days=expired_min_days,
+                max_days=expired_max_days,
+                limit=_filter_fetch_limit(expired_limit),
+            ),
+            flow_key="exit",
+            mobile_filter=mobile_filter,
+            email_filter=email_filter,
+            sent_filter=sent_filter,
+        )[:expired_limit]
 
     token_input = _token_input(request)
     notices = []
@@ -1652,6 +1766,9 @@ def inactive(
         "expired_min_days": expired_min_days,
         "expired_max_days": expired_max_days,
         "expired_limit": expired_limit,
+        "mobile_filter": mobile_filter,
+        "email_filter": email_filter,
+        "sent_filter": sent_filter,
     }
     tabs = []
     for key, label in (("new", "New Members"), ("inactive", "Not Training"), ("expired", "Expired Members")):
@@ -1662,6 +1779,8 @@ def inactive(
     tabs_html = '<div class="tabs">' + "".join(tabs) + "</div>"
 
     if selected_tab == "new":
+        filter_fields = _list_filter_fields(mobile_filter, email_filter, sent_filter)
+        hidden_filters = _hidden_list_filters(mobile_filter, email_filter, sent_filter)
         active_section = f"""
 <section>
   <div class="inline" style="justify-content: space-between;">
@@ -1669,6 +1788,7 @@ def inactive(
     <form method="post" action="{_post_action(request, '/admin/segments/new/send')}" class="inline">
       <input type="hidden" name="min_days" value="{new_min_days}">
       <input type="hidden" name="max_days" value="{new_max_days}">
+      {hidden_filters}
       <label><span>Maximum to send</span><input name="limit" type="number" value="{len(new_rows) or 1}" min="1" max="500"></label>
       <button type="submit" class="secondary">Send new member surveys</button>
     </form>
@@ -1679,6 +1799,7 @@ def inactive(
     <label><span>Member for at least</span><input name="new_min_days" type="number" value="{new_min_days}" min="0"> days</label>
     <label><span>Member for no more than</span><input name="new_max_days" type="number" value="{new_max_days}" min="0"> days</label>
     <label><span>Show up to</span><input name="new_limit" type="number" value="{new_limit}" min="1" max="500"></label>
+    {filter_fields}
     <input type="hidden" name="visit_min_days" value="{visit_min_days}">
     <input type="hidden" name="visit_max_days" value="{visit_max_days}">
     <input type="hidden" name="visit_limit" value="{visit_limit}">
@@ -1693,6 +1814,8 @@ def inactive(
   </table>
 </section>"""
     elif selected_tab == "inactive":
+        filter_fields = _list_filter_fields(mobile_filter, email_filter, sent_filter)
+        hidden_filters = _hidden_list_filters(mobile_filter, email_filter, sent_filter)
         active_section = f"""
 <section>
   <div class="inline" style="justify-content: space-between;">
@@ -1700,6 +1823,7 @@ def inactive(
     <form method="post" action="{_post_action(request, '/admin/segments/inactive/send')}" class="inline">
       <input type="hidden" name="min_days" value="{visit_min_days}">
       <input type="hidden" name="max_days" value="{visit_max_days}">
+      {hidden_filters}
       <label><span>Maximum to send</span><input name="limit" type="number" value="{len(visit_rows) or 1}" min="1" max="500"></label>
       <button type="submit" class="secondary">Send inactive surveys</button>
     </form>
@@ -1713,6 +1837,7 @@ def inactive(
     <label><span>Last trained at least</span><input name="visit_min_days" type="number" value="{visit_min_days}" min="0"> days ago</label>
     <label><span>Last trained no more than</span><input name="visit_max_days" type="number" value="{visit_max_days}" min="0"> days ago</label>
     <label><span>Show up to</span><input name="visit_limit" type="number" value="{visit_limit}" min="1" max="500"></label>
+    {filter_fields}
     <input type="hidden" name="expired_min_days" value="{expired_min_days}">
     <input type="hidden" name="expired_max_days" value="{expired_max_days}">
     <input type="hidden" name="expired_limit" value="{expired_limit}">
@@ -1725,6 +1850,8 @@ def inactive(
   </table>
 </section>"""
     else:
+        filter_fields = _list_filter_fields(mobile_filter, email_filter, sent_filter)
+        hidden_filters = _hidden_list_filters(mobile_filter, email_filter, sent_filter)
         active_section = f"""
 <section>
   <div class="inline" style="justify-content: space-between;">
@@ -1732,6 +1859,7 @@ def inactive(
     <form method="post" action="{_post_action(request, '/admin/segments/expired/send')}" class="inline">
       <input type="hidden" name="min_days" value="{expired_min_days}">
       <input type="hidden" name="max_days" value="{expired_max_days}">
+      {hidden_filters}
       <label><span>Maximum to send</span><input name="limit" type="number" value="{len(expired_rows) or 1}" min="1" max="500"></label>
       <button type="submit" class="secondary">Send exit surveys</button>
     </form>
@@ -1748,6 +1876,7 @@ def inactive(
     <label><span>Expired at least</span><input name="expired_min_days" type="number" value="{expired_min_days}" min="0"> days ago</label>
     <label><span>Expired no more than</span><input name="expired_max_days" type="number" value="{expired_max_days}" min="0"> days ago</label>
     <label><span>Show up to</span><input name="expired_limit" type="number" value="{expired_limit}" min="1" max="500"></label>
+    {filter_fields}
     <button type="submit">Refresh</button>
   </form>
   <table>
@@ -1773,15 +1902,42 @@ def send_new_member_surveys(
     min_days: int = Form(0),
     max_days: int = Form(7),
     limit: int = Form(25),
+    mobile_filter: str = Form("any"),
+    email_filter: str = Form("any"),
+    sent_filter: str = Form("any"),
     session: Session = Depends(get_session),
     _: None = Depends(require_admin),
 ):
     min_days, max_days = _coerce_range(min_days, max_days)
+    mobile_filter = _filter_choice(mobile_filter, {"any", "present", "missing"})
+    email_filter = _filter_choice(email_filter, {"any", "present", "missing"})
+    sent_filter = _filter_choice(sent_filter, {"any", "not_sent", "sent"})
     requested = max(min(int(limit or 25), 500), 1)
     candidate_limit = max(min(requested * 3, 1500), requested)
-    members = new_member_candidates(session, min_days=min_days, max_days=max_days, limit=candidate_limit)
+    members = _apply_list_filters(
+        session,
+        new_member_candidates(session, min_days=min_days, max_days=max_days, limit=candidate_limit),
+        flow_key="new_member",
+        mobile_filter=mobile_filter,
+        email_filter=email_filter,
+        sent_filter=sent_filter,
+    )
     sent = _send_segment(request, session, members, "new_member", limit=requested)
-    return _redirect(request, f"/admin/inactive?tab=new&new_min_days={min_days}&new_max_days={max_days}&sent_new={sent}")
+    return _redirect(
+        request,
+        "/admin/inactive?"
+        + urlencode(
+            {
+                "tab": "new",
+                "new_min_days": min_days,
+                "new_max_days": max_days,
+                "mobile_filter": mobile_filter,
+                "email_filter": email_filter,
+                "sent_filter": sent_filter,
+                "sent_new": sent,
+            }
+        ),
+    )
 
 
 @router.post("/admin/segments/inactive/send")
@@ -1790,15 +1946,42 @@ def send_inactive_surveys(
     min_days: int = Form(14),
     max_days: int = Form(21),
     limit: int = Form(25),
+    mobile_filter: str = Form("any"),
+    email_filter: str = Form("any"),
+    sent_filter: str = Form("any"),
     session: Session = Depends(get_session),
     _: None = Depends(require_admin),
 ):
     min_days, max_days = _coerce_range(min_days, max_days)
+    mobile_filter = _filter_choice(mobile_filter, {"any", "present", "missing"})
+    email_filter = _filter_choice(email_filter, {"any", "present", "missing"})
+    sent_filter = _filter_choice(sent_filter, {"any", "not_sent", "sent"})
     requested = max(min(int(limit or 25), 500), 1)
     candidate_limit = max(min(requested * 3, 1500), requested)
-    members = last_visit_range_candidates(session, min_days=min_days, max_days=max_days, limit=candidate_limit)
+    members = _apply_list_filters(
+        session,
+        last_visit_range_candidates(session, min_days=min_days, max_days=max_days, limit=candidate_limit),
+        flow_key="inactive",
+        mobile_filter=mobile_filter,
+        email_filter=email_filter,
+        sent_filter=sent_filter,
+    )
     sent = _send_segment(request, session, members, "inactive", limit=requested)
-    return _redirect(request, f"/admin/inactive?tab=inactive&visit_min_days={min_days}&visit_max_days={max_days}&sent_inactive={sent}")
+    return _redirect(
+        request,
+        "/admin/inactive?"
+        + urlencode(
+            {
+                "tab": "inactive",
+                "visit_min_days": min_days,
+                "visit_max_days": max_days,
+                "mobile_filter": mobile_filter,
+                "email_filter": email_filter,
+                "sent_filter": sent_filter,
+                "sent_inactive": sent,
+            }
+        ),
+    )
 
 
 @router.post("/admin/segments/expired/send")
@@ -1807,15 +1990,42 @@ def send_expired_surveys(
     min_days: int = Form(0),
     max_days: int = Form(30),
     limit: int = Form(25),
+    mobile_filter: str = Form("any"),
+    email_filter: str = Form("any"),
+    sent_filter: str = Form("any"),
     session: Session = Depends(get_session),
     _: None = Depends(require_admin),
 ):
     min_days, max_days = _coerce_range(min_days, max_days)
+    mobile_filter = _filter_choice(mobile_filter, {"any", "present", "missing"})
+    email_filter = _filter_choice(email_filter, {"any", "present", "missing"})
+    sent_filter = _filter_choice(sent_filter, {"any", "not_sent", "sent"})
     requested = max(min(int(limit or 25), 500), 1)
     candidate_limit = max(min(requested * 3, 1500), requested)
-    members = expired_member_candidates(session, min_days=min_days, max_days=max_days, limit=candidate_limit)
+    members = _apply_list_filters(
+        session,
+        expired_member_candidates(session, min_days=min_days, max_days=max_days, limit=candidate_limit),
+        flow_key="exit",
+        mobile_filter=mobile_filter,
+        email_filter=email_filter,
+        sent_filter=sent_filter,
+    )
     sent = _send_segment(request, session, members, "exit", limit=requested)
-    return _redirect(request, f"/admin/inactive?tab=expired&expired_min_days={min_days}&expired_max_days={max_days}&sent_expired={sent}")
+    return _redirect(
+        request,
+        "/admin/inactive?"
+        + urlencode(
+            {
+                "tab": "expired",
+                "expired_min_days": min_days,
+                "expired_max_days": max_days,
+                "mobile_filter": mobile_filter,
+                "email_filter": email_filter,
+                "sent_filter": sent_filter,
+                "sent_expired": sent,
+            }
+        ),
+    )
 
 
 @router.get("/admin/import", response_class=HTMLResponse)
