@@ -81,8 +81,16 @@ https://your-public-url.example/s/{survey-token}
 
 ## Render Deployment
 
-MemberSense is defined as its own Python web service in the repo-level `render.yaml`.
+MemberSense can be deployed on its own from `render.membersense.yaml`.
 It uses a separate Render Postgres database named `membersense-db`.
+
+When creating the Blueprint in Render, set **Blueprint Path** to:
+
+```text
+render.membersense.yaml
+```
+
+Using the root `render.yaml` provisions HealthSense services as well.
 
 On first deploy:
 
