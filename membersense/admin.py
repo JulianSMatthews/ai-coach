@@ -330,6 +330,28 @@ def _layout(request: Request, title: str, body: str) -> HTMLResponse:
     {account_nav}
   </header>
   <main>{body}</main>
+  <script>
+    document.addEventListener("click", async function (event) {{
+      var target = event.target;
+      var button = target && target.closest ? target.closest("[data-copy-value]") : null;
+      if (!button) return;
+      event.preventDefault();
+      var value = button.getAttribute("data-copy-value") || "";
+      var original = button.getAttribute("data-copy-label") || button.textContent || "Copy";
+      try {{
+        if (!navigator.clipboard) throw new Error("Clipboard unavailable");
+        await navigator.clipboard.writeText(value);
+      }} catch (error) {{
+        var source = button.parentElement ? button.parentElement.querySelector("[data-copy-source]") : null;
+        if (source && source.select) {{
+          source.select();
+          document.execCommand("copy");
+        }}
+      }}
+      button.textContent = "Copied";
+      window.setTimeout(function () {{ button.textContent = original; }}, 1800);
+    }});
+  </script>
 </body>
 </html>"""
     return HTMLResponse(html)
@@ -2597,7 +2619,8 @@ def conversation_detail(
   {link_notice}
   <p class="muted">Use this when a member should complete the survey in the browser.</p>
   <div class="inline">
-    <input value="{_esc(app_link)}" readonly onclick="this.select()">
+    <input value="{_esc(app_link)}" readonly onclick="this.select()" data-copy-source>
+    <button type="button" class="secondary" data-copy-value="{_esc(app_link)}" data-copy-label="Copy link">Copy link</button>
     <a class="button" href="{_esc(app_link)}" target="_blank" rel="noreferrer">Open app survey</a>
     {email_action}
   </div>
