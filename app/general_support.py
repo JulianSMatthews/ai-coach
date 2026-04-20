@@ -515,6 +515,28 @@ def _tracker_history_lines(tracker_context: dict) -> list[str]:
                 bits.append(f"reason={reason}")
             if bits:
                 lines.append("Exercise readiness: " + "; ".join(bits))
+        time_context = day_brief.get("time_context") if isinstance(day_brief.get("time_context"), dict) else tracker_context.get("time_context")
+        if isinstance(time_context, dict):
+            current_label = str(time_context.get("current_moment_label") or "").strip()
+            remaining = [
+                str(item or "").strip()
+                for item in (time_context.get("remaining_moment_labels") or [])
+                if str(item or "").strip()
+            ]
+            past = [
+                str(item or "").strip()
+                for item in (time_context.get("past_moment_labels") or [])
+                if str(item or "").strip()
+            ]
+            bits = []
+            if current_label:
+                bits.append(f"generated_during={current_label}")
+            if remaining:
+                bits.append("use_only=" + ", ".join(remaining))
+            if past:
+                bits.append("past_today=" + ", ".join(past))
+            if bits:
+                lines.append("Plan timing: " + "; ".join(bits) + ". Do not create advice for past parts of today.")
         key_moments = day_brief.get("key_moments") if isinstance(day_brief.get("key_moments"), list) else []
         if key_moments:
             lines.append("Key moments for today:")

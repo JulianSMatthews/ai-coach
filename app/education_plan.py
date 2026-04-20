@@ -1891,6 +1891,57 @@ def _plan_last_programme_day_completed(
     )
 
 
+def _completed_programme_day_indices(
+    session,
+    *,
+    plan: UserEducationPlan,
+    programme: EducationProgramme,
+) -> set[int]:
+    rows = (
+        session.execute(
+            select(EducationProgrammeDay.day_index)
+            .join(
+                UserEducationDayProgress,
+                UserEducationDayProgress.programme_day_id == EducationProgrammeDay.id,
+            )
+            .where(
+                UserEducationDayProgress.user_plan_id == int(plan.id),
+                UserEducationDayProgress.completed_at.isnot(None),
+                EducationProgrammeDay.programme_id == int(programme.id),
+            )
+        )
+        .scalars()
+        .all()
+    )
+    completed: set[int] = set()
+    for row in rows:
+        try:
+            value = int(row or 0)
+        except Exception:
+            value = 0
+        if value > 0:
+            completed.add(value)
+    return completed
+
+
+def _next_incomplete_programme_day_index(
+    session,
+    *,
+    plan: UserEducationPlan,
+    programme: EducationProgramme,
+) -> int:
+    duration_days = _programme_duration_days(session, programme)
+    completed_days = _completed_programme_day_indices(
+        session,
+        plan=plan,
+        programme=programme,
+    )
+    for day_index in range(1, max(int(duration_days), 1) + 1):
+        if day_index not in completed_days:
+            return day_index
+    return max(int(duration_days), 1)
+
+
 def _plan_ready_for_next_programme(
     session,
     *,
@@ -1898,13 +1949,6 @@ def _plan_ready_for_next_programme(
     programme: EducationProgramme,
     plan_date: date,
 ) -> bool:
-    starts_on = getattr(plan, "starts_on", None)
-    if not isinstance(starts_on, date):
-        return False
-    duration_days = _programme_duration_days(session, programme)
-    final_lesson_date = starts_on + timedelta(days=max(int(duration_days), 1) - 1)
-    if plan_date <= final_lesson_date:
-        return False
     return _plan_last_programme_day_completed(session, plan=plan, programme=programme)
 
 
@@ -1978,7 +2022,7 @@ def _get_or_create_active_plan(
         if existing is not None and getattr(existing, "programme_id", None)
         else None
     )
-    if (
+    existing_ready_for_rollover = (
         existing is not None
         and existing_programme_for_rollover is not None
         and bool(getattr(existing_programme_for_rollover, "is_active", False))
@@ -1988,7 +2032,8 @@ def _get_or_create_active_plan(
             programme=existing_programme_for_rollover,
             plan_date=plan_date,
         )
-    ):
+    )
+    if existing_ready_for_rollover and existing_programme_for_rollover is not None:
         completed_programme_ids.add(int(existing_programme_for_rollover.id))
     preferred_programme = _select_programme(
         session,
@@ -2005,16 +2050,13 @@ def _get_or_create_active_plan(
             session.flush()
             existing = None
             programme = None
-        elif (
-            _plan_ready_for_next_programme(
-                session,
-                plan=existing,
-                programme=programme,
-                plan_date=plan_date,
-            )
-            and preferred_programme is not None
-            and int(getattr(preferred_programme, "id", 0) or 0) != int(existing.programme_id)
+        elif _plan_ready_for_next_programme(
+            session,
+            plan=existing,
+            programme=programme,
+            plan_date=plan_date,
         ):
+            existing.current_day_index = _programme_duration_days(session, programme)
             existing.status = "completed"
             _sync_plan_streaks(session, existing)
             session.add(existing)
@@ -2088,9 +2130,11 @@ def _get_or_create_active_plan(
         session.flush()
     if programme is None:
         programme = session.get(EducationProgramme, int(existing.programme_id))
-    duration_days = _programme_duration_days(session, programme)
-    elapsed = max(0, (plan_date - existing.starts_on).days)
-    existing.current_day_index = min(duration_days, elapsed + 1)
+    existing.current_day_index = _next_incomplete_programme_day_index(
+        session,
+        plan=existing,
+        programme=programme,
+    )
     existing.pillar_key = str(getattr(programme, "pillar_key", "") or existing.pillar_key or "").strip().lower() or "nutrition"
     existing.entry_concept_key = (
         _normalize_concept_key(getattr(existing, "entry_concept_key", None))

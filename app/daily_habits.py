@@ -25,7 +25,7 @@ from .wearables import get_apple_health_resting_hr_summary
 
 _DAILY_HABITS_SCHEMA_READY = False
 _PILLAR_ORDER = ("nutrition", "training", "resilience", "recovery")
-_CURRENT_HABIT_PLAN_VERSION = 11
+_CURRENT_HABIT_PLAN_VERSION = 12
 _DAY_PLAN_SCOPE_KEY = "__day_plan__"
 _DAY_MOMENT_SEQUENCE = (
     ("morning", "Morning"),
@@ -33,6 +33,7 @@ _DAY_MOMENT_SEQUENCE = (
     ("afternoon", "Afternoon"),
     ("evening", "Evening"),
 )
+_DAY_MOMENT_LABELS = {key: label for key, label in _DAY_MOMENT_SEQUENCE}
 _MORNING_PLAN_END_HOUR = 12
 
 
@@ -87,6 +88,88 @@ def _is_morning_plan_window() -> bool:
         return 0 <= int(current.hour) < _MORNING_PLAN_END_HOUR
     except Exception:
         return False
+
+
+def _current_day_moment_key(current: datetime | None = None) -> str:
+    try:
+        now = current or tracker_now()
+        hour = int(now.hour)
+    except Exception:
+        hour = 9
+    if hour < 11:
+        return "morning"
+    if hour < 14:
+        return "midday"
+    if hour < 18:
+        return "afternoon"
+    return "evening"
+
+
+def _moment_keys_from(value: Any) -> tuple[str, ...]:
+    if isinstance(value, str):
+        raw_items = [item.strip() for item in re.split(r"[,|]", value) if item.strip()]
+    elif isinstance(value, (list, tuple, set)):
+        raw_items = list(value)
+    else:
+        return ()
+    requested = {
+        normalized
+        for normalized in (_normalize_moment_key(item) for item in raw_items)
+        if normalized
+    }
+    return tuple(key for key, _label in _DAY_MOMENT_SEQUENCE if key in requested)
+
+
+def _day_moment_sequence_for_keys(moment_keys: tuple[str, ...] | list[str] | None = None) -> tuple[tuple[str, str], ...]:
+    keys = _moment_keys_from(moment_keys or [])
+    if not keys:
+        return _DAY_MOMENT_SEQUENCE
+    return tuple((key, _DAY_MOMENT_LABELS[key]) for key in keys if key in _DAY_MOMENT_LABELS)
+
+
+def _build_time_context(today: date | None = None) -> dict[str, Any]:
+    try:
+        now = tracker_now()
+    except Exception:
+        now = datetime.utcnow()
+    current_key = _current_day_moment_key(now)
+    sequence_keys = [key for key, _label in _DAY_MOMENT_SEQUENCE]
+    try:
+        current_index = sequence_keys.index(current_key)
+    except ValueError:
+        current_index = 0
+    remaining_keys = tuple(sequence_keys[current_index:])
+    past_keys = tuple(sequence_keys[:current_index])
+    return {
+        "local_date": (today if isinstance(today, date) else tracker_today()).isoformat(),
+        "current_moment_key": current_key,
+        "current_moment_label": _DAY_MOMENT_LABELS.get(current_key, "Current"),
+        "remaining_moment_keys": list(remaining_keys),
+        "remaining_moment_labels": [_DAY_MOMENT_LABELS[key] for key in remaining_keys],
+        "past_moment_keys": list(past_keys),
+        "past_moment_labels": [_DAY_MOMENT_LABELS[key] for key in past_keys],
+        "rule": "Only create advice for the current and future parts of today; do not schedule or recommend past moments.",
+    }
+
+
+def _time_context_from_payload(payload: dict[str, Any] | None) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+    direct = payload.get("time_context")
+    if isinstance(direct, dict):
+        return direct
+    day_brief = payload.get("day_brief")
+    if isinstance(day_brief, dict) and isinstance(day_brief.get("time_context"), dict):
+        return day_brief.get("time_context") or {}
+    return {}
+
+
+def _required_day_moment_keys(payload: dict[str, Any] | None) -> tuple[str, ...]:
+    time_context = _time_context_from_payload(payload)
+    keys = _moment_keys_from(time_context.get("remaining_moment_keys"))
+    if keys:
+        return keys
+    return tuple(key for key, _label in _DAY_MOMENT_SEQUENCE)
 
 
 def _join_labels(labels: list[str]) -> str:
@@ -984,6 +1067,7 @@ def _build_key_moments(
     snapshots: dict[str, dict[str, Any]],
     planned_training: dict[str, Any] | None = None,
     fasting: dict[str, Any] | None = None,
+    time_context: dict[str, Any] | None = None,
 ) -> list[dict[str, str]]:
     nutrition_snapshot = snapshots.get("nutrition") or {}
     training_snapshot = snapshots.get("training") or {}
@@ -1136,7 +1220,7 @@ def _build_key_moments(
             f"Close things down cleanly, keep {recovery_focus_label} steady, and finish with a short mental reset."
         )
 
-    return [
+    moments = [
         {
             "moment_key": "morning",
             "moment_label": "Morning",
@@ -1161,6 +1245,12 @@ def _build_key_moments(
             "title": evening_title,
             "detail": _protect_fasting_language(evening_detail, fasting)[:180],
         },
+    ]
+    required_keys = set(_required_day_moment_keys({"time_context": time_context or {}}))
+    return [
+        item
+        for item in moments
+        if str(item.get("moment_key") or "").strip().lower() in required_keys
     ]
 
 
@@ -1193,6 +1283,7 @@ def _build_day_brief(
     planned_training: dict[str, Any] | None = None,
     planned_training_loaded: bool = False,
     fasting: dict[str, Any] | None = None,
+    time_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     snapshots: dict[str, dict[str, Any]] = {}
     for pillar_row in (summary.get("pillars") or []):
@@ -1209,6 +1300,8 @@ def _build_day_brief(
         planned_training = _load_morning_training_plan(user_id, today)
     if fasting is None:
         fasting = _load_fasting_context(user_id)
+    time_context = time_context if isinstance(time_context, dict) else _build_time_context(today)
+    required_moment_keys = _required_day_moment_keys({"time_context": time_context})
     planned_training_entries = [
         item for item in ((planned_training or {}).get("entries") or []) if isinstance(item, dict)
     ]
@@ -1268,12 +1361,22 @@ def _build_day_brief(
         today_aim = "Keep movement light, restore the basics, and make the day easier rather than heavier."
     else:
         today_aim = "Keep the day simple, recover properly, and take the pressure off until the basics feel steadier."
+    if "afternoon" not in required_moment_keys and "evening" in required_moment_keys:
+        if planned_training_entries and planned_training_labels:
+            today_aim = (
+                f"If the planned {planned_training_text} is still ahead, keep it scaled; otherwise close the day around recovery and food."
+            )
+        else:
+            today_aim = (
+                "Use the time left today to close food, fluids, recovery, and headspace cleanly rather than trying to catch up on earlier plans."
+            )
     key_moments = _build_key_moments(
         user_id=user_id,
         readiness=readiness,
         snapshots=snapshots,
         planned_training=planned_training,
         fasting=fasting,
+        time_context=time_context,
     )
     today_priority = "The main job today is to match training, food, recovery, and headspace rather than let one area drag the rest off line."
     if planned_training_entries:
@@ -1288,6 +1391,9 @@ def _build_day_brief(
         str(readiness.get("exercise_reason") or "").strip(),
         today_aim,
     ]
+    plan_title = _day_plan_title(readiness, planned_training)
+    if "morning" not in required_moment_keys:
+        plan_title = "This evening's plan" if required_moment_keys == ("evening",) else "Rest of today's plan"
     return {
         "two_day_read": {
             "strength": strength_text,
@@ -1297,9 +1403,10 @@ def _build_day_brief(
         "readiness": readiness,
         "planned_training": planned_training,
         "fasting": fasting if _fasting_is_enabled(fasting) else {"enabled": False, "mode": "off", "goal_days": 0},
+        "time_context": time_context,
         "key_moments": key_moments,
         "today_aim": today_aim,
-        "plan_title": _day_plan_title(readiness, planned_training),
+        "plan_title": plan_title,
         "plan_summary": " ".join(part for part in plan_summary_parts if part).strip(),
     }
 
@@ -1367,6 +1474,7 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
     planned_training = _load_morning_training_plan(user_id, today)
     fasting_context = _load_fasting_context(user_id)
     tracker_review = _build_tracker_review(snapshots, planned_training=planned_training)
+    time_context = _build_time_context(today)
     selected_pillar_key = str(weakest.get("pillar_key") or "nutrition").strip().lower() or "nutrition"
     selected_pillar_label = str(weakest.get("label") or selected_pillar_key.title()).strip() or selected_pillar_key.title()
     okr_context: dict[str, Any] = {}
@@ -1381,6 +1489,7 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
         planned_training=planned_training,
         planned_training_loaded=True,
         fasting=fasting_context,
+        time_context=time_context,
     )
     biometrics_context = _build_biometrics_context(user_id)
     pillars_payload = [
@@ -1416,6 +1525,7 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
         "tracker_review": tracker_review,
         "day_brief": day_brief,
         "fasting": fasting_context,
+        "time_context": time_context,
         "biometrics": biometrics_context,
     }
 
@@ -1595,23 +1705,39 @@ def _normalize_habit_plan_item(
     }
 
 
-def _items_with_day_moments(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _items_with_day_moments(
+    items: list[dict[str, Any]],
+    *,
+    moment_sequence: tuple[tuple[str, str], ...] | None = None,
+) -> list[dict[str, Any]]:
     output: list[dict[str, Any]] = []
     used: set[str] = set()
-    sequence = list(_DAY_MOMENT_SEQUENCE)
+    sequence = list(moment_sequence or _DAY_MOMENT_SEQUENCE)
+    allowed_keys = {key for key, _label in sequence}
+    filter_to_sequence = moment_sequence is not None
     for index, item in enumerate(items):
         row = dict(item)
         moment_key = _normalize_moment_key(row.get("moment_key"))
+        if moment_key and filter_to_sequence and moment_key not in allowed_keys:
+            continue
         if not moment_key:
-            if index < len(sequence):
-                moment_key = sequence[index][0]
+            sequence_index = len(output)
+            if sequence_index < len(sequence):
+                moment_key = sequence[sequence_index][0]
+            elif filter_to_sequence:
+                continue
             else:
                 moment_key = f"step_{index + 1}"
         if moment_key in used:
+            replacement_key = None
             for candidate_key, _candidate_label in sequence:
                 if candidate_key not in used:
-                    moment_key = candidate_key
+                    replacement_key = candidate_key
                     break
+            if replacement_key:
+                moment_key = replacement_key
+            elif filter_to_sequence:
+                continue
         used.add(moment_key)
         row["moment_key"] = moment_key
         row["moment_label"] = str(row.get("moment_label") or _moment_label_for_key(moment_key) or f"Step {index + 1}").strip()
@@ -1619,15 +1745,19 @@ def _items_with_day_moments(items: list[dict[str, Any]]) -> list[dict[str, Any]]
     return output
 
 
-def _has_complete_day_plan_items(items: list[dict[str, Any]]) -> bool:
-    if len(items) < len(_DAY_MOMENT_SEQUENCE):
+def _has_complete_day_plan_items(
+    items: list[dict[str, Any]],
+    *,
+    required_moment_keys: tuple[str, ...] | None = None,
+) -> bool:
+    required_keys = set(required_moment_keys or tuple(key for key, _label in _DAY_MOMENT_SEQUENCE))
+    if len(items) < len(required_keys):
         return False
     keys = {
         _normalize_moment_key(item.get("moment_key"))
         for item in items
         if isinstance(item, dict)
     }
-    required_keys = {key for key, _label in _DAY_MOMENT_SEQUENCE}
     return required_keys.issubset({key for key in keys if key})
 
 
@@ -1967,6 +2097,8 @@ def _fallback_habit_options_for_concept(concept: dict[str, Any], pillar_key: str
 def _fallback_plan(context: dict[str, Any]) -> dict[str, Any]:
     day_brief = context.get("day_brief") or {}
     fasting = day_brief.get("fasting") if isinstance(day_brief.get("fasting"), dict) else context.get("fasting")
+    required_moment_keys = _required_day_moment_keys(context)
+    moment_sequence = _day_moment_sequence_for_keys(required_moment_keys)
     moments = [
         item
         for item in (
@@ -1975,47 +2107,44 @@ def _fallback_plan(context: dict[str, Any]) -> dict[str, Any]:
         )
         if item
     ]
-    moments = _items_with_day_moments(moments)
+    moments = _items_with_day_moments(moments, moment_sequence=moment_sequence)
     if not moments:
-        fallback_items = [
-            _normalize_habit_plan_item(
-                {
-                    "title": "Set the day early",
-                    "detail": "Choose one simple action that makes the rest of the day easier to manage.",
-                    "moment_key": "morning",
-                },
-                default_concept=None,
-            ),
-            _normalize_habit_plan_item(
-                {
-                    "title": "Keep the middle steady",
-                    "detail": (
-                        "Use your eating window and the middle of the day to keep fluids and focus under control."
-                        if _fasting_is_enabled(fasting)
-                        else "Use lunch and the middle of the day to keep food, fluids, and focus under control."
-                    ),
-                    "moment_key": "midday",
-                },
-                default_concept=None,
-            ),
-            _normalize_habit_plan_item(
-                {
-                    "title": "Keep the afternoon purposeful",
-                    "detail": "Use the afternoon for the right level of movement for today, not extra noise.",
-                    "moment_key": "afternoon",
-                },
-                default_concept=None,
-            ),
-            _normalize_habit_plan_item(
-                {
-                    "title": "Close the day cleanly",
-                    "detail": "Finish with a short reset so tomorrow starts cleaner than today.",
-                    "moment_key": "evening",
-                },
-                default_concept=None,
-            ),
+        fallback_defs = [
+            {
+                "title": "Set the day early",
+                "detail": "Choose one simple action that makes the rest of the day easier to manage.",
+                "moment_key": "morning",
+            },
+            {
+                "title": "Keep the middle steady",
+                "detail": (
+                    "Use your eating window and the middle of the day to keep fluids and focus under control."
+                    if _fasting_is_enabled(fasting)
+                    else "Use lunch and the middle of the day to keep food, fluids, and focus under control."
+                ),
+                "moment_key": "midday",
+            },
+            {
+                "title": "Keep the afternoon purposeful",
+                "detail": "Use the afternoon for the right level of movement for today, not extra noise.",
+                "moment_key": "afternoon",
+            },
+            {
+                "title": "Close the day cleanly",
+                "detail": "Finish with a short reset so tomorrow starts cleaner than today.",
+                "moment_key": "evening",
+            },
         ]
-        moments = _items_with_day_moments([item for item in fallback_items if item])
+        required_set = set(required_moment_keys)
+        fallback_items = [
+            _normalize_habit_plan_item(item, default_concept=None)
+            for item in fallback_defs
+            if str(item.get("moment_key") or "").strip().lower() in required_set
+        ]
+        moments = _items_with_day_moments(
+            [item for item in fallback_items if item],
+            moment_sequence=moment_sequence,
+        )
     protected_moments = []
     for item in moments:
         protected_moments.append(_protect_fasting_habit_item(item, fasting))
@@ -2073,6 +2202,8 @@ def _generate_plan_from_llm(user_id: int, context: dict[str, Any]) -> dict[str, 
     try:
         selected_pillar = context.get("selected_pillar") or {}
         user_name = str(context.get("user_name") or "User").strip() or "User"
+        required_moment_keys = _required_day_moment_keys(context)
+        moment_sequence = _day_moment_sequence_for_keys(required_moment_keys)
         ensure_builtin_prompt_templates(["daily_habit_plan"])
         assembly = build_prompt(
             "daily_habit_plan",
@@ -2116,8 +2247,8 @@ def _generate_plan_from_llm(user_id: int, context: dict[str, Any]) -> dict[str, 
             )
             if item
         ][:5]
-        habits = _items_with_day_moments(habits)
-        if len(habits) < len(_DAY_MOMENT_SEQUENCE):
+        habits = _items_with_day_moments(habits, moment_sequence=moment_sequence)
+        if not _has_complete_day_plan_items(habits, required_moment_keys=required_moment_keys):
             return None
         day_brief = context.get("day_brief") or {}
         fasting = day_brief.get("fasting") if isinstance(day_brief.get("fasting"), dict) else context.get("fasting")
@@ -2143,6 +2274,8 @@ def _serialize_plan(
     default_habits_view: str | None = None,
 ) -> dict[str, Any]:
     payload = row.context_payload if isinstance(getattr(row, "context_payload", None), dict) else {}
+    required_moment_keys = _required_day_moment_keys(payload)
+    moment_sequence = _day_moment_sequence_for_keys(required_moment_keys)
     available_concepts: list[dict[str, Any]] = []
     option_sets = _habit_option_sets_from_state(
         payload,
@@ -2156,15 +2289,18 @@ def _serialize_plan(
         available_concepts=available_concepts,
         option_sets=option_sets,
     )
-    selected_habits = _items_with_day_moments(_selected_habits_from_option_sets(option_sets, selected_ids_by_concept))
+    selected_habits = _items_with_day_moments(
+        _selected_habits_from_option_sets(option_sets, selected_ids_by_concept),
+        moment_sequence=moment_sequence,
+    )
     ask_suggestions = _normalized_ask_suggestions(payload.get("ask_suggestions") or [])
     selected_ids = {str(item.get("id") or "").strip() for item in selected_habits}
     selected_concept_key = None
     raw_current_options = [dict(item) for item in option_sets.get(_DAY_PLAN_SCOPE_KEY, [])]
     current_options = []
-    for item in _items_with_day_moments(raw_current_options):
+    for item in _items_with_day_moments(raw_current_options, moment_sequence=moment_sequence):
         current_options.append({**item, "selected": str(item.get("id") or "").strip() in selected_ids})
-    if not _has_complete_day_plan_items(current_options):
+    if not _has_complete_day_plan_items(current_options, required_moment_keys=required_moment_keys):
         fallback_plan = _fallback_plan(payload)
         fallback_items = [
             item
@@ -2174,7 +2310,7 @@ def _serialize_plan(
             )
             if item
         ]
-        fallback_items = _items_with_day_moments(fallback_items)
+        fallback_items = _items_with_day_moments(fallback_items, moment_sequence=moment_sequence)
         options_by_moment = {
             _normalize_moment_key(item.get("moment_key")): dict(item)
             for item in current_options
@@ -2186,11 +2322,11 @@ def _serialize_plan(
                 options_by_moment[moment_key] = {**item, "selected": False}
         current_options = [
             options_by_moment[moment_key]
-            for moment_key, _label in _DAY_MOMENT_SEQUENCE
+            for moment_key in required_moment_keys
             if moment_key in options_by_moment
         ]
     display_habits = selected_habits
-    if len(display_habits) < len(_DAY_MOMENT_SEQUENCE) and len(current_options) >= len(_DAY_MOMENT_SEQUENCE):
+    if len(display_habits) < len(required_moment_keys) and len(current_options) >= len(required_moment_keys):
         display_habits = [dict(item) for item in current_options]
     elif not display_habits and current_options:
         display_habits = [dict(item) for item in current_options]
@@ -2286,6 +2422,8 @@ def get_or_generate_daily_habit_plan(
             hash_value = _context_hash(context)
         day_brief = context.get("day_brief") if isinstance(context.get("day_brief"), dict) else {}
         fasting_context = day_brief.get("fasting") if isinstance(day_brief.get("fasting"), dict) else context.get("fasting")
+        required_moment_keys = _required_day_moment_keys(context)
+        moment_sequence = _day_moment_sequence_for_keys(required_moment_keys)
         available_concepts: list[dict[str, Any]] = []
         option_sets = _habit_option_sets_from_state(
             seed_payload,
@@ -2300,7 +2438,10 @@ def get_or_generate_daily_habit_plan(
             available_concepts=available_concepts,
             option_sets=option_sets,
         )
-        selected_habits = _selected_habits_from_option_sets(option_sets, selected_ids_by_concept)
+        selected_habits = _items_with_day_moments(
+            _selected_habits_from_option_sets(option_sets, selected_ids_by_concept),
+            moment_sequence=moment_sequence,
+        )
         selected_habits = [_protect_fasting_habit_item(item, fasting_context) for item in selected_habits]
         plan_scope_key = _DAY_PLAN_SCOPE_KEY
         existing_options_for_concept = option_sets.get(plan_scope_key, [])
@@ -2310,7 +2451,7 @@ def get_or_generate_daily_habit_plan(
             and _habit_plan_version(existing_payload) >= _CURRENT_HABIT_PLAN_VERSION
             and str(getattr(existing, "context_hash", "") or "").strip() == hash_value
             and existing_options_for_concept
-            and _has_complete_day_plan_items(existing_options_for_concept)
+            and _has_complete_day_plan_items(existing_options_for_concept, required_moment_keys=required_moment_keys)
         ):
             ask_suggestions = _normalized_ask_suggestions(existing_payload.get("ask_suggestions") or [])
             if not ask_suggestions:
@@ -2341,7 +2482,7 @@ def get_or_generate_daily_habit_plan(
             )
             if item
         ]
-        generated_items = _items_with_day_moments(generated_items)
+        generated_items = _items_with_day_moments(generated_items, moment_sequence=moment_sequence)
         if generated_items:
             existing_options = option_sets.get(plan_scope_key, [])
             option_sets[plan_scope_key] = _merge_concept_option_set(
@@ -2351,7 +2492,7 @@ def get_or_generate_daily_habit_plan(
                 force=bool(force),
             )
         current_option_set = option_sets.get(plan_scope_key, [])
-        if not _has_complete_day_plan_items(current_option_set):
+        if not _has_complete_day_plan_items(current_option_set, required_moment_keys=required_moment_keys):
             fallback_items = [
                 item
                 for item in (
@@ -2360,7 +2501,7 @@ def get_or_generate_daily_habit_plan(
                 )
                 if item
             ]
-            fallback_items = _items_with_day_moments(fallback_items)
+            fallback_items = _items_with_day_moments(fallback_items, moment_sequence=moment_sequence)
             if fallback_items:
                 option_sets[plan_scope_key] = _merge_concept_option_set(
                     existing_items=current_option_set,

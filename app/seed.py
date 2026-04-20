@@ -308,7 +308,7 @@ def _seed_admin_role(entry: dict) -> str:
 
 APP_TRACKER_SUMMARY_TASK_BLOCK = """Task: write a concise one-way daily briefing for the member. Bring together their daily tracking from today and yesterday, biometric/readiness signals, the existing Today's plan, and the current Today's focus lesson.
 
-Do not create a new plan for the day. Do not rewrite the plan as a schedule. Do not use a morning/midday/evening list. Do not add new habits, times, or tasks beyond the supplied education action.
+Do not create a new plan for the day. Do not rewrite the plan as a schedule. Do not use a morning/midday/evening list. Do not add new habits, times, or tasks beyond the supplied education action. Respect the plan timing: do not recommend actions for parts of today that have already passed.
 
 If a fasting plan is enabled, respect it: do not recommend breakfast or early eating, and refer to the eating window or first planned meal instead.
 
@@ -674,6 +674,7 @@ Always bring the conversation back to what will genuinely support the user’s h
     },
     {
         "touchpoint": 'app_tracker_summary',
+        "version": 2,
         "okr_scope": 'none',
         "programme_scope": 'none',
         "response_format": '',

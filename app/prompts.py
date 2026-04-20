@@ -65,7 +65,8 @@ APP_TRACKER_SUMMARY_TASK_BLOCK = (
     "Task: write a concise one-way daily briefing for the member. Bring together their daily tracking from today and yesterday, "
     "biometric/readiness signals, the existing Today's plan, and the current Today's focus lesson.\n\n"
     "Do not create a new plan for the day. Do not rewrite the plan as a schedule. Do not use a morning/midday/evening list. "
-    "Do not add new habits, times, or tasks beyond the supplied education action.\n\n"
+    "Do not add new habits, times, or tasks beyond the supplied education action. Respect the plan timing: do not recommend actions "
+    "for parts of today that have already passed.\n\n"
     "If a fasting plan is enabled, respect it: do not recommend breakfast or early eating, and refer to the eating window or first planned meal instead.\n\n"
     "Identify the clearest overall pattern, explain what level of exercise makes sense today based on recovery and nutrition, "
     "mention the Today's focus lesson once when it is available, include the supplied education action, and close with the single "
@@ -96,6 +97,7 @@ BUILTIN_PROMPT_TEMPLATE_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "note": "Runtime builtin template for assessment completion audio/avatar summary.",
     },
     "daily_habit_plan": {
+        "version": 2,
         "touchpoint": "daily_habit_plan",
         "okr_scope": "pillar",
         "programme_scope": "none",
@@ -107,7 +109,7 @@ BUILTIN_PROMPT_TEMPLATE_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "task_block": (
             "Create a coach-home day plan. Return STRICT JSON only with this shape: "
             "{\"title\":\"...\",\"summary\":\"...\",\"moments\":[{\"moment\":\"morning|midday|afternoon|evening\",\"title\":\"...\",\"detail\":\"...\"}]}. "
-            "Return exactly 4 moments for the day: morning, midday, afternoon, and evening. "
+            "Return only the current and future moments supplied in Plan timing; omit past parts of today. "
             "Use the provided two-day tracker read, exercise readiness, and key moments framework to make this feel like a practical schedule for today. "
             "If today's morning training record is supplied, treat it as what the member has planned for today, not as completed or missed training. "
             "If a fasting plan is enabled, protect the fasting window: do not recommend breakfast or early eating, and refer to fluids, first planned meal, or eating window instead. "
@@ -119,6 +121,7 @@ BUILTIN_PROMPT_TEMPLATE_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "note": "Runtime builtin template for coach-home daily plan generated from tracker context.",
     },
     "app_tracker_summary": {
+        "version": 2,
         "touchpoint": "app_tracker_summary",
         "okr_scope": "none",
         "programme_scope": "none",
@@ -577,6 +580,29 @@ def _coach_home_history_lines(
             if bits:
                 lines.append("Exercise readiness: " + "; ".join(bits))
 
+        time_context = day_brief.get("time_context") if isinstance(day_brief.get("time_context"), dict) else tracker_context.get("time_context")
+        if isinstance(time_context, dict):
+            current_label = str(time_context.get("current_moment_label") or "").strip()
+            remaining = [
+                str(item or "").strip()
+                for item in (time_context.get("remaining_moment_labels") or [])
+                if str(item or "").strip()
+            ]
+            past = [
+                str(item or "").strip()
+                for item in (time_context.get("past_moment_labels") or [])
+                if str(item or "").strip()
+            ]
+            bits = []
+            if current_label:
+                bits.append(f"generated_during={current_label}")
+            if remaining:
+                bits.append("use_only=" + ", ".join(remaining))
+            if past:
+                bits.append("past_today=" + ", ".join(past))
+            if bits:
+                lines.append("Plan timing: " + "; ".join(bits) + ". Do not create advice for past parts of today.")
+
         key_moments = day_brief.get("key_moments") if isinstance(day_brief.get("key_moments"), list) else []
         if key_moments:
             lines.append("Key moments for today:")
@@ -962,6 +988,10 @@ def ensure_builtin_prompt_templates(touchpoints: List[str] | None = None) -> int
             with SessionLocal() as s:
                 for touchpoint in sorted(missing):
                     spec = dict(BUILTIN_PROMPT_TEMPLATE_DEFAULTS[touchpoint])
+                    try:
+                        target_version = int(spec.get("version") or 1)
+                    except Exception:
+                        target_version = 1
                     for state in ["develop", "beta", "live"]:
                         row = (
                             s.query(PromptTemplate)
@@ -974,7 +1004,7 @@ def ensure_builtin_prompt_templates(touchpoints: List[str] | None = None) -> int
                                         "production" if state == "live" else state,
                                     ]
                                 ),
-                                PromptTemplate.version == 1,
+                                PromptTemplate.version == target_version,
                             )
                             .order_by(PromptTemplate.id.desc())
                             .first()
@@ -984,7 +1014,7 @@ def ensure_builtin_prompt_templates(touchpoints: List[str] | None = None) -> int
                         row = PromptTemplate(
                             touchpoint=touchpoint,
                             state=state,
-                            version=1,
+                            version=target_version,
                             okr_scope=spec.get("okr_scope"),
                             programme_scope=spec.get("programme_scope"),
                             response_format=spec.get("response_format"),
@@ -1834,6 +1864,7 @@ def build_prompt(
                             "Use plain language, avoid OKR/KR jargon, and avoid system terms like pillar, drill, or resilience work. "
                             "When an education programme lesson is available, mention its concept or lesson title once and include the supplied education action without replacing the lesson content. "
                             "Use the key moments from the day plan only as context; do not rewrite them as a schedule, do not use a morning/midday/evening list, and do not add new habits, times, or tasks beyond the supplied education action. "
+                            "Respect the plan timing when it is supplied: do not recommend actions for parts of today that have already passed. "
                             "If a fasting plan is enabled, respect it: do not recommend breakfast or early eating, and refer to the eating window or first planned meal instead. "
                             "Make the exercise guidance proportionate to recovery and nutrition, then end with one clear practical aim that ties the programme, plan, and biometrics together. Do not ask a question and do not invite a reply."
                             if tracker_summary_mode
@@ -1860,9 +1891,29 @@ def build_prompt(
         okr_context = data.get("okr_context") or {}
         tracker_review = data.get("tracker_review") or []
         day_brief = data.get("day_brief") or {}
+        time_context = day_brief.get("time_context") if isinstance(day_brief, dict) and isinstance(day_brief.get("time_context"), dict) else {}
+        remaining_labels = [
+            str(item or "").strip()
+            for item in (time_context.get("remaining_moment_labels") or [])
+            if str(item or "").strip()
+        ]
+        past_labels = [
+            str(item or "").strip()
+            for item in (time_context.get("past_moment_labels") or [])
+            if str(item or "").strip()
+        ]
+        timing_bits = []
+        current_label = str(time_context.get("current_moment_label") or "").strip()
+        if current_label:
+            timing_bits.append(f"generated_during={current_label}")
+        if remaining_labels:
+            timing_bits.append("return_moments=" + ", ".join(remaining_labels))
+        if past_labels:
+            timing_bits.append("omit_past=" + ", ".join(past_labels))
         context_extras = (
             "Tracker scope=all daily tracking; "
             f"Plan date={data.get('plan_date') or ''}"
+            + (("; Plan timing: " + "; ".join(timing_bits)) if timing_bits else "")
         )
         tracker_context = {
             "plan_date": data.get("plan_date"),
@@ -1884,7 +1935,7 @@ def build_prompt(
                     "Create a daily day-plan for the coach home screen in strict JSON.",
                     constraints=(
                         "Return only {title, summary, moments} or {title, summary, habits}. "
-                        "Provide exactly 4 time-anchored moments for today: morning, midday, afternoon, and evening. "
+                        "Provide only the current and future time-anchored moments listed in Plan timing; omit past parts of today. "
                         "Use the supplied two-day read, exercise readiness, and key moments framework so this feels like a practical daily schedule. "
                         "If today's morning training record is supplied, treat it as what the member has planned for today, not as completed or missed training. "
                         "If a fasting plan is enabled, protect the fasting window: do not recommend breakfast or early eating, and refer to fluids, first planned meal, or eating window instead. "
@@ -1892,7 +1943,8 @@ def build_prompt(
                         "Use the tracker signals to decide which concepts matter today; do not favour fasting, alcohol, heat exposure, cold exposure, or any optional item by default. "
                         "Take the whole programme into account: training, nutrition, resilience, and recovery. "
                         "Build the plan around the day as a whole rather than one selected concept. "
-                        "Keep the title and summary aligned to the day as a whole rather than a single narrow task."
+                        "Keep the title and summary aligned to the day as a whole rather than a single narrow task. "
+                        "Do not recommend breakfast, morning setup, lunch, or any other time-specific action if that part of today is listed as past."
                     ),
                 ),
             ),
