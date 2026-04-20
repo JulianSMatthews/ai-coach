@@ -1862,35 +1862,58 @@ def _get_or_create_concept_level(
 
 
 def _completed_programme_ids_for_user(session, user_id: int) -> set[int]:
-    rows = (
+    plans = (
         session.execute(
-            select(UserEducationPlan.programme_id)
-            .where(
-                UserEducationPlan.user_id == int(user_id),
-                UserEducationPlan.status == "completed",
-            )
+            select(UserEducationPlan)
+            .where(UserEducationPlan.user_id == int(user_id))
+            .order_by(desc(UserEducationPlan.updated_at), desc(UserEducationPlan.id))
         )
         .scalars()
         .all()
     )
-    return {int(row) for row in rows if row}
+    completed: set[int] = set()
+    for plan in plans:
+        _sync_existing_plan_completion_states(session, plan=plan)
+        programme_id = int(getattr(plan, "programme_id", 0) or 0)
+        if not programme_id:
+            continue
+        programme = session.get(EducationProgramme, programme_id)
+        if programme is None:
+            continue
+        plan_completed = str(getattr(plan, "status", "") or "").strip().lower() == "completed"
+        if not plan_completed:
+            plan_completed = _plan_last_programme_day_completed(session, plan=plan, programme=programme)
+        if plan_completed:
+            completed.add(programme_id)
+    return completed
 
 
 def _completed_concept_keys_for_user(session, user_id: int) -> set[str]:
-    rows = (
+    completed: set[str] = set()
+    plans = (
         session.execute(
-            select(UserEducationPlan.entry_concept_key, EducationProgramme.concept_key)
-            .outerjoin(EducationProgramme, UserEducationPlan.programme_id == EducationProgramme.id)
-            .where(
-                UserEducationPlan.user_id == int(user_id),
-                UserEducationPlan.status == "completed",
-            )
+            select(UserEducationPlan)
+            .where(UserEducationPlan.user_id == int(user_id))
+            .order_by(desc(UserEducationPlan.updated_at), desc(UserEducationPlan.id))
         )
+        .scalars()
         .all()
     )
-    completed: set[str] = set()
-    for entry_key, programme_key in rows:
-        for candidate in (entry_key, programme_key):
+    for plan in plans:
+        _sync_existing_plan_completion_states(session, plan=plan)
+        programme = (
+            session.get(EducationProgramme, int(getattr(plan, "programme_id", 0) or 0))
+            if getattr(plan, "programme_id", None)
+            else None
+        )
+        if programme is None:
+            continue
+        plan_completed = str(getattr(plan, "status", "") or "").strip().lower() == "completed"
+        if not plan_completed:
+            plan_completed = _plan_last_programme_day_completed(session, plan=plan, programme=programme)
+        if not plan_completed:
+            continue
+        for candidate in (getattr(plan, "entry_concept_key", None), getattr(programme, "concept_key", None)):
             token = _normalize_concept_key(candidate)
             if token:
                 completed.add(token)
@@ -2073,6 +2096,24 @@ def _get_or_create_active_plan(
         )
         if completed_concept_key:
             completed_concept_keys.add(completed_concept_key)
+    existing_concept_key = None
+    if existing is not None:
+        existing_concept_key = _normalize_concept_key(
+            getattr(existing_programme_for_rollover, "concept_key", None)
+        ) or _normalize_concept_key(getattr(existing, "entry_concept_key", None))
+    if (
+        existing is not None
+        and existing_programme_for_rollover is not None
+        and not existing_ready_for_rollover
+        and existing_concept_key
+        and existing_concept_key in completed_concept_keys
+    ):
+        existing.status = "paused"
+        existing.current_day_index = _programme_duration_days(session, existing_programme_for_rollover)
+        session.add(existing)
+        session.flush()
+        existing = None
+        existing_programme_for_rollover = None
     preferred_programme = _select_programme(
         session,
         preferred_pillar or None,
