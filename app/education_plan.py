@@ -456,7 +456,7 @@ def _lesson_variant_video_url(row: EducationLessonVariant | None) -> str | None:
 
 
 def _lesson_variant_playable_media_url(row: EducationLessonVariant | None) -> str | None:
-    return _lesson_variant_video_url(row) or _avatar_result_url(row)
+    return _lesson_variant_video_url(row)
 
 
 def _lesson_variant_has_playable_media(row: EducationLessonVariant | None) -> bool:
@@ -500,8 +500,8 @@ def education_lesson_avatar_payload(row: EducationLessonVariant | None) -> dict[
     ):
         return None
     return {
-        "url": url or result_url,
-        "video_url": url or result_url,
+        "url": url,
+        "video_url": url,
         "result_url": result_url,
         "resultUrl": result_url,
         "title": title or "Education lesson",
@@ -810,6 +810,8 @@ def _refresh_lesson_variant_avatar_media(
             return row
         except Exception as exc:
             print(f"[education] avatar cache skipped for lesson_variant={getattr(row, 'id', None)}: {exc}")
+            if raise_errors:
+                raise
             if not job_id:
                 return row
     if not job_id:
@@ -1070,27 +1072,30 @@ def generate_education_programme_avatar_videos(
             status_key = str(getattr(row, "avatar_status", "") or "").strip().lower()
             job_id = str(getattr(row, "avatar_job_id", "") or "").strip()
             if not regenerate and _avatar_result_url(row):
+                stale_result_reason: str | None = None
                 try:
                     refreshed = _refresh_lesson_variant_avatar_media(session, row, raise_errors=True) or row
                     avatar = education_lesson_avatar_payload(refreshed) or {}
                     if _lesson_variant_video_url(refreshed):
                         item.update({"status": "ready", "avatar_status": avatar.get("status"), "video_url": avatar.get("url")})
                         counts["ready"] += 1
+                        items.append(item)
+                        continue
                     else:
-                        item.update(
-                            {
-                                "status": "pending",
-                                "avatar_status": avatar.get("status"),
-                                "job_id": avatar.get("job_id"),
-                                "reason": avatar.get("error") or "Avatar result exists but is not cached yet.",
-                            }
-                        )
-                        counts["pending"] += 1
+                        stale_result_reason = avatar.get("error") or "Avatar result exists but is not cached yet."
                 except Exception as exc:
-                    counts["errors"] += 1
-                    item.update({"status": "error", "reason": str(exc), "job_id": job_id or None})
-                items.append(item)
-                continue
+                    stale_result_reason = str(exc)
+                if stale_result_reason:
+                    item["previous_error"] = stale_result_reason
+                    row.avatar_status = "failed"
+                    row.avatar_error = f"Previous avatar result could not be cached; starting a replacement job. {stale_result_reason}"[:1000]
+                    row.avatar_job_id = None
+                    row.avatar_payload_json = None
+                    row.avatar_summary_url = None
+                    session.add(row)
+                    session.flush()
+                    job_id = ""
+                    status_key = "failed"
             if generation_halted_reason:
                 item.update({"status": "deferred", "reason": generation_halted_reason})
                 counts["deferred"] += 1
@@ -2292,8 +2297,7 @@ def _sync_progress_completion(
 ) -> None:
     has_video = bool(getattr(progress, "video_completed_at", None))
     has_quiz = bool(getattr(progress, "quiz_completed_at", None))
-    video_required = True if lesson_variant is None else _lesson_variant_has_playable_media(lesson_variant)
-    if has_quiz and (has_video or not video_required):
+    if has_quiz:
         progress.completion_status = "completed"
         if getattr(progress, "completed_at", None) is None:
             progress.completed_at = _now_utc()

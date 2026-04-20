@@ -875,8 +875,6 @@ export default function AssessmentChatBox({
     educationAvatarRecord?.url,
     educationAvatarRecord?.video_url,
     educationAvatarRecord?.videoUrl,
-    educationAvatarRecord?.result_url,
-    educationAvatarRecord?.resultUrl,
     educationContent?.video_url,
   );
   const fallbackEducationMediaUrl = String(educationContent?.podcast_url || "").trim();
