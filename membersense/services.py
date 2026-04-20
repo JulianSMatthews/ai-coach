@@ -515,7 +515,7 @@ def survey_avatar_runtime_config() -> dict[str, Any]:
 
 def generate_survey_avatar_video(session: Session, flow_key: str) -> SurveyConfig:
     try:
-        from app.avatar import azure_avatar_enabled, generate_batch_avatar_video
+        from app.avatar import azure_avatar_enabled, create_batch_avatar
     except Exception as exc:
         raise RuntimeError(f"Azure avatar tools are not available: {exc}") from exc
     if not azure_avatar_enabled():
@@ -539,7 +539,7 @@ def generate_survey_avatar_video(session: Session, flow_key: str) -> SurveyConfi
     session.add(row)
     session.commit()
     try:
-        result = generate_batch_avatar_video(
+        result = create_batch_avatar(
             script=script,
             title=f"{flow.label} avatar",
             character=character,
@@ -547,17 +547,14 @@ def generate_survey_avatar_video(session: Session, flow_key: str) -> SurveyConfi
             voice=voice,
         )
         status = str(result.get("status") or "").strip() or "Running"
+        outputs = result.get("outputs") if isinstance(result.get("outputs"), dict) else {}
         row.avatar_status = status.lower()
-        row.avatar_job_id = str(result.get("job_id") or "").strip() or None
-        row.avatar_summary_url = str(result.get("summary_url") or "").strip() or None
+        row.avatar_job_id = str(result.get("id") or "").strip() or None
+        row.avatar_summary_url = str((outputs or {}).get("summary") or "").strip() or None
         row.avatar_error = None
-        row.avatar_payload = result.get("response") if isinstance(result.get("response"), dict) else None
-        video_bytes = result.get("video_bytes")
-        if status == "Succeeded" and isinstance(video_bytes, (bytes, bytearray)) and video_bytes:
-            row.avatar_video_url = _write_survey_avatar_video(row.flow_key, row.avatar_job_id, bytes(video_bytes))
-            row.avatar_generated_at = datetime.utcnow()
-        elif status == "Failed":
-            row.avatar_error = str(result.get("response") or "Azure avatar generation failed.")[:1000]
+        row.avatar_payload = result
+        if status == "Failed":
+            row.avatar_error = str(result or "Azure avatar generation failed.")[:1000]
         session.add(row)
         session.commit()
         session.refresh(row)

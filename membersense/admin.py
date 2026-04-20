@@ -2326,7 +2326,7 @@ def _survey_config_notice(saved: int | None, generated: int | None, refreshed: i
     if saved is not None:
         parts.append("Survey setup saved.")
     if generated is not None:
-        parts.append("Avatar generation requested.")
+        parts.append("Avatar generation started. Use refresh after a few minutes to cache the completed video.")
     if refreshed is not None:
         parts.append("Avatar status refreshed.")
     if error:
@@ -2477,7 +2477,7 @@ def survey_config_edit(
     </div>
     <div class="inline">
       <button type="submit" name="action" value="save">Save survey setup</button>
-      <button type="submit" name="action" value="generate" class="secondary">Save and generate avatar video</button>
+      <button type="submit" name="action" value="generate" class="secondary">Save and start avatar generation</button>
       <button type="submit" name="action" value="refresh" class="secondary">Refresh avatar job</button>
     </div>
   </form>
