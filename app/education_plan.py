@@ -1675,10 +1675,16 @@ def _select_programme(
     concept_key: str | None = None,
     *,
     exclude_programme_ids: set[int] | None = None,
+    exclude_concept_keys: set[str] | None = None,
 ) -> EducationProgramme | None:
     pillar_token = str(pillar_key or "").strip().lower()
     concept_token = _normalize_concept_key(concept_key)
     excluded = {int(item) for item in (exclude_programme_ids or set()) if item}
+    excluded_concepts = {
+        token
+        for token in (_normalize_concept_key(item) for item in (exclude_concept_keys or set()))
+        if token
+    }
     concept_programme = and_(
         EducationProgramme.concept_key.isnot(None),
         EducationProgramme.concept_key != "",
@@ -1691,6 +1697,8 @@ def _select_programme(
         )
         if excluded:
             stmt = stmt.where(EducationProgramme.id.notin_(sorted(excluded)))
+        if excluded_concepts:
+            stmt = stmt.where(EducationProgramme.concept_key.notin_(sorted(excluded_concepts)))
         return (
             session.execute(stmt.order_by(desc(EducationProgramme.updated_at), desc(EducationProgramme.id)))
             .scalars()
@@ -1868,6 +1876,27 @@ def _completed_programme_ids_for_user(session, user_id: int) -> set[int]:
     return {int(row) for row in rows if row}
 
 
+def _completed_concept_keys_for_user(session, user_id: int) -> set[str]:
+    rows = (
+        session.execute(
+            select(UserEducationPlan.entry_concept_key, EducationProgramme.concept_key)
+            .outerjoin(EducationProgramme, UserEducationPlan.programme_id == EducationProgramme.id)
+            .where(
+                UserEducationPlan.user_id == int(user_id),
+                UserEducationPlan.status == "completed",
+            )
+        )
+        .all()
+    )
+    completed: set[str] = set()
+    for entry_key, programme_key in rows:
+        for candidate in (entry_key, programme_key):
+            token = _normalize_concept_key(candidate)
+            if token:
+                completed.add(token)
+    return completed
+
+
 def _plan_last_programme_day_completed(
     session,
     *,
@@ -2017,11 +2046,14 @@ def _get_or_create_active_plan(
         .first()
     )
     completed_programme_ids = _completed_programme_ids_for_user(session, int(user_id))
+    completed_concept_keys = _completed_concept_keys_for_user(session, int(user_id))
     existing_programme_for_rollover = (
         session.get(EducationProgramme, int(existing.programme_id))
         if existing is not None and getattr(existing, "programme_id", None)
         else None
     )
+    if existing is not None:
+        _sync_existing_plan_completion_states(session, plan=existing)
     existing_ready_for_rollover = (
         existing is not None
         and existing_programme_for_rollover is not None
@@ -2035,11 +2067,18 @@ def _get_or_create_active_plan(
     )
     if existing_ready_for_rollover and existing_programme_for_rollover is not None:
         completed_programme_ids.add(int(existing_programme_for_rollover.id))
+        completed_concept_key = (
+            _normalize_concept_key(getattr(existing_programme_for_rollover, "concept_key", None))
+            or _normalize_concept_key(getattr(existing, "entry_concept_key", None))
+        )
+        if completed_concept_key:
+            completed_concept_keys.add(completed_concept_key)
     preferred_programme = _select_programme(
         session,
         preferred_pillar or None,
         preferred_concept,
         exclude_programme_ids=completed_programme_ids,
+        exclude_concept_keys=completed_concept_keys,
     )
     programme: EducationProgramme | None = None
     if existing is not None:
@@ -2101,6 +2140,7 @@ def _get_or_create_active_plan(
             preferred_pillar or None,
             preferred_concept,
             exclude_programme_ids=completed_programme_ids,
+            exclude_concept_keys=completed_concept_keys,
         )
         if programme is None:
             return None, None
@@ -2205,10 +2245,14 @@ def _select_takeaway(lesson_variant: EducationLessonVariant | None, score_pct: f
     return (text or None), ("default" if text else None)
 
 
-def _sync_progress_completion(progress: UserEducationDayProgress) -> None:
+def _sync_progress_completion(
+    progress: UserEducationDayProgress,
+    lesson_variant: EducationLessonVariant | None = None,
+) -> None:
     has_video = bool(getattr(progress, "video_completed_at", None))
     has_quiz = bool(getattr(progress, "quiz_completed_at", None))
-    if has_video and has_quiz:
+    video_required = True if lesson_variant is None else _lesson_variant_has_playable_media(lesson_variant)
+    if has_quiz and (has_video or not video_required):
         progress.completion_status = "completed"
         if getattr(progress, "completed_at", None) is None:
             progress.completed_at = _now_utc()
@@ -2221,6 +2265,37 @@ def _sync_progress_completion(progress: UserEducationDayProgress) -> None:
     else:
         progress.completion_status = "pending"
         progress.completed_at = None
+
+
+def _sync_existing_plan_completion_states(
+    session,
+    *,
+    plan: UserEducationPlan,
+) -> None:
+    rows = (
+        session.execute(
+            select(UserEducationDayProgress, EducationLessonVariant)
+            .outerjoin(
+                EducationLessonVariant,
+                UserEducationDayProgress.lesson_variant_id == EducationLessonVariant.id,
+            )
+            .where(UserEducationDayProgress.user_plan_id == int(plan.id))
+        )
+        .all()
+    )
+    changed = False
+    for progress, lesson_variant in rows:
+        before_status = str(getattr(progress, "completion_status", "") or "")
+        before_completed_at = getattr(progress, "completed_at", None)
+        _sync_progress_completion(progress, lesson_variant)
+        if (
+            before_status != str(getattr(progress, "completion_status", "") or "")
+            or before_completed_at != getattr(progress, "completed_at", None)
+        ):
+            session.add(progress)
+            changed = True
+    if changed:
+        session.flush()
 
 
 def _question_rows(session, quiz_id: int | None) -> list[EducationQuizQuestion]:
@@ -2391,6 +2466,9 @@ def _lesson_state(
         lesson_variant=lesson_variant,
         lesson_date=anchor,
     )
+    _sync_progress_completion(progress, lesson_variant)
+    session.add(progress)
+    session.flush()
     quiz_answers_by_question: dict[int, UserEducationQuizAnswer] = {}
     if getattr(progress, "id", None):
         quiz_answers = (
@@ -2528,7 +2606,9 @@ def record_education_video_progress(
                 pass
         if (progress.watch_pct or 0.0) >= _WATCH_COMPLETE_THRESHOLD_PCT and getattr(progress, "video_completed_at", None) is None:
             progress.video_completed_at = _now_utc()
-        _sync_progress_completion(progress)
+        lesson_variant_id = int((((state.get("lesson") or {}).get("lesson_variant_id")) or getattr(progress, "lesson_variant_id", 0) or 0) or 0)
+        lesson_variant = session.get(EducationLessonVariant, lesson_variant_id) if lesson_variant_id else None
+        _sync_progress_completion(progress, lesson_variant)
         session.add(progress)
         plan = session.get(UserEducationPlan, int(state.get("plan_id") or 0))
         if plan is not None:
@@ -2604,7 +2684,7 @@ def submit_education_quiz(
         takeaway_text, takeaway_variant = _select_takeaway(lesson_variant, score_pct)
         progress.takeaway_text_shown = takeaway_text
         progress.takeaway_variant = takeaway_variant
-        _sync_progress_completion(progress)
+        _sync_progress_completion(progress, lesson_variant)
         session.add(progress)
         plan = session.get(UserEducationPlan, int(state.get("plan_id") or 0))
         if plan is not None:
