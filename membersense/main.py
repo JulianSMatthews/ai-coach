@@ -8,7 +8,7 @@ from . import config
 from .admin import router as admin_router
 from .auth import bootstrap_staff_user
 from .db import SessionLocal, init_db
-from .services import handle_inbound_sms, membersense_media_root, update_message_status
+from .services import handle_inbound_sms, membersense_media_root, resume_pending_survey_avatar_jobs, update_message_status
 
 
 app = FastAPI(title=config.APP_NAME)
@@ -21,6 +21,7 @@ def startup() -> None:
     init_db()
     with SessionLocal() as session:
         bootstrap_staff_user(session)
+    resume_pending_survey_avatar_jobs()
 
 
 @app.get("/")

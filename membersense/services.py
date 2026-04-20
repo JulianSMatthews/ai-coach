@@ -6,6 +6,7 @@ import io
 import os
 import re
 import secrets
+import threading
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,10 @@ from .surveys import (
     response_summary,
     response_summary_for_flow,
 )
+
+
+_SURVEY_AVATAR_THREAD_LOCK = threading.Lock()
+_SURVEY_AVATAR_THREADS: dict[str, threading.Thread] = {}
 
 
 def _parse_date(raw: str | None) -> date | None:
@@ -489,11 +494,18 @@ def survey_avatar_defaults() -> dict[str, Any]:
 def survey_avatar_runtime_config() -> dict[str, Any]:
     avatar_key = str(os.getenv("AZURE_AVATAR_KEY") or "").strip()
     speech_key = str(os.getenv("AZURE_SPEECH_KEY") or "").strip()
-    resolved_key = avatar_key or speech_key
+    tts_key = str(os.getenv("AZURE_TTS_KEY") or "").strip()
+    resolved_key = avatar_key or speech_key or tts_key
     avatar_region = str(os.getenv("AZURE_AVATAR_REGION") or "").strip()
     speech_region = str(os.getenv("AZURE_SPEECH_REGION") or "").strip()
-    endpoint = str(os.getenv("AZURE_AVATAR_ENDPOINT") or os.getenv("AZURE_SPEECH_ENDPOINT") or "").strip()
-    resolved_region = avatar_region or speech_region
+    tts_region = str(os.getenv("AZURE_TTS_REGION") or "").strip()
+    endpoint = str(
+        os.getenv("AZURE_AVATAR_ENDPOINT")
+        or os.getenv("AZURE_SPEECH_ENDPOINT")
+        or os.getenv("AZURE_TTS_ENDPOINT")
+        or ""
+    ).strip()
+    resolved_region = avatar_region or speech_region or tts_region
     if not endpoint and resolved_region:
         endpoint = f"https://{resolved_region}.api.cognitive.microsoft.com"
     endpoint_host = ""
@@ -505,12 +517,223 @@ def survey_avatar_runtime_config() -> dict[str, Any]:
         "enabled": enabled in {"1", "true", "yes", "on"},
         "key_configured": bool(resolved_key),
         "key_fingerprint": hashlib.sha256(resolved_key.encode()).hexdigest()[:10] if resolved_key else "",
-        "key_source": "AZURE_AVATAR_KEY" if avatar_key else "AZURE_SPEECH_KEY" if speech_key else "",
+        "key_source": (
+            "AZURE_AVATAR_KEY"
+            if avatar_key
+            else "AZURE_SPEECH_KEY"
+            if speech_key
+            else "AZURE_TTS_KEY"
+            if tts_key
+            else ""
+        ),
         "region": resolved_region,
-        "region_source": "AZURE_AVATAR_REGION" if avatar_region else "AZURE_SPEECH_REGION" if speech_region else "",
+        "region_source": (
+            "AZURE_AVATAR_REGION"
+            if avatar_region
+            else "AZURE_SPEECH_REGION"
+            if speech_region
+            else "AZURE_TTS_REGION"
+            if tts_region
+            else ""
+        ),
         "endpoint": endpoint_host,
-        "endpoint_source": "AZURE_AVATAR_ENDPOINT" if os.getenv("AZURE_AVATAR_ENDPOINT") else "AZURE_SPEECH_ENDPOINT" if os.getenv("AZURE_SPEECH_ENDPOINT") else "derived_from_region",
+        "endpoint_source": (
+            "AZURE_AVATAR_ENDPOINT"
+            if os.getenv("AZURE_AVATAR_ENDPOINT")
+            else "AZURE_SPEECH_ENDPOINT"
+            if os.getenv("AZURE_SPEECH_ENDPOINT")
+            else "AZURE_TTS_ENDPOINT"
+            if os.getenv("AZURE_TTS_ENDPOINT")
+            else "derived_from_region"
+        ),
     }
+
+
+def _survey_avatar_error_from_payload(payload: dict[str, Any], fallback: str = "Azure avatar generation failed.") -> str:
+    props = payload.get("properties") if isinstance(payload.get("properties"), dict) else {}
+    raw_error = (props or {}).get("error") or payload.get("error") or fallback
+    if isinstance(raw_error, dict):
+        raw_error = raw_error.get("message") or raw_error.get("code") or raw_error
+    return str(raw_error or fallback).strip()[:1000]
+
+
+def _save_survey_avatar_payload(session: Session, row: SurveyConfig, payload: dict[str, Any]) -> SurveyConfig:
+    status = str(payload.get("status") or "").strip() or "Running"
+    status_key = status.lower()
+    outputs = payload.get("outputs") if isinstance(payload.get("outputs"), dict) else {}
+    result_url = str((outputs or {}).get("result") or "").strip()
+    row.avatar_status = status_key
+    row.avatar_summary_url = str((outputs or {}).get("summary") or "").strip() or None
+    row.avatar_payload = payload
+    row.avatar_error = None
+    if status_key == "succeeded":
+        if not result_url:
+            row.avatar_status = "failed"
+            row.avatar_error = "Azure avatar completed without a result video URL."
+        else:
+            try:
+                from app.avatar import download_batch_avatar_output
+
+                row.avatar_video_url = _write_survey_avatar_video(
+                    row.flow_key,
+                    row.avatar_job_id,
+                    download_batch_avatar_output(result_url),
+                )
+                row.avatar_generated_at = datetime.utcnow()
+            except Exception as exc:
+                row.avatar_status = "failed"
+                row.avatar_error = f"Avatar completed but the video could not be downloaded: {exc}"[:1000]
+    elif status_key == "failed":
+        row.avatar_error = _survey_avatar_error_from_payload(payload)
+    elif payload.get("_timed_out"):
+        row.avatar_error = "Avatar job is still running after the background wait timeout."
+    row.updated_at = datetime.utcnow()
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+def _mark_survey_avatar_failed(session: Session, flow_key: str, error: str) -> SurveyConfig | None:
+    row = survey_config_row(session, flow_key)
+    if row is None:
+        return None
+    row.avatar_status = "failed"
+    row.avatar_error = str(error or "Avatar generation failed.").strip()[:1000]
+    row.updated_at = datetime.utcnow()
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    return row
+
+
+def _survey_avatar_script_for_row(session: Session, row: SurveyConfig) -> str:
+    flow = effective_survey_flow(session, row.flow_key)
+    return str(row.avatar_script or flow.avatar_script or flow.intro or "").strip()
+
+
+def queue_survey_avatar_generation(session: Session, flow_key: str) -> SurveyConfig:
+    try:
+        from app.avatar import azure_avatar_enabled
+    except Exception as exc:
+        raise RuntimeError(f"Azure avatar tools are not available: {exc}") from exc
+    if not azure_avatar_enabled():
+        raise RuntimeError("Azure avatar generation is not enabled. Set USE_AZURE_AVATAR=1 and the Azure avatar credentials.")
+    row = survey_config_row(session, flow_key)
+    if row is None:
+        base = flow_for_key(flow_key)
+        row = save_survey_config(session, base.key, label=base.label, intro=base.intro, completion=base.completion)
+    if not _survey_avatar_script_for_row(session, row):
+        raise RuntimeError("Avatar script is required.")
+    row.avatar_status = "queued"
+    row.avatar_job_id = None
+    row.avatar_error = None
+    row.avatar_source = "azure_batch"
+    row.avatar_video_url = None
+    row.avatar_summary_url = None
+    row.avatar_payload = None
+    row.avatar_generated_at = None
+    row.updated_at = datetime.utcnow()
+    session.add(row)
+    session.commit()
+    session.refresh(row)
+    _start_survey_avatar_thread(row.flow_key, mode="generate")
+    return row
+
+
+def queue_survey_avatar_completion(flow_key: str) -> bool:
+    return _start_survey_avatar_thread(flow_key, mode="complete")
+
+
+def _start_survey_avatar_thread(flow_key: str, *, mode: str) -> bool:
+    key = str(flow_key or "").strip().lower()
+    if not key:
+        return False
+    with _SURVEY_AVATAR_THREAD_LOCK:
+        existing = _SURVEY_AVATAR_THREADS.get(key)
+        if existing is not None and existing.is_alive():
+            return False
+        thread = threading.Thread(target=_survey_avatar_thread_runner, args=(key, mode), daemon=True)
+        _SURVEY_AVATAR_THREADS[key] = thread
+        thread.start()
+        return True
+
+
+def _survey_avatar_thread_runner(flow_key: str, mode: str) -> None:
+    try:
+        if mode == "generate":
+            from .db import SessionLocal
+
+            with SessionLocal() as session:
+                generate_survey_avatar_video(session, flow_key)
+        complete_survey_avatar_video(flow_key)
+    except Exception as exc:
+        try:
+            from .db import SessionLocal
+
+            with SessionLocal() as session:
+                _mark_survey_avatar_failed(session, flow_key, str(exc))
+        except Exception:
+            pass
+    finally:
+        with _SURVEY_AVATAR_THREAD_LOCK:
+            existing = _SURVEY_AVATAR_THREADS.get(flow_key)
+            if existing is threading.current_thread():
+                _SURVEY_AVATAR_THREADS.pop(flow_key, None)
+
+
+def complete_survey_avatar_video(flow_key: str) -> SurveyConfig | None:
+    try:
+        from app.avatar import wait_for_batch_avatar
+    except Exception as exc:
+        raise RuntimeError(f"Azure avatar tools are not available: {exc}") from exc
+    from .db import SessionLocal
+
+    with SessionLocal() as session:
+        row = survey_config_row(session, flow_key)
+        if row is None:
+            return None
+        job_id = str(row.avatar_job_id or "").strip()
+        if not job_id:
+            return row
+        try:
+            timeout = int(os.getenv("MEMBERSENSE_AVATAR_BACKGROUND_TIMEOUT_SECONDS") or "600")
+        except Exception:
+            timeout = 600
+        timeout = max(30, timeout)
+        payload = wait_for_batch_avatar(job_id, timeout_seconds=timeout)
+        return _save_survey_avatar_payload(session, row, payload)
+
+
+def resume_pending_survey_avatar_jobs() -> int:
+    try:
+        from app.avatar import azure_avatar_enabled
+    except Exception:
+        return 0
+    if not azure_avatar_enabled():
+        return 0
+    from .db import SessionLocal
+
+    queued_generation: list[str] = []
+    queued_completion: list[str] = []
+    with SessionLocal() as session:
+        rows = session.execute(select(SurveyConfig)).scalars().all()
+        for row in rows:
+            flow_key = str(row.flow_key or "").strip().lower()
+            job_id = str(row.avatar_job_id or "").strip()
+            status = str(row.avatar_status or "").strip().lower()
+            video_url = str(row.avatar_video_url or "").strip()
+            if not flow_key or video_url or status in {"failed", "succeeded"}:
+                continue
+            if job_id:
+                queued_completion.append(flow_key)
+            elif status in {"queued", "running", "submitting"}:
+                queued_generation.append(flow_key)
+    for flow_key in queued_generation:
+        _start_survey_avatar_thread(flow_key, mode="generate")
+    for flow_key in queued_completion:
+        queue_survey_avatar_completion(flow_key)
+    return len(queued_generation) + len(queued_completion)
 
 
 def generate_survey_avatar_video(session: Session, flow_key: str) -> SurveyConfig:
@@ -526,15 +749,20 @@ def generate_survey_avatar_video(session: Session, flow_key: str) -> SurveyConfi
         row = save_survey_config(session, base.key, label=base.label, intro=base.intro, completion=base.completion)
     flow = effective_survey_flow(session, row.flow_key)
     defaults = survey_avatar_defaults()
-    script = str(row.avatar_script or flow.avatar_script or flow.intro or "").strip()
+    script = _survey_avatar_script_for_row(session, row)
     if not script:
         raise RuntimeError("Avatar script is required.")
     character = str(row.avatar_character or defaults.get("character") or "lisa").strip()
     style = str(row.avatar_style or defaults.get("style") or "graceful-sitting").strip()
     voice = str(row.avatar_voice or defaults.get("voice") or "en-GB-SoniaNeural").strip()
     row.avatar_status = "running"
+    row.avatar_job_id = None
     row.avatar_error = None
     row.avatar_source = "azure_batch"
+    row.avatar_video_url = None
+    row.avatar_summary_url = None
+    row.avatar_payload = None
+    row.avatar_generated_at = None
     row.updated_at = datetime.utcnow()
     session.add(row)
     session.commit()
@@ -547,17 +775,22 @@ def generate_survey_avatar_video(session: Session, flow_key: str) -> SurveyConfi
             voice=voice,
         )
         status = str(result.get("status") or "").strip() or "Running"
+        job_id = str(result.get("id") or "").strip()
+        if not job_id:
+            raise RuntimeError("Azure avatar generation did not return a job id")
         outputs = result.get("outputs") if isinstance(result.get("outputs"), dict) else {}
         row.avatar_status = status.lower()
-        row.avatar_job_id = str(result.get("id") or "").strip() or None
+        row.avatar_job_id = job_id
         row.avatar_summary_url = str((outputs or {}).get("summary") or "").strip() or None
         row.avatar_error = None
         row.avatar_payload = result
-        if status == "Failed":
-            row.avatar_error = str(result or "Azure avatar generation failed.")[:1000]
+        if status.lower() == "failed":
+            row.avatar_error = _survey_avatar_error_from_payload(result)
         session.add(row)
         session.commit()
         session.refresh(row)
+        if status.lower() == "succeeded":
+            return _save_survey_avatar_payload(session, row, result)
         return row
     except Exception as exc:
         row.avatar_status = "failed"
@@ -571,34 +804,20 @@ def generate_survey_avatar_video(session: Session, flow_key: str) -> SurveyConfi
 
 def refresh_survey_avatar_video(session: Session, flow_key: str) -> SurveyConfig:
     try:
-        from app.avatar import download_batch_avatar_output, get_batch_avatar
+        from app.avatar import get_batch_avatar
     except Exception as exc:
         raise RuntimeError(f"Azure avatar tools are not available: {exc}") from exc
     row = survey_config_row(session, flow_key)
-    if row is None or not str(row.avatar_job_id or "").strip():
+    if row is None:
+        raise RuntimeError("No avatar job is pending for this survey.")
+    if not str(row.avatar_job_id or "").strip():
+        status = str(row.avatar_status or "").strip().lower()
+        if status in {"queued", "running", "submitting"}:
+            _start_survey_avatar_thread(row.flow_key, mode="generate")
+            return row
         raise RuntimeError("No avatar job is pending for this survey.")
     payload = get_batch_avatar(str(row.avatar_job_id))
-    status = str(payload.get("status") or "").strip() or "Running"
-    outputs = payload.get("outputs") if isinstance(payload.get("outputs"), dict) else {}
-    result_url = str((outputs or {}).get("result") or "").strip()
-    row.avatar_status = status.lower()
-    row.avatar_summary_url = str((outputs or {}).get("summary") or "").strip() or None
-    row.avatar_payload = payload
-    row.avatar_error = None
-    if status == "Succeeded" and result_url:
-        row.avatar_video_url = _write_survey_avatar_video(
-            row.flow_key,
-            row.avatar_job_id,
-            download_batch_avatar_output(result_url),
-        )
-        row.avatar_generated_at = datetime.utcnow()
-    elif status == "Failed":
-        row.avatar_error = str(payload or "Azure avatar generation failed.")[:1000]
-    row.updated_at = datetime.utcnow()
-    session.add(row)
-    session.commit()
-    session.refresh(row)
-    return row
+    return _save_survey_avatar_payload(session, row, payload)
 
 
 def member_first_name(member: Member | None) -> str:

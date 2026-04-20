@@ -17,6 +17,7 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     _migrate_members_table()
+    _migrate_survey_configs_table()
     _migrate_staff_users_table()
 
 
@@ -63,6 +64,50 @@ def _migrate_members_table() -> None:
             "UPDATE membersense_members SET membership_status = 'current' "
             "WHERE lower(trim(membership_status)) IN ('not setup', 'not set up', 'active')"
         )
+
+
+def _migrate_survey_configs_table() -> None:
+    table_name = "membersense_survey_configs"
+    dialect = engine.dialect.name
+    avatar_columns = {
+        "label": ("VARCHAR(180)", "VARCHAR(180)"),
+        "intro": ("TEXT", "TEXT"),
+        "completion": ("TEXT", "TEXT"),
+        "questions": ("JSON", "JSONB"),
+        "avatar_script": ("TEXT", "TEXT"),
+        "avatar_video_url": ("TEXT", "TEXT"),
+        "avatar_poster_url": ("TEXT", "TEXT"),
+        "avatar_character": ("VARCHAR(80)", "VARCHAR(80)"),
+        "avatar_style": ("VARCHAR(120)", "VARCHAR(120)"),
+        "avatar_voice": ("VARCHAR(160)", "VARCHAR(160)"),
+        "avatar_status": ("VARCHAR(32)", "VARCHAR(32)"),
+        "avatar_job_id": ("VARCHAR(128)", "VARCHAR(128)"),
+        "avatar_error": ("TEXT", "TEXT"),
+        "avatar_summary_url": ("TEXT", "TEXT"),
+        "avatar_source": ("VARCHAR(64)", "VARCHAR(64)"),
+        "avatar_payload": ("JSON", "JSONB"),
+        "avatar_generated_at": ("DATETIME", "TIMESTAMP"),
+        "created_at": ("DATETIME", "TIMESTAMP"),
+        "updated_at": ("DATETIME", "TIMESTAMP"),
+    }
+    with engine.begin() as conn:
+        if dialect == "sqlite":
+            columns = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table_name})").fetchall()}
+            if not columns:
+                return
+            for name, (sqlite_type, _) in avatar_columns.items():
+                if name not in columns:
+                    conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN {name} {sqlite_type}")
+            conn.exec_driver_sql(
+                f"CREATE UNIQUE INDEX IF NOT EXISTS ix_{table_name}_flow_key ON {table_name} (flow_key)"
+            )
+            return
+        if dialect == "postgresql":
+            for name, (_, postgres_type) in avatar_columns.items():
+                conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {name} {postgres_type}")
+            conn.exec_driver_sql(
+                f"CREATE UNIQUE INDEX IF NOT EXISTS ix_{table_name}_flow_key ON {table_name} (flow_key)"
+            )
 
 
 def _migrate_staff_users_table() -> None:

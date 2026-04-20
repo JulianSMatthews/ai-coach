@@ -33,7 +33,6 @@ from .services import (
     ensure_app_link_token,
     expired_member_candidates,
     find_conversation_by_app_token,
-    generate_survey_avatar_video,
     import_members_csv,
     last_visit_range_candidates,
     latest_survey_for_member,
@@ -42,6 +41,8 @@ from .services import (
     member_contact_phone,
     member_name,
     new_member_candidates,
+    queue_survey_avatar_completion,
+    queue_survey_avatar_generation,
     refresh_survey_avatar_video,
     save_survey_config,
     send_survey_link_to_member,
@@ -2365,7 +2366,10 @@ def _survey_config_notice(saved: int | None, generated: int | None, refreshed: i
     if saved is not None:
         parts.append("Survey setup saved.")
     if generated is not None:
-        parts.append("Avatar generation started. Use refresh after a few minutes to cache the completed video.")
+        parts.append(
+            "Avatar generation queued. It will continue in the background; "
+            "refresh this page after a few minutes to see the completed video."
+        )
     if refreshed is not None:
         parts.append("Avatar status refreshed.")
     if error:
@@ -2558,10 +2562,14 @@ async def survey_config_update(
             avatar_voice=str(form.get("avatar_voice") or ""),
         )
         if action == "generate":
-            generate_survey_avatar_video(session, flow_key)
+            queue_survey_avatar_generation(session, flow_key)
             return _redirect(request, _survey_config_path(flow_key, generated=1, saved=1))
         if action == "refresh":
-            refresh_survey_avatar_video(session, flow_key)
+            refreshed_row = refresh_survey_avatar_video(session, flow_key)
+            status = str(getattr(refreshed_row, "avatar_status", "") or "").strip().lower()
+            has_video = bool(str(getattr(refreshed_row, "avatar_video_url", "") or "").strip())
+            if status not in {"failed", "succeeded"} and not has_video:
+                queue_survey_avatar_completion(flow_key)
             return _redirect(request, _survey_config_path(flow_key, refreshed=1, saved=1))
         return _redirect(request, _survey_config_path(flow_key, saved=1))
     except Exception as exc:
