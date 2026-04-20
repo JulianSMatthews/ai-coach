@@ -217,6 +217,22 @@ services:
         value: "1"
       - key: MEMBERSENSE_NGROK
         value: "0"
+      - key: MEMBERSENSE_MEDIA_DIR
+        value: "/var/data/membersense-media"
+      - key: USE_AZURE_AVATAR
+        value: "1"
+      - key: AZURE_AVATAR_KEY
+        sync: false
+      - key: AZURE_AVATAR_REGION
+        sync: false
+      - key: AZURE_AVATAR_ENDPOINT
+        sync: false
+      - key: AZURE_AVATAR_CHARACTER
+        sync: false
+      - key: AZURE_AVATAR_STYLE
+        sync: false
+      - key: AZURE_AVATAR_VOICE
+        sync: false
       - key: MEMBERSENSE_TWILIO_ACCOUNT_SID
         sync: false
       - key: MEMBERSENSE_TWILIO_AUTH_TOKEN
@@ -225,6 +241,10 @@ services:
         sync: false
       - key: MEMBERSENSE_TWILIO_MESSAGING_SERVICE_SID
         sync: false
+    disk:
+      name: membersense-media
+      mountPath: /var/data/membersense-media
+      sizeGB: 1
 
 databases:
   - name: healthsense-db

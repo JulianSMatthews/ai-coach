@@ -47,6 +47,7 @@ from .services import (
     send_survey_link_to_member,
     start_conversation,
     survey_avatar_defaults,
+    survey_avatar_runtime_config,
     survey_intro_for_member,
     survey_options,
     upsert_member,
@@ -2407,6 +2408,7 @@ def survey_config_edit(
     payload = editable_survey_payload(session, flow_key)
     flow = effective_survey_flow(session, flow_key)
     defaults = survey_avatar_defaults()
+    avatar_runtime = survey_avatar_runtime_config()
     notice_html = _survey_config_notice(saved, generated, refreshed, error)
     question_fields = []
     for index, question in enumerate(flow.questions, start=1):
@@ -2428,6 +2430,12 @@ def survey_config_edit(
     )
     status_lines = [
         ("Generation enabled", "Yes" if defaults.get("enabled") else "No"),
+        ("Azure avatar key", "Configured" if avatar_runtime.get("key_configured") else "Not configured"),
+        ("Azure key fingerprint", avatar_runtime.get("key_fingerprint") or ""),
+        ("Azure key source", avatar_runtime.get("key_source") or ""),
+        ("Azure region", avatar_runtime.get("region") or "Not configured"),
+        ("Azure region source", avatar_runtime.get("region_source") or ""),
+        ("Azure endpoint", avatar_runtime.get("endpoint") or ""),
         ("Default character", defaults.get("character") or "lisa"),
         ("Default style", defaults.get("style") or "graceful-sitting"),
         ("Default voice", defaults.get("voice") or "en-GB-SoniaNeural"),
@@ -2450,7 +2458,8 @@ def survey_config_edit(
   {notice_html}
   <form method="post" action="{_post_action(request, f'/admin/survey-config/{flow.key}')}" class="stack">
     {token_input}
-    <label><span>Survey label</span><input name="label" value="{_esc(flow.label)}"></label>
+    <label><span>Survey name</span><input name="label" value="{_esc(flow.label)}"></label>
+    <p class="muted">The survey name is shown to staff in MemberSense. Members see the intro message and questions below.</p>
     <label><span>Intro message</span><textarea name="intro">{_esc(flow.intro)}</textarea></label>
     <label><span>Completion message</span><textarea name="completion">{_esc(flow.completion)}</textarea></label>
     <h3>Questions And Answers</h3>

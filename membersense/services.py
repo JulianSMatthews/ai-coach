@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import io
 import os
 import re
@@ -8,6 +9,7 @@ import secrets
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 from sqlalchemy import desc, func, or_, select
 from sqlalchemy.orm import Session
@@ -482,6 +484,33 @@ def survey_avatar_defaults() -> dict[str, Any]:
             "voice": "en-GB-SoniaNeural",
             "error": str(exc),
         }
+
+
+def survey_avatar_runtime_config() -> dict[str, Any]:
+    avatar_key = str(os.getenv("AZURE_AVATAR_KEY") or "").strip()
+    speech_key = str(os.getenv("AZURE_SPEECH_KEY") or "").strip()
+    resolved_key = avatar_key or speech_key
+    avatar_region = str(os.getenv("AZURE_AVATAR_REGION") or "").strip()
+    speech_region = str(os.getenv("AZURE_SPEECH_REGION") or "").strip()
+    endpoint = str(os.getenv("AZURE_AVATAR_ENDPOINT") or os.getenv("AZURE_SPEECH_ENDPOINT") or "").strip()
+    resolved_region = avatar_region or speech_region
+    if not endpoint and resolved_region:
+        endpoint = f"https://{resolved_region}.api.cognitive.microsoft.com"
+    endpoint_host = ""
+    if endpoint:
+        parsed = urlparse(endpoint)
+        endpoint_host = parsed.netloc or endpoint
+    enabled = str(os.getenv("USE_AZURE_AVATAR") or os.getenv("USE_AZURE_SPEECH") or "").strip().lower()
+    return {
+        "enabled": enabled in {"1", "true", "yes", "on"},
+        "key_configured": bool(resolved_key),
+        "key_fingerprint": hashlib.sha256(resolved_key.encode()).hexdigest()[:10] if resolved_key else "",
+        "key_source": "AZURE_AVATAR_KEY" if avatar_key else "AZURE_SPEECH_KEY" if speech_key else "",
+        "region": resolved_region,
+        "region_source": "AZURE_AVATAR_REGION" if avatar_region else "AZURE_SPEECH_REGION" if speech_region else "",
+        "endpoint": endpoint_host,
+        "endpoint_source": "AZURE_AVATAR_ENDPOINT" if os.getenv("AZURE_AVATAR_ENDPOINT") else "AZURE_SPEECH_ENDPOINT" if os.getenv("AZURE_SPEECH_ENDPOINT") else "derived_from_region",
+    }
 
 
 def generate_survey_avatar_video(session: Session, flow_key: str) -> SurveyConfig:
