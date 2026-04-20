@@ -26,6 +26,7 @@ from .surveys import (
     flow_config_payload,
     flow_for_key,
     flow_from_config,
+    is_outcome_locked_flow,
     normalize_option_answer,
     question_options,
     response_summary,
@@ -412,30 +413,41 @@ def save_survey_config(
     row.label = str(label or "").strip() or base.label
     row.intro = str(intro or "").strip() or base.intro
     row.completion = str(completion or "").strip() or base.completion
-    by_key = {
-        str(item.get("key") or "").strip(): item
-        for item in (questions or [])
-        if isinstance(item, dict) and str(item.get("key") or "").strip()
-    }
-    stored_questions = []
-    for base_question in base.questions:
-        item = by_key.get(base_question.key, {})
-        raw_options = item.get("options")
-        if isinstance(raw_options, str):
-            option_values = [part.strip() for part in raw_options.replace("|", "\n").splitlines()]
-        elif isinstance(raw_options, (list, tuple)):
-            option_values = [str(part or "").strip() for part in raw_options]
-        else:
-            option_values = []
-        options = [option for option in option_values if option][:3] or list(base_question.options)
-        stored_questions.append(
+    if is_outcome_locked_flow(base.key):
+        stored_questions = [
             {
                 "key": base_question.key,
-                "text": str(item.get("text") or "").strip() or base_question.text,
-                "helper": str(item.get("helper") or "").strip() or base_question.helper,
-                "options": options,
+                "text": base_question.text,
+                "helper": base_question.helper,
+                "options": list(base_question.options),
             }
-        )
+            for base_question in base.questions
+        ]
+    else:
+        by_key = {
+            str(item.get("key") or "").strip(): item
+            for item in (questions or [])
+            if isinstance(item, dict) and str(item.get("key") or "").strip()
+        }
+        stored_questions = []
+        for base_question in base.questions:
+            item = by_key.get(base_question.key, {})
+            raw_options = item.get("options")
+            if isinstance(raw_options, str):
+                option_values = [part.strip() for part in raw_options.replace("|", "\n").splitlines()]
+            elif isinstance(raw_options, (list, tuple)):
+                option_values = [str(part or "").strip() for part in raw_options]
+            else:
+                option_values = []
+            options = [option for option in option_values if option][:3] or list(base_question.options)
+            stored_questions.append(
+                {
+                    "key": base_question.key,
+                    "text": str(item.get("text") or "").strip() or base_question.text,
+                    "helper": str(item.get("helper") or "").strip() or base_question.helper,
+                    "options": options,
+                }
+            )
     row.questions = stored_questions
     row.avatar_script = str(avatar_script or "").strip() or None
     row.avatar_video_url = str(avatar_video_url or "").strip() or None

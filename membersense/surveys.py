@@ -41,11 +41,42 @@ SURVEY_FLOWS: dict[str, SurveyFlow] = {
             f"Welcome to {GYM_NAME}. I just want to ask a few quick questions so the gym team can help you get started properly."
         ),
         questions=(
-            SurveyQuestion("goal", "What is your main goal from joining the gym?", options=("Lose weight", "Build strength", "Get fitter")),
-            SurveyQuestion("experience", "How experienced do you feel with gym training?", options=("New", "Some experience", "Confident")),
-            SurveyQuestion("confidence", "How confident do you feel walking in and training on your own?", options=("Low", "Medium", "High")),
-            SurveyQuestion("barrier", "What is most likely to get in the way of you training regularly?", options=("Time", "Confidence", "Motivation")),
-            SurveyQuestion("support", "Would you like help from the team to get started?", options=("Yes", "Maybe", "No")),
+            SurveyQuestion(
+                "goal",
+                "What is your main goal from joining the gym?",
+                helper="Purpose: gives staff context for the induction or coaching conversation.",
+                options=("Lose weight", "Build strength", "Get fitter / healthier"),
+            ),
+            SurveyQuestion(
+                "experience",
+                "Have you trained regularly in a gym before?",
+                helper="Purpose: identifies whether the member is likely to benefit from an induction.",
+                options=("Never", "A little / not recently", "Yes, regularly"),
+            ),
+            SurveyQuestion(
+                "confidence",
+                "How confident are you using gym equipment and choosing exercises?",
+                helper="Purpose: checks whether the member knows what they are doing independently.",
+                options=("Not confident", "Somewhat confident", "Confident"),
+            ),
+            SurveyQuestion(
+                "support",
+                "Which next step would be most useful for you?",
+                helper="Purpose: separates induction need from coaching interest.",
+                options=("Gym induction / equipment help", "No-obligation coaching session", "No support needed"),
+            ),
+            SurveyQuestion(
+                "contact",
+                "What is the best way for the team to follow up?",
+                helper="Purpose: tells staff how to contact the member.",
+                options=("WhatsApp / text", "Phone call", "Email"),
+            ),
+            SurveyQuestion(
+                "timing",
+                "If you would like support, when would suit you best?",
+                helper="Purpose: makes staff follow-up immediately bookable.",
+                options=("Weekday daytime", "Weekday evening", "Weekend"),
+            ),
         ),
         completion="Thanks. The gym team has your answers and will follow up if support would help.",
     ),
@@ -89,6 +120,13 @@ SURVEY_FLOWS: dict[str, SurveyFlow] = {
 }
 
 
+OUTCOME_LOCKED_FLOW_KEYS = frozenset({"new_member"})
+
+
+def is_outcome_locked_flow(flow_key: str) -> bool:
+    return str(flow_key or "").strip().lower() in OUTCOME_LOCKED_FLOW_KEYS
+
+
 def flow_for_key(flow_key: str) -> SurveyFlow:
     key = str(flow_key or "").strip().lower()
     if key not in SURVEY_FLOWS:
@@ -114,7 +152,9 @@ def _question_options_from_payload(raw: object, fallback: tuple[str, ...]) -> tu
 def flow_from_config(flow_key: str, payload: dict[str, Any] | None) -> SurveyFlow:
     base = flow_for_key(flow_key)
     data = payload if isinstance(payload, dict) else {}
-    question_payloads = data.get("questions") if isinstance(data.get("questions"), list) else []
+    question_payloads = []
+    if not is_outcome_locked_flow(base.key):
+        question_payloads = data.get("questions") if isinstance(data.get("questions"), list) else []
     by_key = {
         _clean_text(item.get("key")): item
         for item in question_payloads
@@ -225,7 +265,7 @@ def _confidence_score(text: str) -> int | None:
     label = str(text or "").strip().lower()
     if label in {"low", "not confident"}:
         return 1
-    if label in {"medium", "somewhat", "ok", "okay"}:
+    if label in {"medium", "somewhat", "somewhat confident", "ok", "okay"}:
         return 3
     if label in {"high", "confident", "very confident"}:
         return 5
@@ -239,30 +279,83 @@ def _confidence_score(text: str) -> int | None:
     return None
 
 
+def _new_member_follow_up_action(
+    *,
+    support: str,
+    contact: str,
+    timing: str,
+    induction_recommended: bool,
+    coaching_requested: bool,
+    coaching_opportunity: bool,
+    support_declined: bool,
+) -> str:
+    contact_label = str(contact or "").strip()
+    if contact_label.lower() in {"email", "phone call"}:
+        contact_label = contact_label.lower()
+    prefix = f"Use {contact_label} to " if contact_label else "Contact the member to "
+    timing_suffix = f" Preferred time: {timing}." if timing else ""
+    if coaching_requested:
+        return f"{prefix}book a no-obligation coaching session.{timing_suffix}"
+    if induction_recommended:
+        if support_declined:
+            return f"{prefix}offer an optional gym induction/equipment walkthrough; member selected no support needed.{timing_suffix}"
+        return f"{prefix}book a gym induction/equipment walkthrough.{timing_suffix}"
+    if coaching_opportunity:
+        return f"{prefix}send a simple starter plan and offer a coaching session if useful.{timing_suffix}"
+    if support:
+        return f"{prefix}send a welcome message and leave open for questions."
+    return "Send welcome message and leave open for questions."
+
+
 def classify_response(flow_key: str, answers: dict[str, Any]) -> dict[str, Any]:
     flow = flow_for_key(flow_key)
     if flow.key == "new_member":
-        confidence = _confidence_score(_answer_text(answers, "confidence"))
-        barrier = _answer_text(answers, "barrier")
+        confidence_text = _answer_text(answers, "confidence")
+        confidence = _confidence_score(confidence_text)
+        legacy_barrier = _answer_text(answers, "barrier")
         support = _answer_text(answers, "support")
         experience = _answer_text(answers, "experience")
-        high_markers = (
-            confidence is not None and confidence <= 2
-        ) or _yesish(support) or _contains_any(
-            f"{barrier} {experience}",
+        contact = _answer_text(answers, "contact")
+        timing = _answer_text(answers, "timing")
+        support_declined = _option_key(support) in {"no", "none", "no support needed"}
+        never_trained = _contains_any(experience, ("never", "new"))
+        not_recent = _contains_any(experience, ("little", "not recently", "some experience"))
+        not_confident = (confidence is not None and confidence <= 2) or _contains_any(confidence_text, ("not confident", "low"))
+        somewhat_confident = (confidence is not None and confidence == 3) or _contains_any(
+            confidence_text, ("somewhat", "medium", "ok", "okay")
+        )
+        induction_requested = _contains_any(support, ("induction", "equipment help", "equipment"))
+        coaching_requested = _contains_any(support, ("coaching", "coach"))
+        legacy_support_requested = _yesish(support)
+        legacy_support_possible = _maybeish(support)
+        legacy_risk = _contains_any(
+            f"{legacy_barrier} {experience} {confidence_text}",
             ("confidence", "nervous", "anxious", "injury", "pain", "not sure", "no idea", "new"),
         )
-        medium_markers = _maybeish(support) or (confidence is not None and confidence == 3)
+        induction_recommended = induction_requested or legacy_support_requested or never_trained or not_confident or legacy_risk
+        coaching_opportunity = coaching_requested or (
+            not support_declined and not induction_recommended and (not_recent or somewhat_confident or legacy_support_possible)
+        )
+        high_markers = induction_recommended or coaching_requested
+        medium_markers = coaching_opportunity or legacy_support_possible or (
+            not support_declined and (not_recent or somewhat_confident)
+        )
         level = "high" if high_markers else ("medium" if medium_markers else "low")
-        action = (
-            "Book an induction or trainer check-in."
-            if level == "high"
-            else "Send a simple starter plan or class recommendation."
-            if level == "medium"
-            else "Send welcome message and leave open for questions."
+        action = _new_member_follow_up_action(
+            support=support,
+            contact=contact,
+            timing=timing,
+            induction_recommended=induction_recommended,
+            coaching_requested=coaching_requested,
+            coaching_opportunity=coaching_opportunity,
+            support_declined=support_declined,
         )
         return {
             "support_need": level,
+            "induction_recommended": "yes" if induction_recommended else "no",
+            "coaching_opportunity": "yes" if coaching_requested else ("possible" if coaching_opportunity else "no"),
+            "preferred_contact_method": contact or "not recorded",
+            "preferred_session_time": timing or "not recorded",
             "priority": "high" if level == "high" else "normal",
             "recommended_action": action,
             "task_required": level in {"high", "medium"},

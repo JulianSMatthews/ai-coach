@@ -22,7 +22,7 @@ from .auth import (
 )
 from .db import SessionLocal
 from .models import Conversation, Member, MessageLog, StaffTask, StaffUser
-from .surveys import SURVEY_FLOWS, flow_for_key, question_options
+from .surveys import SURVEY_FLOWS, flow_for_key, is_outcome_locked_flow, question_options
 from .services import (
     active_conversation_for_member,
     continue_app_conversation,
@@ -2382,6 +2382,16 @@ def _survey_config_notice(saved: int | None, generated: int | None, refreshed: i
 
 def _survey_config_questions_from_form(form, flow_key: str) -> list[dict[str, str]]:
     flow = flow_for_key(flow_key)
+    if is_outcome_locked_flow(flow.key):
+        return [
+            {
+                "key": question.key,
+                "text": question.text,
+                "helper": question.helper,
+                "options": "\n".join(question.options),
+            }
+            for question in flow.questions
+        ]
     questions = []
     for question in flow.questions:
         questions.append(
@@ -2426,7 +2436,7 @@ def survey_config_index(
     body = f"""
 <section>
   <h2>Survey Setup</h2>
-  <p class="muted">Edit the text, multiple-choice answers, intro and completion message for each survey. Avatar videos use the same Azure avatar defaults as HealthSense when generation is enabled.</p>
+  <p class="muted">Edit survey text, intro and completion messages where configurable. Outcome-driving question sets are locked when classification depends on exact answer meanings. Avatar videos use the same Azure avatar defaults as HealthSense when generation is enabled.</p>
   <table>
     <thead><tr><th>Survey</th><th>Questions</th><th>Avatar</th><th>Action</th></tr></thead>
     <tbody>{''.join(rows)}</tbody>
@@ -2454,17 +2464,26 @@ def survey_config_edit(
     avatar_runtime = survey_avatar_runtime_config()
     notice_html = _survey_config_notice(saved, generated, refreshed, error)
     question_fields = []
+    questions_locked = is_outcome_locked_flow(flow.key)
     for index, question in enumerate(flow.questions, start=1):
         options_text = "\n".join(question.options)
+        readonly_attr = " readonly" if questions_locked else ""
+        helper_html = f'<p class="muted">{_esc(question.helper)}</p>' if question.helper else ""
         question_fields.append(
             f"""
 <div class="stack" style="border-top: 1px solid var(--line); padding-top: 12px;">
   <h3>Question {index}</h3>
   <p class="muted">Key: {_esc(question.key)}</p>
-  <label><span>Question text</span><textarea name="question_text_{_esc(question.key)}">{_esc(question.text)}</textarea></label>
-  <label><span>Answer options, one per line</span><textarea name="question_options_{_esc(question.key)}">{_esc(options_text)}</textarea></label>
+  {helper_html}
+  <label><span>Question text</span><textarea name="question_text_{_esc(question.key)}"{readonly_attr}>{_esc(question.text)}</textarea></label>
+  <label><span>Answer options, one per line</span><textarea name="question_options_{_esc(question.key)}"{readonly_attr}>{_esc(options_text)}</textarea></label>
 </div>"""
         )
+    question_lock_notice = (
+        '<p class="muted"><strong>These questions and answer options are fixed because the new-member outcome classifier depends on their exact meanings.</strong></p>'
+        if questions_locked
+        else ""
+    )
     video_url = str(payload.get("avatar_video_url") or "").strip()
     video_html = (
         f'<p><a class="button secondary" href="{_esc(video_url)}" target="_blank" rel="noreferrer">Open avatar video</a></p>'
@@ -2506,6 +2525,7 @@ def survey_config_edit(
     <label><span>Intro message</span><textarea name="intro">{_esc(flow.intro)}</textarea></label>
     <label><span>Completion message</span><textarea name="completion">{_esc(flow.completion)}</textarea></label>
     <h3>Questions And Answers</h3>
+    {question_lock_notice}
     {''.join(question_fields)}
     <h3>Avatar Video</h3>
     <p class="muted">Provide a script for the avatar. The generator uses the same HealthSense defaults unless you override character, style, or voice below. You can also paste an existing video URL.</p>
