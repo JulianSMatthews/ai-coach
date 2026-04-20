@@ -1566,7 +1566,6 @@ def members(
         active = active_conversation_for_member(session, int(member.id))
         active_text = f'<span class="pill">{_esc(active.flow_key)}</span>' if active else ""
         member_url = _href(request, f"/admin/members/{member.id}")
-        action_html = '<div class="stack">' + _visit_survey_form(request, member) + _survey_action(request, member, session=session) + "</div>"
         table.append(
             "<tr>"
             f"<td><a href=\"{member_url}\">{_esc(member_name(member))}</a><br><span class=\"muted\">{_esc(_mobile_label(member))}</span></td>"
@@ -1576,7 +1575,6 @@ def members(
             f"<td>{_esc(_date(member.last_visit_date))}</td>"
             f"<td>{_esc(_date(member.expiry_date))}</td>"
             f"<td>{active_text}</td>"
-            f"<td>{action_html}</td>"
             "</tr>"
         )
     token_input = (
@@ -1591,6 +1589,7 @@ def members(
         else f"Search by name, email, mobile, member number, or status. {total} members in MemberSense."
     )
     empty_text = "No members matched your search." if search else "Enter a search above to look up members."
+    create_token_input = _token_input(request)
     body = f"""
 <section>
   <div class="inline" style="justify-content: space-between;">
@@ -1606,10 +1605,29 @@ def members(
   <p class="muted">{result_text}</p>
   <table>
     <thead>
-      <tr><th>Member</th><th>Email</th><th>Status</th><th>Joined</th><th>Last visit</th><th>Expiry</th><th>Active survey</th><th>Action</th></tr>
+      <tr><th>Member</th><th>Email</th><th>Status</th><th>Joined</th><th>Last visit</th><th>Expiry</th><th>Active survey</th></tr>
     </thead>
-    <tbody>{''.join(table) or f'<tr><td colspan="8">{_esc(empty_text)}</td></tr>'}</tbody>
+    <tbody>{''.join(table) or f'<tr><td colspan="7">{_esc(empty_text)}</td></tr>'}</tbody>
   </table>
+</section>
+<section>
+  <h2>Create New Member</h2>
+  <p class="muted">Create a member manually when they are not found in search. Enter either a member number or a mobile number.</p>
+  <form method="post" action="{_post_action(request, '/admin/members')}" class="stack">
+    {create_token_input}
+    <div class="grid">
+      <label><span>First name</span><input name="first_name" autocomplete="given-name"></label>
+      <label><span>Surname</span><input name="last_name" autocomplete="family-name"></label>
+      <label><span>Email</span><input name="email" type="email" autocomplete="email"></label>
+      <label><span>Mobile</span><input name="phone" autocomplete="tel"></label>
+      <label><span>Member number</span><input name="external_member_id"></label>
+      <label><span>Status</span><select name="membership_status"><option value="current">Current</option><option value="expired">Expired</option><option value="account onhold">Account On Hold</option></select></label>
+      <label><span>Joining date</span><input name="join_date" type="date"></label>
+      <label><span>Last visit</span><input name="last_visit_date" type="date"></label>
+      <label><span>Expiry date</span><input name="expiry_date" type="date"></label>
+    </div>
+    <button type="submit">Create member</button>
+  </form>
 </section>"""
     return _layout(request, "Members", body)
 
