@@ -7,6 +7,7 @@ import os
 import re
 import secrets
 import threading
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -472,13 +473,17 @@ def _write_survey_avatar_video(flow_key: str, job_id: str | None, video_bytes: b
 
 def survey_avatar_defaults() -> dict[str, Any]:
     try:
-        from app.avatar import azure_avatar_defaults, azure_avatar_enabled
+        from app.avatar import azure_avatar_defaults, azure_avatar_enabled, normalize_batch_avatar_choice
 
         defaults = azure_avatar_defaults()
+        character, style = normalize_batch_avatar_choice(
+            str(defaults.get("character") or "lisa"),
+            str(defaults.get("style") or "graceful-sitting"),
+        )
         return {
             "enabled": bool(azure_avatar_enabled()),
-            "character": str(defaults.get("character") or "lisa"),
-            "style": str(defaults.get("style") or "graceful-sitting"),
+            "character": character,
+            "style": style,
             "voice": str(defaults.get("voice") or "en-GB-SoniaNeural"),
         }
     except Exception as exc:
@@ -555,6 +560,24 @@ def _survey_avatar_error_from_payload(payload: dict[str, Any], fallback: str = "
     if isinstance(raw_error, dict):
         raw_error = raw_error.get("message") or raw_error.get("code") or raw_error
     return str(raw_error or fallback).strip()[:1000]
+
+
+def _avatar_error_is_retryable(error: str | None) -> bool:
+    value = str(error or "").strip().lower()
+    if not value:
+        return False
+    return "rate-limited with 429" in value or "retry after" in value or "is not supported for avatar character" in value
+
+
+def _avatar_retry_after_seconds(error: str | None) -> int:
+    value = str(error or "")
+    match = re.search(r"retry after\s+(\d+)\s+seconds?", value, re.IGNORECASE)
+    if not match:
+        return 15
+    try:
+        return max(1, min(int(match.group(1)), 120))
+    except Exception:
+        return 15
 
 
 def _save_survey_avatar_payload(session: Session, row: SurveyConfig, payload: dict[str, Any]) -> SurveyConfig:
@@ -662,10 +685,23 @@ def _start_survey_avatar_thread(flow_key: str, *, mode: str) -> bool:
 def _survey_avatar_thread_runner(flow_key: str, mode: str) -> None:
     try:
         if mode == "generate":
-            from .db import SessionLocal
+            attempts = max(1, int(os.getenv("MEMBERSENSE_AVATAR_CREATE_ATTEMPTS") or "3"))
+            last_error: Exception | None = None
+            for attempt in range(attempts):
+                try:
+                    from .db import SessionLocal
 
-            with SessionLocal() as session:
-                generate_survey_avatar_video(session, flow_key)
+                    with SessionLocal() as session:
+                        generate_survey_avatar_video(session, flow_key)
+                    last_error = None
+                    break
+                except Exception as exc:
+                    last_error = exc
+                    if attempt >= attempts - 1 or not _avatar_error_is_retryable(str(exc)):
+                        raise
+                    time.sleep(_avatar_retry_after_seconds(str(exc)))
+            if last_error is not None:
+                raise last_error
         complete_survey_avatar_video(flow_key)
     except Exception as exc:
         try:
@@ -724,11 +760,22 @@ def resume_pending_survey_avatar_jobs() -> int:
             status = str(row.avatar_status or "").strip().lower()
             video_url = str(row.avatar_video_url or "").strip()
             if not flow_key or video_url or status in {"failed", "succeeded"}:
+                if flow_key and not video_url and status == "failed" and _avatar_error_is_retryable(row.avatar_error):
+                    row.avatar_status = "queued"
+                    row.avatar_error = None
+                    row.avatar_job_id = None
+                    row.avatar_summary_url = None
+                    row.avatar_payload = None
+                    row.avatar_generated_at = None
+                    row.updated_at = datetime.utcnow()
+                    session.add(row)
+                    queued_generation.append(flow_key)
                 continue
             if job_id:
                 queued_completion.append(flow_key)
             elif status in {"queued", "running", "submitting"}:
                 queued_generation.append(flow_key)
+        session.commit()
     for flow_key in queued_generation:
         _start_survey_avatar_thread(flow_key, mode="generate")
     for flow_key in queued_completion:
@@ -738,7 +785,7 @@ def resume_pending_survey_avatar_jobs() -> int:
 
 def generate_survey_avatar_video(session: Session, flow_key: str) -> SurveyConfig:
     try:
-        from app.avatar import azure_avatar_enabled, create_batch_avatar
+        from app.avatar import azure_avatar_enabled, create_batch_avatar, normalize_batch_avatar_choice
     except Exception as exc:
         raise RuntimeError(f"Azure avatar tools are not available: {exc}") from exc
     if not azure_avatar_enabled():
@@ -754,6 +801,7 @@ def generate_survey_avatar_video(session: Session, flow_key: str) -> SurveyConfi
         raise RuntimeError("Avatar script is required.")
     character = str(row.avatar_character or defaults.get("character") or "lisa").strip()
     style = str(row.avatar_style or defaults.get("style") or "graceful-sitting").strip()
+    character, style = normalize_batch_avatar_choice(character, style)
     voice = str(row.avatar_voice or defaults.get("voice") or "en-GB-SoniaNeural").strip()
     row.avatar_status = "running"
     row.avatar_job_id = None
@@ -763,6 +811,8 @@ def generate_survey_avatar_video(session: Session, flow_key: str) -> SurveyConfi
     row.avatar_summary_url = None
     row.avatar_payload = None
     row.avatar_generated_at = None
+    row.avatar_character = character
+    row.avatar_style = style
     row.updated_at = datetime.utcnow()
     session.add(row)
     session.commit()

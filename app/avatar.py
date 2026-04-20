@@ -67,6 +67,27 @@ def azure_avatar_defaults() -> dict[str, Any]:
     }
 
 
+_STANDARD_BATCH_AVATAR_STYLES = {
+    "harry": ("business", "casual", "youthful"),
+    "jeff": ("business", "formal"),
+    "lisa": ("casual-sitting", "graceful-sitting", "graceful-standing", "technical-sitting", "technical-standing"),
+    "lori": ("casual", "graceful", "formal"),
+    "max": ("business", "casual", "formal"),
+    "meg": ("formal", "casual", "business"),
+}
+
+
+def normalize_batch_avatar_choice(character: str | None, style: str | None) -> tuple[str, str]:
+    resolved_character = str(character or "").strip().lower() or "lisa"
+    resolved_style = str(style or "").strip().lower()
+    supported_styles = _STANDARD_BATCH_AVATAR_STYLES.get(resolved_character)
+    if not supported_styles:
+        return resolved_character, resolved_style
+    if resolved_style in supported_styles:
+        return resolved_character, resolved_style
+    return resolved_character, supported_styles[0]
+
+
 def _safe_int(value: str | None, default: int) -> int:
     try:
         parsed = int(str(value or "").strip())
@@ -277,6 +298,10 @@ def create_batch_avatar(
     job_id: str | None = None,
 ) -> dict[str, Any]:
     defaults = azure_avatar_defaults()
+    resolved_character, resolved_style = normalize_batch_avatar_choice(
+        character or defaults["character"],
+        style or defaults["style"],
+    )
     batch_id = _sanitize_job_id(job_id or f"{title or 'intro-avatar'}-{uuid.uuid4().hex[:12]}")
     payload: dict[str, Any] = {
         "displayName": title or "Intro avatar",
@@ -284,8 +309,8 @@ def create_batch_avatar(
         "inputKind": "SSML",
         "inputs": [{"content": build_avatar_ssml(script, voice, defaults["locale"])}],
         "avatarConfig": {
-            "talkingAvatarCharacter": character or defaults["character"],
-            "talkingAvatarStyle": style or defaults["style"],
+            "talkingAvatarCharacter": resolved_character,
+            "talkingAvatarStyle": resolved_style,
             "videoFormat": defaults["video_format"],
             "videoCodec": defaults["video_codec"],
             "subtitleType": defaults["subtitle_type"],
@@ -399,5 +424,6 @@ __all__ = [
     "get_avatar_relay_token",
     "get_batch_avatar",
     "issue_avatar_speech_token",
+    "normalize_batch_avatar_choice",
     "wait_for_batch_avatar",
 ]
