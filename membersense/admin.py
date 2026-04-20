@@ -877,7 +877,6 @@ def _public_survey_response(
         body = f"""
 <p class="eyebrow">{_esc(config.GYM_NAME)}</p>
 <h1>Thanks, {_esc(member_name(member))}</h1>
-{_survey_avatar_html(flow)}
 <p class="muted">{_esc(flow.completion)}</p>
 <div class="progress"><span style="width: 100%"></span></div>
 <p>Your answers have been recorded.</p>"""
