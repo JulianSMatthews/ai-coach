@@ -214,11 +214,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
 
   const alerts = health?.alerts || [];
   const funnelSteps = health?.funnel?.steps || [];
-  const coachingFunnelSteps = health?.coaching?.day_funnel?.steps || [];
-  const coachingWeekRows = health?.coaching?.week_funnel?.weeks || [];
-  const coachingDayStats = (health?.coaching?.day_stats || []).filter(
-    (row) => String(row?.day || "").toLowerCase() !== "kickoff",
-  );
   const llmP50WarnMs = Number(health?.thresholds?.llm_p50_ms?.warn ?? DEFAULT_LLM_P50_WARN_MS);
   const llmP50CriticalMs = Number(health?.thresholds?.llm_p50_ms?.critical ?? DEFAULT_LLM_P50_CRITICAL_MS);
   const llmP95WarnMs = Number(health?.thresholds?.llm_p95_ms?.warn ?? DEFAULT_LLM_P95_WARN_MS);
@@ -316,97 +311,9 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
       description: "Share of Twilio callbacks marked failed/undelivered, counting only callbacks linked to existing message logs.",
     },
   ];
-  const coachingMetrics = [
-    {
-      title: "Coaching users reached",
-      value: health?.coaching?.users_reached != null ? `${health.coaching.users_reached}` : "—",
-      state: "unknown",
-      subtitle: `${health?.coaching?.touchpoints_sent ?? 0} coaching touchpoints sent`,
-      description: "Unique users who received at least one coaching touchpoint in this window.",
-    },
-    {
-      title: "First-day coaching reply",
-      value:
-        health?.coaching?.first_day?.response_rate_pct != null
-          ? `${formatNum(health.coaching.first_day.response_rate_pct)}%`
-          : "—",
-      state: "unknown",
-      subtitle: `${health?.coaching?.first_day?.responded_24h ?? 0} replied / ${health?.coaching?.first_day?.sent ?? 0} first-day prompts`,
-      description: "Share of first-day coaching messages that received a user reply within 24 hours.",
-    },
-    {
-      title: "Weekly flow completion",
-      value:
-        health?.coaching?.day_funnel?.week_completion_rate_pct != null
-          ? `${formatNum(health.coaching.day_funnel.week_completion_rate_pct)}%`
-          : "—",
-      state: health?.coaching?.day_funnel?.week_completion_state,
-      subtitle: `${health?.coaching?.day_funnel?.completed_sunday ?? 0} reached Sunday / ${health?.coaching?.day_funnel?.started ?? 0} Monday starts`,
-      description: "Monday-started coaching users who reached Sunday in the same flow.",
-    },
-    {
-      title: "Sunday reply rate",
-      value:
-        health?.coaching?.day_funnel?.sunday_reply_rate_pct != null
-          ? `${formatNum(health.coaching.day_funnel.sunday_reply_rate_pct)}%`
-          : "—",
-      state: health?.coaching?.day_funnel?.sunday_reply_state,
-      subtitle: `${health?.coaching?.day_funnel?.sunday_replied ?? 0} replied / ${health?.coaching?.day_funnel?.completed_sunday ?? 0} Sunday prompts`,
-      description: "Share of Sunday review prompts that received a user reply within 24 hours.",
-    },
-    {
-      title: "Coach reply latency p95",
-      value:
-        health?.coaching?.response_time_minutes?.p95 != null
-          ? `${Math.round(health.coaching.response_time_minutes.p95)} min`
-          : "—",
-      state: health?.coaching?.response_time_minutes?.state,
-      subtitle: `p50 ${health?.coaching?.response_time_minutes?.p50 != null ? `${Math.round(health.coaching.response_time_minutes.p50)} min` : "—"} (${health?.coaching?.response_time_minutes?.sample_size ?? 0} samples)`,
-      description: "How quickly users typically reply after coaching touchpoints (windowed to 24h).",
-    },
-    {
-      title: "Outside 24h window",
-      value:
-        health?.coaching?.engagement_window?.outside_24h_rate_pct != null
-          ? `${formatNum(health.coaching.engagement_window.outside_24h_rate_pct)}%`
-          : "—",
-      state: health?.coaching?.engagement_window?.outside_24h_state,
-      subtitle: `${health?.coaching?.engagement_window?.outside_24h ?? 0} outside / ${health?.coaching?.engagement_window?.users_tracked ?? 0} tracked`,
-      description: "Users whose latest inbound message is older than 24 hours (or has no inbound history).",
-    },
-    {
-      title: "Current streak p50",
-      value:
-        health?.coaching?.engagement_window?.current_streak_days_p50 != null
-          ? `${formatNum(health.coaching.engagement_window.current_streak_days_p50)} days`
-          : "—",
-      state: "unknown",
-      subtitle: `p95 ${health?.coaching?.engagement_window?.current_streak_days_p95 != null ? `${formatNum(health.coaching.engagement_window.current_streak_days_p95)} days` : "—"} | max ${health?.coaching?.engagement_window?.current_streak_days_max ?? "—"} days`,
-      description: "Median consecutive-day inbound streak (UK day), anchored to today.",
-    },
-  ];
-  const coachingDelivery = health?.coaching?.delivery || {
-    attempted_current_logic: 0,
-    attempted_messages: 0,
-    delivery_confirmed: 0,
-    failed_undelivered: 0,
-    callback_pending_unknown: 0,
-  };
-  const templateDelivery = health?.messaging?.out_of_session_template || {};
-  const templateSent = Math.max(0, Number(templateDelivery.attempted_messages ?? 0) || 0);
-  const templateReceived = Math.max(0, Number(templateDelivery.delivery_confirmed ?? 0) || 0);
-  const templateFailed = Math.max(0, Number(templateDelivery.failed_undelivered ?? 0) || 0);
-  const templatePendingRaw = Math.max(0, Number(templateDelivery.pending_unknown ?? 0) || 0);
-  const templatePending = Math.max(0, templateSent - templateReceived - templateFailed, templatePendingRaw);
-  const templateNotReceived = Math.max(0, templateFailed + templatePending);
-  const templateReceivedPct = templateSent > 0 ? (templateReceived / templateSent) * 100 : 0;
-  const templateFailedPct = templateSent > 0 ? (templateFailed / templateSent) * 100 : 0;
-  const templatePendingPct = templateSent > 0 ? (templatePending / templateSent) * 100 : 0;
-  const templateNotReceivedPct = templateSent > 0 ? (templateNotReceived / templateSent) * 100 : null;
   const appKpis = appEngagement?.top_kpis || {};
   const appDetail = appEngagement?.detail || {};
   const currentApp = appDetail.current_app || {};
-  const appOnboarding = appDetail.onboarding || {};
   const appDailyRows = appDetail.daily || [];
   const appMetrics = [
     {
@@ -478,24 +385,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
     {
       label: "Weekly objectives",
       value: `${currentApp.weekly_objectives?.opens ?? 0} opens · ${currentApp.weekly_objectives?.saves ?? 0} saves`,
-    },
-  ];
-  const legacyAppRows = [
-    {
-      label: "Legacy progress home",
-      value: `${appDetail.home?.views ?? 0} views · ${appDetail.home?.users ?? 0} users`,
-    },
-    {
-      label: "Library",
-      value: `${appDetail.library?.views ?? 0} views · ${appDetail.library?.users ?? 0} users`,
-    },
-    {
-      label: "Podcasts",
-      value: `${appDetail.podcasts?.plays ?? 0} plays · ${appDetail.podcasts?.completes ?? 0} completes`,
-    },
-    {
-      label: "Intro funnel",
-      value: `${appOnboarding.intro_completed_after_first_login_users ?? 0} completed · ${appOnboarding.first_login_cohort_users ?? 0} first-logins`,
     },
   ];
   const giaRatio = giaToday?.ratio || {};
@@ -806,235 +695,6 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
                 </div>
               </section>
 
-              <section className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Legacy WhatsApp delivery signals</p>
-                <p className="mt-2 text-sm text-[#6b6257]">
-                  Retained for historical touchpoint monitoring; the current user app readiness state is shown above.
-                </p>
-                <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  {coachingMetrics.slice(0, 4).map((item) => (
-                    <div key={item.title} className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-3">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{item.title}</span>
-                        <span className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.2em] ${stateBadgeClass(item.state)}`}>
-                          {(item.state || "unknown").toUpperCase()}
-                        </span>
-                      </div>
-                      <div className="mt-2 text-xl font-semibold">{item.value}</div>
-                      <p className="mt-1 text-xs text-[#8a8176]">{item.subtitle}</p>
-                    </div>
-                  ))}
-                </div>
-              </section>
-
-              <section className="grid gap-4 md:grid-cols-3">
-              <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Attempted (current logic)</p>
-                <div className="mt-3 text-3xl font-semibold">{coachingDelivery.attempted_current_logic ?? 0}</div>
-                <p className="mt-2 text-sm text-[#6b6257]">Touchpoints attempted by the scheduler flow.</p>
-              </div>
-              <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Delivery confirmed (from Twilio callbacks)</p>
-                <div className="mt-3 text-3xl font-semibold">{coachingDelivery.delivery_confirmed ?? 0}</div>
-                <p className="mt-2 text-sm text-[#6b6257]">
-                  Latest callback status is <code>delivered</code> or <code>read</code>.
-                </p>
-              </div>
-              <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Failed/undelivered (with error codes)</p>
-                <div className="mt-3 text-3xl font-semibold">{coachingDelivery.failed_undelivered ?? 0}</div>
-                <p className="mt-2 text-sm text-[#6b6257]">
-                  Latest callback has <code>failed</code>/<code>undelivered</code> or an error code.
-                </p>
-              </div>
-            </section>
-
-            <section className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
-              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Day-by-day engagement</p>
-              <p className="mt-1 text-xs text-[#8a8176]">
-                Attempted touchpoints, Twilio delivery outcomes, 24-hour replies, and media usage by day.
-              </p>
-              <div className="mt-3 rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">24h+ template delivery</span>
-                  <span
-                    className={`rounded-full border px-2 py-1 text-[10px] uppercase tracking-[0.2em] ${stateBadgeClass(
-                      health?.messaging?.out_of_session_template?.failure_state,
-                    )}`}
-                  >
-                    {(health?.messaging?.out_of_session_template?.failure_state || "unknown").toUpperCase()}
-                  </span>
-                </div>
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm font-semibold">
-                    not received {templateNotReceived}/{templateSent} (
-                    {templateSent ? `${formatNum(templateNotReceivedPct)}%` : "—"})
-                  </span>
-                  <span className="text-sm font-semibold">
-                    received {templateReceived}/{templateSent} (
-                    {templateSent ? `${formatNum(templateReceivedPct)}%` : "—"})
-                  </span>
-                </div>
-                <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-[#ece4d8]">
-                  <div className="flex h-full w-full">
-                    <div className="bg-[#1d6a4f]" style={{ width: `${templateReceivedPct}%` }} />
-                    <div className="bg-[#c43d3d]" style={{ width: `${templateFailedPct}%` }} />
-                    <div className="bg-[#b6ad9f]" style={{ width: `${templatePendingPct}%` }} />
-                  </div>
-                </div>
-                <div className="mt-1 text-xs text-[#6b6257]">
-                  sent {templateSent} | received {templateReceived} | failed {templateFailed} | pending {templatePending}
-                </div>
-                <div className="mt-1 text-xs text-[#8a8176]">
-                  failure rate{" "}
-                  {health?.messaging?.out_of_session_template?.failure_rate_pct != null
-                    ? `${formatNum(health.messaging.out_of_session_template.failure_rate_pct)}%`
-                    : "—"}
-                  {" "}· callbacks matched {health?.messaging?.out_of_session_template?.callbacks_matched ?? 0}
-                </div>
-              </div>
-              <div className="mt-3 space-y-2">
-                {!coachingDayStats.length ? (
-                  <p className="text-sm text-[#8a8176]">No day-level coaching data in this window.</p>
-                ) : (
-                  coachingDayStats.map((row) => {
-                    const attempted = Math.max(
-                      0,
-                      Number(row.attempted_messages ?? row.sent ?? row.attempted_current_logic ?? 0) || 0,
-                    );
-                    const received = Math.max(0, Number(row.delivery_confirmed ?? 0) || 0);
-                    const failed = Math.max(0, Number(row.failed_undelivered ?? 0) || 0);
-                    const pendingRaw = Math.max(0, Number(row.callback_pending_unknown ?? 0) || 0);
-                    const pending = Math.max(0, attempted - received - failed, pendingRaw);
-                    const receivedPct = attempted > 0 ? (received / attempted) * 100 : 0;
-                    const failedPct = attempted > 0 ? (failed / attempted) * 100 : 0;
-                    const pendingPct = attempted > 0 ? (pending / attempted) * 100 : 0;
-                    return (
-                      <div key={`day-${row.day || "unknown"}`} className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.day || "unknown"}</span>
-                          <span className="text-sm font-semibold">
-                            received {received}/{attempted} ({attempted ? `${formatNum(receivedPct)}%` : "—"})
-                          </span>
-                        </div>
-                        <div className="mt-2 h-3 w-full overflow-hidden rounded-full bg-[#ece4d8]">
-                          <div className="flex h-full w-full">
-                            <div className="bg-[#1d6a4f]" style={{ width: `${receivedPct}%` }} />
-                            <div className="bg-[#c43d3d]" style={{ width: `${failedPct}%` }} />
-                            <div className="bg-[#b6ad9f]" style={{ width: `${pendingPct}%` }} />
-                          </div>
-                        </div>
-                        <div className="mt-1 text-xs text-[#6b6257]">
-                          sent {attempted} | received {received} | failed {failed} | pending {pending}
-                        </div>
-                        <div className="mt-1 text-xs text-[#6b6257]">
-                          attempted (current logic) {row.attempted_current_logic ?? row.sent ?? 0}
-                        </div>
-                        <div className="mt-1 text-xs text-[#6b6257]">
-                          deferred outside 24h {row.deferred_outside_24h ?? 0} | resumed after reopen{" "}
-                          {row.resumed_after_reopen ?? 0} | expired after day change{" "}
-                          {row.expired_after_day_change ?? 0}
-                        </div>
-                        <div className="mt-1 text-xs text-[#6b6257]">
-                          users {row.users ?? 0} | received {row.received_users ?? 0} | listened {row.listened_users ?? 0}
-                          {row.listened_user_rate_pct != null ? ` (${formatNum(row.listened_user_rate_pct)}%)` : ""} | replies{" "}
-                          {row.replied_users ?? row.replied_24h ?? 0} (by user
-                          {row.reply_user_rate_pct != null ? `: ${formatNum(row.reply_user_rate_pct)}%` : ""})
-                        </div>
-                        <div className="mt-1 text-xs text-[#8a8176]">
-                          with audio {row.with_audio ?? 0} (
-                          {row.audio_rate_pct != null ? `${formatNum(row.audio_rate_pct)}%` : "—"})
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </section>
-
-            <section className="grid gap-4 xl:grid-cols-2">
-              <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Weekly flow funnel</p>
-                <p className="mt-1 text-xs text-[#8a8176]">
-                  Per-week conversion through Monday → Sunday so you can spot week-on-week retention drift.
-                </p>
-                <div className="mt-3 space-y-3">
-                  {!coachingWeekRows.length ? (
-                    <p className="text-sm text-[#8a8176]">No week-level coaching data in this window.</p>
-                  ) : (
-                    coachingWeekRows.map((week) => (
-                      <div key={`week-${week.week_no ?? "unknown"}`} className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Week {week.week_no ?? "—"}</span>
-                          <span className="text-sm font-semibold">
-                            {week.completion_rate_pct != null ? `${formatNum(week.completion_rate_pct)}%` : "—"} completion
-                          </span>
-                        </div>
-                        <div className="mt-2 text-xs text-[#6b6257]">
-                          Cohort {week.cohort_users ?? 0} | Sunday reached {week.completed_sunday ?? 0} | Sunday replied{" "}
-                          {week.sunday_replied ?? 0}
-                        </div>
-                        <div className="mt-2 h-2 w-full rounded-full bg-[#ece4d8]">
-                          <div
-                            className="h-2 rounded-full bg-[#1d6a4f]"
-                            style={{ width: barWidth(week.completion_rate_pct ?? null) }}
-                          />
-                        </div>
-                        <div className="mt-2 text-xs text-[#8a8176]">
-                          Sunday reply rate:{" "}
-                          {week.sunday_reply_rate_pct != null ? `${formatNum(week.sunday_reply_rate_pct)}%` : "—"}
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Coaching day flow funnel</p>
-                <p className="mt-2 text-sm text-[#6b6257]">
-                  Monday to Sunday progression for coaching touchpoints. Width is % of Monday starters.
-                </p>
-                {!coachingFunnelSteps.length ? (
-                  <p className="mt-4 text-sm text-[#8a8176]">No coaching funnel data in this window.</p>
-                ) : (
-                  <div className="mt-4 space-y-3">
-                    {coachingFunnelSteps.map((step, idx) => (
-                      <div key={step.key || `${idx}`} className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-3">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <div className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                              {idx + 1}. {step.label || step.key || "step"}
-                            </div>
-                            <div className="mt-1 text-xs text-[#8a8176]">{step.description || "—"}</div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-lg font-semibold">{step.count ?? 0}</div>
-                            <div className="text-xs text-[#6b6257]">
-                              {step.percent_of_start != null ? `${formatNum(step.percent_of_start)}% of Monday starters` : "—"}
-                            </div>
-                          </div>
-                        </div>
-                        <div className="mt-3 h-3 w-full rounded-full bg-[#ece4d8]">
-                          <div className="h-3 rounded-full bg-[#1d6a4f]" style={{ width: barWidth(step.percent_of_start) }} />
-                        </div>
-                        <div className="mt-2 flex flex-wrap gap-4 text-xs text-[#6b6257]">
-                          <span>
-                            Conversion from previous:{" "}
-                            {idx === 0
-                              ? "—"
-                              : step.conversion_pct_from_prev != null
-                                ? `${formatNum(step.conversion_pct_from_prev)}%`
-                                : "—"}
-                          </span>
-                          <span>Drop-off from previous: {idx === 0 ? "—" : step.dropoff_from_prev ?? 0}</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </section>
           </>
         ) : null}
 
@@ -1051,87 +711,19 @@ export default async function MonitoringPage({ searchParams }: { searchParams?: 
               ))}
             </section>
 
-              <section className="grid gap-4 xl:grid-cols-2">
-                <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
-                  <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Current user app surfaces</p>
-                  <p className="mt-2 text-sm text-[#6b6257]">
-                    Surfaces visible in the current post-assessment user app.
-                  </p>
-                  <div className="mt-3 space-y-2 text-sm">
-                    {appSurfaceRows.map((row) => (
-                      <div key={row.label} className="flex items-center justify-between gap-3 rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
-                        <span className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">{row.label}</span>
-                        <span className="font-semibold">{row.value}</span>
-                      </div>
-                    ))}
+            <section className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
+              <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Current user app surfaces</p>
+              <p className="mt-2 text-sm text-[#6b6257]">
+                Surfaces visible in the current post-assessment user app.
+              </p>
+              <div className="mt-3 space-y-2 text-sm">
+                {appSurfaceRows.map((row) => (
+                  <div key={row.label} className="flex items-center justify-between gap-3 rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
+                    <span className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">{row.label}</span>
+                    <span className="font-semibold">{row.value}</span>
                   </div>
-                </div>
-
-                <div className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
-                  <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Legacy app signals</p>
-                  <p className="mt-2 text-sm text-[#6b6257]">
-                    Signals from surfaces that are no longer primary in the current user app.
-                  </p>
-                  <div className="mt-3 space-y-2 text-sm">
-                    {legacyAppRows.map((row) => (
-                      <div key={row.label} className="flex items-center justify-between gap-3 rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2">
-                        <span className="text-xs uppercase tracking-[0.16em] text-[#6b6257]">{row.label}</span>
-                        <span className="font-semibold">{row.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </section>
-
-              <section className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
-                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Legacy onboarding/preferences</p>
-                <p className="mt-2 text-sm text-[#6b6257]">
-                  First login and intro preference markers retained for historical analysis.
-                </p>
-              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2 text-sm">
-                  First logins: {appOnboarding.first_login_cohort_users ?? 0}
-                </div>
-                <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2 text-sm">
-                  Assessment reviewed: {appOnboarding.assessment_after_first_login_users ?? 0}
-                </div>
-                <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2 text-sm">
-                  Intro completed: {appOnboarding.intro_completed_after_first_login_users ?? 0}
-                </div>
-                <div className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-2 text-sm">
-                  Coaching on: {appOnboarding.coaching_auto_enabled_after_first_login_users ?? 0}
-                </div>
+                ))}
               </div>
-              {(appOnboarding.funnel || []).length ? (
-                <div className="mt-4 space-y-3">
-                  {(appOnboarding.funnel || []).map((step, idx) => (
-                    <div key={step.key || `${idx}`} className="rounded-xl border border-[#efe7db] bg-[#fdfaf4] px-3 py-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-                          {idx + 1}. {step.label || step.key || "step"}
-                        </span>
-                        <span className="text-sm font-semibold">{step.count ?? 0}</span>
-                      </div>
-                      <div className="mt-1 text-xs text-[#6b6257]">
-                        {step.percent_of_first_login != null ? `${formatNum(step.percent_of_first_login)}% of first logins` : "—"}
-                      </div>
-                      <div className="mt-2 h-2 w-full rounded-full bg-[#ece4d8]">
-                        <div className="h-2 rounded-full bg-[#1d4ed8]" style={{ width: barWidth(step.percent_of_first_login ?? null) }} />
-                      </div>
-                      <div className="mt-2 text-xs text-[#8a8176]">
-                        Conversion from previous:{" "}
-                        {idx === 0
-                          ? "—"
-                          : step.conversion_pct_from_prev != null
-                            ? `${formatNum(step.conversion_pct_from_prev)}%`
-                            : "—"}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-3 text-sm text-[#8a8176]">No onboarding funnel data in this window.</p>
-              )}
             </section>
 
             <section className="rounded-2xl border border-[#e7e1d6] bg-white p-5">
