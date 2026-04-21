@@ -1,36 +1,33 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+HealthSense Admin is the staff-facing console for operating the HealthSense user app.
 
-## Getting Started
+## Current Scope
 
-First, run the development server:
+- User Ops: create/search users, open the user app as a user, review onboarding, coaching, and user app state.
+- Monitoring: assessment, coaching, app engagement, and infrastructure health.
+- Content & onboarding: app intro, assessment intro, library content, and generated media.
+- Prompt QA: template editing, test assembly, promotion, and prompt history.
+- Messaging: Twilio templates, 24-hour reopen flow, and global prompt schedule.
+- Billing: plan catalog and Stripe sync.
+- Reporting: launch URLs, marketing funnel, usage, and cost reporting.
+
+## Development
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm run lint
+npm run build
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Required server-side environment:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- `API_BASE_URL`
+- `ADMIN_API_TOKEN`
+- `ADMIN_USER_ID`
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Optional user app preview environment:
 
-## Learn More
+- `NEXT_PUBLIC_HSAPP_BASE_URL`
+- `NEXT_PUBLIC_APP_BASE_URL`
+- `HSAPP_PUBLIC_URL`
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The scripts area is intentionally hidden from production navigation and should be treated as a development diagnostics surface.

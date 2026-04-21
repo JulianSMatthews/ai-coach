@@ -72,12 +72,12 @@ export default async function AdminHome() {
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto w-full max-w-5xl space-y-6">
-        <AdminNav title={`Welcome, ${name}`} subtitle="Use the shortcuts below to manage users, prompts, and library content." />
+        <AdminNav title={`Welcome, ${name}`} subtitle="Use the shortcuts below to manage user ops, prompts, and app content." />
 
         <section className="grid gap-4 lg:grid-cols-3">
           {[
             {
-              title: "Users",
+              title: "User Ops",
               desc: "Total users, new today, and new this week.",
               rows: [
                 { label: "Total", value: stats?.users?.total ?? "—" },

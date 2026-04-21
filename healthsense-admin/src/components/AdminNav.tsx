@@ -7,6 +7,21 @@ type AdminNavProps = {
 
 export default function AdminNav({ title = "Admin", subtitle }: AdminNavProps) {
   const adminLabel = process.env.NODE_ENV === "development" ? "Admin (Develop)" : "Admin";
+  const showDevTools = process.env.NODE_ENV === "development";
+  const navItems = [
+    { href: "/admin", label: "Dashboard" },
+    { href: "/admin/monitoring", label: "Monitoring" },
+    { href: "/admin/users", label: "User Ops" },
+    { href: "/admin/education", label: "Education" },
+    { href: "/admin/messaging", label: "Messaging" },
+    { href: "/admin/reporting", label: "Reporting" },
+    { href: "/admin/billing", label: "Billing" },
+    { href: "/admin/prompts/templates", label: "Prompt QA" },
+    { href: "/admin/history", label: "History" },
+    { href: "/admin/library", label: "Content" },
+    { href: "/admin/kb", label: "KB" },
+    ...(showDevTools ? [{ href: "/admin/scripts", label: "Dev scripts" }] : []),
+  ];
   return (
     <header className="rounded-3xl border border-[#e7e1d6] bg-white p-6 shadow-[0_20px_60px_-40px_rgba(30,27,22,0.4)]">
       <div className="flex items-center gap-3">
@@ -16,21 +31,7 @@ export default function AdminNav({ title = "Admin", subtitle }: AdminNavProps) {
       <h1 className="mt-4 text-3xl">{title}</h1>
       {subtitle ? <p className="mt-2 text-sm text-[#6b6257]">{subtitle}</p> : null}
       <nav className="mt-4 flex flex-wrap gap-2 text-xs uppercase tracking-[0.2em] text-[#6b6257]">
-        {[
-          { href: "/admin", label: "Dashboard" },
-          { href: "/admin/monitoring", label: "Monitoring" },
-          { href: "/admin/users", label: "Users" },
-          { href: "/admin/team", label: "Team" },
-          { href: "/admin/education", label: "Education" },
-          { href: "/admin/messaging", label: "Messaging" },
-          { href: "/admin/reporting", label: "Reporting" },
-          { href: "/admin/billing", label: "Billing" },
-          { href: "/admin/prompts/templates", label: "Prompts" },
-          { href: "/admin/history", label: "History" },
-          { href: "/admin/library", label: "Library" },
-          { href: "/admin/kb", label: "KB" },
-          { href: "/admin/scripts", label: "Scripts" },
-        ].map((item) => (
+        {navItems.map((item) => (
           <Link
             key={item.href}
             href={item.href}

@@ -19,7 +19,7 @@ export default async function TemplatesPage({ searchParams }: TemplatesPageProps
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto w-full max-w-6xl space-y-6">
-        <AdminNav title="Prompt templates" subtitle="Edit develop templates and promote to beta or live." />
+        <AdminNav title="Prompt QA" subtitle="Edit live user-app touchpoints, test assembly, and inspect prompt history." />
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">

@@ -204,7 +204,7 @@ export default async function MessagingPage() {
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Twilio templates</p>
               <h2 className="mt-2 text-xl">Quick replies & session reopen</h2>
               <p className="mt-2 text-sm text-[#6b6257]">
-                Quick‑reply templates are reused across all messages. The session‑reopen template is used when a member has
+                Quick‑reply templates are reused across all messages. The session‑reopen template is used when a user has
                 been inactive for more than 24 hours.
               </p>
             </div>

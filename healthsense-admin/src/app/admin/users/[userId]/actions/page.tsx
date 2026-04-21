@@ -272,8 +272,8 @@ export default async function UserActionsPage({ params, searchParams }: UserActi
 
         <div className="grid gap-4 md:grid-cols-2">
           <ActionCard
-            title="Access app"
-            description="Open the member app as this user in a secure admin session. Use this to review exactly what the user sees."
+            title="Access user app"
+            description="Open the user app as this user in a secure admin session. Use this to review exactly what the user sees."
           >
             <form action={openAppAction}>
               <input type="hidden" name="user_id" value={userId} />

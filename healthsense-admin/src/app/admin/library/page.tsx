@@ -1,3 +1,4 @@
+import Link from "next/link";
 import AdminNav from "@/components/AdminNav";
 import { listLibraryContent } from "@/lib/api";
 
@@ -43,13 +44,13 @@ export default async function LibraryPage({ searchParams }: PageProps) {
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
       <div className="mx-auto w-full max-w-6xl space-y-6">
-        <AdminNav title="Library content" subtitle="Generate, store, and publish content by pillar." />
+        <AdminNav title="Content & onboarding" subtitle="Generate, store, and publish content used by the user app." />
 
         <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold">Content library</h2>
-              <p className="text-sm text-[#6b6257]">Generate content from content templates and publish to the app.</p>
+              <p className="text-sm text-[#6b6257]">Generate content from templates and publish to the user app.</p>
             </div>
             <form method="get" className="flex flex-wrap items-center gap-2 text-sm">
               <input
@@ -88,36 +89,36 @@ export default async function LibraryPage({ searchParams }: PageProps) {
               <button className="rounded-full border border-[#efe7db] px-4 py-2 text-xs uppercase tracking-[0.2em]">
                 Filter
               </button>
-              <a
+              <Link
                 href="/admin/library/templates"
                 className="rounded-full border border-[#efe7db] px-4 py-2 text-xs uppercase tracking-[0.2em]"
               >
                 Templates
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/admin/library/generator"
                 className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white"
               >
                 Generate
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/admin/library/content/new"
                 className="rounded-full border border-[#efe7db] px-4 py-2 text-xs uppercase tracking-[0.2em]"
               >
                 New content
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/admin/library/intro"
                 className="rounded-full border border-[#efe7db] px-4 py-2 text-xs uppercase tracking-[0.2em]"
               >
                 Intro setup
-              </a>
-              <a
+              </Link>
+              <Link
                 href="/admin/library/settings"
                 className="rounded-full border border-[#efe7db] px-4 py-2 text-xs uppercase tracking-[0.2em]"
               >
                 Settings
-              </a>
+              </Link>
             </form>
           </div>
 
@@ -148,12 +149,12 @@ export default async function LibraryPage({ searchParams }: PageProps) {
                     <td className="py-3 pr-4 text-[#6b6257]">{formatDate(row.created_at)}</td>
                     <td className="py-3 pr-4 text-[#6b6257]">{row.text_preview || "—"}</td>
                     <td className="py-3 pr-4">
-                      <a
+                      <Link
                         className="rounded-full border border-[#efe7db] px-3 py-1 text-xs uppercase tracking-[0.2em]"
                         href={`/admin/library/content/${row.id}`}
                       >
                         Open
-                      </a>
+                      </Link>
                     </td>
                   </tr>
                 ))}

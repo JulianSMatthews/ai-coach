@@ -110,6 +110,10 @@ from .models import (
     WearableSyncRun,
     WearableDailyMetric,
     DailyPillarTrackerEntry,
+    DailyCoachHabitPlan,
+    EducationProgramme,
+    UserEducationPlan,
+    UserEducationDayProgress,
 )  # ensure model registered for metadata
 from . import monday, sunday, kickoff, admin_routes, general_support, habit_selector
 from . import psych
@@ -295,7 +299,7 @@ def _normalize_reports_url(raw: str | None) -> str | None:
 
 def _build_coaching_window_payload(last_inbound_at: datetime | None) -> dict[str, object]:
     """
-    Build member-app coaching window state and WhatsApp deep link for re-engagement.
+    Build user-app coaching window state and WhatsApp deep link for re-engagement.
     """
     now_utc = datetime.utcnow()
     window_hours_raw = (os.getenv("COACHING_WHATSAPP_WINDOW_HOURS") or "24").strip()
@@ -4591,7 +4595,7 @@ async def twilio_inbound(request: Request):
         except Exception:
             pass
 
-        # App-channel members should continue via the in-app chat surface for coaching.
+        # App-channel users should continue via the in-app chat surface for coaching.
         # Keep this after active-assessment handling so legacy WhatsApp assessments are not interrupted.
         # For strict channel separation, do not send coaching replies on WhatsApp when app is selected.
         try:
@@ -4740,7 +4744,7 @@ async def twilio_inbound(request: Request):
                     coaching_enabled = _coaching_enabled_for_user(s, int(user.id))
             except Exception:
                 coaching_enabled = False
-            # Do not restart assessment for members already in coaching or already completed.
+            # Do not restart assessment for users already in coaching or already completed.
             if completed_assessment or coaching_enabled:
                 try:
                     print(
@@ -15926,7 +15930,7 @@ def admin_touchpoint_history(
         state_val = str(delivery_state or "").strip().lower()
         if state_val == "failed" or status_val in {"failed", "undelivered"}:
             return "failed"
-        # If the member replied after this outbound within the reply window, treat it as replied
+        # If the user replied after this outbound within the reply window, treat it as replied
         # even when Twilio callback status is missing/unknown.
         if reply_found:
             return "replied"
@@ -16300,7 +16304,7 @@ def admin_coaching_today_drilldown(admin_user: User = Depends(_require_admin)):
         {
             "key": "tracked_today",
             "label": "Daily records submitted today",
-            "description": "Members with at least one daily recovery/training/nutrition record for today.",
+            "description": "Users with at least one daily recovery/training/nutrition record for today.",
             "total": len(tracked_user_ids),
             "users": _entries_for(tracked_user_ids),
         },
@@ -16314,7 +16318,7 @@ def admin_coaching_today_drilldown(admin_user: User = Depends(_require_admin)):
         {
             "key": "gia_ready",
             "label": "Gia message ready today",
-            "description": "Members whose tracker refresh has a Gia message ready for today's plan date.",
+            "description": "Users whose tracker refresh has a Gia message ready for today's plan date.",
             "total": len(gia_ready_user_ids),
             "users": _entries_for(gia_ready_user_ids),
         },
@@ -20891,6 +20895,260 @@ def admin_user_details(user_id: int, admin_user: User = Depends(_require_admin))
         "current_weekly_plan": current_weekly_plan,
     }
 
+
+@admin.get("/users/{user_id}/app-state")
+def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin)):
+    """
+    Read-only snapshot of the same user-app surfaces shown after assessment.
+
+    This endpoint intentionally avoids user-app GET handlers that log engagement
+    or generate fresh content. It should support admin review without changing
+    the user's app state.
+    """
+    ensure_pillar_tracker_schema()
+    ensure_daily_habit_plan_schema()
+    ensure_education_plan_schema()
+    ensure_wearables_schema()
+    ensure_urine_test_schema()
+
+    errors: list[dict[str, str]] = []
+
+    def capture(section: str, fn):
+        try:
+            return fn()
+        except Exception as exc:
+            errors.append({"section": section, "message": str(exc)})
+            return None
+
+    def iso_value(value: object) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, (datetime, date)):
+            return value.isoformat()
+        raw = str(value).strip()
+        return raw or None
+
+    with SessionLocal() as s:
+        user = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="user not found")
+        _ensure_club_scope(admin_user, user)
+        billing_status = getattr(user, "billing_status", None)
+        billing_provider = getattr(user, "billing_provider", None)
+        today = get_virtual_date(s, int(user_id)) or datetime.utcnow().date()
+
+        daily_plan_row = (
+            s.execute(
+                select(DailyCoachHabitPlan)
+                .where(
+                    DailyCoachHabitPlan.user_id == int(user_id),
+                    DailyCoachHabitPlan.plan_date == today,
+                )
+                .order_by(desc(DailyCoachHabitPlan.id))
+            )
+            .scalars()
+            .first()
+        )
+        latest_daily_plan_row = daily_plan_row or (
+            s.execute(
+                select(DailyCoachHabitPlan)
+                .where(DailyCoachHabitPlan.user_id == int(user_id))
+                .order_by(desc(DailyCoachHabitPlan.plan_date), desc(DailyCoachHabitPlan.id))
+            )
+            .scalars()
+            .first()
+        )
+        raw_habits = latest_daily_plan_row.habits if latest_daily_plan_row is not None else []
+        habits = raw_habits if isinstance(raw_habits, list) else []
+        daily_plan = (
+            {
+                "id": int(latest_daily_plan_row.id),
+                "is_today": bool(daily_plan_row is not None),
+                "plan_date": iso_value(latest_daily_plan_row.plan_date),
+                "pillar_key": latest_daily_plan_row.pillar_key,
+                "pillar_label": latest_daily_plan_row.pillar_label,
+                "title": latest_daily_plan_row.title,
+                "summary": latest_daily_plan_row.summary,
+                "source": latest_daily_plan_row.source,
+                "generated_at": iso_value(latest_daily_plan_row.generated_at),
+                "updated_at": iso_value(latest_daily_plan_row.updated_at),
+                "habits_count": len(habits),
+                "habit_titles": [
+                    str(item.get("title") or item.get("label") or "").strip()
+                    for item in habits
+                    if isinstance(item, dict) and str(item.get("title") or item.get("label") or "").strip()
+                ][:4],
+            }
+            if latest_daily_plan_row is not None
+            else None
+        )
+
+        cached_gia_raw = _pref_value(s, int(user_id), general_support.TRACKER_SUMMARY_CACHE_KEY)
+        cached_gia = None
+        if cached_gia_raw:
+            try:
+                cached_gia = json.loads(cached_gia_raw)
+            except Exception:
+                cached_gia = None
+        gia_message = {
+            "cached": bool(isinstance(cached_gia, dict) and str(cached_gia.get("text") or "").strip()),
+            "plan_date": str(cached_gia.get("plan_date") or "").strip() if isinstance(cached_gia, dict) else None,
+            "generated_at": str(cached_gia.get("generated_at") or "").strip() if isinstance(cached_gia, dict) else None,
+            "source": str(cached_gia.get("source") or "").strip() if isinstance(cached_gia, dict) else None,
+        }
+
+        education_plan_row = (
+            s.execute(
+                select(UserEducationPlan, EducationProgramme)
+                .join(EducationProgramme, UserEducationPlan.programme_id == EducationProgramme.id)
+                .where(
+                    UserEducationPlan.user_id == int(user_id),
+                    UserEducationPlan.status == "active",
+                )
+                .order_by(desc(UserEducationPlan.updated_at), desc(UserEducationPlan.id))
+            )
+            .first()
+        )
+        education = None
+        if education_plan_row:
+            plan, programme = education_plan_row
+            progress = (
+                s.execute(
+                    select(UserEducationDayProgress)
+                    .where(
+                        UserEducationDayProgress.user_plan_id == int(plan.id),
+                        UserEducationDayProgress.lesson_date == today,
+                    )
+                    .order_by(desc(UserEducationDayProgress.id))
+                )
+                .scalars()
+                .first()
+            )
+            if progress is None:
+                progress = (
+                    s.execute(
+                        select(UserEducationDayProgress)
+                        .where(UserEducationDayProgress.user_plan_id == int(plan.id))
+                        .order_by(desc(UserEducationDayProgress.lesson_date), desc(UserEducationDayProgress.id))
+                    )
+                    .scalars()
+                    .first()
+                )
+            education = {
+                "available": True,
+                "plan_id": int(plan.id),
+                "programme_id": int(programme.id),
+                "programme_name": programme.name,
+                "pillar_key": plan.pillar_key,
+                "concept_key": plan.entry_concept_key,
+                "concept_label": plan.entry_concept_label,
+                "starts_on": iso_value(plan.starts_on),
+                "current_day_index": plan.current_day_index,
+                "current_streak_days": plan.current_streak_days,
+                "best_streak_days": plan.best_streak_days,
+                "progress": (
+                    {
+                        "id": int(progress.id),
+                        "is_today": bool(progress.lesson_date == today),
+                        "lesson_date": iso_value(progress.lesson_date),
+                        "completion_status": progress.completion_status,
+                        "watch_pct": progress.watch_pct,
+                        "quiz_score_pct": progress.quiz_score_pct,
+                        "video_completed_at": iso_value(progress.video_completed_at),
+                        "quiz_completed_at": iso_value(progress.quiz_completed_at),
+                        "completed_at": iso_value(progress.completed_at),
+                    }
+                    if progress is not None
+                    else None
+                ),
+            }
+
+        connections = s.query(WearableConnection).filter(WearableConnection.user_id == int(user_id)).all()
+        metric_rows = (
+            s.query(
+                WearableDailyMetric.provider,
+                func.count(WearableDailyMetric.id),
+                func.max(WearableDailyMetric.metric_date),
+            )
+            .filter(WearableDailyMetric.user_id == int(user_id))
+            .group_by(WearableDailyMetric.provider)
+            .all()
+        )
+        connection_map = {
+            str(getattr(row, "provider", "") or "").strip().lower(): row
+            for row in connections
+        }
+        metric_map = {
+            str(provider or "").strip().lower(): {
+                "metric_days_count": int(count or 0),
+                "latest_metric_date": latest_metric_date,
+            }
+            for provider, count, latest_metric_date in metric_rows
+        }
+        wearable_providers = []
+        for definition in list_provider_definitions():
+            meta = metric_map.get(definition.key) or {}
+            wearable_providers.append(
+                _serialize_wearable_provider_state(
+                    definition,
+                    connection=connection_map.get(definition.key),
+                    metric_days_count=int(meta.get("metric_days_count") or 0),
+                    latest_metric_date=meta.get("latest_metric_date"),
+                )
+            )
+        wearables = {
+            "connected_count": sum(1 for item in wearable_providers if bool(item.get("connected"))),
+            "providers": wearable_providers,
+        }
+
+        biometrics = capture(
+            "biometrics",
+            lambda: get_apple_health_resting_hr_summary(s, user_id=int(user_id)),
+        )
+        urine = capture(
+            "urine",
+            lambda: get_latest_urine_test_result(s, user_id=int(user_id)),
+        )
+
+    tracker = capture("tracker", lambda: get_pillar_tracker_summary(int(user_id), anchor=today))
+    weekly_objectives = capture("weekly_objectives", lambda: get_weekly_objectives_config(int(user_id)))
+    tracker_pillars = tracker.get("pillars") if isinstance(tracker, dict) else []
+    objective_sections = weekly_objectives.get("sections") if isinstance(weekly_objectives, dict) else []
+
+    return {
+        "user_id": int(user_id),
+        "today": today.isoformat(),
+        "billing": {
+            "status": billing_status,
+            "provider": billing_provider,
+        },
+        "tracker": {
+            "today_complete": bool(tracker.get("today_complete")) if isinstance(tracker, dict) else False,
+            "today_completed_pillars_count": tracker.get("today_completed_pillars_count") if isinstance(tracker, dict) else None,
+            "total_pillars": tracker.get("total_pillars") if isinstance(tracker, dict) else None,
+            "pillars": tracker_pillars if isinstance(tracker_pillars, list) else [],
+        },
+        "daily_plan": daily_plan,
+        "gia_message": gia_message,
+        "weekly_objectives": {
+            "week": weekly_objectives.get("week") if isinstance(weekly_objectives, dict) else None,
+            "sections": objective_sections if isinstance(objective_sections, list) else [],
+            "configured_count": sum(
+                int(section.get("configured_count") or 0)
+                for section in objective_sections
+                if isinstance(section, dict)
+            )
+            if isinstance(objective_sections, list)
+            else 0,
+        },
+        "education": education or {"available": False},
+        "wearables": wearables,
+        "biometrics": biometrics or {},
+        "urine": urine or {},
+        "errors": errors,
+    }
+
+
 @admin.post("/users/{user_id}/prompt-state")
 def admin_user_prompt_state(user_id: int, payload: dict, admin_user: User = Depends(_require_admin)):
     """
@@ -21264,7 +21522,7 @@ def _resolve_admin_hsapp_base_url() -> tuple[str, dict]:
 @admin.post("/users/{user_id}/app-session")
 def admin_user_app_session(user_id: int, admin_user: User = Depends(_require_admin)):
     """
-    Mint a short-lived app session token for opening the member app from admin.
+    Mint a short-lived app session token for opening the user app from admin.
     """
     ttl_minutes_raw = (os.getenv("ADMIN_APP_SESSION_TTL_MINUTES") or "30").strip()
     try:
@@ -21485,7 +21743,7 @@ def admin_reset_user(user_id: int, admin_user: User = Depends(_require_admin)):
 @admin.post("/users/{user_id}/delete")
 def admin_delete_user(user_id: int, admin_user: User = Depends(_require_admin)):
     """
-    Permanently delete a member user and related records.
+    Permanently delete a user and related records.
     """
     with SessionLocal() as s:
         target = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()

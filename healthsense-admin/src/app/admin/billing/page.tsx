@@ -217,7 +217,7 @@ export default async function BillingPage() {
                 className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
                 required
               />
-              <p className="mt-1 text-xs text-[#6b6257]">Display name shown to team/users in billing views.</p>
+              <p className="mt-1 text-xs text-[#6b6257]">Display name shown to staff/users in billing views.</p>
             </div>
             <div className="md:col-span-2">
               <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Description</label>

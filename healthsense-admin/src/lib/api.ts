@@ -1218,6 +1218,115 @@ export type AdminUserSummary = {
   coaching_fast_minutes?: number | null;
 };
 
+export type AdminUserAppState = {
+  user_id?: number;
+  today?: string | null;
+  billing?: {
+    status?: string | null;
+    provider?: string | null;
+  };
+  tracker?: {
+    today_complete?: boolean;
+    today_completed_pillars_count?: number | null;
+    total_pillars?: number | null;
+    pillars?: Array<{
+      pillar_key?: string | null;
+      label?: string | null;
+      score?: number | null;
+      tracker_score?: number | null;
+      baseline_score?: number | null;
+      source?: string | null;
+      completed_days_count?: number | null;
+      streak_days?: number | null;
+      today_complete?: boolean | null;
+    }>;
+  };
+  daily_plan?: {
+    id?: number;
+    is_today?: boolean;
+    plan_date?: string | null;
+    pillar_key?: string | null;
+    pillar_label?: string | null;
+    title?: string | null;
+    summary?: string | null;
+    source?: string | null;
+    generated_at?: string | null;
+    updated_at?: string | null;
+    habits_count?: number | null;
+    habit_titles?: string[];
+  } | null;
+  gia_message?: {
+    cached?: boolean;
+    plan_date?: string | null;
+    generated_at?: string | null;
+    source?: string | null;
+  };
+  weekly_objectives?: {
+    week?: { anchor_date?: string | null; start?: string | null; end?: string | null } | null;
+    configured_count?: number | null;
+    sections?: Array<{
+      key?: string | null;
+      label?: string | null;
+      type?: string | null;
+      configured_count?: number | null;
+      total_count?: number | null;
+    }>;
+  };
+  education?: {
+    available?: boolean;
+    plan_id?: number | null;
+    programme_id?: number | null;
+    programme_name?: string | null;
+    pillar_key?: string | null;
+    concept_key?: string | null;
+    concept_label?: string | null;
+    starts_on?: string | null;
+    current_day_index?: number | null;
+    current_streak_days?: number | null;
+    best_streak_days?: number | null;
+    progress?: {
+      id?: number;
+      is_today?: boolean;
+      lesson_date?: string | null;
+      completion_status?: string | null;
+      watch_pct?: number | null;
+      quiz_score_pct?: number | null;
+      video_completed_at?: string | null;
+      quiz_completed_at?: string | null;
+      completed_at?: string | null;
+    } | null;
+  } | null;
+  wearables?: {
+    connected_count?: number | null;
+    providers?: Array<{
+      provider?: string | null;
+      label?: string | null;
+      connected?: boolean | null;
+      status?: string | null;
+      last_sync_at?: string | null;
+      latest_metric_date?: string | null;
+    }>;
+  };
+  biometrics?: {
+    training_readiness_label?: string | null;
+    training_readiness_status?: string | null;
+    resting_hr_bpm?: number | null;
+    hrv_ms?: number | null;
+    steps_today?: number | null;
+    active_minutes_today?: number | null;
+    synced_at?: string | null;
+    hrv_synced_at?: string | null;
+  };
+  urine?: {
+    available?: boolean;
+    status?: string | null;
+    captured_at?: string | null;
+    sample_date?: string | null;
+    markers?: Array<{ key?: string | null; label?: string | null; status_label?: string | null; status?: string | null }>;
+  };
+  errors?: Array<{ section?: string; message?: string }>;
+};
+
 function getBaseUrl() {
   const base = process.env.API_BASE_URL;
   if (!base) {
@@ -1891,6 +2000,10 @@ export async function getAdminUserStatus(userId: number): Promise<Record<string,
 
 export async function getAdminUserDetails(userId: number): Promise<Record<string, unknown>> {
   return apiAdmin<Record<string, unknown>>(`/admin/users/${userId}`);
+}
+
+export async function getAdminUserAppState(userId: number): Promise<AdminUserAppState> {
+  return apiAdmin<AdminUserAppState>(`/admin/users/${userId}/app-state`);
 }
 
 export async function getAdminUserReport(userId: number): Promise<Record<string, unknown>> {
