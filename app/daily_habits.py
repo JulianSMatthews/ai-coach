@@ -25,8 +25,12 @@ from .wearables import get_apple_health_resting_hr_summary
 
 _DAILY_HABITS_SCHEMA_READY = False
 _PILLAR_ORDER = ("nutrition", "training", "resilience", "recovery")
-_CURRENT_HABIT_PLAN_VERSION = 12
+_CURRENT_HABIT_PLAN_VERSION = 13
 _DAY_PLAN_SCOPE_KEY = "__day_plan__"
+_TRAINING_SESSION_CONCEPT_KEYS = frozenset({"cardio_frequency", "strength_training", "flexibility_mobility"})
+_SUPPLEMENT_CONCEPT_KEYS = frozenset({"omega_3", "vitamin_d", "creatine", "magnesium"})
+_EXPOSURE_CONCEPT_KEYS = frozenset({"heat_exposure", "cold_exposure"})
+_OPTIONAL_SUPPORT_RECORD_CONCEPT_KEYS = _SUPPLEMENT_CONCEPT_KEYS | _EXPOSURE_CONCEPT_KEYS
 _DAY_MOMENT_SEQUENCE = (
     ("morning", "Morning"),
     ("midday", "Midday"),
@@ -76,6 +80,34 @@ def _normalize_plan_scope_key(value: Any) -> str | None:
     if token == _DAY_PLAN_SCOPE_KEY:
         return _DAY_PLAN_SCOPE_KEY
     return _normalize_concept_token(token)
+
+
+def _is_training_session_concept(concept_key: Any) -> bool:
+    return (_normalize_concept_token(concept_key) or "") in _TRAINING_SESSION_CONCEPT_KEYS
+
+
+def _is_optional_support_record(concept_key: Any) -> bool:
+    return (_normalize_concept_token(concept_key) or "") in _OPTIONAL_SUPPORT_RECORD_CONCEPT_KEYS
+
+
+def _tracker_concept_context_kind(concept_key: Any) -> str:
+    token = _normalize_concept_token(concept_key) or ""
+    if token in _TRAINING_SESSION_CONCEPT_KEYS:
+        return "training_session"
+    if token in _SUPPLEMENT_CONCEPT_KEYS:
+        return "supplement_adherence"
+    if token in _EXPOSURE_CONCEPT_KEYS:
+        return "exposure_record"
+    return "daily_record"
+
+
+def _tracker_concept_guidance_note(concept_key: Any) -> str | None:
+    token = _normalize_concept_token(concept_key) or ""
+    if token in _SUPPLEMENT_CONCEPT_KEYS:
+        return "Supplement adherence record; do not describe it as a training, recovery, or nutrition session."
+    if token in _EXPOSURE_CONCEPT_KEYS:
+        return "Optional exposure record; do not describe it as the member's recovery state or recovery session."
+    return None
 
 
 def _today_iso() -> str:
@@ -241,6 +273,8 @@ def _load_morning_training_plan(user_id: int, today: date) -> dict[str, Any] | N
         concept_key = str(getattr(row, "concept_key", "") or "").strip().lower()
         if not concept_key:
             continue
+        if not _is_training_session_concept(concept_key):
+            continue
         defn = definitions.get(concept_key)
         label = str(getattr(defn, "label", "") or "").strip() or concept_key.replace("_", " ").title()
         value_label = str(getattr(row, "value_label", "") or "").strip() or _value_label_from_definition(
@@ -253,6 +287,7 @@ def _load_morning_training_plan(user_id: int, today: date) -> dict[str, Any] | N
             {
                 "concept_key": concept_key,
                 "label": label,
+                "context_kind": _tracker_concept_context_kind(concept_key),
                 "value_label": value_label or ("Yes" if planned else "No"),
                 "planned": bool(planned),
             }
@@ -274,7 +309,7 @@ def _load_morning_training_plan(user_id: int, today: date) -> dict[str, Any] | N
     return {
         "source": "today_morning_training_record",
         "date": today.isoformat(),
-        "assumption": "Treat these training entries as the user's planned training for today, not as completed or missed outcomes.",
+        "assumption": "Treat only cardio, strength, and mobility entries as planned movement/training sessions for today. Supplements and exposure records are not sessions.",
         "summary": summary,
         "entries": entries,
         "planned_labels": planned_labels,
@@ -775,7 +810,16 @@ def _pillar_day_snapshot(user_id: int, pillar_row: dict[str, Any], today: date) 
             str(item.get("label") or ""),
         )
     )
-    primary_focus = focus_rows[0] if focus_rows else None
+    for row in focus_rows:
+        concept_key = _normalize_concept_token(row.get("concept_key"))
+        row["context_kind"] = _tracker_concept_context_kind(concept_key)
+        note = _tracker_concept_guidance_note(concept_key)
+        if note:
+            row["guidance_note"] = note
+    primary_focus = next(
+        (row for row in focus_rows if not _is_optional_support_record(row.get("concept_key"))),
+        focus_rows[0] if focus_rows else None,
+    )
     score = _safe_int(pillar_row.get("score"))
     return {
         "pillar_key": pillar_key,
@@ -826,7 +870,11 @@ def _latest_tracker_strength(snapshots: dict[str, dict[str, Any]]) -> dict[str, 
         snapshot = snapshots.get(pillar_key)
         if not isinstance(snapshot, dict):
             continue
-        concepts = [item for item in (snapshot.get("review_concepts") or []) if isinstance(item, dict)]
+        concepts = [
+            item
+            for item in (snapshot.get("review_concepts") or [])
+            if isinstance(item, dict) and not _is_optional_support_record(item.get("concept_key"))
+        ]
         if not concepts:
             continue
         on_track = sum(1 for item in concepts if _concept_signal(item) == "on_track")
@@ -944,7 +992,11 @@ def _snapshot_concept(snapshot: dict[str, Any], concept_key: str) -> dict[str, A
 
 
 def _latest_daily_guidance_state(snapshot: dict[str, Any], pillar_key: str) -> str:
-    concepts = [item for item in (snapshot.get("review_concepts") or []) if isinstance(item, dict)]
+    concepts = [
+        item
+        for item in (snapshot.get("review_concepts") or [])
+        if isinstance(item, dict) and not _is_optional_support_record(item.get("concept_key"))
+    ]
     if not concepts:
         return str(snapshot.get("state") or "unknown").strip().lower() or "unknown"
     missed_today = sum(1 for item in concepts if _concept_signal(item) == "missed_today")
@@ -976,6 +1028,15 @@ def _all_tracker_review_concepts(snapshots: dict[str, dict[str, Any]]) -> list[d
                     **raw_item,
                     "pillar_key": str(raw_item.get("pillar_key") or pillar_key).strip().lower() or pillar_key,
                     "pillar_label": str(raw_item.get("pillar_label") or pillar_label).strip() or pillar_label,
+                    "context_kind": str(
+                        raw_item.get("context_kind")
+                        or _tracker_concept_context_kind(raw_item.get("concept_key"))
+                    ).strip() or None,
+                    "guidance_note": str(
+                        raw_item.get("guidance_note")
+                        or _tracker_concept_guidance_note(raw_item.get("concept_key"))
+                        or ""
+                    ).strip() or None,
                 }
             )
     return items
@@ -989,6 +1050,7 @@ def _primary_tracker_issue(snapshots: dict[str, dict[str, Any]]) -> dict[str, An
         items,
         key=lambda item: (
             _focus_signal_priority(str(item.get("signal") or "")),
+            1 if _is_optional_support_record(item.get("concept_key")) else 0,
             item.get("score") if item.get("score") is not None else 999,
             _pillar_rank(str(item.get("pillar_key") or "")),
             str(item.get("label") or ""),
@@ -1028,6 +1090,8 @@ def _build_tracker_review(
                 "concept_key": str(item.get("concept_key") or "").strip() or None,
                 "label": str(item.get("label") or "").strip() or None,
                 "helper": str(item.get("helper") or "").strip() or None,
+                "context_kind": str(item.get("context_kind") or _tracker_concept_context_kind(concept_key)).strip() or None,
+                "guidance_note": str(item.get("guidance_note") or _tracker_concept_guidance_note(concept_key) or "").strip() or None,
                 "signal": signal,
                 "target_label": str(item.get("target_label") or "").strip() or None,
                 "latest_value": str(item.get("latest_value") or "").strip() or None,

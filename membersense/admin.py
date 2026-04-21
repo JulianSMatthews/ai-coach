@@ -897,9 +897,10 @@ def _public_survey_response(
     step_index = max(min(int(conversation.step_index or 0), total), 0)
     answered = sum(1 for question in flow.questions if str(answers.get(question.key) or "").strip())
     if conversation.status == "completed" or step_index >= total:
+        thanks_name = member_first_name(member) or "there"
         body = f"""
 <p class="eyebrow">{_esc(config.GYM_NAME)}</p>
-<h1>Thanks, {_esc(member_name(member))}</h1>
+<h1>Thanks, {_esc(thanks_name)}</h1>
 <p class="muted">{_esc(flow.completion)}</p>
 <div class="progress"><span style="width: 100%"></span></div>
 <p>Your answers have been recorded.</p>"""

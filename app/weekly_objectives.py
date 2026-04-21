@@ -75,24 +75,28 @@ SUPPLEMENT_OBJECTIVES: tuple[dict[str, str], ...] = (
         "label": "Omega 3",
         "pillar": "Nutrition",
         "pref_key": OMEGA_3_DAYS_PREF_KEY,
+        "helper": "Adds Omega 3 as a nutrition-support supplement record.",
     },
     {
         "key": "vitamin_d",
         "label": "Vitamin D",
         "pillar": "Nutrition",
         "pref_key": VITAMIN_D_DAYS_PREF_KEY,
+        "helper": "Adds Vitamin D as a nutrition-support supplement record.",
     },
     {
         "key": "creatine",
         "label": "Creatine",
         "pillar": "Training",
         "pref_key": CREATINE_DAYS_PREF_KEY,
+        "helper": "Adds Creatine as a training-support supplement record, not a training session.",
     },
     {
         "key": "magnesium",
         "label": "Magnesium",
         "pillar": "Recovery",
         "pref_key": MAGNESIUM_DAYS_PREF_KEY,
+        "helper": "Adds Magnesium as a recovery-support supplement record, not a recovery session.",
     },
 )
 
@@ -343,7 +347,7 @@ def _wellbeing_payload(user_id: int) -> dict[str, Any]:
         {
             "key": "heat_exposure",
             "label": "Heat exposure",
-            "helper": "Adds heat exposure to your Recovery daily record.",
+            "helper": "Adds heat exposure as an optional exposure record, not as core recovery.",
             "value": "on" if int(heat_sessions) > 0 else "off",
             "fields": [
                 {
@@ -363,7 +367,7 @@ def _wellbeing_payload(user_id: int) -> dict[str, Any]:
         {
             "key": "cold_exposure",
             "label": "Cold exposure",
-            "helper": "Adds cold exposure to your Recovery daily record.",
+            "helper": "Adds cold exposure as an optional exposure record, not as core recovery.",
             "value": "on" if int(cold_sessions) > 0 else "off",
             "fields": [
                 {
@@ -387,7 +391,7 @@ def _wellbeing_payload(user_id: int) -> dict[str, Any]:
             {
                 "key": supplement["key"],
                 "label": supplement["label"],
-                "helper": f"Adds {supplement['label']} to your {supplement['pillar']} daily record.",
+                "helper": supplement.get("helper") or f"Adds {supplement['label']} to your {supplement['pillar']} daily record.",
                 "value": "on" if int(days_value) > 0 else "off",
                 "fields": [
                     {
