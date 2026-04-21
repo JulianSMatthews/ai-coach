@@ -1,6 +1,13 @@
 import Link from "next/link";
 import AdminNav from "@/components/AdminNav";
-import { getAdminAppEngagement, getAdminAssessmentHealth, getAdminProfile, getAdminStats, getAdminUsageSummary } from "@/lib/api";
+import {
+  getAdminAppEngagement,
+  getAdminAssessmentHealth,
+  getAdminCoachingTodayDrilldown,
+  getAdminProfile,
+  getAdminStats,
+  getAdminUsageSummary,
+} from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -47,27 +54,18 @@ export default async function AdminHome() {
   } catch {
     appEngagement = null;
   }
+  let giaToday: Awaited<ReturnType<typeof getAdminCoachingTodayDrilldown>> | null = null;
+  try {
+    giaToday = await getAdminCoachingTodayDrilldown();
+  } catch {
+    giaToday = null;
+  }
   const appKpis = appEngagement?.top_kpis || {};
-  const outside24hState = health?.coaching?.engagement_window?.outside_24h_state || "unknown";
-  const dashboardAsOf = health?.as_of_utc ? new Date(health.as_of_utc) : new Date();
-  const dashboardTodayDayKey = new Intl.DateTimeFormat("en-GB", {
-    weekday: "long",
-    timeZone: "Europe/London",
-  })
-    .format(dashboardAsOf)
-    .toLowerCase();
-  const dashboardTodayStats = (health?.coaching?.day_stats || []).find(
-    (row) => String(row?.day || "").toLowerCase() === dashboardTodayDayKey,
-  );
-  const dashboardTodayUsersSent = Math.max(0, Number(dashboardTodayStats?.users ?? 0) || 0);
-  const dashboardTodayOutside24hDeferred = Math.max(0, Number(dashboardTodayStats?.deferred_outside_24h ?? 0) || 0);
-  const dashboardTodayUsersToBeSent = dashboardTodayUsersSent + dashboardTodayOutside24hDeferred;
-  const dashboardTodayRepliedToReopen = Math.max(0, Number(dashboardTodayStats?.resumed_after_reopen ?? 0) || 0);
-  const dashboardTodayRepliedToDay = Math.max(
-    0,
-    Number(dashboardTodayStats?.replied_users ?? dashboardTodayStats?.replied_24h ?? 0) || 0,
-  );
-  const dashboardTodayRatio = `${dashboardTodayUsersToBeSent}:${dashboardTodayUsersSent}:${dashboardTodayOutside24hDeferred}:${dashboardTodayRepliedToReopen}:${dashboardTodayRepliedToDay}`;
+  const giaRatio = giaToday?.ratio || {};
+  const giaTodayRatio = giaRatio.display || "—";
+  const giaFailed = Number(giaRatio.refresh_failed ?? 0) || 0;
+  const giaQueued = Number(giaRatio.refresh_queued_or_running ?? 0) || 0;
+  const giaReadinessState = giaToday ? (giaFailed > 0 ? "warn" : "ok") : "unknown";
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -85,24 +83,24 @@ export default async function AdminHome() {
                 { label: "This week", value: stats?.users?.week ?? "—" },
               ],
             },
-            {
-              title: "Assessments",
-              desc: "Completed assessments across the programme.",
-              rows: [
-                { label: "Total", value: stats?.assessments?.total ?? "—" },
-                { label: "Today", value: stats?.assessments?.today ?? "—" },
-                { label: "This week", value: stats?.assessments?.week ?? "—" },
-              ],
-            },
-            {
-              title: "Coaching interactions",
-              desc: "WhatsApp + in-app coaching touchpoints.",
-              rows: [
-                { label: "Total", value: stats?.interactions?.total ?? "—" },
-                { label: "Today", value: dashboardTodayRatio, href: "/admin/monitoring/coaching-today" },
-                { label: "This week", value: stats?.interactions?.week ?? "—" },
-              ],
-            },
+              {
+                title: "Assessments",
+                desc: "Completed assessments across the programme.",
+                rows: [
+                  { label: "Total", value: stats?.assessments?.total ?? "—" },
+                  { label: "Today", value: stats?.assessments?.today ?? "—" },
+                  { label: "This week", value: stats?.assessments?.week ?? "—" },
+                ],
+              },
+              {
+                title: "User app activity",
+                desc: "Current app actions and today's Gia readiness.",
+                rows: [
+                  { label: "Active users", value: appKpis.active_app_users ?? "—", href: "/admin/monitoring?tab=app" },
+                  { label: "Check-ins", value: appKpis.daily_check_in_users ?? "—", href: "/admin/monitoring?tab=app" },
+                  { label: "Gia ready today", value: giaTodayRatio, href: "/admin/monitoring/coaching-today" },
+                ],
+              },
           ].map((item) => (
             <div key={item.title} className="rounded-2xl border border-[#efe7db] bg-white p-5">
               <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{item.title}</p>
@@ -111,7 +109,7 @@ export default async function AdminHome() {
                 {item.rows.map((row) => (
                   <div key={row.label} className="flex items-center justify-between rounded-xl bg-[#f7f4ee] px-3 py-2">
                     <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{row.label}</span>
-                    {row.href ? (
+                    {"href" in row && row.href ? (
                       <Link href={row.href} className="text-lg font-semibold text-[#1d6a4f] underline-offset-2 hover:underline">
                         {row.value}
                       </Link>
@@ -178,81 +176,67 @@ export default async function AdminHome() {
               </div>
             </div>
           </div>
-          <div className="rounded-2xl border border-[#efe7db] bg-white p-5 xl:col-span-2">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Coaching monitoring</p>
-                <p className="mt-2 text-sm text-[#6b6257]">
-                  Weekly flow completion, reply behavior, and coaching reach.
-                </p>
-              </div>
-              <Link
-                href="/admin/monitoring?tab=coaching"
-                className="rounded-full border border-[#1d6a4f] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[#1d6a4f]"
-              >
-                Open
-              </Link>
-            </div>
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Users reached</span>
-                <div className="mt-1 text-xl font-semibold">{health?.coaching?.users_reached ?? "—"}</div>
-              </div>
-              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Week completion</span>
-                <div className="mt-1 text-xl font-semibold">
-                  {health?.coaching?.day_funnel?.week_completion_rate_pct != null
-                    ? `${health.coaching.day_funnel.week_completion_rate_pct}%`
-                    : "—"}
+            <div className="rounded-2xl border border-[#efe7db] bg-white p-5 xl:col-span-2">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Gia readiness monitoring</p>
+                  <p className="mt-2 text-sm text-[#6b6257]">
+                    Today&apos;s tracker records, refresh jobs, and Gia message readiness.
+                  </p>
                 </div>
+                <Link
+                  href="/admin/monitoring/coaching-today"
+                  className="rounded-full border border-[#1d6a4f] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[#1d6a4f]"
+                >
+                  Open
+                </Link>
               </div>
-              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Sunday reply</span>
-                <div className="mt-1 text-xl font-semibold">
-                  {health?.coaching?.day_funnel?.sunday_reply_rate_pct != null
-                    ? `${health.coaching.day_funnel.sunday_reply_rate_pct}%`
-                    : "—"}
+              <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                  <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Daily records</span>
+                  <div className="mt-1 text-xl font-semibold">{giaRatio.tracked_today ?? "—"}</div>
                 </div>
-              </div>
-              <div className={stateTileClass(outside24hState)}>
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Outside 24h</span>
-                  <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${stateChipClass(outside24hState)}`}>
-                    {String(outside24hState || "unknown").toUpperCase()}
-                  </span>
+                <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                  <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Queued/running</span>
+                  <div className="mt-1 text-xl font-semibold">{giaQueued}</div>
                 </div>
-                <div className="mt-1 text-xl font-semibold">
-                  {health?.coaching?.engagement_window?.outside_24h_rate_pct != null
-                    ? `${health.coaching.engagement_window.outside_24h_rate_pct}%`
-                    : "—"}
+                <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                  <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Gia ready</span>
+                  <div className="mt-1 text-xl font-semibold">{giaRatio.gia_ready ?? "—"}</div>
                 </div>
-              </div>
-              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Streak p50</span>
-                <div className="mt-1 text-xl font-semibold">
-                  {health?.coaching?.engagement_window?.current_streak_days_p50 != null
-                    ? `${health.coaching.engagement_window.current_streak_days_p50} days`
-                    : "—"}
+                <div className={stateTileClass(giaReadinessState)}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Failed</span>
+                    <span className={`rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] ${stateChipClass(giaReadinessState)}`}>
+                      {String(giaReadinessState || "unknown").toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="mt-1 text-xl font-semibold">{giaFailed}</div>
                 </div>
-              </div>
-              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Reply p95</span>
-                <div className="mt-1 text-xl font-semibold">
-                  {health?.coaching?.response_time_minutes?.p95 != null
-                    ? `${Math.round(health.coaching.response_time_minutes.p95)} min`
-                    : "—"}
+                <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                  <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Ratio</span>
+                  <div className="mt-1 text-xl font-semibold">{giaTodayRatio}</div>
+                </div>
+                <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                  <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Job states</span>
+                  <div className="mt-1 text-sm font-semibold">
+                    {Object.entries(giaToday?.job_status_counts || {}).length
+                      ? Object.entries(giaToday?.job_status_counts || {})
+                          .map(([key, value]) => `${key} ${value}`)
+                          .join(" · ")
+                      : "—"}
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-          <div className="rounded-2xl border border-[#efe7db] bg-white p-5 xl:col-span-3">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">App monitoring</p>
-                <p className="mt-2 text-sm text-[#6b6257]">
-                  Home usage, assessment return behavior, and podcast engagement.
-                </p>
-              </div>
+            <div className="rounded-2xl border border-[#efe7db] bg-white p-5 xl:col-span-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">User app monitoring</p>
+                  <p className="mt-2 text-sm text-[#6b6257]">
+                    Daily check-ins, plan views, education, Gia messages, biometrics, and urine tests.
+                  </p>
+                </div>
               <Link
                 href="/admin/monitoring?tab=app"
                 className="rounded-full border border-[#1d4ed8] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[#1d4ed8]"
@@ -261,32 +245,32 @@ export default async function AdminHome() {
               </Link>
             </div>
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Active users</span>
-                <div className="mt-1 text-xl font-semibold">{appKpis.active_app_users ?? "—"}</div>
-              </div>
-              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Home views</span>
-                <div className="mt-1 text-xl font-semibold">{appKpis.home_page_views ?? "—"}</div>
-              </div>
-              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Results view rate</span>
-                <div className="mt-1 text-xl font-semibold">
-                  {appKpis.post_assessment_results_view_rate_pct != null
-                    ? `${appKpis.post_assessment_results_view_rate_pct}%`
-                    : "—"}
+                <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                  <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Active users</span>
+                  <div className="mt-1 text-xl font-semibold">{appKpis.active_app_users ?? "—"}</div>
                 </div>
-              </div>
-              <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
-                <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Podcast listener rate</span>
-                <div className="mt-1 text-xl font-semibold">
-                  {appKpis.podcast_listener_rate_pct != null
-                    ? `${appKpis.podcast_listener_rate_pct}%`
-                    : "—"}
+                <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                  <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Daily check-ins</span>
+                  <div className="mt-1 text-xl font-semibold">{appKpis.daily_check_in_users ?? "—"}</div>
+                </div>
+                <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                  <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Plan views</span>
+                  <div className="mt-1 text-xl font-semibold">{appKpis.daily_plan_views ?? "—"}</div>
+                </div>
+                <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                  <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Education views</span>
+                  <div className="mt-1 text-xl font-semibold">{appKpis.education_views ?? "—"}</div>
+                </div>
+                <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                  <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Gia messages</span>
+                  <div className="mt-1 text-xl font-semibold">{appKpis.gia_message_views ?? "—"}</div>
+                </div>
+                <div className="rounded-xl bg-[#f7f4ee] px-3 py-2">
+                  <span className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Urine captures</span>
+                  <div className="mt-1 text-xl font-semibold">{appKpis.urine_captures ?? "—"}</div>
                 </div>
               </div>
             </div>
-          </div>
           <div className="rounded-2xl border border-[#efe7db] bg-white p-5 xl:col-span-3">
             <div className="flex items-start justify-between gap-3">
               <div>

@@ -2067,6 +2067,25 @@ export default function LatestAssessmentPanel({
     }
   }, [userId]);
 
+  const logUserAppEvent = useCallback(
+    (eventType: string, meta?: Record<string, unknown>) => {
+      void fetch("/api/engagement", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId,
+          event_type: eventType,
+          surface: "coach_home",
+          meta: {
+            page: "coach_home",
+            ...(meta || {}),
+          },
+        }),
+      }).catch(() => undefined);
+    },
+    [userId],
+  );
+
   const syncNativeRestingHeartRate = useCallback(
     async (requestAccess = false) => {
       if (!appleHealthSupported) return null;
@@ -2106,6 +2125,7 @@ export default function LatestAssessmentPanel({
     setUrineTestFlowOpen(false);
     setBiometricsActionError(null);
     setBiometricsModalOpen(true);
+    logUserAppEvent("biometrics_open", { source: "review_biometrics" });
     if (
       appleHealthSupported &&
       !restingHeartRateLoading &&
@@ -2117,6 +2137,7 @@ export default function LatestAssessmentPanel({
   }, [
     appleHealthAuthStatus,
     appleHealthSupported,
+    logUserAppEvent,
     restingHeartRateEnabling,
     restingHeartRateLoading,
     syncNativeRestingHeartRate,
@@ -2143,6 +2164,7 @@ export default function LatestAssessmentPanel({
   }) => {
     setUrineTestSaving(true);
     setUrineTestError(null);
+    const captureStage = urineCaptureStartedAt ? "timed" : "single";
     try {
       if (sizeBytes > URINE_TEST_MAX_PHOTO_BYTES) {
         throw new Error("Photo is too large. Retake or choose a smaller image.");
@@ -2153,7 +2175,7 @@ export default function LatestAssessmentPanel({
         body: JSON.stringify({
           userId,
           capturedAt: capturedAt.toISOString(),
-          captureStage: urineCaptureStartedAt ? "timed" : "single",
+          captureStage,
           fileName,
           mimeType,
           sizeBytes,
@@ -2176,12 +2198,16 @@ export default function LatestAssessmentPanel({
       setBiometricSourceCheckOpen(false);
       setUrineTestFlowOpen(false);
       setBiometricsModalOpen(true);
+      logUserAppEvent("urine_test_capture", {
+        captureStage,
+        source: "biometrics_modal",
+      });
     } catch (error) {
       setUrineTestError(error instanceof Error ? error.message : String(error));
     } finally {
       setUrineTestSaving(false);
     }
-  }, [urineCaptureStartedAt, userId]);
+  }, [logUserAppEvent, urineCaptureStartedAt, userId]);
 
   const openUrinePhotoCapture = useCallback(async () => {
     setUrineTestError(null);
@@ -2375,6 +2401,7 @@ export default function LatestAssessmentPanel({
         }
         const payload = (text ? (JSON.parse(text) as AppleHealthRestingHeartRateResponse) : {}) as AppleHealthRestingHeartRateResponse;
         setRestingHeartRate(payload);
+        logUserAppEvent("biometrics_source_update", { metricKey, enabled });
         await loadWeeklyObjectives().catch(() => undefined);
       } catch (error) {
         setBiometricsActionError(error instanceof Error ? error.message : String(error));
@@ -2382,7 +2409,7 @@ export default function LatestAssessmentPanel({
         setBiometricPreferenceSaving(null);
       }
     },
-    [loadWeeklyObjectives, userId],
+    [loadWeeklyObjectives, logUserAppEvent, userId],
   );
 
   const startBiometricWearableConnection = useCallback(
@@ -2430,8 +2457,9 @@ export default function LatestAssessmentPanel({
     setObjectivesModalOpen(true);
     setSelectedObjectivesSection(null);
     setBiometricsActionError(null);
+    logUserAppEvent("weekly_objectives_open", { source: "weekly_targets_card" });
     await loadWeeklyObjectives();
-  }, [loadWeeklyObjectives]);
+  }, [loadWeeklyObjectives, logUserAppEvent]);
 
   const closeObjectivesModal = useCallback(() => {
     setObjectivesModalOpen(false);
@@ -2469,6 +2497,7 @@ export default function LatestAssessmentPanel({
       }
       const payload = (text ? (JSON.parse(text) as WeeklyObjectivesResponse) : {}) as WeeklyObjectivesResponse;
       applyWeeklyObjectivesPayload(payload);
+      logUserAppEvent("weekly_objectives_save", { section: selectedObjectivesSection });
       await refreshSummary().catch(() => undefined);
       if (typeof window !== "undefined") {
         window.dispatchEvent(
@@ -2488,6 +2517,7 @@ export default function LatestAssessmentPanel({
     }
   }, [
     applyWeeklyObjectivesPayload,
+    logUserAppEvent,
     refreshSummary,
     selectedObjectivesSection,
     selectedPillarObjectiveDraft,
@@ -3553,6 +3583,7 @@ export default function LatestAssessmentPanel({
                             onClick={() => {
                               setActiveBiomarkerExplanation(null);
                               setUrineTestFlowOpen(true);
+                              logUserAppEvent("urine_test_open", { source: "biometrics_modal" });
                             }}
                             className="rounded-full border border-[#c54817] bg-[#c54817] px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-white"
                           >

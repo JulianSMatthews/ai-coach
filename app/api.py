@@ -6714,6 +6714,11 @@ def api_user_assessment_chat_tracker_summary(
         raise HTTPException(status_code=502, detail=str(exc))
     if not text_out:
         raise HTTPException(status_code=502, detail="Gia's coaching message is not available right now.")
+    _log_app_engagement_event(
+        user_id=int(user.id),
+        unit_type="coach_home_gia_message_view",
+        meta={"page": "coach_home", "source": "app_tracker_summary"},
+    )
     return {
         "ok": True,
         "user_id": int(user.id),
@@ -8905,6 +8910,12 @@ def api_user_engagement_event(
         "intro_listened",
         "intro_read",
         "coaching_interest",
+        "biometrics_open",
+        "biometrics_source_update",
+        "urine_test_open",
+        "urine_test_capture",
+        "weekly_objectives_open",
+        "weekly_objectives_save",
     }
     if event_type not in valid_event_types:
         allowed = ", ".join(sorted(valid_event_types))
@@ -14204,12 +14215,42 @@ def admin_usage_app_engagement(
     home_users: set[int] = set()
     library_users: set[int] = set()
     assessment_users: set[int] = set()
+    tracker_update_users: set[int] = set()
+    daily_plan_users: set[int] = set()
+    daily_plan_update_users: set[int] = set()
+    education_view_users: set[int] = set()
+    education_video_progress_users: set[int] = set()
+    education_video_complete_users: set[int] = set()
+    education_quiz_submit_users: set[int] = set()
+    gia_message_users: set[int] = set()
+    biometrics_open_users: set[int] = set()
+    biometrics_source_update_users: set[int] = set()
+    urine_test_open_users: set[int] = set()
+    urine_capture_users: set[int] = set()
+    weekly_objectives_open_users: set[int] = set()
+    weekly_objectives_save_users: set[int] = set()
+    coaching_interest_users: set[int] = set()
     podcast_play_users: set[int] = set()
     podcast_complete_users: set[int] = set()
 
     home_views = 0
     library_views = 0
     assessment_views = 0
+    tracker_updates = 0
+    daily_plan_views = 0
+    daily_plan_updates = 0
+    education_views = 0
+    education_video_progress_events = 0
+    education_video_complete_events = 0
+    education_quiz_submits = 0
+    gia_message_views = 0
+    biometrics_opens = 0
+    biometrics_source_updates = 0
+    urine_test_opens = 0
+    urine_captures = 0
+    weekly_objectives_opens = 0
+    weekly_objectives_saves = 0
+    coaching_interest_events = 0
     podcast_plays = 0
     podcast_completes = 0
     library_podcast_plays = 0
@@ -14237,6 +14278,20 @@ def admin_usage_app_engagement(
                 "home_views": 0,
                 "assessment_views": 0,
                 "library_views": 0,
+                "tracker_updates": 0,
+                "daily_plan_views": 0,
+                "daily_plan_updates": 0,
+                "education_views": 0,
+                "education_video_progress_events": 0,
+                "education_video_completes": 0,
+                "education_quiz_submits": 0,
+                "gia_message_views": 0,
+                "biometrics_opens": 0,
+                "urine_test_opens": 0,
+                "urine_captures": 0,
+                "weekly_objectives_opens": 0,
+                "weekly_objectives_saves": 0,
+                "coaching_interest_events": 0,
                 "podcast_plays": 0,
                 "podcast_completes": 0,
                 "_users": set(),
@@ -14264,6 +14319,113 @@ def admin_usage_app_engagement(
 
             if page in {"progress_home", "assessment_results"} and user_id_int is not None:
                 results_views_by_user.setdefault(user_id_int, []).append(created_at)
+            continue
+
+        if unit_type == "pillar_tracker_update":
+            tracker_updates += 1
+            day_entry["tracker_updates"] += 1
+            if user_id_int is not None:
+                tracker_update_users.add(user_id_int)
+            continue
+
+        if unit_type == "coach_home_habits_view":
+            daily_plan_views += 1
+            day_entry["daily_plan_views"] += 1
+            if user_id_int is not None:
+                daily_plan_users.add(user_id_int)
+            continue
+
+        if unit_type == "coach_home_habits_update":
+            daily_plan_updates += 1
+            day_entry["daily_plan_updates"] += 1
+            if user_id_int is not None:
+                daily_plan_update_users.add(user_id_int)
+            continue
+
+        if unit_type == "education_plan_view":
+            education_views += 1
+            day_entry["education_views"] += 1
+            if user_id_int is not None:
+                education_view_users.add(user_id_int)
+            continue
+
+        if unit_type == "education_video_progress":
+            education_video_progress_events += 1
+            day_entry["education_video_progress_events"] += 1
+            if user_id_int is not None:
+                education_video_progress_users.add(user_id_int)
+            completion_status = str(meta.get("completion_status") or "").strip().lower()
+            try:
+                watch_pct = float(meta.get("watch_pct") or 0)
+            except Exception:
+                watch_pct = 0.0
+            if completion_status in {"complete", "completed"} or watch_pct >= 95:
+                education_video_complete_events += 1
+                day_entry["education_video_completes"] += 1
+                if user_id_int is not None:
+                    education_video_complete_users.add(user_id_int)
+            continue
+
+        if unit_type == "education_quiz_submit":
+            education_quiz_submits += 1
+            day_entry["education_quiz_submits"] += 1
+            if user_id_int is not None:
+                education_quiz_submit_users.add(user_id_int)
+            continue
+
+        if unit_type == "coach_home_gia_message_view":
+            gia_message_views += 1
+            day_entry["gia_message_views"] += 1
+            if user_id_int is not None:
+                gia_message_users.add(user_id_int)
+            continue
+
+        if unit_type == "biometrics_open":
+            biometrics_opens += 1
+            day_entry["biometrics_opens"] += 1
+            if user_id_int is not None:
+                biometrics_open_users.add(user_id_int)
+            continue
+
+        if unit_type == "biometrics_source_update":
+            biometrics_source_updates += 1
+            if user_id_int is not None:
+                biometrics_source_update_users.add(user_id_int)
+            continue
+
+        if unit_type == "urine_test_open":
+            urine_test_opens += 1
+            day_entry["urine_test_opens"] += 1
+            if user_id_int is not None:
+                urine_test_open_users.add(user_id_int)
+            continue
+
+        if unit_type == "urine_test_capture":
+            urine_captures += 1
+            day_entry["urine_captures"] += 1
+            if user_id_int is not None:
+                urine_capture_users.add(user_id_int)
+            continue
+
+        if unit_type == "weekly_objectives_open":
+            weekly_objectives_opens += 1
+            day_entry["weekly_objectives_opens"] += 1
+            if user_id_int is not None:
+                weekly_objectives_open_users.add(user_id_int)
+            continue
+
+        if unit_type == "weekly_objectives_save":
+            weekly_objectives_saves += 1
+            day_entry["weekly_objectives_saves"] += 1
+            if user_id_int is not None:
+                weekly_objectives_save_users.add(user_id_int)
+            continue
+
+        if unit_type == "coaching_interest":
+            coaching_interest_events += 1
+            day_entry["coaching_interest_events"] += 1
+            if user_id_int is not None:
+                coaching_interest_users.add(user_id_int)
             continue
 
         if unit_type == "podcast_play":
@@ -14489,6 +14651,35 @@ def admin_usage_app_engagement(
             "post_assessment_results_view_rate_pct": post_assessment_view_rate_pct,
             "post_assessment_users_completed": completed_users,
             "post_assessment_users_viewed_results": post_assessment_results_view_users,
+            "daily_check_in_users": len(tracker_update_users),
+            "daily_check_in_updates": tracker_updates,
+            "daily_plan_users": len(daily_plan_users),
+            "daily_plan_views": daily_plan_views,
+            "daily_plan_updates": daily_plan_updates,
+            "education_users": len(education_view_users),
+            "education_views": education_views,
+            "education_video_progress_users": len(education_video_progress_users),
+            "education_video_progress_events": education_video_progress_events,
+            "education_video_complete_users": len(education_video_complete_users),
+            "education_video_complete_events": education_video_complete_events,
+            "education_quiz_submit_users": len(education_quiz_submit_users),
+            "education_quiz_submits": education_quiz_submits,
+            "gia_message_users": len(gia_message_users),
+            "gia_message_views": gia_message_views,
+            "biometrics_users": len(biometrics_open_users),
+            "biometrics_opens": biometrics_opens,
+            "biometrics_source_update_users": len(biometrics_source_update_users),
+            "biometrics_source_updates": biometrics_source_updates,
+            "urine_test_users": len(urine_test_open_users),
+            "urine_test_opens": urine_test_opens,
+            "urine_capture_users": len(urine_capture_users),
+            "urine_captures": urine_captures,
+            "weekly_objectives_open_users": len(weekly_objectives_open_users),
+            "weekly_objectives_opens": weekly_objectives_opens,
+            "weekly_objectives_save_users": len(weekly_objectives_save_users),
+            "weekly_objectives_saves": weekly_objectives_saves,
+            "coaching_interest_users": len(coaching_interest_users),
+            "coaching_interest_events": coaching_interest_events,
             "podcast_listener_rate_pct": podcast_listener_rate_pct,
             "podcast_listeners": len(podcast_play_users),
             "onboarding_first_login_users": onboarding_first_login_count,
@@ -14499,6 +14690,48 @@ def admin_usage_app_engagement(
             "home": {"views": home_views, "users": len(home_users)},
             "assessment_results": {"views": assessment_views, "users": len(assessment_users)},
             "library": {"views": library_views, "users": len(library_users)},
+            "current_app": {
+                "daily_check_in": {"updates": tracker_updates, "users": len(tracker_update_users)},
+                "daily_plan": {
+                    "views": daily_plan_views,
+                    "view_users": len(daily_plan_users),
+                    "updates": daily_plan_updates,
+                    "update_users": len(daily_plan_update_users),
+                },
+                "education": {
+                    "views": education_views,
+                    "view_users": len(education_view_users),
+                    "video_progress_events": education_video_progress_events,
+                    "video_progress_users": len(education_video_progress_users),
+                    "video_complete_events": education_video_complete_events,
+                    "video_complete_users": len(education_video_complete_users),
+                    "quiz_submits": education_quiz_submits,
+                    "quiz_submit_users": len(education_quiz_submit_users),
+                },
+                "gia_message": {"views": gia_message_views, "users": len(gia_message_users)},
+                "biometrics": {
+                    "opens": biometrics_opens,
+                    "users": len(biometrics_open_users),
+                    "source_updates": biometrics_source_updates,
+                    "source_update_users": len(biometrics_source_update_users),
+                },
+                "urine": {
+                    "opens": urine_test_opens,
+                    "open_users": len(urine_test_open_users),
+                    "captures": urine_captures,
+                    "capture_users": len(urine_capture_users),
+                },
+                "weekly_objectives": {
+                    "opens": weekly_objectives_opens,
+                    "open_users": len(weekly_objectives_open_users),
+                    "saves": weekly_objectives_saves,
+                    "save_users": len(weekly_objectives_save_users),
+                },
+                "coaching_interest": {
+                    "events": coaching_interest_events,
+                    "users": len(coaching_interest_users),
+                },
+            },
             "podcasts": {
                 "plays": podcast_plays,
                 "completes": podcast_completes,

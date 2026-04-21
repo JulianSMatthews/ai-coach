@@ -41,6 +41,12 @@ export async function POST(request: Request) {
       "intro_listened",
       "intro_read",
       "coaching_interest",
+      "biometrics_open",
+      "biometrics_source_update",
+      "urine_test_open",
+      "urine_test_capture",
+      "weekly_objectives_open",
+      "weekly_objectives_save",
     ];
     if (!allowedEventTypes.includes(eventType)) {
       return NextResponse.json(

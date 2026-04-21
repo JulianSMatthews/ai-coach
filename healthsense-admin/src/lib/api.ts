@@ -96,6 +96,35 @@ export type AppEngagementSummary = {
     post_assessment_results_view_rate_pct?: number | null;
     post_assessment_users_completed?: number;
     post_assessment_users_viewed_results?: number;
+    daily_check_in_users?: number;
+    daily_check_in_updates?: number;
+    daily_plan_users?: number;
+    daily_plan_views?: number;
+    daily_plan_updates?: number;
+    education_users?: number;
+    education_views?: number;
+    education_video_progress_users?: number;
+    education_video_progress_events?: number;
+    education_video_complete_users?: number;
+    education_video_complete_events?: number;
+    education_quiz_submit_users?: number;
+    education_quiz_submits?: number;
+    gia_message_users?: number;
+    gia_message_views?: number;
+    biometrics_users?: number;
+    biometrics_opens?: number;
+    biometrics_source_update_users?: number;
+    biometrics_source_updates?: number;
+    urine_test_users?: number;
+    urine_test_opens?: number;
+    urine_capture_users?: number;
+    urine_captures?: number;
+    weekly_objectives_open_users?: number;
+    weekly_objectives_opens?: number;
+    weekly_objectives_save_users?: number;
+    weekly_objectives_saves?: number;
+    coaching_interest_users?: number;
+    coaching_interest_events?: number;
     podcast_listener_rate_pct?: number | null;
     podcast_listeners?: number;
     onboarding_first_login_users?: number;
@@ -106,6 +135,45 @@ export type AppEngagementSummary = {
     home?: { views?: number; users?: number };
     assessment_results?: { views?: number; users?: number };
     library?: { views?: number; users?: number };
+    current_app?: {
+      daily_check_in?: { updates?: number; users?: number };
+      daily_plan?: {
+        views?: number;
+        view_users?: number;
+        updates?: number;
+        update_users?: number;
+      };
+      education?: {
+        views?: number;
+        view_users?: number;
+        video_progress_events?: number;
+        video_progress_users?: number;
+        video_complete_events?: number;
+        video_complete_users?: number;
+        quiz_submits?: number;
+        quiz_submit_users?: number;
+      };
+      gia_message?: { views?: number; users?: number };
+      biometrics?: {
+        opens?: number;
+        users?: number;
+        source_updates?: number;
+        source_update_users?: number;
+      };
+      urine?: {
+        opens?: number;
+        open_users?: number;
+        captures?: number;
+        capture_users?: number;
+      };
+      weekly_objectives?: {
+        opens?: number;
+        open_users?: number;
+        saves?: number;
+        save_users?: number;
+      };
+      coaching_interest?: { events?: number; users?: number };
+    };
     podcasts?: {
       plays?: number;
       completes?: number;
@@ -152,6 +220,20 @@ export type AppEngagementSummary = {
       home_views?: number;
       assessment_views?: number;
       library_views?: number;
+      tracker_updates?: number;
+      daily_plan_views?: number;
+      daily_plan_updates?: number;
+      education_views?: number;
+      education_video_progress_events?: number;
+      education_video_completes?: number;
+      education_quiz_submits?: number;
+      gia_message_views?: number;
+      biometrics_opens?: number;
+      urine_test_opens?: number;
+      urine_captures?: number;
+      weekly_objectives_opens?: number;
+      weekly_objectives_saves?: number;
+      coaching_interest_events?: number;
       podcast_plays?: number;
       podcast_completes?: number;
       active_users?: number;
@@ -866,6 +948,24 @@ export type CoachingTodayDrilldownUser = {
   user_id?: number | null;
   user_name?: string | null;
   phone?: string | null;
+  active?: boolean | null;
+  has_today_entry?: boolean | null;
+  tracker_entries_today?: number | null;
+  last_tracker_entry_at?: string | null;
+  refresh_status?: string | null;
+  refresh_plan_date?: string | null;
+  refresh_updated_at?: string | null;
+  gia_ready?: boolean | null;
+  habits_ready?: boolean | null;
+  insight_ready?: boolean | null;
+  latest_refresh_job?: {
+    id?: number | null;
+    status?: string | null;
+    created_at?: string | null;
+    updated_at?: string | null;
+    finished_at?: string | null;
+    error?: string | null;
+  } | null;
   day_message?: {
     id?: number | null;
     at?: string | null;
@@ -908,7 +1008,15 @@ export type CoachingTodayDrilldownPayload = {
   day_key?: string;
   day_start_uk?: string;
   day_end_uk?: string;
+  mode?: string;
+  retired?: boolean;
+  job_status_counts?: Record<string, number>;
+  score_date?: string | null;
   ratio?: {
+    tracked_today?: number;
+    refresh_queued_or_running?: number;
+    gia_ready?: number;
+    refresh_failed?: number;
     users_to_be_sent?: number;
     users_sent_day_message?: number;
     users_outside_24h_deferred?: number;
