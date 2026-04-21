@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { friendlyAuthError } from "@/lib/authErrors";
+import LegalFooter from "@/components/LegalFooter";
 
 type MeResponse = {
   user?: { id?: number; display_name?: string; phone?: string; email?: string };
@@ -150,6 +151,7 @@ export default function SetupSecurityPage() {
         </form>
         {status ? <p className="text-sm text-[#6b6257]">{status}</p> : null}
       </div>
+      <LegalFooter className="mx-auto mt-6 max-w-md text-[#6b6257]" />
     </main>
   );
 }

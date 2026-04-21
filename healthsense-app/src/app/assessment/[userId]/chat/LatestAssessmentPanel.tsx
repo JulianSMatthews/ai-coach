@@ -3038,6 +3038,11 @@ export default function LatestAssessmentPanel({
 
             <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
               <div className="space-y-4">
+                <div className="rounded-2xl border border-[#efe7db] bg-[#fff8ef] px-4 py-3 text-xs leading-5 text-[#8a5a1a]">
+                  HealthSense biometrics and urine markers are optional wellbeing screening and trend signals. They are
+                  not medical diagnosis or treatment advice. If a result is unexpected or you have symptoms, retest
+                  where appropriate and speak to a qualified healthcare professional.
+                </div>
                 {!urineTestFlowOpen && activeBiomarkerExplanationDetail ? (
                   <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
                     <BiomarkerExplanationCard

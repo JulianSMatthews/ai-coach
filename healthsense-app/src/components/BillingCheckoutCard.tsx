@@ -29,6 +29,7 @@ export default function BillingCheckoutCard({
   const [error, setError] = useState<string | null>(null);
   const [readOnlyPreview, setReadOnlyPreview] = useState(false);
   const [selectedPriceId, setSelectedPriceId] = useState<string>("");
+  const [nativeIosApp, setNativeIosApp] = useState(false);
   const state = normalizeBillingState(billingState);
   const billingTag = String(billingFlag || "").trim().toLowerCase();
   const formatPrice = (amountMinor?: number, exponent?: number, currency?: string) => {
@@ -72,6 +73,12 @@ export default function BillingCheckoutCard({
     }
     return list;
   }, [plans]);
+
+  useEffect(() => {
+    if (typeof navigator !== "undefined") {
+      setNativeIosApp(/\bHealthSenseIOS\//i.test(navigator.userAgent));
+    }
+  }, []);
 
   useEffect(() => {
     if (!options.length) {
@@ -121,7 +128,7 @@ export default function BillingCheckoutCard({
         const isAdminPreview = code === "admin_preview_read_only" || rawError.toLowerCase().includes("admin preview");
         if (isAdminPreview) {
           setReadOnlyPreview(true);
-          throw new Error("Checkout is unavailable in admin preview. Open the member app session to set up subscription.");
+          throw new Error("Checkout is unavailable in admin preview. Open the user app session to set up subscription.");
         }
         throw new Error(rawError);
       }
@@ -150,31 +157,45 @@ export default function BillingCheckoutCard({
       ) : null}
       {state !== "active" ? (
         <>
-          <label className="mt-3 block text-xs uppercase tracking-[0.2em] text-[#6b6257]">Choose plan</label>
-          <select
-            className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-            value={selectedPriceId}
-            onChange={(e) => setSelectedPriceId(e.target.value)}
-            disabled={!options.length || loading || readOnlyPreview}
-          >
-            {!options.length ? <option value="">No active plans available</option> : null}
-            {options.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          <button
-            type="button"
-            onClick={subscribe}
-            disabled={loading || !selectedPriceId || readOnlyPreview}
-            className="mt-3 rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {loading ? "Opening checkout..." : "Set up subscription"}
-          </button>
+          {nativeIosApp ? (
+            <div className="mt-3 rounded-2xl border border-[#efe7db] bg-[#fffaf3] px-4 py-3">
+              <p className="text-sm text-[#6b6257]">
+                Subscription setup for the HealthSense coaching service is managed directly with HealthSense staff. No
+                payment is taken inside this iOS app.
+              </p>
+              <a className="mt-2 inline-block text-sm text-[var(--accent)] underline" href="/support">
+                Contact support
+              </a>
+            </div>
+          ) : (
+            <>
+              <label className="mt-3 block text-xs uppercase tracking-[0.2em] text-[#6b6257]">Choose plan</label>
+              <select
+                className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+                value={selectedPriceId}
+                onChange={(e) => setSelectedPriceId(e.target.value)}
+                disabled={!options.length || loading || readOnlyPreview}
+              >
+                {!options.length ? <option value="">No active plans available</option> : null}
+                {options.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                onClick={subscribe}
+                disabled={loading || !selectedPriceId || readOnlyPreview}
+                className="mt-3 rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs uppercase tracking-[0.2em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {loading ? "Opening checkout..." : "Set up subscription"}
+              </button>
+            </>
+          )}
           {readOnlyPreview ? (
             <p className="mt-2 text-xs text-[#6b6257]">
-              Admin preview is read-only. Open the member app session to complete subscription setup.
+              Admin preview is read-only. Open the user app session to complete subscription setup.
             </p>
           ) : null}
         </>

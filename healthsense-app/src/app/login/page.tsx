@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { friendlyAuthError } from "@/lib/authErrors";
 import HealthSenseMark from "@/components/HealthSenseMark";
+import LegalFooter from "@/components/LegalFooter";
 
 function looksLikePhone(value: string) {
   const trimmed = value.trim();
@@ -343,6 +344,7 @@ export default function LoginPage() {
 
         {status ? <p className="text-sm text-[#6b6257]">{status}</p> : null}
       </div>
+      <LegalFooter className="mx-auto mt-6 max-w-md text-[#6b6257]" />
     </main>
   );
 }

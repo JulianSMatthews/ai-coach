@@ -8273,6 +8273,66 @@ def api_user_preferences_update(
     return {"ok": True}
 
 
+@api_v1.post("/users/{user_id}/account-deletion-request")
+def api_user_account_deletion_request(
+    user_id: int,
+    payload: dict,
+    request: Request,
+    x_admin_token: str | None = Header(None, alias="X-Admin-Token"),
+    x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
+):
+    """
+    Record a user-initiated account deletion request for support/admin handling.
+    This avoids destructive self-delete while still giving users an in-app path.
+    """
+    _resolve_user_access(request=request, user_id=user_id, x_admin_token=x_admin_token, x_admin_user_id=x_admin_user_id)
+    if _is_readonly_admin_preview_request(
+        request,
+        x_admin_token=x_admin_token,
+        x_admin_user_id=x_admin_user_id,
+    ):
+        raise HTTPException(status_code=403, detail="Admin app preview is read-only")
+
+    if not isinstance(payload, dict):
+        payload = {}
+    reason = str(payload.get("reason") or "").strip()[:1000]
+    email = str(payload.get("email") or "").strip().lower()[:240]
+    if email and ("@" not in email or "." not in email.split("@")[-1]):
+        raise HTTPException(status_code=400, detail="invalid email")
+
+    now_val = datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
+
+    def _upsert_pref(session, key: str, value: str):
+        row = (
+            session.query(UserPreference)
+            .filter(UserPreference.user_id == user_id, UserPreference.key == key)
+            .one_or_none()
+        )
+        if row:
+            row.value = value
+        else:
+            session.add(UserPreference(user_id=user_id, key=key, value=value))
+
+    with SessionLocal() as s:
+        u = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
+        if not u:
+            raise HTTPException(status_code=404, detail="user not found")
+        _upsert_pref(s, "account_deletion_request_status", "requested")
+        _upsert_pref(s, "account_deletion_requested_at", now_val)
+        if reason:
+            _upsert_pref(s, "account_deletion_request_reason", reason)
+        if email:
+            _upsert_pref(s, "account_deletion_request_contact_email", email)
+        s.commit()
+
+    return {
+        "ok": True,
+        "status": "requested",
+        "requested_at": now_val,
+        "message": "Account deletion request received.",
+    }
+
+
 def _wearable_provider_note(definition, *, connection: WearableConnection | None) -> str | None:
     if not wearable_provider_enabled(definition.key):
         return "Disabled by environment configuration."

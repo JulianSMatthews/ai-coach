@@ -13,7 +13,16 @@ const APP_LABEL = process.env.NODE_ENV === "development" ? "App (Develop)" : "Ap
 
 export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
   const [open, setOpen] = useState(false);
-  const links: Array<{ label: string; href: string }> = [];
+  const links: Array<{ label: string; href: string }> = [
+    { label: "Home", href: `/assessment/${userId}/chat` },
+    { label: "Prefs", href: `/preferences/${userId}` },
+    { label: "Support", href: "/support" },
+  ];
+  const legalLinks: Array<{ label: string; href: string }> = [
+    { label: "Privacy", href: "/privacy" },
+    { label: "Terms", href: "/terms" },
+    { label: "Delete account", href: "/delete-account" },
+  ];
 
   useEffect(() => {
     if (!open) return;
@@ -131,6 +140,16 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
 
           <div className="mt-6">
             <LogoutButton className="w-full text-center" />
+          </div>
+
+          <div className="mt-6 border-t border-[var(--border)] pt-5">
+            <div className="grid gap-2 text-xs uppercase tracking-[0.16em] text-[var(--text-secondary)]">
+              {legalLinks.map((link) => (
+                <a key={link.href} href={link.href} onClick={() => setOpen(false)}>
+                  {link.label}
+                </a>
+              ))}
+            </div>
           </div>
         </div>
       </div>

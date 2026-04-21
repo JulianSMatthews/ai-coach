@@ -37,7 +37,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error:
-            "Checkout is unavailable in admin preview. Open the member app session to set up subscription.",
+            "Checkout is unavailable in admin preview. Open the user app session to set up subscription.",
           code: "admin_preview_read_only",
         },
         { status: 403 },
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
       return NextResponse.json(
         {
           error: isReadOnly
-            ? "Checkout is unavailable in admin preview. Open the member app session to set up subscription."
+            ? "Checkout is unavailable in admin preview. Open the user app session to set up subscription."
             : detail || "Failed to create checkout session",
           code: isReadOnly ? "admin_preview_read_only" : undefined,
         },

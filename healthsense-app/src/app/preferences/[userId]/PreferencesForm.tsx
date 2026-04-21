@@ -179,7 +179,7 @@ export default function PreferencesForm({
           <option value="light">light</option>
           <option value="dark">dark</option>
         </select>
-        <p className="mt-2 text-xs text-[#6b6257]">Switch the member app between light and dark mode.</p>
+        <p className="mt-2 text-xs text-[#6b6257]">Switch the user app between light and dark mode.</p>
       </div>
 
       <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
