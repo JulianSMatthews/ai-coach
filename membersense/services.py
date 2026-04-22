@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 
 from . import config
 from .messaging import normalize_phone, send_sms
-from .models import Conversation, ImportBatch, Member, MessageLog, StaffTask, SurveyConfig
+from .models import Conversation, ImportBatch, Member, MessageLog, OkrKeyResult, OkrObjective, StaffTask, SurveyConfig
 from .surveys import (
     SURVEY_FLOWS,
     SurveyFlow,
@@ -36,6 +36,69 @@ from .surveys import (
 
 _SURVEY_AVATAR_THREAD_LOCK = threading.Lock()
 _SURVEY_AVATAR_THREADS: dict[str, threading.Thread] = {}
+
+Q2_2026_OKR_PRESET: tuple[dict[str, Any], ...] = (
+    {
+        "area": "Club Growth",
+        "champions": "Soph & Ben",
+        "title": "Grow club revenue to GBP 70,000+ in Q2 to strengthen the club's financial foundation.",
+        "description": "Q2 2026 OKR: April to June.",
+        "key_results": (
+            {"title": "Achieve >=30% prospect-to-member conversion rate monthly", "target": 30, "unit": "%"},
+            {"title": "Ensure >=50% of new joiners pay the GBP 30 set-up fee", "target": 50, "unit": "%"},
+            {"title": "Generate >=120 qualified marketing leads per month", "target": 120, "unit": "leads/month"},
+            {"title": "Sell >=2 annual memberships per month", "target": 2, "unit": "annual memberships/month"},
+            {"title": "Capture >=10 referral contact details at point of sale per month", "target": 10, "unit": "referrals/month"},
+            {
+                "title": "Secure and execute >=1 external marketing partnership by end of Q2",
+                "target": 1,
+                "unit": "partnership",
+            },
+        ),
+    },
+    {
+        "area": "Onboarding",
+        "champions": "Tremaine",
+        "title": "Ensure all new members engage with the 6-week onboarding programme to drive early habit formation and retention.",
+        "description": "Q2 2026 OKR: April to June.",
+        "key_results": (
+            {"title": "Achieve >=85% of new members booking their first session within 7 days", "target": 85, "unit": "%"},
+            {"title": "Ensure >=50% of new members book at least 3 onboarding sessions", "target": 50, "unit": "%"},
+            {"title": "Contact 100% of non-booked members within 72 hours of joining", "target": 100, "unit": "%"},
+            {"title": "Run bi-weekly onboarding reviews with documented actions", "target": 6, "unit": "reviews"},
+            {"title": "Collect >=3 onboarding success stories/testimonials per month", "target": 3, "unit": "testimonials/month"},
+        ),
+    },
+    {
+        "area": "Experience",
+        "champions": "Soph",
+        "title": "Deliver a consistently premium club experience that maximises member satisfaction and retention.",
+        "description": "Q2 2026 OKR: April to June.",
+        "key_results": (
+            {"title": "Maintain rolling NPS >=70, with 100% of reviews responded to within 24 hours", "target": 70, "unit": "NPS"},
+            {"title": "Keep month 2 inactivity <10%", "target": 10, "unit": "%", "direction": "decrease"},
+            {"title": "Keep month 3 inactivity <15%", "target": 15, "unit": "%", "direction": "decrease"},
+            {"title": "Launch and implement a member needs and exit survey, with monthly insight review", "target": 3, "unit": "reviews"},
+            {"title": "Complete daily club walk and maintenance log", "target": 100, "unit": "%"},
+            {"title": "Review and action suggestions box weekly", "target": 13, "unit": "reviews"},
+            {"title": "Achieve 100% completion of FranConnect tasks weekly", "target": 100, "unit": "%"},
+            {"title": "Complete deep clean of flooring and bathrooms weekly, logged and signed off", "target": 13, "unit": "cleans"},
+        ),
+    },
+    {
+        "area": "Team Onboarding",
+        "champions": "Soph",
+        "title": "Ensure new team members are fully aligned with club standards, driving strong sales performance and member experience.",
+        "description": "Q2 2026 OKR: April to June.",
+        "key_results": (
+            {"title": "Complete full role handover from Rhys to Soph by 22 April", "target": 1, "unit": "handover"},
+            {"title": "Tremaine completes 100% of club training plan, sales and coaching, by end of Q2", "target": 100, "unit": "%"},
+            {"title": "Tremaine completes AF onboarding programme with Alex Barton within 4 weeks", "target": 1, "unit": "programme"},
+            {"title": "Generate >=3 new PT clients via 5-for-GBP 100 offer", "target": 3, "unit": "PT clients"},
+            {"title": "Conduct monthly performance review with clear KPIs and development actions", "target": 3, "unit": "reviews"},
+        ),
+    },
+)
 
 
 def _parse_date(raw: str | None) -> date | None:
@@ -1307,6 +1370,51 @@ def survey_options(session: Session | None = None) -> list[dict[str, str]]:
     if session is None:
         return [{"key": key, "label": flow.label} for key, flow in SURVEY_FLOWS.items()]
     return [{"key": key, "label": effective_survey_flow(session, key).label} for key in SURVEY_FLOWS]
+
+
+def seed_default_okrs(session: Session) -> int:
+    quarter = "2026-Q2"
+    existing = int(
+        session.scalar(
+            select(func.count())
+            .select_from(OkrObjective)
+            .where(OkrObjective.quarter == quarter)
+        )
+        or 0
+    )
+    if existing > 0:
+        return 0
+    created = 0
+    for item in Q2_2026_OKR_PRESET:
+        objective = OkrObjective(
+            quarter=quarter,
+            area=str(item.get("area") or "").strip(),
+            title=str(item.get("title") or "").strip(),
+            description=str(item.get("description") or "").strip() or None,
+            champions=str(item.get("champions") or "").strip() or None,
+            status="active",
+        )
+        session.add(objective)
+        session.flush()
+        champion_label = str(item.get("champions") or "").strip() or "Team"
+        for kr in item.get("key_results") or ():
+            if not isinstance(kr, dict):
+                continue
+            session.add(
+                OkrKeyResult(
+                    objective_id=int(objective.id),
+                    title=str(kr.get("title") or "").strip(),
+                    target_value=float(kr.get("target") or 0),
+                    actual_value=0.0,
+                    unit=str(kr.get("unit") or "").strip() or None,
+                    direction=str(kr.get("direction") or "increase").strip().lower() or "increase",
+                    allocation_type="team",
+                    team_label=champion_label,
+                )
+            )
+        created += 1
+    session.commit()
+    return created
 
 
 def mark_task_done(session: Session, task_id: int) -> bool:

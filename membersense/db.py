@@ -19,6 +19,11 @@ def init_db() -> None:
     _migrate_members_table()
     _migrate_survey_configs_table()
     _migrate_staff_users_table()
+    _migrate_okrs_table()
+    from .services import seed_default_okrs
+
+    with SessionLocal() as session:
+        seed_default_okrs(session)
 
 
 def _migrate_members_table() -> None:
@@ -120,12 +125,40 @@ def _migrate_staff_users_table() -> None:
                 return
             if "username" not in columns:
                 conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN username VARCHAR(80)")
+            if "mobile" not in columns:
+                conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN mobile VARCHAR(64)")
             conn.exec_driver_sql(
                 f"CREATE UNIQUE INDEX IF NOT EXISTS ix_{table_name}_username ON {table_name} (username)"
             )
             return
         if dialect == "postgresql":
             conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS username VARCHAR(80)")
+            conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS mobile VARCHAR(64)")
             conn.exec_driver_sql(
                 f"CREATE UNIQUE INDEX IF NOT EXISTS ix_{table_name}_username ON {table_name} (username)"
             )
+
+
+def _migrate_okrs_table() -> None:
+    dialect = engine.dialect.name
+    tables = {
+        "membersense_okr_objectives": {
+            "champions": ("VARCHAR(240)", "VARCHAR(240)"),
+        },
+        "membersense_okr_key_results": {
+            "direction": ("VARCHAR(24)", "VARCHAR(24)"),
+        },
+    }
+    with engine.begin() as conn:
+        for table_name, columns_to_add in tables.items():
+            if dialect == "sqlite":
+                columns = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table_name})").fetchall()}
+                if not columns:
+                    continue
+                for name, (sqlite_type, _) in columns_to_add.items():
+                    if name not in columns:
+                        conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN {name} {sqlite_type}")
+                continue
+            if dialect == "postgresql":
+                for name, (_, postgres_type) in columns_to_add.items():
+                    conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {name} {postgres_type}")

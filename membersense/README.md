@@ -11,6 +11,7 @@ MemberSense is a separate internal gym member-assistance app. It uses Twilio SMS
 - SMS survey links: each survey is completed in a browser from the link sent to the member.
 - In-app survey links: each survey link can also be opened manually or emailed when a member has email but no mobile.
 - Staff tasks: survey answers are classified into open follow-up tasks when action is useful.
+- Quarterly OKRs: staff can track area objectives, KR owners, actuals, RAG status, and percentage achieved.
 - CSV import: member data can be loaded from a gym system export.
 
 ## Run Locally

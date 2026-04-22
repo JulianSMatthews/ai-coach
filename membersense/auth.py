@@ -20,6 +20,15 @@ from .models import StaffUser
 SESSION_COOKIE_NAME = "membersense_staff_session"
 SESSION_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 PASSWORD_ITERATIONS = 180_000
+STAFF_ROLE_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("member_advisor", "Member Advisor"),
+    ("assistant_manager", "Assistant Manager"),
+    ("club_manager", "Club Manager"),
+    ("staff", "Staff"),
+    ("admin", "Admin"),
+    ("owner", "Owner"),
+)
+STAFF_ROLE_KEYS = {key for key, _label in STAFF_ROLE_OPTIONS}
 
 
 def normalize_email(value: str | None) -> str:
@@ -34,6 +43,19 @@ def normalize_username(value: str | None) -> str:
 def default_staff_email(username: str) -> str:
     key = normalize_username(username)
     return f"{key or 'staff'}@membersense.local"
+
+
+def normalize_staff_role(value: str | None, fallback: str = "member_advisor") -> str:
+    token = "_".join(str(value or "").strip().lower().replace("-", " ").split())
+    if token in STAFF_ROLE_KEYS:
+        return token
+    if token in {"memberadvisor", "membership_advisor"}:
+        return "member_advisor"
+    if token in {"assistantmanager", "assistant"}:
+        return "assistant_manager"
+    if token in {"clubmanager", "manager"}:
+        return "club_manager"
+    return fallback if fallback in STAFF_ROLE_KEYS else "member_advisor"
 
 
 def staff_count(session: Session) -> int:
@@ -88,6 +110,7 @@ def create_staff_user(
     *,
     email: str | None = None,
     username: str | None = None,
+    mobile: str | None = None,
     name: str,
     password: str,
     role: str = "staff",
@@ -96,10 +119,9 @@ def create_staff_user(
     normalized_username = normalize_username(username)
     normalized_email = normalize_email(email) or default_staff_email(normalized_username)
     display_name = str(name or "").strip() or normalized_username or normalized_email
+    mobile_text = str(mobile or "").strip()
     password_text = str(password or "")
-    role_key = str(role or "staff").strip().lower()
-    if role_key not in {"owner", "admin", "staff"}:
-        role_key = "staff"
+    role_key = normalize_staff_role(role, fallback="staff")
     if username is not None and not normalized_username:
         raise ValueError("Enter a valid staff username.")
     if not normalized_email or "@" not in normalized_email:
@@ -116,6 +138,7 @@ def create_staff_user(
         username=normalized_username or None,
         email=normalized_email,
         name=display_name,
+        mobile=mobile_text or None,
         password_hash=hash_password(password_text),
         role=role_key,
         is_active=bool(is_active),
@@ -123,6 +146,54 @@ def create_staff_user(
     session.add(row)
     session.flush()
     return row
+
+
+def update_staff_user(
+    session: Session,
+    staff: StaffUser,
+    *,
+    email: str | None = None,
+    username: str | None = None,
+    mobile: str | None = None,
+    name: str,
+    password: str | None = None,
+    role: str = "member_advisor",
+) -> StaffUser:
+    normalized_username = normalize_username(username)
+    normalized_email = normalize_email(email)
+    display_name = str(name or "").strip()
+    mobile_text = str(mobile or "").strip()
+    password_text = str(password or "")
+    if username and not normalized_username:
+        raise ValueError("Enter a valid staff username.")
+    if not normalized_email or "@" not in normalized_email:
+        raise ValueError("Enter a valid staff email address.")
+    if not display_name:
+        raise ValueError("Enter a staff name.")
+    if password_text and len(password_text) < 8:
+        raise ValueError("Password must be at least 8 characters.")
+    duplicate_checks = [StaffUser.email == normalized_email]
+    if normalized_username:
+        duplicate_checks.append(StaffUser.username == normalized_username)
+    existing = (
+        session.execute(
+            select(StaffUser).where(or_(*duplicate_checks), StaffUser.id != int(staff.id))
+        )
+        .scalars()
+        .first()
+    )
+    if existing is not None:
+        raise ValueError("A staff account already exists for that username or email.")
+    staff.username = normalized_username or None
+    staff.email = normalized_email
+    staff.name = display_name
+    staff.mobile = mobile_text or None
+    staff.role = normalize_staff_role(role, fallback=getattr(staff, "role", "member_advisor"))
+    if password_text:
+        staff.password_hash = hash_password(password_text)
+    session.add(staff)
+    session.flush()
+    return staff
 
 
 def authenticate_staff(session: Session, login: str, password: str) -> StaffUser | None:

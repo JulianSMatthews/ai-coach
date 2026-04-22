@@ -11,17 +11,20 @@ from sqlalchemy.orm import Session
 
 from . import config
 from .auth import (
+    STAFF_ROLE_OPTIONS,
     active_staff_count,
     authenticate_staff,
     clear_staff_cookie,
     create_staff_user,
+    normalize_staff_role,
     safe_next_path,
     set_staff_cookie,
     staff_count,
     staff_from_request,
+    update_staff_user,
 )
 from .db import SessionLocal
-from .models import Conversation, Member, MessageLog, StaffTask, StaffUser
+from .models import Conversation, Member, MessageLog, OkrKeyResult, OkrObjective, StaffTask, StaffUser
 from .surveys import SURVEY_FLOWS, flow_for_key, is_outcome_locked_flow, question_options
 from .services import (
     active_conversation_for_member,
@@ -129,6 +132,21 @@ def _member_status_label(member: Member | None) -> str:
     return value.replace("_", " ").title() if value else "Current"
 
 
+def _staff_role_label(role: object) -> str:
+    value = str(role or "").strip().lower()
+    labels = dict(STAFF_ROLE_OPTIONS)
+    return labels.get(value, value.replace("_", " ").title() if value else "Member Advisor")
+
+
+def _staff_role_select(selected: object = "member_advisor") -> str:
+    selected_key = normalize_staff_role(str(selected or ""), fallback="member_advisor")
+    options = []
+    for key, label in STAFF_ROLE_OPTIONS:
+        selected_attr = " selected" if key == selected_key else ""
+        options.append(f'<option value="{_esc(key)}"{selected_attr}>{_esc(label)}</option>')
+    return f"<select name=\"role\">{''.join(options)}</select>"
+
+
 def _redirect(request: Request, path: str) -> RedirectResponse:
     return RedirectResponse(_href(request, path), status_code=303)
 
@@ -158,6 +176,7 @@ def _layout(request: Request, title: str, body: str) -> HTMLResponse:
             ("/admin/reports/visits", "Visit report"),
             ("/admin/sms-diagnostics", "SMS"),
             ("/admin/tasks", "Tasks"),
+            ("/admin/okrs", "OKRs"),
             ("/admin/surveys", "Surveys"),
             ("/admin/survey-config", "Survey setup"),
             ("/admin/import", "Import"),
@@ -274,6 +293,28 @@ def _layout(request: Request, title: str, body: str) -> HTMLResponse:
       background: #fff;
     }}
     .priority-high {{ color: var(--danger); font-weight: 800; }}
+    .rag {{
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 9px;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }}
+    .rag-green {{ background: #e7f6ec; color: #166534; border: 1px solid #bfe6ca; }}
+    .rag-amber {{ background: #fff7df; color: #92400e; border: 1px solid #f2d086; }}
+    .rag-red {{ background: #fff1ef; color: #991b1b; border: 1px solid #efb4aa; }}
+    .rag-grey {{ background: #f3f5f2; color: var(--muted); border: 1px solid var(--line); }}
+    .progress-mini {{
+      min-width: 120px;
+      height: 12px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #f3f5f2;
+      overflow: hidden;
+      margin-top: 4px;
+    }}
+    .progress-mini span {{ display: block; height: 100%; background: var(--accent); }}
     .error {{
       display: inline-block;
       border: 1px solid #f0b4aa;
@@ -623,6 +664,73 @@ def _send_segment(
 
 def _datetime(value) -> str:
     return value.strftime("%d/%m/%y %H:%M") if value else ""
+
+
+def _current_quarter(today: date | None = None) -> str:
+    value = today or date.today()
+    quarter = ((value.month - 1) // 3) + 1
+    return f"{value.year}-Q{quarter}"
+
+
+def _normalize_quarter(value: object) -> str:
+    token = str(value or "").strip().upper().replace(" ", "")
+    if len(token) == 6 and token[:4].isdigit() and token[4] == "Q" and token[5] in {"1", "2", "3", "4"}:
+        return token
+    return _current_quarter()
+
+
+def _parse_float(value: object, fallback: float = 0.0) -> float:
+    try:
+        return float(str(value or "").strip())
+    except Exception:
+        return fallback
+
+
+def _format_number(value: object) -> str:
+    number = _parse_float(value)
+    if abs(number - round(number)) < 0.000001:
+        return str(int(round(number)))
+    return f"{number:.1f}".rstrip("0").rstrip(".")
+
+
+def _okr_percent(actual: object, target: object, direction: object = "increase") -> float | None:
+    target_value = _parse_float(target)
+    actual_value = _parse_float(actual)
+    if str(direction or "").strip().lower() == "decrease":
+        if target_value < 0:
+            return None
+        if actual_value <= 0:
+            return 100.0
+        return (target_value / actual_value) * 100.0
+    if target_value <= 0:
+        return None
+    return (actual_value / target_value) * 100.0
+
+
+def _okr_rag(percent: float | None) -> str:
+    if percent is None:
+        return "grey"
+    if percent >= 100:
+        return "green"
+    if percent >= 70:
+        return "amber"
+    return "red"
+
+
+def _okr_rag_html(percent: float | None) -> str:
+    rag = _okr_rag(percent)
+    label = {"green": "Green", "amber": "Amber", "red": "Red"}.get(rag, "Not set")
+    return f'<span class="rag rag-{rag}">{label}</span>'
+
+
+def _okr_percent_html(percent: float | None) -> str:
+    if percent is None:
+        return '<span class="muted">No target</span>'
+    width = max(0, min(100, round(percent)))
+    return (
+        f"<strong>{percent:.1f}%</strong>"
+        f'<div class="progress-mini"><span style="width: {width}%"></span></div>'
+    )
 
 
 def _public_base_url(request: Request) -> str:
@@ -1078,6 +1186,7 @@ def _setup_form(request: Request, *, error: str = "") -> HTMLResponse:
   <label><span>Name</span><input name="name" autocomplete="name" required></label>
   <label><span>Username</span><input name="username" autocomplete="username"></label>
   <label><span>Email</span><input name="email" type="email" autocomplete="username" required></label>
+  <label><span>Mobile number</span><input name="mobile" inputmode="tel"></label>
   <label><span>Password</span><input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
   <button type="submit">Create staff account</button>
 </form>"""
@@ -1105,6 +1214,7 @@ def staff_setup_save(
     name: str = Form(...),
     username: str = Form(""),
     email: str = Form(...),
+    mobile: str = Form(""),
     password: str = Form(...),
     session: Session = Depends(get_session),
 ):
@@ -1117,6 +1227,7 @@ def staff_setup_save(
             session,
             username=username or None,
             email=email,
+            mobile=mobile,
             name=name,
             password=password,
             role="owner",
@@ -1208,6 +1319,415 @@ def dashboard(request: Request, session: Session = Depends(get_session), _: None
   </div>
 </section>"""
     return _layout(request, "Dashboard", body)
+
+
+@router.get("/admin/okrs", response_class=HTMLResponse)
+def okrs(
+    request: Request,
+    quarter: str = "",
+    created: int | None = None,
+    updated: int | None = None,
+    error: str = "",
+    session: Session = Depends(get_session),
+    _: None = Depends(require_admin),
+):
+    selected_quarter = _normalize_quarter(quarter)
+    staff_rows = (
+        session.execute(select(StaffUser).where(StaffUser.is_active.is_(True)).order_by(StaffUser.name.asc()))
+        .scalars()
+        .all()
+    )
+    objectives = (
+        session.execute(
+            select(OkrObjective)
+            .where(OkrObjective.quarter == selected_quarter)
+            .order_by(OkrObjective.area.asc(), OkrObjective.id.desc())
+        )
+        .scalars()
+        .all()
+    )
+
+    def staff_select(name: str, selected_id: int | None = None) -> str:
+        selected = int(selected_id or 0)
+        options = [f'<option value="0"{"" if selected else " selected"}>Team / unassigned</option>']
+        for staff in staff_rows:
+            selected_attr = " selected" if selected == int(staff.id) else ""
+            options.append(f'<option value="{int(staff.id)}"{selected_attr}>{_esc(staff.name)}</option>')
+        return f'<select name="{_esc(name)}">{"".join(options)}</select>'
+
+    def direction_select(selected: str | None = None) -> str:
+        value = str(selected or "increase").strip().lower()
+        return (
+            '<select name="direction">'
+            f'<option value="increase"{" selected" if value != "decrease" else ""}>Higher is better</option>'
+            f'<option value="decrease"{" selected" if value == "decrease" else ""}>Lower is better</option>'
+            "</select>"
+        )
+
+    def staff_name(staff_id: int | None) -> str:
+        if not staff_id:
+            return ""
+        staff = session.get(StaffUser, int(staff_id))
+        return str(getattr(staff, "name", "") or "").strip()
+
+    all_krs: list[OkrKeyResult] = []
+    for objective in objectives:
+        all_krs.extend(sorted(objective.key_results, key=lambda item: int(item.id or 0)))
+    percents = [
+        pct
+        for pct in (_okr_percent(kr.actual_value, kr.target_value, kr.direction) for kr in all_krs)
+        if pct is not None
+    ]
+    average_percent = (sum(percents) / len(percents)) if percents else None
+    rag_counts = {"green": 0, "amber": 0, "red": 0, "grey": 0}
+    for kr in all_krs:
+        rag_counts[_okr_rag(_okr_percent(kr.actual_value, kr.target_value, kr.direction))] += 1
+    average_percent_label = f"{average_percent:.1f}%" if average_percent is not None else "0%"
+    notice_parts = []
+    if created is not None:
+        notice_parts.append("OKR saved.")
+    if updated is not None:
+        notice_parts.append("Actual updated.")
+    if error:
+        notice_parts.append(str(error))
+    notice_class = "error" if error else "pill"
+    notice_html = f'<p><span class="{notice_class}">{_esc(" ".join(notice_parts))}</span></p>' if notice_parts else ""
+
+    objective_sections = []
+    for objective in objectives:
+        key_results = sorted(objective.key_results, key=lambda item: int(item.id or 0))
+        objective_percents = [
+            pct
+            for pct in (_okr_percent(kr.actual_value, kr.target_value, kr.direction) for kr in key_results)
+            if pct is not None
+        ]
+        objective_percent = (sum(objective_percents) / len(objective_percents)) if objective_percents else None
+        owner = staff_name(objective.owner_staff_id)
+        champions = str(getattr(objective, "champions", "") or "").strip()
+        kr_rows = []
+        kr_amend_forms = []
+        for kr in key_results:
+            percent = _okr_percent(kr.actual_value, kr.target_value, kr.direction)
+            assigned = staff_name(kr.assigned_staff_id)
+            if str(kr.allocation_type or "").strip().lower() == "individual" and assigned:
+                allocated_to = assigned
+            else:
+                allocated_to = str(kr.team_label or "").strip() or "Team"
+            unit = str(kr.unit or "").strip()
+            direction_label = "Lower is better" if str(kr.direction or "").strip().lower() == "decrease" else "Higher is better"
+            target_label = f"{_format_number(kr.target_value)} {unit}".strip()
+            actual_label = f"{_format_number(kr.actual_value)} {unit}".strip()
+            kr_rows.append(
+                "<tr>"
+                f"<td>{_esc(kr.title)}<br><span class=\"muted\">Allocated to: {_esc(allocated_to)}</span></td>"
+                f"<td>{_esc(target_label)}<br><span class=\"muted\">{_esc(direction_label)}</span></td>"
+                f"<td>{_esc(actual_label)}</td>"
+                f"<td>{_okr_percent_html(percent)}</td>"
+                f"<td>{_okr_rag_html(percent)}</td>"
+                "<td>"
+                f"<form method=\"post\" action=\"{_post_action(request, f'/admin/okrs/key-results/{int(kr.id)}/actual')}\" class=\"inline\">"
+                f"<input type=\"hidden\" name=\"quarter\" value=\"{_esc(selected_quarter)}\">"
+                f"<input type=\"number\" step=\"0.01\" min=\"0\" name=\"actual_value\" value=\"{_esc(_format_number(kr.actual_value))}\" style=\"max-width: 120px;\">"
+                "<button type=\"submit\">Update</button>"
+                "</form>"
+                "</td>"
+                "</tr>"
+            )
+            allocation_value = str(kr.allocation_type or "team").strip().lower()
+            team_selected = " selected" if allocation_value != "individual" else ""
+            individual_selected = " selected" if allocation_value == "individual" else ""
+            kr_amend_forms.append(
+                f"""
+<form method="post" action="{_post_action(request, f'/admin/okrs/key-results/{int(kr.id)}/update')}" class="stack">
+  <input type="hidden" name="quarter" value="{_esc(selected_quarter)}">
+  <div class="grid">
+    <label><span>Key result</span><input name="title" value="{_esc(kr.title)}" required></label>
+    <label><span>Target</span><input name="target_value" type="number" step="0.01" min="0.01" value="{_esc(_format_number(kr.target_value))}" required></label>
+    <label><span>Actual</span><input name="actual_value" type="number" step="0.01" min="0" value="{_esc(_format_number(kr.actual_value))}"></label>
+    <label><span>Unit</span><input name="unit" value="{_esc(unit)}"></label>
+    <label><span>RAG direction</span>{direction_select(kr.direction)}</label>
+    <label><span>Allocation</span><select name="allocation_type">
+      <option value="team"{team_selected}>Team</option>
+      <option value="individual"{individual_selected}>Individual staff</option>
+    </select></label>
+    <label><span>Team label</span><input name="team_label" value="{_esc(kr.team_label or '')}"></label>
+    <label><span>Staff owner</span>{staff_select("assigned_staff_id", kr.assigned_staff_id)}</label>
+  </div>
+  <button type="submit" class="secondary">Save key result</button>
+</form>"""
+            )
+        objective_sections.append(
+            f"""
+<section>
+  <div class="inline" style="justify-content: space-between;">
+    <div>
+      <h2>{_esc(objective.area)}: {_esc(objective.title)}</h2>
+      <p class="muted">{_esc(objective.description or '')}</p>
+      <p class="muted">Quarter: {_esc(objective.quarter)}{f' · Champions: {_esc(champions)}' if champions else ''}{f' · Owner: {_esc(owner)}' if owner else ''}</p>
+    </div>
+    <div>{_okr_rag_html(objective_percent)}<br>{_okr_percent_html(objective_percent)}</div>
+  </div>
+  <details>
+    <summary class="button secondary">Amend objective</summary>
+    <form method="post" action="{_post_action(request, f'/admin/okrs/objectives/{int(objective.id)}/update')}" class="stack" style="margin-top: 12px;">
+      <input type="hidden" name="quarter" value="{_esc(selected_quarter)}">
+      <div class="grid">
+        <label><span>Quarter</span><input name="objective_quarter" value="{_esc(objective.quarter)}" required></label>
+        <label><span>Area</span><input name="area" value="{_esc(objective.area)}" required></label>
+        <label><span>Champions</span><input name="champions" value="{_esc(champions)}"></label>
+        <label><span>Objective</span><input name="title" value="{_esc(objective.title)}" required></label>
+        <label><span>Objective owner</span>{staff_select("owner_staff_id", objective.owner_staff_id)}</label>
+      </div>
+      <label><span>Description</span><textarea name="description">{_esc(objective.description or '')}</textarea></label>
+      <button type="submit" class="secondary">Save objective</button>
+    </form>
+  </details>
+  <h3>Key Results</h3>
+  <table>
+    <thead><tr><th>KR</th><th>Target</th><th>Actual</th><th>Achieved</th><th>RAG</th><th>Enter actual</th></tr></thead>
+    <tbody>{''.join(kr_rows) or '<tr><td colspan="6">No key results yet.</td></tr>'}</tbody>
+  </table>
+  <h3>Add Key Result</h3>
+  <form method="post" action="{_post_action(request, f'/admin/okrs/objectives/{int(objective.id)}/key-results')}" class="stack">
+    <input type="hidden" name="quarter" value="{_esc(selected_quarter)}">
+    <div class="grid">
+      <label><span>Key result</span><input name="title" required placeholder="e.g. Increase attended inductions"></label>
+      <label><span>Target</span><input name="target_value" type="number" step="0.01" min="0.01" required></label>
+      <label><span>Unit</span><input name="unit" placeholder="%, visits, calls, members"></label>
+      <label><span>RAG direction</span>{direction_select()}</label>
+      <label><span>Allocation</span><select name="allocation_type">
+        <option value="team">Team</option>
+        <option value="individual">Individual staff</option>
+      </select></label>
+      <label><span>Team label</span><input name="team_label" placeholder="Team"></label>
+      <label><span>Staff owner</span>{staff_select("assigned_staff_id")}</label>
+    </div>
+    <button type="submit">Add key result</button>
+  </form>
+  <details>
+    <summary class="button secondary">Amend key results</summary>
+    <div class="stack" style="margin-top: 12px;">{''.join(kr_amend_forms) or '<p class="muted">No key results to amend yet.</p>'}</div>
+  </details>
+</section>"""
+        )
+
+    body = f"""
+<section>
+  <div class="inline" style="justify-content: space-between;">
+    <div>
+      <h2>Quarterly OKRs</h2>
+      <p class="muted">Set area objectives with measurable key results. Actuals can be updated as the quarter progresses.</p>
+    </div>
+    <form method="get" action="{_href(request, '/admin/okrs')}" class="inline">
+      <label><span>Quarter</span><input name="quarter" value="{_esc(selected_quarter)}" placeholder="2026-Q2"></label>
+      <button type="submit">View</button>
+    </form>
+  </div>
+  {notice_html}
+  <div class="grid">
+    <div class="metric"><strong>{len(objectives)}</strong><span>Objectives</span></div>
+    <div class="metric"><strong>{len(all_krs)}</strong><span>Key results</span></div>
+    <div class="metric"><strong>{average_percent_label}</strong><span>Average achieved</span></div>
+    <div class="metric"><strong>{rag_counts['green']}</strong><span>Green KRs</span></div>
+    <div class="metric"><strong>{rag_counts['amber']}</strong><span>Amber KRs</span></div>
+    <div class="metric"><strong>{rag_counts['red']}</strong><span>Red KRs</span></div>
+  </div>
+</section>
+<section>
+  <h2>Create Objective</h2>
+  <form method="post" action="{_post_action(request, '/admin/okrs/objectives')}" class="stack">
+    <div class="grid">
+      <label><span>Quarter</span><input name="quarter" value="{_esc(selected_quarter)}" placeholder="2026-Q2" required></label>
+      <label><span>Area</span><input name="area" placeholder="Sales, retention, operations" required></label>
+      <label><span>Champions</span><input name="champions" placeholder="Team or staff names"></label>
+      <label><span>Objective</span><input name="title" placeholder="Improve new member onboarding" required></label>
+      <label><span>Objective owner</span>{staff_select("owner_staff_id")}</label>
+    </div>
+    <label><span>Description</span><textarea name="description" placeholder="What outcome should this objective create?"></textarea></label>
+    <button type="submit">Create objective</button>
+  </form>
+</section>
+{''.join(objective_sections) or '<section><h2>No OKRs for this quarter yet.</h2><p class="muted">Create an objective above, then add measurable key results.</p></section>'}"""
+    return _layout(request, "OKRs", body)
+
+
+@router.post("/admin/okrs/objectives")
+def okr_create_objective(
+    request: Request,
+    quarter: str = Form(""),
+    area: str = Form(""),
+    title: str = Form(""),
+    description: str = Form(""),
+    champions: str = Form(""),
+    owner_staff_id: int = Form(0),
+    session: Session = Depends(get_session),
+    _: None = Depends(require_admin),
+):
+    selected_quarter = _normalize_quarter(quarter)
+    area_text = str(area or "").strip()
+    title_text = str(title or "").strip()
+    if not area_text or not title_text:
+        return _redirect(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'error': 'Enter an area and objective.'})}")
+    owner_id = int(owner_staff_id or 0)
+    if owner_id and session.get(StaffUser, owner_id) is None:
+        owner_id = 0
+    row = OkrObjective(
+        quarter=selected_quarter,
+        area=area_text,
+        title=title_text,
+        description=str(description or "").strip() or None,
+        champions=str(champions or "").strip() or None,
+        owner_staff_id=owner_id or None,
+        status="active",
+    )
+    session.add(row)
+    session.commit()
+    return _redirect(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'created': 1})}")
+
+
+@router.post("/admin/okrs/objectives/{objective_id}/update")
+def okr_update_objective(
+    request: Request,
+    objective_id: int,
+    quarter: str = Form(""),
+    objective_quarter: str = Form(""),
+    area: str = Form(""),
+    title: str = Form(""),
+    description: str = Form(""),
+    champions: str = Form(""),
+    owner_staff_id: int = Form(0),
+    session: Session = Depends(get_session),
+    _: None = Depends(require_admin),
+):
+    row = session.get(OkrObjective, int(objective_id))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Objective not found")
+    selected_quarter = _normalize_quarter(objective_quarter or quarter or row.quarter)
+    area_text = str(area or "").strip()
+    title_text = str(title or "").strip()
+    if not area_text or not title_text:
+        return _redirect(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'error': 'Enter an area and objective.'})}")
+    owner_id = int(owner_staff_id or 0)
+    if owner_id and session.get(StaffUser, owner_id) is None:
+        owner_id = 0
+    row.quarter = selected_quarter
+    row.area = area_text
+    row.title = title_text
+    row.description = str(description or "").strip() or None
+    row.champions = str(champions or "").strip() or None
+    row.owner_staff_id = owner_id or None
+    session.add(row)
+    session.commit()
+    return _redirect(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'updated': 1})}")
+
+
+@router.post("/admin/okrs/objectives/{objective_id}/key-results")
+def okr_create_key_result(
+    request: Request,
+    objective_id: int,
+    quarter: str = Form(""),
+    title: str = Form(""),
+    target_value: str = Form(""),
+    unit: str = Form(""),
+    direction: str = Form("increase"),
+    allocation_type: str = Form("team"),
+    team_label: str = Form(""),
+    assigned_staff_id: int = Form(0),
+    session: Session = Depends(get_session),
+    _: None = Depends(require_admin),
+):
+    objective = session.get(OkrObjective, int(objective_id))
+    if objective is None:
+        raise HTTPException(status_code=404, detail="Objective not found")
+    selected_quarter = _normalize_quarter(quarter or objective.quarter)
+    title_text = str(title or "").strip()
+    target = _parse_float(target_value)
+    if not title_text or target <= 0:
+        return _redirect(
+            request,
+            f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'error': 'Enter a key result and a target above zero.'})}",
+        )
+    allocation = "individual" if str(allocation_type or "").strip().lower() == "individual" else "team"
+    staff_id = int(assigned_staff_id or 0)
+    if allocation != "individual" or not staff_id or session.get(StaffUser, staff_id) is None:
+        staff_id = 0
+    row = OkrKeyResult(
+        objective_id=int(objective.id),
+        title=title_text,
+        target_value=target,
+        actual_value=0.0,
+        unit=str(unit or "").strip() or None,
+        direction="decrease" if str(direction or "").strip().lower() == "decrease" else "increase",
+        allocation_type=allocation,
+        assigned_staff_id=staff_id or None,
+        team_label=(str(team_label or "").strip() or "Team") if allocation == "team" else None,
+    )
+    session.add(row)
+    session.commit()
+    return _redirect(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'created': 1})}")
+
+
+@router.post("/admin/okrs/key-results/{kr_id}/update")
+def okr_update_key_result(
+    request: Request,
+    kr_id: int,
+    quarter: str = Form(""),
+    title: str = Form(""),
+    target_value: str = Form(""),
+    actual_value: str = Form(""),
+    unit: str = Form(""),
+    direction: str = Form("increase"),
+    allocation_type: str = Form("team"),
+    team_label: str = Form(""),
+    assigned_staff_id: int = Form(0),
+    session: Session = Depends(get_session),
+    _: None = Depends(require_admin),
+):
+    row = session.get(OkrKeyResult, int(kr_id))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Key result not found")
+    selected_quarter = _normalize_quarter(quarter or getattr(row.objective, "quarter", ""))
+    title_text = str(title or "").strip()
+    target = _parse_float(target_value)
+    if not title_text or target <= 0:
+        return _redirect(
+            request,
+            f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'error': 'Enter a key result and a target above zero.'})}",
+        )
+    allocation = "individual" if str(allocation_type or "").strip().lower() == "individual" else "team"
+    staff_id = int(assigned_staff_id or 0)
+    if allocation != "individual" or not staff_id or session.get(StaffUser, staff_id) is None:
+        staff_id = 0
+    row.title = title_text
+    row.target_value = target
+    row.actual_value = max(0.0, _parse_float(actual_value))
+    row.unit = str(unit or "").strip() or None
+    row.direction = "decrease" if str(direction or "").strip().lower() == "decrease" else "increase"
+    row.allocation_type = allocation
+    row.assigned_staff_id = staff_id or None
+    row.team_label = (str(team_label or "").strip() or "Team") if allocation == "team" else None
+    session.add(row)
+    session.commit()
+    return _redirect(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'updated': 1})}")
+
+
+@router.post("/admin/okrs/key-results/{kr_id}/actual")
+def okr_update_key_result_actual(
+    request: Request,
+    kr_id: int,
+    actual_value: str = Form(""),
+    quarter: str = Form(""),
+    session: Session = Depends(get_session),
+    _: None = Depends(require_admin),
+):
+    row = session.get(OkrKeyResult, int(kr_id))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Key result not found")
+    selected_quarter = _normalize_quarter(quarter or getattr(row.objective, "quarter", ""))
+    row.actual_value = max(0.0, _parse_float(actual_value))
+    session.add(row)
+    session.commit()
+    return _redirect(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'updated': 1})}")
 
 
 def _configured(value: object) -> str:
@@ -1389,14 +1909,29 @@ def staff_admin(
   <button type="submit" class="secondary">{toggle_label}</button>
 </form>"""
         )
+        edit_form = f"""
+<details>
+  <summary class="button secondary">Amend</summary>
+  <form method="post" action="{_post_action(request, f'/admin/staff/{int(row.id)}/update')}" class="stack" style="margin-top: 12px;">
+    <div class="grid">
+      <label><span>Name</span><input name="name" value="{_esc(row.name)}" required></label>
+      <label><span>Username</span><input name="username" value="{_esc(row.username or '')}"></label>
+      <label><span>Email</span><input name="email" type="email" value="{_esc(row.email)}" required></label>
+      <label><span>Mobile number</span><input name="mobile" value="{_esc(getattr(row, 'mobile', '') or '')}" inputmode="tel"></label>
+      <label><span>Role</span>{_staff_role_select(row.role)}</label>
+      <label><span>New password</span><input name="password" type="password" minlength="8" placeholder="Leave blank to keep current"></label>
+    </div>
+    <button type="submit" class="secondary">Save staff record</button>
+  </form>
+</details>"""
         table_rows.append(
             "<tr>"
-            f"<td>{_esc(row.name)}<br><span class=\"muted\">{_esc(row.username or '')}</span><br><span class=\"muted\">{_esc(row.email)}</span></td>"
-            f"<td><span class=\"pill\">{_esc(row.role)}</span></td>"
+            f"<td>{_esc(row.name)}<br><span class=\"muted\">{_esc(row.username or '')}</span><br><span class=\"muted\">{_esc(row.email)}</span><br><span class=\"muted\">{_esc(getattr(row, 'mobile', '') or 'No mobile')}</span></td>"
+            f"<td><span class=\"pill\">{_esc(_staff_role_label(row.role))}</span></td>"
             f"<td>{_esc(status)}</td>"
             f"<td>{_esc(_datetime(row.last_login_at)) or 'Not yet'}</td>"
             f"<td>{_esc(_datetime(row.created_at))}</td>"
-            f"<td>{toggle}</td>"
+            f"<td>{toggle}{edit_form}</td>"
             "</tr>"
         )
     body = f"""
@@ -1409,12 +1944,9 @@ def staff_admin(
       <label><span>Name</span><input name="name" required></label>
       <label><span>Username</span><input name="username"></label>
       <label><span>Email</span><input name="email" type="email" required></label>
+      <label><span>Mobile number</span><input name="mobile" inputmode="tel"></label>
       <label><span>Password</span><input name="password" type="password" minlength="8" required></label>
-      <label><span>Role</span><select name="role">
-        <option value="staff">Staff</option>
-        <option value="admin">Admin</option>
-        <option value="owner">Owner</option>
-      </select></label>
+      <label><span>Role</span>{_staff_role_select("member_advisor")}</label>
     </div>
     <button type="submit">Add staff</button>
   </form>
@@ -1435,8 +1967,9 @@ def staff_create(
     name: str = Form(...),
     username: str = Form(""),
     email: str = Form(...),
+    mobile: str = Form(""),
     password: str = Form(...),
-    role: str = Form("staff"),
+    role: str = Form("member_advisor"),
     session: Session = Depends(get_session),
     _: None = Depends(require_admin),
 ):
@@ -1445,6 +1978,7 @@ def staff_create(
             session,
             username=username or None,
             email=email,
+            mobile=mobile,
             name=name,
             password=password,
             role=role,
@@ -1455,6 +1989,40 @@ def staff_create(
         session.rollback()
         return _redirect(request, f"/admin/staff?{urlencode({'error': str(exc)})}")
     return _redirect(request, "/admin/staff?created=1")
+
+
+@router.post("/admin/staff/{staff_id}/update")
+def staff_update(
+    request: Request,
+    staff_id: int,
+    name: str = Form(...),
+    username: str = Form(""),
+    email: str = Form(...),
+    mobile: str = Form(""),
+    password: str = Form(""),
+    role: str = Form("member_advisor"),
+    session: Session = Depends(get_session),
+    _: None = Depends(require_admin),
+):
+    row = session.get(StaffUser, int(staff_id))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Staff account not found")
+    try:
+        update_staff_user(
+            session,
+            row,
+            username=username or None,
+            email=email,
+            mobile=mobile,
+            name=name,
+            password=password,
+            role=role,
+        )
+        session.commit()
+    except ValueError as exc:
+        session.rollback()
+        return _redirect(request, f"/admin/staff?{urlencode({'error': str(exc)})}")
+    return _redirect(request, "/admin/staff?updated=1")
 
 
 @router.post("/admin/staff/{staff_id}/toggle")

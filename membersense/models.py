@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, Boolean, Column, Date, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import JSON, Boolean, Column, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 
 from .db import Base
@@ -125,12 +125,51 @@ class StaffUser(Base):
     username = Column(String(80), nullable=True, unique=True, index=True)
     email = Column(String(255), nullable=False, unique=True, index=True)
     name = Column(String(160), nullable=False)
+    mobile = Column(String(64), nullable=True)
     password_hash = Column(String(255), nullable=False)
     role = Column(String(32), nullable=False, default="staff", index=True)
     is_active = Column(Boolean, nullable=False, default=True, index=True)
     last_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class OkrObjective(Base):
+    __tablename__ = "membersense_okr_objectives"
+
+    id = Column(Integer, primary_key=True)
+    quarter = Column(String(16), nullable=False, index=True)
+    area = Column(String(160), nullable=False, index=True)
+    title = Column(String(240), nullable=False)
+    description = Column(Text, nullable=True)
+    champions = Column(String(240), nullable=True)
+    owner_staff_id = Column(Integer, ForeignKey("membersense_staff_users.id", ondelete="SET NULL"), nullable=True, index=True)
+    status = Column(String(32), nullable=False, default="active", index=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    owner = relationship("StaffUser", foreign_keys=[owner_staff_id])
+    key_results = relationship("OkrKeyResult", back_populates="objective", cascade="all, delete-orphan")
+
+
+class OkrKeyResult(Base):
+    __tablename__ = "membersense_okr_key_results"
+
+    id = Column(Integer, primary_key=True)
+    objective_id = Column(Integer, ForeignKey("membersense_okr_objectives.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(240), nullable=False)
+    target_value = Column(Float, nullable=False, default=0.0)
+    actual_value = Column(Float, nullable=False, default=0.0)
+    unit = Column(String(40), nullable=True)
+    direction = Column(String(24), nullable=False, default="increase")
+    allocation_type = Column(String(24), nullable=False, default="team", index=True)
+    assigned_staff_id = Column(Integer, ForeignKey("membersense_staff_users.id", ondelete="SET NULL"), nullable=True, index=True)
+    team_label = Column(String(160), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    objective = relationship("OkrObjective", back_populates="key_results")
+    assigned_staff = relationship("StaffUser", foreign_keys=[assigned_staff_id])
 
 
 class ImportBatch(Base):
