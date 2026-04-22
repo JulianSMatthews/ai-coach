@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from html import escape
 from urllib.parse import urlencode
 
@@ -667,6 +667,16 @@ def _datetime(value) -> str:
     return value.strftime("%d/%m/%y %H:%M") if value else ""
 
 
+def _okr_actual_updated_html(value: object) -> str:
+    if not value:
+        return ""
+    if hasattr(value, "strftime"):
+        label = value.strftime("%d/%m/%y")
+    else:
+        label = str(value)[:10]
+    return f' <small class="muted">(last updated {_esc(label)})</small>'
+
+
 def _current_quarter(today: date | None = None) -> str:
     value = today or date.today()
     quarter = ((value.month - 1) // 3) + 1
@@ -713,6 +723,62 @@ def _okr_percent(actual: object, target: object, direction: object = "increase")
     if target_value <= 0:
         return None
     return (actual_value / target_value) * 100.0
+
+
+def _quarter_bounds(quarter: object) -> tuple[date, date]:
+    token = _normalize_quarter(quarter)
+    year = int(token[:4])
+    quarter_number = int(token[-1])
+    start_month = ((quarter_number - 1) * 3) + 1
+    start = date(year, start_month, 1)
+    if quarter_number == 4:
+        end = date(year, 12, 31)
+    else:
+        end = date(year, start_month + 3, 1) - timedelta(days=1)
+    return start, end
+
+
+def _quarter_elapsed_fraction(quarter: object, today: date | None = None) -> float:
+    start, end = _quarter_bounds(quarter)
+    value = today or date.today()
+    if value < start:
+        return 0.0
+    if value > end:
+        return 1.0
+    total_days = max(1, (end - start).days + 1)
+    elapsed_days = (value - start).days + 1
+    return max(0.0, min(1.0, elapsed_days / total_days))
+
+
+def _okr_pace_percent(actual: object, target: object, direction: object, quarter: object) -> float | None:
+    if str(direction or "").strip().lower() == "decrease":
+        return _okr_percent(actual, target, direction)
+    target_value = _parse_float(target)
+    actual_value = _parse_float(actual)
+    if target_value <= 0:
+        return None
+    elapsed_fraction = _quarter_elapsed_fraction(quarter)
+    if elapsed_fraction <= 0:
+        return 100.0 if actual_value > 0 else None
+    expected_by_now = target_value * elapsed_fraction
+    if expected_by_now <= 0:
+        return None
+    return (actual_value / expected_by_now) * 100.0
+
+
+def _okr_pace_hint_html(target: object, direction: object, unit: object, quarter: object) -> str:
+    if str(direction or "").strip().lower() == "decrease":
+        return '<small class="muted">Threshold based</small>'
+    target_value = _parse_float(target)
+    if target_value <= 0:
+        return ""
+    elapsed_fraction = _quarter_elapsed_fraction(quarter)
+    if elapsed_fraction <= 0:
+        return '<small class="muted">Quarter not started</small>'
+    expected_by_now = target_value * elapsed_fraction
+    expected_label = f"{_format_number(expected_by_now)} {str(unit or '').strip()}".strip()
+    elapsed_label = f"{_format_number(elapsed_fraction * 100)}%"
+    return f'<small class="muted">Expected by now: {_esc(expected_label)} ({_esc(elapsed_label)} of quarter)</small>'
 
 
 def _okr_rag(percent: float | None) -> str:
@@ -1377,7 +1443,7 @@ def okrs(
     average_percent = (sum(percents) / len(percents)) if percents else None
     rag_counts = {"green": 0, "amber": 0, "red": 0, "grey": 0}
     for kr in all_krs:
-        rag_counts[_okr_rag(_okr_percent(kr.actual_value, kr.target_value, kr.direction))] += 1
+        rag_counts[_okr_rag(_okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter))] += 1
     average_percent_label = f"{average_percent:.1f}%" if average_percent is not None else "0%"
     config_href = _href(request, f"/admin/okrs/config?{urlencode({'quarter': selected_quarter})}")
     notice_parts = []
@@ -1399,7 +1465,20 @@ def okrs(
             for pct in (_okr_percent(kr.actual_value, kr.target_value, kr.direction) for kr in key_results)
             if pct is not None
         ]
+        objective_pace_percents = [
+            pct
+            for pct in (
+                _okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter)
+                for kr in key_results
+            )
+            if pct is not None
+        ]
         objective_percent = (sum(objective_percents) / len(objective_percents)) if objective_percents else None
+        objective_pace_percent = (
+            sum(objective_pace_percents) / len(objective_pace_percents)
+            if objective_pace_percents
+            else None
+        )
         owner = staff_name(objective.owner_staff_id)
         champions = str(getattr(objective, "champions", "") or "").strip()
         kr_rows = []
@@ -1407,6 +1486,7 @@ def okrs(
             kr_part_number = _parse_int(getattr(kr, "key_result_number", None), kr_index) or kr_index
             kr_number = f"{objective_number}.{kr_part_number}"
             percent = _okr_percent(kr.actual_value, kr.target_value, kr.direction)
+            pace_percent = _okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter)
             assigned = staff_name(kr.assigned_staff_id)
             if str(kr.allocation_type or "").strip().lower() == "individual" and assigned:
                 allocated_to = assigned
@@ -1416,14 +1496,16 @@ def okrs(
             direction_label = "Lower is better" if str(kr.direction or "").strip().lower() == "decrease" else "Higher is better"
             target_label = f"{_format_number(kr.target_value)} {unit}".strip()
             actual_label = f"{_format_number(kr.actual_value)} {unit}".strip()
+            actual_updated_html = _okr_actual_updated_html(getattr(kr, "actual_updated_at", None))
+            pace_hint_html = _okr_pace_hint_html(kr.target_value, kr.direction, unit, selected_quarter)
             kr_rows.append(
                 "<tr>"
                 f"<td><strong>{_esc(kr_number)}</strong></td>"
-                f"<td>{_esc(kr.title)}<br><span class=\"muted\">Allocated to: {_esc(allocated_to)}</span></td>"
+                f"<td>{_esc(kr.title)}{actual_updated_html}<br><span class=\"muted\">Allocated to: {_esc(allocated_to)}</span></td>"
                 f"<td>{_esc(target_label)}<br><span class=\"muted\">{_esc(direction_label)}</span></td>"
                 f"<td>{_esc(actual_label)}</td>"
                 f"<td>{_okr_percent_html(percent)}</td>"
-                f"<td>{_okr_rag_html(percent)}</td>"
+                f"<td>{_okr_rag_html(pace_percent)}<br>{pace_hint_html}</td>"
                 "<td>"
                 '<div class="stack">'
                 f"<form method=\"post\" action=\"{_post_action(request, f'/admin/okrs/key-results/{int(kr.id)}/actual')}\" class=\"inline\">"
@@ -1445,11 +1527,11 @@ def okrs(
       <p class="muted">{_esc(objective.description or '')}</p>
       <p class="muted">Quarter: {_esc(objective.quarter)}{f' · Champions: {_esc(champions)}' if champions else ''}{f' · Owner: {_esc(owner)}' if owner else ''}</p>
     </div>
-    <div>{_okr_rag_html(objective_percent)}<br>{_okr_percent_html(objective_percent)}</div>
+    <div>{_okr_rag_html(objective_pace_percent)}<br>{_okr_percent_html(objective_percent)}</div>
   </div>
   <h3>Key Results for Objective {objective_number}</h3>
   <table>
-    <thead><tr><th>No.</th><th>Key result</th><th>Target</th><th>Actual</th><th>Achieved</th><th>RAG</th><th>Actions</th></tr></thead>
+    <thead><tr><th>No.</th><th>Key result</th><th>Target</th><th>Actual</th><th>Achieved</th><th>Pace RAG</th><th>Actions</th></tr></thead>
     <tbody>{''.join(kr_rows) or '<tr><td colspan="7">No key results yet.</td></tr>'}</tbody>
   </table>
 </section>"""
@@ -1460,7 +1542,7 @@ def okrs(
   <div class="inline" style="justify-content: space-between;">
     <div>
       <h2>OKR Dashboard</h2>
-      <p class="muted">Track quarterly OKR progress and update actual results as the quarter progresses.</p>
+      <p class="muted">Track quarterly OKR progress and update actual results. RAG is based on expected progress for the time elapsed in the quarter.</p>
     </div>
     <div class="inline">
       <form method="get" action="{_href(request, '/admin/okrs')}" class="inline">
@@ -1887,6 +1969,7 @@ def okr_update_key_result(
     row.target_value = target
     if str(actual_value or "").strip():
         row.actual_value = max(0.0, _parse_float(actual_value))
+        row.actual_updated_at = datetime.utcnow()
     row.unit = str(unit or "").strip() or None
     row.direction = "decrease" if str(direction or "").strip().lower() == "decrease" else "increase"
     row.allocation_type = allocation
@@ -1911,6 +1994,7 @@ def okr_update_key_result_actual(
         raise HTTPException(status_code=404, detail="Key result not found")
     selected_quarter = _normalize_quarter(quarter or getattr(row.objective, "quarter", ""))
     row.actual_value = max(0.0, _parse_float(actual_value))
+    row.actual_updated_at = datetime.utcnow()
     session.add(row)
     session.commit()
     return _redirect(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'updated': 1})}")

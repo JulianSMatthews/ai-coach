@@ -149,6 +149,7 @@ def _migrate_okrs_table() -> None:
         },
         "membersense_okr_key_results": {
             "key_result_number": ("INTEGER", "INTEGER"),
+            "actual_updated_at": ("DATETIME", "TIMESTAMP"),
             "direction": ("VARCHAR(24)", "VARCHAR(24)"),
         },
     }

@@ -162,6 +162,7 @@ class OkrKeyResult(Base):
     title = Column(String(240), nullable=False)
     target_value = Column(Float, nullable=False, default=0.0)
     actual_value = Column(Float, nullable=False, default=0.0)
+    actual_updated_at = Column(DateTime, nullable=True)
     unit = Column(String(40), nullable=True)
     direction = Column(String(24), nullable=False, default="increase")
     allocation_type = Column(String(24), nullable=False, default="team", index=True)
