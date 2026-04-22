@@ -144,6 +144,7 @@ def _migrate_okrs_table() -> None:
     tables = {
         "membersense_okr_objectives": {
             "champions": ("VARCHAR(240)", "VARCHAR(240)"),
+            "objective_number": ("INTEGER", "INTEGER"),
         },
         "membersense_okr_key_results": {
             "direction": ("VARCHAR(24)", "VARCHAR(24)"),
@@ -158,7 +159,50 @@ def _migrate_okrs_table() -> None:
                 for name, (sqlite_type, _) in columns_to_add.items():
                     if name not in columns:
                         conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN {name} {sqlite_type}")
+                        columns.add(name)
+                if table_name == "membersense_okr_objectives" and "objective_number" in columns:
+                    conn.exec_driver_sql(
+                        "UPDATE membersense_okr_objectives "
+                        "SET objective_number = CASE lower(trim(area)) "
+                        "WHEN 'club growth' THEN 1 "
+                        "WHEN 'onboarding' THEN 2 "
+                        "WHEN 'experience' THEN 3 "
+                        "WHEN 'team onboarding' THEN 4 "
+                        "ELSE id END "
+                        "WHERE objective_number IS NULL"
+                    )
+                    conn.exec_driver_sql(
+                        "CREATE INDEX IF NOT EXISTS ix_membersense_okr_objectives_objective_number "
+                        "ON membersense_okr_objectives (objective_number)"
+                    )
+                if table_name == "membersense_okr_key_results" and "direction" in columns:
+                    conn.exec_driver_sql(
+                        "UPDATE membersense_okr_key_results "
+                        "SET direction = 'increase' "
+                        "WHERE direction IS NULL OR trim(direction) = ''"
+                    )
                 continue
             if dialect == "postgresql":
                 for name, (_, postgres_type) in columns_to_add.items():
                     conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {name} {postgres_type}")
+                if table_name == "membersense_okr_objectives":
+                    conn.exec_driver_sql(
+                        "UPDATE membersense_okr_objectives "
+                        "SET objective_number = CASE lower(trim(area)) "
+                        "WHEN 'club growth' THEN 1 "
+                        "WHEN 'onboarding' THEN 2 "
+                        "WHEN 'experience' THEN 3 "
+                        "WHEN 'team onboarding' THEN 4 "
+                        "ELSE id END "
+                        "WHERE objective_number IS NULL"
+                    )
+                    conn.exec_driver_sql(
+                        "CREATE INDEX IF NOT EXISTS ix_membersense_okr_objectives_objective_number "
+                        "ON membersense_okr_objectives (objective_number)"
+                    )
+                if table_name == "membersense_okr_key_results":
+                    conn.exec_driver_sql(
+                        "UPDATE membersense_okr_key_results "
+                        "SET direction = 'increase' "
+                        "WHERE direction IS NULL OR btrim(direction) = ''"
+                    )

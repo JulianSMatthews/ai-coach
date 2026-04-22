@@ -139,6 +139,7 @@ class OkrObjective(Base):
 
     id = Column(Integer, primary_key=True)
     quarter = Column(String(16), nullable=False, index=True)
+    objective_number = Column(Integer, nullable=True, index=True)
     area = Column(String(160), nullable=False, index=True)
     title = Column(String(240), nullable=False)
     description = Column(Text, nullable=True)

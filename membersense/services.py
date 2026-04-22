@@ -39,6 +39,7 @@ _SURVEY_AVATAR_THREADS: dict[str, threading.Thread] = {}
 
 Q2_2026_OKR_PRESET: tuple[dict[str, Any], ...] = (
     {
+        "number": 1,
         "area": "Club Growth",
         "champions": "Soph & Ben",
         "title": "Grow club revenue to GBP 70,000+ in Q2 to strengthen the club's financial foundation.",
@@ -57,6 +58,7 @@ Q2_2026_OKR_PRESET: tuple[dict[str, Any], ...] = (
         ),
     },
     {
+        "number": 2,
         "area": "Onboarding",
         "champions": "Tremaine",
         "title": "Ensure all new members engage with the 6-week onboarding programme to drive early habit formation and retention.",
@@ -70,6 +72,7 @@ Q2_2026_OKR_PRESET: tuple[dict[str, Any], ...] = (
         ),
     },
     {
+        "number": 3,
         "area": "Experience",
         "champions": "Soph",
         "title": "Deliver a consistently premium club experience that maximises member satisfaction and retention.",
@@ -86,6 +89,7 @@ Q2_2026_OKR_PRESET: tuple[dict[str, Any], ...] = (
         ),
     },
     {
+        "number": 4,
         "area": "Team Onboarding",
         "champions": "Soph",
         "title": "Ensure new team members are fully aligned with club standards, driving strong sales performance and member experience.",
@@ -1388,6 +1392,7 @@ def seed_default_okrs(session: Session) -> int:
     for item in Q2_2026_OKR_PRESET:
         objective = OkrObjective(
             quarter=quarter,
+            objective_number=int(item.get("number") or created + 1),
             area=str(item.get("area") or "").strip(),
             title=str(item.get("title") or "").strip(),
             description=str(item.get("description") or "").strip() or None,

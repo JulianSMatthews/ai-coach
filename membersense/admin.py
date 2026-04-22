@@ -176,7 +176,8 @@ def _layout(request: Request, title: str, body: str) -> HTMLResponse:
             ("/admin/reports/visits", "Visit report"),
             ("/admin/sms-diagnostics", "SMS"),
             ("/admin/tasks", "Tasks"),
-            ("/admin/okrs", "OKRs"),
+            ("/admin/okrs", "OKR dashboard"),
+            ("/admin/okrs/config", "OKR setup"),
             ("/admin/surveys", "Surveys"),
             ("/admin/survey-config", "Survey setup"),
             ("/admin/import", "Import"),
@@ -682,6 +683,13 @@ def _normalize_quarter(value: object) -> str:
 def _parse_float(value: object, fallback: float = 0.0) -> float:
     try:
         return float(str(value or "").strip())
+    except Exception:
+        return fallback
+
+
+def _parse_int(value: object, fallback: int = 0) -> int:
+    try:
+        return int(float(str(value or "").strip()))
     except Exception:
         return fallback
 
@@ -1332,6 +1340,151 @@ def okrs(
     _: None = Depends(require_admin),
 ):
     selected_quarter = _normalize_quarter(quarter)
+    objectives = (
+        session.execute(
+            select(OkrObjective)
+            .where(OkrObjective.quarter == selected_quarter)
+            .order_by(func.coalesce(OkrObjective.objective_number, 999999).asc(), OkrObjective.id.asc())
+        )
+        .scalars()
+        .all()
+    )
+
+    def staff_name(staff_id: int | None) -> str:
+        if not staff_id:
+            return ""
+        staff = session.get(StaffUser, int(staff_id))
+        return str(getattr(staff, "name", "") or "").strip()
+
+    all_krs: list[OkrKeyResult] = []
+    for objective in objectives:
+        all_krs.extend(sorted(objective.key_results, key=lambda item: int(item.id or 0)))
+    percents = [
+        pct
+        for pct in (_okr_percent(kr.actual_value, kr.target_value, kr.direction) for kr in all_krs)
+        if pct is not None
+    ]
+    average_percent = (sum(percents) / len(percents)) if percents else None
+    rag_counts = {"green": 0, "amber": 0, "red": 0, "grey": 0}
+    for kr in all_krs:
+        rag_counts[_okr_rag(_okr_percent(kr.actual_value, kr.target_value, kr.direction))] += 1
+    average_percent_label = f"{average_percent:.1f}%" if average_percent is not None else "0%"
+    config_href = _href(request, f"/admin/okrs/config?{urlencode({'quarter': selected_quarter})}")
+    notice_parts = []
+    if created is not None:
+        notice_parts.append("OKR saved.")
+    if updated is not None:
+        notice_parts.append("Actual updated.")
+    if error:
+        notice_parts.append(str(error))
+    notice_class = "error" if error else "pill"
+    notice_html = f'<p><span class="{notice_class}">{_esc(" ".join(notice_parts))}</span></p>' if notice_parts else ""
+
+    objective_sections = []
+    for objective_index, objective in enumerate(objectives, start=1):
+        objective_number = _parse_int(getattr(objective, "objective_number", None), objective_index) or objective_index
+        key_results = sorted(objective.key_results, key=lambda item: int(item.id or 0))
+        objective_percents = [
+            pct
+            for pct in (_okr_percent(kr.actual_value, kr.target_value, kr.direction) for kr in key_results)
+            if pct is not None
+        ]
+        objective_percent = (sum(objective_percents) / len(objective_percents)) if objective_percents else None
+        owner = staff_name(objective.owner_staff_id)
+        champions = str(getattr(objective, "champions", "") or "").strip()
+        kr_rows = []
+        for kr_index, kr in enumerate(key_results, start=1):
+            kr_number = f"{objective_number}.{kr_index}"
+            percent = _okr_percent(kr.actual_value, kr.target_value, kr.direction)
+            assigned = staff_name(kr.assigned_staff_id)
+            if str(kr.allocation_type or "").strip().lower() == "individual" and assigned:
+                allocated_to = assigned
+            else:
+                allocated_to = str(kr.team_label or "").strip() or "Team"
+            unit = str(kr.unit or "").strip()
+            direction_label = "Lower is better" if str(kr.direction or "").strip().lower() == "decrease" else "Higher is better"
+            target_label = f"{_format_number(kr.target_value)} {unit}".strip()
+            actual_label = f"{_format_number(kr.actual_value)} {unit}".strip()
+            kr_rows.append(
+                "<tr>"
+                f"<td><strong>{_esc(kr_number)}</strong></td>"
+                f"<td>{_esc(kr.title)}<br><span class=\"muted\">Allocated to: {_esc(allocated_to)}</span></td>"
+                f"<td>{_esc(target_label)}<br><span class=\"muted\">{_esc(direction_label)}</span></td>"
+                f"<td>{_esc(actual_label)}</td>"
+                f"<td>{_okr_percent_html(percent)}</td>"
+                f"<td>{_okr_rag_html(percent)}</td>"
+                "<td>"
+                '<div class="stack">'
+                f"<form method=\"post\" action=\"{_post_action(request, f'/admin/okrs/key-results/{int(kr.id)}/actual')}\" class=\"inline\">"
+                f"<input type=\"hidden\" name=\"quarter\" value=\"{_esc(selected_quarter)}\">"
+                f"<input type=\"number\" step=\"0.01\" min=\"0\" name=\"actual_value\" value=\"{_esc(_format_number(kr.actual_value))}\" style=\"max-width: 120px;\">"
+                "<button type=\"submit\">Update actual</button>"
+                "</form>"
+                "</div>"
+                "</td>"
+                "</tr>"
+            )
+        objective_sections.append(
+            f"""
+<section>
+  <div class="inline" style="justify-content: space-between;">
+    <div>
+      <h2>Objective {objective_number}: {_esc(objective.area)}</h2>
+      <p><strong>{_esc(objective.title)}</strong></p>
+      <p class="muted">{_esc(objective.description or '')}</p>
+      <p class="muted">Quarter: {_esc(objective.quarter)}{f' · Champions: {_esc(champions)}' if champions else ''}{f' · Owner: {_esc(owner)}' if owner else ''}</p>
+    </div>
+    <div>{_okr_rag_html(objective_percent)}<br>{_okr_percent_html(objective_percent)}</div>
+  </div>
+  <h3>Key Results for Objective {objective_number}</h3>
+  <table>
+    <thead><tr><th>No.</th><th>Key result</th><th>Target</th><th>Actual</th><th>Achieved</th><th>RAG</th><th>Actions</th></tr></thead>
+    <tbody>{''.join(kr_rows) or '<tr><td colspan="7">No key results yet.</td></tr>'}</tbody>
+  </table>
+</section>"""
+        )
+
+    body = f"""
+<section>
+  <div class="inline" style="justify-content: space-between;">
+    <div>
+      <h2>OKR Dashboard</h2>
+      <p class="muted">Track quarterly OKR progress and update actual results as the quarter progresses.</p>
+    </div>
+    <div class="inline">
+      <form method="get" action="{_href(request, '/admin/okrs')}" class="inline">
+        <label><span>Quarter</span><input name="quarter" value="{_esc(selected_quarter)}" placeholder="2026-Q2"></label>
+        <button type="submit">View</button>
+      </form>
+      <a class="button secondary" href="{config_href}">Configure OKRs</a>
+    </div>
+  </div>
+  {notice_html}
+  <div class="grid">
+    <div class="metric"><strong>{len(objectives)}</strong><span>Objectives</span></div>
+    <div class="metric"><strong>{len(all_krs)}</strong><span>Key results</span></div>
+    <div class="metric"><strong>{average_percent_label}</strong><span>Average achieved</span></div>
+    <div class="metric"><strong>{rag_counts['green']}</strong><span>Green KRs</span></div>
+    <div class="metric"><strong>{rag_counts['amber']}</strong><span>Amber KRs</span></div>
+    <div class="metric"><strong>{rag_counts['red']}</strong><span>Red KRs</span></div>
+  </div>
+</section>
+{''.join(objective_sections) or f'<section><h2>No OKRs for this quarter yet.</h2><p class="muted">Create objectives and key results in <a href="{config_href}">OKR setup</a>.</p></section>'}"""
+    return _layout(request, "OKRs", body)
+
+
+@router.get("/admin/okrs/config", response_class=HTMLResponse)
+def okr_config(
+    request: Request,
+    quarter: str = "",
+    created: int | None = None,
+    updated: int | None = None,
+    error: str = "",
+    session: Session = Depends(get_session),
+    _: None = Depends(require_admin),
+):
+    selected_quarter = _normalize_quarter(quarter)
+    dashboard_href = _href(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter})}")
     staff_rows = (
         session.execute(select(StaffUser).where(StaffUser.is_active.is_(True)).order_by(StaffUser.name.asc()))
         .scalars()
@@ -1341,7 +1494,7 @@ def okrs(
         session.execute(
             select(OkrObjective)
             .where(OkrObjective.quarter == selected_quarter)
-            .order_by(OkrObjective.area.asc(), OkrObjective.id.desc())
+            .order_by(func.coalesce(OkrObjective.objective_number, 999999).asc(), OkrObjective.id.asc())
         )
         .scalars()
         .all()
@@ -1373,105 +1526,88 @@ def okrs(
     all_krs: list[OkrKeyResult] = []
     for objective in objectives:
         all_krs.extend(sorted(objective.key_results, key=lambda item: int(item.id or 0)))
-    percents = [
-        pct
-        for pct in (_okr_percent(kr.actual_value, kr.target_value, kr.direction) for kr in all_krs)
-        if pct is not None
+    numbered_objectives = [
+        _parse_int(getattr(objective, "objective_number", None))
+        for objective in objectives
+        if _parse_int(getattr(objective, "objective_number", None)) > 0
     ]
-    average_percent = (sum(percents) / len(percents)) if percents else None
-    rag_counts = {"green": 0, "amber": 0, "red": 0, "grey": 0}
-    for kr in all_krs:
-        rag_counts[_okr_rag(_okr_percent(kr.actual_value, kr.target_value, kr.direction))] += 1
-    average_percent_label = f"{average_percent:.1f}%" if average_percent is not None else "0%"
+    next_objective_number = (max(numbered_objectives) + 1) if numbered_objectives else (len(objectives) + 1)
     notice_parts = []
     if created is not None:
-        notice_parts.append("OKR saved.")
+        notice_parts.append("OKR configuration saved.")
     if updated is not None:
-        notice_parts.append("Actual updated.")
+        notice_parts.append("OKR configuration updated.")
     if error:
         notice_parts.append(str(error))
     notice_class = "error" if error else "pill"
     notice_html = f'<p><span class="{notice_class}">{_esc(" ".join(notice_parts))}</span></p>' if notice_parts else ""
 
     objective_sections = []
-    for objective in objectives:
+    for objective_index, objective in enumerate(objectives, start=1):
+        objective_number = _parse_int(getattr(objective, "objective_number", None), objective_index) or objective_index
         key_results = sorted(objective.key_results, key=lambda item: int(item.id or 0))
-        objective_percents = [
-            pct
-            for pct in (_okr_percent(kr.actual_value, kr.target_value, kr.direction) for kr in key_results)
-            if pct is not None
-        ]
-        objective_percent = (sum(objective_percents) / len(objective_percents)) if objective_percents else None
         owner = staff_name(objective.owner_staff_id)
         champions = str(getattr(objective, "champions", "") or "").strip()
         kr_rows = []
-        kr_amend_forms = []
-        for kr in key_results:
-            percent = _okr_percent(kr.actual_value, kr.target_value, kr.direction)
+        for kr_index, kr in enumerate(key_results, start=1):
+            kr_number = f"{objective_number}.{kr_index}"
             assigned = staff_name(kr.assigned_staff_id)
-            if str(kr.allocation_type or "").strip().lower() == "individual" and assigned:
+            allocation_value = str(kr.allocation_type or "team").strip().lower()
+            if allocation_value == "individual" and assigned:
                 allocated_to = assigned
             else:
                 allocated_to = str(kr.team_label or "").strip() or "Team"
             unit = str(kr.unit or "").strip()
             direction_label = "Lower is better" if str(kr.direction or "").strip().lower() == "decrease" else "Higher is better"
             target_label = f"{_format_number(kr.target_value)} {unit}".strip()
-            actual_label = f"{_format_number(kr.actual_value)} {unit}".strip()
-            kr_rows.append(
-                "<tr>"
-                f"<td>{_esc(kr.title)}<br><span class=\"muted\">Allocated to: {_esc(allocated_to)}</span></td>"
-                f"<td>{_esc(target_label)}<br><span class=\"muted\">{_esc(direction_label)}</span></td>"
-                f"<td>{_esc(actual_label)}</td>"
-                f"<td>{_okr_percent_html(percent)}</td>"
-                f"<td>{_okr_rag_html(percent)}</td>"
-                "<td>"
-                f"<form method=\"post\" action=\"{_post_action(request, f'/admin/okrs/key-results/{int(kr.id)}/actual')}\" class=\"inline\">"
-                f"<input type=\"hidden\" name=\"quarter\" value=\"{_esc(selected_quarter)}\">"
-                f"<input type=\"number\" step=\"0.01\" min=\"0\" name=\"actual_value\" value=\"{_esc(_format_number(kr.actual_value))}\" style=\"max-width: 120px;\">"
-                "<button type=\"submit\">Update</button>"
-                "</form>"
-                "</td>"
-                "</tr>"
-            )
-            allocation_value = str(kr.allocation_type or "team").strip().lower()
             team_selected = " selected" if allocation_value != "individual" else ""
             individual_selected = " selected" if allocation_value == "individual" else ""
-            kr_amend_forms.append(
+            kr_rows.append(
                 f"""
-<form method="post" action="{_post_action(request, f'/admin/okrs/key-results/{int(kr.id)}/update')}" class="stack">
-  <input type="hidden" name="quarter" value="{_esc(selected_quarter)}">
-  <div class="grid">
-    <label><span>Key result</span><input name="title" value="{_esc(kr.title)}" required></label>
-    <label><span>Target</span><input name="target_value" type="number" step="0.01" min="0.01" value="{_esc(_format_number(kr.target_value))}" required></label>
-    <label><span>Actual</span><input name="actual_value" type="number" step="0.01" min="0" value="{_esc(_format_number(kr.actual_value))}"></label>
-    <label><span>Unit</span><input name="unit" value="{_esc(unit)}"></label>
-    <label><span>RAG direction</span>{direction_select(kr.direction)}</label>
-    <label><span>Allocation</span><select name="allocation_type">
-      <option value="team"{team_selected}>Team</option>
-      <option value="individual"{individual_selected}>Individual staff</option>
-    </select></label>
-    <label><span>Team label</span><input name="team_label" value="{_esc(kr.team_label or '')}"></label>
-    <label><span>Staff owner</span>{staff_select("assigned_staff_id", kr.assigned_staff_id)}</label>
-  </div>
-  <button type="submit" class="secondary">Save key result</button>
-</form>"""
+<tr>
+  <td><strong>{_esc(kr_number)}</strong></td>
+  <td>{_esc(kr.title)}<br><span class="muted">Allocated to: {_esc(allocated_to)}</span></td>
+  <td>{_esc(target_label)}<br><span class="muted">{_esc(direction_label)}</span></td>
+  <td>
+    <details>
+      <summary class="button secondary">Amend KR {kr_number}</summary>
+      <form method="post" action="{_post_action(request, f'/admin/okrs/key-results/{int(kr.id)}/update')}" class="stack" style="margin-top: 12px;">
+        <input type="hidden" name="quarter" value="{_esc(selected_quarter)}">
+        <div class="grid">
+          <label><span>Key result</span><input name="title" value="{_esc(kr.title)}" required></label>
+          <label><span>Target</span><input name="target_value" type="number" step="0.01" min="0.01" value="{_esc(_format_number(kr.target_value))}" required></label>
+          <label><span>Unit</span><input name="unit" value="{_esc(unit)}"></label>
+          <label><span>RAG direction</span>{direction_select(kr.direction)}</label>
+          <label><span>Allocation</span><select name="allocation_type">
+            <option value="team"{team_selected}>Team</option>
+            <option value="individual"{individual_selected}>Individual staff</option>
+          </select></label>
+          <label><span>Team label</span><input name="team_label" value="{_esc(kr.team_label or '')}"></label>
+          <label><span>Staff owner</span>{staff_select("assigned_staff_id", kr.assigned_staff_id)}</label>
+        </div>
+        <button type="submit" class="secondary">Save key result</button>
+      </form>
+    </details>
+  </td>
+</tr>"""
             )
         objective_sections.append(
             f"""
 <section>
   <div class="inline" style="justify-content: space-between;">
     <div>
-      <h2>{_esc(objective.area)}: {_esc(objective.title)}</h2>
+      <h2>Objective {objective_number}: {_esc(objective.area)}</h2>
+      <p><strong>{_esc(objective.title)}</strong></p>
       <p class="muted">{_esc(objective.description or '')}</p>
       <p class="muted">Quarter: {_esc(objective.quarter)}{f' · Champions: {_esc(champions)}' if champions else ''}{f' · Owner: {_esc(owner)}' if owner else ''}</p>
     </div>
-    <div>{_okr_rag_html(objective_percent)}<br>{_okr_percent_html(objective_percent)}</div>
   </div>
-  <details>
-    <summary class="button secondary">Amend objective</summary>
+  <details open>
+    <summary class="button secondary">Amend objective {objective_number}</summary>
     <form method="post" action="{_post_action(request, f'/admin/okrs/objectives/{int(objective.id)}/update')}" class="stack" style="margin-top: 12px;">
       <input type="hidden" name="quarter" value="{_esc(selected_quarter)}">
       <div class="grid">
+        <label><span>Objective number</span><input name="objective_number" type="number" min="1" value="{objective_number}" required></label>
         <label><span>Quarter</span><input name="objective_quarter" value="{_esc(objective.quarter)}" required></label>
         <label><span>Area</span><input name="area" value="{_esc(objective.area)}" required></label>
         <label><span>Champions</span><input name="champions" value="{_esc(champions)}"></label>
@@ -1482,12 +1618,12 @@ def okrs(
       <button type="submit" class="secondary">Save objective</button>
     </form>
   </details>
-  <h3>Key Results</h3>
+  <h3>Configure Key Results for Objective {objective_number}</h3>
   <table>
-    <thead><tr><th>KR</th><th>Target</th><th>Actual</th><th>Achieved</th><th>RAG</th><th>Enter actual</th></tr></thead>
-    <tbody>{''.join(kr_rows) or '<tr><td colspan="6">No key results yet.</td></tr>'}</tbody>
+    <thead><tr><th>No.</th><th>Key result</th><th>Target</th><th>Amend</th></tr></thead>
+    <tbody>{''.join(kr_rows) or '<tr><td colspan="4">No key results yet.</td></tr>'}</tbody>
   </table>
-  <h3>Add Key Result</h3>
+  <h3>Add Key Result to Objective {objective_number}</h3>
   <form method="post" action="{_post_action(request, f'/admin/okrs/objectives/{int(objective.id)}/key-results')}" class="stack">
     <input type="hidden" name="quarter" value="{_esc(selected_quarter)}">
     <div class="grid">
@@ -1504,10 +1640,6 @@ def okrs(
     </div>
     <button type="submit">Add key result</button>
   </form>
-  <details>
-    <summary class="button secondary">Amend key results</summary>
-    <div class="stack" style="margin-top: 12px;">{''.join(kr_amend_forms) or '<p class="muted">No key results to amend yet.</p>'}</div>
-  </details>
 </section>"""
         )
 
@@ -1515,28 +1647,28 @@ def okrs(
 <section>
   <div class="inline" style="justify-content: space-between;">
     <div>
-      <h2>Quarterly OKRs</h2>
-      <p class="muted">Set area objectives with measurable key results. Actuals can be updated as the quarter progresses.</p>
+      <h2>OKR Setup</h2>
+      <p class="muted">Create and amend quarterly objectives and key results. Actual tracking remains on the OKR dashboard.</p>
     </div>
-    <form method="get" action="{_href(request, '/admin/okrs')}" class="inline">
-      <label><span>Quarter</span><input name="quarter" value="{_esc(selected_quarter)}" placeholder="2026-Q2"></label>
-      <button type="submit">View</button>
-    </form>
+    <div class="inline">
+      <form method="get" action="{_href(request, '/admin/okrs/config')}" class="inline">
+        <label><span>Quarter</span><input name="quarter" value="{_esc(selected_quarter)}" placeholder="2026-Q2"></label>
+        <button type="submit">View setup</button>
+      </form>
+      <a class="button secondary" href="{dashboard_href}">View dashboard</a>
+    </div>
   </div>
   {notice_html}
   <div class="grid">
-    <div class="metric"><strong>{len(objectives)}</strong><span>Objectives</span></div>
-    <div class="metric"><strong>{len(all_krs)}</strong><span>Key results</span></div>
-    <div class="metric"><strong>{average_percent_label}</strong><span>Average achieved</span></div>
-    <div class="metric"><strong>{rag_counts['green']}</strong><span>Green KRs</span></div>
-    <div class="metric"><strong>{rag_counts['amber']}</strong><span>Amber KRs</span></div>
-    <div class="metric"><strong>{rag_counts['red']}</strong><span>Red KRs</span></div>
+    <div class="metric"><strong>{len(objectives)}</strong><span>Configured objectives</span></div>
+    <div class="metric"><strong>{len(all_krs)}</strong><span>Configured key results</span></div>
   </div>
 </section>
 <section>
   <h2>Create Objective</h2>
   <form method="post" action="{_post_action(request, '/admin/okrs/objectives')}" class="stack">
     <div class="grid">
+      <label><span>Objective number</span><input name="objective_number" type="number" min="1" value="{next_objective_number}" required></label>
       <label><span>Quarter</span><input name="quarter" value="{_esc(selected_quarter)}" placeholder="2026-Q2" required></label>
       <label><span>Area</span><input name="area" placeholder="Sales, retention, operations" required></label>
       <label><span>Champions</span><input name="champions" placeholder="Team or staff names"></label>
@@ -1548,13 +1680,14 @@ def okrs(
   </form>
 </section>
 {''.join(objective_sections) or '<section><h2>No OKRs for this quarter yet.</h2><p class="muted">Create an objective above, then add measurable key results.</p></section>'}"""
-    return _layout(request, "OKRs", body)
+    return _layout(request, "OKR Setup", body)
 
 
 @router.post("/admin/okrs/objectives")
 def okr_create_objective(
     request: Request,
     quarter: str = Form(""),
+    objective_number: str = Form(""),
     area: str = Form(""),
     title: str = Form(""),
     description: str = Form(""),
@@ -1567,12 +1700,24 @@ def okr_create_objective(
     area_text = str(area or "").strip()
     title_text = str(title or "").strip()
     if not area_text or not title_text:
-        return _redirect(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'error': 'Enter an area and objective.'})}")
+        return _redirect(
+            request,
+            f"/admin/okrs/config?{urlencode({'quarter': selected_quarter, 'error': 'Enter an area and objective.'})}",
+        )
     owner_id = int(owner_staff_id or 0)
     if owner_id and session.get(StaffUser, owner_id) is None:
         owner_id = 0
+    number = _parse_int(objective_number)
+    if number <= 0:
+        number = int(
+            session.scalar(
+                select(func.max(OkrObjective.objective_number)).where(OkrObjective.quarter == selected_quarter)
+            )
+            or 0
+        ) + 1
     row = OkrObjective(
         quarter=selected_quarter,
+        objective_number=number,
         area=area_text,
         title=title_text,
         description=str(description or "").strip() or None,
@@ -1582,7 +1727,7 @@ def okr_create_objective(
     )
     session.add(row)
     session.commit()
-    return _redirect(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'created': 1})}")
+    return _redirect(request, f"/admin/okrs/config?{urlencode({'quarter': selected_quarter, 'created': 1})}")
 
 
 @router.post("/admin/okrs/objectives/{objective_id}/update")
@@ -1590,6 +1735,7 @@ def okr_update_objective(
     request: Request,
     objective_id: int,
     quarter: str = Form(""),
+    objective_number: str = Form(""),
     objective_quarter: str = Form(""),
     area: str = Form(""),
     title: str = Form(""),
@@ -1606,11 +1752,18 @@ def okr_update_objective(
     area_text = str(area or "").strip()
     title_text = str(title or "").strip()
     if not area_text or not title_text:
-        return _redirect(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'error': 'Enter an area and objective.'})}")
+        return _redirect(
+            request,
+            f"/admin/okrs/config?{urlencode({'quarter': selected_quarter, 'error': 'Enter an area and objective.'})}",
+        )
     owner_id = int(owner_staff_id or 0)
     if owner_id and session.get(StaffUser, owner_id) is None:
         owner_id = 0
+    number = _parse_int(objective_number, _parse_int(getattr(row, "objective_number", None), 1))
+    if number <= 0:
+        number = 1
     row.quarter = selected_quarter
+    row.objective_number = number
     row.area = area_text
     row.title = title_text
     row.description = str(description or "").strip() or None
@@ -1618,7 +1771,7 @@ def okr_update_objective(
     row.owner_staff_id = owner_id or None
     session.add(row)
     session.commit()
-    return _redirect(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'updated': 1})}")
+    return _redirect(request, f"/admin/okrs/config?{urlencode({'quarter': selected_quarter, 'updated': 1})}")
 
 
 @router.post("/admin/okrs/objectives/{objective_id}/key-results")
@@ -1645,7 +1798,7 @@ def okr_create_key_result(
     if not title_text or target <= 0:
         return _redirect(
             request,
-            f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'error': 'Enter a key result and a target above zero.'})}",
+            f"/admin/okrs/config?{urlencode({'quarter': selected_quarter, 'error': 'Enter a key result and a target above zero.'})}",
         )
     allocation = "individual" if str(allocation_type or "").strip().lower() == "individual" else "team"
     staff_id = int(assigned_staff_id or 0)
@@ -1664,7 +1817,7 @@ def okr_create_key_result(
     )
     session.add(row)
     session.commit()
-    return _redirect(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'created': 1})}")
+    return _redirect(request, f"/admin/okrs/config?{urlencode({'quarter': selected_quarter, 'created': 1})}")
 
 
 @router.post("/admin/okrs/key-results/{kr_id}/update")
@@ -1692,7 +1845,7 @@ def okr_update_key_result(
     if not title_text or target <= 0:
         return _redirect(
             request,
-            f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'error': 'Enter a key result and a target above zero.'})}",
+            f"/admin/okrs/config?{urlencode({'quarter': selected_quarter, 'error': 'Enter a key result and a target above zero.'})}",
         )
     allocation = "individual" if str(allocation_type or "").strip().lower() == "individual" else "team"
     staff_id = int(assigned_staff_id or 0)
@@ -1700,7 +1853,8 @@ def okr_update_key_result(
         staff_id = 0
     row.title = title_text
     row.target_value = target
-    row.actual_value = max(0.0, _parse_float(actual_value))
+    if str(actual_value or "").strip():
+        row.actual_value = max(0.0, _parse_float(actual_value))
     row.unit = str(unit or "").strip() or None
     row.direction = "decrease" if str(direction or "").strip().lower() == "decrease" else "increase"
     row.allocation_type = allocation
@@ -1708,7 +1862,7 @@ def okr_update_key_result(
     row.team_label = (str(team_label or "").strip() or "Team") if allocation == "team" else None
     session.add(row)
     session.commit()
-    return _redirect(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'updated': 1})}")
+    return _redirect(request, f"/admin/okrs/config?{urlencode({'quarter': selected_quarter, 'updated': 1})}")
 
 
 @router.post("/admin/okrs/key-results/{kr_id}/actual")
