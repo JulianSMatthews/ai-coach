@@ -42,15 +42,17 @@ Q2_2026_OKR_PRESET: tuple[dict[str, Any], ...] = (
         "number": 1,
         "area": "Club Growth",
         "champions": "Soph & Ben",
-        "title": "Grow club revenue to GBP 70,000+ in Q2 to strengthen the club's financial foundation.",
+        "title": "Grow the club to have over 825 members.",
         "description": "Q2 2026 OKR: April to June.",
         "key_results": (
-            {"title": "Achieve >=30% prospect-to-member conversion rate monthly", "target": 30, "unit": "%"},
-            {"title": "Ensure >=50% of new joiners pay the GBP 30 set-up fee", "target": 50, "unit": "%"},
-            {"title": "Generate >=120 qualified marketing leads per month", "target": 120, "unit": "leads/month"},
-            {"title": "Sell >=2 annual memberships per month", "target": 2, "unit": "annual memberships/month"},
-            {"title": "Capture >=10 referral contact details at point of sale per month", "target": 10, "unit": "referrals/month"},
+            {"number": 1, "title": "Achieve club turnover of GBP 70,000 over three months", "target": 70000, "unit": "GBP"},
+            {"number": 2, "title": "Sell 160 memberships in the quarter", "target": 160, "unit": "memberships/quarter"},
+            {"number": 3, "title": "Ensure >=50% of new joiners pay the GBP 30 set-up fee", "target": 50, "unit": "%"},
+            {"number": 4, "title": "Generate 480 qualified marketing leads in the quarter", "target": 480, "unit": "marketing leads/quarter"},
+            {"number": 5, "title": "Sell >=2 annual memberships per month", "target": 2, "unit": "annual memberships/month"},
+            {"number": 6, "title": "Capture >=10 referral contact details at point of sale per month", "target": 10, "unit": "referrals/month"},
             {
+                "number": 7,
                 "title": "Secure and execute >=1 external marketing partnership by end of Q2",
                 "target": 1,
                 "unit": "partnership",
@@ -1408,6 +1410,7 @@ def seed_default_okrs(session: Session) -> int:
             session.add(
                 OkrKeyResult(
                     objective_id=int(objective.id),
+                    key_result_number=int(kr.get("number") or 0) or None,
                     title=str(kr.get("title") or "").strip(),
                     target_value=float(kr.get("target") or 0),
                     actual_value=0.0,
@@ -1420,6 +1423,148 @@ def seed_default_okrs(session: Session) -> int:
         created += 1
     session.commit()
     return created
+
+
+def sync_q2_2026_okrs(session: Session) -> int:
+    quarter = "2026-Q2"
+    changed = 0
+    objectives = (
+        session.execute(
+            select(OkrObjective)
+            .where(OkrObjective.quarter == quarter)
+            .order_by(OkrObjective.id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    objective_number_by_area = {
+        "club growth": 1,
+        "onboarding": 2,
+        "experience": 3,
+        "team onboarding": 4,
+    }
+    for objective in objectives:
+        area_key = " ".join(str(objective.area or "").strip().lower().split())
+        expected_number = objective_number_by_area.get(area_key)
+        if expected_number and not getattr(objective, "objective_number", None):
+            objective.objective_number = expected_number
+            session.add(objective)
+            changed += 1
+        for index, kr in enumerate(sorted(objective.key_results, key=lambda item: int(item.id or 0)), start=1):
+            if not getattr(kr, "key_result_number", None):
+                kr.key_result_number = index
+                session.add(kr)
+                changed += 1
+
+    club_growth = next(
+        (
+            objective
+            for objective in objectives
+            if int(getattr(objective, "objective_number", 0) or 0) == 1
+            or " ".join(str(objective.area or "").strip().lower().split()) == "club growth"
+        ),
+        None,
+    )
+    if club_growth is None:
+        if changed:
+            session.commit()
+        return changed
+
+    target_objective_title = "Grow the club to have over 825 members."
+    if club_growth.title != target_objective_title:
+        club_growth.title = target_objective_title
+        session.add(club_growth)
+        changed += 1
+
+    desired_krs = {
+        "turnover": {
+            "number": 1,
+            "title": "Achieve club turnover of GBP 70,000 over three months",
+            "target": 70000.0,
+            "unit": "GBP",
+            "direction": "increase",
+        },
+        "memberships": {
+            "number": 2,
+            "title": "Sell 160 memberships in the quarter",
+            "target": 160.0,
+            "unit": "memberships/quarter",
+            "direction": "increase",
+        },
+        "marketing_leads": {
+            "number": 4,
+            "title": "Generate 480 qualified marketing leads in the quarter",
+            "target": 480.0,
+            "unit": "marketing leads/quarter",
+            "direction": "increase",
+        },
+    }
+    old_conversion_title = "Achieve >=30% prospect-to-member conversion rate monthly"
+    old_marketing_leads_title = "Generate >=120 qualified marketing leads per month"
+    key_results = sorted(club_growth.key_results, key=lambda item: int(item.id or 0))
+    turnover_kr = next((kr for kr in key_results if kr.title == desired_krs["turnover"]["title"]), None)
+    if turnover_kr is None:
+        turnover_kr = OkrKeyResult(objective_id=int(club_growth.id), allocation_type="team", team_label=club_growth.champions or "Team")
+        session.add(turnover_kr)
+        changed += 1
+    memberships_kr = next((kr for kr in key_results if kr.title == desired_krs["memberships"]["title"]), None)
+    if memberships_kr is None:
+        memberships_kr = next((kr for kr in key_results if kr.title == old_conversion_title), None)
+    if memberships_kr is None:
+        memberships_kr = OkrKeyResult(objective_id=int(club_growth.id), allocation_type="team", team_label=club_growth.champions or "Team")
+        session.add(memberships_kr)
+        changed += 1
+    marketing_leads_kr = next((kr for kr in key_results if kr.title == desired_krs["marketing_leads"]["title"]), None)
+    if marketing_leads_kr is None:
+        marketing_leads_kr = next((kr for kr in key_results if kr.title == old_marketing_leads_title), None)
+    if marketing_leads_kr is None:
+        marketing_leads_kr = OkrKeyResult(
+            objective_id=int(club_growth.id),
+            allocation_type="team",
+            team_label=club_growth.champions or "Team",
+        )
+        session.add(marketing_leads_kr)
+        changed += 1
+
+    for kr, values in (
+        (turnover_kr, desired_krs["turnover"]),
+        (memberships_kr, desired_krs["memberships"]),
+        (marketing_leads_kr, desired_krs["marketing_leads"]),
+    ):
+        for field, value in (
+            ("key_result_number", values["number"]),
+            ("title", values["title"]),
+            ("target_value", values["target"]),
+            ("unit", values["unit"]),
+            ("direction", values["direction"]),
+        ):
+            if getattr(kr, field) != value:
+                setattr(kr, field, value)
+                changed += 1
+        if not kr.allocation_type:
+            kr.allocation_type = "team"
+            changed += 1
+        if not kr.team_label:
+            kr.team_label = club_growth.champions or "Team"
+            changed += 1
+        session.add(kr)
+
+    club_growth_tail_numbers = {
+        "Ensure >=50% of new joiners pay the GBP 30 set-up fee": 3,
+        "Sell >=2 annual memberships per month": 5,
+        "Capture >=10 referral contact details at point of sale per month": 6,
+        "Secure and execute >=1 external marketing partnership by end of Q2": 7,
+    }
+    for kr in key_results:
+        expected_number = club_growth_tail_numbers.get(str(kr.title or "").strip())
+        if expected_number and kr.key_result_number != expected_number:
+            kr.key_result_number = expected_number
+            session.add(kr)
+            changed += 1
+
+    if changed:
+        session.commit()
+    return changed
 
 
 def mark_task_done(session: Session, task_id: int) -> bool:

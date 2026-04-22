@@ -158,6 +158,7 @@ class OkrKeyResult(Base):
 
     id = Column(Integer, primary_key=True)
     objective_id = Column(Integer, ForeignKey("membersense_okr_objectives.id", ondelete="CASCADE"), nullable=False, index=True)
+    key_result_number = Column(Integer, nullable=True, index=True)
     title = Column(String(240), nullable=False)
     target_value = Column(Float, nullable=False, default=0.0)
     actual_value = Column(Float, nullable=False, default=0.0)

@@ -20,10 +20,11 @@ def init_db() -> None:
     _migrate_survey_configs_table()
     _migrate_staff_users_table()
     _migrate_okrs_table()
-    from .services import seed_default_okrs
+    from .services import seed_default_okrs, sync_q2_2026_okrs
 
     with SessionLocal() as session:
         seed_default_okrs(session)
+        sync_q2_2026_okrs(session)
 
 
 def _migrate_members_table() -> None:
@@ -147,6 +148,7 @@ def _migrate_okrs_table() -> None:
             "objective_number": ("INTEGER", "INTEGER"),
         },
         "membersense_okr_key_results": {
+            "key_result_number": ("INTEGER", "INTEGER"),
             "direction": ("VARCHAR(24)", "VARCHAR(24)"),
         },
     }

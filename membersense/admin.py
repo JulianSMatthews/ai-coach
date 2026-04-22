@@ -741,6 +741,16 @@ def _okr_percent_html(percent: float | None) -> str:
     )
 
 
+def _sort_okr_key_results(key_results) -> list[OkrKeyResult]:
+    return sorted(
+        key_results,
+        key=lambda item: (
+            _parse_int(getattr(item, "key_result_number", None), 999999),
+            int(getattr(item, "id", 0) or 0),
+        ),
+    )
+
+
 def _public_base_url(request: Request) -> str:
     configured = str(getattr(config, "PUBLIC_BASE_URL", "") or "").strip()
     if configured:
@@ -1358,7 +1368,7 @@ def okrs(
 
     all_krs: list[OkrKeyResult] = []
     for objective in objectives:
-        all_krs.extend(sorted(objective.key_results, key=lambda item: int(item.id or 0)))
+        all_krs.extend(_sort_okr_key_results(objective.key_results))
     percents = [
         pct
         for pct in (_okr_percent(kr.actual_value, kr.target_value, kr.direction) for kr in all_krs)
@@ -1383,7 +1393,7 @@ def okrs(
     objective_sections = []
     for objective_index, objective in enumerate(objectives, start=1):
         objective_number = _parse_int(getattr(objective, "objective_number", None), objective_index) or objective_index
-        key_results = sorted(objective.key_results, key=lambda item: int(item.id or 0))
+        key_results = _sort_okr_key_results(objective.key_results)
         objective_percents = [
             pct
             for pct in (_okr_percent(kr.actual_value, kr.target_value, kr.direction) for kr in key_results)
@@ -1394,7 +1404,8 @@ def okrs(
         champions = str(getattr(objective, "champions", "") or "").strip()
         kr_rows = []
         for kr_index, kr in enumerate(key_results, start=1):
-            kr_number = f"{objective_number}.{kr_index}"
+            kr_part_number = _parse_int(getattr(kr, "key_result_number", None), kr_index) or kr_index
+            kr_number = f"{objective_number}.{kr_part_number}"
             percent = _okr_percent(kr.actual_value, kr.target_value, kr.direction)
             assigned = staff_name(kr.assigned_staff_id)
             if str(kr.allocation_type or "").strip().lower() == "individual" and assigned:
@@ -1525,7 +1536,7 @@ def okr_config(
 
     all_krs: list[OkrKeyResult] = []
     for objective in objectives:
-        all_krs.extend(sorted(objective.key_results, key=lambda item: int(item.id or 0)))
+        all_krs.extend(_sort_okr_key_results(objective.key_results))
     numbered_objectives = [
         _parse_int(getattr(objective, "objective_number", None))
         for objective in objectives
@@ -1545,12 +1556,16 @@ def okr_config(
     objective_sections = []
     for objective_index, objective in enumerate(objectives, start=1):
         objective_number = _parse_int(getattr(objective, "objective_number", None), objective_index) or objective_index
-        key_results = sorted(objective.key_results, key=lambda item: int(item.id or 0))
+        key_results = _sort_okr_key_results(objective.key_results)
         owner = staff_name(objective.owner_staff_id)
         champions = str(getattr(objective, "champions", "") or "").strip()
         kr_rows = []
+        next_key_result_number = max(
+            [_parse_int(getattr(kr, "key_result_number", None)) for kr in key_results] or [0]
+        ) + 1
         for kr_index, kr in enumerate(key_results, start=1):
-            kr_number = f"{objective_number}.{kr_index}"
+            kr_part_number = _parse_int(getattr(kr, "key_result_number", None), kr_index) or kr_index
+            kr_number = f"{objective_number}.{kr_part_number}"
             assigned = staff_name(kr.assigned_staff_id)
             allocation_value = str(kr.allocation_type or "team").strip().lower()
             if allocation_value == "individual" and assigned:
@@ -1574,6 +1589,7 @@ def okr_config(
       <form method="post" action="{_post_action(request, f'/admin/okrs/key-results/{int(kr.id)}/update')}" class="stack" style="margin-top: 12px;">
         <input type="hidden" name="quarter" value="{_esc(selected_quarter)}">
         <div class="grid">
+          <label><span>KR number within objective</span><input name="key_result_number" type="number" min="1" value="{kr_part_number}" required></label>
           <label><span>Key result</span><input name="title" value="{_esc(kr.title)}" required></label>
           <label><span>Target</span><input name="target_value" type="number" step="0.01" min="0.01" value="{_esc(_format_number(kr.target_value))}" required></label>
           <label><span>Unit</span><input name="unit" value="{_esc(unit)}"></label>
@@ -1627,6 +1643,7 @@ def okr_config(
   <form method="post" action="{_post_action(request, f'/admin/okrs/objectives/{int(objective.id)}/key-results')}" class="stack">
     <input type="hidden" name="quarter" value="{_esc(selected_quarter)}">
     <div class="grid">
+      <label><span>KR number within objective</span><input name="key_result_number" type="number" min="1" value="{next_key_result_number}" required></label>
       <label><span>Key result</span><input name="title" required placeholder="e.g. Increase attended inductions"></label>
       <label><span>Target</span><input name="target_value" type="number" step="0.01" min="0.01" required></label>
       <label><span>Unit</span><input name="unit" placeholder="%, visits, calls, members"></label>
@@ -1779,6 +1796,7 @@ def okr_create_key_result(
     request: Request,
     objective_id: int,
     quarter: str = Form(""),
+    key_result_number: str = Form(""),
     title: str = Form(""),
     target_value: str = Form(""),
     unit: str = Form(""),
@@ -1804,8 +1822,17 @@ def okr_create_key_result(
     staff_id = int(assigned_staff_id or 0)
     if allocation != "individual" or not staff_id or session.get(StaffUser, staff_id) is None:
         staff_id = 0
+    kr_number = _parse_int(key_result_number)
+    if kr_number <= 0:
+        kr_number = int(
+            session.scalar(
+                select(func.max(OkrKeyResult.key_result_number)).where(OkrKeyResult.objective_id == int(objective.id))
+            )
+            or 0
+        ) + 1
     row = OkrKeyResult(
         objective_id=int(objective.id),
+        key_result_number=kr_number,
         title=title_text,
         target_value=target,
         actual_value=0.0,
@@ -1825,6 +1852,7 @@ def okr_update_key_result(
     request: Request,
     kr_id: int,
     quarter: str = Form(""),
+    key_result_number: str = Form(""),
     title: str = Form(""),
     target_value: str = Form(""),
     actual_value: str = Form(""),
@@ -1851,6 +1879,10 @@ def okr_update_key_result(
     staff_id = int(assigned_staff_id or 0)
     if allocation != "individual" or not staff_id or session.get(StaffUser, staff_id) is None:
         staff_id = 0
+    kr_number = _parse_int(key_result_number, _parse_int(getattr(row, "key_result_number", None), 1))
+    if kr_number <= 0:
+        kr_number = 1
+    row.key_result_number = kr_number
     row.title = title_text
     row.target_value = target
     if str(actual_value or "").strip():
