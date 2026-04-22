@@ -1488,7 +1488,7 @@ def okrs(
             percent = _okr_percent(kr.actual_value, kr.target_value, kr.direction)
             pace_percent = _okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter)
             assigned = staff_name(kr.assigned_staff_id)
-            if str(kr.allocation_type or "").strip().lower() == "individual" and assigned:
+            if assigned:
                 allocated_to = assigned
             else:
                 allocated_to = str(kr.team_label or "").strip() or "Team"
@@ -1650,7 +1650,7 @@ def okr_config(
             kr_number = f"{objective_number}.{kr_part_number}"
             assigned = staff_name(kr.assigned_staff_id)
             allocation_value = str(kr.allocation_type or "team").strip().lower()
-            if allocation_value == "individual" and assigned:
+            if assigned:
                 allocated_to = assigned
             else:
                 allocated_to = str(kr.team_label or "").strip() or "Team"
@@ -1899,10 +1899,10 @@ def okr_create_key_result(
         return _redirect(
             request,
             f"/admin/okrs/config?{urlencode({'quarter': selected_quarter, 'error': 'Enter a key result and a target above zero.'})}",
-        )
+    )
     allocation = "individual" if str(allocation_type or "").strip().lower() == "individual" else "team"
     staff_id = int(assigned_staff_id or 0)
-    if allocation != "individual" or not staff_id or session.get(StaffUser, staff_id) is None:
+    if not staff_id or session.get(StaffUser, staff_id) is None:
         staff_id = 0
     kr_number = _parse_int(key_result_number)
     if kr_number <= 0:
@@ -1956,10 +1956,10 @@ def okr_update_key_result(
         return _redirect(
             request,
             f"/admin/okrs/config?{urlencode({'quarter': selected_quarter, 'error': 'Enter a key result and a target above zero.'})}",
-        )
+    )
     allocation = "individual" if str(allocation_type or "").strip().lower() == "individual" else "team"
     staff_id = int(assigned_staff_id or 0)
-    if allocation != "individual" or not staff_id or session.get(StaffUser, staff_id) is None:
+    if not staff_id or session.get(StaffUser, staff_id) is None:
         staff_id = 0
     kr_number = _parse_int(key_result_number, _parse_int(getattr(row, "key_result_number", None), 1))
     if kr_number <= 0:
