@@ -1260,6 +1260,7 @@ export default function LatestAssessmentPanel({
   const [urinePhotoCapturedAt, setUrinePhotoCapturedAt] = useState<string | null>(null);
   const [urinePhotoCapturedAtMs, setUrinePhotoCapturedAtMs] = useState<number | null>(null);
   const [urineCaptureNowMs, setUrineCaptureNowMs] = useState(() => Date.now());
+  const modalOverlayOpen = biometricsModalOpen || objectivesModalOpen || Boolean(selectedPillarKey);
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
   const orderedPillarKeys = pillars
@@ -1319,8 +1320,8 @@ export default function LatestAssessmentPanel({
   const displayLabel = displayTheme === "dark" ? "light" : "dark";
   const displayButtonClassName =
     displayLabel === "dark"
-      ? "rounded-full border border-[#2f3542] bg-[#1c2230] px-3 py-1.5 text-[11px] font-semibold text-white shadow-[0_10px_24px_-18px_rgba(12,18,28,0.9)] disabled:cursor-not-allowed disabled:opacity-60"
-      : "rounded-full border border-[#d9cdbb] bg-white px-3 py-1.5 text-[11px] font-semibold text-[#5d5348] shadow-[0_10px_24px_-18px_rgba(93,83,72,0.45)] disabled:cursor-not-allowed disabled:opacity-60";
+      ? "rounded-full border border-[#2f3542] bg-[#1c2230] px-3 py-1.5 text-[13px] font-semibold text-white shadow-[0_10px_24px_-18px_rgba(12,18,28,0.9)] disabled:cursor-not-allowed disabled:opacity-60"
+      : "rounded-full border border-[#d9cdbb] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#5d5348] shadow-[0_10px_24px_-18px_rgba(93,83,72,0.45)] disabled:cursor-not-allowed disabled:opacity-60";
   const objectivesSections = useMemo(
     () => (Array.isArray(weeklyObjectives?.sections) ? weeklyObjectives.sections : []),
     [weeklyObjectives],
@@ -1649,6 +1650,14 @@ export default function LatestAssessmentPanel({
     "rounded-full border border-[#d9cdbb] bg-white px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#5d5348]";
   const biometricSourceCheckButtonClassName =
     "shrink-0 rounded-full border border-[var(--accent)] bg-[var(--accent)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white shadow-[0_10px_24px_-18px_var(--shadow-strong)]";
+  const biometricAboutButtonClassName =
+    displayTheme === "dark"
+      ? "border-[#2f3542] bg-[#1c2230] text-white shadow-[0_10px_24px_-18px_rgba(12,18,28,0.9)]"
+      : "border-[#d9cdbb] bg-white text-[#5d5348] shadow-[0_10px_24px_-18px_rgba(93,83,72,0.45)]";
+  const biometricAboutPanelClassName =
+    displayTheme === "dark"
+      ? "border-[var(--border)] bg-[#151a24] text-[var(--text-secondary)]"
+      : "border-[#efe7db] bg-[#fffaf3] text-[#6b6257]";
   const latestHrvValue = resolveHeartRateVariabilityValue(latestHrvItem?.hrv_ms);
   const latestActiveMinutesValue = formatFullActiveMinutes(latestActiveMinutesItem?.active_minutes);
   const latestActiveMinutesStatus = resolveActiveMinutesStatus(latestActiveMinutesItem?.active_minutes);
@@ -2537,6 +2546,18 @@ export default function LatestAssessmentPanel({
   }, []);
 
   useEffect(() => {
+    if (!modalOverlayOpen || typeof document === "undefined") return;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousDocumentOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousDocumentOverflow;
+    };
+  }, [modalOverlayOpen]);
+
+  useEffect(() => {
     if (!biometricsModalOpen) return;
     void loadLatestUrineTest();
     void loadWeeklyObjectives();
@@ -2980,7 +3001,7 @@ export default function LatestAssessmentPanel({
       ) : null}
 
       {biometricsModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 sm:items-center sm:px-3 sm:py-3">
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-hidden overscroll-none bg-black/40 sm:items-center sm:px-3 sm:py-3">
           <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-2xl flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
             <div className="shrink-0 border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
               <div className="flex items-start justify-between gap-3">
@@ -3040,14 +3061,14 @@ export default function LatestAssessmentPanel({
 
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
               <div className="space-y-4">
-                <details className="rounded-2xl border border-[#efe7db] bg-[#fff8ef] text-[#8a5a1a]">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em]">
+                <details className="group">
+                  <summary className={`inline-flex cursor-pointer list-none items-center justify-between gap-3 rounded-full border px-3 py-2 text-xs font-semibold uppercase tracking-[0.16em] ${biometricAboutButtonClassName}`}>
                     <span>About biometrics</span>
-                    <span aria-hidden="true" className="text-sm leading-none">
+                    <span aria-hidden="true" className="text-sm leading-none transition-transform group-open:rotate-45">
                       +
                     </span>
                   </summary>
-                  <p className="border-t border-[#f2dccb] px-4 pb-3 pt-2 text-xs leading-5">
+                  <p className={`mt-3 rounded-2xl border px-4 py-3 text-sm leading-6 ${biometricAboutPanelClassName}`}>
                     HealthSense biometrics and urine markers are optional wellbeing screening and trend signals. They
                     are not medical diagnosis or treatment advice. If a result is unexpected or you have symptoms,
                     retest where appropriate and speak to a qualified healthcare professional.
@@ -3657,7 +3678,7 @@ export default function LatestAssessmentPanel({
       ) : null}
 
       {objectivesModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 sm:items-center sm:px-3 sm:py-3">
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-hidden overscroll-none bg-black/40 sm:items-center sm:px-3 sm:py-3">
           <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-2xl flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
             <div className="shrink-0 border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
               <div className="flex items-start justify-between gap-3">
@@ -3913,7 +3934,7 @@ export default function LatestAssessmentPanel({
       ) : null}
 
       {selectedPillarKey ? (
-        <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 sm:items-center sm:px-3 sm:py-3">
+        <div className="fixed inset-0 z-50 flex items-stretch justify-center overflow-hidden overscroll-none bg-black/40 sm:items-center sm:px-3 sm:py-3">
           <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-2xl flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
             <div className="shrink-0 border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
               <div className="min-w-0 space-y-1">

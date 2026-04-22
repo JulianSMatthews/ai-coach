@@ -17,7 +17,7 @@ const links = [
 ];
 
 const defaultButtonClassName =
-  "rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[11px] font-semibold text-[var(--text-secondary)] shadow-[0_10px_24px_-18px_var(--shadow-strong)]";
+  "rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[13px] font-semibold text-[var(--text-secondary)] shadow-[0_10px_24px_-18px_var(--shadow-strong)]";
 
 function isSafeReturnPath(value: string): boolean {
   return Boolean(value && value.startsWith("/") && !value.startsWith("//") && !value.startsWith("/api"));
@@ -50,7 +50,7 @@ export default function AboutMenu({
         about
         <svg
           viewBox="0 0 20 20"
-          className="h-3.5 w-3.5 transition-transform group-open:rotate-180"
+          className="h-4 w-4 transition-transform group-open:rotate-180"
           aria-hidden="true"
         >
           <path
@@ -64,7 +64,7 @@ export default function AboutMenu({
         </svg>
       </summary>
       <div
-        className={`absolute ${menuPositionClassName} mt-2 w-[min(16rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2 text-[13px] text-[var(--text-primary)] shadow-[0_24px_70px_-42px_var(--shadow-strong)] ${menuClassName}`.trim()}
+        className={`absolute ${menuPositionClassName} mt-2 w-[min(16rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2 text-[15px] text-[var(--text-primary)] shadow-[0_24px_70px_-42px_var(--shadow-strong)] ${menuClassName}`.trim()}
       >
         {links.map((link) => (
           <a

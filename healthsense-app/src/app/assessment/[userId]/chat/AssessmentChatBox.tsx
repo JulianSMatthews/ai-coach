@@ -964,10 +964,14 @@ export default function AssessmentChatBox({
       : null;
   const homePanelHeightClass =
     homeSurface === "tracking"
-      ? "min-h-[calc(100dvh-8.5rem)] sm:h-[44vh] sm:min-h-[20rem] sm:max-h-[28rem]"
+      ? "h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] sm:h-[44vh] sm:min-h-[20rem] sm:max-h-[28rem]"
       : homeSurface === "ask"
-        ? "min-h-[calc(100dvh-8.5rem)] sm:h-[58vh] sm:min-h-[22rem] sm:max-h-[38rem]"
-        : "min-h-[calc(100dvh-8.5rem)] sm:h-[78vh] sm:min-h-[32rem] sm:max-h-[56rem]";
+        ? "h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] sm:h-[58vh] sm:min-h-[22rem] sm:max-h-[38rem]"
+        : "h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] sm:h-[78vh] sm:min-h-[32rem] sm:max-h-[56rem]";
+  const insightQuizSubmitVisible =
+    homeSurface === "insight" &&
+    educationQuizQuestions.length > 0 &&
+    !educationQuizCompleted;
 
   const markCompletionSummaryVideoSeen = useCallback(() => {
     if (!completionSummaryVideoStorageKey || typeof window === "undefined") {
@@ -1379,6 +1383,18 @@ export default function AssessmentChatBox({
       setHomeSurfaceEntryMode("guided");
     }
   }, [showGuidedHomeChatPanel, stopFinalGiaListening, userId]);
+
+  useEffect(() => {
+    if (!showGuidedHomeChatPanel || typeof document === "undefined") return;
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousDocumentOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousDocumentOverflow;
+    };
+  }, [showGuidedHomeChatPanel]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -2361,30 +2377,10 @@ export default function AssessmentChatBox({
                   ))}
                 </div>
               </div>
-              <div className="sticky bottom-0 mt-auto rounded-t-[24px] bg-white/95 pt-3 backdrop-blur">
-                <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4 shadow-[0_-20px_50px_-42px_rgba(30,27,22,0.45)] sm:px-5">
-                  <p className="text-sm text-[#6b6257]">
-                    Start the tracker and we will take you through all four pillars one at a time.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (typeof window !== "undefined") {
-                        window.scrollTo({ top: 0, behavior: "smooth" });
-                        window.dispatchEvent(
-                          new CustomEvent("healthsense-open-tracker", {
-                            detail: {
-                              guided: true,
-                            },
-                          }),
-                        );
-                      }
-                    }}
-                    className="mt-4 w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-white"
-                  >
-                    Start daily check-in
-                  </button>
-                </div>
+              <div className="mt-auto rounded-[24px] border border-[#efe7db] bg-white px-4 py-4 sm:px-5">
+                <p className="text-sm text-[#6b6257]">
+                  Use the footer button to start the guided tracker, or select a pillar above.
+                </p>
               </div>
             </div>
           ) : homeSurface === "insight" ? (
@@ -2572,18 +2568,6 @@ export default function AssessmentChatBox({
                     {educationQuizMessage ? (
                       <p className="mt-3 text-sm text-[#8a3e1a]">{educationQuizMessage}</p>
                     ) : null}
-                    {!educationQuizCompleted ? (
-                      <div className="sticky bottom-0 -mx-4 mt-4 bg-[#fffaf3]/95 px-4 py-3 backdrop-blur">
-                        <button
-                          type="button"
-                          onClick={() => void submitEducationQuiz()}
-                          disabled={educationQuizSubmitting}
-                          className="w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {educationQuizSubmitting ? "Saving" : "Submit quick check"}
-                        </button>
-                      </div>
-                    ) : null}
                   </div>
                 ) : null}
                 {educationPlanError ? <p className="text-sm text-[#8a3e1a]">{educationPlanError}</p> : null}
@@ -2699,7 +2683,7 @@ export default function AssessmentChatBox({
             </div>
           )}
         </div>
-        <div className="border-t border-[#efe7db] px-4 py-3 sm:px-5">
+        <div className="shrink-0 border-t border-[#efe7db] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-5">
           {viewingHomeSurfaceFromSummary ? (
             <div className="flex justify-end">
               <button
@@ -2709,6 +2693,49 @@ export default function AssessmentChatBox({
               >
                 Close
               </button>
+            </div>
+          ) : homeSurface === "tracking" ? (
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  window.dispatchEvent(
+                    new CustomEvent("healthsense-open-tracker", {
+                      detail: {
+                        guided: true,
+                      },
+                    }),
+                  );
+                }
+              }}
+              className="w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-white"
+            >
+              Start daily check-in
+            </button>
+          ) : insightQuizSubmitVisible ? (
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[11px] uppercase tracking-[0.16em] text-[#8c7f70]">
+                {`${currentHomeSurfaceIndex + 1} of ${HOME_SURFACE_SEQUENCE.length}`}
+              </div>
+              <div className="flex gap-2">
+                {previousHomeSurface ? (
+                  <button
+                    type="button"
+                    onClick={() => setHomeSurface(previousHomeSurface)}
+                    className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
+                  >
+                    Back
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  onClick={() => void submitEducationQuiz()}
+                  disabled={educationQuizSubmitting}
+                  className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {educationQuizSubmitting ? "Saving" : "Submit quick check"}
+                </button>
+              </div>
             </div>
           ) : (
             <div className="flex items-center justify-between gap-2">

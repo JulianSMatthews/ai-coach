@@ -40,7 +40,7 @@ export default function AboutCloseButton({ className = "" }: AboutCloseButtonPro
     <button
       type="button"
       onClick={close}
-      className={`rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[11px] font-semibold text-[var(--text-secondary)] shadow-[0_10px_24px_-18px_var(--shadow-strong)] ${className}`.trim()}
+      className={`rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[13px] font-semibold text-[var(--text-secondary)] shadow-[0_10px_24px_-18px_var(--shadow-strong)] ${className}`.trim()}
     >
       close
     </button>
