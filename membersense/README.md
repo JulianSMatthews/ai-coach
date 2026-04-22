@@ -6,7 +6,8 @@ MemberSense is a separate internal gym member-assistance app. It uses Twilio SMS
 
 - New member survey: identifies whether an induction would help, whether a no-obligation coaching session is a good next step, and the member's preferred contact method and timing.
 - Inactive member check-in: asks why someone is not training and whether a reset plan, class, or trainer check-in would help.
-- Exit survey: records why someone is leaving and whether there is a save or win-back opportunity.
+- Exit survey: records why someone is leaving, whether there is a save or win-back opportunity, and how they experienced the gym environment, equipment, and team.
+- Visit follow-up survey: records how the visit felt, whether support would help, and how the member experienced the gym environment, equipment, and team.
 - SMS survey links: each survey is completed in a browser from the link sent to the member.
 - In-app survey links: each survey link can also be opened manually or emailed when a member has email but no mobile.
 - Staff tasks: survey answers are classified into open follow-up tasks when action is useful.

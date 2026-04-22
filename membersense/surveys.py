@@ -99,6 +99,9 @@ SURVEY_FLOWS: dict[str, SurveyFlow] = {
         intro=f"It is the {GYM_NAME} team. Sorry to see you leave. Could we ask a few quick questions so we can understand what happened?",
         questions=(
             SurveyQuestion("reason", "What is the main reason you are leaving?", options=("Cost", "Not using it", "Moving away")),
+            SurveyQuestion("gym_experience", "How was your overall experience of the gym environment?", options=("Good", "Okay", "Poor")),
+            SurveyQuestion("equipment_experience", "How well did the equipment meet your needs?", options=("Good", "Okay", "Poor")),
+            SurveyQuestion("team_experience", "How was your experience with the team?", options=("Good", "Okay", "Poor")),
             SurveyQuestion("preventable", "Was there anything the gym could have done differently?", options=("Yes", "Not sure", "No")),
             SurveyQuestion("future", "Would you consider coming back in the future?", options=("Yes", "Maybe", "No")),
         ),
@@ -112,6 +115,9 @@ SURVEY_FLOWS: dict[str, SurveyFlow] = {
         ),
         questions=(
             SurveyQuestion("experience", "How did your visit feel today?", options=("Good", "Okay", "Difficult")),
+            SurveyQuestion("gym_experience", "How was the gym environment today?", options=("Good", "Okay", "Poor")),
+            SurveyQuestion("equipment_experience", "How was the equipment during your visit?", options=("Good", "Okay", "Poor")),
+            SurveyQuestion("team_experience", "How was your interaction with the team today?", options=("Good", "Okay", "Poor")),
             SurveyQuestion("support", "Would support from the team help before your next visit?", options=("Yes", "Maybe", "No")),
             SurveyQuestion("next_step", "What would help most for your next session?", options=("Training plan", "Technique help", "Class or booking")),
         ),
@@ -380,10 +386,18 @@ def classify_response(flow_key: str, answers: dict[str, Any]) -> dict[str, Any]:
         reason = _answer_text(answers, "reason")
         preventable = _answer_text(answers, "preventable")
         future = _answer_text(answers, "future")
+        gym_experience = _answer_text(answers, "gym_experience")
+        equipment_experience = _answer_text(answers, "equipment_experience")
+        team_experience = _answer_text(answers, "team_experience")
+        experience_text = f"{gym_experience} {equipment_experience} {team_experience}"
         save = _yesish(preventable) or _maybeish(preventable) or _yesish(future) or _maybeish(future)
-        urgent = _contains_any(reason, ("staff", "dirty", "equipment", "rude", "complaint", "price", "cost", "value"))
+        poor_experience = _contains_any(experience_text, ("poor", "bad", "dirty", "broken", "rude", "unhelpful"))
+        urgent = _contains_any(reason, ("staff", "dirty", "equipment", "rude", "complaint", "price", "cost", "value")) or poor_experience
         return {
             "save_opportunity": "yes" if save else "no",
+            "gym_experience": gym_experience or "not recorded",
+            "equipment_experience": equipment_experience or "not recorded",
+            "team_experience": team_experience or "not recorded",
             "priority": "high" if urgent or save else "normal",
             "recommended_action": (
                 "Review quickly and consider a save/win-back call."
@@ -394,15 +408,22 @@ def classify_response(flow_key: str, answers: dict[str, Any]) -> dict[str, Any]:
         }
     if flow.key == "visit":
         experience = _answer_text(answers, "experience")
+        gym_experience = _answer_text(answers, "gym_experience")
+        equipment_experience = _answer_text(answers, "equipment_experience")
+        team_experience = _answer_text(answers, "team_experience")
         support = _answer_text(answers, "support")
         next_step = _answer_text(answers, "next_step")
+        experience_detail = f"{experience} {gym_experience} {equipment_experience} {team_experience}"
         needs_support = _yesish(support) or _maybeish(support) or _contains_any(
-            f"{experience} {next_step}",
-            ("difficult", "hard", "pain", "injury", "help", "plan", "technique", "class"),
+            f"{experience_detail} {next_step}",
+            ("difficult", "hard", "pain", "injury", "help", "plan", "technique", "class", "poor", "bad"),
         )
-        priority = "high" if _contains_any(experience, ("difficult", "hard", "pain", "injury")) else "normal"
+        priority = "high" if _contains_any(experience_detail, ("difficult", "hard", "pain", "injury", "poor", "bad")) else "normal"
         return {
             "visit_experience": experience or "not recorded",
+            "gym_experience": gym_experience or "not recorded",
+            "equipment_experience": equipment_experience or "not recorded",
+            "team_experience": team_experience or "not recorded",
             "priority": priority if needs_support else "low",
             "recommended_action": (
                 "Follow up with a clear next-session option."
