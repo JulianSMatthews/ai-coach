@@ -78,7 +78,7 @@ SURVEY_FLOWS: dict[str, SurveyFlow] = {
                 options=("Weekday daytime", "Weekday evening", "Weekend"),
             ),
         ),
-        completion="Thanks. The gym team has your answers and will follow up if support would help.",
+        completion="Thank you for taking the time to let us know how we can help support you best. A member of the team will be in touch.",
     ),
     "inactive": SurveyFlow(
         key="inactive",
