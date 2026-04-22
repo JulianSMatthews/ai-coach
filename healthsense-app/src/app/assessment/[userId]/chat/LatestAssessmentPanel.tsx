@@ -22,6 +22,7 @@ import {
   type AppleHealthAuthorizationState,
 } from "@/lib/appleHealth";
 import { Capacitor } from "@capacitor/core";
+import AboutMenu from "@/components/AboutMenu";
 import { applyThemePreference, readStoredThemePreference } from "@/lib/theme";
 import { getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
@@ -2883,7 +2884,8 @@ export default function LatestAssessmentPanel({
           ref={summaryPanelRef}
           className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-5 sm:py-5"
         >
-          <div className="mb-2 flex justify-end">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <AboutMenu buttonClassName={displayButtonClassName} />
             <button
               type="button"
               onClick={() => void toggleDisplayTheme()}

@@ -1,7 +1,6 @@
 import React from "react";
 import SessionBootstrap from "./SessionBootstrap";
 import ThemeBootstrap from "./ThemeBootstrap";
-import LegalLinksMenu from "./LegalLinksMenu";
 
 export function PageShell({
   children,
@@ -20,9 +19,6 @@ export function PageShell({
     >
       <SessionBootstrap />
       <ThemeBootstrap defaultTheme={defaultTheme} />
-      <div className="mx-auto mb-3 flex w-full max-w-6xl justify-start">
-        <LegalLinksMenu />
-      </div>
       <div className={`${contentClassName} min-w-0 overflow-x-hidden`.trim()}>{children}</div>
     </main>
   );

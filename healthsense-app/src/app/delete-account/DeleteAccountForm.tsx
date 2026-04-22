@@ -54,25 +54,25 @@ export default function DeleteAccountForm() {
   };
 
   return (
-    <form onSubmit={onSubmit} className="space-y-4">
-      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-4">
-        <label className="text-xs uppercase tracking-[0.2em] text-[var(--text-secondary)]">User ID</label>
+    <form onSubmit={onSubmit} className="space-y-3 text-[13px] leading-5">
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+        <label className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-secondary)]">User ID</label>
         <input
-          className="mt-2 w-full rounded-xl border px-3 py-2 text-sm"
+          className="mt-2 w-full rounded-xl border px-3 py-2 text-[13px]"
           value={userId}
           onChange={(event) => setUserId(event.target.value)}
           inputMode="numeric"
           placeholder="Sign in first if this is blank"
         />
-        <p className="mt-2 text-xs text-[var(--text-secondary)]">
+        <p className="mt-2 text-[12px] text-[var(--text-secondary)]">
           For security, deletion requests must come from a signed-in account.
         </p>
       </div>
 
-      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-4">
-        <label className="text-xs uppercase tracking-[0.2em] text-[var(--text-secondary)]">Contact email</label>
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+        <label className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-secondary)]">Contact email</label>
         <input
-          className="mt-2 w-full rounded-xl border px-3 py-2 text-sm"
+          className="mt-2 w-full rounded-xl border px-3 py-2 text-[13px]"
           type="email"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
@@ -80,18 +80,18 @@ export default function DeleteAccountForm() {
         />
       </div>
 
-      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-4">
-        <label className="text-xs uppercase tracking-[0.2em] text-[var(--text-secondary)]">Optional note</label>
+      <div className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-3">
+        <label className="text-[10px] uppercase tracking-[0.2em] text-[var(--text-secondary)]">Optional note</label>
         <textarea
-          className="mt-2 w-full rounded-xl border px-3 py-2 text-sm"
-          rows={4}
+          className="mt-2 w-full rounded-xl border px-3 py-2 text-[13px]"
+          rows={3}
           value={reason}
           onChange={(event) => setReason(event.target.value)}
           placeholder="Anything support should know before verifying deletion..."
         />
       </div>
 
-      <label className="flex items-start gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-4 text-sm">
+      <label className="flex items-start gap-3 rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] p-3 text-[13px]">
         <input
           type="checkbox"
           className="mt-1 h-4 w-4"
@@ -108,16 +108,20 @@ export default function DeleteAccountForm() {
         <button
           type="submit"
           disabled={submitting}
-          className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
         >
           {submitting ? "Sending..." : "Request deletion"}
         </button>
-        <a className="text-sm text-[var(--accent)] underline" href="/login">
+        <a className="text-[13px] text-[var(--accent)] underline" href="/login">
           Sign in
         </a>
       </div>
 
-      {status ? <p className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3 text-sm">{status}</p> : null}
+      {status ? (
+        <p className="rounded-2xl border border-[var(--border)] bg-[var(--surface-muted)] px-4 py-3 text-[13px]">
+          {status}
+        </p>
+      ) : null}
     </form>
   );
 }

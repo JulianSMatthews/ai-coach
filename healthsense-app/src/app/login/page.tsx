@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { friendlyAuthError } from "@/lib/authErrors";
 import HealthSenseMark from "@/components/HealthSenseMark";
-import LegalLinksMenu from "@/components/LegalLinksMenu";
+import AboutMenu from "@/components/AboutMenu";
 
 function looksLikePhone(value: string) {
   const trimmed = value.trim();
@@ -235,7 +235,7 @@ export default function LoginPage() {
   return (
     <main className="min-h-[100dvh] overflow-x-hidden bg-white px-6 py-6 text-[#1e1b16]">
       <div className="mx-auto mb-4 flex w-full max-w-md justify-start">
-        <LegalLinksMenu />
+        <AboutMenu />
       </div>
       <div className="mx-auto flex w-full max-w-md flex-col gap-6 rounded-3xl border border-[#e7e1d6] bg-white p-8 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.5)]">
         <div>
