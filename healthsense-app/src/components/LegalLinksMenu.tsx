@@ -13,7 +13,7 @@ export default function LegalLinksMenu({ className = "" }: LegalLinksMenuProps) 
   return (
     <details className={`group relative z-40 w-fit ${className}`.trim()}>
       <summary className="flex cursor-pointer list-none items-center gap-2 rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-xs uppercase tracking-[0.18em] text-[var(--text-secondary)] shadow-[0_14px_40px_-32px_var(--shadow-strong)]">
-        Legal
+        About
         <svg
           viewBox="0 0 20 20"
           className="h-3.5 w-3.5 transition-transform group-open:rotate-180"
