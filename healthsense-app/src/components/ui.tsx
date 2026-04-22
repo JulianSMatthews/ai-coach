@@ -1,7 +1,7 @@
 import React from "react";
 import SessionBootstrap from "./SessionBootstrap";
 import ThemeBootstrap from "./ThemeBootstrap";
-import LegalFooter from "./LegalFooter";
+import LegalLinksMenu from "./LegalLinksMenu";
 
 export function PageShell({
   children,
@@ -15,13 +15,15 @@ export function PageShell({
   defaultTheme?: string;
 }) {
   return (
-    <main className={`min-h-screen bg-[var(--background)] px-6 py-10 text-[var(--foreground)] ${className}`.trim()}>
+    <main
+      className={`min-h-[100dvh] overflow-x-hidden bg-[var(--background)] px-6 py-10 text-[var(--foreground)] ${className}`.trim()}
+    >
       <SessionBootstrap />
       <ThemeBootstrap defaultTheme={defaultTheme} />
-      <div className={contentClassName}>
-        {children}
-        <LegalFooter className="pt-2" />
+      <div className="mx-auto mb-3 flex w-full max-w-6xl justify-start">
+        <LegalLinksMenu />
       </div>
+      <div className={`${contentClassName} min-w-0 overflow-x-hidden`.trim()}>{children}</div>
     </main>
   );
 }

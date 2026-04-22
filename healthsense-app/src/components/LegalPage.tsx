@@ -1,5 +1,5 @@
 import HealthSenseMark from "@/components/HealthSenseMark";
-import LegalFooter from "@/components/LegalFooter";
+import LegalLinksMenu from "@/components/LegalLinksMenu";
 import type { ReactNode } from "react";
 
 type LegalPageProps = {
@@ -11,8 +11,9 @@ type LegalPageProps = {
 
 export default function LegalPage({ eyebrow, title, subtitle, children }: LegalPageProps) {
   return (
-    <main className="min-h-screen bg-[var(--background)] px-6 py-10 text-[var(--foreground)]">
+    <main className="min-h-[100dvh] overflow-x-hidden bg-[var(--background)] px-6 py-6 text-[var(--foreground)]">
       <div className="mx-auto w-full max-w-3xl space-y-6">
+        <LegalLinksMenu />
         <header className="rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-6 shadow-[0_30px_80px_-60px_var(--shadow-strong)]">
           <div className="flex items-center gap-3">
             <HealthSenseMark className="h-10 w-7" />
@@ -25,8 +26,6 @@ export default function LegalPage({ eyebrow, title, subtitle, children }: LegalP
         <article className="space-y-5 rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-6 text-sm text-[var(--text-secondary)]">
           {children}
         </article>
-
-        <LegalFooter />
       </div>
     </main>
   );
