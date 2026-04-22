@@ -9,7 +9,7 @@ export default function DeleteAccountPage() {
       subtitle="Start a HealthSense account deletion request from inside the app."
     >
       <section className="space-y-1.5">
-        <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">What deletion includes</h2>
+        <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">What deletion includes</h2>
         <p>
           Account deletion removes or disables your HealthSense user account and related assessment, coaching, biometric
           trend, urine test, preference, session, and message records where we are able to delete them.
@@ -21,7 +21,7 @@ export default function DeleteAccountPage() {
       </section>
 
       <section className="space-y-2.5">
-        <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">Request deletion</h2>
+        <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Request deletion</h2>
         <DeleteAccountForm />
       </section>
     </LegalPage>

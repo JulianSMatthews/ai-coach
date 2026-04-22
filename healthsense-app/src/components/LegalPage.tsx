@@ -25,10 +25,10 @@ export default function LegalPage({ eyebrow, title, subtitle, children }: LegalP
             <p className="text-[10px] uppercase tracking-[0.24em] text-[var(--text-secondary)]">{eyebrow}</p>
           </div>
           <h1 className="mt-4 text-[22px] leading-7">{title}</h1>
-          <p className="mt-2 text-[13px] leading-5 text-[var(--text-secondary)]">{subtitle}</p>
+          <p className="mt-2 text-[15px] leading-6 text-[var(--text-secondary)]">{subtitle}</p>
         </header>
 
-        <article className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-4 text-[13px] leading-5 text-[var(--text-secondary)] sm:p-5">
+        <article className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain rounded-3xl border border-[var(--border)] bg-[var(--surface)] p-4 text-[15px] leading-6 text-[var(--text-secondary)] sm:p-5">
           {children}
         </article>
       </div>

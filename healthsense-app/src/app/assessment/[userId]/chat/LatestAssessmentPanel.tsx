@@ -2981,7 +2981,7 @@ export default function LatestAssessmentPanel({
 
       {biometricsModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 sm:items-center sm:px-3 sm:py-3">
-          <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-2xl flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
+          <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-2xl flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
             <div className="shrink-0 border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="space-y-1">
@@ -3038,13 +3038,21 @@ export default function LatestAssessmentPanel({
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
               <div className="space-y-4">
-                <div className="rounded-2xl border border-[#efe7db] bg-[#fff8ef] px-4 py-3 text-xs leading-5 text-[#8a5a1a]">
-                  HealthSense biometrics and urine markers are optional wellbeing screening and trend signals. They are
-                  not medical diagnosis or treatment advice. If a result is unexpected or you have symptoms, retest
-                  where appropriate and speak to a qualified healthcare professional.
-                </div>
+                <details className="rounded-2xl border border-[#efe7db] bg-[#fff8ef] text-[#8a5a1a]">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-[11px] font-semibold uppercase tracking-[0.16em]">
+                    <span>About biometrics</span>
+                    <span aria-hidden="true" className="text-sm leading-none">
+                      +
+                    </span>
+                  </summary>
+                  <p className="border-t border-[#f2dccb] px-4 pb-3 pt-2 text-xs leading-5">
+                    HealthSense biometrics and urine markers are optional wellbeing screening and trend signals. They
+                    are not medical diagnosis or treatment advice. If a result is unexpected or you have symptoms,
+                    retest where appropriate and speak to a qualified healthcare professional.
+                  </p>
+                </details>
                 {!urineTestFlowOpen && activeBiomarkerExplanationDetail ? (
                   <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4">
                     <BiomarkerExplanationCard
@@ -3650,7 +3658,7 @@ export default function LatestAssessmentPanel({
 
       {objectivesModalOpen ? (
         <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 sm:items-center sm:px-3 sm:py-3">
-          <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-2xl flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
+          <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-2xl flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
             <div className="shrink-0 border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0 space-y-1">
@@ -3684,7 +3692,7 @@ export default function LatestAssessmentPanel({
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
               {weeklyObjectivesLoading ? <p className="text-sm text-[#6b6257]">Loading weekly objectives…</p> : null}
               {weeklyObjectivesError ? <p className="text-sm text-[#8a3e1a]">{weeklyObjectivesError}</p> : null}
 
@@ -3906,7 +3914,7 @@ export default function LatestAssessmentPanel({
 
       {selectedPillarKey ? (
         <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 sm:items-center sm:px-3 sm:py-3">
-          <div className="flex h-[100dvh] max-h-[100dvh] w-full max-w-2xl flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
+          <div className="flex h-[100dvh] max-h-[100dvh] min-h-0 w-full max-w-2xl flex-col overflow-hidden bg-white pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] shadow-[0_30px_80px_-60px_rgba(30,27,22,0.6)] sm:h-auto sm:max-h-[92vh] sm:rounded-[28px] sm:border sm:border-[#e7e1d6] sm:pt-0 sm:pb-0">
             <div className="shrink-0 border-b border-[#efe7db] bg-white px-4 py-4 sm:px-5">
               <div className="min-w-0 space-y-1">
                 <div className="flex min-w-0 items-center gap-3">
@@ -3929,7 +3937,7 @@ export default function LatestAssessmentPanel({
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto px-4 py-4 sm:px-5">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
               {loadingDetail ? <p className="text-sm text-[#6b6257]">Loading tracker…</p> : null}
               {detailError ? <p className="text-sm text-[#8a3e1a]">{detailError}</p> : null}
 

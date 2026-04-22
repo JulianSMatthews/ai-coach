@@ -2289,7 +2289,7 @@ export default function AssessmentChatBox({
 
   const homeChatPanel = showGuidedHomeChatPanel ? (
     <section className="-mx-3 overflow-hidden border-y border-[#e7e1d6] bg-white sm:mx-0 sm:rounded-[28px] sm:border sm:shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]">
-      <div className={`flex ${homePanelHeightClass} flex-col`}>
+      <div className={`flex ${homePanelHeightClass} min-h-0 flex-col`}>
         <div className="shrink-0 border-b border-[#efe7db] bg-[#fffaf3] px-4 py-4 sm:px-5">
           {homeSurface === "insight" && educationPlan?.available ? (
             <div className="min-w-0 space-y-1">
@@ -2326,9 +2326,9 @@ export default function AssessmentChatBox({
             </>
           )}
         </div>
-        <div className="flex-1 min-h-0 overflow-y-auto px-4 py-4 sm:px-5">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
           {homeSurface === "tracking" ? (
-            <div className="flex h-full flex-col justify-between gap-4">
+            <div className="flex min-h-full flex-col gap-4">
               <div className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-4 sm:px-5 sm:py-5">
                 <p className="text-sm text-[#6b6257]">
                   Tap a pillar to open just that daily check-in, or start the guided flow below to move through each pillar in order.
@@ -2361,39 +2361,41 @@ export default function AssessmentChatBox({
                   ))}
                 </div>
               </div>
-              <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4 sm:px-5">
-                <p className="text-sm text-[#6b6257]">
-                  Start the tracker and we will take you through all four pillars one at a time.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (typeof window !== "undefined") {
-                      window.scrollTo({ top: 0, behavior: "smooth" });
-                      window.dispatchEvent(
-                        new CustomEvent("healthsense-open-tracker", {
-                          detail: {
-                            guided: true,
-                          },
-                        }),
-                      );
-                    }
-                  }}
-                  className="mt-4 w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-white"
-                >
-                  Start daily check-in
-                </button>
+              <div className="sticky bottom-0 mt-auto rounded-t-[24px] bg-white/95 pt-3 backdrop-blur">
+                <div className="rounded-[24px] border border-[#efe7db] bg-white px-4 py-4 shadow-[0_-20px_50px_-42px_rgba(30,27,22,0.45)] sm:px-5">
+                  <p className="text-sm text-[#6b6257]">
+                    Start the tracker and we will take you through all four pillars one at a time.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (typeof window !== "undefined") {
+                        window.scrollTo({ top: 0, behavior: "smooth" });
+                        window.dispatchEvent(
+                          new CustomEvent("healthsense-open-tracker", {
+                            detail: {
+                              guided: true,
+                            },
+                          }),
+                        );
+                      }
+                    }}
+                    className="mt-4 w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-white"
+                  >
+                    Start daily check-in
+                  </button>
+                </div>
               </div>
             </div>
           ) : homeSurface === "insight" ? (
             educationPlanLoading && !educationPlan ? (
-              <div className="flex h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
+              <div className="flex min-h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
                 <p className="text-sm text-[#6b6257]">
                   Loading today&apos;s education programme…
                 </p>
               </div>
             ) : educationPlan?.available ? (
-              <div className="flex h-full flex-col gap-3 overflow-y-auto pr-1">
+              <div className="flex min-h-full flex-col gap-3">
                 {educationPlanLoading && educationPlan ? (
                   <p className="text-sm text-[#6b6257]">Refreshing today&apos;s lesson…</p>
                 ) : null}
@@ -2571,47 +2573,49 @@ export default function AssessmentChatBox({
                       <p className="mt-3 text-sm text-[#8a3e1a]">{educationQuizMessage}</p>
                     ) : null}
                     {!educationQuizCompleted ? (
-                      <button
-                        type="button"
-                        onClick={() => void submitEducationQuiz()}
-                        disabled={educationQuizSubmitting}
-                        className="mt-4 rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {educationQuizSubmitting ? "Saving" : "Submit quick check"}
-                      </button>
+                      <div className="sticky bottom-0 -mx-4 mt-4 bg-[#fffaf3]/95 px-4 py-3 backdrop-blur">
+                        <button
+                          type="button"
+                          onClick={() => void submitEducationQuiz()}
+                          disabled={educationQuizSubmitting}
+                          className="w-full rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {educationQuizSubmitting ? "Saving" : "Submit quick check"}
+                        </button>
+                      </div>
                     ) : null}
                   </div>
                 ) : null}
                 {educationPlanError ? <p className="text-sm text-[#8a3e1a]">{educationPlanError}</p> : null}
               </div>
             ) : (
-              <div className="flex h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
+              <div className="flex min-h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
                 <p className="text-sm text-[#6b6257]">
                   {educationPlanError || educationPlan?.reason || "Today's lesson is not available right now."}
                 </p>
               </div>
             )
           ) : homeSurface === "habits" ? (
-            <div className="flex h-full flex-col">
+            <div className="flex min-h-full flex-col">
               {dailyHabitPlanLoading && !dailyHabitPlan ? (
-                <div className="flex h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
+                <div className="flex min-h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
                   <p className="text-sm text-[#6b6257]">
                     Reviewing your tracker and preparing today&apos;s plan…
                   </p>
                 </div>
               ) : dailyHabitPlanError && !dailyHabitPlan ? (
-                <div className="flex h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
+                <div className="flex min-h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
                   <p className="text-sm text-[#8a3e1a]">{dailyHabitPlanError}</p>
                 </div>
               ) : (
-                <div className="flex h-full flex-col">
+                <div className="flex min-h-full flex-col">
                   {dailyHabitPlan?.title ? <p className="text-sm font-semibold text-[#1e1b16]">{dailyHabitPlan.title}</p> : null}
                   {dailyHabitPlan?.summary ? <p className="text-sm text-[#6b6257]">{dailyHabitPlan.summary}</p> : null}
                   {dailyHabitPlanLoading && dailyHabitPlan ? (
                     <p className="text-sm text-[#6b6257]">Refreshing today&apos;s plan…</p>
                   ) : null}
                   {dailyHabits.length ? (
-                    <div className="mt-4 grid flex-1 auto-rows-fr gap-3 md:grid-cols-3">
+                    <div className="mt-4 grid auto-rows-fr gap-3 md:grid-cols-3">
                       {dailyHabits.map((habit, index) => {
                         const momentLabel = String(habit?.moment_label || "").trim();
                         const title = String(habit?.title || "").trim();
@@ -2632,7 +2636,7 @@ export default function AssessmentChatBox({
                       })}
                     </div>
                   ) : (
-                    <div className="flex h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5 text-sm text-[#6b6257]">
+                    <div className="flex min-h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5 text-sm text-[#6b6257]">
                       Today&apos;s plan is not available right now.
                     </div>
                   )}
@@ -2641,8 +2645,8 @@ export default function AssessmentChatBox({
               )}
             </div>
           ) : (
-            <div className="flex h-full flex-col">
-              <div className="flex h-full flex-col justify-center">
+            <div className="flex min-h-full flex-col">
+              <div className="flex min-h-full flex-col justify-center">
                 {finalGiaMessageLoading ? (
                   <div className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
                     <p className="text-sm font-semibold text-[#1e1b16]">Gia is reviewing today&apos;s tracker results…</p>
