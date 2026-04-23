@@ -764,15 +764,32 @@ def _extract_llm_json_object(raw_text: str) -> dict[str, object]:
         if lines and lines[-1].strip().startswith("```"):
             lines = lines[:-1]
         cleaned = "\n".join(lines).strip()
+    decoder = json.JSONDecoder()
     candidates = [cleaned]
     first = cleaned.find("{")
     last = cleaned.rfind("}")
     if first >= 0 and last > first:
         candidates.append(cleaned[first : last + 1])
+    bracket_positions = [
+        index
+        for index, char in enumerate(cleaned)
+        if char in "{["
+    ]
+    candidates.extend(cleaned[index:].strip() for index in bracket_positions)
     last_error: Exception | None = None
     for candidate in candidates:
+        if not candidate:
+            continue
         try:
             parsed = json.loads(candidate)
+            if isinstance(parsed, dict):
+                return parsed
+            if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+                return parsed[0]
+        except Exception as exc:
+            last_error = exc
+        try:
+            parsed, _ = decoder.raw_decode(candidate)
             if isinstance(parsed, dict):
                 return parsed
             if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
