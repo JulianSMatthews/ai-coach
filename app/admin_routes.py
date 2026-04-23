@@ -63,6 +63,7 @@ _PROMPT_TEMPLATE_DEFAULTS = {
 BANNED_BLOCKS = {"developer", "policy", "tool"}
 LIVE_TEMPLATE_ALLOWED_MODELS = {"gpt-5-mini", "gpt-5.1"}
 EDUCATION_DAY_LLM_TOUCHPOINT = "education_programme_day_generator"
+EDUCATION_PROGRAMME_LLM_TOUCHPOINT = "education_concept_programme_generator"
 LLM_MODEL_CHOICES = [
     "gpt-5.2-pro",
     "gpt-5.2",
@@ -734,6 +735,24 @@ def _compact_education_day_for_llm(raw_day: object) -> dict[str, object]:
     }
 
 
+def _compact_education_programme_for_llm(raw_programme: object) -> dict[str, object]:
+    if not isinstance(raw_programme, dict):
+        return {"days": []}
+    raw_days = raw_programme.get("days") if isinstance(raw_programme.get("days"), list) else []
+    return {
+        "programme_name": _trim_llm_context_text(raw_programme.get("programme_name") or raw_programme.get("name"), 300),
+        "programme_code": _trim_llm_context_text(raw_programme.get("programme_code") or raw_programme.get("code"), 160),
+        "pillar_key": str(raw_programme.get("pillar_key") or "").strip().lower(),
+        "programme_concept_key": str(raw_programme.get("programme_concept_key") or "").strip().lower(),
+        "programme_concept_label": _trim_llm_context_text(
+            raw_programme.get("programme_concept_label") or raw_programme.get("concept_label"),
+            300,
+        ),
+        "duration_days": raw_programme.get("duration_days"),
+        "days": [_compact_education_day_for_llm(day) for day in raw_days[:31] if isinstance(day, dict)],
+    }
+
+
 def _extract_llm_json_object(raw_text: str) -> dict[str, object]:
     cleaned = str(raw_text or "").strip()
     if not cleaned:
@@ -899,6 +918,57 @@ def _normalise_generated_education_day(
         "default_title": default_title,
         "default_summary": default_summary,
         "variants": variants,
+    }
+
+
+def _normalise_generated_education_programme(
+    raw_generated: dict[str, object],
+    *,
+    concept_key: str,
+    concept_label: str,
+    requested_days: int,
+) -> dict[str, object]:
+    generated = raw_generated.get("programme") if isinstance(raw_generated.get("programme"), dict) else raw_generated
+    raw_days = generated.get("days") if isinstance(generated.get("days"), list) else []
+    if not raw_days:
+        raise ValueError("LLM response did not include any programme days")
+    normalised_days: list[dict[str, object]] = []
+    seen_indexes: set[int] = set()
+    for idx, raw_day in enumerate(raw_days[:31], start=1):
+        if not isinstance(raw_day, dict):
+            continue
+        raw_variants = raw_day.get("variants") if isinstance(raw_day.get("variants"), list) else []
+        existing_level = "build"
+        if raw_variants and isinstance(raw_variants[0], dict):
+            existing_level = str(raw_variants[0].get("level") or "build").strip().lower() or "build"
+        if existing_level not in {"support", "foundation", "build", "perform"}:
+            existing_level = "build"
+        day = _normalise_generated_education_day(
+            raw_day,
+            day_index=idx,
+            concept_key=concept_key,
+            concept_label=concept_label,
+            existing_level=existing_level,
+        )
+        day_index = int(day.get("day_index") or idx)
+        if day_index in seen_indexes:
+            day_index = max(seen_indexes, default=0) + 1
+            day["day_index"] = day_index
+        seen_indexes.add(day_index)
+        normalised_days.append(day)
+    if not normalised_days:
+        raise ValueError("LLM response did not include usable programme days")
+    if requested_days > 0 and len(normalised_days) != requested_days:
+        raise ValueError(f"LLM returned {len(normalised_days)} days; expected {requested_days}")
+    try:
+        duration_days = int(generated.get("duration_days") or len(normalised_days))
+    except Exception:
+        duration_days = len(normalised_days)
+    return {
+        "programme_name": str(generated.get("programme_name") or generated.get("name") or "").strip(),
+        "programme_code": str(generated.get("programme_code") or generated.get("code") or "").strip(),
+        "duration_days": duration_days,
+        "days": sorted(normalised_days, key=lambda item: int(item.get("day_index") or 0)),
     }
 
 
@@ -2348,6 +2418,169 @@ async def refresh_education_programme_lesson_avatar(variant_id: int):
         raise HTTPException(400, str(exc))
 
 
+@admin.post("/education-programmes/programme/llm-regenerate")
+async def regenerate_education_concept_programme_with_llm(request: Request):
+    ensure_education_plan_schema()
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(400, f"Invalid JSON payload: {exc}")
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "JSON payload must be an object")
+
+    model_override = _normalize_model_override(str(payload.get("model_override") or ""))
+    brief = str(payload.get("brief") or "").strip()
+    existing_programme = payload.get("existing_programme") if isinstance(payload.get("existing_programme"), dict) else {}
+    concept_key = str(payload.get("programme_concept_key") or existing_programme.get("programme_concept_key") or "").strip().lower()
+    concept_label = str(payload.get("programme_concept_label") or existing_programme.get("programme_concept_label") or "").strip()
+    pillar_key = str(payload.get("pillar_key") or existing_programme.get("pillar_key") or "").strip().lower()
+    if not concept_key:
+        raise HTTPException(400, "programme_concept_key is required")
+    try:
+        requested_days = int(payload.get("duration_days") or existing_programme.get("duration_days") or 0)
+    except Exception:
+        requested_days = 0
+    if requested_days <= 0:
+        raw_days = existing_programme.get("days") if isinstance(existing_programme.get("days"), list) else []
+        requested_days = len(raw_days) if raw_days else 7
+    requested_days = max(1, min(31, requested_days))
+
+    programme_context = {
+        "programme_name": str(payload.get("programme_name") or existing_programme.get("programme_name") or "").strip(),
+        "programme_code": str(payload.get("programme_code") or existing_programme.get("programme_code") or "").strip(),
+        "pillar_key": pillar_key,
+        "programme_concept_key": concept_key,
+        "programme_concept_label": concept_label,
+        "requested_days": requested_days,
+        "task_description": brief or "Regenerate a complete concept programme for this concept.",
+        "existing_programme": _compact_education_programme_for_llm(existing_programme),
+    }
+    output_schema = {
+        "programme": {
+            "programme_name": "string",
+            "programme_code": "string",
+            "duration_days": requested_days,
+            "days": [
+                {
+                    "day_index": 1,
+                    "lesson_goal": "string",
+                    "default_title": "string",
+                    "default_summary": "string",
+                    "variants": [
+                        {
+                            "level": "build",
+                            "title": "string",
+                            "summary": "string",
+                            "script": "string",
+                            "action_prompt": "string",
+                            "poster_url": "",
+                            "avatar_character": "",
+                            "avatar_style": "",
+                            "avatar_voice": "",
+                            "takeaway_default": "string",
+                            "takeaway_if_low_score": "string",
+                            "takeaway_if_high_score": "string",
+                            "is_active": True,
+                            "quiz": {
+                                "pass_score_pct": 66.67,
+                                "questions": [
+                                    {
+                                        "question_order": 1,
+                                        "question_text": "string",
+                                        "answer_type": "single_choice",
+                                        "options_json": ["string", "string", "string", "string"],
+                                        "correct_answer_json": "one exact option string",
+                                        "explanation": "string",
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    }
+    prompt = (
+        "You are creating a complete HealthSense concept-based education programme for the admin editor.\n"
+        "Return a single valid JSON object only. Do not use markdown, code fences, comments, or prose outside JSON.\n\n"
+        "Task:\n"
+        "- Regenerate the full concept programme from the task_description and selected concept.\n"
+        "- Use the existing programme only for context and continuity; replace the day plan, lesson goals, lesson scripts, daily actions, takeaways, and quizzes.\n"
+        f"- Return exactly {requested_days} programme days, numbered 1 to {requested_days}.\n"
+        "- Keep every day on the selected programme concept; do not drift into other concepts unless the task explicitly asks for a supporting contrast.\n"
+        "- Generate one active variant per day unless the task_description explicitly asks for multiple variants.\n"
+        "- Use level='build' unless the task_description asks for another level or a clear level progression.\n"
+        "- Include exactly 3 quiz questions for each variant.\n"
+        "- Use answer_type='single_choice' unless the task_description clearly requires boolean or multi_choice.\n"
+        "- For single_choice questions, options_json must be an array of 4 short answer options.\n"
+        "- correct_answer_json must exactly match the correct option string for single_choice questions.\n"
+        "- Leave video_url, avatar_status, avatar_job_id, avatar_error, avatar_generated_at, avatar_source, and avatar_summary_url absent or empty.\n"
+        "- Use UK English, clear coaching language, practical daily actions, and avoid diagnosis or medical claims.\n\n"
+        "CONTEXT_JSON:\n"
+        f"{json.dumps(programme_context, ensure_ascii=False, default=str)}\n\n"
+        "OUTPUT_SCHEMA_JSON:\n"
+        f"{json.dumps(output_schema, ensure_ascii=False)}\n"
+    )
+
+    try:
+        from . import llm as shared_llm
+
+        t0 = time.perf_counter()
+        resolved_model = shared_llm.resolve_model_name_for_touchpoint(
+            touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
+            model_override=model_override,
+        )
+        client = shared_llm.get_llm_client(
+            touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
+            model_override=model_override,
+        )
+        response = client.invoke(prompt)
+        duration_ms = int((time.perf_counter() - t0) * 1000)
+        content = _coerce_llm_content(getattr(response, "content", None)).strip()
+    except Exception as exc:
+        raise HTTPException(500, f"LLM programme generation failed: {exc}")
+
+    try:
+        raw_generated = _extract_llm_json_object(content)
+        generated_programme = _normalise_generated_education_programme(
+            raw_generated,
+            concept_key=concept_key,
+            concept_label=concept_label,
+            requested_days=requested_days,
+        )
+    except Exception as exc:
+        raise HTTPException(502, f"LLM response could not be used: {exc}")
+
+    try:
+        log_llm_prompt(
+            user_id=None,
+            touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
+            prompt_text=prompt,
+            model=resolved_model,
+            duration_ms=duration_ms,
+            response_preview=content[:4000],
+            context_meta={
+                "programme_name": programme_context["programme_name"],
+                "programme_code": programme_context["programme_code"],
+                "pillar_key": pillar_key,
+                "programme_concept_key": concept_key,
+                "requested_days": requested_days,
+                "model_override": model_override,
+            },
+            prompt_variant="admin_programme_editor",
+            task_label=(brief or f"Regenerate {concept_label or concept_key} programme")[:160],
+            prompt_blocks={
+                "context": json.dumps(programme_context, ensure_ascii=False, default=str),
+                "task": brief,
+            },
+            block_order=["context", "task"],
+        )
+    except Exception:
+        pass
+
+    return {"ok": True, "model": resolved_model, "programme": generated_programme}
+
+
 @admin.post("/education-programmes/day/llm-generate")
 async def generate_education_programme_day_with_llm(request: Request):
     ensure_education_plan_schema()
@@ -2516,9 +2749,12 @@ def edit_education_programme(id: int | None = None):
     try:
         from . import llm as shared_llm
         default_day_llm_model = shared_llm.resolve_model_name_for_touchpoint(EDUCATION_DAY_LLM_TOUCHPOINT)
+        default_programme_llm_model = shared_llm.resolve_model_name_for_touchpoint(EDUCATION_PROGRAMME_LLM_TOUCHPOINT)
     except Exception:
         default_day_llm_model = "default"
+        default_programme_llm_model = "default"
     day_llm_model_options_html = _llm_model_options_html(default_day_llm_model)
+    programme_llm_model_options_html = _llm_model_options_html(default_programme_llm_model)
     title = "Edit Education Programme" if row is not None else "Create Education Programme"
     title += f": {html.escape(str(getattr(row, 'name', '') or '').strip())}" if row is not None else ""
     current_pillar = str(programme_payload.get("pillar_key") or "").strip().lower()
@@ -2610,6 +2846,34 @@ def edit_education_programme(id: int | None = None):
         </div>
       </div>
 
+      <details class="programme-day-llm" id="programme-llm" style="margin-bottom:12px;">
+        <summary>Regenerate concept programme with LLM</summary>
+        <p class="help">Draft the full programme for the selected concept using the nominated model. This replaces the editor draft only; click Save Programme to persist it.</p>
+        <div class="grid-2">
+          <div class="field">
+            <label>Model<br/>
+              <select id="programme-llm-model">
+                {programme_llm_model_options_html}
+              </select>
+            </label>
+          </div>
+          <div class="field">
+            <label>Number of days<br/>
+              <input type="number" id="programme-llm-days" min="1" max="31" value="{html.escape(str(programme_payload.get('duration_days') or len(programme_payload.get('days') or []) or 7))}" />
+            </label>
+          </div>
+        </div>
+        <div class="field">
+          <label>Task description<br/>
+            <textarea id="programme-llm-brief" rows="4" placeholder="Example: Regenerate a 7-day concept programme that builds practical understanding, one daily action, and a 3-question quiz each day."></textarea>
+          </label>
+        </div>
+        <div class="stack">
+          <button type="button" id="generate-programme-llm">Generate concept programme draft</button>
+          <span class="subtle programme-day-llm-status" id="programme-llm-status"></span>
+        </div>
+      </details>
+
       <div class="programme-days-shell">
         <div class="card">
           <div class='stack' style='justify-content:space-between; margin-bottom:12px;'>
@@ -2693,6 +2957,11 @@ def edit_education_programme(id: int | None = None):
         const dayLlmModel = document.getElementById('day-llm-model');
         const dayLlmButton = document.getElementById('generate-selected-day-llm');
         const dayLlmStatus = document.getElementById('day-llm-status');
+        const programmeLlmBrief = document.getElementById('programme-llm-brief');
+        const programmeLlmModel = document.getElementById('programme-llm-model');
+        const programmeLlmDays = document.getElementById('programme-llm-days');
+        const programmeLlmButton = document.getElementById('generate-programme-llm');
+        const programmeLlmStatus = document.getElementById('programme-llm-status');
         const form = document.getElementById('education-programme-form');
         const structureField = document.getElementById('structure_json');
         const programmeConceptInput = document.getElementById('programme_concept_key');
@@ -3473,6 +3742,101 @@ def edit_education_programme(id: int | None = None):
           selectDay(selectedDayPosition);
         }}
 
+        function normaliseGeneratedProgrammeForEditor(generatedProgramme) {{
+          const generated = generatedProgramme && typeof generatedProgramme === 'object'
+            ? (generatedProgramme.programme && typeof generatedProgramme.programme === 'object' ? generatedProgramme.programme : generatedProgramme)
+            : {{}};
+          const rawDays = Array.isArray(generated.days) ? generated.days : [];
+          const existingDays = collectAllDaysFromDom();
+          const existingByIndex = new Map(existingDays.map((day) => [Number(day.day_index || 0), day]));
+          return rawDays.map((rawDay, index) => {{
+            const generatedDay = rawDay && typeof rawDay === 'object' ? rawDay : {{}};
+            const dayIndex = Number(generatedDay.day_index || index + 1);
+            const existingDay = existingByIndex.get(dayIndex) || existingDays[index] || null;
+            return normaliseGeneratedDayForEditor({{ ...generatedDay, day_index: dayIndex }}, existingDay);
+          }}).filter((day) => day.default_title || day.lesson_goal || (Array.isArray(day.variants) && day.variants.length));
+        }}
+
+        function replaceProgrammeWithGenerated(generatedProgramme) {{
+          const replacementDays = normaliseGeneratedProgrammeForEditor(generatedProgramme);
+          if (!replacementDays.length) {{
+            throw new Error('LLM response did not include usable programme days.');
+          }}
+          selectedDayPosition = 0;
+          renderDays(replacementDays);
+          selectDay(0);
+        }}
+
+        async function requestConceptProgrammeLlmGeneration() {{
+          if (!selectedProgrammeConceptKey()) {{
+            window.alert('Select a programme concept before generating a concept programme.');
+            programmeConceptInput?.focus();
+            return;
+          }}
+          const dayCount = Math.max(1, Math.min(31, Number(programmeLlmDays?.value || currentDayElements().length || 7)));
+          const existingDays = collectAllDaysFromDom();
+          const brief = String(programmeLlmBrief?.value || '').trim();
+          if (!window.confirm(`Replace the current editor draft with a new ${{dayCount}}-day concept programme? You still need to save afterwards.`)) {{
+            return;
+          }}
+          const payload = {{
+            brief,
+            model_override: String(programmeLlmModel?.value || '').trim(),
+            duration_days: dayCount,
+            programme_name: String(form.querySelector('input[name="name"]')?.value || '').trim(),
+            programme_code: String(form.querySelector('input[name="code"]')?.value || '').trim(),
+            pillar_key: selectedProgrammePillar(),
+            programme_concept_key: selectedProgrammeConceptKey(),
+            programme_concept_label: resolvedProgrammeConceptLabel(),
+            existing_programme: {{
+              programme_name: String(form.querySelector('input[name="name"]')?.value || '').trim(),
+              programme_code: String(form.querySelector('input[name="code"]')?.value || '').trim(),
+              pillar_key: selectedProgrammePillar(),
+              programme_concept_key: selectedProgrammeConceptKey(),
+              programme_concept_label: resolvedProgrammeConceptLabel(),
+              duration_days: existingDays.length,
+              days: existingDays,
+            }},
+          }};
+          const previousText = programmeLlmButton ? programmeLlmButton.textContent : '';
+          if (programmeLlmButton) {{
+            programmeLlmButton.disabled = true;
+            programmeLlmButton.textContent = 'Generating...';
+          }}
+          if (programmeLlmStatus) {{
+            programmeLlmStatus.textContent = 'Generating concept programme draft...';
+          }}
+          try {{
+            const response = await fetch('/admin/education-programmes/programme/llm-regenerate', {{
+              method: 'POST',
+              headers: {{ 'Content-Type': 'application/json' }},
+              body: JSON.stringify(payload),
+            }});
+            const result = await response.json().catch(() => ({{}}));
+            if (!response.ok || result.ok === false) {{
+              throw new Error(String(result.error || result.detail || 'LLM programme generation failed.'));
+            }}
+            if (!result.programme) {{
+              throw new Error('LLM response did not include a programme draft.');
+            }}
+            replaceProgrammeWithGenerated(result.programme);
+            if (programmeLlmStatus) {{
+              programmeLlmStatus.textContent = `Generated with ${{result.model || 'selected model'}}. Review the full programme, then save.`;
+            }}
+          }} catch (err) {{
+            const message = err instanceof Error ? err.message : String(err);
+            if (programmeLlmStatus) {{
+              programmeLlmStatus.textContent = message;
+            }}
+            window.alert(message);
+          }} finally {{
+            if (programmeLlmButton) {{
+              programmeLlmButton.disabled = false;
+              programmeLlmButton.textContent = previousText || 'Generate concept programme draft';
+            }}
+          }}
+        }}
+
         async function requestSelectedDayLlmGeneration() {{
           const dayEl = selectedDayElement();
           if (!dayEl) {{
@@ -3677,6 +4041,10 @@ def edit_education_programme(id: int | None = None):
 
         dayLlmButton?.addEventListener('click', function() {{
           void requestSelectedDayLlmGeneration();
+        }});
+
+        programmeLlmButton?.addEventListener('click', function() {{
+          void requestConceptProgrammeLlmGeneration();
         }});
 
         reviewSelectedDayVideoButton?.addEventListener('click', openSelectedDayVideoReview);
