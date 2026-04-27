@@ -1368,6 +1368,7 @@ def logout():
 @router.get("/admin", response_class=HTMLResponse)
 def dashboard(request: Request, session: Session = Depends(get_session), _: None = Depends(require_admin)):
     today = date.today()
+    current_staff = staff_from_request(request, session)
     current_members = current_member_rows(session, today=today)
     current_count = len(current_members)
     active_cutoff = today - timedelta(days=21)
@@ -1391,6 +1392,96 @@ def dashboard(request: Request, session: Session = Depends(get_session), _: None
         or 0
     )
     open_tasks = session.scalar(select(func.count()).select_from(StaffTask).where(StaffTask.status == "open")) or 0
+    assigned_section = ""
+    if current_staff is not None:
+        selected_quarter = _current_quarter(today)
+        assigned_rows = session.execute(
+            select(OkrObjective, OkrKeyResult)
+            .join(OkrKeyResult, OkrKeyResult.objective_id == OkrObjective.id)
+            .where(
+                OkrObjective.quarter == selected_quarter,
+                OkrKeyResult.assigned_staff_id == int(current_staff.id),
+            )
+            .order_by(
+                func.coalesce(OkrObjective.objective_number, 999999).asc(),
+                OkrObjective.id.asc(),
+                func.coalesce(OkrKeyResult.key_result_number, 999999).asc(),
+                OkrKeyResult.id.asc(),
+            )
+        ).all()
+        assigned_krs = [kr for _objective, kr in assigned_rows]
+        assigned_percents = [
+            pct
+            for pct in (_okr_percent(kr.actual_value, kr.target_value, kr.direction) for kr in assigned_krs)
+            if pct is not None
+        ]
+        assigned_average_percent = (sum(assigned_percents) / len(assigned_percents)) if assigned_percents else None
+        assigned_average_label = f"{assigned_average_percent:.1f}%" if assigned_average_percent is not None else "0%"
+        assigned_rag_counts = {"green": 0, "amber": 0, "red": 0, "grey": 0}
+        for kr in assigned_krs:
+            assigned_rag_counts[
+                _okr_rag(_okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter))
+            ] += 1
+
+        objective_positions: dict[int, int] = {}
+        objective_kr_positions: dict[int, int] = {}
+        kr_rows = []
+        for objective, kr in assigned_rows:
+            objective_id = int(getattr(objective, "id", 0) or 0)
+            if objective_id not in objective_positions:
+                objective_positions[objective_id] = len(objective_positions) + 1
+            objective_kr_positions[objective_id] = objective_kr_positions.get(objective_id, 0) + 1
+            objective_number = (
+                _parse_int(getattr(objective, "objective_number", None), objective_positions[objective_id])
+                or objective_positions[objective_id]
+            )
+            kr_part_number = (
+                _parse_int(getattr(kr, "key_result_number", None), objective_kr_positions[objective_id])
+                or objective_kr_positions[objective_id]
+            )
+            kr_number = f"{objective_number}.{kr_part_number}"
+            percent = _okr_percent(kr.actual_value, kr.target_value, kr.direction)
+            pace_percent = _okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter)
+            unit = str(kr.unit or "").strip()
+            target_label = f"{_format_number(kr.target_value)} {unit}".strip()
+            actual_label = f"{_format_number(kr.actual_value)} {unit}".strip()
+            direction_label = "Lower is better" if str(kr.direction or "").strip().lower() == "decrease" else "Higher is better"
+            actual_updated_html = _okr_actual_updated_html(getattr(kr, "actual_updated_at", None))
+            pace_hint_html = _okr_pace_hint_html(kr.target_value, kr.direction, unit, selected_quarter)
+            kr_rows.append(
+                "<tr>"
+                f"<td><strong>{_esc(kr_number)}</strong></td>"
+                f"<td>{_esc(objective.area)}<br><span class=\"muted\">Objective {objective_number}: {_esc(objective.title)}</span></td>"
+                f"<td>{_esc(kr.title)}{actual_updated_html}</td>"
+                f"<td>{_esc(target_label)}<br><span class=\"muted\">{_esc(direction_label)}</span></td>"
+                f"<td>{_esc(actual_label)}</td>"
+                f"<td>{_okr_percent_html(percent)}</td>"
+                f"<td>{_okr_rag_html(pace_percent)}<br>{pace_hint_html}</td>"
+                "</tr>"
+            )
+
+        okr_dashboard_href = _href(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter})}")
+        assigned_section = f"""
+<section>
+  <div class="inline" style="justify-content: space-between;">
+    <div>
+      <h2>Your Key Results</h2>
+      <p class="muted">Quarter: {_esc(selected_quarter)}. Showing only KRs assigned to you.</p>
+    </div>
+    <a class="button secondary" href="{okr_dashboard_href}">Open OKR dashboard</a>
+  </div>
+  <div class="grid">
+    <div class="metric"><strong>{len(assigned_krs)}</strong><span>Assigned key results</span></div>
+    <div class="metric"><strong>{assigned_average_label}</strong><span>Average achieved</span></div>
+    <div class="metric"><strong>{assigned_rag_counts['green']}</strong><span>Green KRs</span></div>
+    <div class="metric"><strong>{assigned_rag_counts['amber']}</strong><span>Amber KRs</span></div>
+    <div class="metric"><strong>{assigned_rag_counts['red']}</strong><span>Red KRs</span></div>
+  </div>
+  <table>
+    <thead><tr><th>No.</th><th>Area</th><th>Key result</th><th>Target</th><th>Actual</th><th>Achieved</th><th>Pace RAG</th></tr></thead>
+    <tbody>{''.join(kr_rows) or f'<tr><td colspan="7">No key results are assigned to you for {_esc(selected_quarter)}.</td></tr>'}</tbody>
+  </table>
+</section>"""
     body = f"""
 <section>
   <h2>Dashboard</h2>
@@ -1401,7 +1492,8 @@ def dashboard(request: Request, session: Session = Depends(get_session), _: None
     <div class="metric"><strong>{expired_30_count}</strong><span>Expired members in last 30 days</span></div>
     <div class="metric"><strong>{open_tasks}</strong><span>Open staff tasks</span></div>
   </div>
-</section>"""
+</section>
+{assigned_section}"""
     return _layout(request, "Dashboard", body)
 
 
