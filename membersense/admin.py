@@ -309,6 +309,24 @@ def _maintenance_default_assignment(category: object, *, purchase_staff_id: int 
     return "maint_main", 0
 
 
+def _maintenance_is_purchase_category(category: object) -> bool:
+    return _maintenance_category_key(category) == "purchase"
+
+
+def _maintenance_is_purchase_item(item: MaintenanceItem) -> bool:
+    return _maintenance_is_purchase_category(getattr(item, "category", ""))
+
+
+def _maintenance_purchase_status_key(item: MaintenanceItem) -> str:
+    return "ordered" if getattr(item, "ordered_on", None) is not None else "pending"
+
+
+def _maintenance_is_active(item: MaintenanceItem) -> bool:
+    if _maintenance_is_purchase_item(item):
+        return getattr(item, "ordered_on", None) is None
+    return _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) != "complete"
+
+
 def _staff_name(session: Session, staff_id: int | None) -> str:
     if not staff_id:
         return ""
@@ -334,9 +352,12 @@ def _maintenance_days_transpired(item: MaintenanceItem) -> int:
         start = created_value.date()
     else:
         start = date.today()
-    end_value = getattr(item, "completed_on", None)
-    if end_value is None and _maintenance_stage_key(getattr(item, "stage", "")) == "complete":
-        end_value = getattr(item, "completed_at", None)
+    if _maintenance_is_purchase_item(item):
+        end_value = getattr(item, "ordered_on", None)
+    else:
+        end_value = getattr(item, "completed_on", None)
+        if end_value is None and _maintenance_stage_key(getattr(item, "stage", "")) == "complete":
+            end_value = getattr(item, "completed_at", None)
     if end_value is not None and hasattr(end_value, "date"):
         end = end_value.date()
     elif isinstance(end_value, date):
@@ -353,6 +374,14 @@ def _maintenance_stage_html(stage: object) -> str:
     if key == "arrange_work":
         return '<span class="rag rag-amber">Arrange work</span>'
     return '<span class="rag rag-red">Order parts</span>'
+
+
+def _maintenance_status_html(item: MaintenanceItem) -> str:
+    if _maintenance_is_purchase_item(item):
+        if _maintenance_purchase_status_key(item) == "ordered":
+            return '<span class="rag rag-green">Ordered</span>'
+        return '<span class="rag rag-amber">Pending order</span>'
+    return _maintenance_stage_html(getattr(item, "stage", getattr(item, "status", "")))
 
 
 def _maintenance_priority_html(priority: object) -> str:
@@ -424,6 +453,11 @@ def _maintenance_stage_fields(
 
 
 def _maintenance_stage_date_detail(item: MaintenanceItem) -> str:
+    if _maintenance_is_purchase_item(item):
+        ordered_on = getattr(item, "ordered_on", None)
+        if ordered_on is None:
+            return "Order date not set"
+        return f'Ordered on {_esc(_date(ordered_on) or "Not set")}'
     stage = _maintenance_stage_key(getattr(item, "stage", ""))
     if stage == "order_parts":
         due_on = getattr(item, "parts_due_on", None)
@@ -438,9 +472,21 @@ def _maintenance_stage_date_detail(item: MaintenanceItem) -> str:
 def _maintenance_sort_key(item: MaintenanceItem) -> tuple[int, int, int, str, int]:
     category_order = {"purchase": 0, "maintenance": 1, "repair": 2}
     stage_order = {"order_parts": 0, "arrange_work": 1, "complete": 2}
+    purchase_status_order = {"pending": 0, "ordered": 1}
     priority_order = {"high": 0, "medium": 1, "low": 2}
-    stage_date = None
     category_key = _maintenance_category_key(getattr(item, "category", ""))
+    if category_key == "purchase":
+        purchase_status = _maintenance_purchase_status_key(item)
+        ordered_on = getattr(item, "ordered_on", None)
+        date_label = ordered_on.isoformat() if hasattr(ordered_on, "isoformat") else ""
+        return (
+            category_order.get(category_key, 9),
+            purchase_status_order.get(purchase_status, 9),
+            priority_order.get(_maintenance_priority_key(getattr(item, "priority", "")), 9),
+            date_label,
+            int(getattr(item, "id", 0) or 0),
+        )
+    stage_date = None
     stage = _maintenance_stage_key(getattr(item, "stage", ""))
     if stage == "order_parts":
         stage_date = getattr(item, "parts_due_on", None)
@@ -479,7 +525,7 @@ def _maintenance_redirect(
         params["item_type"] = item_type_key
     if category_key:
         params["category"] = category_key
-    if stage_key:
+    if stage_key and category_key != "purchase":
         params["stage"] = stage_key
     if created is not None:
         params["created"] = int(created)
@@ -1754,13 +1800,8 @@ def dashboard(
         or 0
     )
     open_tasks = session.scalar(select(func.count()).select_from(StaffTask).where(StaffTask.status == "open")) or 0
-    open_maintenance = (
-        session.scalar(
-            select(func.count())
-            .select_from(MaintenanceItem)
-            .where(MaintenanceItem.stage != "complete")
-        )
-        or 0
+    open_maintenance = sum(
+        1 for item in session.execute(select(MaintenanceItem)).scalars().all() if _maintenance_is_active(item)
     )
     notice_html = '<p><span class="pill">Actual updated.</span></p>' if updated is not None else ""
     assigned_section = ""
@@ -1949,6 +1990,8 @@ def maintenance_admin(
 ):
     selected_category = _maintenance_category_key(category, allow_blank=True)
     selected_stage = _maintenance_stage_key(stage or status, allow_blank=True)
+    if selected_category == "purchase":
+        selected_stage = ""
     staff_rows = (
         session.execute(select(StaffUser).where(StaffUser.is_active.is_(True)).order_by(StaffUser.name.asc()))
         .scalars()
@@ -1964,58 +2007,89 @@ def maintenance_admin(
             options.append(f'<option value="{int(staff.id)}"{selected_attr}>{_esc(staff.name)}</option>')
         return f'<select name="{_esc(name)}">{"".join(options)}</select>'
 
-    def stage_fields_html(
+    def workflow_fields_html(
         *,
+        selected_category_value: object,
         selected_stage_value: object,
+        ordered_value: object,
         needs_parts_value: object,
         parts_due_value: object,
         work_due_value: object,
         completed_value: object,
     ) -> str:
+        category_key = _maintenance_category_key(selected_category_value)
+        purchase_style = "display: block;" if category_key == "purchase" else "display: none;"
+        work_style = "display: block;" if category_key != "purchase" else "display: none;"
         needs_parts_checked = " checked" if bool(needs_parts_value) else ""
         return f"""
-      <label><span>Stage</span>{_select_html("stage", MAINTENANCE_STAGE_OPTIONS, selected_stage_value)}</label>
-      <div style="display: flex; align-items: center; gap: 10px; padding-top: 24px;">
+      <div data-maintenance-field-group="purchase" data-display-style="block" style="{purchase_style}">
+        <label><span>Order date</span><input type="date" name="ordered_on" value="{_esc(_date_input_value(ordered_value))}"></label>
+      </div>
+      <div data-maintenance-field-group="work" data-display-style="block" style="{work_style}">
+        <label><span>Stage</span>{_select_html("stage", MAINTENANCE_STAGE_OPTIONS, selected_stage_value)}</label>
+      </div>
+      <div data-maintenance-field-group="work" data-display-style="flex" style="align-items: center; gap: 10px; padding-top: 24px; {work_style}">
         <input type="checkbox" name="needs_parts" value="1"{needs_parts_checked} style="width: 18px; height: 18px; margin: 0;">
         <span style="font-weight: 700; color: var(--muted);">Needs parts</span>
       </div>
-      <label><span>Parts due on</span><input type="date" name="parts_due_on" value="{_esc(_date_input_value(parts_due_value))}"></label>
-      <label><span>Date to be done</span><input type="date" name="work_due_on" value="{_esc(_date_input_value(work_due_value))}"></label>
-      <label><span>Completed on</span><input type="date" name="completed_on" value="{_esc(_date_input_value(completed_value))}"></label>"""
+      <div data-maintenance-field-group="work" data-display-style="block" style="{work_style}">
+        <label><span>Parts due on</span><input type="date" name="parts_due_on" value="{_esc(_date_input_value(parts_due_value))}"></label>
+      </div>
+      <div data-maintenance-field-group="work" data-display-style="block" style="{work_style}">
+        <label><span>Date to be done</span><input type="date" name="work_due_on" value="{_esc(_date_input_value(work_due_value))}"></label>
+      </div>
+      <div data-maintenance-field-group="work" data-display-style="block" style="{work_style}">
+        <label><span>Completed on</span><input type="date" name="completed_on" value="{_esc(_date_input_value(completed_value))}"></label>
+      </div>"""
 
     all_items = session.execute(select(MaintenanceItem)).scalars().all()
     purchase_active_count = sum(
         1
         for item in all_items
         if _maintenance_category_key(getattr(item, "category", "")) == "purchase"
-        and _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) != "complete"
+        and _maintenance_is_active(item)
+    )
+    purchase_ordered_count = sum(
+        1
+        for item in all_items
+        if _maintenance_category_key(getattr(item, "category", "")) == "purchase"
+        and not _maintenance_is_active(item)
     )
     maintenance_active_count = sum(
         1
         for item in all_items
         if _maintenance_category_key(getattr(item, "category", "")) == "maintenance"
-        and _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) != "complete"
+        and _maintenance_is_active(item)
     )
     repair_active_count = sum(
         1
         for item in all_items
         if _maintenance_category_key(getattr(item, "category", "")) == "repair"
-        and _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) != "complete"
+        and _maintenance_is_active(item)
     )
     order_parts_count = sum(
-        1 for item in all_items if _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) == "order_parts"
+        1
+        for item in all_items
+        if not _maintenance_is_purchase_item(item)
+        and _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) == "order_parts"
     )
     arrange_work_count = sum(
-        1 for item in all_items if _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) == "arrange_work"
+        1
+        for item in all_items
+        if not _maintenance_is_purchase_item(item)
+        and _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) == "arrange_work"
     )
     complete_count = sum(
-        1 for item in all_items if _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) == "complete"
+        1
+        for item in all_items
+        if not _maintenance_is_purchase_item(item)
+        and _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) == "complete"
     )
     high_priority_active_count = sum(
         1
         for item in all_items
         if _maintenance_priority_key(getattr(item, "priority", "")) == "high"
-        and _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) != "complete"
+        and _maintenance_is_active(item)
     )
     filtered_items = [
         item
@@ -2023,7 +2097,10 @@ def maintenance_admin(
         if (not selected_category or _maintenance_category_key(getattr(item, "category", "")) == selected_category)
         and (
             not selected_stage
-            or _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) == selected_stage
+            or (
+                not _maintenance_is_purchase_item(item)
+                and _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) == selected_stage
+            )
         )
     ]
     filtered_items = sorted(filtered_items, key=_maintenance_sort_key)
@@ -2053,11 +2130,12 @@ def maintenance_admin(
         assignee_label = _maintenance_assignee_label(item, session)
         detail_text = str(getattr(item, "detail", "") or "").strip()
         stage_detail = _maintenance_stage_date_detail(item)
-        needs_parts_label = "Needs parts" if bool(getattr(item, "needs_parts", False)) else "No parts needed"
         detail_html = f'<br><span class="muted">{_esc(detail_text)}</span>' if detail_text else ""
-        item_meta_html = (
-            f'<div class="muted" style="margin-top: 4px;">{stage_detail} · {_esc(needs_parts_label)}</div>'
-        )
+        if _maintenance_is_purchase_item(item):
+            item_meta_html = f'<div class="muted" style="margin-top: 4px;">{stage_detail}</div>'
+        else:
+            needs_parts_label = "Needs parts" if bool(getattr(item, "needs_parts", False)) else "No parts needed"
+            item_meta_html = f'<div class="muted" style="margin-top: 4px;">{stage_detail} · {_esc(needs_parts_label)}</div>'
         item_stage = _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", "")))
         edit_form = f"""
 <details>
@@ -2074,8 +2152,10 @@ def maintenance_admin(
       <label><span>Priority</span>{_select_html("priority", MAINTENANCE_PRIORITY_OPTIONS, getattr(item, "priority", "medium"))}</label>
       <label><span>Who completes this</span>{_select_html("allocation_type", MAINTENANCE_ALLOCATION_OPTIONS, getattr(item, "allocation_type", "maint_main"))}</label>
       <label><span>Staff person</span>{staff_select("assigned_staff_id", getattr(item, "assigned_staff_id", None))}</label>
-      {stage_fields_html(
+      {workflow_fields_html(
+          selected_category_value=category_key,
           selected_stage_value=item_stage,
+          ordered_value=getattr(item, "ordered_on", None),
           needs_parts_value=bool(getattr(item, "needs_parts", False)),
           parts_due_value=getattr(item, "parts_due_on", None),
           work_due_value=getattr(item, "work_due_on", None),
@@ -2095,7 +2175,7 @@ def maintenance_admin(
             f"<td><strong>{_esc(item.title)}</strong>{detail_html}{item_meta_html}</td>"
             f"<td>{_esc(assignee_label)}</td>"
             f"<td>{_maintenance_priority_html(getattr(item, 'priority', 'medium'))}</td>"
-            f"<td>{_maintenance_stage_html(item_stage)}</td>"
+            f"<td>{_maintenance_status_html(item)}</td>"
             f"<td>{edit_form}</td>"
             "</tr>"
         )
@@ -2111,7 +2191,7 @@ def maintenance_admin(
 <section>
   <h2>{_esc(title)}</h2>
   <table>
-    <thead><tr><th>Recorded</th><th>Days</th><th>Category</th><th>Item</th><th>Allocated to</th><th>Priority</th><th>Stage</th><th>Action</th></tr></thead>
+    <thead><tr><th>Recorded</th><th>Days</th><th>Category</th><th>Item</th><th>Allocated to</th><th>Priority</th><th>Status</th><th>Action</th></tr></thead>
     <tbody>{''.join(rows) or f'<tr><td colspan="8">{_esc(empty_label)}</td></tr>'}</tbody>
   </table>
 </section>"""
@@ -2120,12 +2200,13 @@ def maintenance_admin(
   <div class="inline" style="justify-content: space-between;">
     <div>
       <h2>Maintenance</h2>
-      <p class="muted">Track purchase, maintenance, and repair items with stage, parts requirement, recorded date, elapsed days, and allocation.</p>
+      <p class="muted">Track purchase items by order date, and maintenance and repair items by stage, with recorded date, elapsed days, and allocation.</p>
     </div>
   </div>
   {notice_html}
   <div class="grid">
     <div class="metric"><strong>{purchase_active_count}</strong><span>Active purchase items</span></div>
+    <div class="metric"><strong>{purchase_ordered_count}</strong><span>Ordered purchase items</span></div>
     <div class="metric"><strong>{maintenance_active_count}</strong><span>Active maintenance items</span></div>
     <div class="metric"><strong>{repair_active_count}</strong><span>Active repair items</span></div>
     <div class="metric"><strong>{order_parts_count}</strong><span>Order parts</span></div>
@@ -2148,8 +2229,10 @@ def maintenance_admin(
       <label><span>Priority</span>{_select_html("priority", MAINTENANCE_PRIORITY_OPTIONS, "medium")}</label>
       <label><span>Who completes this</span>{_select_html("allocation_type", MAINTENANCE_ALLOCATION_OPTIONS, add_form_allocation)}</label>
       <label><span>Staff person</span>{staff_select("assigned_staff_id", add_form_staff_id)}</label>
-      {stage_fields_html(
+      {workflow_fields_html(
+          selected_category_value=add_form_category,
           selected_stage_value="arrange_work",
+          ordered_value=None,
           needs_parts_value=False,
           parts_due_value=None,
           work_due_value=None,
@@ -2165,11 +2248,11 @@ def maintenance_admin(
   <div class="inline" style="justify-content: space-between;">
     <div>
       <h2>Maintenance Filters</h2>
-      <p class="muted">Use filters to focus the logs. Days transpired runs from the recorded date to completion, or to today while the item is still active.</p>
+      <p class="muted">Use filters to focus the logs. Days transpired runs from the recorded date to the order date for purchases, to completion for finished work, or to today while the item is still active.</p>
     </div>
     <form method="get" action="{_href(request, '/admin/maintenance')}" class="inline">
       <label><span>Category</span>{category_filter_html}</label>
-      <label><span>Stage</span>{stage_filter_html}</label>
+      {'' if selected_category == 'purchase' else f'<label><span>Stage</span>{stage_filter_html}</label>'}
       <button type="submit">Filter</button>
     </form>
   </div>
@@ -2181,11 +2264,18 @@ def maintenance_admin(
     const categoryInputs = form.querySelectorAll('input[name="category"]');
     const allocationSelect = form.querySelector('select[name="allocation_type"]');
     const staffSelect = form.querySelector('select[name="assigned_staff_id"]');
+    const groupedFields = form.querySelectorAll('[data-maintenance-field-group]');
     const purchaseStaffId = form.getAttribute('data-purchase-staff-id') || '';
     if (!categoryInputs.length || !allocationSelect || !staffSelect) return;
     const applyCategoryDefaults = () => {{
       const checked = form.querySelector('input[name="category"]:checked');
       const categoryValue = checked ? checked.value : 'maintenance';
+      groupedFields.forEach((field) => {{
+        const group = field.getAttribute('data-maintenance-field-group') || '';
+        const displayStyle = field.getAttribute('data-display-style') || 'block';
+        const visible = categoryValue === 'purchase' ? group === 'purchase' : group === 'work';
+        field.style.display = visible ? displayStyle : 'none';
+      }});
       if (categoryValue === 'purchase') {{
         allocationSelect.value = 'staff_person';
         if (purchaseStaffId && Array.from(staffSelect.options).some((option) => option.value === purchaseStaffId)) {{
@@ -2200,6 +2290,7 @@ def maintenance_admin(
       }}
     }};
     categoryInputs.forEach((input) => input.addEventListener('change', applyCategoryDefaults));
+    applyCategoryDefaults();
   }});
 }})();
 </script>"""
@@ -2224,6 +2315,7 @@ def maintenance_create_item(
     category: str = Form("maintenance"),
     priority: str = Form("medium"),
     stage: str = Form("arrange_work"),
+    ordered_on: str = Form(""),
     needs_parts: str = Form(""),
     parts_due_on: str = Form(""),
     work_due_on: str = Form(""),
@@ -2260,21 +2352,33 @@ def maintenance_create_item(
         )
     if allocation != "staff_person":
         staff_id = 0
-    try:
-        stage_key, needs_parts_flag, parts_due_date, work_due_date, completed_date = _maintenance_stage_fields(
-            stage=stage,
-            needs_parts=needs_parts,
-            parts_due_on=parts_due_on,
-            work_due_on=work_due_on,
-            completed_on=completed_on,
-        )
-    except ValueError as exc:
-        return _maintenance_redirect(
-            request,
-            category=return_category,
-            stage=return_stage or return_status,
-            error=str(exc),
-        )
+    ordered_date = _parse_date_input(ordered_on)
+    if category_key == "purchase":
+        stage_key = "order_parts"
+        needs_parts_flag = False
+        parts_due_date = None
+        work_due_date = None
+        completed_date = None
+        status_key = "ordered" if ordered_date is not None else "pending"
+        completed_at_value = None
+    else:
+        try:
+            stage_key, needs_parts_flag, parts_due_date, work_due_date, completed_date = _maintenance_stage_fields(
+                stage=stage,
+                needs_parts=needs_parts,
+                parts_due_on=parts_due_on,
+                work_due_on=work_due_on,
+                completed_on=completed_on,
+            )
+        except ValueError as exc:
+            return _maintenance_redirect(
+                request,
+                category=return_category,
+                stage=return_stage or return_status,
+                error=str(exc),
+            )
+        status_key = "complete" if stage_key == "complete" else "in_progress"
+        completed_at_value = datetime.combine(completed_date, datetime.min.time()) if completed_date is not None else None
     row = MaintenanceItem(
         title=title_text,
         detail=str(detail or "").strip() or None,
@@ -2283,14 +2387,15 @@ def maintenance_create_item(
         priority=_maintenance_priority_key(priority),
         needs_parts=needs_parts_flag,
         stage=stage_key,
-        status="complete" if stage_key == "complete" else "in_progress",
+        status=status_key,
         allocation_type=allocation,
         assigned_staff_id=staff_id or None,
         team_label=None,
+        ordered_on=ordered_date if category_key == "purchase" else None,
         parts_due_on=parts_due_date,
         work_due_on=work_due_date,
         completed_on=completed_date,
-        completed_at=datetime.combine(completed_date, datetime.min.time()) if completed_date is not None else None,
+        completed_at=completed_at_value,
     )
     session.add(row)
     session.commit()
@@ -2311,6 +2416,7 @@ def maintenance_update_item(
     category: str = Form("maintenance"),
     priority: str = Form("medium"),
     stage: str = Form("arrange_work"),
+    ordered_on: str = Form(""),
     needs_parts: str = Form(""),
     parts_due_on: str = Form(""),
     work_due_on: str = Form(""),
@@ -2350,21 +2456,33 @@ def maintenance_update_item(
         )
     if allocation != "staff_person":
         staff_id = 0
-    try:
-        stage_key, needs_parts_flag, parts_due_date, work_due_date, completed_date = _maintenance_stage_fields(
-            stage=stage,
-            needs_parts=needs_parts,
-            parts_due_on=parts_due_on,
-            work_due_on=work_due_on,
-            completed_on=completed_on,
-        )
-    except ValueError as exc:
-        return _maintenance_redirect(
-            request,
-            category=return_category,
-            stage=return_stage or return_status,
-            error=str(exc),
-        )
+    ordered_date = _parse_date_input(ordered_on)
+    if category_key == "purchase":
+        stage_key = "order_parts"
+        needs_parts_flag = False
+        parts_due_date = None
+        work_due_date = None
+        completed_date = None
+        status_key = "ordered" if ordered_date is not None else "pending"
+        completed_at_value = None
+    else:
+        try:
+            stage_key, needs_parts_flag, parts_due_date, work_due_date, completed_date = _maintenance_stage_fields(
+                stage=stage,
+                needs_parts=needs_parts,
+                parts_due_on=parts_due_on,
+                work_due_on=work_due_on,
+                completed_on=completed_on,
+            )
+        except ValueError as exc:
+            return _maintenance_redirect(
+                request,
+                category=return_category,
+                stage=return_stage or return_status,
+                error=str(exc),
+            )
+        status_key = "complete" if stage_key == "complete" else "in_progress"
+        completed_at_value = datetime.combine(completed_date, datetime.min.time()) if completed_date is not None else None
     row.title = title_text
     row.detail = str(detail or "").strip() or None
     row.item_type = _maintenance_item_type_for_category(category_key)
@@ -2372,14 +2490,15 @@ def maintenance_update_item(
     row.priority = _maintenance_priority_key(priority)
     row.needs_parts = needs_parts_flag
     row.stage = stage_key
-    row.status = "complete" if stage_key == "complete" else "in_progress"
+    row.status = status_key
     row.allocation_type = allocation
     row.assigned_staff_id = staff_id or None
     row.team_label = None
+    row.ordered_on = ordered_date if category_key == "purchase" else None
     row.parts_due_on = parts_due_date
     row.work_due_on = work_due_date
     row.completed_on = completed_date
-    row.completed_at = datetime.combine(completed_date, datetime.min.time()) if completed_date is not None else None
+    row.completed_at = completed_at_value
     session.add(row)
     session.commit()
     return _maintenance_redirect(
@@ -2406,6 +2525,22 @@ def maintenance_update_item_status(
     row = session.get(MaintenanceItem, int(item_id))
     if row is None:
         raise HTTPException(status_code=404, detail="Maintenance item not found")
+    if _maintenance_is_purchase_item(row):
+        row.stage = "order_parts"
+        row.status = "ordered" if getattr(row, "ordered_on", None) is not None else "pending"
+        row.needs_parts = False
+        row.parts_due_on = None
+        row.work_due_on = None
+        row.completed_on = None
+        row.completed_at = None
+        session.add(row)
+        session.commit()
+        return _maintenance_redirect(
+            request,
+            category=return_category or getattr(row, "category", ""),
+            stage="",
+            updated=1,
+        )
     stage_key = _maintenance_stage_key(stage or status)
     completed_date = _parse_date_input(completed_on) or (date.today() if stage_key == "complete" else None)
     row.stage = stage_key

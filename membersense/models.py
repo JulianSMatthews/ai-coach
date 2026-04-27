@@ -149,6 +149,7 @@ class MaintenanceItem(Base):
     allocation_type = Column(String(24), nullable=False, default="maint_main", index=True)
     assigned_staff_id = Column(Integer, ForeignKey("membersense_staff_users.id", ondelete="SET NULL"), nullable=True, index=True)
     team_label = Column(String(160), nullable=True)
+    ordered_on = Column(Date, nullable=True)
     parts_due_on = Column(Date, nullable=True)
     work_due_on = Column(Date, nullable=True)
     completed_on = Column(Date, nullable=True)

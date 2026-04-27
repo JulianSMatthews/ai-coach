@@ -118,26 +118,26 @@ Q2_2026_OKR_PRESET: tuple[dict[str, Any], ...] = (
 )
 
 DEFAULT_MAINTENANCE_ITEMS: tuple[dict[str, Any], ...] = (
-    {"title": "Replace bathroom toilet brushes", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": True, "stage": "order_parts"},
-    {"title": "Replace bathroom loo roll holders", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": True, "stage": "order_parts"},
-    {"title": "Replace bathroom soap dispensers", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": True, "stage": "order_parts"},
-    {"title": "Replace bathroom wooden benches", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": True, "stage": "order_parts"},
+    {"title": "Replace bathroom toilet brushes", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": False, "stage": "order_parts"},
+    {"title": "Replace bathroom loo roll holders", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": False, "stage": "order_parts"},
+    {"title": "Replace bathroom soap dispensers", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": False, "stage": "order_parts"},
+    {"title": "Replace bathroom wooden benches", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": False, "stage": "order_parts"},
     {"title": "Repair treadmill screen", "item_type": "maintenance_work", "category": "repair", "priority": "high", "allocation_type": "equipment_supplier", "needs_parts": True, "stage": "complete"},
     {"title": "Repair treadmill foot", "item_type": "maintenance_work", "category": "repair", "priority": "high", "allocation_type": "equipment_supplier", "needs_parts": True, "stage": "complete"},
-    {"title": "Replace bike strap", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": True, "stage": "order_parts"},
+    {"title": "Replace bike strap", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": False, "stage": "order_parts"},
     {"title": "Clean glass on mezzanine", "item_type": "maintenance_work", "category": "maintenance", "priority": "medium", "allocation_type": "maint_main", "needs_parts": False, "stage": "complete"},
-    {"title": "Replace boxing bag", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": True, "stage": "order_parts"},
+    {"title": "Replace boxing bag", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": False, "stage": "order_parts"},
     {"title": "Deep clean flooring", "item_type": "maintenance_work", "category": "maintenance", "priority": "high", "allocation_type": "maint_main", "needs_parts": False, "stage": "arrange_work"},
     {"title": "Touch up paint work", "item_type": "maintenance_work", "category": "maintenance", "priority": "medium", "allocation_type": "maint_main", "needs_parts": False, "stage": "arrange_work"},
-    {"title": "Replace stair grip pads", "item_type": "replacement_item", "category": "purchase", "priority": "high", "allocation_type": "staff_person", "needs_parts": True, "stage": "order_parts"},
-    {"title": "Replace trim on flooring edges", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": True, "stage": "order_parts"},
-    {"title": "Replace padded wall by glute equipment with metal panels", "item_type": "replacement_item", "category": "purchase", "priority": "high", "allocation_type": "staff_person", "needs_parts": True, "stage": "order_parts"},
-    {"title": "Replace sandbags", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": True, "stage": "order_parts"},
+    {"title": "Replace stair grip pads", "item_type": "replacement_item", "category": "purchase", "priority": "high", "allocation_type": "staff_person", "needs_parts": False, "stage": "order_parts"},
+    {"title": "Replace trim on flooring edges", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": False, "stage": "order_parts"},
+    {"title": "Replace padded wall by glute equipment with metal panels", "item_type": "replacement_item", "category": "purchase", "priority": "high", "allocation_type": "staff_person", "needs_parts": False, "stage": "order_parts"},
+    {"title": "Replace sandbags", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": False, "stage": "order_parts"},
     {"title": "Clean toilet lid and shower head", "item_type": "maintenance_work", "category": "maintenance", "priority": "medium", "allocation_type": "maint_main", "needs_parts": False, "stage": "arrange_work"},
     {"title": "Remove mould from ceiling tiles", "item_type": "maintenance_work", "category": "maintenance", "priority": "high", "allocation_type": "maint_main", "needs_parts": False, "stage": "arrange_work"},
     {"title": "Tighten loose radiator in top bathroom", "item_type": "maintenance_work", "category": "repair", "priority": "high", "allocation_type": "equipment_supplier", "needs_parts": False, "stage": "arrange_work"},
-    {"title": "Order security wall backboards", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": True, "stage": "order_parts"},
-    {"title": "Order new security wall lanyards", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": True, "stage": "order_parts"},
+    {"title": "Order security wall backboards", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": False, "stage": "order_parts"},
+    {"title": "Order new security wall lanyards", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": False, "stage": "order_parts"},
 )
 
 
@@ -1536,22 +1536,26 @@ def seed_default_maintenance_items(session: Session) -> int:
         completed_date = completed_at.date() if stage == "complete" else None
         category_key = _maintenance_category_key(item.get("category") or "maintenance")
         allocation_key = _maintenance_default_allocation(category_key)
+        ordered_on = None
+        if category_key == "purchase":
+            stage = "order_parts"
         row = MaintenanceItem(
             title=title,
             detail=str(item.get("detail") or "").strip() or None,
             item_type=_maintenance_item_type_for_category(category_key),
             category=category_key,
             priority=str(item.get("priority") or "medium").strip().lower() or "medium",
-            needs_parts=bool(item.get("needs_parts")),
+            needs_parts=False if category_key == "purchase" else bool(item.get("needs_parts")),
             stage=stage if stage in {"order_parts", "arrange_work", "complete"} else "arrange_work",
-            status="complete" if stage == "complete" else "in_progress",
+            status="pending" if category_key == "purchase" else ("complete" if stage == "complete" else "in_progress"),
             allocation_type=allocation_key,
             assigned_staff_id=(purchase_staff_id or None) if category_key == "purchase" else None,
             team_label=None,
+            ordered_on=ordered_on,
             parts_due_on=None,
             work_due_on=None,
             completed_on=completed_date,
-            completed_at=completed_at if stage == "complete" else None,
+            completed_at=completed_at if stage == "complete" and category_key != "purchase" else None,
         )
         session.add(row)
         existing_titles.add(title_key)
@@ -1598,9 +1602,14 @@ def sync_maintenance_items(session: Session) -> int:
         else:
             desired_allocation = _maintenance_default_allocation(desired_category)
             desired_staff_id = purchase_staff_id if desired_category == "purchase" else 0
-        desired_needs_parts = bool(desired_meta.get("needs_parts")) if desired_meta else bool(getattr(row, "needs_parts", False))
+        desired_needs_parts = False if desired_category == "purchase" else (
+            bool(desired_meta.get("needs_parts")) if desired_meta else bool(getattr(row, "needs_parts", False))
+        )
         current_stage = str(getattr(row, "stage", "") or "").strip().lower()
-        if current_stage not in {"order_parts", "arrange_work", "complete"}:
+        current_ordered_on = getattr(row, "ordered_on", None)
+        if desired_category == "purchase":
+            desired_stage = "order_parts"
+        elif current_stage not in {"order_parts", "arrange_work", "complete"}:
             current_status = str(getattr(row, "status", "") or "").strip().lower()
             if current_status == "complete" or getattr(row, "completed_at", None) is not None:
                 desired_stage = "complete"
@@ -1610,7 +1619,7 @@ def sync_maintenance_items(session: Session) -> int:
                 desired_stage = "arrange_work"
         else:
             desired_stage = current_stage
-        if desired_stage == "order_parts":
+        if desired_stage == "order_parts" and desired_category != "purchase":
             desired_needs_parts = True
         desired_team_label = None
         if _maintenance_category_key(getattr(row, "category", "")) != desired_category:
@@ -1636,7 +1645,28 @@ def sync_maintenance_items(session: Session) -> int:
             changed += 1
         completed_on = getattr(row, "completed_on", None)
         completed_at = getattr(row, "completed_at", None)
-        if desired_stage == "complete":
+        if desired_category == "purchase":
+            desired_ordered_on = current_ordered_on or getattr(row, "parts_due_on", None) or completed_on
+            desired_status = "ordered" if desired_ordered_on is not None else "pending"
+            if getattr(row, "ordered_on", None) != desired_ordered_on:
+                row.ordered_on = desired_ordered_on
+                changed += 1
+            if str(getattr(row, "status", "") or "").strip().lower() != desired_status:
+                row.status = desired_status
+                changed += 1
+            if getattr(row, "parts_due_on", None) is not None:
+                row.parts_due_on = None
+                changed += 1
+            if getattr(row, "work_due_on", None) is not None:
+                row.work_due_on = None
+                changed += 1
+            if getattr(row, "completed_on", None) is not None:
+                row.completed_on = None
+                changed += 1
+            if getattr(row, "completed_at", None) is not None:
+                row.completed_at = None
+                changed += 1
+        elif desired_stage == "complete":
             desired_completed_on = completed_on or (completed_at.date() if completed_at is not None and hasattr(completed_at, "date") else date.today())
             if getattr(row, "completed_on", None) != desired_completed_on:
                 row.completed_on = desired_completed_on
@@ -1656,6 +1686,9 @@ def sync_maintenance_items(session: Session) -> int:
                 changed += 1
             if str(getattr(row, "status", "") or "").strip().lower() != "in_progress":
                 row.status = "in_progress"
+                changed += 1
+            if getattr(row, "ordered_on", None) is not None:
+                row.ordered_on = None
                 changed += 1
         if not bool(getattr(row, "needs_parts", False)) and getattr(row, "parts_due_on", None) is not None:
             row.parts_due_on = None

@@ -150,6 +150,7 @@ def _migrate_maintenance_table() -> None:
         "item_type": ("VARCHAR(32)", "VARCHAR(32)"),
         "needs_parts": ("BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN DEFAULT FALSE"),
         "stage": ("VARCHAR(24)", "VARCHAR(24)"),
+        "ordered_on": ("DATE", "DATE"),
         "parts_due_on": ("DATE", "DATE"),
         "work_due_on": ("DATE", "DATE"),
         "completed_on": ("DATE", "DATE"),
