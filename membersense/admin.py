@@ -441,8 +441,6 @@ def _maintenance_stage_fields(
             raise ValueError("Enter the due date for items in the Order parts stage.")
         completed_date = None
     elif stage_key == "arrange_work":
-        if work_due_date is None:
-            raise ValueError("Enter the date to be done for items in the Arrange work stage.")
         completed_date = None
     else:
         if completed_date is None:
