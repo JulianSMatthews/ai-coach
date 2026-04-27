@@ -563,7 +563,7 @@ def _layout(request: Request, title: str, body: str) -> HTMLResponse:
     nav = "".join(
         f'<a href="{_href(request, path)}">{label}</a>'
         for path, label in [
-            ("/admin", "Dashboard"),
+            ("/admin", "Member dashboard"),
             ("/admin/members", "Members"),
             ("/admin/inactive", "Member lists"),
             ("/admin/reports/visits", "Visit report"),
@@ -1779,6 +1779,7 @@ def dashboard(
     _: None = Depends(require_admin),
 ):
     today = date.today()
+    selected_quarter = _current_quarter(today)
     current_staff = staff_from_request(request, session)
     current_members = current_member_rows(session, today=today)
     current_count = len(current_members)
@@ -1803,13 +1804,78 @@ def dashboard(
         or 0
     )
     open_tasks = session.scalar(select(func.count()).select_from(StaffTask).where(StaffTask.status == "open")) or 0
-    open_maintenance = sum(
-        1 for item in session.execute(select(MaintenanceItem)).scalars().all() if _maintenance_is_active(item)
+    all_maintenance_items = session.execute(select(MaintenanceItem)).scalars().all()
+    open_maintenance = sum(1 for item in all_maintenance_items if _maintenance_is_active(item))
+    purchase_active_count = sum(
+        1
+        for item in all_maintenance_items
+        if _maintenance_category_key(getattr(item, "category", "")) == "purchase"
+        and _maintenance_is_active(item)
     )
+    maintenance_active_count = sum(
+        1
+        for item in all_maintenance_items
+        if _maintenance_category_key(getattr(item, "category", "")) == "maintenance"
+        and _maintenance_is_active(item)
+    )
+    repair_active_count = sum(
+        1
+        for item in all_maintenance_items
+        if _maintenance_category_key(getattr(item, "category", "")) == "repair"
+        and _maintenance_is_active(item)
+    )
+    order_parts_count = sum(
+        1
+        for item in all_maintenance_items
+        if not _maintenance_is_purchase_item(item)
+        and _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) == "order_parts"
+    )
+    arrange_work_count = sum(
+        1
+        for item in all_maintenance_items
+        if not _maintenance_is_purchase_item(item)
+        and _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) == "arrange_work"
+    )
+    high_priority_active_count = sum(
+        1
+        for item in all_maintenance_items
+        if _maintenance_priority_key(getattr(item, "priority", "")) == "high"
+        and _maintenance_is_active(item)
+    )
+
+    objectives = (
+        session.execute(
+            select(OkrObjective)
+            .where(OkrObjective.quarter == selected_quarter)
+            .order_by(func.coalesce(OkrObjective.objective_number, 999999).asc(), OkrObjective.id.asc())
+        )
+        .scalars()
+        .all()
+    )
+    all_krs: list[OkrKeyResult] = []
+    for objective in objectives:
+        all_krs.extend(_sort_okr_key_results(objective.key_results))
+    overall_percents = [
+        pct
+        for pct in (_okr_percent(kr.actual_value, kr.target_value, kr.direction) for kr in all_krs)
+        if pct is not None
+    ]
+    overall_average_percent = (sum(overall_percents) / len(overall_percents)) if overall_percents else None
+    overall_average_label = f"{overall_average_percent:.1f}%" if overall_average_percent is not None else "0%"
+    overall_rag_counts = {"green": 0, "amber": 0, "red": 0, "grey": 0}
+    for kr in all_krs:
+        overall_rag_counts[
+            _okr_rag(_okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter))
+        ] += 1
+
+    okr_dashboard_href = _href(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter})}")
+    okr_config_href = _href(request, f"/admin/okrs/config?{urlencode({'quarter': selected_quarter})}")
+    maintenance_dashboard_href = _href(request, "/admin/maintenance")
+    maintenance_open_href = _href(request, "/admin/maintenance?scope=open")
+
     notice_html = '<p><span class="pill">Actual updated.</span></p>' if updated is not None else ""
     assigned_section = ""
     if current_staff is not None:
-        selected_quarter = _current_quarter(today)
         assigned_rows = session.execute(
             select(OkrObjective, OkrKeyResult)
             .join(OkrKeyResult, OkrKeyResult.objective_id == OkrObjective.id)
@@ -1865,7 +1931,6 @@ def dashboard(
             if isinstance(rows, list):
                 rows.append((kr_number, kr))
 
-        okr_dashboard_href = _href(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter})}")
         objective_sections = []
         for group in grouped_objectives:
             objective = group["objective"]
@@ -1945,38 +2010,81 @@ def dashboard(
 </div>"""
             )
         assigned_section = f"""
-<section>
-  <div class="inline" style="justify-content: space-between;">
-    <div>
-      <h2>Your Key Results</h2>
-      <p class="muted">Quarter: {_esc(selected_quarter)}. Showing only KRs assigned to you.</p>
+<details style="margin-top: 18px;"{' open' if updated is not None else ''}>
+  <summary style="cursor: pointer; font-weight: 800;">View and update your key results</summary>
+  <div style="margin-top: 16px;">
+    <p class="muted">Quarter: {_esc(selected_quarter)}. Showing only KRs assigned to you.</p>
+    <div class="grid">
+      <div class="metric"><strong>{len(assigned_krs)}</strong><span>Assigned key results</span></div>
+      <div class="metric"><strong>{assigned_average_label}</strong><span>Average achieved</span></div>
+      <div class="metric"><strong>{assigned_rag_counts['green']}</strong><span>Green KRs</span></div>
+      <div class="metric"><strong>{assigned_rag_counts['amber']}</strong><span>Amber KRs</span></div>
+      <div class="metric"><strong>{assigned_rag_counts['red']}</strong><span>Red KRs</span></div>
     </div>
-    <a class="button secondary" href="{okr_dashboard_href}">Open OKR dashboard</a>
+    {''.join(objective_sections) or f'<p class="muted">No key results are assigned to you for {_esc(selected_quarter)}.</p>'}
   </div>
-  <div class="grid">
-    <div class="metric"><strong>{len(assigned_krs)}</strong><span>Assigned key results</span></div>
-    <div class="metric"><strong>{assigned_average_label}</strong><span>Average achieved</span></div>
-    <div class="metric"><strong>{assigned_rag_counts['green']}</strong><span>Green KRs</span></div>
-    <div class="metric"><strong>{assigned_rag_counts['amber']}</strong><span>Amber KRs</span></div>
-    <div class="metric"><strong>{assigned_rag_counts['red']}</strong><span>Red KRs</span></div>
-  </div>
-  {''.join(objective_sections) or f'<p class="muted">No key results are assigned to you for {_esc(selected_quarter)}.</p>'}
-</section>"""
+</details>"""
+    else:
+        assigned_section = """
+<div style="margin-top: 18px;">
+  <p class="muted">Sign in with a staff account to view and update your own assigned key results here.</p>
+</div>"""
+
     body = f"""
 <section>
-  <h2>Dashboard</h2>
-  {notice_html}
+  <h2>Member Dashboard</h2>
   <div class="grid">
     <div class="metric"><strong>{current_count}</strong><span>Current members</span></div>
     <div class="metric"><strong>{active_21_count}</strong><span>Active members, visited in last 21 days</span></div>
     <div class="metric"><strong>{inactive_21_count}</strong><span>Inactive over 21 days</span></div>
     <div class="metric"><strong>{expired_30_count}</strong><span>Expired members in last 30 days</span></div>
     <div class="metric"><strong>{open_tasks}</strong><span>Open staff tasks</span></div>
-    <div class="metric"><strong>{open_maintenance}</strong><span>Active maintenance items</span></div>
   </div>
 </section>
-{assigned_section}"""
-    return _layout(request, "Dashboard", body)
+<section>
+  <div class="inline" style="justify-content: space-between;">
+    <div>
+      <h2>OKR Dashboard</h2>
+      <p class="muted">Quarter: {_esc(selected_quarter)}. Overall OKR summary first, with your assigned KRs available below.</p>
+    </div>
+    <div class="inline">
+      <a class="button secondary" href="{okr_dashboard_href}">Open OKR dashboard</a>
+      <a class="button secondary" href="{okr_config_href}">Open OKR setup</a>
+    </div>
+  </div>
+  {notice_html}
+  <div class="grid">
+    <div class="metric"><strong>{len(objectives)}</strong><span>Objectives</span></div>
+    <div class="metric"><strong>{len(all_krs)}</strong><span>Key results</span></div>
+    <div class="metric"><strong>{overall_average_label}</strong><span>Average achieved</span></div>
+    <div class="metric"><strong>{overall_rag_counts['green']}</strong><span>Green KRs</span></div>
+    <div class="metric"><strong>{overall_rag_counts['amber']}</strong><span>Amber KRs</span></div>
+    <div class="metric"><strong>{overall_rag_counts['red']}</strong><span>Red KRs</span></div>
+  </div>
+  {assigned_section}
+</section>
+<section>
+  <div class="inline" style="justify-content: space-between;">
+    <div>
+      <h2>Maintenance Dashboard</h2>
+      <p class="muted">Current open maintenance workload and stage position.</p>
+    </div>
+    <div class="inline">
+      <a class="button secondary" href="{maintenance_dashboard_href}">Open maintenance</a>
+      <a class="button secondary" href="{maintenance_open_href}">Review open items</a>
+    </div>
+  </div>
+  <div class="grid">
+    <div class="metric"><strong>{open_maintenance}</strong><span>Active items</span></div>
+    <div class="metric"><strong>{purchase_active_count}</strong><span>Active purchases</span></div>
+    <div class="metric"><strong>{maintenance_active_count}</strong><span>Active maintenance</span></div>
+    <div class="metric"><strong>{repair_active_count}</strong><span>Active repairs</span></div>
+    <div class="metric"><strong>{order_parts_count}</strong><span>Order parts</span></div>
+    <div class="metric"><strong>{arrange_work_count}</strong><span>Arrange work</span></div>
+    <div class="metric"><strong>{high_priority_active_count}</strong><span>High priority active</span></div>
+  </div>
+</section>"""
+    return _layout(request, "Member Dashboard", body)
 
 
 @router.get("/admin/maintenance", response_class=HTMLResponse)
