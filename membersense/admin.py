@@ -432,11 +432,11 @@ def _maintenance_stage_fields(
     parts_due_date = _parse_date_input(parts_due_on)
     work_due_date = _parse_date_input(work_due_on)
     completed_date = _parse_date_input(completed_on)
+    if stage_key == "order_parts":
+        needs_parts_flag = True
     if not needs_parts_flag:
         parts_due_date = None
     if stage_key == "order_parts":
-        if not needs_parts_flag:
-            raise ValueError("Select Needs parts for items in the Order parts stage.")
         if parts_due_date is None:
             raise ValueError("Enter the due date for items in the Order parts stage.")
         completed_date = None
