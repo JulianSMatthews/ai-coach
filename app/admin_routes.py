@@ -989,6 +989,572 @@ def _normalise_generated_education_programme(
     }
 
 
+def _normalise_generated_education_programme_outline(
+    raw_generated: dict[str, object],
+    *,
+    requested_days: int,
+) -> dict[str, object]:
+    generated = raw_generated.get("programme") if isinstance(raw_generated.get("programme"), dict) else raw_generated
+    raw_days = generated.get("days") if isinstance(generated.get("days"), list) else []
+    if not raw_days:
+        raise ValueError("LLM response did not include any programme outline days")
+    outline_days: list[dict[str, object]] = []
+    seen_indexes: set[int] = set()
+    for idx, raw_day in enumerate(raw_days[:31], start=1):
+        if not isinstance(raw_day, dict):
+            continue
+        try:
+            day_index = int(raw_day.get("day_index") or idx)
+        except Exception:
+            day_index = idx
+        if day_index in seen_indexes:
+            day_index = max(seen_indexes, default=0) + 1
+        seen_indexes.add(day_index)
+        outline_days.append(
+            {
+                "day_index": day_index,
+                "lesson_goal": str(raw_day.get("lesson_goal") or "").strip(),
+                "default_title": str(raw_day.get("default_title") or raw_day.get("title") or "").strip(),
+                "default_summary": str(raw_day.get("default_summary") or raw_day.get("summary") or "").strip(),
+            }
+        )
+    if not outline_days:
+        raise ValueError("LLM response did not include any usable programme outline days")
+    if requested_days > 0 and len(outline_days) != requested_days:
+        raise ValueError(f"LLM returned {len(outline_days)} outline days; expected {requested_days}")
+    try:
+        duration_days = int(generated.get("duration_days") or len(outline_days))
+    except Exception:
+        duration_days = len(outline_days)
+    return {
+        "programme_name": str(generated.get("programme_name") or generated.get("name") or "").strip(),
+        "programme_code": str(generated.get("programme_code") or generated.get("code") or "").strip(),
+        "duration_days": duration_days,
+        "days": sorted(outline_days, key=lambda item: int(item.get("day_index") or 0)),
+    }
+
+
+def _resolve_existing_education_day_level(existing_day: object) -> str:
+    if not isinstance(existing_day, dict):
+        return "build"
+    raw_existing_variants = existing_day.get("variants") if isinstance(existing_day.get("variants"), list) else []
+    existing_level = ""
+    if raw_existing_variants and isinstance(raw_existing_variants[0], dict):
+        existing_level = str(raw_existing_variants[0].get("level") or "").strip().lower()
+    if existing_level not in {"support", "foundation", "build", "perform"}:
+        existing_level = "build"
+    return existing_level
+
+
+def _build_education_programme_generation_prompt(
+    *,
+    brief: str,
+    programme_context: dict[str, object],
+    requested_days: int,
+) -> str:
+    output_schema = {
+        "programme": {
+            "programme_name": "string",
+            "programme_code": "string",
+            "duration_days": requested_days,
+            "days": [
+                {
+                    "day_index": 1,
+                    "lesson_goal": "string",
+                    "default_title": "string",
+                    "default_summary": "string",
+                    "variants": [
+                        {
+                            "level": "build",
+                            "title": "string",
+                            "summary": "string",
+                            "script": "string",
+                            "action_prompt": "string",
+                            "poster_url": "",
+                            "avatar_character": "",
+                            "avatar_style": "",
+                            "avatar_voice": "",
+                            "takeaway_default": "string",
+                            "takeaway_if_low_score": "string",
+                            "takeaway_if_high_score": "string",
+                            "is_active": True,
+                            "quiz": {
+                                "pass_score_pct": 66.67,
+                                "questions": [
+                                    {
+                                        "question_order": 1,
+                                        "question_text": "string",
+                                        "answer_type": "single_choice",
+                                        "options_json": ["string", "string", "string", "string"],
+                                        "correct_answer_json": "one exact option string",
+                                        "explanation": "string",
+                                    }
+                                ],
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+    }
+    return (
+        "You are creating a complete HealthSense concept-based education programme for the admin editor.\n"
+        "Return a single valid JSON object only. Do not use markdown, code fences, comments, or prose outside JSON.\n\n"
+        "Task:\n"
+        "- Regenerate the full concept programme from the task_description and selected concept.\n"
+        "- Use the existing programme only for context and continuity; replace the day plan, lesson goals, lesson scripts, daily actions, takeaways, and quizzes.\n"
+        f"- Return exactly {requested_days} programme days, numbered 1 to {requested_days}.\n"
+        "- Keep every day on the selected programme concept; do not drift into other concepts unless the task explicitly asks for a supporting contrast.\n"
+        "- Generate one active variant per day unless the task_description explicitly asks for multiple variants.\n"
+        "- Use level='build' unless the task_description asks for another level or a clear level progression.\n"
+        "- Include exactly 3 quiz questions for each variant.\n"
+        "- Use answer_type='single_choice' unless the task_description clearly requires boolean or multi_choice.\n"
+        "- For single_choice questions, options_json must be an array of 4 short answer options.\n"
+        "- correct_answer_json must exactly match the correct option string for single_choice questions.\n"
+        "- Leave video_url, avatar_status, avatar_job_id, avatar_error, avatar_generated_at, avatar_source, and avatar_summary_url absent or empty.\n"
+        "- Use UK English, clear coaching language, practical daily actions, and avoid diagnosis or medical claims.\n\n"
+        "CONTEXT_JSON:\n"
+        f"{json.dumps(programme_context, ensure_ascii=False, default=str)}\n\n"
+        "OUTPUT_SCHEMA_JSON:\n"
+        f"{json.dumps(output_schema, ensure_ascii=False)}\n"
+    )
+
+
+def _build_education_programme_outline_prompt(
+    *,
+    brief: str,
+    programme_context: dict[str, object],
+    requested_days: int,
+) -> str:
+    output_schema = {
+        "programme": {
+            "programme_name": "string",
+            "programme_code": "string",
+            "duration_days": requested_days,
+            "days": [
+                {
+                    "day_index": 1,
+                    "lesson_goal": "string",
+                    "default_title": "string",
+                    "default_summary": "string",
+                }
+            ],
+        }
+    }
+    return (
+        "You are sketching the structure of a complete HealthSense concept-based education programme for the admin editor.\n"
+        "Return a single valid JSON object only. Do not use markdown, code fences, comments, or prose outside JSON.\n\n"
+        "Task:\n"
+        "- Create the full concept programme outline from the task_description and selected concept.\n"
+        f"- Return exactly {requested_days} programme days, numbered 1 to {requested_days}.\n"
+        "- Keep every day on the selected programme concept and make the sequence feel progressive across the full concept.\n"
+        "- For each day, return only lesson_goal, default_title, and default_summary.\n"
+        "- Do not include lesson variants, scripts, daily actions, takeaways, or quiz content in this outline response.\n"
+        "- Use UK English, clear coaching language, and avoid diagnosis or medical claims.\n\n"
+        "CONTEXT_JSON:\n"
+        f"{json.dumps(programme_context, ensure_ascii=False, default=str)}\n\n"
+        "OUTPUT_SCHEMA_JSON:\n"
+        f"{json.dumps(output_schema, ensure_ascii=False)}\n"
+    )
+
+
+def _build_education_day_generation_prompt(
+    *,
+    brief: str,
+    programme_context: dict[str, object],
+    day_index: int,
+    existing_level: str,
+) -> str:
+    output_schema = {
+        "day_index": day_index,
+        "lesson_goal": "string",
+        "default_title": "string",
+        "default_summary": "string",
+        "variants": [
+            {
+                "level": existing_level,
+                "title": "string",
+                "summary": "string",
+                "script": "string",
+                "action_prompt": "string",
+                "poster_url": "",
+                "avatar_character": "",
+                "avatar_style": "",
+                "avatar_voice": "",
+                "takeaway_default": "string",
+                "takeaway_if_low_score": "string",
+                "takeaway_if_high_score": "string",
+                "is_active": True,
+                "quiz": {
+                    "pass_score_pct": 66.67,
+                    "questions": [
+                        {
+                            "question_order": 1,
+                            "question_text": "string",
+                            "answer_type": "single_choice",
+                            "options_json": ["string", "string", "string", "string"],
+                            "correct_answer_json": "one exact option string",
+                            "explanation": "string",
+                        }
+                    ],
+                },
+            }
+        ],
+    }
+    return (
+        "You are creating a HealthSense education programme day for the admin editor.\n"
+        "Return a single valid JSON object only. Do not use markdown, code fences, comments, or prose outside JSON.\n\n"
+        "Task:\n"
+        "- Regenerate the selected day entirely from the task_description.\n"
+        "- Use the existing day only for continuity with the programme; replace the lesson goal, title, summary, script, daily action, takeaways, and quiz.\n"
+        "- Keep the day anchored to the selected concept and aligned with any programme outline or selected day outline supplied in CONTEXT_JSON.\n"
+        "- When selected_day_outline is supplied in CONTEXT_JSON, treat its lesson_goal, default_title, and default_summary as the intended direction for this day.\n"
+        "- Do not rewrite other days or refer to them in the output.\n"
+        "- Generate one active variant unless the task_description explicitly asks for multiple variants.\n"
+        f"- Use the existing level '{existing_level}' unless the task_description explicitly asks for another level.\n"
+        "- Include exactly 3 quiz questions for each variant.\n"
+        "- Use answer_type='single_choice' unless the task_description clearly requires boolean or multi_choice.\n"
+        "- For single_choice questions, options_json must be an array of 4 short answer options.\n"
+        "- correct_answer_json must exactly match the correct option string for single_choice questions.\n"
+        "- Leave video_url, avatar_status, avatar_job_id, avatar_error, avatar_generated_at, avatar_source, and avatar_summary_url absent or empty.\n"
+        "- Use UK English, clear coaching language, and avoid diagnosis or medical claims.\n\n"
+        "CONTEXT_JSON:\n"
+        f"{json.dumps(programme_context, ensure_ascii=False, default=str)}\n\n"
+        "OUTPUT_SCHEMA_JSON:\n"
+        f"{json.dumps(output_schema, ensure_ascii=False)}\n"
+    )
+
+
+def _invoke_education_llm_prompt(
+    *,
+    prompt: str,
+    touchpoint: str,
+    model_override: str | None,
+) -> dict[str, object]:
+    from . import llm as shared_llm
+
+    t0 = time.perf_counter()
+    resolved_model = shared_llm.resolve_model_name_for_touchpoint(
+        touchpoint=touchpoint,
+        model_override=model_override,
+    )
+    client = shared_llm.get_llm_client(
+        touchpoint=touchpoint,
+        model_override=model_override,
+    )
+    response = client.invoke(prompt)
+    duration_ms = int((time.perf_counter() - t0) * 1000)
+    content = _coerce_llm_content(getattr(response, "content", None)).strip()
+    return {
+        "model": resolved_model,
+        "duration_ms": duration_ms,
+        "content": content,
+        "prompt": prompt,
+    }
+
+
+def _log_education_llm_generation(
+    *,
+    touchpoint: str,
+    prompt: str,
+    model: str,
+    duration_ms: int,
+    response_preview: str,
+    context_meta: dict[str, object],
+    prompt_variant: str,
+    task_label: str,
+    prompt_blocks: dict[str, object],
+    block_order: list[str],
+) -> None:
+    try:
+        log_llm_prompt(
+            user_id=None,
+            touchpoint=touchpoint,
+            prompt_text=prompt,
+            model=model,
+            duration_ms=duration_ms,
+            response_preview=response_preview[:4000],
+            context_meta=context_meta,
+            prompt_variant=prompt_variant,
+            task_label=task_label[:160],
+            prompt_blocks=prompt_blocks,
+            block_order=block_order,
+        )
+    except Exception:
+        pass
+
+
+def _generate_education_day_with_llm(
+    *,
+    brief: str,
+    model_override: str | None,
+    touchpoint: str = EDUCATION_DAY_LLM_TOUCHPOINT,
+    programme_name: str,
+    programme_code: str,
+    pillar_key: str,
+    concept_key: str,
+    concept_label: str,
+    day_index: int,
+    existing_day: dict[str, object],
+    extra_context: dict[str, object] | None = None,
+) -> dict[str, object]:
+    existing_level = _resolve_existing_education_day_level(existing_day)
+    programme_context = {
+        "programme_name": programme_name,
+        "programme_code": programme_code,
+        "pillar_key": pillar_key,
+        "programme_concept_key": concept_key,
+        "programme_concept_label": concept_label,
+        "selected_day_index": day_index,
+        "existing_day": _compact_education_day_for_llm(existing_day),
+        "task_description": brief or "Regenerate the selected programme day from the supplied programme context.",
+    }
+    if extra_context:
+        programme_context["generation_context"] = extra_context
+    prompt = _build_education_day_generation_prompt(
+        brief=brief,
+        programme_context=programme_context,
+        day_index=day_index,
+        existing_level=existing_level,
+    )
+    llm_result = _invoke_education_llm_prompt(
+        prompt=prompt,
+        touchpoint=touchpoint,
+        model_override=model_override,
+    )
+    raw_generated = _extract_llm_json_object(str(llm_result["content"] or ""))
+    generated_day = _normalise_generated_education_day(
+        raw_generated,
+        day_index=day_index,
+        concept_key=concept_key,
+        concept_label=concept_label,
+        existing_level=existing_level,
+    )
+    return {
+        "day": generated_day,
+        "model": llm_result["model"],
+        "duration_ms": llm_result["duration_ms"],
+        "content": llm_result["content"],
+        "prompt": prompt,
+        "context": programme_context,
+    }
+
+
+def _generate_education_programme_with_llm(
+    *,
+    brief: str,
+    model_override: str | None,
+    programme_context: dict[str, object],
+    concept_key: str,
+    concept_label: str,
+    requested_days: int,
+) -> dict[str, object]:
+    prompt = _build_education_programme_generation_prompt(
+        brief=brief,
+        programme_context=programme_context,
+        requested_days=requested_days,
+    )
+    llm_result = _invoke_education_llm_prompt(
+        prompt=prompt,
+        touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
+        model_override=model_override,
+    )
+    raw_generated = _extract_llm_json_object(str(llm_result["content"] or ""))
+    generated_programme = _normalise_generated_education_programme(
+        raw_generated,
+        concept_key=concept_key,
+        concept_label=concept_label,
+        requested_days=requested_days,
+    )
+    return {
+        "programme": generated_programme,
+        "model": llm_result["model"],
+        "duration_ms": llm_result["duration_ms"],
+        "content": llm_result["content"],
+        "prompt": prompt,
+        "context": programme_context,
+    }
+
+
+def _generate_education_programme_outline_with_llm(
+    *,
+    brief: str,
+    model_override: str | None,
+    programme_context: dict[str, object],
+    requested_days: int,
+) -> dict[str, object]:
+    prompt = _build_education_programme_outline_prompt(
+        brief=brief,
+        programme_context=programme_context,
+        requested_days=requested_days,
+    )
+    llm_result = _invoke_education_llm_prompt(
+        prompt=prompt,
+        touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
+        model_override=model_override,
+    )
+    raw_generated = _extract_llm_json_object(str(llm_result["content"] or ""))
+    generated_programme = _normalise_generated_education_programme_outline(
+        raw_generated,
+        requested_days=requested_days,
+    )
+    return {
+        "programme": generated_programme,
+        "model": llm_result["model"],
+        "duration_ms": llm_result["duration_ms"],
+        "content": llm_result["content"],
+        "prompt": prompt,
+        "context": programme_context,
+    }
+
+
+def _build_education_programme_day_brief(
+    *,
+    brief: str,
+    outline_day: dict[str, object],
+    requested_days: int,
+) -> str:
+    parts = []
+    if brief:
+        parts.append(f"Overall concept programme brief: {brief}")
+    parts.append(
+        f"Generate day {int(outline_day.get('day_index') or 1)} of a {requested_days}-day concept programme."
+    )
+    lesson_goal = str(outline_day.get("lesson_goal") or "").strip()
+    if lesson_goal:
+        parts.append(f"Day lesson goal: {lesson_goal}")
+    title = str(outline_day.get("default_title") or "").strip()
+    if title:
+        parts.append(f"Day title direction: {title}")
+    summary = str(outline_day.get("default_summary") or "").strip()
+    if summary:
+        parts.append(f"Day summary direction: {summary}")
+    parts.append(
+        "Keep this day aligned to the selected concept and the supplied programme outline. Return the full day payload only."
+    )
+    return "\n".join(parts)
+
+
+def _generate_education_programme_via_outline(
+    *,
+    brief: str,
+    model_override: str | None,
+    programme_context: dict[str, object],
+    existing_programme: dict[str, object],
+    programme_name: str,
+    programme_code: str,
+    pillar_key: str,
+    concept_key: str,
+    concept_label: str,
+    requested_days: int,
+) -> dict[str, object]:
+    outline_result = _generate_education_programme_outline_with_llm(
+        brief=brief,
+        model_override=model_override,
+        programme_context=programme_context,
+        requested_days=requested_days,
+    )
+    outline_programme = outline_result["programme"] if isinstance(outline_result.get("programme"), dict) else {}
+    outline_days = outline_programme.get("days") if isinstance(outline_programme.get("days"), list) else []
+    existing_days = existing_programme.get("days") if isinstance(existing_programme.get("days"), list) else []
+    existing_by_index: dict[int, dict[str, object]] = {}
+    for day in existing_days:
+        if not isinstance(day, dict):
+            continue
+        try:
+            existing_index = int(day.get("day_index") or 0)
+        except Exception:
+            continue
+        if existing_index > 0:
+            existing_by_index[existing_index] = day
+    compact_outline = {
+        "programme_name": str(outline_programme.get("programme_name") or programme_name).strip(),
+        "programme_code": str(outline_programme.get("programme_code") or programme_code).strip(),
+        "duration_days": requested_days,
+        "days": [
+            {
+                "day_index": int(day.get("day_index") or 0),
+                "lesson_goal": str(day.get("lesson_goal") or "").strip(),
+                "default_title": str(day.get("default_title") or "").strip(),
+                "default_summary": str(day.get("default_summary") or "").strip(),
+            }
+            for day in outline_days
+            if isinstance(day, dict)
+        ],
+    }
+    generated_days: list[dict[str, object]] = []
+    day_logs: list[dict[str, object]] = []
+    for outline_day in compact_outline["days"]:
+        day_index = int(outline_day.get("day_index") or len(generated_days) + 1)
+        existing_day = existing_by_index.get(day_index) if isinstance(existing_by_index.get(day_index), dict) else {}
+        day_seed = dict(existing_day) if isinstance(existing_day, dict) else {}
+        day_seed["day_index"] = day_index
+        day_seed["concept_key"] = concept_key
+        day_seed["concept_label"] = concept_label
+        day_seed["lesson_goal"] = str(outline_day.get("lesson_goal") or day_seed.get("lesson_goal") or "").strip()
+        day_seed["default_title"] = str(outline_day.get("default_title") or day_seed.get("default_title") or "").strip()
+        day_seed["default_summary"] = str(
+            outline_day.get("default_summary") or day_seed.get("default_summary") or ""
+        ).strip()
+        if not isinstance(day_seed.get("variants"), list) or not day_seed.get("variants"):
+            day_seed["variants"] = [{"level": "build"}]
+        extra_context = {
+            "programme_outline": compact_outline,
+            "selected_day_outline": outline_day,
+        }
+        if generated_days:
+            extra_context["previous_generated_day"] = _compact_education_day_for_llm(generated_days[-1])
+        day_brief = _build_education_programme_day_brief(
+            brief=brief,
+            outline_day=outline_day,
+            requested_days=requested_days,
+        )
+        day_result = _generate_education_day_with_llm(
+            brief=day_brief,
+            model_override=model_override,
+            touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
+            programme_name=compact_outline["programme_name"],
+            programme_code=compact_outline["programme_code"],
+            pillar_key=pillar_key,
+            concept_key=concept_key,
+            concept_label=concept_label,
+            day_index=day_index,
+            existing_day=day_seed,
+            extra_context=extra_context,
+        )
+        generated_day = day_result["day"] if isinstance(day_result.get("day"), dict) else {}
+        generated_day["day_index"] = day_index
+        if not str(generated_day.get("lesson_goal") or "").strip():
+            generated_day["lesson_goal"] = str(outline_day.get("lesson_goal") or "").strip()
+        if not str(generated_day.get("default_title") or "").strip():
+            generated_day["default_title"] = str(outline_day.get("default_title") or "").strip()
+        if not str(generated_day.get("default_summary") or "").strip():
+            generated_day["default_summary"] = str(outline_day.get("default_summary") or "").strip()
+        generated_days.append(generated_day)
+        day_logs.append(
+            {
+                "day_index": day_index,
+                "model": day_result["model"],
+                "duration_ms": day_result["duration_ms"],
+                "content": day_result["content"],
+                "prompt": day_result["prompt"],
+                "context": day_result["context"],
+                "task_label": day_brief,
+            }
+        )
+    return {
+        "programme": {
+            "programme_name": compact_outline["programme_name"] or programme_name,
+            "programme_code": compact_outline["programme_code"] or programme_code,
+            "duration_days": requested_days,
+            "days": generated_days,
+        },
+        "model": outline_result["model"],
+        "outline": outline_result,
+        "day_logs": day_logs,
+    }
+
+
 def _truthy_form_value(value: object) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -2472,110 +3038,25 @@ async def regenerate_education_concept_programme_with_llm(request: Request):
         "task_description": brief or "Regenerate a complete concept programme for this concept.",
         "existing_programme": _compact_education_programme_for_llm(existing_programme),
     }
-    output_schema = {
-        "programme": {
-            "programme_name": "string",
-            "programme_code": "string",
-            "duration_days": requested_days,
-            "days": [
-                {
-                    "day_index": 1,
-                    "lesson_goal": "string",
-                    "default_title": "string",
-                    "default_summary": "string",
-                    "variants": [
-                        {
-                            "level": "build",
-                            "title": "string",
-                            "summary": "string",
-                            "script": "string",
-                            "action_prompt": "string",
-                            "poster_url": "",
-                            "avatar_character": "",
-                            "avatar_style": "",
-                            "avatar_voice": "",
-                            "takeaway_default": "string",
-                            "takeaway_if_low_score": "string",
-                            "takeaway_if_high_score": "string",
-                            "is_active": True,
-                            "quiz": {
-                                "pass_score_pct": 66.67,
-                                "questions": [
-                                    {
-                                        "question_order": 1,
-                                        "question_text": "string",
-                                        "answer_type": "single_choice",
-                                        "options_json": ["string", "string", "string", "string"],
-                                        "correct_answer_json": "one exact option string",
-                                        "explanation": "string",
-                                    }
-                                ],
-                            },
-                        }
-                    ],
-                }
-            ],
-        }
-    }
-    prompt = (
-        "You are creating a complete HealthSense concept-based education programme for the admin editor.\n"
-        "Return a single valid JSON object only. Do not use markdown, code fences, comments, or prose outside JSON.\n\n"
-        "Task:\n"
-        "- Regenerate the full concept programme from the task_description and selected concept.\n"
-        "- Use the existing programme only for context and continuity; replace the day plan, lesson goals, lesson scripts, daily actions, takeaways, and quizzes.\n"
-        f"- Return exactly {requested_days} programme days, numbered 1 to {requested_days}.\n"
-        "- Keep every day on the selected programme concept; do not drift into other concepts unless the task explicitly asks for a supporting contrast.\n"
-        "- Generate one active variant per day unless the task_description explicitly asks for multiple variants.\n"
-        "- Use level='build' unless the task_description asks for another level or a clear level progression.\n"
-        "- Include exactly 3 quiz questions for each variant.\n"
-        "- Use answer_type='single_choice' unless the task_description clearly requires boolean or multi_choice.\n"
-        "- For single_choice questions, options_json must be an array of 4 short answer options.\n"
-        "- correct_answer_json must exactly match the correct option string for single_choice questions.\n"
-        "- Leave video_url, avatar_status, avatar_job_id, avatar_error, avatar_generated_at, avatar_source, and avatar_summary_url absent or empty.\n"
-        "- Use UK English, clear coaching language, practical daily actions, and avoid diagnosis or medical claims.\n\n"
-        "CONTEXT_JSON:\n"
-        f"{json.dumps(programme_context, ensure_ascii=False, default=str)}\n\n"
-        "OUTPUT_SCHEMA_JSON:\n"
-        f"{json.dumps(output_schema, ensure_ascii=False)}\n"
-    )
-
+    task_label = brief or f"Regenerate {concept_label or concept_key} programme"
+    generation_strategy = "single_response"
     try:
-        from . import llm as shared_llm
-
-        t0 = time.perf_counter()
-        resolved_model = shared_llm.resolve_model_name_for_touchpoint(
-            touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
+        direct_result = _generate_education_programme_with_llm(
+            brief=brief,
             model_override=model_override,
-        )
-        client = shared_llm.get_llm_client(
-            touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
-            model_override=model_override,
-        )
-        response = client.invoke(prompt)
-        duration_ms = int((time.perf_counter() - t0) * 1000)
-        content = _coerce_llm_content(getattr(response, "content", None)).strip()
-    except Exception as exc:
-        raise HTTPException(500, f"LLM programme generation failed: {exc}")
-
-    try:
-        raw_generated = _extract_llm_json_object(content)
-        generated_programme = _normalise_generated_education_programme(
-            raw_generated,
+            programme_context=programme_context,
             concept_key=concept_key,
             concept_label=concept_label,
             requested_days=requested_days,
         )
-    except Exception as exc:
-        raise HTTPException(502, f"LLM response could not be used: {exc}")
-
-    try:
-        log_llm_prompt(
-            user_id=None,
+        generated_programme = direct_result["programme"] if isinstance(direct_result.get("programme"), dict) else {}
+        resolved_model = str(direct_result.get("model") or "")
+        _log_education_llm_generation(
             touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
-            prompt_text=prompt,
+            prompt=str(direct_result.get("prompt") or ""),
             model=resolved_model,
-            duration_ms=duration_ms,
-            response_preview=content[:4000],
+            duration_ms=int(direct_result.get("duration_ms") or 0),
+            response_preview=str(direct_result.get("content") or ""),
             context_meta={
                 "programme_name": programme_context["programme_name"],
                 "programme_code": programme_context["programme_code"],
@@ -2583,19 +3064,102 @@ async def regenerate_education_concept_programme_with_llm(request: Request):
                 "programme_concept_key": concept_key,
                 "requested_days": requested_days,
                 "model_override": model_override,
+                "strategy": generation_strategy,
             },
             prompt_variant="admin_programme_editor",
-            task_label=(brief or f"Regenerate {concept_label or concept_key} programme")[:160],
+            task_label=task_label,
             prompt_blocks={
                 "context": json.dumps(programme_context, ensure_ascii=False, default=str),
                 "task": brief,
             },
             block_order=["context", "task"],
         )
-    except Exception:
-        pass
+    except Exception as direct_exc:
+        generation_strategy = "outline_plus_days"
+        direct_message = str(direct_exc)
+        try:
+            fallback_result = _generate_education_programme_via_outline(
+                brief=brief,
+                model_override=model_override,
+                programme_context=programme_context,
+                existing_programme=existing_programme,
+                programme_name=str(programme_context.get("programme_name") or "").strip(),
+                programme_code=str(programme_context.get("programme_code") or "").strip(),
+                pillar_key=pillar_key,
+                concept_key=concept_key,
+                concept_label=concept_label,
+                requested_days=requested_days,
+            )
+        except Exception as fallback_exc:
+            raise HTTPException(
+                502,
+                f"LLM concept programme generation failed. Direct attempt: {direct_message}. "
+                f"Fallback outline/day attempt: {fallback_exc}",
+            )
+        generated_programme = fallback_result["programme"] if isinstance(fallback_result.get("programme"), dict) else {}
+        resolved_model = str(fallback_result.get("model") or "")
+        outline_result = fallback_result["outline"] if isinstance(fallback_result.get("outline"), dict) else {}
+        outline_context = outline_result.get("context") if isinstance(outline_result.get("context"), dict) else programme_context
+        _log_education_llm_generation(
+            touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
+            prompt=str(outline_result.get("prompt") or ""),
+            model=str(outline_result.get("model") or resolved_model),
+            duration_ms=int(outline_result.get("duration_ms") or 0),
+            response_preview=str(outline_result.get("content") or ""),
+            context_meta={
+                "programme_name": programme_context["programme_name"],
+                "programme_code": programme_context["programme_code"],
+                "pillar_key": pillar_key,
+                "programme_concept_key": concept_key,
+                "requested_days": requested_days,
+                "model_override": model_override,
+                "strategy": generation_strategy,
+                "direct_error": direct_message[:500],
+            },
+            prompt_variant="admin_programme_editor_outline",
+            task_label=task_label,
+            prompt_blocks={
+                "context": json.dumps(outline_context, ensure_ascii=False, default=str),
+                "task": brief,
+            },
+            block_order=["context", "task"],
+        )
+        for day_log in fallback_result.get("day_logs") if isinstance(fallback_result.get("day_logs"), list) else []:
+            if not isinstance(day_log, dict):
+                continue
+            day_context = day_log.get("context") if isinstance(day_log.get("context"), dict) else {}
+            day_index = int(day_log.get("day_index") or 0)
+            _log_education_llm_generation(
+                touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
+                prompt=str(day_log.get("prompt") or ""),
+                model=str(day_log.get("model") or resolved_model),
+                duration_ms=int(day_log.get("duration_ms") or 0),
+                response_preview=str(day_log.get("content") or ""),
+                context_meta={
+                    "programme_name": programme_context["programme_name"],
+                    "programme_code": programme_context["programme_code"],
+                    "pillar_key": pillar_key,
+                    "programme_concept_key": concept_key,
+                    "day_index": day_index,
+                    "requested_days": requested_days,
+                    "model_override": model_override,
+                    "strategy": generation_strategy,
+                },
+                prompt_variant="admin_programme_editor_day",
+                task_label=str(day_log.get("task_label") or f"Generate day {day_index}"),
+                prompt_blocks={
+                    "context": json.dumps(day_context, ensure_ascii=False, default=str),
+                    "task": str(day_log.get("task_label") or ""),
+                },
+                block_order=["context", "task"],
+            )
 
-    return {"ok": True, "model": resolved_model, "programme": generated_programme}
+    return {
+        "ok": True,
+        "model": resolved_model,
+        "programme": generated_programme,
+        "strategy": generation_strategy,
+    }
 
 
 @admin.post("/education-programmes/day/llm-generate")
