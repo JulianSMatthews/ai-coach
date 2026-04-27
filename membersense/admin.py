@@ -513,6 +513,7 @@ def _maintenance_redirect(
     category: object = "",
     stage: object = "",
     status: object = "",
+    scope: object = "",
     created: int | None = None,
     updated: int | None = None,
     error: str = "",
@@ -521,12 +522,15 @@ def _maintenance_redirect(
     item_type_key = _maintenance_item_type_key(item_type, allow_blank=True)
     category_key = _maintenance_category_key(category, allow_blank=True)
     stage_key = _maintenance_stage_key(stage or status, allow_blank=True)
+    scope_key = "open" if str(scope or "").strip().lower() == "open" else ""
     if item_type_key:
         params["item_type"] = item_type_key
     if category_key:
         params["category"] = category_key
     if stage_key and category_key != "purchase":
         params["stage"] = stage_key
+    if scope_key:
+        params["scope"] = scope_key
     if created is not None:
         params["created"] = int(created)
     if updated is not None:
@@ -1985,11 +1989,13 @@ def maintenance_admin(
     category: str = "",
     stage: str = "",
     status: str = "",
+    scope: str = "",
     session: Session = Depends(get_session),
     _: None = Depends(require_admin),
 ):
     selected_category = _maintenance_category_key(category, allow_blank=True)
     selected_stage = _maintenance_stage_key(stage or status, allow_blank=True)
+    selected_scope = "open" if str(scope or "").strip().lower() == "open" else "all"
     if selected_category == "purchase":
         selected_stage = ""
     staff_rows = (
@@ -2094,6 +2100,7 @@ def maintenance_admin(
     filtered_items = [
         item
         for item in all_items
+        if (selected_scope != "open" or _maintenance_is_active(item))
         if (not selected_category or _maintenance_category_key(getattr(item, "category", "")) == selected_category)
         and (
             not selected_stage
@@ -2121,6 +2128,11 @@ def maintenance_admin(
         "category", MAINTENANCE_CATEGORY_OPTIONS, selected_category, blank_label="All categories"
     )
     stage_filter_html = _select_html("stage", MAINTENANCE_STAGE_OPTIONS, selected_stage, blank_label="All stages")
+    scope_filter_html = _select_html(
+        "scope",
+        (("all", "All items"), ("open", "Open items only")),
+        selected_scope,
+    )
     filtered_groups: dict[str, list[str]] = {"purchase": [], "maintenance": [], "repair": []}
     for item in filtered_items:
         category_key = _maintenance_category_key(getattr(item, "category", ""))
@@ -2143,6 +2155,7 @@ def maintenance_admin(
   <form method="post" action="{_post_action(request, f'/admin/maintenance/items/{int(item.id)}/update')}" class="stack maintenance-item-form" style="margin-top: 12px;" data-purchase-staff-id="{purchase_staff_id}">
     <input type="hidden" name="return_category" value="{_esc(selected_category)}">
     <input type="hidden" name="return_stage" value="{_esc(selected_stage)}">
+    <input type="hidden" name="return_scope" value="{_esc(selected_scope)}">
     <div class="grid">
       <label><span>Item</span><input name="title" value="{_esc(item.title)}" required></label>
       <div style="grid-column: 1 / -1;">
@@ -2202,6 +2215,9 @@ def maintenance_admin(
       <h2>Maintenance</h2>
       <p class="muted">Track purchase items by order date, and maintenance and repair items by stage, with recorded date, elapsed days, and allocation.</p>
     </div>
+    <div class="inline">
+      <a class="button secondary" href="{_href(request, '/admin/maintenance?scope=open')}">Review open items</a>
+    </div>
   </div>
   {notice_html}
   <div class="grid">
@@ -2220,6 +2236,7 @@ def maintenance_admin(
   <form method="post" action="{_post_action(request, '/admin/maintenance/items')}" class="stack maintenance-item-form" data-purchase-staff-id="{purchase_staff_id}">
     <input type="hidden" name="return_category" value="{_esc(selected_category)}">
     <input type="hidden" name="return_stage" value="{_esc(selected_stage)}">
+    <input type="hidden" name="return_scope" value="{_esc(selected_scope)}">
     <div class="grid">
       <label><span>Item</span><input name="title" required></label>
       <div style="grid-column: 1 / -1;">
@@ -2251,6 +2268,7 @@ def maintenance_admin(
       <p class="muted">Use filters to focus the logs. Days transpired runs from the recorded date to the order date for purchases, to completion for finished work, or to today while the item is still active.</p>
     </div>
     <form method="get" action="{_href(request, '/admin/maintenance')}" class="inline">
+      <label><span>View</span>{scope_filter_html}</label>
       <label><span>Category</span>{category_filter_html}</label>
       {'' if selected_category == 'purchase' else f'<label><span>Stage</span>{stage_filter_html}</label>'}
       <button type="submit">Filter</button>
@@ -2331,6 +2349,7 @@ def maintenance_create_item(
     assigned_staff_id: int = Form(0),
     return_category: str = Form(""),
     return_stage: str = Form(""),
+    return_scope: str = Form(""),
     return_status: str = Form(""),
     session: Session = Depends(get_session),
     _: None = Depends(require_admin),
@@ -2342,6 +2361,7 @@ def maintenance_create_item(
             request,
             category=return_category,
             stage=return_stage or return_status,
+            scope=return_scope,
             error="Enter a maintenance item title.",
         )
     allocation = _maintenance_allocation_key(allocation_type)
@@ -2355,6 +2375,7 @@ def maintenance_create_item(
             request,
             category=return_category,
             stage=return_stage or return_status,
+            scope=return_scope,
             error="Choose a staff name when the item is assigned to a staff person.",
         )
     if allocation != "staff_person":
@@ -2382,6 +2403,7 @@ def maintenance_create_item(
                 request,
                 category=return_category,
                 stage=return_stage or return_status,
+                scope=return_scope,
                 error=str(exc),
             )
         status_key = "complete" if stage_key == "complete" else "in_progress"
@@ -2410,6 +2432,7 @@ def maintenance_create_item(
         request,
         category=return_category or category_key,
         stage=return_stage or return_status,
+        scope=return_scope,
         created=1,
     )
 
@@ -2432,6 +2455,7 @@ def maintenance_update_item(
     assigned_staff_id: int = Form(0),
     return_category: str = Form(""),
     return_stage: str = Form(""),
+    return_scope: str = Form(""),
     return_status: str = Form(""),
     session: Session = Depends(get_session),
     _: None = Depends(require_admin),
@@ -2446,6 +2470,7 @@ def maintenance_update_item(
             request,
             category=return_category,
             stage=return_stage or return_status,
+            scope=return_scope,
             error="Enter a maintenance item title.",
         )
     allocation = _maintenance_allocation_key(allocation_type)
@@ -2459,6 +2484,7 @@ def maintenance_update_item(
             request,
             category=return_category,
             stage=return_stage or return_status,
+            scope=return_scope,
             error="Choose a staff name when the item is assigned to a staff person.",
         )
     if allocation != "staff_person":
@@ -2486,6 +2512,7 @@ def maintenance_update_item(
                 request,
                 category=return_category,
                 stage=return_stage or return_status,
+                scope=return_scope,
                 error=str(exc),
             )
         status_key = "complete" if stage_key == "complete" else "in_progress"
@@ -2512,6 +2539,7 @@ def maintenance_update_item(
         request,
         category=return_category or category_key,
         stage=return_stage or return_status,
+        scope=return_scope,
         updated=1,
     )
 
@@ -2525,6 +2553,7 @@ def maintenance_update_item_status(
     completed_on: str = Form(""),
     return_category: str = Form(""),
     return_stage: str = Form(""),
+    return_scope: str = Form(""),
     return_status: str = Form(""),
     session: Session = Depends(get_session),
     _: None = Depends(require_admin),
@@ -2546,6 +2575,7 @@ def maintenance_update_item_status(
             request,
             category=return_category or getattr(row, "category", ""),
             stage="",
+            scope=return_scope,
             updated=1,
         )
     stage_key = _maintenance_stage_key(stage or status)
@@ -2562,6 +2592,7 @@ def maintenance_update_item_status(
         request,
         category=return_category,
         stage=return_stage or return_status,
+        scope=return_scope,
         updated=1,
     )
 
