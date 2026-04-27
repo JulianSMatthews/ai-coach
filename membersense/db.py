@@ -182,6 +182,18 @@ def _migrate_maintenance_table() -> None:
             )
             conn.exec_driver_sql(
                 f"UPDATE {table_name} "
+                "SET category = CASE "
+                "WHEN lower(trim(coalesce(category, ''))) IN ('purchase', 'maintenance', 'repair') THEN lower(trim(category)) "
+                "WHEN lower(trim(coalesce(item_type, ''))) = 'replacement_item' THEN 'purchase' "
+                "WHEN lower(trim(coalesce(title, ''))) LIKE 'replace %' THEN 'purchase' "
+                "WHEN lower(trim(coalesce(title, ''))) LIKE 'order %' THEN 'purchase' "
+                "WHEN lower(trim(coalesce(title, ''))) LIKE 'repair %' THEN 'repair' "
+                "WHEN lower(trim(coalesce(title, ''))) LIKE '%tighten %' THEN 'repair' "
+                "WHEN lower(trim(coalesce(category, ''))) = 'equipment' THEN 'repair' "
+                "ELSE 'maintenance' END"
+            )
+            conn.exec_driver_sql(
+                f"UPDATE {table_name} "
                 "SET stage = CASE "
                 "WHEN stage IS NULL OR trim(stage) = '' THEN CASE "
                 "WHEN lower(trim(coalesce(status, ''))) = 'complete' OR completed_at IS NOT NULL THEN 'complete' "
@@ -194,6 +206,18 @@ def _migrate_maintenance_table() -> None:
             )
             conn.exec_driver_sql(
                 f"UPDATE {table_name} SET needs_parts = 1 WHERE lower(trim(coalesce(stage, ''))) = 'order_parts'"
+            )
+            conn.exec_driver_sql(
+                f"UPDATE {table_name} SET allocation_type = 'staff_person' "
+                "WHERE lower(trim(coalesce(category, ''))) = 'purchase'"
+            )
+            conn.exec_driver_sql(
+                f"UPDATE {table_name} SET allocation_type = 'maint_main' "
+                "WHERE lower(trim(coalesce(category, ''))) = 'maintenance'"
+            )
+            conn.exec_driver_sql(
+                f"UPDATE {table_name} SET allocation_type = 'equipment_supplier' "
+                "WHERE lower(trim(coalesce(category, ''))) = 'repair'"
             )
             return
         if dialect == "postgresql":
@@ -218,6 +242,18 @@ def _migrate_maintenance_table() -> None:
             )
             conn.exec_driver_sql(
                 f"UPDATE {table_name} "
+                "SET category = CASE "
+                "WHEN lower(btrim(coalesce(category, ''))) IN ('purchase', 'maintenance', 'repair') THEN lower(btrim(category)) "
+                "WHEN lower(btrim(coalesce(item_type, ''))) = 'replacement_item' THEN 'purchase' "
+                "WHEN lower(btrim(coalesce(title, ''))) LIKE 'replace %' THEN 'purchase' "
+                "WHEN lower(btrim(coalesce(title, ''))) LIKE 'order %' THEN 'purchase' "
+                "WHEN lower(btrim(coalesce(title, ''))) LIKE 'repair %' THEN 'repair' "
+                "WHEN lower(btrim(coalesce(title, ''))) LIKE '%tighten %' THEN 'repair' "
+                "WHEN lower(btrim(coalesce(category, ''))) = 'equipment' THEN 'repair' "
+                "ELSE 'maintenance' END"
+            )
+            conn.exec_driver_sql(
+                f"UPDATE {table_name} "
                 "SET stage = CASE "
                 "WHEN stage IS NULL OR btrim(stage) = '' THEN CASE "
                 "WHEN lower(btrim(coalesce(status, ''))) = 'complete' OR completed_at IS NOT NULL THEN 'complete' "
@@ -230,6 +266,18 @@ def _migrate_maintenance_table() -> None:
             )
             conn.exec_driver_sql(
                 f"UPDATE {table_name} SET needs_parts = TRUE WHERE lower(btrim(coalesce(stage, ''))) = 'order_parts'"
+            )
+            conn.exec_driver_sql(
+                f"UPDATE {table_name} SET allocation_type = 'staff_person' "
+                "WHERE lower(btrim(coalesce(category, ''))) = 'purchase'"
+            )
+            conn.exec_driver_sql(
+                f"UPDATE {table_name} SET allocation_type = 'maint_main' "
+                "WHERE lower(btrim(coalesce(category, ''))) = 'maintenance'"
+            )
+            conn.exec_driver_sql(
+                f"UPDATE {table_name} SET allocation_type = 'equipment_supplier' "
+                "WHERE lower(btrim(coalesce(category, ''))) = 'repair'"
             )
 
 

@@ -62,14 +62,9 @@ router = APIRouter()
 
 
 MAINTENANCE_CATEGORY_OPTIONS: tuple[tuple[str, str], ...] = (
-    ("bathroom", "Bathroom"),
-    ("equipment", "Equipment"),
-    ("decor", "Decor"),
-    ("cleaning", "Cleaning"),
-    ("safety", "Safety"),
-    ("security", "Security"),
-    ("facilities", "Facilities"),
-    ("general", "General"),
+    ("purchase", "Purchase"),
+    ("maintenance", "Maintenance"),
+    ("repair", "Repair"),
 )
 MAINTENANCE_PRIORITY_OPTIONS: tuple[tuple[str, str], ...] = (
     ("high", "High"),
@@ -202,7 +197,15 @@ def _maintenance_category_key(value: object, *, allow_blank: bool = False) -> st
     allowed = {key for key, _label in MAINTENANCE_CATEGORY_OPTIONS}
     if allow_blank and not token:
         return ""
-    return token if token in allowed else ("general" if not allow_blank else "")
+    if token in allowed:
+        return token
+    if token in {"replacement_item", "purchase"}:
+        return "purchase"
+    if token in {"equipment", "repair"}:
+        return "repair"
+    if token in {"bathroom", "cleaning", "decor", "safety", "security", "facilities", "general"}:
+        return "maintenance"
+    return "maintenance" if not allow_blank else ""
 
 
 def _maintenance_priority_key(value: object) -> str:
@@ -219,14 +222,19 @@ def _maintenance_item_type_key(value: object, *, allow_blank: bool = False) -> s
     return token if token in allowed else ("maintenance_work" if not allow_blank else "")
 
 
-def _maintenance_item_type_input_html(name: str, selected: object = "maintenance_work") -> str:
-    selected_key = _maintenance_item_type_key(selected)
+def _maintenance_item_type_for_category(category: object) -> str:
+    return "replacement_item" if _maintenance_category_key(category) == "purchase" else "maintenance_work"
+
+
+def _maintenance_category_input_html(name: str, selected: object = "maintenance") -> str:
+    selected_key = _maintenance_category_key(selected)
     descriptions = {
-        "maintenance_work": "Repairs, cleaning, touch-up work, or jobs to arrange.",
-        "replacement_item": "Gym items or stock that need buying or replacing.",
+        "purchase": "Items to buy or replace. Defaults to Sophie.",
+        "maintenance": "Routine upkeep, cleaning, or touch-up work. Defaults to Maint man.",
+        "repair": "Fixes or supplier-led repair work. Defaults to Equipment supplier.",
     }
     options = []
-    for key, label in MAINTENANCE_TYPE_OPTIONS:
+    for key, label in MAINTENANCE_CATEGORY_OPTIONS:
         checked = " checked" if key == selected_key else ""
         options.append(
             f"""
@@ -269,6 +277,36 @@ def _maintenance_label(value: object, options: tuple[tuple[str, str], ...], fall
     token = str(value or "").strip().lower()
     labels = dict(options)
     return labels.get(token, fallback)
+
+
+def _maintenance_purchase_staff_id_from_rows(staff_rows: list[StaffUser]) -> int:
+    for staff in staff_rows:
+        candidates = [
+            str(getattr(staff, "name", "") or "").strip().lower(),
+            str(getattr(staff, "username", "") or "").strip().lower(),
+            str(getattr(staff, "email", "") or "").strip().lower(),
+        ]
+        if any(candidate.startswith("sophie") or candidate.startswith("soph") or "sophie" in candidate for candidate in candidates):
+            return int(staff.id or 0)
+    return 0
+
+
+def _maintenance_purchase_staff_id(session: Session) -> int:
+    staff_rows = (
+        session.execute(select(StaffUser).where(StaffUser.is_active.is_(True)).order_by(StaffUser.name.asc()))
+        .scalars()
+        .all()
+    )
+    return _maintenance_purchase_staff_id_from_rows(staff_rows)
+
+
+def _maintenance_default_assignment(category: object, *, purchase_staff_id: int = 0) -> tuple[str, int]:
+    category_key = _maintenance_category_key(category)
+    if category_key == "purchase":
+        return "staff_person", int(purchase_staff_id or 0)
+    if category_key == "repair":
+        return "equipment_supplier", 0
+    return "maint_main", 0
 
 
 def _staff_name(session: Session, staff_id: int | None) -> str:
@@ -398,11 +436,11 @@ def _maintenance_stage_date_detail(item: MaintenanceItem) -> str:
 
 
 def _maintenance_sort_key(item: MaintenanceItem) -> tuple[int, int, int, str, int]:
-    type_order = {"maintenance_work": 0, "replacement_item": 1}
+    category_order = {"purchase": 0, "maintenance": 1, "repair": 2}
     stage_order = {"order_parts": 0, "arrange_work": 1, "complete": 2}
     priority_order = {"high": 0, "medium": 1, "low": 2}
     stage_date = None
-    item_type = _maintenance_item_type_key(getattr(item, "item_type", ""))
+    category_key = _maintenance_category_key(getattr(item, "category", ""))
     stage = _maintenance_stage_key(getattr(item, "stage", ""))
     if stage == "order_parts":
         stage_date = getattr(item, "parts_due_on", None)
@@ -414,7 +452,7 @@ def _maintenance_sort_key(item: MaintenanceItem) -> tuple[int, int, int, str, in
     if stage == "complete":
         stage_date_label = stage_date.isoformat() if hasattr(stage_date, "isoformat") else ""
     return (
-        type_order.get(item_type, 9),
+        category_order.get(category_key, 9),
         stage_order.get(stage, 9),
         priority_order.get(_maintenance_priority_key(getattr(item, "priority", "")), 9),
         stage_date_label,
@@ -1903,14 +1941,12 @@ def maintenance_admin(
     created: int | None = None,
     updated: int | None = None,
     error: str = "",
-    item_type: str = "",
     category: str = "",
     stage: str = "",
     status: str = "",
     session: Session = Depends(get_session),
     _: None = Depends(require_admin),
 ):
-    selected_item_type = _maintenance_item_type_key(item_type, allow_blank=True)
     selected_category = _maintenance_category_key(category, allow_blank=True)
     selected_stage = _maintenance_stage_key(stage or status, allow_blank=True)
     staff_rows = (
@@ -1918,6 +1954,7 @@ def maintenance_admin(
         .scalars()
         .all()
     )
+    purchase_staff_id = _maintenance_purchase_staff_id_from_rows(staff_rows)
 
     def staff_select(name: str, selected_id: int | None = None) -> str:
         selected = int(selected_id or 0)
@@ -1947,16 +1984,22 @@ def maintenance_admin(
       <label><span>Completed on</span><input type="date" name="completed_on" value="{_esc(_date_input_value(completed_value))}"></label>"""
 
     all_items = session.execute(select(MaintenanceItem)).scalars().all()
-    maintenance_work_active_count = sum(
+    purchase_active_count = sum(
         1
         for item in all_items
-        if _maintenance_item_type_key(getattr(item, "item_type", "")) == "maintenance_work"
+        if _maintenance_category_key(getattr(item, "category", "")) == "purchase"
         and _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) != "complete"
     )
-    replacement_item_active_count = sum(
+    maintenance_active_count = sum(
         1
         for item in all_items
-        if _maintenance_item_type_key(getattr(item, "item_type", "")) == "replacement_item"
+        if _maintenance_category_key(getattr(item, "category", "")) == "maintenance"
+        and _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) != "complete"
+    )
+    repair_active_count = sum(
+        1
+        for item in all_items
+        if _maintenance_category_key(getattr(item, "category", "")) == "repair"
         and _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) != "complete"
     )
     order_parts_count = sum(
@@ -1977,11 +2020,7 @@ def maintenance_admin(
     filtered_items = [
         item
         for item in all_items
-        if (
-            not selected_item_type
-            or _maintenance_item_type_key(getattr(item, "item_type", "")) == selected_item_type
-        )
-        and (not selected_category or _maintenance_category_key(getattr(item, "category", "")) == selected_category)
+        if (not selected_category or _maintenance_category_key(getattr(item, "category", "")) == selected_category)
         and (
             not selected_stage
             or _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) == selected_stage
@@ -1997,16 +2036,18 @@ def maintenance_admin(
         notice_parts.append(str(error))
     notice_class = "error" if error else "pill"
     notice_html = f'<p><span class="{notice_class}">{_esc(" ".join(notice_parts))}</span></p>' if notice_parts else ""
+    add_form_category = selected_category or "maintenance"
+    add_form_allocation, add_form_staff_id = _maintenance_default_assignment(
+        add_form_category, purchase_staff_id=purchase_staff_id
+    )
     category_filter_html = _select_html(
         "category", MAINTENANCE_CATEGORY_OPTIONS, selected_category, blank_label="All categories"
     )
-    type_filter_html = _select_html("item_type", MAINTENANCE_TYPE_OPTIONS, selected_item_type, blank_label="All types")
     stage_filter_html = _select_html("stage", MAINTENANCE_STAGE_OPTIONS, selected_stage, blank_label="All stages")
-    filtered_groups: dict[str, list[str]] = {"maintenance_work": [], "replacement_item": []}
+    filtered_groups: dict[str, list[str]] = {"purchase": [], "maintenance": [], "repair": []}
     for item in filtered_items:
-        item_type_key = _maintenance_item_type_key(getattr(item, "item_type", ""))
-        item_type_label = _maintenance_label(item_type_key, MAINTENANCE_TYPE_OPTIONS, "Maintenance work")
-        category_label = _maintenance_label(getattr(item, "category", ""), MAINTENANCE_CATEGORY_OPTIONS, "General")
+        category_key = _maintenance_category_key(getattr(item, "category", ""))
+        category_label = _maintenance_label(category_key, MAINTENANCE_CATEGORY_OPTIONS, "Maintenance")
         recorded_label = _datetime(getattr(item, "created_at", None)) or "Not recorded"
         days_label = str(_maintenance_days_transpired(item))
         assignee_label = _maintenance_assignee_label(item, session)
@@ -2015,23 +2056,21 @@ def maintenance_admin(
         needs_parts_label = "Needs parts" if bool(getattr(item, "needs_parts", False)) else "No parts needed"
         detail_html = f'<br><span class="muted">{_esc(detail_text)}</span>' if detail_text else ""
         item_meta_html = (
-            f'<div class="muted" style="margin-top: 4px;"><span class="pill">{_esc(item_type_label)}</span> {stage_detail} · {_esc(needs_parts_label)}</div>'
+            f'<div class="muted" style="margin-top: 4px;">{stage_detail} · {_esc(needs_parts_label)}</div>'
         )
         item_stage = _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", "")))
         edit_form = f"""
 <details>
   <summary class="button secondary">Amend</summary>
-  <form method="post" action="{_post_action(request, f'/admin/maintenance/items/{int(item.id)}/update')}" class="stack" style="margin-top: 12px;">
-    <input type="hidden" name="return_item_type" value="{_esc(selected_item_type)}">
+  <form method="post" action="{_post_action(request, f'/admin/maintenance/items/{int(item.id)}/update')}" class="stack maintenance-item-form" style="margin-top: 12px;" data-purchase-staff-id="{purchase_staff_id}">
     <input type="hidden" name="return_category" value="{_esc(selected_category)}">
     <input type="hidden" name="return_stage" value="{_esc(selected_stage)}">
     <div class="grid">
       <label><span>Item</span><input name="title" value="{_esc(item.title)}" required></label>
       <div style="grid-column: 1 / -1;">
-        <span class="muted" style="display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600;">Item type</span>
-        {_maintenance_item_type_input_html("item_type", item_type_key)}
+        <span class="muted" style="display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600;">Category</span>
+        {_maintenance_category_input_html("category", category_key)}
       </div>
-      <label><span>Category</span>{_select_html("category", MAINTENANCE_CATEGORY_OPTIONS, getattr(item, "category", "general"))}</label>
       <label><span>Priority</span>{_select_html("priority", MAINTENANCE_PRIORITY_OPTIONS, getattr(item, "priority", "medium"))}</label>
       <label><span>Who completes this</span>{_select_html("allocation_type", MAINTENANCE_ALLOCATION_OPTIONS, getattr(item, "allocation_type", "maint_main"))}</label>
       <label><span>Staff person</span>{staff_select("assigned_staff_id", getattr(item, "assigned_staff_id", None))}</label>
@@ -2043,11 +2082,12 @@ def maintenance_admin(
           completed_value=getattr(item, "completed_on", None),
       )}
     </div>
+    <p class="muted" style="margin-top: 0;">Purchase defaults to Sophie, Maintenance defaults to Maint man, and Repair defaults to Equipment supplier.</p>
     <label><span>Notes</span><textarea name="detail">{_esc(detail_text)}</textarea></label>
     <button type="submit" class="secondary">Save maintenance item</button>
   </form>
 </details>"""
-        filtered_groups.setdefault(item_type_key, []).append(
+        filtered_groups.setdefault(category_key, []).append(
             "<tr>"
             f"<td>{_esc(recorded_label)}</td>"
             f"<td>{_esc(days_label)}</td>"
@@ -2059,13 +2099,14 @@ def maintenance_admin(
             f"<td>{edit_form}</td>"
             "</tr>"
         )
-    def table_section(title: str, item_type_key: str) -> str:
-        rows = filtered_groups.get(item_type_key) or []
-        empty_label = (
-            "No maintenance work items match the current filters."
-            if item_type_key == "maintenance_work"
-            else "No replacement items match the current filters."
-        )
+    def table_section(title: str, category_key: str) -> str:
+        rows = filtered_groups.get(category_key) or []
+        empty_by_category = {
+            "purchase": "No purchase items match the current filters.",
+            "maintenance": "No maintenance items match the current filters.",
+            "repair": "No repair items match the current filters.",
+        }
+        empty_label = empty_by_category.get(category_key, "No maintenance items match the current filters.")
         return f"""
 <section>
   <h2>{_esc(title)}</h2>
@@ -2079,13 +2120,14 @@ def maintenance_admin(
   <div class="inline" style="justify-content: space-between;">
     <div>
       <h2>Maintenance</h2>
-      <p class="muted">Track maintenance work separately from replacement items for the club, with stage, parts requirement, recorded date, elapsed days, and allocation.</p>
+      <p class="muted">Track purchase, maintenance, and repair items with stage, parts requirement, recorded date, elapsed days, and allocation.</p>
     </div>
   </div>
   {notice_html}
   <div class="grid">
-    <div class="metric"><strong>{maintenance_work_active_count}</strong><span>Active maintenance work</span></div>
-    <div class="metric"><strong>{replacement_item_active_count}</strong><span>Active replacement items</span></div>
+    <div class="metric"><strong>{purchase_active_count}</strong><span>Active purchase items</span></div>
+    <div class="metric"><strong>{maintenance_active_count}</strong><span>Active maintenance items</span></div>
+    <div class="metric"><strong>{repair_active_count}</strong><span>Active repair items</span></div>
     <div class="metric"><strong>{order_parts_count}</strong><span>Order parts</span></div>
     <div class="metric"><strong>{arrange_work_count}</strong><span>Arrange work</span></div>
     <div class="metric"><strong>{complete_count}</strong><span>Complete</span></div>
@@ -2093,21 +2135,19 @@ def maintenance_admin(
   </div>
 </section>
 <section>
-  <h2>Add Maintenance or Replacement Item</h2>
-  <form method="post" action="{_post_action(request, '/admin/maintenance/items')}" class="stack">
-    <input type="hidden" name="return_item_type" value="{_esc(selected_item_type)}">
+  <h2>Add Maintenance Item</h2>
+  <form method="post" action="{_post_action(request, '/admin/maintenance/items')}" class="stack maintenance-item-form" data-purchase-staff-id="{purchase_staff_id}">
     <input type="hidden" name="return_category" value="{_esc(selected_category)}">
     <input type="hidden" name="return_stage" value="{_esc(selected_stage)}">
     <div class="grid">
       <label><span>Item</span><input name="title" required></label>
       <div style="grid-column: 1 / -1;">
-        <span class="muted" style="display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600;">Item type</span>
-        {_maintenance_item_type_input_html("item_type", selected_item_type or "maintenance_work")}
+        <span class="muted" style="display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600;">Category</span>
+        {_maintenance_category_input_html("category", add_form_category)}
       </div>
-      <label><span>Category</span>{_select_html("category", MAINTENANCE_CATEGORY_OPTIONS, "general")}</label>
       <label><span>Priority</span>{_select_html("priority", MAINTENANCE_PRIORITY_OPTIONS, "medium")}</label>
-      <label><span>Who completes this</span>{_select_html("allocation_type", MAINTENANCE_ALLOCATION_OPTIONS, "maint_main")}</label>
-      <label><span>Staff person</span>{staff_select("assigned_staff_id")}</label>
+      <label><span>Who completes this</span>{_select_html("allocation_type", MAINTENANCE_ALLOCATION_OPTIONS, add_form_allocation)}</label>
+      <label><span>Staff person</span>{staff_select("assigned_staff_id", add_form_staff_id)}</label>
       {stage_fields_html(
           selected_stage_value="arrange_work",
           needs_parts_value=False,
@@ -2116,7 +2156,7 @@ def maintenance_admin(
           completed_value=None,
       )}
     </div>
-    <p class="muted" style="margin-top: 0;">Use <strong>Replacement item</strong> for equipment or club items that need buying or swapping out, rather than a repair or cleaning task.</p>
+    <p class="muted" style="margin-top: 0;">Purchase defaults to Sophie, Maintenance defaults to Maint man, and Repair defaults to Equipment supplier.</p>
     <label><span>Notes</span><textarea name="detail" placeholder="Optional location, part required, or follow-up notes"></textarea></label>
     <button type="submit">Add maintenance item</button>
   </form>
@@ -2128,20 +2168,51 @@ def maintenance_admin(
       <p class="muted">Use filters to focus the logs. Days transpired runs from the recorded date to completion, or to today while the item is still active.</p>
     </div>
     <form method="get" action="{_href(request, '/admin/maintenance')}" class="inline">
-      <label><span>Type</span>{type_filter_html}</label>
       <label><span>Category</span>{category_filter_html}</label>
       <label><span>Stage</span>{stage_filter_html}</label>
       <button type="submit">Filter</button>
     </form>
   </div>
-</section>"""
-    if selected_item_type == "maintenance_work":
-        body += table_section("Maintenance Work Log", "maintenance_work")
-    elif selected_item_type == "replacement_item":
-        body += table_section("Replacement Items Log", "replacement_item")
+</section>
+<script>
+(function () {{
+  const forms = document.querySelectorAll('.maintenance-item-form');
+  forms.forEach((form) => {{
+    const categoryInputs = form.querySelectorAll('input[name="category"]');
+    const allocationSelect = form.querySelector('select[name="allocation_type"]');
+    const staffSelect = form.querySelector('select[name="assigned_staff_id"]');
+    const purchaseStaffId = form.getAttribute('data-purchase-staff-id') || '';
+    if (!categoryInputs.length || !allocationSelect || !staffSelect) return;
+    const applyCategoryDefaults = () => {{
+      const checked = form.querySelector('input[name="category"]:checked');
+      const categoryValue = checked ? checked.value : 'maintenance';
+      if (categoryValue === 'purchase') {{
+        allocationSelect.value = 'staff_person';
+        if (purchaseStaffId && Array.from(staffSelect.options).some((option) => option.value === purchaseStaffId)) {{
+          staffSelect.value = purchaseStaffId;
+        }}
+      }} else if (categoryValue === 'repair') {{
+        allocationSelect.value = 'equipment_supplier';
+        staffSelect.value = '';
+      }} else {{
+        allocationSelect.value = 'maint_main';
+        staffSelect.value = '';
+      }}
+    }};
+    categoryInputs.forEach((input) => input.addEventListener('change', applyCategoryDefaults));
+  }});
+}})();
+</script>"""
+    if selected_category == "purchase":
+        body += table_section("Purchase Log", "purchase")
+    elif selected_category == "maintenance":
+        body += table_section("Maintenance Log", "maintenance")
+    elif selected_category == "repair":
+        body += table_section("Repair Log", "repair")
     else:
-        body += table_section("Maintenance Work Log", "maintenance_work")
-        body += table_section("Replacement Items Log", "replacement_item")
+        body += table_section("Purchase Log", "purchase")
+        body += table_section("Maintenance Log", "maintenance")
+        body += table_section("Repair Log", "repair")
     return _layout(request, "Maintenance", body)
 
 
@@ -2150,8 +2221,7 @@ def maintenance_create_item(
     request: Request,
     title: str = Form(""),
     detail: str = Form(""),
-    item_type: str = Form("maintenance_work"),
-    category: str = Form("general"),
+    category: str = Form("maintenance"),
     priority: str = Form("medium"),
     stage: str = Form("arrange_work"),
     needs_parts: str = Form(""),
@@ -2160,18 +2230,17 @@ def maintenance_create_item(
     completed_on: str = Form(""),
     allocation_type: str = Form("maint_main"),
     assigned_staff_id: int = Form(0),
-    return_item_type: str = Form(""),
     return_category: str = Form(""),
     return_stage: str = Form(""),
     return_status: str = Form(""),
     session: Session = Depends(get_session),
     _: None = Depends(require_admin),
 ):
+    category_key = _maintenance_category_key(category)
     title_text = str(title or "").strip()
     if not title_text:
         return _maintenance_redirect(
             request,
-            item_type=return_item_type,
             category=return_category,
             stage=return_stage or return_status,
             error="Enter a maintenance item title.",
@@ -2180,10 +2249,11 @@ def maintenance_create_item(
     staff_id = int(assigned_staff_id or 0)
     if not staff_id or session.get(StaffUser, staff_id) is None:
         staff_id = 0
+    if allocation == "staff_person" and not staff_id and category_key == "purchase":
+        staff_id = _maintenance_purchase_staff_id(session)
     if allocation == "staff_person" and not staff_id:
         return _maintenance_redirect(
             request,
-            item_type=return_item_type,
             category=return_category,
             stage=return_stage or return_status,
             error="Choose a staff name when the item is assigned to a staff person.",
@@ -2201,7 +2271,6 @@ def maintenance_create_item(
     except ValueError as exc:
         return _maintenance_redirect(
             request,
-            item_type=return_item_type,
             category=return_category,
             stage=return_stage or return_status,
             error=str(exc),
@@ -2209,8 +2278,8 @@ def maintenance_create_item(
     row = MaintenanceItem(
         title=title_text,
         detail=str(detail or "").strip() or None,
-        item_type=_maintenance_item_type_key(item_type),
-        category=_maintenance_category_key(category),
+        item_type=_maintenance_item_type_for_category(category_key),
+        category=category_key,
         priority=_maintenance_priority_key(priority),
         needs_parts=needs_parts_flag,
         stage=stage_key,
@@ -2227,8 +2296,7 @@ def maintenance_create_item(
     session.commit()
     return _maintenance_redirect(
         request,
-        item_type=return_item_type or item_type,
-        category=return_category,
+        category=return_category or category_key,
         stage=return_stage or return_status,
         created=1,
     )
@@ -2240,8 +2308,7 @@ def maintenance_update_item(
     item_id: int,
     title: str = Form(""),
     detail: str = Form(""),
-    item_type: str = Form("maintenance_work"),
-    category: str = Form("general"),
+    category: str = Form("maintenance"),
     priority: str = Form("medium"),
     stage: str = Form("arrange_work"),
     needs_parts: str = Form(""),
@@ -2250,7 +2317,6 @@ def maintenance_update_item(
     completed_on: str = Form(""),
     allocation_type: str = Form("maint_main"),
     assigned_staff_id: int = Form(0),
-    return_item_type: str = Form(""),
     return_category: str = Form(""),
     return_stage: str = Form(""),
     return_status: str = Form(""),
@@ -2260,11 +2326,11 @@ def maintenance_update_item(
     row = session.get(MaintenanceItem, int(item_id))
     if row is None:
         raise HTTPException(status_code=404, detail="Maintenance item not found")
+    category_key = _maintenance_category_key(category)
     title_text = str(title or "").strip()
     if not title_text:
         return _maintenance_redirect(
             request,
-            item_type=return_item_type,
             category=return_category,
             stage=return_stage or return_status,
             error="Enter a maintenance item title.",
@@ -2273,10 +2339,11 @@ def maintenance_update_item(
     staff_id = int(assigned_staff_id or 0)
     if not staff_id or session.get(StaffUser, staff_id) is None:
         staff_id = 0
+    if allocation == "staff_person" and not staff_id and category_key == "purchase":
+        staff_id = _maintenance_purchase_staff_id(session)
     if allocation == "staff_person" and not staff_id:
         return _maintenance_redirect(
             request,
-            item_type=return_item_type,
             category=return_category,
             stage=return_stage or return_status,
             error="Choose a staff name when the item is assigned to a staff person.",
@@ -2294,15 +2361,14 @@ def maintenance_update_item(
     except ValueError as exc:
         return _maintenance_redirect(
             request,
-            item_type=return_item_type,
             category=return_category,
             stage=return_stage or return_status,
             error=str(exc),
         )
     row.title = title_text
     row.detail = str(detail or "").strip() or None
-    row.item_type = _maintenance_item_type_key(item_type)
-    row.category = _maintenance_category_key(category)
+    row.item_type = _maintenance_item_type_for_category(category_key)
+    row.category = category_key
     row.priority = _maintenance_priority_key(priority)
     row.needs_parts = needs_parts_flag
     row.stage = stage_key
@@ -2318,8 +2384,7 @@ def maintenance_update_item(
     session.commit()
     return _maintenance_redirect(
         request,
-        item_type=return_item_type or item_type,
-        category=return_category,
+        category=return_category or category_key,
         stage=return_stage or return_status,
         updated=1,
     )
@@ -2332,7 +2397,6 @@ def maintenance_update_item_status(
     stage: str = Form("arrange_work"),
     status: str = Form(""),
     completed_on: str = Form(""),
-    return_item_type: str = Form(""),
     return_category: str = Form(""),
     return_stage: str = Form(""),
     return_status: str = Form(""),
@@ -2354,7 +2418,6 @@ def maintenance_update_item_status(
     session.commit()
     return _maintenance_redirect(
         request,
-        item_type=return_item_type or getattr(row, "item_type", ""),
         category=return_category,
         stage=return_stage or return_status,
         updated=1,
