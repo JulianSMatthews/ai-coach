@@ -2267,15 +2267,22 @@ def maintenance_admin(
     const groupedFields = form.querySelectorAll('[data-maintenance-field-group]');
     const purchaseStaffId = form.getAttribute('data-purchase-staff-id') || '';
     if (!categoryInputs.length || !allocationSelect || !staffSelect) return;
-    const applyCategoryDefaults = () => {{
+    const selectedCategory = () => {{
       const checked = form.querySelector('input[name="category"]:checked');
-      const categoryValue = checked ? checked.value : 'maintenance';
+      return checked ? checked.value : 'maintenance';
+    }};
+    const applyCategoryPresentation = (categoryValue) => {{
       groupedFields.forEach((field) => {{
         const group = field.getAttribute('data-maintenance-field-group') || '';
         const displayStyle = field.getAttribute('data-display-style') || 'block';
         const visible = categoryValue === 'purchase' ? group === 'purchase' : group === 'work';
         field.style.display = visible ? displayStyle : 'none';
       }});
+    }};
+    const applyCategoryDefaults = (forceDefaults) => {{
+      const categoryValue = selectedCategory();
+      applyCategoryPresentation(categoryValue);
+      if (!forceDefaults) return;
       if (categoryValue === 'purchase') {{
         allocationSelect.value = 'staff_person';
         if (purchaseStaffId && Array.from(staffSelect.options).some((option) => option.value === purchaseStaffId)) {{
@@ -2289,8 +2296,8 @@ def maintenance_admin(
         staffSelect.value = '';
       }}
     }};
-    categoryInputs.forEach((input) => input.addEventListener('change', applyCategoryDefaults));
-    applyCategoryDefaults();
+    categoryInputs.forEach((input) => input.addEventListener('change', () => applyCategoryDefaults(true)));
+    applyCategoryDefaults(false);
   }});
 }})();
 </script>"""
