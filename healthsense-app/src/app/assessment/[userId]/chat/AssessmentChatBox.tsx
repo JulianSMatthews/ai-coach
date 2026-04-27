@@ -2727,6 +2727,18 @@ export default function AssessmentChatBox({
                     Back
                   </button>
                 ) : null}
+                {nextHomeSurface ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEducationQuizMessage(null);
+                      setHomeSurface(nextHomeSurface);
+                    }}
+                    className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
+                  >
+                    Skip today&apos;s focus
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => void submitEducationQuiz()}
