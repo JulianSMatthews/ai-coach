@@ -19,6 +19,7 @@ def init_db() -> None:
     _migrate_members_table()
     _migrate_survey_configs_table()
     _migrate_staff_users_table()
+    _migrate_maintenance_table()
     _migrate_okrs_table()
     from .services import seed_default_maintenance_items, seed_default_okrs, sync_maintenance_items, sync_q2_2026_okrs
 
@@ -139,6 +140,73 @@ def _migrate_staff_users_table() -> None:
             conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS mobile VARCHAR(64)")
             conn.exec_driver_sql(
                 f"CREATE UNIQUE INDEX IF NOT EXISTS ix_{table_name}_username ON {table_name} (username)"
+            )
+
+
+def _migrate_maintenance_table() -> None:
+    table_name = "membersense_maintenance_items"
+    dialect = engine.dialect.name
+    columns_to_add = {
+        "needs_parts": ("BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN DEFAULT FALSE"),
+        "stage": ("VARCHAR(24)", "VARCHAR(24)"),
+        "parts_due_on": ("DATE", "DATE"),
+        "work_due_on": ("DATE", "DATE"),
+        "completed_on": ("DATE", "DATE"),
+    }
+    with engine.begin() as conn:
+        if dialect == "sqlite":
+            columns = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table_name})").fetchall()}
+            if not columns:
+                return
+            for name, (sqlite_type, _) in columns_to_add.items():
+                if name not in columns:
+                    conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN {name} {sqlite_type}")
+                    columns.add(name)
+            conn.exec_driver_sql(
+                f"CREATE INDEX IF NOT EXISTS ix_{table_name}_stage ON {table_name} (stage)"
+            )
+            conn.exec_driver_sql(
+                f"CREATE INDEX IF NOT EXISTS ix_{table_name}_needs_parts ON {table_name} (needs_parts)"
+            )
+            conn.exec_driver_sql(
+                f"UPDATE {table_name} "
+                "SET stage = CASE "
+                "WHEN stage IS NULL OR trim(stage) = '' THEN CASE "
+                "WHEN lower(trim(coalesce(status, ''))) = 'complete' OR completed_at IS NOT NULL THEN 'complete' "
+                "ELSE 'arrange_work' END "
+                "WHEN lower(trim(stage)) IN ('open', 'in_progress') THEN 'arrange_work' "
+                "ELSE lower(trim(stage)) END"
+            )
+            conn.exec_driver_sql(
+                f"UPDATE {table_name} SET status = 'in_progress' WHERE lower(trim(coalesce(status, ''))) = 'open'"
+            )
+            conn.exec_driver_sql(
+                f"UPDATE {table_name} SET needs_parts = 1 WHERE lower(trim(coalesce(stage, ''))) = 'order_parts'"
+            )
+            return
+        if dialect == "postgresql":
+            for name, (_, postgres_type) in columns_to_add.items():
+                conn.exec_driver_sql(f"ALTER TABLE {table_name} ADD COLUMN IF NOT EXISTS {name} {postgres_type}")
+            conn.exec_driver_sql(
+                f"CREATE INDEX IF NOT EXISTS ix_{table_name}_stage ON {table_name} (stage)"
+            )
+            conn.exec_driver_sql(
+                f"CREATE INDEX IF NOT EXISTS ix_{table_name}_needs_parts ON {table_name} (needs_parts)"
+            )
+            conn.exec_driver_sql(
+                f"UPDATE {table_name} "
+                "SET stage = CASE "
+                "WHEN stage IS NULL OR btrim(stage) = '' THEN CASE "
+                "WHEN lower(btrim(coalesce(status, ''))) = 'complete' OR completed_at IS NOT NULL THEN 'complete' "
+                "ELSE 'arrange_work' END "
+                "WHEN lower(btrim(stage)) IN ('open', 'in_progress') THEN 'arrange_work' "
+                "ELSE lower(btrim(stage)) END"
+            )
+            conn.exec_driver_sql(
+                f"UPDATE {table_name} SET status = 'in_progress' WHERE lower(btrim(coalesce(status, ''))) = 'open'"
+            )
+            conn.exec_driver_sql(
+                f"UPDATE {table_name} SET needs_parts = TRUE WHERE lower(btrim(coalesce(stage, ''))) = 'order_parts'"
             )
 
 
