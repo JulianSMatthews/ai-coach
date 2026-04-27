@@ -1590,15 +1590,18 @@ def sync_maintenance_items(session: Session) -> int:
             desired_meta.get("category") if desired_meta else getattr(row, "category", ""),
         )
         desired_item_type = _maintenance_item_type_for_category(desired_category)
-        if desired_meta:
+        if current == "staff_person":
+            desired_allocation = "staff_person"
+            desired_staff_id = current_staff_id or (purchase_staff_id if desired_category == "purchase" else 0)
+        elif current in {"cleaners", "maint_main", "equipment_supplier"}:
+            desired_allocation = current
+            desired_staff_id = 0
+        elif desired_meta:
             desired_allocation = _maintenance_default_allocation(desired_category)
             desired_staff_id = purchase_staff_id if desired_category == "purchase" else 0
         elif current_staff_id:
             desired_allocation = "staff_person"
             desired_staff_id = current_staff_id
-        elif current in {"staff_person", "cleaners", "maint_main", "equipment_supplier"}:
-            desired_allocation = current
-            desired_staff_id = purchase_staff_id if current == "staff_person" and desired_category == "purchase" else 0
         else:
             desired_allocation = _maintenance_default_allocation(desired_category)
             desired_staff_id = purchase_staff_id if desired_category == "purchase" else 0
