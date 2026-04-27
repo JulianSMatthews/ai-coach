@@ -147,6 +147,7 @@ def _migrate_maintenance_table() -> None:
     table_name = "membersense_maintenance_items"
     dialect = engine.dialect.name
     columns_to_add = {
+        "item_type": ("VARCHAR(32)", "VARCHAR(32)"),
         "needs_parts": ("BOOLEAN NOT NULL DEFAULT 0", "BOOLEAN DEFAULT FALSE"),
         "stage": ("VARCHAR(24)", "VARCHAR(24)"),
         "parts_due_on": ("DATE", "DATE"),
@@ -167,6 +168,17 @@ def _migrate_maintenance_table() -> None:
             )
             conn.exec_driver_sql(
                 f"CREATE INDEX IF NOT EXISTS ix_{table_name}_needs_parts ON {table_name} (needs_parts)"
+            )
+            conn.exec_driver_sql(
+                f"CREATE INDEX IF NOT EXISTS ix_{table_name}_item_type ON {table_name} (item_type)"
+            )
+            conn.exec_driver_sql(
+                f"UPDATE {table_name} "
+                "SET item_type = CASE "
+                "WHEN lower(trim(coalesce(title, ''))) LIKE 'replace %' THEN 'replacement_item' "
+                "WHEN lower(trim(coalesce(title, ''))) LIKE 'order %' THEN 'replacement_item' "
+                "ELSE 'maintenance_work' END "
+                "WHERE item_type IS NULL OR trim(item_type) = ''"
             )
             conn.exec_driver_sql(
                 f"UPDATE {table_name} "
@@ -192,6 +204,17 @@ def _migrate_maintenance_table() -> None:
             )
             conn.exec_driver_sql(
                 f"CREATE INDEX IF NOT EXISTS ix_{table_name}_needs_parts ON {table_name} (needs_parts)"
+            )
+            conn.exec_driver_sql(
+                f"CREATE INDEX IF NOT EXISTS ix_{table_name}_item_type ON {table_name} (item_type)"
+            )
+            conn.exec_driver_sql(
+                f"UPDATE {table_name} "
+                "SET item_type = CASE "
+                "WHEN lower(btrim(coalesce(title, ''))) LIKE 'replace %' THEN 'replacement_item' "
+                "WHEN lower(btrim(coalesce(title, ''))) LIKE 'order %' THEN 'replacement_item' "
+                "ELSE 'maintenance_work' END "
+                "WHERE item_type IS NULL OR btrim(item_type) = ''"
             )
             conn.exec_driver_sql(
                 f"UPDATE {table_name} "

@@ -140,6 +140,7 @@ class MaintenanceItem(Base):
     id = Column(Integer, primary_key=True)
     title = Column(String(240), nullable=False)
     detail = Column(Text, nullable=True)
+    item_type = Column(String(32), nullable=False, default="maintenance_work", index=True)
     category = Column(String(64), nullable=False, default="general", index=True)
     priority = Column(String(32), nullable=False, default="medium", index=True)
     needs_parts = Column(Boolean, nullable=False, default=False, index=True)
