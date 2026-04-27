@@ -563,7 +563,7 @@ def _layout(request: Request, title: str, body: str) -> HTMLResponse:
     nav = "".join(
         f'<a href="{_href(request, path)}">{label}</a>'
         for path, label in [
-            ("/admin", "Member dashboard"),
+            ("/admin", "Dashboard"),
             ("/admin/members", "Members"),
             ("/admin/inactive", "Member lists"),
             ("/admin/reports/visits", "Visit report"),
@@ -1654,7 +1654,7 @@ def _auth_layout(title: str, body: str) -> HTMLResponse:
 def _login_form(*, next_path: str = "/admin", error: str = "") -> HTMLResponse:
     error_html = f'<p class="error">{_esc(error)}</p>' if error else ""
     body = f"""
-<h1>MemberSense Login</h1>
+<h1>{_esc(config.APP_NAME)} Login</h1>
 <p class="muted">Sign in with your staff account.</p>
 {error_html}
 <form method="post" action="/admin/login">
@@ -1670,7 +1670,7 @@ def _setup_form(request: Request, *, error: str = "") -> HTMLResponse:
     error_html = f'<p class="error">{_esc(error)}</p>' if error else ""
     body = f"""
 <h1>Set Up Staff Login</h1>
-<p class="muted">Create the first MemberSense staff account. This account can add other staff users.</p>
+<p class="muted">Create the first {_esc(config.APP_NAME)} staff account. This account can add other staff users.</p>
 {error_html}
 <form method="post" action="{_post_action(request, '/admin/setup')}">
   <label><span>Name</span><input name="name" autocomplete="name" required></label>
@@ -1868,11 +1868,6 @@ def dashboard(
             _okr_rag(_okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter))
         ] += 1
 
-    okr_dashboard_href = _href(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter})}")
-    okr_config_href = _href(request, f"/admin/okrs/config?{urlencode({'quarter': selected_quarter})}")
-    maintenance_dashboard_href = _href(request, "/admin/maintenance")
-    maintenance_open_href = _href(request, "/admin/maintenance?scope=open")
-
     notice_html = '<p><span class="pill">Actual updated.</span></p>' if updated is not None else ""
     assigned_section = ""
     if current_staff is not None:
@@ -2047,10 +2042,6 @@ def dashboard(
       <h2>OKR Dashboard</h2>
       <p class="muted">Quarter: {_esc(selected_quarter)}. Overall OKR summary first, with your assigned KRs available below.</p>
     </div>
-    <div class="inline">
-      <a class="button secondary" href="{okr_dashboard_href}">Open OKR dashboard</a>
-      <a class="button secondary" href="{okr_config_href}">Open OKR setup</a>
-    </div>
   </div>
   {notice_html}
   <div class="grid">
@@ -2068,10 +2059,6 @@ def dashboard(
     <div>
       <h2>Maintenance Dashboard</h2>
       <p class="muted">Current open maintenance workload and stage position.</p>
-    </div>
-    <div class="inline">
-      <a class="button secondary" href="{maintenance_dashboard_href}">Open maintenance</a>
-      <a class="button secondary" href="{maintenance_open_href}">Review open items</a>
     </div>
   </div>
   <div class="grid">
@@ -3546,7 +3533,7 @@ def staff_admin(
     body = f"""
 <section>
   <h2>Staff Setup</h2>
-  <p class="muted">Create staff logins for MemberSense admin access. Passwords are stored as salted hashes.</p>
+  <p class="muted">Create staff logins for {_esc(config.APP_NAME)} admin access. Passwords are stored as salted hashes.</p>
   {notice_html}
   <form method="post" action="{_post_action(request, '/admin/staff')}" class="stack">
     <div class="grid">
@@ -3785,9 +3772,9 @@ def members(
     )
     clear_link = f'<a class="button secondary" href="{_href(request, "/admin/members")}">Clear</a>' if search else ""
     result_text = (
-        f'{len(rows)} shown for "{_esc(search)}". {total} members in MemberSense.'
+        f'{len(rows)} shown for "{_esc(search)}". {total} members in {_esc(config.APP_NAME)}.'
         if search
-        else f"Search by name, email, mobile, member number, or status. {total} members in MemberSense."
+        else f"Search by name, email, mobile, member number, or status. {total} members in {_esc(config.APP_NAME)}."
     )
     empty_text = "No members matched your search." if search else "Enter a search above to look up members."
     create_token_input = _token_input(request)
@@ -4699,7 +4686,7 @@ def survey_config_edit(
   <form method="post" action="{_post_action(request, f'/admin/survey-config/{flow.key}')}" class="stack">
     {token_input}
     <label><span>Survey name</span><input name="label" value="{_esc(flow.label)}"></label>
-    <p class="muted">The survey name is shown to staff in MemberSense. Members see the intro message and questions below.</p>
+    <p class="muted">The survey name is shown to staff in {_esc(config.APP_NAME)}. Members see the intro message and questions below.</p>
     <label><span>Intro message</span><textarea name="intro">{_esc(flow.intro)}</textarea></label>
     <label><span>Completion message</span><textarea name="completion">{_esc(flow.completion)}</textarea></label>
     <h3>Questions And Answers</h3>

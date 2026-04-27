@@ -1,6 +1,6 @@
-# MemberSense
+# ClubSense
 
-MemberSense is a separate internal gym member-assistance app. It uses Twilio SMS to send members a secure in-app survey link, while keeping its own database tables, configuration, admin routes, and survey logic.
+ClubSense is a separate internal gym member-assistance app. It uses Twilio SMS to send members a secure in-app survey link, while keeping its own database tables, configuration, admin routes, and survey logic.
 
 ## What It Covers
 
@@ -83,7 +83,7 @@ https://your-public-url.example/s/{survey-token}
 
 ## Render Deployment
 
-MemberSense can be deployed on its own from `render.membersense.yaml`.
+ClubSense can be deployed on its own from `render.membersense.yaml`.
 It uses a separate Render Postgres database named `membersense-db`.
 
 When creating the Blueprint in Render, set **Blueprint Path** to:
@@ -103,7 +103,7 @@ On first deploy:
 5. Set `MEMBERSENSE_BOOTSTRAP_STAFF_PASSWORD` to create the default `jsm` owner login on startup.
 6. After a successful SMS test, change `MEMBERSENSE_DRY_RUN` to `0`.
 
-Render sets `RENDER_EXTERNAL_URL` automatically, and MemberSense uses it for survey links unless `MEMBERSENSE_PUBLIC_BASE_URL` is set manually for a custom domain.
+Render sets `RENDER_EXTERNAL_URL` automatically, and ClubSense uses it for survey links unless `MEMBERSENSE_PUBLIC_BASE_URL` is set manually for a custom domain.
 
 ## CSV Columns
 

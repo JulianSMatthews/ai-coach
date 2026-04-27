@@ -1,1 +1,1 @@
-"""MemberSense internal gym retention app."""
+"""ClubSense internal gym retention app."""
