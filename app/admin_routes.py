@@ -753,6 +753,35 @@ def _compact_education_programme_for_llm(raw_programme: object) -> dict[str, obj
     }
 
 
+def _looks_like_education_day_payload(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    return any(
+        key in value
+        for key in (
+            "day_index",
+            "lesson_goal",
+            "default_title",
+            "default_summary",
+            "variants",
+        )
+    )
+
+
+def _coerce_llm_json_payload(parsed: object) -> dict[str, object] | None:
+    if isinstance(parsed, dict):
+        return parsed
+    if isinstance(parsed, list):
+        dict_items = [item for item in parsed if isinstance(item, dict)]
+        if dict_items and len(dict_items) == len(parsed) and all(
+            _looks_like_education_day_payload(item) for item in dict_items
+        ):
+            return {"days": dict_items}
+        if dict_items:
+            return dict_items[0]
+    return None
+
+
 def _extract_llm_json_object(raw_text: str) -> dict[str, object]:
     cleaned = str(raw_text or "").strip()
     if not cleaned:
@@ -782,21 +811,104 @@ def _extract_llm_json_object(raw_text: str) -> dict[str, object]:
             continue
         try:
             parsed = json.loads(candidate)
-            if isinstance(parsed, dict):
-                return parsed
-            if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
-                return parsed[0]
+            coerced = _coerce_llm_json_payload(parsed)
+            if coerced is not None:
+                return coerced
         except Exception as exc:
             last_error = exc
         try:
             parsed, _ = decoder.raw_decode(candidate)
-            if isinstance(parsed, dict):
-                return parsed
-            if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
-                return parsed[0]
+            coerced = _coerce_llm_json_payload(parsed)
+            if coerced is not None:
+                return coerced
         except Exception as exc:
             last_error = exc
     raise ValueError(f"LLM response was not valid JSON: {last_error or 'unknown parse error'}")
+
+
+def _blank_generated_quiz_question(order: int) -> dict[str, object]:
+    return {
+        "id": None,
+        "question_order": int(order),
+        "question_text": "",
+        "answer_type": "single_choice",
+        "options_json": [""],
+        "correct_answer_json": "",
+        "explanation": "",
+    }
+
+
+def _blank_generated_variant(
+    *,
+    level: str,
+    title: str = "",
+    summary: str = "",
+    script: str = "",
+    action_prompt: str = "",
+    takeaway_default: str = "",
+    takeaway_if_low_score: str = "",
+    takeaway_if_high_score: str = "",
+) -> dict[str, object]:
+    resolved_level = str(level or "build").strip().lower() or "build"
+    if resolved_level not in {"support", "foundation", "build", "perform"}:
+        resolved_level = "build"
+    return {
+        "id": None,
+        "level": resolved_level,
+        "title": str(title or "").strip(),
+        "summary": str(summary or "").strip(),
+        "script": str(script or "").strip(),
+        "action_prompt": str(action_prompt or "").strip(),
+        "video_url": "",
+        "poster_url": "",
+        "avatar_character": "",
+        "avatar_style": "",
+        "avatar_voice": "",
+        "avatar_status": "",
+        "avatar_job_id": "",
+        "avatar_error": "",
+        "avatar_generated_at": "",
+        "avatar_source": "",
+        "avatar_summary_url": "",
+        "content_item_id": None,
+        "reset_avatar_media": True,
+        "takeaway_default": str(takeaway_default or "").strip(),
+        "takeaway_if_low_score": str(takeaway_if_low_score or "").strip(),
+        "takeaway_if_high_score": str(takeaway_if_high_score or "").strip(),
+        "is_active": True,
+        "quiz": {
+            "id": None,
+            "pass_score_pct": 66.67,
+            "questions": [_blank_generated_quiz_question(1), _blank_generated_quiz_question(2), _blank_generated_quiz_question(3)],
+        },
+    }
+
+
+def _placeholder_generated_education_day(
+    *,
+    day_index: int,
+    concept_key: str,
+    concept_label: str,
+    existing_level: str,
+    lesson_goal: str = "",
+    default_title: str = "",
+    default_summary: str = "",
+) -> dict[str, object]:
+    variant = _blank_generated_variant(
+        level=existing_level,
+        title=default_title,
+        summary=default_summary,
+    )
+    return {
+        "id": None,
+        "day_index": int(day_index or 1),
+        "concept_key": concept_key,
+        "concept_label": concept_label,
+        "lesson_goal": str(lesson_goal or "").strip(),
+        "default_title": str(default_title or "").strip(),
+        "default_summary": str(default_summary or "").strip(),
+        "variants": [variant],
+    }
 
 
 def _normalise_generated_question(raw_question: object, order: int) -> dict[str, object] | None:
@@ -859,7 +971,7 @@ def _normalise_generated_education_day(
     if not raw_variants and any(generated.get(key) for key in ("title", "summary", "script", "action_prompt", "quiz")):
         raw_variants = [generated]
     if not raw_variants:
-        raise ValueError("LLM response did not include any lesson variants")
+        raw_variants = [{}]
 
     variants = []
     for raw_variant in raw_variants[:4]:
@@ -875,8 +987,8 @@ def _normalise_generated_education_day(
             )
             if question is not None
         ]
-        if not questions:
-            raise ValueError("LLM response did not include quiz questions")
+        while len(questions) < 3:
+            questions.append(_blank_generated_quiz_question(len(questions) + 1))
         try:
             pass_score_pct = float(quiz.get("pass_score_pct") if quiz.get("pass_score_pct") not in (None, "") else 66.67)
         except Exception:
@@ -919,9 +1031,24 @@ def _normalise_generated_education_day(
             }
         )
     if not variants:
-        raise ValueError("LLM response did not include usable lesson variants")
+        variants = [
+            _blank_generated_variant(
+                level=existing_level,
+                title=str(generated.get("default_title") or generated.get("title") or "").strip(),
+                summary=str(generated.get("default_summary") or generated.get("summary") or "").strip(),
+                script=str(generated.get("script") or generated.get("body") or "").strip(),
+                action_prompt=str(generated.get("action_prompt") or generated.get("daily_action") or "").strip(),
+                takeaway_default=str(generated.get("takeaway_default") or "").strip(),
+                takeaway_if_low_score=str(generated.get("takeaway_if_low_score") or "").strip(),
+                takeaway_if_high_score=str(generated.get("takeaway_if_high_score") or "").strip(),
+            )
+        ]
     default_title = str(generated.get("default_title") or "").strip() or str(variants[0].get("title") or "").strip()
     default_summary = str(generated.get("default_summary") or "").strip() or str(variants[0].get("summary") or "").strip()
+    if default_title and not str(variants[0].get("title") or "").strip():
+        variants[0]["title"] = default_title
+    if default_summary and not str(variants[0].get("summary") or "").strip():
+        variants[0]["summary"] = default_summary
     try:
         generated_day_index = int(generated.get("day_index") or day_index or 1)
     except Exception:
@@ -947,6 +1074,8 @@ def _normalise_generated_education_programme(
 ) -> dict[str, object]:
     generated = raw_generated.get("programme") if isinstance(raw_generated.get("programme"), dict) else raw_generated
     raw_days = generated.get("days") if isinstance(generated.get("days"), list) else []
+    if not raw_days and isinstance(generated.get("programme_days"), list):
+        raw_days = generated.get("programme_days")
     if not raw_days:
         raise ValueError("LLM response did not include any programme days")
     normalised_days: list[dict[str, object]] = []
@@ -996,6 +1125,8 @@ def _normalise_generated_education_programme_outline(
 ) -> dict[str, object]:
     generated = raw_generated.get("programme") if isinstance(raw_generated.get("programme"), dict) else raw_generated
     raw_days = generated.get("days") if isinstance(generated.get("days"), list) else []
+    if not raw_days and isinstance(generated.get("programme_days"), list):
+        raw_days = generated.get("programme_days")
     if not raw_days:
         raise ValueError("LLM response did not include any programme outline days")
     outline_days: list[dict[str, object]] = []
@@ -1020,8 +1151,21 @@ def _normalise_generated_education_programme_outline(
         )
     if not outline_days:
         raise ValueError("LLM response did not include any usable programme outline days")
-    if requested_days > 0 and len(outline_days) != requested_days:
-        raise ValueError(f"LLM returned {len(outline_days)} outline days; expected {requested_days}")
+    outline_days = sorted(outline_days, key=lambda item: int(item.get("day_index") or 0))
+    if requested_days > 0:
+        outline_days = outline_days[:requested_days]
+        while len(outline_days) < requested_days:
+            next_index = len(outline_days) + 1
+            outline_days.append(
+                {
+                    "day_index": next_index,
+                    "lesson_goal": "",
+                    "default_title": f"Day {next_index}",
+                    "default_summary": "",
+                }
+            )
+        for idx, day in enumerate(outline_days, start=1):
+            day["day_index"] = idx
     try:
         duration_days = int(generated.get("duration_days") or len(outline_days))
     except Exception:
@@ -1030,7 +1174,7 @@ def _normalise_generated_education_programme_outline(
         "programme_name": str(generated.get("programme_name") or generated.get("name") or "").strip(),
         "programme_code": str(generated.get("programme_code") or generated.get("code") or "").strip(),
         "duration_days": duration_days,
-        "days": sorted(outline_days, key=lambda item: int(item.get("day_index") or 0)),
+        "days": outline_days,
     }
 
 
@@ -1509,39 +1653,63 @@ def _generate_education_programme_via_outline(
             outline_day=outline_day,
             requested_days=requested_days,
         )
-        day_result = _generate_education_day_with_llm(
-            brief=day_brief,
-            model_override=model_override,
-            touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
-            programme_name=compact_outline["programme_name"],
-            programme_code=compact_outline["programme_code"],
-            pillar_key=pillar_key,
-            concept_key=concept_key,
-            concept_label=concept_label,
-            day_index=day_index,
-            existing_day=day_seed,
-            extra_context=extra_context,
-        )
-        generated_day = day_result["day"] if isinstance(day_result.get("day"), dict) else {}
-        generated_day["day_index"] = day_index
-        if not str(generated_day.get("lesson_goal") or "").strip():
-            generated_day["lesson_goal"] = str(outline_day.get("lesson_goal") or "").strip()
-        if not str(generated_day.get("default_title") or "").strip():
-            generated_day["default_title"] = str(outline_day.get("default_title") or "").strip()
-        if not str(generated_day.get("default_summary") or "").strip():
-            generated_day["default_summary"] = str(outline_day.get("default_summary") or "").strip()
-        generated_days.append(generated_day)
-        day_logs.append(
-            {
-                "day_index": day_index,
-                "model": day_result["model"],
-                "duration_ms": day_result["duration_ms"],
-                "content": day_result["content"],
-                "prompt": day_result["prompt"],
-                "context": day_result["context"],
-                "task_label": day_brief,
-            }
-        )
+        try:
+            day_result = _generate_education_day_with_llm(
+                brief=day_brief,
+                model_override=model_override,
+                touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
+                programme_name=compact_outline["programme_name"],
+                programme_code=compact_outline["programme_code"],
+                pillar_key=pillar_key,
+                concept_key=concept_key,
+                concept_label=concept_label,
+                day_index=day_index,
+                existing_day=day_seed,
+                extra_context=extra_context,
+            )
+            generated_day = day_result["day"] if isinstance(day_result.get("day"), dict) else {}
+            generated_day["day_index"] = day_index
+            if not str(generated_day.get("lesson_goal") or "").strip():
+                generated_day["lesson_goal"] = str(outline_day.get("lesson_goal") or "").strip()
+            if not str(generated_day.get("default_title") or "").strip():
+                generated_day["default_title"] = str(outline_day.get("default_title") or "").strip()
+            if not str(generated_day.get("default_summary") or "").strip():
+                generated_day["default_summary"] = str(outline_day.get("default_summary") or "").strip()
+            generated_days.append(generated_day)
+            day_logs.append(
+                {
+                    "day_index": day_index,
+                    "model": day_result["model"],
+                    "duration_ms": day_result["duration_ms"],
+                    "content": day_result["content"],
+                    "prompt": day_result["prompt"],
+                    "context": day_result["context"],
+                    "task_label": day_brief,
+                }
+            )
+        except Exception as day_exc:
+            generated_days.append(
+                _placeholder_generated_education_day(
+                    day_index=day_index,
+                    concept_key=concept_key,
+                    concept_label=concept_label,
+                    existing_level=_resolve_existing_education_day_level(day_seed),
+                    lesson_goal=str(outline_day.get("lesson_goal") or "").strip(),
+                    default_title=str(outline_day.get("default_title") or day_seed.get("default_title") or "").strip(),
+                    default_summary=str(outline_day.get("default_summary") or day_seed.get("default_summary") or "").strip(),
+                )
+            )
+            day_logs.append(
+                {
+                    "day_index": day_index,
+                    "model": str(outline_result.get("model") or ""),
+                    "duration_ms": 0,
+                    "content": f"Day generation failed: {day_exc}",
+                    "prompt": "",
+                    "context": extra_context,
+                    "task_label": day_brief,
+                }
+            )
     return {
         "programme": {
             "programme_name": compact_outline["programme_name"] or programme_name,
