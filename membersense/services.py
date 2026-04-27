@@ -117,26 +117,26 @@ Q2_2026_OKR_PRESET: tuple[dict[str, Any], ...] = (
 )
 
 DEFAULT_MAINTENANCE_ITEMS: tuple[dict[str, Any], ...] = (
-    {"title": "Replace bathroom toilet brushes", "category": "bathroom", "priority": "medium", "team_label": "Club team"},
-    {"title": "Replace bathroom loo roll holders", "category": "bathroom", "priority": "medium", "team_label": "Club team"},
-    {"title": "Replace bathroom soap dispensers", "category": "bathroom", "priority": "medium", "team_label": "Club team"},
-    {"title": "Replace bathroom wooden benches", "category": "bathroom", "priority": "medium", "allocation_type": "external", "team_label": "External contractor"},
-    {"title": "Repair treadmill screen", "category": "equipment", "priority": "high", "allocation_type": "external", "team_label": "Equipment engineer", "status": "complete"},
-    {"title": "Repair treadmill foot", "category": "equipment", "priority": "high", "allocation_type": "external", "team_label": "Equipment engineer", "status": "complete"},
-    {"title": "Replace bike strap", "category": "equipment", "priority": "medium", "allocation_type": "external", "team_label": "Equipment engineer"},
-    {"title": "Clean glass on mezzanine", "category": "cleaning", "priority": "medium", "team_label": "Cleaning team", "status": "complete"},
-    {"title": "Replace boxing bag", "category": "equipment", "priority": "medium", "team_label": "Club team"},
-    {"title": "Deep clean flooring", "category": "cleaning", "priority": "high", "team_label": "Cleaning team"},
-    {"title": "Touch up paint work", "category": "decor", "priority": "medium", "team_label": "Club team"},
-    {"title": "Replace stair grip pads", "category": "safety", "priority": "high", "team_label": "Club team"},
-    {"title": "Replace trim on flooring edges", "category": "decor", "priority": "medium", "team_label": "Club team"},
-    {"title": "Replace padded wall by glute equipment with metal panels", "category": "decor", "priority": "high", "allocation_type": "external", "team_label": "External contractor"},
-    {"title": "Replace sandbags", "category": "equipment", "priority": "medium", "team_label": "Club team"},
-    {"title": "Clean toilet lid and shower head", "category": "cleaning", "priority": "medium", "team_label": "Cleaning team"},
-    {"title": "Remove mould from ceiling tiles", "category": "cleaning", "priority": "high", "team_label": "Cleaning team"},
-    {"title": "Tighten loose radiator in top bathroom", "category": "bathroom", "priority": "high", "team_label": "Club team"},
-    {"title": "Order security wall backboards", "category": "security", "priority": "medium", "team_label": "Management"},
-    {"title": "Order new security wall lanyards", "category": "security", "priority": "medium", "team_label": "Management"},
+    {"title": "Replace bathroom toilet brushes", "category": "bathroom", "priority": "medium", "allocation_type": "maint_main"},
+    {"title": "Replace bathroom loo roll holders", "category": "bathroom", "priority": "medium", "allocation_type": "maint_main"},
+    {"title": "Replace bathroom soap dispensers", "category": "bathroom", "priority": "medium", "allocation_type": "maint_main"},
+    {"title": "Replace bathroom wooden benches", "category": "bathroom", "priority": "medium", "allocation_type": "maint_main"},
+    {"title": "Repair treadmill screen", "category": "equipment", "priority": "high", "allocation_type": "equipment_supplier", "status": "complete"},
+    {"title": "Repair treadmill foot", "category": "equipment", "priority": "high", "allocation_type": "equipment_supplier", "status": "complete"},
+    {"title": "Replace bike strap", "category": "equipment", "priority": "medium", "allocation_type": "equipment_supplier"},
+    {"title": "Clean glass on mezzanine", "category": "cleaning", "priority": "medium", "allocation_type": "cleaners", "status": "complete"},
+    {"title": "Replace boxing bag", "category": "equipment", "priority": "medium", "allocation_type": "equipment_supplier"},
+    {"title": "Deep clean flooring", "category": "cleaning", "priority": "high", "allocation_type": "cleaners"},
+    {"title": "Touch up paint work", "category": "decor", "priority": "medium", "allocation_type": "maint_main"},
+    {"title": "Replace stair grip pads", "category": "safety", "priority": "high", "allocation_type": "maint_main"},
+    {"title": "Replace trim on flooring edges", "category": "decor", "priority": "medium", "allocation_type": "maint_main"},
+    {"title": "Replace padded wall by glute equipment with metal panels", "category": "decor", "priority": "high", "allocation_type": "maint_main"},
+    {"title": "Replace sandbags", "category": "equipment", "priority": "medium", "allocation_type": "equipment_supplier"},
+    {"title": "Clean toilet lid and shower head", "category": "cleaning", "priority": "medium", "allocation_type": "cleaners"},
+    {"title": "Remove mould from ceiling tiles", "category": "cleaning", "priority": "high", "allocation_type": "cleaners"},
+    {"title": "Tighten loose radiator in top bathroom", "category": "bathroom", "priority": "high", "allocation_type": "maint_main"},
+    {"title": "Order security wall backboards", "category": "security", "priority": "medium", "allocation_type": "maint_main"},
+    {"title": "Order new security wall lanyards", "category": "security", "priority": "medium", "allocation_type": "maint_main"},
 )
 
 
@@ -1480,11 +1480,12 @@ def seed_default_maintenance_items(session: Session) -> int:
             priority=str(item.get("priority") or "medium").strip().lower() or "medium",
             status=status if status in {"open", "in_progress", "complete"} else "open",
             allocation_type=(
-                str(item.get("allocation_type") or "team").strip().lower()
-                if str(item.get("allocation_type") or "").strip().lower() in {"team", "individual", "external"}
-                else "team"
+                str(item.get("allocation_type") or "maint_main").strip().lower()
+                if str(item.get("allocation_type") or "").strip().lower()
+                in {"staff_person", "cleaners", "maint_main", "equipment_supplier"}
+                else "maint_main"
             ),
-            team_label=str(item.get("team_label") or "").strip() or None,
+            team_label=None,
             completed_at=completed_at if status == "complete" else None,
         )
         session.add(row)
@@ -1493,6 +1494,43 @@ def seed_default_maintenance_items(session: Session) -> int:
     if created:
         session.commit()
     return created
+
+
+def sync_maintenance_items(session: Session) -> int:
+    desired_by_title = {
+        " ".join(str(item.get("title") or "").strip().lower().split()): str(item.get("allocation_type") or "maint_main").strip().lower() or "maint_main"
+        for item in DEFAULT_MAINTENANCE_ITEMS
+        if str(item.get("title") or "").strip()
+    }
+    changed = 0
+    rows = session.execute(select(MaintenanceItem).order_by(MaintenanceItem.id.asc())).scalars().all()
+    for row in rows:
+        title_key = " ".join(str(getattr(row, "title", "") or "").strip().lower().split())
+        current = str(getattr(row, "allocation_type", "") or "").strip().lower()
+        current_label = " ".join(str(getattr(row, "team_label", "") or "").strip().lower().split())
+        if int(getattr(row, "assigned_staff_id", 0) or 0):
+            desired = "staff_person"
+        elif title_key in desired_by_title:
+            desired = desired_by_title[title_key]
+        elif current == "individual":
+            desired = "staff_person"
+        elif current in {"equipment_supplier"} or "equipment" in current_label:
+            desired = "equipment_supplier"
+        elif current in {"cleaners"} or "clean" in current_label:
+            desired = "cleaners"
+        else:
+            desired = "maint_main"
+        desired_team_label = None
+        if current != desired:
+            row.allocation_type = desired
+            changed += 1
+        if getattr(row, "team_label", None) != desired_team_label:
+            row.team_label = desired_team_label
+            changed += 1
+        session.add(row)
+    if changed:
+        session.commit()
+    return changed
 
 
 def sync_q2_2026_okrs(session: Session) -> int:

@@ -82,9 +82,10 @@ MAINTENANCE_STATUS_OPTIONS: tuple[tuple[str, str], ...] = (
     ("complete", "Complete"),
 )
 MAINTENANCE_ALLOCATION_OPTIONS: tuple[tuple[str, str], ...] = (
-    ("team", "Team"),
-    ("individual", "Individual staff"),
-    ("external", "External supplier"),
+    ("staff_person", "Staff person"),
+    ("cleaners", "Cleaners"),
+    ("maint_main", "Maint main"),
+    ("equipment_supplier", "Equipment supplier"),
 )
 
 
@@ -217,7 +218,13 @@ def _maintenance_status_key(value: object, *, allow_blank: bool = False) -> str:
 def _maintenance_allocation_key(value: object) -> str:
     token = str(value or "").strip().lower()
     allowed = {key for key, _label in MAINTENANCE_ALLOCATION_OPTIONS}
-    return token if token in allowed else "team"
+    if token == "individual":
+        return "staff_person"
+    if token == "external":
+        return "maint_main"
+    if token == "team":
+        return "maint_main"
+    return token if token in allowed else "maint_main"
 
 
 def _maintenance_label(value: object, options: tuple[tuple[str, str], ...], fallback: str) -> str:
@@ -237,15 +244,10 @@ def _maintenance_assignee_label(item: MaintenanceItem, session: Session) -> str:
     staff_name = _staff_name(session, getattr(item, "assigned_staff_id", None))
     if staff_name:
         return staff_name
-    allocation = _maintenance_allocation_key(getattr(item, "allocation_type", "team"))
-    if allocation == "individual":
+    allocation = _maintenance_allocation_key(getattr(item, "allocation_type", "maint_main"))
+    if allocation == "staff_person":
         return "Unassigned staff"
-    team_label = str(getattr(item, "team_label", "") or "").strip()
-    if team_label:
-        return team_label
-    if allocation == "external":
-        return "External supplier"
-    return "Club team"
+    return _maintenance_label(allocation, MAINTENANCE_ALLOCATION_OPTIONS, "Maint main")
 
 
 def _maintenance_days_transpired(item: MaintenanceItem) -> int:
@@ -1843,9 +1845,8 @@ def maintenance_admin(
       <label><span>Category</span>{_select_html("category", MAINTENANCE_CATEGORY_OPTIONS, getattr(item, "category", "general"))}</label>
       <label><span>Priority</span>{_select_html("priority", MAINTENANCE_PRIORITY_OPTIONS, getattr(item, "priority", "medium"))}</label>
       <label><span>Status</span>{_select_html("status", MAINTENANCE_STATUS_OPTIONS, getattr(item, "status", "open"))}</label>
-      <label><span>Who completes this</span>{_select_html("allocation_type", MAINTENANCE_ALLOCATION_OPTIONS, getattr(item, "allocation_type", "team"))}</label>
-      <label><span>Staff owner</span>{staff_select("assigned_staff_id", getattr(item, "assigned_staff_id", None))}</label>
-      <label><span>Team / supplier</span><input name="team_label" value="{_esc(getattr(item, 'team_label', '') or '')}" placeholder="Club team, Cleaning team, External supplier"></label>
+      <label><span>Who completes this</span>{_select_html("allocation_type", MAINTENANCE_ALLOCATION_OPTIONS, getattr(item, "allocation_type", "maint_main"))}</label>
+      <label><span>Staff person</span>{staff_select("assigned_staff_id", getattr(item, "assigned_staff_id", None))}</label>
     </div>
     <label><span>Notes</span><textarea name="detail">{_esc(detail_text)}</textarea></label>
     <button type="submit" class="secondary">Save maintenance item</button>
@@ -1899,9 +1900,8 @@ def maintenance_admin(
       <label><span>Category</span>{_select_html("category", MAINTENANCE_CATEGORY_OPTIONS, "general")}</label>
       <label><span>Priority</span>{_select_html("priority", MAINTENANCE_PRIORITY_OPTIONS, "medium")}</label>
       <label><span>Status</span>{_select_html("status", MAINTENANCE_STATUS_OPTIONS, "open")}</label>
-      <label><span>Who completes this</span>{_select_html("allocation_type", MAINTENANCE_ALLOCATION_OPTIONS, "team")}</label>
-      <label><span>Staff owner</span>{staff_select("assigned_staff_id")}</label>
-      <label><span>Team / supplier</span><input name="team_label" placeholder="Club team, Cleaning team, External supplier"></label>
+      <label><span>Who completes this</span>{_select_html("allocation_type", MAINTENANCE_ALLOCATION_OPTIONS, "maint_main")}</label>
+      <label><span>Staff person</span>{staff_select("assigned_staff_id")}</label>
     </div>
     <label><span>Notes</span><textarea name="detail" placeholder="Optional location, part required, or follow-up notes"></textarea></label>
     <button type="submit">Add maintenance item</button>
@@ -1935,9 +1935,8 @@ def maintenance_create_item(
     category: str = Form("general"),
     priority: str = Form("medium"),
     status: str = Form("open"),
-    allocation_type: str = Form("team"),
+    allocation_type: str = Form("maint_main"),
     assigned_staff_id: int = Form(0),
-    team_label: str = Form(""),
     return_category: str = Form(""),
     return_status: str = Form(""),
     session: Session = Depends(get_session),
@@ -1955,14 +1954,14 @@ def maintenance_create_item(
     staff_id = int(assigned_staff_id or 0)
     if not staff_id or session.get(StaffUser, staff_id) is None:
         staff_id = 0
-    if allocation == "individual" and not staff_id:
+    if allocation == "staff_person" and not staff_id:
         return _maintenance_redirect(
             request,
             category=return_category,
             status=return_status,
-            error="Choose a staff owner when the item is assigned to an individual.",
+            error="Choose a staff name when the item is assigned to a staff person.",
         )
-    if allocation != "individual":
+    if allocation != "staff_person":
         staff_id = 0
     row = MaintenanceItem(
         title=title_text,
@@ -1972,7 +1971,7 @@ def maintenance_create_item(
         status=_maintenance_status_key(status),
         allocation_type=allocation,
         assigned_staff_id=staff_id or None,
-        team_label=(str(team_label or "").strip() or None) if allocation != "individual" else None,
+        team_label=None,
         completed_at=datetime.utcnow().replace(microsecond=0) if _maintenance_status_key(status) == "complete" else None,
     )
     session.add(row)
@@ -1989,9 +1988,8 @@ def maintenance_update_item(
     category: str = Form("general"),
     priority: str = Form("medium"),
     status: str = Form("open"),
-    allocation_type: str = Form("team"),
+    allocation_type: str = Form("maint_main"),
     assigned_staff_id: int = Form(0),
-    team_label: str = Form(""),
     return_category: str = Form(""),
     return_status: str = Form(""),
     session: Session = Depends(get_session),
@@ -2012,14 +2010,14 @@ def maintenance_update_item(
     staff_id = int(assigned_staff_id or 0)
     if not staff_id or session.get(StaffUser, staff_id) is None:
         staff_id = 0
-    if allocation == "individual" and not staff_id:
+    if allocation == "staff_person" and not staff_id:
         return _maintenance_redirect(
             request,
             category=return_category,
             status=return_status,
-            error="Choose a staff owner when the item is assigned to an individual.",
+            error="Choose a staff name when the item is assigned to a staff person.",
         )
-    if allocation != "individual":
+    if allocation != "staff_person":
         staff_id = 0
     status_key = _maintenance_status_key(status)
     row.title = title_text
@@ -2029,7 +2027,7 @@ def maintenance_update_item(
     row.status = status_key
     row.allocation_type = allocation
     row.assigned_staff_id = staff_id or None
-    row.team_label = (str(team_label or "").strip() or None) if allocation != "individual" else None
+    row.team_label = None
     row.completed_at = (
         getattr(row, "completed_at", None) or datetime.utcnow().replace(microsecond=0)
         if status_key == "complete"
