@@ -437,8 +437,6 @@ def _maintenance_stage_fields(
     if not needs_parts_flag:
         parts_due_date = None
     if stage_key == "order_parts":
-        if parts_due_date is None:
-            raise ValueError("Enter the due date for items in the Order parts stage.")
         completed_date = None
     elif stage_key == "arrange_work":
         completed_date = None
