@@ -21,13 +21,6 @@ def init_db() -> None:
     _migrate_staff_users_table()
     _migrate_maintenance_table()
     _migrate_okrs_table()
-    from .services import seed_default_maintenance_items, seed_default_okrs, sync_maintenance_items, sync_q2_2026_okrs
-
-    with SessionLocal() as session:
-        seed_default_okrs(session)
-        sync_q2_2026_okrs(session)
-        seed_default_maintenance_items(session)
-        sync_maintenance_items(session)
 
 
 def _migrate_members_table() -> None:
