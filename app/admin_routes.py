@@ -3179,148 +3179,153 @@ async def regenerate_education_concept_programme_with_llm(request: Request):
     if not isinstance(payload, dict):
         raise HTTPException(400, "JSON payload must be an object")
 
-    model_override = _normalize_model_override(str(payload.get("model_override") or ""))
-    brief = str(payload.get("brief") or "").strip()
-    existing_programme = payload.get("existing_programme") if isinstance(payload.get("existing_programme"), dict) else {}
-    concept_key = str(payload.get("programme_concept_key") or existing_programme.get("programme_concept_key") or "").strip().lower()
-    concept_label = str(payload.get("programme_concept_label") or existing_programme.get("programme_concept_label") or "").strip()
-    pillar_key = str(payload.get("pillar_key") or existing_programme.get("pillar_key") or "").strip().lower()
-    if not concept_key:
-        raise HTTPException(400, "programme_concept_key is required")
     try:
-        requested_days = int(payload.get("duration_days") or existing_programme.get("duration_days") or 0)
-    except Exception:
-        requested_days = 0
-    if requested_days <= 0:
-        raw_days = existing_programme.get("days") if isinstance(existing_programme.get("days"), list) else []
-        requested_days = len(raw_days) if raw_days else 7
-    requested_days = max(1, min(31, requested_days))
-
-    programme_context = {
-        "programme_name": str(payload.get("programme_name") or existing_programme.get("programme_name") or "").strip(),
-        "programme_code": str(payload.get("programme_code") or existing_programme.get("programme_code") or "").strip(),
-        "pillar_key": pillar_key,
-        "programme_concept_key": concept_key,
-        "programme_concept_label": concept_label,
-        "requested_days": requested_days,
-        "task_description": brief or "Regenerate a complete concept programme for this concept.",
-        "existing_programme": _compact_education_programme_for_llm(existing_programme),
-    }
-    task_label = brief or f"Regenerate {concept_label or concept_key} programme"
-    generation_strategy = "single_response"
-    try:
-        direct_result = _generate_education_programme_with_llm(
-            brief=brief,
-            model_override=model_override,
-            programme_context=programme_context,
-            concept_key=concept_key,
-            concept_label=concept_label,
-            requested_days=requested_days,
-        )
-        generated_programme = direct_result["programme"] if isinstance(direct_result.get("programme"), dict) else {}
-        resolved_model = str(direct_result.get("model") or "")
-        _log_education_llm_generation(
-            touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
-            prompt=str(direct_result.get("prompt") or ""),
-            model=resolved_model,
-            duration_ms=int(direct_result.get("duration_ms") or 0),
-            response_preview=str(direct_result.get("content") or ""),
-            context_meta={
-                "programme_name": programme_context["programme_name"],
-                "programme_code": programme_context["programme_code"],
-                "pillar_key": pillar_key,
-                "programme_concept_key": concept_key,
-                "requested_days": requested_days,
-                "model_override": model_override,
-                "strategy": generation_strategy,
-            },
-            prompt_variant="admin_programme_editor",
-            task_label=task_label,
-            prompt_blocks={
-                "context": json.dumps(programme_context, ensure_ascii=False, default=str),
-                "task": brief,
-            },
-            block_order=["context", "task"],
-        )
-    except Exception as direct_exc:
-        generation_strategy = "outline_plus_days"
-        direct_message = str(direct_exc)
+        model_override = _normalize_model_override(str(payload.get("model_override") or ""))
+        brief = str(payload.get("brief") or "").strip()
+        existing_programme = payload.get("existing_programme") if isinstance(payload.get("existing_programme"), dict) else {}
+        concept_key = str(payload.get("programme_concept_key") or existing_programme.get("programme_concept_key") or "").strip().lower()
+        concept_label = str(payload.get("programme_concept_label") or existing_programme.get("programme_concept_label") or "").strip()
+        pillar_key = str(payload.get("pillar_key") or existing_programme.get("pillar_key") or "").strip().lower()
+        if not concept_key:
+            raise HTTPException(400, "programme_concept_key is required")
         try:
-            fallback_result = _generate_education_programme_via_outline(
+            requested_days = int(payload.get("duration_days") or existing_programme.get("duration_days") or 0)
+        except Exception:
+            requested_days = 0
+        if requested_days <= 0:
+            raw_days = existing_programme.get("days") if isinstance(existing_programme.get("days"), list) else []
+            requested_days = len(raw_days) if raw_days else 7
+        requested_days = max(1, min(31, requested_days))
+
+        programme_context = {
+            "programme_name": str(payload.get("programme_name") or existing_programme.get("programme_name") or "").strip(),
+            "programme_code": str(payload.get("programme_code") or existing_programme.get("programme_code") or "").strip(),
+            "pillar_key": pillar_key,
+            "programme_concept_key": concept_key,
+            "programme_concept_label": concept_label,
+            "requested_days": requested_days,
+            "task_description": brief or "Regenerate a complete concept programme for this concept.",
+            "existing_programme": _compact_education_programme_for_llm(existing_programme),
+        }
+        task_label = brief or f"Regenerate {concept_label or concept_key} programme"
+        generation_strategy = "single_response"
+        try:
+            direct_result = _generate_education_programme_with_llm(
                 brief=brief,
                 model_override=model_override,
                 programme_context=programme_context,
-                existing_programme=existing_programme,
-                programme_name=str(programme_context.get("programme_name") or "").strip(),
-                programme_code=str(programme_context.get("programme_code") or "").strip(),
-                pillar_key=pillar_key,
                 concept_key=concept_key,
                 concept_label=concept_label,
                 requested_days=requested_days,
             )
-        except Exception as fallback_exc:
-            raise HTTPException(
-                502,
-                f"LLM concept programme generation failed. Direct attempt: {direct_message}. "
-                f"Fallback outline/day attempt: {fallback_exc}",
-            )
-        generated_programme = fallback_result["programme"] if isinstance(fallback_result.get("programme"), dict) else {}
-        resolved_model = str(fallback_result.get("model") or "")
-        outline_result = fallback_result["outline"] if isinstance(fallback_result.get("outline"), dict) else {}
-        outline_context = outline_result.get("context") if isinstance(outline_result.get("context"), dict) else programme_context
-        _log_education_llm_generation(
-            touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
-            prompt=str(outline_result.get("prompt") or ""),
-            model=str(outline_result.get("model") or resolved_model),
-            duration_ms=int(outline_result.get("duration_ms") or 0),
-            response_preview=str(outline_result.get("content") or ""),
-            context_meta={
-                "programme_name": programme_context["programme_name"],
-                "programme_code": programme_context["programme_code"],
-                "pillar_key": pillar_key,
-                "programme_concept_key": concept_key,
-                "requested_days": requested_days,
-                "model_override": model_override,
-                "strategy": generation_strategy,
-                "direct_error": direct_message[:500],
-            },
-            prompt_variant="admin_programme_editor_outline",
-            task_label=task_label,
-            prompt_blocks={
-                "context": json.dumps(outline_context, ensure_ascii=False, default=str),
-                "task": brief,
-            },
-            block_order=["context", "task"],
-        )
-        for day_log in fallback_result.get("day_logs") if isinstance(fallback_result.get("day_logs"), list) else []:
-            if not isinstance(day_log, dict):
-                continue
-            day_context = day_log.get("context") if isinstance(day_log.get("context"), dict) else {}
-            day_index = int(day_log.get("day_index") or 0)
+            generated_programme = direct_result["programme"] if isinstance(direct_result.get("programme"), dict) else {}
+            resolved_model = str(direct_result.get("model") or "")
             _log_education_llm_generation(
                 touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
-                prompt=str(day_log.get("prompt") or ""),
-                model=str(day_log.get("model") or resolved_model),
-                duration_ms=int(day_log.get("duration_ms") or 0),
-                response_preview=str(day_log.get("content") or ""),
+                prompt=str(direct_result.get("prompt") or ""),
+                model=resolved_model,
+                duration_ms=int(direct_result.get("duration_ms") or 0),
+                response_preview=str(direct_result.get("content") or ""),
                 context_meta={
                     "programme_name": programme_context["programme_name"],
                     "programme_code": programme_context["programme_code"],
                     "pillar_key": pillar_key,
                     "programme_concept_key": concept_key,
-                    "day_index": day_index,
                     "requested_days": requested_days,
                     "model_override": model_override,
                     "strategy": generation_strategy,
                 },
-                prompt_variant="admin_programme_editor_day",
-                task_label=str(day_log.get("task_label") or f"Generate day {day_index}"),
+                prompt_variant="admin_programme_editor",
+                task_label=task_label,
                 prompt_blocks={
-                    "context": json.dumps(day_context, ensure_ascii=False, default=str),
-                    "task": str(day_log.get("task_label") or ""),
+                    "context": json.dumps(programme_context, ensure_ascii=False, default=str),
+                    "task": brief,
                 },
                 block_order=["context", "task"],
             )
+        except Exception as direct_exc:
+            generation_strategy = "outline_plus_days"
+            direct_message = str(direct_exc)
+            try:
+                fallback_result = _generate_education_programme_via_outline(
+                    brief=brief,
+                    model_override=model_override,
+                    programme_context=programme_context,
+                    existing_programme=existing_programme,
+                    programme_name=str(programme_context.get("programme_name") or "").strip(),
+                    programme_code=str(programme_context.get("programme_code") or "").strip(),
+                    pillar_key=pillar_key,
+                    concept_key=concept_key,
+                    concept_label=concept_label,
+                    requested_days=requested_days,
+                )
+            except Exception as fallback_exc:
+                raise HTTPException(
+                    502,
+                    f"LLM concept programme generation failed. Direct attempt: {direct_message}. "
+                    f"Fallback outline/day attempt: {fallback_exc}",
+                )
+            generated_programme = fallback_result["programme"] if isinstance(fallback_result.get("programme"), dict) else {}
+            resolved_model = str(fallback_result.get("model") or "")
+            outline_result = fallback_result["outline"] if isinstance(fallback_result.get("outline"), dict) else {}
+            outline_context = outline_result.get("context") if isinstance(outline_result.get("context"), dict) else programme_context
+            _log_education_llm_generation(
+                touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
+                prompt=str(outline_result.get("prompt") or ""),
+                model=str(outline_result.get("model") or resolved_model),
+                duration_ms=int(outline_result.get("duration_ms") or 0),
+                response_preview=str(outline_result.get("content") or ""),
+                context_meta={
+                    "programme_name": programme_context["programme_name"],
+                    "programme_code": programme_context["programme_code"],
+                    "pillar_key": pillar_key,
+                    "programme_concept_key": concept_key,
+                    "requested_days": requested_days,
+                    "model_override": model_override,
+                    "strategy": generation_strategy,
+                    "direct_error": direct_message[:500],
+                },
+                prompt_variant="admin_programme_editor_outline",
+                task_label=task_label,
+                prompt_blocks={
+                    "context": json.dumps(outline_context, ensure_ascii=False, default=str),
+                    "task": brief,
+                },
+                block_order=["context", "task"],
+            )
+            for day_log in fallback_result.get("day_logs") if isinstance(fallback_result.get("day_logs"), list) else []:
+                if not isinstance(day_log, dict):
+                    continue
+                day_context = day_log.get("context") if isinstance(day_log.get("context"), dict) else {}
+                day_index = int(day_log.get("day_index") or 0)
+                _log_education_llm_generation(
+                    touchpoint=EDUCATION_PROGRAMME_LLM_TOUCHPOINT,
+                    prompt=str(day_log.get("prompt") or ""),
+                    model=str(day_log.get("model") or resolved_model),
+                    duration_ms=int(day_log.get("duration_ms") or 0),
+                    response_preview=str(day_log.get("content") or ""),
+                    context_meta={
+                        "programme_name": programme_context["programme_name"],
+                        "programme_code": programme_context["programme_code"],
+                        "pillar_key": pillar_key,
+                        "programme_concept_key": concept_key,
+                        "day_index": day_index,
+                        "requested_days": requested_days,
+                        "model_override": model_override,
+                        "strategy": generation_strategy,
+                    },
+                    prompt_variant="admin_programme_editor_day",
+                    task_label=str(day_log.get("task_label") or f"Generate day {day_index}"),
+                    prompt_blocks={
+                        "context": json.dumps(day_context, ensure_ascii=False, default=str),
+                        "task": str(day_log.get("task_label") or ""),
+                    },
+                    block_order=["context", "task"],
+                )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(502, f"LLM programme generation failed: {exc}")
 
     return {
         "ok": True,
@@ -4561,9 +4566,17 @@ def edit_education_programme(id: int | None = None):
               headers: {{ 'Content-Type': 'application/json' }},
               body: JSON.stringify(payload),
             }});
-            const result = await response.json().catch(() => ({{}}));
+            const responseText = await response.text();
+            let result = {{}};
+            if (responseText) {{
+              try {{
+                result = JSON.parse(responseText);
+              }} catch (_err) {{
+                result = {{ raw: responseText }};
+              }}
+            }}
             if (!response.ok || result.ok === false) {{
-              throw new Error(String(result.error || result.detail || 'LLM programme generation failed.'));
+              throw new Error(String(result.error || result.detail || result.raw || `LLM programme generation failed (HTTP ${{response.status}}).`));
             }}
             if (!result.programme) {{
               throw new Error('LLM response did not include a programme draft.');
