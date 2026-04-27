@@ -219,6 +219,28 @@ def _maintenance_item_type_key(value: object, *, allow_blank: bool = False) -> s
     return token if token in allowed else ("maintenance_work" if not allow_blank else "")
 
 
+def _maintenance_item_type_input_html(name: str, selected: object = "maintenance_work") -> str:
+    selected_key = _maintenance_item_type_key(selected)
+    descriptions = {
+        "maintenance_work": "Repairs, cleaning, touch-up work, or jobs to arrange.",
+        "replacement_item": "Gym items or stock that need buying or replacing.",
+    }
+    options = []
+    for key, label in MAINTENANCE_TYPE_OPTIONS:
+        checked = " checked" if key == selected_key else ""
+        options.append(
+            f"""
+<label style="display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: #fff; margin: 0;">
+  <input type="radio" name="{_esc(name)}" value="{_esc(key)}"{checked} style="width: 18px; height: 18px; margin: 1px 0 0;">
+  <span style="display: block;">
+    <strong style="display: block; color: var(--ink);">{_esc(label)}</strong>
+    <span class="muted" style="display: block; margin-top: 2px;">{_esc(descriptions.get(key, ""))}</span>
+  </span>
+</label>"""
+        )
+    return f'<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px;">{"".join(options)}</div>'
+
+
 def _maintenance_stage_key(value: object, *, allow_blank: bool = False) -> str:
     token = str(value or "").strip().lower()
     allowed = {key for key, _label in MAINTENANCE_STAGE_OPTIONS}
@@ -2005,7 +2027,10 @@ def maintenance_admin(
     <input type="hidden" name="return_stage" value="{_esc(selected_stage)}">
     <div class="grid">
       <label><span>Item</span><input name="title" value="{_esc(item.title)}" required></label>
-      <label><span>Type</span>{_select_html("item_type", MAINTENANCE_TYPE_OPTIONS, item_type_key)}</label>
+      <div style="grid-column: 1 / -1;">
+        <span class="muted" style="display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600;">Item type</span>
+        {_maintenance_item_type_input_html("item_type", item_type_key)}
+      </div>
       <label><span>Category</span>{_select_html("category", MAINTENANCE_CATEGORY_OPTIONS, getattr(item, "category", "general"))}</label>
       <label><span>Priority</span>{_select_html("priority", MAINTENANCE_PRIORITY_OPTIONS, getattr(item, "priority", "medium"))}</label>
       <label><span>Who completes this</span>{_select_html("allocation_type", MAINTENANCE_ALLOCATION_OPTIONS, getattr(item, "allocation_type", "maint_main"))}</label>
@@ -2068,14 +2093,17 @@ def maintenance_admin(
   </div>
 </section>
 <section>
-  <h2>Add Maintenance Item</h2>
+  <h2>Add Maintenance or Replacement Item</h2>
   <form method="post" action="{_post_action(request, '/admin/maintenance/items')}" class="stack">
     <input type="hidden" name="return_item_type" value="{_esc(selected_item_type)}">
     <input type="hidden" name="return_category" value="{_esc(selected_category)}">
     <input type="hidden" name="return_stage" value="{_esc(selected_stage)}">
     <div class="grid">
       <label><span>Item</span><input name="title" required></label>
-      <label><span>Type</span>{_select_html("item_type", MAINTENANCE_TYPE_OPTIONS, selected_item_type or "maintenance_work")}</label>
+      <div style="grid-column: 1 / -1;">
+        <span class="muted" style="display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600;">Item type</span>
+        {_maintenance_item_type_input_html("item_type", selected_item_type or "maintenance_work")}
+      </div>
       <label><span>Category</span>{_select_html("category", MAINTENANCE_CATEGORY_OPTIONS, "general")}</label>
       <label><span>Priority</span>{_select_html("priority", MAINTENANCE_PRIORITY_OPTIONS, "medium")}</label>
       <label><span>Who completes this</span>{_select_html("allocation_type", MAINTENANCE_ALLOCATION_OPTIONS, "maint_main")}</label>
@@ -2088,6 +2116,7 @@ def maintenance_admin(
           completed_value=None,
       )}
     </div>
+    <p class="muted" style="margin-top: 0;">Use <strong>Replacement item</strong> for equipment or club items that need buying or swapping out, rather than a repair or cleaning task.</p>
     <label><span>Notes</span><textarea name="detail" placeholder="Optional location, part required, or follow-up notes"></textarea></label>
     <button type="submit">Add maintenance item</button>
   </form>
