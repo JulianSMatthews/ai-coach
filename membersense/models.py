@@ -109,7 +109,7 @@ class StaffTask(Base):
     task_type = Column(String(64), nullable=False, index=True)
     title = Column(String(240), nullable=False)
     detail = Column(Text, nullable=True)
-    priority = Column(String(32), nullable=False, default="normal", index=True)
+    priority = Column(String(32), nullable=False, default="medium", index=True)
     status = Column(String(32), nullable=False, default="open", index=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     completed_at = Column(DateTime, nullable=True)
@@ -132,6 +132,25 @@ class StaffUser(Base):
     last_login_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+
+class MaintenanceItem(Base):
+    __tablename__ = "membersense_maintenance_items"
+
+    id = Column(Integer, primary_key=True)
+    title = Column(String(240), nullable=False)
+    detail = Column(Text, nullable=True)
+    category = Column(String(64), nullable=False, default="general", index=True)
+    priority = Column(String(32), nullable=False, default="normal", index=True)
+    status = Column(String(32), nullable=False, default="open", index=True)
+    allocation_type = Column(String(24), nullable=False, default="team", index=True)
+    assigned_staff_id = Column(Integer, ForeignKey("membersense_staff_users.id", ondelete="SET NULL"), nullable=True, index=True)
+    team_label = Column(String(160), nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    completed_at = Column(DateTime, nullable=True)
+
+    assigned_staff = relationship("StaffUser", foreign_keys=[assigned_staff_id])
 
 
 class OkrObjective(Base):

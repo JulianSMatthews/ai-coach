@@ -18,7 +18,17 @@ from sqlalchemy.orm import Session
 
 from . import config
 from .messaging import normalize_phone, send_sms
-from .models import Conversation, ImportBatch, Member, MessageLog, OkrKeyResult, OkrObjective, StaffTask, SurveyConfig
+from .models import (
+    Conversation,
+    ImportBatch,
+    MaintenanceItem,
+    Member,
+    MessageLog,
+    OkrKeyResult,
+    OkrObjective,
+    StaffTask,
+    SurveyConfig,
+)
 from .surveys import (
     SURVEY_FLOWS,
     SurveyFlow,
@@ -104,6 +114,29 @@ Q2_2026_OKR_PRESET: tuple[dict[str, Any], ...] = (
             {"title": "Conduct monthly performance review with clear KPIs and development actions", "target": 3, "unit": "reviews"},
         ),
     },
+)
+
+DEFAULT_MAINTENANCE_ITEMS: tuple[dict[str, Any], ...] = (
+    {"title": "Replace bathroom toilet brushes", "category": "bathroom", "priority": "medium", "team_label": "Club team"},
+    {"title": "Replace bathroom loo roll holders", "category": "bathroom", "priority": "medium", "team_label": "Club team"},
+    {"title": "Replace bathroom soap dispensers", "category": "bathroom", "priority": "medium", "team_label": "Club team"},
+    {"title": "Replace bathroom wooden benches", "category": "bathroom", "priority": "medium", "allocation_type": "external", "team_label": "External contractor"},
+    {"title": "Repair treadmill screen", "category": "equipment", "priority": "high", "allocation_type": "external", "team_label": "Equipment engineer", "status": "complete"},
+    {"title": "Repair treadmill foot", "category": "equipment", "priority": "high", "allocation_type": "external", "team_label": "Equipment engineer", "status": "complete"},
+    {"title": "Replace bike strap", "category": "equipment", "priority": "medium", "allocation_type": "external", "team_label": "Equipment engineer"},
+    {"title": "Clean glass on mezzanine", "category": "cleaning", "priority": "medium", "team_label": "Cleaning team", "status": "complete"},
+    {"title": "Replace boxing bag", "category": "equipment", "priority": "medium", "team_label": "Club team"},
+    {"title": "Deep clean flooring", "category": "cleaning", "priority": "high", "team_label": "Cleaning team"},
+    {"title": "Touch up paint work", "category": "decor", "priority": "medium", "team_label": "Club team"},
+    {"title": "Replace stair grip pads", "category": "safety", "priority": "high", "team_label": "Club team"},
+    {"title": "Replace trim on flooring edges", "category": "decor", "priority": "medium", "team_label": "Club team"},
+    {"title": "Replace padded wall by glute equipment with metal panels", "category": "decor", "priority": "high", "allocation_type": "external", "team_label": "External contractor"},
+    {"title": "Replace sandbags", "category": "equipment", "priority": "medium", "team_label": "Club team"},
+    {"title": "Clean toilet lid and shower head", "category": "cleaning", "priority": "medium", "team_label": "Cleaning team"},
+    {"title": "Remove mould from ceiling tiles", "category": "cleaning", "priority": "high", "team_label": "Cleaning team"},
+    {"title": "Tighten loose radiator in top bathroom", "category": "bathroom", "priority": "high", "team_label": "Club team"},
+    {"title": "Order security wall backboards", "category": "security", "priority": "medium", "team_label": "Management"},
+    {"title": "Order new security wall lanyards", "category": "security", "priority": "medium", "team_label": "Management"},
 )
 
 
@@ -1422,6 +1455,43 @@ def seed_default_okrs(session: Session) -> int:
             )
         created += 1
     session.commit()
+    return created
+
+
+def seed_default_maintenance_items(session: Session) -> int:
+    existing_titles = {
+        " ".join(str(row.title or "").strip().lower().split())
+        for row in session.execute(select(MaintenanceItem)).scalars().all()
+    }
+    created = 0
+    completed_at = datetime.utcnow().replace(microsecond=0)
+    for item in DEFAULT_MAINTENANCE_ITEMS:
+        title = str(item.get("title") or "").strip()
+        if not title:
+            continue
+        title_key = " ".join(title.lower().split())
+        if title_key in existing_titles:
+            continue
+        status = str(item.get("status") or "open").strip().lower() or "open"
+        row = MaintenanceItem(
+            title=title,
+            detail=str(item.get("detail") or "").strip() or None,
+            category=str(item.get("category") or "general").strip().lower() or "general",
+            priority=str(item.get("priority") or "medium").strip().lower() or "medium",
+            status=status if status in {"open", "in_progress", "complete"} else "open",
+            allocation_type=(
+                str(item.get("allocation_type") or "team").strip().lower()
+                if str(item.get("allocation_type") or "").strip().lower() in {"team", "individual", "external"}
+                else "team"
+            ),
+            team_label=str(item.get("team_label") or "").strip() or None,
+            completed_at=completed_at if status == "complete" else None,
+        )
+        session.add(row)
+        existing_titles.add(title_key)
+        created += 1
+    if created:
+        session.commit()
     return created
 
 

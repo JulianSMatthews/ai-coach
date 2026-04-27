@@ -24,7 +24,7 @@ from .auth import (
     update_staff_user,
 )
 from .db import SessionLocal
-from .models import Conversation, Member, MessageLog, OkrKeyResult, OkrObjective, StaffTask, StaffUser
+from .models import Conversation, MaintenanceItem, Member, MessageLog, OkrKeyResult, OkrObjective, StaffTask, StaffUser
 from .surveys import SURVEY_FLOWS, flow_for_key, is_outcome_locked_flow, question_options
 from .services import (
     active_conversation_for_member,
@@ -59,6 +59,33 @@ from .services import (
 
 
 router = APIRouter()
+
+
+MAINTENANCE_CATEGORY_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("bathroom", "Bathroom"),
+    ("equipment", "Equipment"),
+    ("decor", "Decor"),
+    ("cleaning", "Cleaning"),
+    ("safety", "Safety"),
+    ("security", "Security"),
+    ("facilities", "Facilities"),
+    ("general", "General"),
+)
+MAINTENANCE_PRIORITY_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("high", "High"),
+    ("medium", "Medium"),
+    ("low", "Low"),
+)
+MAINTENANCE_STATUS_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("open", "Open"),
+    ("in_progress", "In progress"),
+    ("complete", "Complete"),
+)
+MAINTENANCE_ALLOCATION_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("team", "Team"),
+    ("individual", "Individual staff"),
+    ("external", "External supplier"),
+)
 
 
 def get_session():
@@ -147,6 +174,153 @@ def _staff_role_select(selected: object = "member_advisor") -> str:
     return f"<select name=\"role\">{''.join(options)}</select>"
 
 
+def _select_html(
+    name: str,
+    options: tuple[tuple[str, str], ...],
+    selected: object = "",
+    *,
+    blank_label: str | None = None,
+) -> str:
+    selected_key = str(selected or "").strip().lower()
+    rows = []
+    if blank_label is not None:
+        blank_selected = " selected" if not selected_key else ""
+        rows.append(f'<option value=""{blank_selected}>{_esc(blank_label)}</option>')
+    for key, label in options:
+        selected_attr = " selected" if key == selected_key else ""
+        rows.append(f'<option value="{_esc(key)}"{selected_attr}>{_esc(label)}</option>')
+    return f'<select name="{_esc(name)}">{"".join(rows)}</select>'
+
+
+def _maintenance_category_key(value: object, *, allow_blank: bool = False) -> str:
+    token = str(value or "").strip().lower()
+    allowed = {key for key, _label in MAINTENANCE_CATEGORY_OPTIONS}
+    if allow_blank and not token:
+        return ""
+    return token if token in allowed else ("general" if not allow_blank else "")
+
+
+def _maintenance_priority_key(value: object) -> str:
+    token = str(value or "").strip().lower()
+    allowed = {key for key, _label in MAINTENANCE_PRIORITY_OPTIONS}
+    return token if token in allowed else "medium"
+
+
+def _maintenance_status_key(value: object, *, allow_blank: bool = False) -> str:
+    token = str(value or "").strip().lower()
+    allowed = {key for key, _label in MAINTENANCE_STATUS_OPTIONS}
+    if allow_blank and not token:
+        return ""
+    return token if token in allowed else ("open" if not allow_blank else "")
+
+
+def _maintenance_allocation_key(value: object) -> str:
+    token = str(value or "").strip().lower()
+    allowed = {key for key, _label in MAINTENANCE_ALLOCATION_OPTIONS}
+    return token if token in allowed else "team"
+
+
+def _maintenance_label(value: object, options: tuple[tuple[str, str], ...], fallback: str) -> str:
+    token = str(value or "").strip().lower()
+    labels = dict(options)
+    return labels.get(token, fallback)
+
+
+def _staff_name(session: Session, staff_id: int | None) -> str:
+    if not staff_id:
+        return ""
+    staff = session.get(StaffUser, int(staff_id))
+    return str(getattr(staff, "name", "") or "").strip()
+
+
+def _maintenance_assignee_label(item: MaintenanceItem, session: Session) -> str:
+    staff_name = _staff_name(session, getattr(item, "assigned_staff_id", None))
+    if staff_name:
+        return staff_name
+    allocation = _maintenance_allocation_key(getattr(item, "allocation_type", "team"))
+    if allocation == "individual":
+        return "Unassigned staff"
+    team_label = str(getattr(item, "team_label", "") or "").strip()
+    if team_label:
+        return team_label
+    if allocation == "external":
+        return "External supplier"
+    return "Club team"
+
+
+def _maintenance_days_transpired(item: MaintenanceItem) -> int:
+    created_value = getattr(item, "created_at", None)
+    if created_value is None:
+        return 0
+    if hasattr(created_value, "date"):
+        start = created_value.date()
+    else:
+        start = date.today()
+    end_value = getattr(item, "completed_at", None) if _maintenance_status_key(getattr(item, "status", "")) == "complete" else None
+    if end_value is not None and hasattr(end_value, "date"):
+        end = end_value.date()
+    else:
+        end = date.today()
+    return max(0, (end - start).days)
+
+
+def _maintenance_status_html(status: object) -> str:
+    key = _maintenance_status_key(status)
+    if key == "complete":
+        return '<span class="rag rag-green">Complete</span>'
+    if key == "in_progress":
+        return '<span class="rag rag-amber">In progress</span>'
+    return '<span class="rag rag-red">Open</span>'
+
+
+def _maintenance_priority_html(priority: object) -> str:
+    key = _maintenance_priority_key(priority)
+    if key == "high":
+        return '<span class="rag rag-red">High</span>'
+    if key == "low":
+        return '<span class="pill">Low</span>'
+    return '<span class="pill">Medium</span>'
+
+
+def _maintenance_sort_key(item: MaintenanceItem) -> tuple[int, int, str, int]:
+    status_order = {"open": 0, "in_progress": 1, "complete": 2}
+    priority_order = {"high": 0, "medium": 1, "low": 2}
+    created_value = getattr(item, "created_at", None)
+    created_label = created_value.isoformat() if hasattr(created_value, "isoformat") else ""
+    return (
+        status_order.get(_maintenance_status_key(getattr(item, "status", "")), 9),
+        priority_order.get(_maintenance_priority_key(getattr(item, "priority", "")), 9),
+        created_label,
+        int(getattr(item, "id", 0) or 0),
+    )
+
+
+def _maintenance_redirect(
+    request: Request,
+    *,
+    category: object = "",
+    status: object = "",
+    created: int | None = None,
+    updated: int | None = None,
+    error: str = "",
+) -> RedirectResponse:
+    params: dict[str, object] = {}
+    category_key = _maintenance_category_key(category, allow_blank=True)
+    status_key = _maintenance_status_key(status, allow_blank=True)
+    if category_key:
+        params["category"] = category_key
+    if status_key:
+        params["status"] = status_key
+    if created is not None:
+        params["created"] = int(created)
+    if updated is not None:
+        params["updated"] = int(updated)
+    if str(error or "").strip():
+        params["error"] = str(error).strip()
+    suffix = f"?{urlencode(params)}" if params else ""
+    return _redirect(request, f"/admin/maintenance{suffix}")
+
+
 def _redirect(request: Request, path: str) -> RedirectResponse:
     return RedirectResponse(_href(request, path), status_code=303)
 
@@ -176,6 +350,7 @@ def _layout(request: Request, title: str, body: str) -> HTMLResponse:
             ("/admin/reports/visits", "Visit report"),
             ("/admin/sms-diagnostics", "SMS"),
             ("/admin/tasks", "Tasks"),
+            ("/admin/maintenance", "Maintenance"),
             ("/admin/okrs", "OKR dashboard"),
             ("/admin/okrs/config", "OKR setup"),
             ("/admin/surveys", "Surveys"),
@@ -807,6 +982,18 @@ def _okr_percent_html(percent: float | None) -> str:
     )
 
 
+def _okr_percent_inline_html(percent: float | None, *, width_px: int = 150) -> str:
+    if percent is None:
+        return '<span class="muted">No target</span>'
+    width = max(0, min(100, round(percent)))
+    return (
+        '<div class="inline" style="gap: 8px; align-items: center; justify-content: flex-end;">'
+        f"<strong>{percent:.1f}%</strong>"
+        f'<div class="progress-mini" style="margin-top: 0; min-width: {width_px}px; width: {width_px}px;"><span style="width: {width}%"></span></div>'
+        "</div>"
+    )
+
+
 def _sort_okr_key_results(key_results) -> list[OkrKeyResult]:
     return sorted(
         key_results,
@@ -1366,7 +1553,12 @@ def logout():
 
 
 @router.get("/admin", response_class=HTMLResponse)
-def dashboard(request: Request, session: Session = Depends(get_session), _: None = Depends(require_admin)):
+def dashboard(
+    request: Request,
+    updated: int | None = None,
+    session: Session = Depends(get_session),
+    _: None = Depends(require_admin),
+):
     today = date.today()
     current_staff = staff_from_request(request, session)
     current_members = current_member_rows(session, today=today)
@@ -1392,6 +1584,15 @@ def dashboard(request: Request, session: Session = Depends(get_session), _: None
         or 0
     )
     open_tasks = session.scalar(select(func.count()).select_from(StaffTask).where(StaffTask.status == "open")) or 0
+    open_maintenance = (
+        session.scalar(
+            select(func.count())
+            .select_from(MaintenanceItem)
+            .where(MaintenanceItem.status.in_(["open", "in_progress"]))
+        )
+        or 0
+    )
+    notice_html = '<p><span class="pill">Actual updated.</span></p>' if updated is not None else ""
     assigned_section = ""
     if current_staff is not None:
         selected_quarter = _current_quarter(today)
@@ -1425,42 +1626,110 @@ def dashboard(request: Request, session: Session = Depends(get_session), _: None
 
         objective_positions: dict[int, int] = {}
         objective_kr_positions: dict[int, int] = {}
-        kr_rows = []
+        grouped_objectives: list[dict[str, object]] = []
+        groups_by_id: dict[int, dict[str, object]] = {}
         for objective, kr in assigned_rows:
             objective_id = int(getattr(objective, "id", 0) or 0)
             if objective_id not in objective_positions:
                 objective_positions[objective_id] = len(objective_positions) + 1
+            if objective_id not in groups_by_id:
+                objective_number = (
+                    _parse_int(getattr(objective, "objective_number", None), objective_positions[objective_id])
+                    or objective_positions[objective_id]
+                )
+                group = {"objective": objective, "objective_number": objective_number, "rows": []}
+                groups_by_id[objective_id] = group
+                grouped_objectives.append(group)
             objective_kr_positions[objective_id] = objective_kr_positions.get(objective_id, 0) + 1
-            objective_number = (
-                _parse_int(getattr(objective, "objective_number", None), objective_positions[objective_id])
-                or objective_positions[objective_id]
-            )
+            objective_number = int(groups_by_id[objective_id]["objective_number"])
             kr_part_number = (
                 _parse_int(getattr(kr, "key_result_number", None), objective_kr_positions[objective_id])
                 or objective_kr_positions[objective_id]
             )
             kr_number = f"{objective_number}.{kr_part_number}"
-            percent = _okr_percent(kr.actual_value, kr.target_value, kr.direction)
-            pace_percent = _okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter)
-            unit = str(kr.unit or "").strip()
-            target_label = f"{_format_number(kr.target_value)} {unit}".strip()
-            actual_label = f"{_format_number(kr.actual_value)} {unit}".strip()
-            direction_label = "Lower is better" if str(kr.direction or "").strip().lower() == "decrease" else "Higher is better"
-            actual_updated_html = _okr_actual_updated_html(getattr(kr, "actual_updated_at", None))
-            pace_hint_html = _okr_pace_hint_html(kr.target_value, kr.direction, unit, selected_quarter)
-            kr_rows.append(
-                "<tr>"
-                f"<td><strong>{_esc(kr_number)}</strong></td>"
-                f"<td>{_esc(objective.area)}<br><span class=\"muted\">Objective {objective_number}: {_esc(objective.title)}</span></td>"
-                f"<td>{_esc(kr.title)}{actual_updated_html}</td>"
-                f"<td>{_esc(target_label)}<br><span class=\"muted\">{_esc(direction_label)}</span></td>"
-                f"<td>{_esc(actual_label)}</td>"
-                f"<td>{_okr_percent_html(percent)}</td>"
-                f"<td>{_okr_rag_html(pace_percent)}<br>{pace_hint_html}</td>"
-                "</tr>"
-            )
+            rows = groups_by_id[objective_id]["rows"]
+            if isinstance(rows, list):
+                rows.append((kr_number, kr))
 
         okr_dashboard_href = _href(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter})}")
+        objective_sections = []
+        for group in grouped_objectives:
+            objective = group["objective"]
+            objective_number = int(group["objective_number"])
+            grouped_rows = group["rows"] if isinstance(group.get("rows"), list) else []
+            key_results = [row_kr for _row_number, row_kr in grouped_rows if isinstance(row_kr, OkrKeyResult)]
+            objective_percents = [
+                pct
+                for pct in (_okr_percent(kr.actual_value, kr.target_value, kr.direction) for kr in key_results)
+                if pct is not None
+            ]
+            objective_pace_percents = [
+                pct
+                for pct in (
+                    _okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter)
+                    for kr in key_results
+                )
+                if pct is not None
+            ]
+            objective_percent = (sum(objective_percents) / len(objective_percents)) if objective_percents else None
+            objective_pace_percent = (
+                sum(objective_pace_percents) / len(objective_pace_percents)
+                if objective_pace_percents
+                else None
+            )
+            champions = str(getattr(objective, "champions", "") or "").strip()
+            kr_rows = []
+            for kr_number, kr in grouped_rows:
+                percent = _okr_percent(kr.actual_value, kr.target_value, kr.direction)
+                pace_percent = _okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter)
+                unit = str(kr.unit or "").strip()
+                target_label = f"{_format_number(kr.target_value)} {unit}".strip()
+                actual_label = f"{_format_number(kr.actual_value)} {unit}".strip()
+                direction_label = "Lower is better" if str(kr.direction or "").strip().lower() == "decrease" else "Higher is better"
+                actual_updated_html = _okr_actual_updated_html(getattr(kr, "actual_updated_at", None))
+                pace_hint_html = _okr_pace_hint_html(kr.target_value, kr.direction, unit, selected_quarter)
+                update_form = (
+                    '<form method="post" action="'
+                    + _post_action(request, f"/admin/okrs/key-results/{int(kr.id)}/actual")
+                    + '" class="inline" style="justify-content: flex-end;">'
+                    + f'<input type="hidden" name="quarter" value="{_esc(selected_quarter)}">'
+                    + '<input type="hidden" name="return_to" value="/admin">'
+                    + f'<input type="number" step="0.01" min="0" name="actual_value" value="{_esc(_format_number(kr.actual_value))}" style="max-width: 110px;">'
+                    + "<button type=\"submit\">Update</button>"
+                    + "</form>"
+                )
+                kr_rows.append(
+                    "<tr>"
+                    f"<td style=\"width: 72px;\"><strong>{_esc(kr_number)}</strong></td>"
+                    "<td>"
+                    '<div style="display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap;">'
+                    f'<div style="min-width: 240px; flex: 1 1 320px;"><strong>{_esc(kr.title)}</strong>{actual_updated_html}<br><span class="muted">Target: {_esc(target_label)} · Actual: {_esc(actual_label)} · {_esc(direction_label)}</span></div>'
+                    f'<div style="flex: 0 0 260px;">{_okr_percent_inline_html(percent, width_px=170)}</div>'
+                    "</div>"
+                    "</td>"
+                    f"<td style=\"width: 220px;\">{_okr_rag_html(pace_percent)}<br>{pace_hint_html}</td>"
+                    f"<td style=\"width: 180px;\">{update_form}</td>"
+                    "</tr>"
+                )
+            objective_sections.append(
+                f"""
+<div style="border-top: 1px solid var(--line); padding-top: 16px; margin-top: 16px;">
+  <div class="inline" style="justify-content: space-between; align-items: flex-start;">
+    <div>
+      <h3 style="margin: 0 0 6px;">Objective {objective_number}: {_esc(objective.area)}</h3>
+      <p><strong>{_esc(objective.title)}</strong></p>
+      {f'<p class="muted">Champions: {_esc(champions)}</p>' if champions else ''}
+    </div>
+    <div style="text-align: right;">
+      {_okr_rag_html(objective_pace_percent)}<br>{_okr_percent_inline_html(objective_percent, width_px=120)}
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>No.</th><th>Key result</th><th>Pace RAG</th><th>Update actual</th></tr></thead>
+    <tbody>{''.join(kr_rows)}</tbody>
+  </table>
+</div>"""
+            )
         assigned_section = f"""
 <section>
   <div class="inline" style="justify-content: space-between;">
@@ -1477,24 +1746,319 @@ def dashboard(request: Request, session: Session = Depends(get_session), _: None
     <div class="metric"><strong>{assigned_rag_counts['amber']}</strong><span>Amber KRs</span></div>
     <div class="metric"><strong>{assigned_rag_counts['red']}</strong><span>Red KRs</span></div>
   </div>
-  <table>
-    <thead><tr><th>No.</th><th>Area</th><th>Key result</th><th>Target</th><th>Actual</th><th>Achieved</th><th>Pace RAG</th></tr></thead>
-    <tbody>{''.join(kr_rows) or f'<tr><td colspan="7">No key results are assigned to you for {_esc(selected_quarter)}.</td></tr>'}</tbody>
-  </table>
+  {''.join(objective_sections) or f'<p class="muted">No key results are assigned to you for {_esc(selected_quarter)}.</p>'}
 </section>"""
     body = f"""
 <section>
   <h2>Dashboard</h2>
+  {notice_html}
   <div class="grid">
     <div class="metric"><strong>{current_count}</strong><span>Current members</span></div>
     <div class="metric"><strong>{active_21_count}</strong><span>Active members, visited in last 21 days</span></div>
     <div class="metric"><strong>{inactive_21_count}</strong><span>Inactive over 21 days</span></div>
     <div class="metric"><strong>{expired_30_count}</strong><span>Expired members in last 30 days</span></div>
     <div class="metric"><strong>{open_tasks}</strong><span>Open staff tasks</span></div>
+    <div class="metric"><strong>{open_maintenance}</strong><span>Open maintenance items</span></div>
   </div>
 </section>
 {assigned_section}"""
     return _layout(request, "Dashboard", body)
+
+
+@router.get("/admin/maintenance", response_class=HTMLResponse)
+def maintenance_admin(
+    request: Request,
+    created: int | None = None,
+    updated: int | None = None,
+    error: str = "",
+    category: str = "",
+    status: str = "",
+    session: Session = Depends(get_session),
+    _: None = Depends(require_admin),
+):
+    selected_category = _maintenance_category_key(category, allow_blank=True)
+    selected_status = _maintenance_status_key(status, allow_blank=True)
+    staff_rows = (
+        session.execute(select(StaffUser).where(StaffUser.is_active.is_(True)).order_by(StaffUser.name.asc()))
+        .scalars()
+        .all()
+    )
+
+    def staff_select(name: str, selected_id: int | None = None) -> str:
+        selected = int(selected_id or 0)
+        options = ['<option value="">No staff owner</option>']
+        for staff in staff_rows:
+            selected_attr = " selected" if selected == int(staff.id) else ""
+            options.append(f'<option value="{int(staff.id)}"{selected_attr}>{_esc(staff.name)}</option>')
+        return f'<select name="{_esc(name)}">{"".join(options)}</select>'
+
+    all_items = session.execute(select(MaintenanceItem)).scalars().all()
+    open_count = sum(1 for item in all_items if _maintenance_status_key(getattr(item, "status", "")) == "open")
+    in_progress_count = sum(
+        1 for item in all_items if _maintenance_status_key(getattr(item, "status", "")) == "in_progress"
+    )
+    complete_count = sum(1 for item in all_items if _maintenance_status_key(getattr(item, "status", "")) == "complete")
+    high_priority_open_count = sum(
+        1
+        for item in all_items
+        if _maintenance_priority_key(getattr(item, "priority", "")) == "high"
+        and _maintenance_status_key(getattr(item, "status", "")) != "complete"
+    )
+    filtered_items = [
+        item
+        for item in all_items
+        if (not selected_category or _maintenance_category_key(getattr(item, "category", "")) == selected_category)
+        and (not selected_status or _maintenance_status_key(getattr(item, "status", "")) == selected_status)
+    ]
+    filtered_items = sorted(filtered_items, key=_maintenance_sort_key)
+    notice_parts = []
+    if created is not None:
+        notice_parts.append("Maintenance item created.")
+    if updated is not None:
+        notice_parts.append("Maintenance item updated.")
+    if error:
+        notice_parts.append(str(error))
+    notice_class = "error" if error else "pill"
+    notice_html = f'<p><span class="{notice_class}">{_esc(" ".join(notice_parts))}</span></p>' if notice_parts else ""
+    category_filter_html = _select_html("category", MAINTENANCE_CATEGORY_OPTIONS, selected_category, blank_label="All categories")
+    status_filter_html = _select_html("status", MAINTENANCE_STATUS_OPTIONS, selected_status, blank_label="All statuses")
+    table_rows = []
+    for item in filtered_items:
+        category_label = _maintenance_label(getattr(item, "category", ""), MAINTENANCE_CATEGORY_OPTIONS, "General")
+        recorded_label = _datetime(getattr(item, "created_at", None)) or "Not recorded"
+        days_label = str(_maintenance_days_transpired(item))
+        assignee_label = _maintenance_assignee_label(item, session)
+        detail_text = str(getattr(item, "detail", "") or "").strip()
+        detail_html = f'<br><span class="muted">{_esc(detail_text)}</span>' if detail_text else ""
+        complete_target = "open" if _maintenance_status_key(getattr(item, "status", "")) == "complete" else "complete"
+        complete_label = "Reopen" if complete_target == "open" else "Mark complete"
+        edit_form = f"""
+<details>
+  <summary class="button secondary">Amend</summary>
+  <form method="post" action="{_post_action(request, f'/admin/maintenance/items/{int(item.id)}/update')}" class="stack" style="margin-top: 12px;">
+    <input type="hidden" name="return_category" value="{_esc(selected_category)}">
+    <input type="hidden" name="return_status" value="{_esc(selected_status)}">
+    <div class="grid">
+      <label><span>Item</span><input name="title" value="{_esc(item.title)}" required></label>
+      <label><span>Category</span>{_select_html("category", MAINTENANCE_CATEGORY_OPTIONS, getattr(item, "category", "general"))}</label>
+      <label><span>Priority</span>{_select_html("priority", MAINTENANCE_PRIORITY_OPTIONS, getattr(item, "priority", "medium"))}</label>
+      <label><span>Status</span>{_select_html("status", MAINTENANCE_STATUS_OPTIONS, getattr(item, "status", "open"))}</label>
+      <label><span>Who completes this</span>{_select_html("allocation_type", MAINTENANCE_ALLOCATION_OPTIONS, getattr(item, "allocation_type", "team"))}</label>
+      <label><span>Staff owner</span>{staff_select("assigned_staff_id", getattr(item, "assigned_staff_id", None))}</label>
+      <label><span>Team / supplier</span><input name="team_label" value="{_esc(getattr(item, 'team_label', '') or '')}" placeholder="Club team, Cleaning team, External supplier"></label>
+    </div>
+    <label><span>Notes</span><textarea name="detail">{_esc(detail_text)}</textarea></label>
+    <button type="submit" class="secondary">Save maintenance item</button>
+  </form>
+</details>"""
+        action_html = f"""
+<div class="stack">
+  <form method="post" action="{_post_action(request, f'/admin/maintenance/items/{int(item.id)}/status')}" class="inline">
+    <input type="hidden" name="status" value="{_esc(complete_target)}">
+    <input type="hidden" name="return_category" value="{_esc(selected_category)}">
+    <input type="hidden" name="return_status" value="{_esc(selected_status)}">
+    <button type="submit">{_esc(complete_label)}</button>
+  </form>
+  {edit_form}
+</div>"""
+        table_rows.append(
+            "<tr>"
+            f"<td>{_esc(recorded_label)}</td>"
+            f"<td>{_esc(days_label)}</td>"
+            f"<td><span class=\"pill\">{_esc(category_label)}</span></td>"
+            f"<td><strong>{_esc(item.title)}</strong>{detail_html}</td>"
+            f"<td>{_esc(assignee_label)}</td>"
+            f"<td>{_maintenance_priority_html(getattr(item, 'priority', 'medium'))}</td>"
+            f"<td>{_maintenance_status_html(getattr(item, 'status', 'open'))}</td>"
+            f"<td>{action_html}</td>"
+            "</tr>"
+        )
+    body = f"""
+<section>
+  <div class="inline" style="justify-content: space-between;">
+    <div>
+      <h2>Maintenance</h2>
+      <p class="muted">Track club maintenance items by category, priority, date recorded, elapsed days, and who needs to complete the work.</p>
+    </div>
+  </div>
+  {notice_html}
+  <div class="grid">
+    <div class="metric"><strong>{open_count}</strong><span>Open items</span></div>
+    <div class="metric"><strong>{in_progress_count}</strong><span>In progress</span></div>
+    <div class="metric"><strong>{complete_count}</strong><span>Complete</span></div>
+    <div class="metric"><strong>{high_priority_open_count}</strong><span>High priority open</span></div>
+  </div>
+</section>
+<section>
+  <h2>Add Maintenance Item</h2>
+  <form method="post" action="{_post_action(request, '/admin/maintenance/items')}" class="stack">
+    <input type="hidden" name="return_category" value="{_esc(selected_category)}">
+    <input type="hidden" name="return_status" value="{_esc(selected_status)}">
+    <div class="grid">
+      <label><span>Item</span><input name="title" required></label>
+      <label><span>Category</span>{_select_html("category", MAINTENANCE_CATEGORY_OPTIONS, "general")}</label>
+      <label><span>Priority</span>{_select_html("priority", MAINTENANCE_PRIORITY_OPTIONS, "medium")}</label>
+      <label><span>Status</span>{_select_html("status", MAINTENANCE_STATUS_OPTIONS, "open")}</label>
+      <label><span>Who completes this</span>{_select_html("allocation_type", MAINTENANCE_ALLOCATION_OPTIONS, "team")}</label>
+      <label><span>Staff owner</span>{staff_select("assigned_staff_id")}</label>
+      <label><span>Team / supplier</span><input name="team_label" placeholder="Club team, Cleaning team, External supplier"></label>
+    </div>
+    <label><span>Notes</span><textarea name="detail" placeholder="Optional location, part required, or follow-up notes"></textarea></label>
+    <button type="submit">Add maintenance item</button>
+  </form>
+</section>
+<section>
+  <div class="inline" style="justify-content: space-between;">
+    <div>
+      <h2>Maintenance Log</h2>
+      <p class="muted">Use filters to focus the list. Days transpired runs from the recorded date to completion, or to today if still open.</p>
+    </div>
+    <form method="get" action="{_href(request, '/admin/maintenance')}" class="inline">
+      <label><span>Category</span>{category_filter_html}</label>
+      <label><span>Status</span>{status_filter_html}</label>
+      <button type="submit">Filter</button>
+    </form>
+  </div>
+  <table>
+    <thead><tr><th>Recorded</th><th>Days</th><th>Category</th><th>Item</th><th>Allocated to</th><th>Priority</th><th>Status</th><th>Action</th></tr></thead>
+    <tbody>{''.join(table_rows) or '<tr><td colspan="8">No maintenance items match the current filters.</td></tr>'}</tbody>
+  </table>
+</section>"""
+    return _layout(request, "Maintenance", body)
+
+
+@router.post("/admin/maintenance/items")
+def maintenance_create_item(
+    request: Request,
+    title: str = Form(""),
+    detail: str = Form(""),
+    category: str = Form("general"),
+    priority: str = Form("medium"),
+    status: str = Form("open"),
+    allocation_type: str = Form("team"),
+    assigned_staff_id: int = Form(0),
+    team_label: str = Form(""),
+    return_category: str = Form(""),
+    return_status: str = Form(""),
+    session: Session = Depends(get_session),
+    _: None = Depends(require_admin),
+):
+    title_text = str(title or "").strip()
+    if not title_text:
+        return _maintenance_redirect(
+            request,
+            category=return_category,
+            status=return_status,
+            error="Enter a maintenance item title.",
+        )
+    allocation = _maintenance_allocation_key(allocation_type)
+    staff_id = int(assigned_staff_id or 0)
+    if not staff_id or session.get(StaffUser, staff_id) is None:
+        staff_id = 0
+    if allocation == "individual" and not staff_id:
+        return _maintenance_redirect(
+            request,
+            category=return_category,
+            status=return_status,
+            error="Choose a staff owner when the item is assigned to an individual.",
+        )
+    if allocation != "individual":
+        staff_id = 0
+    row = MaintenanceItem(
+        title=title_text,
+        detail=str(detail or "").strip() or None,
+        category=_maintenance_category_key(category),
+        priority=_maintenance_priority_key(priority),
+        status=_maintenance_status_key(status),
+        allocation_type=allocation,
+        assigned_staff_id=staff_id or None,
+        team_label=(str(team_label or "").strip() or None) if allocation != "individual" else None,
+        completed_at=datetime.utcnow().replace(microsecond=0) if _maintenance_status_key(status) == "complete" else None,
+    )
+    session.add(row)
+    session.commit()
+    return _maintenance_redirect(request, category=return_category, status=return_status, created=1)
+
+
+@router.post("/admin/maintenance/items/{item_id}/update")
+def maintenance_update_item(
+    request: Request,
+    item_id: int,
+    title: str = Form(""),
+    detail: str = Form(""),
+    category: str = Form("general"),
+    priority: str = Form("medium"),
+    status: str = Form("open"),
+    allocation_type: str = Form("team"),
+    assigned_staff_id: int = Form(0),
+    team_label: str = Form(""),
+    return_category: str = Form(""),
+    return_status: str = Form(""),
+    session: Session = Depends(get_session),
+    _: None = Depends(require_admin),
+):
+    row = session.get(MaintenanceItem, int(item_id))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Maintenance item not found")
+    title_text = str(title or "").strip()
+    if not title_text:
+        return _maintenance_redirect(
+            request,
+            category=return_category,
+            status=return_status,
+            error="Enter a maintenance item title.",
+        )
+    allocation = _maintenance_allocation_key(allocation_type)
+    staff_id = int(assigned_staff_id or 0)
+    if not staff_id or session.get(StaffUser, staff_id) is None:
+        staff_id = 0
+    if allocation == "individual" and not staff_id:
+        return _maintenance_redirect(
+            request,
+            category=return_category,
+            status=return_status,
+            error="Choose a staff owner when the item is assigned to an individual.",
+        )
+    if allocation != "individual":
+        staff_id = 0
+    status_key = _maintenance_status_key(status)
+    row.title = title_text
+    row.detail = str(detail or "").strip() or None
+    row.category = _maintenance_category_key(category)
+    row.priority = _maintenance_priority_key(priority)
+    row.status = status_key
+    row.allocation_type = allocation
+    row.assigned_staff_id = staff_id or None
+    row.team_label = (str(team_label or "").strip() or None) if allocation != "individual" else None
+    row.completed_at = (
+        getattr(row, "completed_at", None) or datetime.utcnow().replace(microsecond=0)
+        if status_key == "complete"
+        else None
+    )
+    session.add(row)
+    session.commit()
+    return _maintenance_redirect(request, category=return_category, status=return_status, updated=1)
+
+
+@router.post("/admin/maintenance/items/{item_id}/status")
+def maintenance_update_item_status(
+    request: Request,
+    item_id: int,
+    status: str = Form("open"),
+    return_category: str = Form(""),
+    return_status: str = Form(""),
+    session: Session = Depends(get_session),
+    _: None = Depends(require_admin),
+):
+    row = session.get(MaintenanceItem, int(item_id))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Maintenance item not found")
+    status_key = _maintenance_status_key(status)
+    row.status = status_key
+    row.completed_at = datetime.utcnow().replace(microsecond=0) if status_key == "complete" else None
+    session.add(row)
+    session.commit()
+    return _maintenance_redirect(request, category=return_category, status=return_status, updated=1)
 
 
 @router.get("/admin/okrs", response_class=HTMLResponse)
@@ -2078,6 +2642,7 @@ def okr_update_key_result_actual(
     kr_id: int,
     actual_value: str = Form(""),
     quarter: str = Form(""),
+    return_to: str = Form(""),
     session: Session = Depends(get_session),
     _: None = Depends(require_admin),
 ):
@@ -2089,7 +2654,10 @@ def okr_update_key_result_actual(
     row.actual_updated_at = datetime.utcnow()
     session.add(row)
     session.commit()
-    return _redirect(request, f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'updated': 1})}")
+    fallback_path = f"/admin/okrs?{urlencode({'quarter': selected_quarter, 'updated': 1})}"
+    next_path = safe_next_path(return_to, fallback=fallback_path) if str(return_to or "").strip() else fallback_path
+    joiner = "&" if "?" in next_path else "?"
+    return _redirect(request, f"{next_path}{joiner}{urlencode({'updated': 1})}" if next_path == "/admin" else next_path)
 
 
 def _configured(value: object) -> str:
