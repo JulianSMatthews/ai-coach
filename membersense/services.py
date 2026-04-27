@@ -1583,11 +1583,17 @@ def sync_maintenance_items(session: Session) -> int:
         desired_meta = desired_by_title.get(title_key) or {}
         current = str(getattr(row, "allocation_type", "") or "").strip().lower()
         current_item_type = str(getattr(row, "item_type", "") or "").strip().lower()
+        current_category_raw = str(getattr(row, "category", "") or "").strip().lower()
         current_staff_id = int(getattr(row, "assigned_staff_id", 0) or 0)
+        category_source = (
+            current_category_raw
+            if current_category_raw in {"purchase", "maintenance", "repair"}
+            else desired_meta.get("category") if desired_meta else current_category_raw
+        )
         desired_category = _maintenance_category_from_row(
             getattr(row, "title", ""),
             current_item_type,
-            desired_meta.get("category") if desired_meta else getattr(row, "category", ""),
+            category_source,
         )
         desired_item_type = _maintenance_item_type_for_category(desired_category)
         if current == "staff_person":
