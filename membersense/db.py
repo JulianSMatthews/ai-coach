@@ -235,8 +235,8 @@ def _migrate_maintenance_table() -> None:
             conn.exec_driver_sql(
                 f"UPDATE {table_name} "
                 "SET item_type = CASE "
-                "WHEN lower(btrim(coalesce(title, ''))) LIKE 'replace %' THEN 'replacement_item' "
-                "WHEN lower(btrim(coalesce(title, ''))) LIKE 'order %' THEN 'replacement_item' "
+                "WHEN lower(btrim(coalesce(title, ''))) LIKE 'replace %%' THEN 'replacement_item' "
+                "WHEN lower(btrim(coalesce(title, ''))) LIKE 'order %%' THEN 'replacement_item' "
                 "ELSE 'maintenance_work' END "
                 "WHERE item_type IS NULL OR btrim(item_type) = ''"
             )
@@ -245,10 +245,10 @@ def _migrate_maintenance_table() -> None:
                 "SET category = CASE "
                 "WHEN lower(btrim(coalesce(category, ''))) IN ('purchase', 'maintenance', 'repair') THEN lower(btrim(category)) "
                 "WHEN lower(btrim(coalesce(item_type, ''))) = 'replacement_item' THEN 'purchase' "
-                "WHEN lower(btrim(coalesce(title, ''))) LIKE 'replace %' THEN 'purchase' "
-                "WHEN lower(btrim(coalesce(title, ''))) LIKE 'order %' THEN 'purchase' "
-                "WHEN lower(btrim(coalesce(title, ''))) LIKE 'repair %' THEN 'repair' "
-                "WHEN lower(btrim(coalesce(title, ''))) LIKE '%tighten %' THEN 'repair' "
+                "WHEN lower(btrim(coalesce(title, ''))) LIKE 'replace %%' THEN 'purchase' "
+                "WHEN lower(btrim(coalesce(title, ''))) LIKE 'order %%' THEN 'purchase' "
+                "WHEN lower(btrim(coalesce(title, ''))) LIKE 'repair %%' THEN 'repair' "
+                "WHEN lower(btrim(coalesce(title, ''))) LIKE '%%tighten %%' THEN 'repair' "
                 "WHEN lower(btrim(coalesce(category, ''))) = 'equipment' THEN 'repair' "
                 "ELSE 'maintenance' END"
             )
