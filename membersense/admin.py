@@ -514,6 +514,7 @@ def _maintenance_redirect(
     scope: object = "",
     created: int | None = None,
     updated: int | None = None,
+    deleted: int | None = None,
     error: str = "",
 ) -> RedirectResponse:
     params: dict[str, object] = {}
@@ -533,6 +534,8 @@ def _maintenance_redirect(
         params["created"] = int(created)
     if updated is not None:
         params["updated"] = int(updated)
+    if deleted is not None:
+        params["deleted"] = int(deleted)
     if str(error or "").strip():
         params["error"] = str(error).strip()
     suffix = f"?{urlencode(params)}" if params else ""
@@ -1983,6 +1986,7 @@ def maintenance_admin(
     request: Request,
     created: int | None = None,
     updated: int | None = None,
+    deleted: int | None = None,
     error: str = "",
     category: str = "",
     stage: str = "",
@@ -2114,6 +2118,8 @@ def maintenance_admin(
         notice_parts.append("Maintenance item created.")
     if updated is not None:
         notice_parts.append("Maintenance item updated.")
+    if deleted is not None:
+        notice_parts.append("Maintenance item deleted.")
     if error:
         notice_parts.append(str(error))
     notice_class = "error" if error else "pill"
@@ -2175,7 +2181,15 @@ def maintenance_admin(
     </div>
     <p class="muted" style="margin-top: 0;">Purchase defaults to Sophie, Maintenance defaults to Maint man, and Repair defaults to Equipment supplier.</p>
     <label><span>Notes</span><textarea name="detail">{_esc(detail_text)}</textarea></label>
-    <button type="submit" class="secondary">Save maintenance item</button>
+    <div class="inline">
+      <button type="submit" class="secondary">Save maintenance item</button>
+    </div>
+  </form>
+  <form method="post" action="{_post_action(request, f'/admin/maintenance/items/{int(item.id)}/delete')}" class="inline" style="margin-top: 10px;" onsubmit="return window.confirm('Delete this maintenance item?');">
+    <input type="hidden" name="return_category" value="{_esc(selected_category)}">
+    <input type="hidden" name="return_stage" value="{_esc(selected_stage)}">
+    <input type="hidden" name="return_scope" value="{_esc(selected_scope)}">
+    <button type="submit" class="danger">Delete maintenance item</button>
   </form>
 </details>"""
         filtered_groups.setdefault(category_key, []).append(
@@ -2592,6 +2606,31 @@ def maintenance_update_item_status(
         stage=return_stage or return_status,
         scope=return_scope,
         updated=1,
+    )
+
+
+@router.post("/admin/maintenance/items/{item_id}/delete")
+def maintenance_delete_item(
+    request: Request,
+    item_id: int,
+    return_category: str = Form(""),
+    return_stage: str = Form(""),
+    return_scope: str = Form(""),
+    return_status: str = Form(""),
+    session: Session = Depends(get_session),
+    _: None = Depends(require_admin),
+):
+    row = session.get(MaintenanceItem, int(item_id))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Maintenance item not found")
+    session.delete(row)
+    session.commit()
+    return _maintenance_redirect(
+        request,
+        category=return_category,
+        stage=return_stage or return_status,
+        scope=return_scope,
+        deleted=1,
     )
 
 
