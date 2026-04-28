@@ -1999,6 +1999,35 @@ def _next_incomplete_programme_day_index(
     return max(int(duration_days), 1)
 
 
+def _programme_day_index_for_lesson_date(
+    session,
+    *,
+    plan: UserEducationPlan,
+    lesson_date: date,
+) -> int | None:
+    row = (
+        session.execute(
+            select(EducationProgrammeDay.day_index)
+            .join(
+                UserEducationDayProgress,
+                UserEducationDayProgress.programme_day_id == EducationProgrammeDay.id,
+            )
+            .where(
+                UserEducationDayProgress.user_plan_id == int(plan.id),
+                UserEducationDayProgress.lesson_date == lesson_date,
+            )
+            .order_by(desc(UserEducationDayProgress.updated_at), desc(UserEducationDayProgress.id))
+        )
+        .scalars()
+        .first()
+    )
+    try:
+        value = int(row or 0)
+    except Exception:
+        value = 0
+    return value if value > 0 else None
+
+
 def _plan_ready_for_next_programme(
     session,
     *,
@@ -2216,11 +2245,20 @@ def _get_or_create_active_plan(
         session.flush()
     if programme is None:
         programme = session.get(EducationProgramme, int(existing.programme_id))
-    existing.current_day_index = _next_incomplete_programme_day_index(
+    next_incomplete_day_index = _next_incomplete_programme_day_index(
         session,
         plan=existing,
         programme=programme,
     )
+    locked_day_index = _programme_day_index_for_lesson_date(
+        session,
+        plan=existing,
+        lesson_date=plan_date,
+    )
+    if locked_day_index is not None and locked_day_index <= next_incomplete_day_index:
+        existing.current_day_index = locked_day_index
+    else:
+        existing.current_day_index = next_incomplete_day_index
     existing.pillar_key = str(getattr(programme, "pillar_key", "") or existing.pillar_key or "").strip().lower() or "nutrition"
     existing.entry_concept_key = (
         _normalize_concept_key(getattr(existing, "entry_concept_key", None))
@@ -2297,7 +2335,7 @@ def _sync_progress_completion(
 ) -> None:
     has_video = bool(getattr(progress, "video_completed_at", None))
     has_quiz = bool(getattr(progress, "quiz_completed_at", None))
-    if has_quiz:
+    if has_video and has_quiz:
         progress.completion_status = "completed"
         if getattr(progress, "completed_at", None) is None:
             progress.completed_at = _now_utc()
