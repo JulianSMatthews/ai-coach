@@ -2962,14 +2962,17 @@ def list_education_programmes():
             f"<td>{'✓' if bool(row.is_active) else '✕'}</td>"
             f"<td>{html.escape(str(row.updated_at or ''))}</td>"
             "<td>"
+            "<div class='stack'>"
             f"<a href='/admin/education-programmes/edit?id={row_id}'>Edit</a>"
+            f"<a href='/admin/education-programmes/simulate?id={row_id}'>Simulate</a>"
             "<form method='post' action='/admin/education-programmes/delete' "
-            "style='display:inline; margin-left:8px;' "
+            "style='display:inline;' "
             "onsubmit=\"return confirm('Delete this education programme? This cannot be undone.');\">"
             f"<input type='hidden' name='id' value='{row_id}' />"
             f"<input type='hidden' name='expected_code' value='{html.escape(row_code)}' />"
             "<button type='submit' class='danger' style='padding:6px 10px;'>Delete</button>"
             "</form>"
+            "</div>"
             "</td>"
             "</tr>"
         )
@@ -3009,6 +3012,915 @@ def list_education_programmes():
         "</div>"
     )
     return _wrap_page("Education Programmes", body)
+
+
+@admin.get("/education-programmes/simulate", response_class=HTMLResponse)
+def simulate_education_programme(id: int):
+    ensure_education_plan_schema()
+    with SessionLocal() as s:
+        row = s.get(EducationProgramme, int(id))
+        if row is None:
+            raise HTTPException(404, "Education programme not found")
+        programme_payload = _education_programme_payload(s, row)
+
+    programme_id = int(programme_payload.get("id") or 0)
+    programme_name = str(programme_payload.get("name") or "").strip() or "Education programme"
+    concept_label = str(
+        programme_payload.get("programme_concept_label")
+        or programme_payload.get("programme_concept_key")
+        or ""
+    ).strip()
+    pillar_key = str(programme_payload.get("pillar_key") or "").strip().lower()
+    duration_days = int(programme_payload.get("duration_days") or 0)
+    day_rows = programme_payload.get("days") if isinstance(programme_payload.get("days"), list) else []
+    variant_count = sum(
+        len(day.get("variants") or [])
+        for day in day_rows
+        if isinstance(day, dict) and isinstance(day.get("variants"), list)
+    )
+    body = (
+        "<style>"
+        ".simulator-layout { display: grid; gap: 16px; grid-template-columns: minmax(17rem, 20rem) minmax(0, 1fr); align-items: start; }"
+        ".simulator-sidebar, .simulator-main { min-width: 0; }"
+        ".simulator-stat-grid { display: grid; gap: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); margin-top: 12px; }"
+        ".simulator-stat { border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: #fcfdff; }"
+        ".simulator-stat-label { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }"
+        ".simulator-stat-value { font-family: 'Outfit', 'Inter', system-ui, sans-serif; font-size: 1.05rem; font-weight: 600; }"
+        ".simulator-day-list { display: grid; gap: 8px; margin-top: 12px; }"
+        ".simulator-day-button { width: 100%; text-align: left; background: #fff; color: var(--text); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; }"
+        ".simulator-day-button:hover { background: #fff8f3; }"
+        ".simulator-day-button.is-active { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(197, 72, 23, 0.14); }"
+        ".simulator-day-button.is-complete { border-color: #96d7b5; background: #f2fcf6; }"
+        ".simulator-day-button.is-locked { opacity: 0.55; cursor: not-allowed; background: #f7f8fa; }"
+        ".simulator-day-button-row { display: flex; justify-content: space-between; gap: 10px; align-items: center; }"
+        ".simulator-day-button-title { font-weight: 700; }"
+        ".simulator-day-button-meta { color: var(--muted); font-size: 0.82rem; margin-top: 4px; line-height: 1.35; }"
+        ".simulator-pill { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 8px; border-radius: 999px; font-size: 0.76rem; font-weight: 700; }"
+        ".simulator-pill.pending { background: #fff7ed; color: #9a3412; }"
+        ".simulator-pill.complete { background: #ecfdf3; color: #027a48; }"
+        ".simulator-pill.locked { background: #eef2f6; color: #667085; }"
+        ".simulator-overview { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }"
+        ".simulator-panel { border: 1px solid var(--border); border-radius: 12px; padding: 14px; background: #fcfdff; margin-top: 12px; }"
+        ".simulator-video { width: 100%; border-radius: 12px; border: 1px solid var(--border); background: #000; max-height: 420px; }"
+        ".simulator-empty { border: 1px dashed var(--border); border-radius: 12px; padding: 14px; background: #fff; color: var(--muted); }"
+        ".simulator-quiz-form { display: grid; gap: 12px; margin-top: 12px; }"
+        ".simulator-question { border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: #fff; }"
+        ".simulator-question-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; margin-bottom: 8px; }"
+        ".simulator-question-title { font-weight: 700; }"
+        ".simulator-option-list { display: grid; gap: 8px; margin-top: 10px; }"
+        ".simulator-option { display: flex; gap: 8px; align-items: flex-start; }"
+        ".simulator-result { border-top: 1px solid var(--border); margin-top: 10px; padding-top: 10px; color: var(--muted); font-size: 0.92rem; }"
+        ".simulator-result strong { color: var(--text); }"
+        ".simulator-result-ok { color: #027a48; font-weight: 700; }"
+        ".simulator-result-bad { color: var(--accent-strong); font-weight: 700; }"
+        ".simulator-toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }"
+        ".simulator-toolbar-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }"
+        ".simulator-summary-line { color: var(--muted); font-size: 0.92rem; }"
+        ".simulator-day-heading { margin-bottom: 4px; }"
+        "@media (max-width: 960px) { .simulator-layout { grid-template-columns: 1fr; } .simulator-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }"
+        "@media (max-width: 640px) { .simulator-stat-grid { grid-template-columns: 1fr; } }"
+        "</style>"
+        f"<h2>Education Programme Simulator</h2>{_build_version_label()}"
+        "<div class='nav stack'>"
+        "<a class='button-link' href='/admin/education-programmes'>Back to education programmes</a>"
+        f"<a class='button-link' href='/admin/education-programmes/edit?id={programme_id}'>Edit programme</a>"
+        "</div>"
+        "<div class='card'>"
+        f"<h3 class='section-title'>{html.escape(programme_name)}</h3>"
+        f"<p class='help'>Run the concept programme day by day using the configured lesson video, daily action prompt, and quiz. This simulator does not change any real user progress.</p>"
+        "<div class='simulator-stat-grid'>"
+        f"<div class='simulator-stat'><div class='simulator-stat-label'>Concept</div><div class='simulator-stat-value'>{html.escape(concept_label or '—')}</div></div>"
+        f"<div class='simulator-stat'><div class='simulator-stat-label'>Pillar</div><div class='simulator-stat-value'>{html.escape(pillar_key or '—')}</div></div>"
+        f"<div class='simulator-stat'><div class='simulator-stat-label'>Days</div><div class='simulator-stat-value'>{duration_days}</div></div>"
+        f"<div class='simulator-stat'><div class='simulator-stat-label'>Variants</div><div class='simulator-stat-value'>{variant_count}</div></div>"
+        "</div>"
+        "</div>"
+        "<div class='simulator-layout'>"
+        "<div class='card simulator-sidebar'>"
+        "<div class='simulator-toolbar'>"
+        "<div>"
+        "<h3 class='section-title'>Programme days</h3>"
+        "<p class='help' style='margin-bottom:0;'>Move sequentially through the concept and score each day's quiz before advancing.</p>"
+        "</div>"
+        "<div class='simulator-toolbar-actions'>"
+        "<label class='subtle' for='simulator-level-select'>Level</label>"
+        "<select id='simulator-level-select' style='width:auto; min-width:9rem;'></select>"
+        "</div>"
+        "</div>"
+        "<div id='simulator-overview' class='simulator-panel'></div>"
+        "<div id='simulator-day-list' class='simulator-day-list'></div>"
+        "<div class='actions'><button type='button' id='simulator-reset' class='secondary'>Reset simulation</button></div>"
+        "</div>"
+        "<div class='card simulator-main'>"
+        "<div id='simulator-day-detail'></div>"
+        "</div>"
+        "</div>"
+        f"<script id='education-simulator-data' type='application/json'>{_json_script_content(programme_payload)}</script>"
+        + """
+<script>
+(() => {
+  const dataEl = document.getElementById('education-simulator-data');
+  const overviewEl = document.getElementById('simulator-overview');
+  const dayListEl = document.getElementById('simulator-day-list');
+  const detailEl = document.getElementById('simulator-day-detail');
+  const levelSelectEl = document.getElementById('simulator-level-select');
+  const resetButtonEl = document.getElementById('simulator-reset');
+  if (!dataEl || !overviewEl || !dayListEl || !detailEl || !levelSelectEl || !resetButtonEl) {
+    return;
+  }
+
+  const programme = JSON.parse(dataEl.textContent || '{}');
+  const days = Array.isArray(programme.days)
+    ? [...programme.days].sort((left, right) => Number(left?.day_index || 0) - Number(right?.day_index || 0))
+    : [];
+  const levelOrder = ['foundation', 'build', 'support', 'perform'];
+  const storageKey = `education-programme-simulator:${String(programme.id || 'draft')}`;
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function normaliseLevelToken(value) {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  function levelLabel(value) {
+    const token = normaliseLevelToken(value);
+    if (!token) return 'Variant';
+    return token.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+
+  function deriveLevels() {
+    const seen = new Set();
+    const ordered = [];
+    days.forEach((day) => {
+      const variants = Array.isArray(day?.variants) ? day.variants : [];
+      variants.forEach((variant) => {
+        const token = normaliseLevelToken(variant?.level);
+        if (!token || seen.has(token)) return;
+        seen.add(token);
+        ordered.push(token);
+      });
+    });
+    ordered.sort((left, right) => {
+      const leftIndex = levelOrder.indexOf(left);
+      const rightIndex = levelOrder.indexOf(right);
+      if (leftIndex === -1 && rightIndex === -1) return left.localeCompare(right);
+      if (leftIndex === -1) return 1;
+      if (rightIndex === -1) return -1;
+      return leftIndex - rightIndex;
+    });
+    return ordered;
+  }
+
+  const availableLevels = deriveLevels();
+
+  function defaultLevel() {
+    if (availableLevels.includes('build')) return 'build';
+    return availableLevels[0] || '';
+  }
+
+  function buildFreshState(selectedLevel) {
+    return {
+      version: 1,
+      programmeId: Number(programme.id || 0) || null,
+      currentPosition: 0,
+      furthestUnlockedPosition: 0,
+      selectedLevel: selectedLevel || defaultLevel(),
+      drafts: {},
+      submissions: {},
+      completed: false,
+    };
+  }
+
+  function loadState() {
+    try {
+      const raw = window.sessionStorage.getItem(storageKey);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      if (Number(parsed.programmeId || 0) !== Number(programme.id || 0)) return null;
+      if (Number(parsed.version || 0) !== 1) return null;
+      return {
+        ...buildFreshState(defaultLevel()),
+        ...parsed,
+        drafts: parsed.drafts && typeof parsed.drafts === 'object' ? parsed.drafts : {},
+        submissions: parsed.submissions && typeof parsed.submissions === 'object' ? parsed.submissions : {},
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  let state = loadState() || buildFreshState();
+
+  function reconcileState() {
+    const maxPosition = Math.max(0, days.length - 1);
+    state.currentPosition = Math.max(0, Math.min(maxPosition, Number(state.currentPosition || 0)));
+    state.furthestUnlockedPosition = Math.max(
+      state.currentPosition,
+      Math.min(maxPosition, Number(state.furthestUnlockedPosition || 0)),
+    );
+    if (!availableLevels.includes(normaliseLevelToken(state.selectedLevel))) {
+      state.selectedLevel = defaultLevel();
+    }
+  }
+
+  function saveState() {
+    try {
+      window.sessionStorage.setItem(storageKey, JSON.stringify(state));
+    } catch {
+      // Ignore storage failures.
+    }
+  }
+
+  function getDayKey(day) {
+    return String(day?.id || day?.day_index || '');
+  }
+
+  function getSubmission(day) {
+    return state.submissions[getDayKey(day)] || null;
+  }
+
+  function getDraft(day) {
+    return state.drafts[getDayKey(day)] || {};
+  }
+
+  function parseOptions(rawValue, fallback) {
+    if (Array.isArray(rawValue)) return rawValue;
+    if (typeof rawValue === 'string' && rawValue.trim()) {
+      try {
+        const parsed = JSON.parse(rawValue);
+        if (Array.isArray(parsed)) return parsed;
+      } catch {
+        return fallback;
+      }
+    }
+    return fallback;
+  }
+
+  function normaliseAnswerPayload(value) {
+    if (Array.isArray(value)) return value.map((item) => normaliseAnswerPayload(item));
+    if (value && typeof value === 'object') {
+      return Object.keys(value)
+        .sort((left, right) => String(left).localeCompare(String(right)))
+        .reduce((accumulator, key) => {
+          accumulator[String(key)] = normaliseAnswerPayload(value[key]);
+          return accumulator;
+        }, {});
+    }
+    if (typeof value === 'string') return value.trim();
+    return value;
+  }
+
+  function answerSortToken(value) {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+
+  function answersEqual(expected, actual) {
+    const left = normaliseAnswerPayload(expected);
+    const right = normaliseAnswerPayload(actual);
+    if (Array.isArray(left) && Array.isArray(right)) {
+      if (left.length !== right.length) return false;
+      const sortedLeft = [...left].sort((a, b) => answerSortToken(a).localeCompare(answerSortToken(b)));
+      const sortedRight = [...right].sort((a, b) => answerSortToken(a).localeCompare(answerSortToken(b)));
+      return sortedLeft.every((item, index) => answerSortToken(item) === answerSortToken(sortedRight[index]));
+    }
+    return answerSortToken(left) === answerSortToken(right);
+  }
+
+  function pickVariant(day, preferredLevel, lockedVariantId) {
+    const variants = Array.isArray(day?.variants) ? day.variants : [];
+    if (!variants.length) return null;
+    const locked = Number(lockedVariantId || 0);
+    if (locked) {
+      const lockedVariant = variants.find((variant) => Number(variant?.id || 0) === locked);
+      if (lockedVariant) return lockedVariant;
+    }
+    const preferredToken = normaliseLevelToken(preferredLevel);
+    if (preferredToken) {
+      const exactMatch = variants.find((variant) => normaliseLevelToken(variant?.level) === preferredToken);
+      if (exactMatch) return exactMatch;
+    }
+    return variants.find((variant) => Boolean(variant?.is_active)) || variants[0];
+  }
+
+  function formatScore(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '—';
+    return `${Math.round(num)}%`;
+  }
+
+  function questionOptions(question) {
+    const answerType = normaliseLevelToken(question?.answer_type) || 'single_choice';
+    if (answerType === 'boolean') {
+      const parsed = parseOptions(question?.options_json, ['True', 'False']);
+      return parsed.length ? parsed : ['True', 'False'];
+    }
+    return parseOptions(question?.options_json, []);
+  }
+
+  function getTakeaway(variant, scorePct) {
+    if (!variant) return '';
+    const score = Number(scorePct);
+    if (Number.isFinite(score) && score >= 85 && String(variant.takeaway_if_high_score || '').trim()) {
+      return String(variant.takeaway_if_high_score || '').trim();
+    }
+    if (Number.isFinite(score) && score < 50 && String(variant.takeaway_if_low_score || '').trim()) {
+      return String(variant.takeaway_if_low_score || '').trim();
+    }
+    return String(variant.takeaway_default || '').trim();
+  }
+
+  function questionAnswer(question, day, submission) {
+    if (submission && submission.answersByQuestion && Object.prototype.hasOwnProperty.call(submission.answersByQuestion, String(question.id))) {
+      return submission.answersByQuestion[String(question.id)];
+    }
+    const draft = getDraft(day);
+    return draft[String(question.id)];
+  }
+
+  function setDraftAnswer(day, questionId, answerValue) {
+    const dayKey = getDayKey(day);
+    const nextDraft = {
+      ...(state.drafts[dayKey] && typeof state.drafts[dayKey] === 'object' ? state.drafts[dayKey] : {}),
+      [String(questionId)]: answerValue,
+    };
+    state = {
+      ...state,
+      drafts: {
+        ...state.drafts,
+        [dayKey]: nextDraft,
+      },
+    };
+    saveState();
+  }
+
+  function removeDraft(day) {
+    const dayKey = getDayKey(day);
+    if (!Object.prototype.hasOwnProperty.call(state.drafts, dayKey)) return;
+    const nextDrafts = { ...state.drafts };
+    delete nextDrafts[dayKey];
+    state = {
+      ...state,
+      drafts: nextDrafts,
+    };
+  }
+
+  function isQuestionAnswered(question, answerValue) {
+    const answerType = normaliseLevelToken(question?.answer_type) || 'single_choice';
+    if (answerType === 'multi_choice') {
+      return Array.isArray(answerValue) && answerValue.length > 0;
+    }
+    return !(answerValue === undefined || answerValue === null || String(answerValue).trim() === '');
+  }
+
+  function gradeDay(day, variant) {
+    const questions = Array.isArray(variant?.quiz?.questions) ? variant.quiz.questions : [];
+    const answersByQuestion = {};
+    const gradedQuestions = [];
+    let correctCount = 0;
+
+    questions.forEach((question) => {
+      const actualAnswer = questionAnswer(question, day, null);
+      answersByQuestion[String(question.id)] = actualAnswer;
+      const expectedAnswer = question?.correct_answer_json;
+      const isCorrect = expectedAnswer === undefined || expectedAnswer === null || expectedAnswer === ''
+        ? null
+        : answersEqual(expectedAnswer, actualAnswer);
+      if (isCorrect) correctCount += 1;
+      gradedQuestions.push({
+        questionId: Number(question?.id || 0) || null,
+        isCorrect,
+        expectedAnswer,
+        actualAnswer,
+      });
+    });
+
+    const totalQuestions = questions.length;
+    const scorePct = totalQuestions ? Math.round((correctCount / totalQuestions) * 10000) / 100 : null;
+    const passScorePct = Number(variant?.quiz?.pass_score_pct);
+    const takeaway = getTakeaway(variant, scorePct);
+
+    return {
+      reviewedOnly: false,
+      variantId: Number(variant?.id || 0) || null,
+      submittedAt: new Date().toISOString(),
+      answersByQuestion,
+      gradedQuestions,
+      correctCount,
+      totalQuestions,
+      scorePct,
+      passScorePct: Number.isFinite(passScorePct) ? passScorePct : null,
+      passed: Number.isFinite(scorePct) && Number.isFinite(passScorePct) ? scorePct >= passScorePct : null,
+      takeaway,
+    };
+  }
+
+  function unlockNextDay() {
+    if (state.currentPosition < days.length - 1) {
+      state = {
+        ...state,
+        furthestUnlockedPosition: Math.max(Number(state.furthestUnlockedPosition || 0), state.currentPosition + 1),
+      };
+    } else {
+      state = {
+        ...state,
+        completed: true,
+      };
+    }
+  }
+
+  function submissionBadge(submission) {
+    if (!submission) return { label: 'Pending', className: 'pending' };
+    if (submission.reviewedOnly) return { label: 'Reviewed', className: 'complete' };
+    const scoreLabel = submission.scorePct == null ? 'Completed' : `${Math.round(Number(submission.scorePct || 0))}%`;
+    return { label: scoreLabel, className: 'complete' };
+  }
+
+  function renderOverview() {
+    const completedCount = Object.keys(state.submissions || {}).length;
+    const activeDay = days[state.currentPosition];
+    const selectedLevel = levelLabel(state.selectedLevel || defaultLevel());
+    overviewEl.innerHTML = `
+      <div class="simulator-overview">
+        <div>
+          <div class="simulator-stat-label">Progress</div>
+          <div class="simulator-stat-value">${escapeHtml(String(completedCount))}/${escapeHtml(String(days.length))} day${days.length === 1 ? '' : 's'} reviewed</div>
+          <div class="simulator-summary-line">Current step: ${escapeHtml(activeDay ? `Day ${Number(activeDay.day_index || 0)}` : 'None')}</div>
+        </div>
+        <div>
+          <div class="simulator-stat-label">Variant level</div>
+          <div class="simulator-stat-value">${escapeHtml(selectedLevel || 'Default')}</div>
+          <div class="simulator-summary-line">${escapeHtml(state.completed ? 'Programme simulation complete.' : 'Advance one day at a time.')}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderDayList() {
+    if (!days.length) {
+      dayListEl.innerHTML = '<div class="simulator-empty">No programme days are configured yet.</div>';
+      return;
+    }
+    dayListEl.innerHTML = days.map((day, index) => {
+      const submission = getSubmission(day);
+      const badge = submissionBadge(submission);
+      const isActive = index === state.currentPosition;
+      const isUnlocked = index <= Number(state.furthestUnlockedPosition || 0);
+      const variant = pickVariant(day, state.selectedLevel, submission?.variantId);
+      const title = String(
+        variant?.title ||
+        day?.default_title ||
+        day?.concept_label ||
+        day?.concept_key ||
+        `Day ${Number(day?.day_index || 0)}`
+      ).trim();
+      const metaBits = [
+        variant ? levelLabel(variant.level) : 'No variant',
+        variant && String(variant.video_url || '').trim() ? 'Video ready' : 'No video',
+        submission && submission.reviewedOnly ? 'Reviewed' : '',
+      ].filter(Boolean);
+      return `
+        <button type="button"
+          class="simulator-day-button ${isActive ? 'is-active' : ''} ${submission ? 'is-complete' : ''} ${!isUnlocked ? 'is-locked' : ''}"
+          data-day-position="${index}"
+          ${isUnlocked ? '' : 'disabled'}>
+          <div class="simulator-day-button-row">
+            <span class="simulator-day-button-title">Day ${escapeHtml(String(Number(day?.day_index || index + 1)))}<\/span>
+            <span class="simulator-pill ${escapeHtml(badge.className)}">${escapeHtml(badge.label)}<\/span>
+          <\/div>
+          <div class="simulator-day-button-meta">${escapeHtml(title)}${metaBits.length ? ` · ${escapeHtml(metaBits.join(' · '))}` : ''}<\/div>
+        <\/button>
+      `;
+    }).join('');
+    dayListEl.querySelectorAll('[data-day-position]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const nextPosition = Number(button.getAttribute('data-day-position') || 0);
+        if (!Number.isFinite(nextPosition) || nextPosition < 0 || nextPosition > Number(state.furthestUnlockedPosition || 0)) {
+          return;
+        }
+        state = {
+          ...state,
+          currentPosition: nextPosition,
+        };
+        saveState();
+        renderAll();
+      });
+    });
+  }
+
+  function answerSummary(value) {
+    if (Array.isArray(value)) return value.map((item) => String(item)).join(', ');
+    if (value === undefined || value === null || value === '') return '—';
+    if (typeof value === 'object') {
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return String(value);
+      }
+    }
+    return String(value);
+  }
+
+  function renderQuestion(question, day, submission) {
+    const answerType = normaliseLevelToken(question?.answer_type) || 'single_choice';
+    const currentAnswer = questionAnswer(question, day, submission);
+    const prompt = String(question?.question_text || '').trim() || 'Question';
+    const explanation = String(question?.explanation || '').trim();
+    if (submission) {
+      const graded = Array.isArray(submission.gradedQuestions)
+        ? submission.gradedQuestions.find((item) => Number(item?.questionId || 0) === Number(question?.id || 0))
+        : null;
+      const statusLabel = graded?.isCorrect === true ? 'Correct' : graded?.isCorrect === false ? 'Incorrect' : 'Recorded';
+      const statusClass = graded?.isCorrect === true ? 'simulator-result-ok' : graded?.isCorrect === false ? 'simulator-result-bad' : '';
+      return `
+        <div class="simulator-question">
+          <div class="simulator-question-head">
+            <div class="simulator-question-title">Q${escapeHtml(String(Number(question?.question_order || 0) || 0))}. ${escapeHtml(prompt)}</div>
+            <span class="${statusClass}">${escapeHtml(statusLabel)}</span>
+          </div>
+          <div class="simulator-result">
+            <div><strong>Your answer:</strong> ${escapeHtml(answerSummary(graded?.actualAnswer))}</div>
+            <div><strong>Correct answer:</strong> ${escapeHtml(answerSummary(graded?.expectedAnswer))}</div>
+            ${explanation ? `<div style="margin-top:8px;"><strong>Explanation:</strong> ${escapeHtml(explanation)}</div>` : ''}
+          </div>
+        </div>
+      `;
+    }
+
+    const options = questionOptions(question);
+    let answerHtml = '';
+    if (answerType === 'multi_choice') {
+      const selected = Array.isArray(currentAnswer) ? currentAnswer.map((item) => String(item)) : [];
+      answerHtml = `
+        <div class="simulator-option-list">
+          ${options.map((option, optionIndex) => {
+            const optionValue = String(option ?? '').trim();
+            const checked = selected.includes(optionValue);
+            return `
+              <label class="simulator-option">
+                <input type="checkbox"
+                  data-question-id="${escapeHtml(String(question.id || ''))}"
+                  data-answer-type="multi_choice"
+                  data-option-index="${optionIndex}"
+                  value="${escapeHtml(optionValue)}"
+                  ${checked ? 'checked' : ''} />
+                <span>${escapeHtml(optionValue || `Option ${optionIndex + 1}`)}</span>
+              </label>
+            `;
+          }).join('')}
+        </div>
+      `;
+    } else if (answerType === 'boolean' || answerType === 'single_choice') {
+      const resolvedOptions = options.length ? options : ['True', 'False'];
+      answerHtml = `
+        <div class="simulator-option-list">
+          ${resolvedOptions.map((option, optionIndex) => {
+            const optionValue = String(option ?? '').trim();
+            const checked = String(currentAnswer ?? '') === optionValue;
+            return `
+              <label class="simulator-option">
+                <input type="radio"
+                  name="question-${escapeHtml(String(question.id || optionIndex))}"
+                  data-question-id="${escapeHtml(String(question.id || ''))}"
+                  data-answer-type="${escapeHtml(answerType)}"
+                  value="${escapeHtml(optionValue)}"
+                  ${checked ? 'checked' : ''} />
+                <span>${escapeHtml(optionValue || `Option ${optionIndex + 1}`)}</span>
+              </label>
+            `;
+          }).join('')}
+        </div>
+      `;
+    } else {
+      answerHtml = `
+        <div class="field" style="margin-top:10px;">
+          <input type="text"
+            data-question-id="${escapeHtml(String(question.id || ''))}"
+            data-answer-type="text"
+            value="${escapeHtml(String(currentAnswer ?? ''))}"
+            placeholder="Enter your answer" />
+        </div>
+      `;
+    }
+
+    return `
+      <div class="simulator-question">
+        <div class="simulator-question-head">
+          <div class="simulator-question-title">Q${escapeHtml(String(Number(question?.question_order || 0) || 0))}. ${escapeHtml(prompt)}</div>
+          <span class="subtle">${escapeHtml(answerType.replace(/_/g, ' '))}</span>
+        </div>
+        ${answerHtml}
+      </div>
+    `;
+  }
+
+  function collectAnswerInputs(day, variant) {
+    const questions = Array.isArray(variant?.quiz?.questions) ? variant.quiz.questions : [];
+    const answers = {};
+    questions.forEach((question) => {
+      const answerType = normaliseLevelToken(question?.answer_type) || 'single_choice';
+      const currentAnswer = questionAnswer(question, day, null);
+      if (answerType === 'multi_choice') {
+        answers[String(question.id)] = Array.isArray(currentAnswer) ? currentAnswer : [];
+      } else {
+        answers[String(question.id)] = currentAnswer;
+      }
+    });
+    return answers;
+  }
+
+  function submitCurrentDay() {
+    const day = days[state.currentPosition];
+    if (!day) return;
+    const existingSubmission = getSubmission(day);
+    if (existingSubmission) return;
+    const variant = pickVariant(day, state.selectedLevel);
+    if (!variant) {
+      window.alert('No lesson variant is configured for this day.');
+      return;
+    }
+    const questions = Array.isArray(variant?.quiz?.questions) ? variant.quiz.questions : [];
+    if (!questions.length) {
+      state = {
+        ...state,
+        submissions: {
+          ...state.submissions,
+          [getDayKey(day)]: {
+            reviewedOnly: true,
+            variantId: Number(variant?.id || 0) || null,
+            submittedAt: new Date().toISOString(),
+            takeaway: String(variant.takeaway_default || '').trim(),
+          },
+        },
+      };
+      removeDraft(day);
+      unlockNextDay();
+      saveState();
+      renderAll();
+      return;
+    }
+
+    const answersByQuestion = collectAnswerInputs(day, variant);
+    const missing = questions.some((question) => !isQuestionAnswered(question, answersByQuestion[String(question.id)]));
+    if (missing) {
+      window.alert('Complete every quiz question before scoring this day.');
+      return;
+    }
+
+    const graded = gradeDay(day, variant);
+    state = {
+      ...state,
+      submissions: {
+        ...state.submissions,
+        [getDayKey(day)]: graded,
+      },
+    };
+    removeDraft(day);
+    unlockNextDay();
+    saveState();
+    renderAll();
+  }
+
+  function moveToNextDay() {
+    if (state.currentPosition >= days.length - 1) {
+      state = {
+        ...state,
+        completed: true,
+      };
+      saveState();
+      renderAll();
+      return;
+    }
+    state = {
+      ...state,
+      currentPosition: Math.min(days.length - 1, state.currentPosition + 1),
+    };
+    saveState();
+    renderAll();
+  }
+
+  function retryCurrentDay() {
+    const day = days[state.currentPosition];
+    if (!day) return;
+    const dayKey = getDayKey(day);
+    const nextSubmissions = { ...state.submissions };
+    delete nextSubmissions[dayKey];
+    state = {
+      ...state,
+      submissions: nextSubmissions,
+      completed: false,
+    };
+    saveState();
+    renderAll();
+  }
+
+  function attachDraftListeners(day) {
+    detailEl.querySelectorAll('[data-question-id]').forEach((input) => {
+      input.addEventListener('change', () => {
+        const questionId = Number(input.getAttribute('data-question-id') || 0);
+        const answerType = normaliseLevelToken(input.getAttribute('data-answer-type'));
+        if (!questionId) return;
+        if (answerType === 'multi_choice') {
+          const values = Array.from(detailEl.querySelectorAll(`[data-question-id="${questionId}"]`))
+            .filter((node) => Boolean(node.checked))
+            .map((node) => String(node.value || '').trim())
+            .filter(Boolean);
+          setDraftAnswer(day, questionId, values);
+        } else if (input.type === 'radio') {
+          setDraftAnswer(day, questionId, String(input.value || '').trim());
+        } else {
+          setDraftAnswer(day, questionId, String(input.value || '').trim());
+        }
+      });
+      if (input.tagName === 'INPUT' && input.type === 'text') {
+        input.addEventListener('input', () => {
+          const questionId = Number(input.getAttribute('data-question-id') || 0);
+          if (!questionId) return;
+          setDraftAnswer(day, questionId, String(input.value || '').trim());
+        });
+      }
+    });
+  }
+
+  function renderDayDetail() {
+    if (!days.length) {
+      detailEl.innerHTML = '<div class="simulator-empty">No programme days are configured yet.</div>';
+      return;
+    }
+    const day = days[state.currentPosition] || days[0];
+    const submission = getSubmission(day);
+    const variant = pickVariant(day, state.selectedLevel, submission?.variantId);
+    const questions = Array.isArray(variant?.quiz?.questions) ? variant.quiz.questions : [];
+    const title = String(
+      variant?.title ||
+      day?.default_title ||
+      day?.concept_label ||
+      day?.concept_key ||
+      `Day ${Number(day?.day_index || state.currentPosition + 1)}`
+    ).trim();
+    const videoUrl = String(variant?.video_url || '').trim();
+    const posterUrl = String(variant?.poster_url || '').trim();
+    const actionPrompt = String(variant?.action_prompt || '').trim();
+    const summary = String(variant?.summary || day?.default_summary || '').trim();
+    const script = String(variant?.script || '').trim();
+    const takeaway = submission?.takeaway ? String(submission.takeaway || '').trim() : '';
+    const passScore = Number(variant?.quiz?.pass_score_pct);
+    const progressLabel = submission
+      ? submission.reviewedOnly
+        ? 'Reviewed'
+        : `${formatScore(submission.scorePct)} scored`
+      : questions.length
+        ? `Quiz ready · ${questions.length} question${questions.length === 1 ? '' : 's'}`
+        : 'No quiz configured';
+
+    detailEl.innerHTML = `
+      <div class="simulator-toolbar">
+        <div>
+          <p class="subtle" style="margin:0 0 6px;">Day ${escapeHtml(String(Number(day?.day_index || state.currentPosition + 1)))} of ${escapeHtml(String(days.length))}</p>
+          <h3 class="simulator-day-heading">${escapeHtml(title)}</h3>
+          <p class="help" style="margin-bottom:0;">${escapeHtml(String(day?.concept_label || day?.concept_key || '').trim() || 'Concept programme day')} · ${escapeHtml(levelLabel(variant?.level || state.selectedLevel || 'build'))} · ${escapeHtml(progressLabel)}</p>
+        </div>
+        <div class="simulator-toolbar-actions">
+          ${submission ? '<button type="button" id="simulator-retry-day" class="secondary">Retry this day</button>' : ''}
+          ${submission ? `<button type="button" id="simulator-next-day">${state.currentPosition >= days.length - 1 ? 'Finish programme' : 'Next day'}</button>` : ''}
+        </div>
+      </div>
+      <div class="simulator-panel">
+        <div class="grid-2">
+          <div>
+            <div class="simulator-stat-label">Lesson goal</div>
+            <div>${escapeHtml(String(day?.lesson_goal || 'No lesson goal set.').trim())}</div>
+          </div>
+          <div>
+            <div class="simulator-stat-label">Daily action prompt</div>
+            <div>${escapeHtml(actionPrompt || 'No daily action prompt set.')}</div>
+          </div>
+        </div>
+        <div class="field" style="margin-top:12px;">
+          <div class="simulator-stat-label">Lesson summary</div>
+          <div>${escapeHtml(summary || 'No lesson summary set.')}</div>
+        </div>
+        <div class="field" style="margin-top:12px;">
+          <div class="simulator-stat-label">Video</div>
+          ${videoUrl
+            ? `<video class="simulator-video" controls preload="metadata" ${posterUrl ? `poster="${escapeHtml(posterUrl)}"` : ''}>
+                <source src="${escapeHtml(videoUrl)}" />
+              </video>
+              <div class="help" style="margin-top:8px;"><a href="${escapeHtml(videoUrl)}" target="_blank" rel="noopener">Open video in a new tab</a></div>`
+            : '<div class="simulator-empty">No video URL is configured for this lesson variant yet.</div>'}
+        </div>
+        <details class="simulator-panel" style="margin-top:12px;">
+          <summary><strong>Video script</strong></summary>
+          <div style="margin-top:10px; white-space:pre-wrap;">${escapeHtml(script || 'No video script set.')}</div>
+        </details>
+      </div>
+      <div class="simulator-panel">
+        <div class="simulator-toolbar">
+          <div>
+            <div class="simulator-stat-label">Quiz</div>
+            <div class="simulator-summary-line">${questions.length ? `${questions.length} question${questions.length === 1 ? '' : 's'}` : 'No quiz configured for this day.'}${Number.isFinite(passScore) ? ` · Pass threshold ${Math.round(passScore)}%` : ''}</div>
+          </div>
+          ${submission && !submission.reviewedOnly
+            ? `<div class="simulator-toolbar-actions"><span class="${submission.passed === false ? 'simulator-result-bad' : 'simulator-result-ok'}">${escapeHtml(submission.passed === false ? 'Below pass threshold' : 'At or above pass threshold')}</span></div>`
+            : ''}
+        </div>
+        <form id="simulator-quiz-form" class="simulator-quiz-form">
+          ${questions.length
+            ? questions.map((question) => renderQuestion(question, day, submission)).join('')
+            : '<div class="simulator-empty">This day has no quiz questions. You can still mark it as reviewed and continue.</div>'}
+          ${submission
+            ? `<div class="simulator-result">
+                ${submission.reviewedOnly
+                  ? '<div><strong>This day was marked as reviewed without a scored quiz.</strong></div>'
+                  : `<div><strong>Score:</strong> ${escapeHtml(formatScore(submission.scorePct))} · ${escapeHtml(String(submission.correctCount || 0))}/${escapeHtml(String(submission.totalQuestions || 0))} correct</div>`}
+                ${takeaway ? `<div style="margin-top:8px;"><strong>Takeaway:</strong> ${escapeHtml(takeaway)}</div>` : ''}
+              </div>`
+            : ''}
+          ${submission
+            ? ''
+            : `<div class="actions"><button type="submit">${questions.length ? 'Score this day' : 'Mark day reviewed'}</button></div>`}
+        </form>
+      </div>
+      ${state.completed && state.currentPosition >= days.length - 1
+        ? '<div class="simulator-panel"><strong>Programme simulation complete.</strong><div class="help" style="margin-top:8px;">Use Reset simulation to run the concept again from day 1, or change level to test a different variant path.</div></div>'
+        : ''}
+    `;
+
+    const formEl = document.getElementById('simulator-quiz-form');
+    if (formEl && !submission) {
+      formEl.addEventListener('submit', (event) => {
+        event.preventDefault();
+        submitCurrentDay();
+      });
+    }
+    if (!submission) {
+      attachDraftListeners(day);
+    }
+    const nextButton = document.getElementById('simulator-next-day');
+    if (nextButton) {
+      nextButton.addEventListener('click', () => moveToNextDay());
+    }
+    const retryButton = document.getElementById('simulator-retry-day');
+    if (retryButton) {
+      retryButton.addEventListener('click', () => retryCurrentDay());
+    }
+  }
+
+  function renderLevelOptions() {
+    const selectedLevel = normaliseLevelToken(state.selectedLevel || defaultLevel());
+    levelSelectEl.innerHTML = availableLevels.length
+      ? availableLevels.map((level) => `<option value="${escapeHtml(level)}" ${normaliseLevelToken(level) === selectedLevel ? 'selected' : ''}>${escapeHtml(levelLabel(level))}</option>`).join('')
+      : '<option value="">Default</option>';
+  }
+
+  function resetSimulation(nextLevel) {
+    state = buildFreshState(nextLevel || state.selectedLevel || defaultLevel());
+    saveState();
+    renderAll();
+  }
+
+  levelSelectEl.addEventListener('change', () => {
+    const nextLevel = normaliseLevelToken(levelSelectEl.value);
+    const hasProgress = Object.keys(state.submissions || {}).length > 0 || Object.keys(state.drafts || {}).length > 0;
+    if (hasProgress && !window.confirm('Change level and restart the simulator? Current simulation progress will be cleared.')) {
+      levelSelectEl.value = state.selectedLevel || defaultLevel();
+      return;
+    }
+    resetSimulation(nextLevel);
+  });
+
+  resetButtonEl.addEventListener('click', () => {
+    if (!window.confirm('Reset this programme simulation back to day 1?')) {
+      return;
+    }
+    resetSimulation(state.selectedLevel || defaultLevel());
+  });
+
+  function renderAll() {
+    reconcileState();
+    renderLevelOptions();
+    renderOverview();
+    renderDayList();
+    renderDayDetail();
+  }
+
+  renderAll();
+})();
+</script>
+"""
+    )
+    return _wrap_page(f"Simulate {programme_name}", body)
 
 
 @admin.post("/education-programmes/delete")
