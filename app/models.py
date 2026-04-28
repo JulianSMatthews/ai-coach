@@ -1263,6 +1263,8 @@ class EducationProgramme(Base):
     code = Column(String(64), nullable=False, unique=True, index=True)
     name = Column(String(200), nullable=False)
     duration_days = Column(Integer, nullable=False, server_default=text("21"))
+    llm_task_description = Column(Text, nullable=True)
+    llm_video_duration = Column(String(120), nullable=True)
     is_active = Column(Boolean, nullable=False, server_default=text("true"), index=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())

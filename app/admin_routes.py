@@ -523,6 +523,8 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
             "code": "",
             "name": "",
             "duration_days": 0,
+            "llm_task_description": "",
+            "llm_video_duration": "",
             "is_active": True,
             "days": [],
         }
@@ -637,9 +639,33 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
         "code": str(row.code or ""),
         "name": str(row.name or ""),
         "duration_days": derived_duration or int(row.duration_days or 0) or 0,
+        "llm_task_description": str(getattr(row, "llm_task_description", "") or ""),
+        "llm_video_duration": str(getattr(row, "llm_video_duration", "") or ""),
         "is_active": bool(row.is_active),
         "days": payload_days,
     }
+
+
+def _store_education_programme_llm_preferences(
+    programme_id: object,
+    *,
+    llm_task_description: object,
+    llm_video_duration: object,
+) -> None:
+    try:
+        programme_int = int(programme_id or 0)
+    except Exception:
+        return
+    if programme_int <= 0:
+        return
+    with SessionLocal() as s:
+        row = s.get(EducationProgramme, programme_int)
+        if row is None:
+            return
+        row.llm_task_description = str(llm_task_description or "").strip() or None
+        row.llm_video_duration = str(llm_video_duration or "").strip() or None
+        s.add(row)
+        s.commit()
 
 
 def _education_editor_options(session) -> list[dict[str, object]]:
@@ -4196,10 +4222,16 @@ async def regenerate_education_concept_programme_with_llm(request: Request):
         raise HTTPException(400, "JSON payload must be an object")
 
     try:
+        programme_id = payload.get("programme_id")
         model_override = _normalize_model_override(str(payload.get("model_override") or ""))
         brief = str(payload.get("brief") or "").strip()
         approx_video_duration = str(payload.get("approx_video_duration") or "").strip()
         existing_programme = payload.get("existing_programme") if isinstance(payload.get("existing_programme"), dict) else {}
+        _store_education_programme_llm_preferences(
+            programme_id,
+            llm_task_description=brief,
+            llm_video_duration=approx_video_duration,
+        )
         concept_key = str(payload.get("programme_concept_key") or existing_programme.get("programme_concept_key") or "").strip().lower()
         concept_label = str(payload.get("programme_concept_label") or existing_programme.get("programme_concept_label") or "").strip()
         pillar_key = str(payload.get("pillar_key") or existing_programme.get("pillar_key") or "").strip().lower()
@@ -4636,13 +4668,13 @@ def edit_education_programme(id: int | None = None):
           </div>
           <div class="field">
             <label>Approx. video duration<br/>
-              <input type="text" id="programme-llm-video-duration" value="" placeholder="Example: 90 seconds or 3 minutes" />
+              <input type="text" id="programme-llm-video-duration" name="llm_video_duration" value="{html.escape(str(programme_payload.get('llm_video_duration') or ''))}" placeholder="Example: 90 seconds or 3 minutes" />
             </label>
           </div>
         </div>
         <div class="field">
           <label>Task description<br/>
-            <textarea id="programme-llm-brief" rows="4" placeholder="Example: Regenerate a 7-day concept programme that builds practical understanding, one daily action, and a 3-question quiz each day."></textarea>
+            <textarea id="programme-llm-brief" name="llm_task_description" rows="4" placeholder="Example: Regenerate a 7-day concept programme that builds practical understanding, one daily action, and a 3-question quiz each day.">{html.escape(str(programme_payload.get('llm_task_description') or ''))}</textarea>
           </label>
         </div>
         <div class="stack">
@@ -5558,6 +5590,7 @@ def edit_education_programme(id: int | None = None):
             return;
           }}
           const payload = {{
+            programme_id: String(form.querySelector('input[name="id"]')?.value || '').trim(),
             brief,
             model_override: String(programmeLlmModel?.value || '').trim(),
             duration_days: dayCount,
@@ -5875,6 +5908,8 @@ async def save_education_programme(
     programme_concept_label: str | None = Form(default=None),
     code: str = Form(...),
     name: str = Form(...),
+    llm_task_description: str | None = Form(default=None),
+    llm_video_duration: str | None = Form(default=None),
     is_active: str | None = Form(default=None),
     structure_json: str | None = Form(default=None),
 ):
@@ -5890,6 +5925,8 @@ async def save_education_programme(
     programme_concept_text = str(programme_concept_label or "").strip()
     code_token = str(code or "").strip()
     name_text = str(name or "").strip()
+    llm_task_description_text = str(llm_task_description or "").strip()
+    llm_video_duration_text = str(llm_video_duration or "").strip()
     if not programme_concept_token:
         raise HTTPException(400, "programme_concept_key is required")
     if not code_token:
@@ -5967,6 +6004,8 @@ async def save_education_programme(
             row.code = code_token
             row.name = name_text
             row.duration_days = resolved_duration
+            row.llm_task_description = llm_task_description_text or None
+            row.llm_video_duration = llm_video_duration_text or None
             row.is_active = is_active is not None
             s.add(row)
             s.flush()
@@ -5977,6 +6016,8 @@ async def save_education_programme(
             row.code = code_token
             row.name = name_text
             row.duration_days = resolved_duration
+            row.llm_task_description = llm_task_description_text or None
+            row.llm_video_duration = llm_video_duration_text or None
             row.is_active = is_active is not None
         s.add(row)
         s.flush()

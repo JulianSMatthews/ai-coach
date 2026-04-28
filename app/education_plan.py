@@ -63,6 +63,8 @@ _EDUCATION_SCHEMA_COLUMNS = {
     "education_programmes": {
         "concept_key": "varchar(64)",
         "concept_label": "varchar(160)",
+        "llm_task_description": "text",
+        "llm_video_duration": "varchar(120)",
     },
     "education_programme_days": {
         "concept_key": "varchar(64)",
