@@ -114,13 +114,34 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
       })
       .replace(",", "");
   };
+  const formatDate = (value: unknown) => {
+    if (!value) return "—";
+    const raw = String(value);
+    const dt = new Date(raw);
+    if (Number.isNaN(dt.getTime())) return raw;
+    return dt.toLocaleDateString("en-GB", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "2-digit",
+      timeZone: "Europe/London",
+    });
+  };
+  const formatJourneyValue = (label: unknown, detail?: unknown) => {
+    const primary = label === null || label === undefined || label === "" ? "" : String(label);
+    const secondary = detail === null || detail === undefined || detail === "" ? "" : String(detail);
+    if (primary && secondary) return `${primary} · ${secondary}`;
+    return primary || secondary || "—";
+  };
   const tracker = appState?.tracker;
   const trackerPillars = Array.isArray(tracker?.pillars) ? tracker.pillars : [];
   const dailyPlan = appState?.daily_plan || null;
-  const giaMessage = appState?.gia_message;
+  const journey = appState?.journey;
+  const journeyDailyRecording = journey?.daily_recording;
+  const journeyDailyPlan = journey?.daily_plan;
+  const journeyTodaysFocus = journey?.todays_focus;
+  const journeyGiaMessage = journey?.gia_message;
+  const journeyBiometrics = journey?.biometrics;
   const objectives = appState?.weekly_objectives;
-  const education = appState?.education;
-  const educationProgress = education?.progress || null;
   const wearables = appState?.wearables;
   const connectedWearables = (wearables?.providers || [])
     .filter((provider) => provider?.connected)
@@ -128,17 +149,30 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
     .filter(Boolean)
     .join(", ");
   const biometrics = appState?.biometrics;
-  const urine = appState?.urine;
-  const urineMarkers = (urine?.markers || [])
-    .map((marker) => `${marker.label || marker.key || "Marker"}: ${marker.status_label || marker.status || "—"}`)
-    .slice(0, 3)
-    .join(" · ");
-  const formatPct = (value: unknown) => {
-    if (value === null || value === undefined || value === "") return "—";
-    const num = Number(value);
-    return Number.isFinite(num) ? `${Math.round(num)}%` : "—";
-  };
-  const formatYesNo = (value: unknown) => (value ? "Yes" : "No");
+  const pillarJourneySummary =
+    (journeyDailyRecording?.pillars || [])
+      .map((pillar) => {
+        const label = String(pillar?.label || pillar?.pillar_key || "Pillar").trim();
+        const status = String(pillar?.status || "open").trim().toLowerCase();
+        const statusLabel = status === "today" ? "today" : status === "yesterday" ? "yesterday" : "open";
+        return `${label}: ${statusLabel}`;
+      })
+      .join(" · ") ||
+    trackerPillars
+      .map((pillar) => `${pillar.label || pillar.pillar_key}: ${pillar.today_complete ? "today" : "open"}`)
+      .join(" · ");
+  const restingHrCoverage = journeyBiometrics?.resting_hr_date
+    ? `${journeyBiometrics.resting_hr_today ? "Today" : formatDate(journeyBiometrics.resting_hr_date)}${biometrics?.resting_hr_bpm != null ? ` · ${biometrics.resting_hr_bpm} bpm` : ""}`
+    : "No recent reading";
+  const hrvCoverage = journeyBiometrics?.hrv_date
+    ? `${journeyBiometrics.hrv_today ? "Today" : formatDate(journeyBiometrics.hrv_date)}${biometrics?.hrv_ms != null ? ` · ${biometrics.hrv_ms} ms` : ""}`
+    : "No recent reading";
+  const stepsCoverage = journeyBiometrics?.steps_date
+    ? `${journeyBiometrics.steps_today ? "Today" : formatDate(journeyBiometrics.steps_date)}${biometrics?.steps_today != null ? ` · ${biometrics.steps_today}` : ""}`
+    : "No recent reading";
+  const urineCoverage = journeyBiometrics?.urine_date
+    ? `${journeyBiometrics.urine_today ? "Today" : formatDate(journeyBiometrics.urine_date)}${journeyBiometrics?.urine_status ? ` · ${journeyBiometrics.urine_status}` : ""}`
+    : "No urine test recorded";
 
   return (
     <main className="min-h-screen bg-[#f7f4ee] px-6 py-10 text-[#1e1b16]">
@@ -260,7 +294,7 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
                 <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">User app snapshot</p>
                 <h2 className="mt-2 text-lg font-semibold">Current user app state</h2>
                 <p className="mt-1 text-sm text-[#6b6257]">
-                  Read-only overview of the surfaces currently shown in the user app.
+                  Read-only overview of the user&apos;s current daily journey in the user app.
                 </p>
               </div>
               {appState?.today ? (
@@ -277,41 +311,41 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
             ) : (
               <div className="mt-4 grid gap-4 md:grid-cols-2">
                 <AppStateCard
-                  eyebrow="Daily check-in"
-                  title={tracker?.today_complete ? "Complete today" : "Incomplete today"}
+                  eyebrow="Daily journey"
+                  title={journeyDailyRecording?.summary_label || (tracker?.today_complete ? "Complete today" : "Incomplete today")}
                   rows={[
                     {
-                      label: "Pillars complete",
-                      value:
-                        tracker?.today_completed_pillars_count != null && tracker?.total_pillars != null
-                          ? `${tracker.today_completed_pillars_count}/${tracker.total_pillars}`
-                          : "—",
+                      label: "Daily recording",
+                      value: journeyDailyRecording?.summary_label,
                     },
                     {
-                      label: "Pillar status",
-                      value: trackerPillars
-                        .map((pillar) => `${pillar.label || pillar.pillar_key}: ${pillar.today_complete ? "done" : "open"}`)
-                        .join(" · "),
+                      label: "Pillars",
+                      value: pillarJourneySummary,
                     },
-                  ]}
-                />
-                <AppStateCard
-                  eyebrow="Daily plan"
-                  title={dailyPlan?.title || "No cached plan"}
-                  rows={[
                     { label: "Plan date", value: dailyPlan?.plan_date },
-                    { label: "Today", value: dailyPlan ? formatYesNo(dailyPlan.is_today) : "—" },
-                    { label: "Habits", value: dailyPlan?.habits_count },
-                    { label: "Source", value: dailyPlan?.source },
+                    {
+                      label: "Daily plan",
+                      value: formatJourneyValue(journeyDailyPlan?.label, journeyDailyPlan?.detail),
+                    },
+                    {
+                      label: "Today's focus",
+                      value: formatJourneyValue(journeyTodaysFocus?.label, journeyTodaysFocus?.detail),
+                    },
+                    {
+                      label: "Gia message",
+                      value: formatJourneyValue(journeyGiaMessage?.label, journeyGiaMessage?.detail),
+                    },
                   ]}
                 />
                 <AppStateCard
-                  eyebrow="Gia message"
-                  title={giaMessage?.cached ? "Cached for user app" : "Not cached"}
+                  eyebrow="Biometric coverage"
+                  title={biometrics?.training_readiness_label || biometrics?.training_readiness_status || "No readiness data"}
                   rows={[
-                    { label: "Plan date", value: giaMessage?.plan_date },
-                    { label: "Generated", value: formatDateTime(giaMessage?.generated_at) },
-                    { label: "Source", value: giaMessage?.source },
+                    { label: "Training readiness", value: biometrics?.training_readiness_label || biometrics?.training_readiness_status || "—" },
+                    { label: "Resting HR", value: restingHrCoverage },
+                    { label: "HRV", value: hrvCoverage },
+                    { label: "Steps", value: stepsCoverage },
+                    { label: "Urine test", value: urineCoverage },
                   ]}
                 />
                 <AppStateCard
@@ -329,27 +363,6 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
                   ]}
                 />
                 <AppStateCard
-                  eyebrow="Education"
-                  title={education?.available ? education.programme_name || "Active programme" : "No active programme"}
-                  rows={[
-                    { label: "Concept", value: education?.concept_label || education?.concept_key },
-                    { label: "Current day", value: education?.current_day_index },
-                    { label: "Progress", value: educationProgress?.completion_status },
-                    { label: "Video", value: formatPct(educationProgress?.watch_pct) },
-                    { label: "Quiz", value: formatPct(educationProgress?.quiz_score_pct) },
-                  ]}
-                />
-                <AppStateCard
-                  eyebrow="Biometrics"
-                  title={biometrics?.training_readiness_label || biometrics?.training_readiness_status || "No readiness data"}
-                  rows={[
-                    { label: "Resting HR", value: biometrics?.resting_hr_bpm != null ? `${biometrics.resting_hr_bpm} bpm` : "—" },
-                    { label: "HRV", value: biometrics?.hrv_ms != null ? `${biometrics.hrv_ms} ms` : "—" },
-                    { label: "Steps", value: biometrics?.steps_today },
-                    { label: "Active minutes", value: biometrics?.active_minutes_today },
-                  ]}
-                />
-                <AppStateCard
                   eyebrow="Wearables"
                   title={`${wearables?.connected_count ?? 0} connected`}
                   rows={[
@@ -362,14 +375,6 @@ export default async function UserStatusPage({ params }: UserStatusPageProps) {
                         .slice(0, 3)
                         .join(" · "),
                     },
-                  ]}
-                />
-                <AppStateCard
-                  eyebrow="Urine test"
-                  title={urine?.available ? urine.status || "Available" : "No latest result"}
-                  rows={[
-                    { label: "Captured", value: formatDateTime(urine?.captured_at || urine?.sample_date) },
-                    { label: "Markers", value: urineMarkers || "—" },
                   ]}
                 />
                 <AppStateCard

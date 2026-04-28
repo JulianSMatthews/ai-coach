@@ -215,6 +215,7 @@ from .pillar_tracker import (
     get_pillar_tracker_summary,
     parse_tracker_anchor,
     save_pillar_tracker_day,
+    tracker_concepts_for_pillar,
 )
 from .daily_habits import (
     ensure_daily_habit_plan_schema,
@@ -21221,6 +21222,25 @@ def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin
         raw = str(value).strip()
         return raw or None
 
+    def coerce_date_value(value: object) -> date | None:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value.date()
+        if isinstance(value, date):
+            return value
+        raw = str(value).strip()
+        if not raw:
+            return None
+        try:
+            return datetime.fromisoformat(raw.replace("Z", "+00:00")).date()
+        except Exception:
+            pass
+        try:
+            return date.fromisoformat(raw[:10])
+        except Exception:
+            return None
+
     with SessionLocal() as s:
         user = s.execute(select(User).where(User.id == user_id)).scalar_one_or_none()
         if not user:
@@ -21229,6 +21249,11 @@ def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin
         billing_status = getattr(user, "billing_status", None)
         billing_provider = getattr(user, "billing_provider", None)
         today = get_virtual_date(s, int(user_id)) or datetime.utcnow().date()
+        yesterday = today - timedelta(days=1)
+        day_start_local = datetime.combine(today, datetime.min.time(), tzinfo=ZoneInfo("Europe/London"))
+        day_end_local = day_start_local + timedelta(days=1)
+        day_start_utc = day_start_local.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
+        day_end_utc = day_end_local.astimezone(ZoneInfo("UTC")).replace(tzinfo=None)
 
         daily_plan_row = (
             s.execute(
@@ -21275,6 +21300,24 @@ def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin
             if latest_daily_plan_row is not None
             else None
         )
+        daily_plan_status = "missing"
+        daily_plan_label = "No plan generated"
+        daily_plan_detail = None
+        if latest_daily_plan_row is not None:
+            latest_plan_date = getattr(latest_daily_plan_row, "plan_date", None)
+            if daily_plan_row is not None or latest_plan_date == today:
+                daily_plan_status = "generated_today"
+                daily_plan_label = "Generated today"
+            elif latest_plan_date == yesterday:
+                daily_plan_status = "generated_yesterday"
+                daily_plan_label = "Last generated yesterday"
+            else:
+                daily_plan_status = "generated_previous"
+                daily_plan_label = "Latest plan is older"
+            if getattr(latest_daily_plan_row, "title", None):
+                daily_plan_detail = str(getattr(latest_daily_plan_row, "title", "") or "").strip() or None
+            elif latest_plan_date is not None:
+                daily_plan_detail = iso_value(latest_plan_date)
 
         cached_gia_raw = _pref_value(s, int(user_id), general_support.TRACKER_SUMMARY_CACHE_KEY)
         cached_gia = None
@@ -21289,6 +21332,49 @@ def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin
             "generated_at": str(cached_gia.get("generated_at") or "").strip() if isinstance(cached_gia, dict) else None,
             "source": str(cached_gia.get("source") or "").strip() if isinstance(cached_gia, dict) else None,
         }
+        gia_plan_date = coerce_date_value(gia_message.get("plan_date"))
+        gia_generated_date = coerce_date_value(gia_message.get("generated_at"))
+        gia_is_today = bool(
+            gia_message.get("cached")
+            and (
+                gia_plan_date == today
+                or (gia_plan_date is None and gia_generated_date == today)
+            )
+        )
+        gia_view_count_today, gia_last_viewed_at = (
+            s.execute(
+                select(
+                    func.count(UsageEvent.id),
+                    func.max(UsageEvent.created_at),
+                )
+                .where(
+                    UsageEvent.user_id == int(user_id),
+                    UsageEvent.unit_type == "coach_home_gia_message_view",
+                    UsageEvent.created_at >= day_start_utc,
+                    UsageEvent.created_at < day_end_utc,
+                )
+            )
+            .first()
+            or (0, None)
+        )
+        gia_message["is_today"] = gia_is_today
+        gia_message["viewed_today"] = bool(int(gia_view_count_today or 0) > 0)
+        gia_message["viewed_today_count"] = int(gia_view_count_today or 0)
+        gia_message["last_viewed_at"] = iso_value(gia_last_viewed_at)
+        gia_message_status = "missing"
+        gia_message_label = "Not generated today"
+        gia_message_detail = None
+        if bool(gia_message.get("cached")):
+            if gia_is_today:
+                gia_message_status = "generated_today"
+                gia_message_label = "Generated today"
+            else:
+                gia_message_status = "generated_previous"
+                gia_message_label = "Latest Gia message is older"
+            if bool(gia_message.get("viewed_today")):
+                gia_message_detail = f"Opened {int(gia_message.get('viewed_today_count') or 0)} time(s) today"
+            elif gia_message.get("generated_at"):
+                gia_message_detail = f"Generated {str(gia_message.get('generated_at') or '').strip()}"
 
         education_plan_row = (
             s.execute(
@@ -21356,6 +21442,32 @@ def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin
                 ),
             }
 
+        tracker_rows = (
+            s.execute(
+                select(DailyPillarTrackerEntry)
+                .where(
+                    DailyPillarTrackerEntry.user_id == int(user_id),
+                    DailyPillarTrackerEntry.score_date >= yesterday,
+                    DailyPillarTrackerEntry.score_date <= today,
+                )
+                .order_by(
+                    DailyPillarTrackerEntry.score_date.asc(),
+                    DailyPillarTrackerEntry.updated_at.desc(),
+                    DailyPillarTrackerEntry.id.desc(),
+                )
+            )
+            .scalars()
+            .all()
+        )
+        tracker_day_concepts: dict[date, dict[str, set[str]]] = {}
+        for row in tracker_rows:
+            score_day = getattr(row, "score_date", None)
+            pillar_key = str(getattr(row, "pillar_key", "") or "").strip().lower()
+            concept_key = str(getattr(row, "concept_key", "") or "").strip().lower()
+            if score_day is None or not pillar_key or not concept_key:
+                continue
+            tracker_day_concepts.setdefault(score_day, {}).setdefault(pillar_key, set()).add(concept_key)
+
         connections = s.query(WearableConnection).filter(WearableConnection.user_id == int(user_id)).all()
         metric_rows = (
             s.query(
@@ -21407,6 +21519,78 @@ def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin
     weekly_objectives = capture("weekly_objectives", lambda: get_weekly_objectives_config(int(user_id)))
     tracker_pillars = tracker.get("pillars") if isinstance(tracker, dict) else []
     objective_sections = weekly_objectives.get("sections") if isinstance(weekly_objectives, dict) else []
+    tracker_journey_pillars = []
+    for pillar in tracker_pillars if isinstance(tracker_pillars, list) else []:
+        if not isinstance(pillar, dict):
+            continue
+        pillar_key = str(pillar.get("pillar_key") or "").strip().lower()
+        if not pillar_key:
+            continue
+        required_keys = {
+            str(item.concept_key or "").strip().lower()
+            for item in tracker_concepts_for_pillar(pillar_key, user_id=int(user_id))
+            if str(getattr(item, "concept_key", "") or "").strip()
+        }
+        today_complete = bool(required_keys) and required_keys.issubset(
+            tracker_day_concepts.get(today, {}).get(pillar_key, set())
+        )
+        yesterday_complete = bool(required_keys) and required_keys.issubset(
+            tracker_day_concepts.get(yesterday, {}).get(pillar_key, set())
+        )
+        tracker_status = "today" if today_complete else "yesterday" if yesterday_complete else "open"
+        tracker_journey_pillars.append(
+            {
+                "pillar_key": pillar_key,
+                "label": str(pillar.get("label") or pillar_key.replace("_", " ").title()).strip(),
+                "status": tracker_status,
+                "today_complete": today_complete,
+                "yesterday_complete": yesterday_complete,
+            }
+        )
+    tracker_today_count = sum(1 for pillar in tracker_journey_pillars if bool(pillar.get("today_complete")))
+    tracker_yesterday_count = sum(1 for pillar in tracker_journey_pillars if bool(pillar.get("yesterday_complete")))
+
+    education_progress = education.get("progress") if isinstance(education, dict) else None
+    today_focus_status = "no_programme"
+    today_focus_label = "No active programme"
+    today_focus_detail = None
+    if isinstance(education, dict) and education.get("available"):
+        today_focus_detail = " · ".join(
+            [
+                bit
+                for bit in [
+                    str(education.get("programme_name") or "").strip() or None,
+                    f"Day {int(education.get('current_day_index') or 0)}"
+                    if int(education.get("current_day_index") or 0) > 0
+                    else None,
+                ]
+                if bit
+            ]
+        ) or None
+        if not isinstance(education_progress, dict) or not bool(education_progress.get("is_today")):
+            today_focus_status = "not_started"
+            today_focus_label = "Not opened today"
+        else:
+            progress_status = str(education_progress.get("completion_status") or "").strip().lower()
+            if progress_status == "completed":
+                today_focus_status = "completed"
+                today_focus_label = "Completed today"
+            elif progress_status == "video_done":
+                today_focus_status = "video_done"
+                today_focus_label = "Video complete"
+            elif progress_status == "quiz_done":
+                today_focus_status = "quiz_done"
+                today_focus_label = "Quick check complete"
+            else:
+                today_focus_status = "opened"
+                today_focus_label = "Opened today"
+
+    biometrics_metric_date = coerce_date_value((biometrics or {}).get("metric_date")) if isinstance(biometrics, dict) else None
+    biometrics_hrv_date = coerce_date_value((biometrics or {}).get("hrv_metric_date")) if isinstance(biometrics, dict) else None
+    biometrics_steps_date = coerce_date_value((biometrics or {}).get("steps_metric_date")) if isinstance(biometrics, dict) else None
+    urine_capture_date = coerce_date_value((urine or {}).get("captured_at")) if isinstance(urine, dict) else None
+    urine_sample_date = coerce_date_value((urine or {}).get("sample_date")) if isinstance(urine, dict) else None
+    urine_latest_date = urine_capture_date or urine_sample_date
 
     return {
         "user_id": int(user_id),
@@ -21423,6 +21607,47 @@ def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin
         },
         "daily_plan": daily_plan,
         "gia_message": gia_message,
+        "journey": {
+            "daily_recording": {
+                "completed_today_count": tracker_today_count,
+                "completed_yesterday_count": tracker_yesterday_count,
+                "total_pillars": len(tracker_journey_pillars),
+                "summary_label": (
+                    f"{tracker_today_count}/{len(tracker_journey_pillars)} pillars complete today"
+                    if tracker_journey_pillars
+                    else "No daily recording yet"
+                ),
+                "pillars": tracker_journey_pillars,
+            },
+            "daily_plan": {
+                "status": daily_plan_status,
+                "label": daily_plan_label,
+                "detail": daily_plan_detail,
+            },
+            "todays_focus": {
+                "status": today_focus_status,
+                "label": today_focus_label,
+                "detail": today_focus_detail,
+            },
+            "gia_message": {
+                "status": gia_message_status,
+                "label": gia_message_label,
+                "detail": gia_message_detail,
+                "viewed_today": bool(gia_message.get("viewed_today")),
+                "viewed_today_count": int(gia_message.get("viewed_today_count") or 0),
+            },
+            "biometrics": {
+                "resting_hr_today": biometrics_metric_date == today if biometrics_metric_date else False,
+                "resting_hr_date": iso_value(biometrics_metric_date),
+                "hrv_today": biometrics_hrv_date == today if biometrics_hrv_date else False,
+                "hrv_date": iso_value(biometrics_hrv_date),
+                "steps_today": biometrics_steps_date == today if biometrics_steps_date else False,
+                "steps_date": iso_value(biometrics_steps_date),
+                "urine_today": urine_latest_date == today if urine_latest_date else False,
+                "urine_date": iso_value(urine_latest_date),
+                "urine_status": str((urine or {}).get("status") or "").strip() if isinstance(urine, dict) else None,
+            },
+        },
         "weekly_objectives": {
             "week": weekly_objectives.get("week") if isinstance(weekly_objectives, dict) else None,
             "sections": objective_sections if isinstance(objective_sections, list) else [],

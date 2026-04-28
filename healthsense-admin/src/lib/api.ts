@@ -1365,9 +1365,56 @@ export type AdminUserAppState = {
   } | null;
   gia_message?: {
     cached?: boolean;
+    is_today?: boolean;
     plan_date?: string | null;
     generated_at?: string | null;
     source?: string | null;
+    viewed_today?: boolean;
+    viewed_today_count?: number;
+    last_viewed_at?: string | null;
+  };
+  journey?: {
+    daily_recording?: {
+      completed_today_count?: number | null;
+      completed_yesterday_count?: number | null;
+      total_pillars?: number | null;
+      summary_label?: string | null;
+      pillars?: Array<{
+        pillar_key?: string | null;
+        label?: string | null;
+        status?: "today" | "yesterday" | "open" | string | null;
+        today_complete?: boolean | null;
+        yesterday_complete?: boolean | null;
+      }>;
+    };
+    daily_plan?: {
+      status?: string | null;
+      label?: string | null;
+      detail?: string | null;
+    };
+    todays_focus?: {
+      status?: string | null;
+      label?: string | null;
+      detail?: string | null;
+    };
+    gia_message?: {
+      status?: string | null;
+      label?: string | null;
+      detail?: string | null;
+      viewed_today?: boolean | null;
+      viewed_today_count?: number | null;
+    };
+    biometrics?: {
+      resting_hr_today?: boolean | null;
+      resting_hr_date?: string | null;
+      hrv_today?: boolean | null;
+      hrv_date?: string | null;
+      steps_today?: boolean | null;
+      steps_date?: string | null;
+      urine_today?: boolean | null;
+      urine_date?: string | null;
+      urine_status?: string | null;
+    };
   };
   weekly_objectives?: {
     week?: { anchor_date?: string | null; start?: string | null; end?: string | null } | null;
@@ -1416,12 +1463,16 @@ export type AdminUserAppState = {
     }>;
   };
   biometrics?: {
+    metric_date?: string | null;
     training_readiness_label?: string | null;
     training_readiness_status?: string | null;
     resting_hr_bpm?: number | null;
+    hrv_metric_date?: string | null;
     hrv_ms?: number | null;
     steps_today?: number | null;
+    steps_metric_date?: string | null;
     active_minutes_today?: number | null;
+    active_minutes_metric_date?: string | null;
     synced_at?: string | null;
     hrv_synced_at?: string | null;
   };
