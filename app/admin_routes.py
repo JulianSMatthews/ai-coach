@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import html
+import hashlib
 import os
 
 import json
@@ -911,6 +912,73 @@ def _placeholder_generated_education_day(
     }
 
 
+def _quiz_answer_token(value: object) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if value is None:
+        return ""
+    try:
+        return json.dumps(value, ensure_ascii=False, sort_keys=True)
+    except Exception:
+        return str(value).strip()
+
+
+def _clean_generated_question_options(answer_type: str, options_val: object) -> list[object]:
+    cleaned: list[object] = []
+    if isinstance(options_val, list):
+        for item in options_val:
+            if isinstance(item, str):
+                token = item.strip()
+                if token:
+                    cleaned.append(token)
+            elif item not in (None, ""):
+                cleaned.append(item)
+    if answer_type == "boolean" and len(cleaned) < 2:
+        cleaned = ["True", "False"]
+    return cleaned
+
+
+def _stable_generated_question_options(
+    *,
+    answer_type: str,
+    question_text: str,
+    explanation: str,
+    options_val: object,
+    correct_val: object,
+) -> list[object]:
+    options = _clean_generated_question_options(answer_type, options_val)
+    if len(options) < 2:
+        return options
+    seed_source = "||".join(
+        [
+            answer_type.strip().lower(),
+            question_text.strip(),
+            explanation.strip(),
+            _quiz_answer_token(correct_val),
+        ]
+    )
+
+    def _sort_key(index: int, option: object) -> str:
+        token = _quiz_answer_token(option)
+        basis = f"{seed_source}||{index}||{token}"
+        return hashlib.sha256(basis.encode("utf-8")).hexdigest()
+
+    reordered = [
+        option
+        for index, option in sorted(
+            enumerate(options),
+            key=lambda item: _sort_key(int(item[0]), item[1]),
+        )
+    ]
+    if answer_type in {"single_choice", "boolean"}:
+        correct_token = _quiz_answer_token(correct_val)
+        if correct_token and _quiz_answer_token(reordered[0]) == correct_token:
+            shift_seed = hashlib.sha256(f"{seed_source}||shift".encode("utf-8")).hexdigest()
+            shift = 1 + (int(shift_seed, 16) % (len(reordered) - 1))
+            reordered = reordered[shift:] + reordered[:shift]
+    return reordered
+
+
 def _normalise_generated_question(raw_question: object, order: int) -> dict[str, object] | None:
     if not isinstance(raw_question, dict):
         return None
@@ -943,6 +1011,16 @@ def _normalise_generated_question(raw_question: object, order: int) -> dict[str,
         "correct_answer_json",
         raw_question.get("correct_answer", raw_question.get("answer")),
     )
+    if isinstance(correct_val, str):
+        correct_val = correct_val.strip()
+    explanation = str(raw_question.get("explanation") or "").strip()
+    options_val = _stable_generated_question_options(
+        answer_type=answer_type,
+        question_text=question_text,
+        explanation=explanation,
+        options_val=options_val,
+        correct_val=correct_val,
+    )
     try:
         question_order = int(raw_question.get("question_order") or order)
     except Exception:
@@ -954,7 +1032,7 @@ def _normalise_generated_question(raw_question: object, order: int) -> dict[str,
         "answer_type": answer_type,
         "options_json": options_val,
         "correct_answer_json": correct_val if correct_val is not None else "",
-        "explanation": str(raw_question.get("explanation") or "").strip(),
+        "explanation": explanation,
     }
 
 
@@ -1196,6 +1274,12 @@ def _build_education_programme_generation_prompt(
     programme_context: dict[str, object],
     requested_days: int,
 ) -> str:
+    approx_video_duration = str(programme_context.get("approx_video_duration") or "").strip()
+    duration_instruction = (
+        f"- Aim for each day's spoken lesson script to fit approximately {approx_video_duration} of video.\n"
+        if approx_video_duration
+        else ""
+    )
     output_schema = {
         "programme": {
             "programme_name": "string",
@@ -1251,10 +1335,12 @@ def _build_education_programme_generation_prompt(
         "- Keep every day on the selected programme concept; do not drift into other concepts unless the task explicitly asks for a supporting contrast.\n"
         "- Generate one active variant per day unless the task_description explicitly asks for multiple variants.\n"
         "- Use level='build' unless the task_description asks for another level or a clear level progression.\n"
+        f"{duration_instruction}"
         "- Include exactly 3 quiz questions for each variant.\n"
         "- Use answer_type='single_choice' unless the task_description clearly requires boolean or multi_choice.\n"
         "- For single_choice questions, options_json must be an array of 4 short answer options.\n"
         "- correct_answer_json must exactly match the correct option string for single_choice questions.\n"
+        "- Vary the position of the correct answer across quiz questions; do not always put it first.\n"
         "- Leave video_url, avatar_status, avatar_job_id, avatar_error, avatar_generated_at, avatar_source, and avatar_summary_url absent or empty.\n"
         "- Use UK English, clear coaching language, practical daily actions, and avoid diagnosis or medical claims.\n\n"
         "CONTEXT_JSON:\n"
@@ -1270,6 +1356,12 @@ def _build_education_programme_outline_prompt(
     programme_context: dict[str, object],
     requested_days: int,
 ) -> str:
+    approx_video_duration = str(programme_context.get("approx_video_duration") or "").strip()
+    duration_instruction = (
+        f"- Shape each day so it can later be taught clearly in approximately {approx_video_duration} of video.\n"
+        if approx_video_duration
+        else ""
+    )
     output_schema = {
         "programme": {
             "programme_name": "string",
@@ -1292,6 +1384,7 @@ def _build_education_programme_outline_prompt(
         "- Create the full concept programme outline from the task_description and selected concept.\n"
         f"- Return exactly {requested_days} programme days, numbered 1 to {requested_days}.\n"
         "- Keep every day on the selected programme concept and make the sequence feel progressive across the full concept.\n"
+        f"{duration_instruction}"
         "- For each day, return only lesson_goal, default_title, and default_summary.\n"
         "- Do not include lesson variants, scripts, daily actions, takeaways, or quiz content in this outline response.\n"
         "- Use UK English, clear coaching language, and avoid diagnosis or medical claims.\n\n"
@@ -1309,6 +1402,12 @@ def _build_education_day_generation_prompt(
     day_index: int,
     existing_level: str,
 ) -> str:
+    approx_video_duration = str(programme_context.get("approx_video_duration") or "").strip()
+    duration_instruction = (
+        f"- Aim for the spoken lesson script to fit approximately {approx_video_duration} of video.\n"
+        if approx_video_duration
+        else ""
+    )
     output_schema = {
         "day_index": day_index,
         "lesson_goal": "string",
@@ -1356,10 +1455,12 @@ def _build_education_day_generation_prompt(
         "- Do not rewrite other days or refer to them in the output.\n"
         "- Generate one active variant unless the task_description explicitly asks for multiple variants.\n"
         f"- Use the existing level '{existing_level}' unless the task_description explicitly asks for another level.\n"
+        f"{duration_instruction}"
         "- Include exactly 3 quiz questions for each variant.\n"
         "- Use answer_type='single_choice' unless the task_description clearly requires boolean or multi_choice.\n"
         "- For single_choice questions, options_json must be an array of 4 short answer options.\n"
         "- correct_answer_json must exactly match the correct option string for single_choice questions.\n"
+        "- Vary the position of the correct answer across quiz questions; do not always put it first.\n"
         "- Leave video_url, avatar_status, avatar_job_id, avatar_error, avatar_generated_at, avatar_source, and avatar_summary_url absent or empty.\n"
         "- Use UK English, clear coaching language, and avoid diagnosis or medical claims.\n\n"
         "CONTEXT_JSON:\n"
@@ -1440,6 +1541,7 @@ def _generate_education_day_with_llm(
     concept_label: str,
     day_index: int,
     existing_day: dict[str, object],
+    approx_video_duration: str = "",
     extra_context: dict[str, object] | None = None,
 ) -> dict[str, object]:
     existing_level = _resolve_existing_education_day_level(existing_day)
@@ -1450,6 +1552,7 @@ def _generate_education_day_with_llm(
         "programme_concept_key": concept_key,
         "programme_concept_label": concept_label,
         "selected_day_index": day_index,
+        "approx_video_duration": str(approx_video_duration or "").strip(),
         "existing_day": _compact_education_day_for_llm(existing_day),
         "task_description": brief or "Regenerate the selected programme day from the supplied programme context.",
     }
@@ -1665,6 +1768,7 @@ def _generate_education_programme_via_outline(
                 concept_label=concept_label,
                 day_index=day_index,
                 existing_day=day_seed,
+                approx_video_duration=str(programme_context.get("approx_video_duration") or "").strip(),
                 extra_context=extra_context,
             )
             generated_day = day_result["day"] if isinstance(day_result.get("day"), dict) else {}
@@ -4094,6 +4198,7 @@ async def regenerate_education_concept_programme_with_llm(request: Request):
     try:
         model_override = _normalize_model_override(str(payload.get("model_override") or ""))
         brief = str(payload.get("brief") or "").strip()
+        approx_video_duration = str(payload.get("approx_video_duration") or "").strip()
         existing_programme = payload.get("existing_programme") if isinstance(payload.get("existing_programme"), dict) else {}
         concept_key = str(payload.get("programme_concept_key") or existing_programme.get("programme_concept_key") or "").strip().lower()
         concept_label = str(payload.get("programme_concept_label") or existing_programme.get("programme_concept_label") or "").strip()
@@ -4116,6 +4221,7 @@ async def regenerate_education_concept_programme_with_llm(request: Request):
             "programme_concept_key": concept_key,
             "programme_concept_label": concept_label,
             "requested_days": requested_days,
+            "approx_video_duration": approx_video_duration,
             "task_description": brief or "Regenerate a complete concept programme for this concept.",
             "existing_programme": _compact_education_programme_for_llm(existing_programme),
         }
@@ -4528,6 +4634,11 @@ def edit_education_programme(id: int | None = None):
               <input type="number" id="programme-llm-days" min="1" max="31" value="{html.escape(str(programme_payload.get('duration_days') or len(programme_payload.get('days') or []) or 7))}" />
             </label>
           </div>
+          <div class="field">
+            <label>Approx. video duration<br/>
+              <input type="text" id="programme-llm-video-duration" value="" placeholder="Example: 90 seconds or 3 minutes" />
+            </label>
+          </div>
         </div>
         <div class="field">
           <label>Task description<br/>
@@ -4626,6 +4737,7 @@ def edit_education_programme(id: int | None = None):
         const programmeLlmBrief = document.getElementById('programme-llm-brief');
         const programmeLlmModel = document.getElementById('programme-llm-model');
         const programmeLlmDays = document.getElementById('programme-llm-days');
+        const programmeLlmVideoDuration = document.getElementById('programme-llm-video-duration');
         const programmeLlmButton = document.getElementById('generate-programme-llm');
         const programmeLlmStatus = document.getElementById('programme-llm-status');
         const form = document.getElementById('education-programme-form');
@@ -5449,6 +5561,7 @@ def edit_education_programme(id: int | None = None):
             brief,
             model_override: String(programmeLlmModel?.value || '').trim(),
             duration_days: dayCount,
+            approx_video_duration: String(programmeLlmVideoDuration?.value || '').trim(),
             programme_name: String(form.querySelector('input[name="name"]')?.value || '').trim(),
             programme_code: String(form.querySelector('input[name="code"]')?.value || '').trim(),
             pillar_key: selectedProgrammePillar(),
