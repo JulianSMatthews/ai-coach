@@ -1440,19 +1440,26 @@ def _public_survey_layout(title: str, body: str) -> HTMLResponse:
       object-fit: cover;
     }}
     form {{ display: grid; gap: 12px; margin-top: 22px; }}
-    label.option {{
-      display: flex;
-      gap: 10px;
-      align-items: center;
+    .option-list {{
+      display: grid;
+      gap: 12px;
+    }}
+    .option-button {{
       border: 1px solid var(--border);
       border-radius: 8px;
       background: #fff;
       padding: 14px 16px;
+      color: var(--text);
+      text-align: left;
       font-weight: 800;
       cursor: pointer;
     }}
-    label.option:focus-within {{ border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }}
-    input[type="radio"] {{ accent-color: var(--accent); }}
+    .option-button:hover,
+    .option-button:focus {{
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+      outline: none;
+    }}
     button {{
       border: 0;
       border-radius: 8px;
@@ -1472,13 +1479,6 @@ def _public_survey_layout(title: str, body: str) -> HTMLResponse:
       padding: 12px;
       font-weight: 800;
     }}
-    .submitting {{
-      display: none;
-      margin-top: 8px;
-      color: var(--muted);
-      font-size: 0.95rem;
-    }}
-    .submitting.is-visible {{ display: block; }}
     @media (max-width: 640px) {{
       main {{ align-items: flex-start; padding: 14px; }}
       .shell {{ padding: 20px; }}
@@ -1487,37 +1487,6 @@ def _public_survey_layout(title: str, body: str) -> HTMLResponse:
 </head>
 <body>
   <main><section class="shell">{body}</section></main>
-  <script>
-    (() => {{
-      const form = document.querySelector('form[data-auto-advance="1"]');
-      if (!form) return;
-      const radioInputs = Array.from(form.querySelectorAll('input[type="radio"][name="answer"]'));
-      if (!radioInputs.length) return;
-      const submitButton = form.querySelector('button[type="submit"]');
-      const status = form.querySelector('[data-submit-status]');
-      let submitting = false;
-      const markSubmitting = () => {{
-        if (status) status.classList.add('is-visible');
-        if (submitButton) submitButton.setAttribute('disabled', 'disabled');
-      }};
-      const submitForm = () => {{
-        if (submitting) return;
-        submitting = true;
-        markSubmitting();
-        form.requestSubmit();
-      }};
-      radioInputs.forEach((input) => {{
-        input.addEventListener('change', () => {{
-          window.setTimeout(submitForm, 120);
-        }});
-      }});
-      form.addEventListener('submit', () => {{
-        if (submitting) return;
-        submitting = true;
-        markSubmitting();
-      }});
-    }})();
-  </script>
 </body>
 </html>"""
     return HTMLResponse(html)
@@ -1578,10 +1547,7 @@ def _public_survey_response(
     for option in question_options(question):
         option_inputs.append(
             f"""
-<label class="option">
-  <input type="radio" name="answer" value="{_esc(option)}" required>
-  <span>{_esc(option)}</span>
-</label>"""
+<button type="submit" name="answer" value="{_esc(option)}" class="option-button">{_esc(option)}</button>"""
         )
     error_html = f'<div class="error">{_esc(error)}</div>' if error else ""
     body = f"""
@@ -1589,10 +1555,9 @@ def _public_survey_response(
 <h1>{_esc(question.text)}</h1>
 <div class="progress"><span style="width: {pct}%"></span></div>
 {error_html}
-<form method="post" data-auto-advance="1">
-  {''.join(option_inputs)}
-  <button type="submit">Continue</button>
-  <p class="submitting" data-submit-status>Saving your answer and moving to the next question…</p>
+<p class="muted">Tap one answer to continue.</p>
+<form method="post">
+  <div class="option-list">{''.join(option_inputs)}</div>
 </form>"""
     return _public_survey_layout(flow.label, body)
 
