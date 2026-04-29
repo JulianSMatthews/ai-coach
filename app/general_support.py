@@ -3,6 +3,7 @@ General coaching support chat, enabled after any weekly flow ends.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from datetime import date, datetime, timedelta
@@ -22,7 +23,21 @@ from .prompts import build_prompt, run_llm_prompt
 COACH_NAME = os.getenv("COACH_NAME", "Gia")
 
 STATE_KEY = "general_support_state"
-TRACKER_SUMMARY_CACHE_KEY = "coach_home_tracker_summary_cache_v5"
+TRACKER_SUMMARY_CACHE_KEY = "coach_home_tracker_summary_cache_v6"
+
+
+def _normalize_context_text(value: object) -> str:
+    return " ".join(str(value or "").strip().split())
+
+
+def _trim_context_text(value: object, *, max_chars: int = 2400) -> str | None:
+    text = _normalize_context_text(value)
+    if not text:
+        return None
+    if len(text) <= max_chars:
+        return text
+    trimmed = text[:max_chars].rsplit(" ", 1)[0].rstrip(" ,;:")
+    return (trimmed or text[:max_chars].rstrip(" ,;:")) + "..."
 
 
 def _coach_message_prefix() -> str:
@@ -108,14 +123,53 @@ def _apply_prefix_preference(text: str | None, *, include_prefix: bool) -> str:
     return normalized
 
 
+def _education_context_signature_payload(education_context: dict | None) -> dict | None:
+    if not isinstance(education_context, dict):
+        return None
+    if not education_context.get("available"):
+        return {
+            "available": False,
+            "reason": str(education_context.get("reason") or "").strip() or None,
+        }
+    return {
+        "available": True,
+        "programme_code": str(education_context.get("programme_code") or "").strip() or None,
+        "concept_key": str(education_context.get("concept_key") or "").strip() or None,
+        "day_index": _safe_int(education_context.get("day_index")),
+        "lesson_variant_id": _safe_int(education_context.get("lesson_variant_id")),
+        "lesson_title": str(education_context.get("lesson_title") or "").strip() or None,
+        "completion_status": str(education_context.get("completion_status") or "").strip() or None,
+        "quiz_score_pct": _safe_int(education_context.get("quiz_score_pct")),
+        "takeaway": str(education_context.get("takeaway") or "").strip() or None,
+        "action_prompt": str(education_context.get("action_prompt") or "").strip() or None,
+        "lesson_transcript": _normalize_context_text(education_context.get("lesson_transcript") or ""),
+    }
+
+
 def _tracker_summary_cache_signature(
     user_id: int,
     tracker_snapshot: dict | None = None,
 ) -> tuple[str, str | None]:
     snapshot = tracker_snapshot if isinstance(tracker_snapshot, dict) else build_daily_tracker_generation_context_snapshot(int(user_id))
     context = snapshot.get("context") if isinstance(snapshot.get("context"), dict) else {}
+    context_hash = str(snapshot.get("context_hash") or "").strip()
+    education_signature_payload = _education_context_signature_payload(
+        _education_programme_context(int(user_id), context)
+    )
+    if context_hash and education_signature_payload is not None:
+        context_hash = hashlib.sha256(
+            json.dumps(
+                {
+                    "tracker_context_hash": context_hash,
+                    "education_programme": education_signature_payload,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+                default=str,
+            ).encode("utf-8")
+        ).hexdigest()
     return (
-        str(snapshot.get("context_hash") or "").strip(),
+        context_hash,
         str(context.get("plan_date") or "").strip() or None,
     )
 
@@ -354,6 +408,8 @@ def _education_programme_context(user_id: int, tracker_context: dict) -> dict | 
     progress = payload.get("progress") if isinstance(payload.get("progress"), dict) else {}
     questions = quiz.get("questions") if isinstance(quiz.get("questions"), list) else []
     duration_days = _safe_int(programme.get("duration_days"))
+    lesson_transcript = _normalize_context_text(content.get("script") or content.get("body") or "")
+    lesson_transcript_excerpt = _trim_context_text(lesson_transcript, max_chars=2400)
     return {
         "available": True,
         "programme_name": str(programme.get("name") or "").strip() or None,
@@ -370,6 +426,9 @@ def _education_programme_context(user_id: int, tracker_context: dict) -> dict | 
         "lesson_title": str(lesson.get("title") or "").strip() or None,
         "lesson_summary": str(lesson.get("summary") or "").strip() or None,
         "lesson_goal": str(lesson.get("goal") or "").strip() or None,
+        "lesson_variant_id": _safe_int(content.get("lesson_variant_id") or lesson.get("lesson_variant_id")),
+        "lesson_transcript": lesson_transcript or None,
+        "lesson_transcript_excerpt": lesson_transcript_excerpt,
         "action_prompt": str(lesson.get("action_prompt") or content.get("action_prompt") or "").strip() or None,
         "has_video": bool(
             str(avatar.get("url") or "").strip()
@@ -409,6 +468,7 @@ def _append_education_programme_lines(lines: list[str], tracker_context: dict) -
     lesson_title = str(education.get("lesson_title") or "").strip()
     lesson_summary = str(education.get("lesson_summary") or "").strip()
     lesson_goal = str(education.get("lesson_goal") or "").strip()
+    transcript_excerpt = str(education.get("lesson_transcript_excerpt") or "").strip()
     action_prompt = str(education.get("action_prompt") or "").strip()
     if lesson_title:
         lines.append(f"- lesson: {lesson_title}")
@@ -416,6 +476,8 @@ def _append_education_programme_lines(lines: list[str], tracker_context: dict) -
         lines.append(f"- lesson summary: {lesson_summary}")
     if lesson_goal:
         lines.append(f"- lesson goal: {lesson_goal}")
+    if transcript_excerpt:
+        lines.append(f"- lesson transcript excerpt: {transcript_excerpt}")
     if action_prompt:
         lines.append(f"- education action: {action_prompt}")
     lines.append(

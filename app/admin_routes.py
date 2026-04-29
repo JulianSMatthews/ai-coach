@@ -4,6 +4,7 @@ from __future__ import annotations
 import html
 import hashlib
 import os
+import ast
 
 import json
 import time
@@ -949,10 +950,43 @@ def _quiz_answer_token(value: object) -> str:
         return str(value).strip()
 
 
+def _normalise_generated_quiz_value(value: object) -> object:
+    if isinstance(value, list):
+        return [_normalise_generated_quiz_value(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            str(key): _normalise_generated_quiz_value(val)
+            for key, val in value.items()
+        }
+    if isinstance(value, str):
+        token = value.strip()
+        if not token:
+            return ""
+        if len(token) >= 2 and token[0] == token[-1] and token[0] in {"'", '"'}:
+            inner = token[1:-1].strip()
+            return _normalise_generated_quiz_value(inner) if inner else ""
+    if len(token) >= 2 and (
+        (token[0] == "[" and token[-1] == "]")
+        or (token[0] == "{" and token[-1] == "}")
+        or (token[0] == '"' and token[-1] == '"')
+    ):
+        try:
+            decoded = json.loads(token)
+        except Exception:
+            try:
+                decoded = ast.literal_eval(token)
+            except Exception:
+                return token
+        return _normalise_generated_quiz_value(decoded)
+    return token
+    return value
+
+
 def _clean_generated_question_options(answer_type: str, options_val: object) -> list[object]:
     cleaned: list[object] = []
     if isinstance(options_val, list):
         for item in options_val:
+            item = _normalise_generated_quiz_value(item)
             if isinstance(item, str):
                 token = item.strip()
                 if token:
@@ -1037,8 +1071,7 @@ def _normalise_generated_question(raw_question: object, order: int) -> dict[str,
         "correct_answer_json",
         raw_question.get("correct_answer", raw_question.get("answer")),
     )
-    if isinstance(correct_val, str):
-        correct_val = correct_val.strip()
+    correct_val = _normalise_generated_quiz_value(correct_val)
     explanation = str(raw_question.get("explanation") or "").strip()
     options_val = _stable_generated_question_options(
         answer_type=answer_type,

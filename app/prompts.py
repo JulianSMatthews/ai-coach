@@ -71,7 +71,8 @@ APP_TRACKER_SUMMARY_TASK_BLOCK = (
     "Do not describe supplement adherence records, including creatine, as training sessions. Do not describe heat or cold exposure records "
     "as the member's recovery state or as a recovery session; they are optional exposure records only.\n\n"
     "Identify the clearest overall pattern, explain what level of exercise makes sense today based on recovery and nutrition, "
-    "mention the Today's focus lesson once when it is available, include the supplied education action, and close with the single "
+    "when a Today's focus transcript is supplied, review it and reinforce the education by summarising the main idea plus two or three key concepts in plain language, "
+    "then connect that learning to the member's day. Mention the Today's focus lesson once when it is available, include the supplied education action, and close with the single "
     "main priority to carry into the plan the member has already seen. Treat every configured tracker concept equally; choose what "
     "to mention from the daily record signals, not from whether the concept is optional or standard.\n\n"
     "Keep it to 2-3 short paragraphs. Use plain British English. Avoid OKR/KR jargon and system terms like pillar, drill, or resilience work. "
@@ -124,7 +125,7 @@ BUILTIN_PROMPT_TEMPLATE_DEFAULTS: Dict[str, Dict[str, Any]] = {
         "note": "Runtime builtin template for coach-home daily plan generated from tracker context.",
     },
     "app_tracker_summary": {
-        "version": 3,
+        "version": 4,
         "touchpoint": "app_tracker_summary",
         "okr_scope": "none",
         "programme_scope": "none",
@@ -713,16 +714,26 @@ def _coach_home_history_lines(
             lesson_title = str(education.get("lesson_title") or "").strip()
             lesson_summary = str(education.get("lesson_summary") or "").strip()
             lesson_goal = str(education.get("lesson_goal") or "").strip()
+            lesson_transcript_excerpt = str(
+                education.get("lesson_transcript_excerpt")
+                or education.get("lesson_transcript")
+                or ""
+            ).strip()
             action_prompt = str(education.get("action_prompt") or "").strip()
             completion = str(education.get("completion_status") or "pending").strip()
+            takeaway = str(education.get("takeaway") or "").strip()
             if lesson_title:
                 lines.append(f"- lesson: {lesson_title}")
             if lesson_summary:
                 lines.append(f"- lesson summary: {lesson_summary}")
             if lesson_goal:
                 lines.append(f"- lesson goal: {lesson_goal}")
+            if lesson_transcript_excerpt:
+                lines.append(f"- today's focus transcript excerpt: {lesson_transcript_excerpt}")
             if action_prompt:
                 lines.append(f"- education action: {action_prompt}")
+            if takeaway:
+                lines.append(f"- lesson takeaway: {takeaway}")
             lines.append(
                 "- lesson assets: "
                 + "; ".join(
@@ -1862,7 +1873,7 @@ def build_prompt(
                     (
                         "Write a concise one-way daily briefing for the member that brings together their daily tracking from today and yesterday, biometric/readiness signals, the existing Today's plan, and the current Today's focus lesson. "
                         "Do not create a new plan for the day. Identify the clearest overall pattern, compare training readiness with activity status when both are available, explain what level of exercise makes sense today based on recovery and nutrition, "
-                        "connect the education lesson to the member's day, and close with the single main priority to carry into the plan they have already seen."
+                        "when a Today's focus transcript is supplied, review it and reinforce the education by summarising the main idea plus two or three key concepts in plain language, connect that learning to the member's day, and close with the single main priority to carry into the plan they have already seen."
                         if tracker_summary_mode
                         else "Reply with a brief coaching message grounded in the latest daily tracker results. "
                         "Reference the most relevant tracker pattern for today or yesterday, give one practical next step tied to that result, "
@@ -1875,7 +1886,7 @@ def build_prompt(
                             "Choose concept mentions from the tracker signals; do not favour fasting, alcohol, heat exposure, cold exposure, or any optional item just because it is configured. "
                             "Do not describe supplement adherence records, including creatine, as training sessions. Do not describe heat or cold exposure records as the member's recovery state or as recovery sessions. "
                             "Use plain language, avoid OKR/KR jargon, and avoid system terms like pillar, drill, or resilience work. "
-                            "When an education programme lesson is available, mention its concept or lesson title once and include the supplied education action without replacing the lesson content. "
+                            "When an education programme lesson is available, use the supplied transcript excerpt as the primary education source when it exists, briefly reinforce two or three key ideas from it, mention the concept or lesson title once, and include the supplied education action without replacing the lesson content. "
                             "Use the key moments from the day plan only as context; do not rewrite them as a schedule, do not use a morning/midday/evening list, and do not add new habits, times, or tasks beyond the supplied education action. "
                             "Respect the plan timing when it is supplied: do not recommend actions for parts of today that have already passed. "
                             "If a fasting plan is enabled, respect it: do not recommend breakfast or early eating, and refer to the eating window or first planned meal instead. "

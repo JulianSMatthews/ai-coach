@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import ast
 import json
 import os
 import re
@@ -1586,19 +1587,48 @@ def _quiz_question_payload(
     row: EducationQuizQuestion,
     answer: UserEducationQuizAnswer | None = None,
 ) -> dict[str, Any]:
+    raw_correct_answer = getattr(row, "correct_answer_json", None)
     payload = {
         "id": int(getattr(row, "id", 0) or 0),
         "order": int(getattr(row, "question_order", 0) or 0),
         "question_text": str(getattr(row, "question_text", "") or "").strip(),
         "answer_type": str(getattr(row, "answer_type", "") or "").strip(),
-        "options": list(getattr(row, "options_json", None) or []),
+        "options": [_normalize_answer_payload(item) for item in list(getattr(row, "options_json", None) or [])],
         "explanation": str(getattr(row, "explanation", "") or "").strip() or None,
     }
     if answer is not None:
-        payload["submitted_answer"] = getattr(answer, "answer_json", None)
-        payload["is_correct"] = getattr(answer, "is_correct", None)
-        payload["correct_answer"] = getattr(row, "correct_answer_json", None)
+        raw_submitted_answer = getattr(answer, "answer_json", None)
+        payload["submitted_answer"] = _normalize_answer_payload(raw_submitted_answer)
+        payload["correct_answer"] = _normalize_answer_payload(raw_correct_answer)
+        payload["is_correct"] = (
+            _answers_equal(raw_correct_answer, raw_submitted_answer)
+            if raw_correct_answer is not None and raw_submitted_answer is not None
+            else getattr(answer, "is_correct", None)
+        )
     return payload
+
+
+def _unwrap_serialized_answer_string(value: str) -> Any:
+    token = value.strip()
+    if not token:
+        return ""
+    if len(token) >= 2 and token[0] == token[-1] and token[0] in {"'", '"'}:
+        inner = token[1:-1].strip()
+        return _unwrap_serialized_answer_string(inner) if inner else ""
+    if len(token) >= 2 and (
+        (token[0] == "[" and token[-1] == "]")
+        or (token[0] == "{" and token[-1] == "}")
+        or (token[0] == '"' and token[-1] == '"')
+    ):
+        try:
+            decoded = json.loads(token)
+        except Exception:
+            try:
+                decoded = ast.literal_eval(token)
+            except Exception:
+                return token
+        return _normalize_answer_payload(decoded)
+    return token
 
 
 def _normalize_answer_payload(value: Any) -> Any:
@@ -1612,7 +1642,7 @@ def _normalize_answer_payload(value: Any) -> Any:
             for key, val in sorted(value.items(), key=lambda item: str(item[0]))
         }
     if isinstance(value, str):
-        return value.strip()
+        return _unwrap_serialized_answer_string(value)
     return value
 
 
@@ -2750,7 +2780,7 @@ def submit_education_quiz(
             delete(UserEducationQuizAnswer).where(UserEducationQuizAnswer.user_day_progress_id == int(progress.id))
         )
         for question in question_rows:
-            submitted = answers_by_question.get(int(question.id))
+            submitted = _normalize_answer_payload(answers_by_question.get(int(question.id)))
             expected = getattr(question, "correct_answer_json", None)
             is_correct = _answers_equal(expected, submitted) if expected is not None else None
             if is_correct:

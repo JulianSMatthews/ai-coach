@@ -11,7 +11,7 @@ from .db import SessionLocal, init_db
 from .services import handle_inbound_sms, membersense_media_root, resume_pending_survey_avatar_jobs, update_message_status
 
 
-app = FastAPI(title=config.APP_NAME)
+app = FastAPI(title=config.GYM_NAME)
 app.mount("/membersense-media", StaticFiles(directory=str(membersense_media_root())), name="membersense-media")
 app.include_router(admin_router)
 

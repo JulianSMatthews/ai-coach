@@ -632,13 +632,39 @@ function firstNonEmptyString(...values: unknown[]): string {
   return "";
 }
 
-function educationQuizOptionLabel(option: unknown): string {
-  if (typeof option === "string" || typeof option === "number" || typeof option === "boolean") {
-    return String(option).trim();
+function normaliseSerializedEducationQuizValue(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const token = value.trim();
+  if (!token) return "";
+  if (token.length >= 2 && token[0] === token[token.length - 1] && (token[0] === "'" || token[0] === '"')) {
+    const inner = token.slice(1, -1).trim();
+    return inner ? normaliseSerializedEducationQuizValue(inner) : "";
   }
-  if (option && typeof option === "object") {
-    const row = option as Record<string, unknown>;
-    return String(row.label || row.text || row.value || "").trim();
+  if (
+    token.length >= 2 &&
+    (
+      (token.startsWith('"') && token.endsWith('"')) ||
+      (token.startsWith("[") && token.endsWith("]")) ||
+      (token.startsWith("{") && token.endsWith("}"))
+    )
+  ) {
+    try {
+      return normaliseSerializedEducationQuizValue(JSON.parse(token));
+    } catch {
+      return token;
+    }
+  }
+  return token;
+}
+
+function educationQuizOptionLabel(option: unknown): string {
+  const normalizedOption = normaliseSerializedEducationQuizValue(option);
+  if (typeof normalizedOption === "string" || typeof normalizedOption === "number" || typeof normalizedOption === "boolean") {
+    return String(normalizedOption).trim();
+  }
+  if (normalizedOption && typeof normalizedOption === "object") {
+    const row = normalizedOption as Record<string, unknown>;
+    return educationQuizOptionLabel(row.label || row.text || row.value || "");
   }
   return "";
 }
@@ -649,10 +675,11 @@ function educationQuizOptions(question: EducationQuizQuestion | null | undefined
 }
 
 function educationQuizAnswerLabel(answer: unknown): string {
-  if (Array.isArray(answer)) {
-    return answer.map(educationQuizOptionLabel).filter(Boolean).join(", ");
+  const normalizedAnswer = normaliseSerializedEducationQuizValue(answer);
+  if (Array.isArray(normalizedAnswer)) {
+    return normalizedAnswer.map(educationQuizOptionLabel).filter(Boolean).join(", ");
   }
-  return educationQuizOptionLabel(answer);
+  return educationQuizOptionLabel(normalizedAnswer);
 }
 
 function fallbackLocalIsoDate(): string {
@@ -2510,6 +2537,7 @@ export default function AssessmentChatBox({
                       {educationQuizQuestions.map((question, index) => {
                         const questionId = Number(question?.id || 0);
                         const selectedAnswer = educationQuizAnswers[String(questionId)] ?? question?.submitted_answer;
+                        const selectedAnswerLabel = educationQuizAnswerLabel(selectedAnswer);
                         const options = educationQuizOptions(question);
                         const answered = question?.submitted_answer !== undefined && question?.submitted_answer !== null;
                         const isCorrect = typeof question?.is_correct === "boolean" ? question.is_correct : null;
@@ -2529,7 +2557,7 @@ export default function AssessmentChatBox({
                             {options.length ? (
                               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                                 {options.map((option) => {
-                                  const active = selectedAnswer === option;
+                                  const active = selectedAnswerLabel === educationQuizOptionLabel(option);
                                   return (
                                     <button
                                       key={option}

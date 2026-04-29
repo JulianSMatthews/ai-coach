@@ -208,9 +208,11 @@ def _maintenance_category_key(value: object, *, allow_blank: bool = False) -> st
     return "maintenance" if not allow_blank else ""
 
 
-def _maintenance_priority_key(value: object) -> str:
+def _maintenance_priority_key(value: object, *, allow_blank: bool = False) -> str:
     token = str(value or "").strip().lower()
     allowed = {key for key, _label in MAINTENANCE_PRIORITY_OPTIONS}
+    if allow_blank and not token:
+        return ""
     return token if token in allowed else "medium"
 
 
@@ -507,6 +509,7 @@ def _maintenance_redirect(
     *,
     item_type: object = "",
     category: object = "",
+    priority: object = "",
     stage: object = "",
     status: object = "",
     scope: object = "",
@@ -518,12 +521,15 @@ def _maintenance_redirect(
     params: dict[str, object] = {}
     item_type_key = _maintenance_item_type_key(item_type, allow_blank=True)
     category_key = _maintenance_category_key(category, allow_blank=True)
+    priority_key = _maintenance_priority_key(priority, allow_blank=True)
     stage_key = _maintenance_stage_key(stage or status, allow_blank=True)
     scope_key = "open" if str(scope or "").strip().lower() == "open" else ""
     if item_type_key:
         params["item_type"] = item_type_key
     if category_key:
         params["category"] = category_key
+    if priority_key:
+        params["priority"] = priority_key
     if stage_key and category_key != "purchase":
         params["stage"] = stage_key
     if scope_key:
@@ -590,7 +596,7 @@ def _layout(request: Request, title: str, body: str) -> HTMLResponse:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{_esc(title)} - {config.APP_NAME}</title>
+  <title>{_esc(title)} - {config.GYM_NAME}</title>
   <style>
     :root {{
       --ink: #171717;
@@ -762,7 +768,7 @@ def _layout(request: Request, title: str, body: str) -> HTMLResponse:
 </head>
 <body>
   <header>
-    <h1>{config.APP_NAME}</h1>
+    <h1>{config.GYM_NAME}</h1>
     <nav>{nav}</nav>
     {account_nav}
   </header>
@@ -1360,7 +1366,7 @@ def _public_survey_layout(title: str, body: str) -> HTMLResponse:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{_esc(title)} - {config.APP_NAME}</title>
+  <title>{_esc(title)} - {config.GYM_NAME}</title>
   <style>
     :root {{
       --background: #ffffff;
@@ -1587,7 +1593,7 @@ def _auth_layout(title: str, body: str) -> HTMLResponse:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{_esc(title)} - {config.APP_NAME}</title>
+  <title>{_esc(title)} - {config.GYM_NAME}</title>
   <style>
     :root {{
       --ink: #171717;
@@ -1654,7 +1660,7 @@ def _auth_layout(title: str, body: str) -> HTMLResponse:
 def _login_form(*, next_path: str = "/admin", error: str = "") -> HTMLResponse:
     error_html = f'<p class="error">{_esc(error)}</p>' if error else ""
     body = f"""
-<h1>{_esc(config.APP_NAME)} Login</h1>
+<h1>{_esc(config.GYM_NAME)} Login</h1>
 <p class="muted">Sign in with your staff account.</p>
 {error_html}
 <form method="post" action="/admin/login">
@@ -2082,6 +2088,7 @@ def maintenance_admin(
     deleted: int | None = None,
     error: str = "",
     category: str = "",
+    priority: str = "",
     stage: str = "",
     status: str = "",
     scope: str = "",
@@ -2089,6 +2096,7 @@ def maintenance_admin(
     _: None = Depends(require_admin),
 ):
     selected_category = _maintenance_category_key(category, allow_blank=True)
+    selected_priority = _maintenance_priority_key(priority, allow_blank=True)
     selected_stage = _maintenance_stage_key(stage or status, allow_blank=True)
     selected_scope = "open" if str(scope or "").strip().lower() == "open" else "all"
     if selected_category == "purchase":
@@ -2197,6 +2205,7 @@ def maintenance_admin(
         for item in all_items
         if (selected_scope != "open" or _maintenance_is_active(item))
         if (not selected_category or _maintenance_category_key(getattr(item, "category", "")) == selected_category)
+        if (not selected_priority or _maintenance_priority_key(getattr(item, "priority", "")) == selected_priority)
         and (
             not selected_stage
             or (
@@ -2223,6 +2232,9 @@ def maintenance_admin(
     )
     category_filter_html = _select_html(
         "category", MAINTENANCE_CATEGORY_OPTIONS, selected_category, blank_label="All categories"
+    )
+    priority_filter_html = _select_html(
+        "priority", MAINTENANCE_PRIORITY_OPTIONS, selected_priority, blank_label="All priorities"
     )
     stage_filter_html = _select_html("stage", MAINTENANCE_STAGE_OPTIONS, selected_stage, blank_label="All stages")
     scope_filter_html = _select_html(
@@ -2251,6 +2263,7 @@ def maintenance_admin(
   <summary class="button secondary">Amend</summary>
   <form method="post" action="{_post_action(request, f'/admin/maintenance/items/{int(item.id)}/update')}" class="stack maintenance-item-form" style="margin-top: 12px;" data-purchase-staff-id="{purchase_staff_id}">
     <input type="hidden" name="return_category" value="{_esc(selected_category)}">
+    <input type="hidden" name="return_priority" value="{_esc(selected_priority)}">
     <input type="hidden" name="return_stage" value="{_esc(selected_stage)}">
     <input type="hidden" name="return_scope" value="{_esc(selected_scope)}">
     <div class="grid">
@@ -2280,6 +2293,7 @@ def maintenance_admin(
   </form>
   <form method="post" action="{_post_action(request, f'/admin/maintenance/items/{int(item.id)}/delete')}" class="inline" style="margin-top: 10px;" onsubmit="return window.confirm('Delete this maintenance item?');">
     <input type="hidden" name="return_category" value="{_esc(selected_category)}">
+    <input type="hidden" name="return_priority" value="{_esc(selected_priority)}">
     <input type="hidden" name="return_stage" value="{_esc(selected_stage)}">
     <input type="hidden" name="return_scope" value="{_esc(selected_scope)}">
     <button type="submit" class="danger">Delete maintenance item</button>
@@ -2297,6 +2311,14 @@ def maintenance_admin(
             f"<td>{edit_form}</td>"
             "</tr>"
         )
+    open_review_params = {"scope": "open"}
+    if selected_category:
+        open_review_params["category"] = selected_category
+    if selected_priority:
+        open_review_params["priority"] = selected_priority
+    if selected_stage and selected_category != "purchase":
+        open_review_params["stage"] = selected_stage
+    open_review_href = _href(request, f"/admin/maintenance?{urlencode(open_review_params)}")
     def table_section(title: str, category_key: str) -> str:
         rows = filtered_groups.get(category_key) or []
         empty_by_category = {
@@ -2321,7 +2343,7 @@ def maintenance_admin(
       <p class="muted">Track purchase items by order date, and maintenance and repair items by stage, with recorded date, elapsed days, and allocation.</p>
     </div>
     <div class="inline">
-      <a class="button secondary" href="{_href(request, '/admin/maintenance?scope=open')}">Review open items</a>
+      <a class="button secondary" href="{open_review_href}">Review open items</a>
     </div>
   </div>
   {notice_html}
@@ -2340,6 +2362,7 @@ def maintenance_admin(
   <h2>Add Maintenance Item</h2>
   <form method="post" action="{_post_action(request, '/admin/maintenance/items')}" class="stack maintenance-item-form" data-purchase-staff-id="{purchase_staff_id}">
     <input type="hidden" name="return_category" value="{_esc(selected_category)}">
+    <input type="hidden" name="return_priority" value="{_esc(selected_priority)}">
     <input type="hidden" name="return_stage" value="{_esc(selected_stage)}">
     <input type="hidden" name="return_scope" value="{_esc(selected_scope)}">
     <div class="grid">
@@ -2375,6 +2398,7 @@ def maintenance_admin(
     <form method="get" action="{_href(request, '/admin/maintenance')}" class="inline">
       <label><span>View</span>{scope_filter_html}</label>
       <label><span>Category</span>{category_filter_html}</label>
+      <label><span>Priority</span>{priority_filter_html}</label>
       {'' if selected_category == 'purchase' else f'<label><span>Stage</span>{stage_filter_html}</label>'}
       <button type="submit">Filter</button>
     </form>
@@ -2453,6 +2477,7 @@ def maintenance_create_item(
     allocation_type: str = Form("maint_main"),
     assigned_staff_id: int = Form(0),
     return_category: str = Form(""),
+    return_priority: str = Form(""),
     return_stage: str = Form(""),
     return_scope: str = Form(""),
     return_status: str = Form(""),
@@ -2465,6 +2490,7 @@ def maintenance_create_item(
         return _maintenance_redirect(
             request,
             category=return_category,
+            priority=return_priority,
             stage=return_stage or return_status,
             scope=return_scope,
             error="Enter a maintenance item title.",
@@ -2479,6 +2505,7 @@ def maintenance_create_item(
         return _maintenance_redirect(
             request,
             category=return_category,
+            priority=return_priority,
             stage=return_stage or return_status,
             scope=return_scope,
             error="Choose a staff name when the item is assigned to a staff person.",
@@ -2507,6 +2534,7 @@ def maintenance_create_item(
             return _maintenance_redirect(
                 request,
                 category=return_category,
+                priority=return_priority,
                 stage=return_stage or return_status,
                 scope=return_scope,
                 error=str(exc),
@@ -2536,6 +2564,7 @@ def maintenance_create_item(
     return _maintenance_redirect(
         request,
         category=return_category or category_key,
+        priority=return_priority,
         stage=return_stage or return_status,
         scope=return_scope,
         created=1,
@@ -2559,6 +2588,7 @@ def maintenance_update_item(
     allocation_type: str = Form("maint_main"),
     assigned_staff_id: int = Form(0),
     return_category: str = Form(""),
+    return_priority: str = Form(""),
     return_stage: str = Form(""),
     return_scope: str = Form(""),
     return_status: str = Form(""),
@@ -2574,6 +2604,7 @@ def maintenance_update_item(
         return _maintenance_redirect(
             request,
             category=return_category,
+            priority=return_priority,
             stage=return_stage or return_status,
             scope=return_scope,
             error="Enter a maintenance item title.",
@@ -2588,6 +2619,7 @@ def maintenance_update_item(
         return _maintenance_redirect(
             request,
             category=return_category,
+            priority=return_priority,
             stage=return_stage or return_status,
             scope=return_scope,
             error="Choose a staff name when the item is assigned to a staff person.",
@@ -2616,6 +2648,7 @@ def maintenance_update_item(
             return _maintenance_redirect(
                 request,
                 category=return_category,
+                priority=return_priority,
                 stage=return_stage or return_status,
                 scope=return_scope,
                 error=str(exc),
@@ -2643,6 +2676,7 @@ def maintenance_update_item(
     return _maintenance_redirect(
         request,
         category=return_category or category_key,
+        priority=return_priority,
         stage=return_stage or return_status,
         scope=return_scope,
         updated=1,
@@ -2657,6 +2691,7 @@ def maintenance_update_item_status(
     status: str = Form(""),
     completed_on: str = Form(""),
     return_category: str = Form(""),
+    return_priority: str = Form(""),
     return_stage: str = Form(""),
     return_scope: str = Form(""),
     return_status: str = Form(""),
@@ -2679,6 +2714,7 @@ def maintenance_update_item_status(
         return _maintenance_redirect(
             request,
             category=return_category or getattr(row, "category", ""),
+            priority=return_priority,
             stage="",
             scope=return_scope,
             updated=1,
@@ -2696,6 +2732,7 @@ def maintenance_update_item_status(
     return _maintenance_redirect(
         request,
         category=return_category,
+        priority=return_priority,
         stage=return_stage or return_status,
         scope=return_scope,
         updated=1,
@@ -2707,6 +2744,7 @@ def maintenance_delete_item(
     request: Request,
     item_id: int,
     return_category: str = Form(""),
+    return_priority: str = Form(""),
     return_stage: str = Form(""),
     return_scope: str = Form(""),
     return_status: str = Form(""),
@@ -2721,6 +2759,7 @@ def maintenance_delete_item(
     return _maintenance_redirect(
         request,
         category=return_category,
+        priority=return_priority,
         stage=return_stage or return_status,
         scope=return_scope,
         deleted=1,
