@@ -2135,13 +2135,24 @@ def dashboard(
 
     body = f"""
 <section>
-  <h2>Member Dashboard</h2>
-  <div class="grid">
-    <div class="metric"><strong>{current_count}</strong><span>Current members</span></div>
-    <div class="metric"><strong>{active_21_count}</strong><span>Active members, visited in last 21 days</span></div>
-    <div class="metric"><strong>{inactive_21_count}</strong><span>Inactive over 21 days</span></div>
-    <div class="metric"><strong>{expired_30_count}</strong><span>Expired members in last 30 days</span></div>
-    <div class="metric"><strong>{open_tasks}</strong><span>Open staff tasks</span></div>
+  <div class="inline" style="justify-content: space-between;">
+    <div>
+      <h2>Member Dashboard</h2>
+      <p class="muted">Current member status, activity, expiry, and open staff workload.</p>
+    </div>
+    <div class="inline">
+      <a class="button secondary" href="{_href(request, '/admin/members')}">View members</a>
+      <a class="button secondary" href="{_href(request, '/admin/inactive')}">Member lists</a>
+      <a class="button secondary" href="{_href(request, '/admin/reports/visits')}">Visit report</a>
+      <a class="button secondary" href="{_href(request, '/admin/tasks')}">Staff tasks</a>
+    </div>
+  </div>
+  <div class="maintenance-summary">
+    <div class="summary-chip rag-grey"><strong>{current_count}</strong><span>Current members</span></div>
+    <div class="summary-chip rag-green"><strong>{active_21_count}</strong><span>Active 21 days</span></div>
+    <div class="summary-chip rag-amber"><strong>{inactive_21_count}</strong><span>Inactive over 21 days</span></div>
+    <div class="summary-chip rag-red"><strong>{expired_30_count}</strong><span>Expired 30 days</span></div>
+    <div class="summary-chip rag-amber"><strong>{open_tasks}</strong><span>Open staff tasks</span></div>
   </div>
 </section>
 <section>
