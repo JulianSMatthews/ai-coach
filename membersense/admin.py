@@ -404,7 +404,7 @@ def _maintenance_stage_html(stage: object) -> str:
         return '<span class="rag rag-green">Completed</span>'
     if key == "scheduled":
         return '<span class="rag rag-amber">Scheduled</span>'
-    return '<span class="pill">Logged</span>'
+    return '<span class="rag rag-red">Logged</span>'
 
 
 def _maintenance_status_html(item: MaintenanceItem) -> str:
@@ -413,7 +413,7 @@ def _maintenance_status_html(item: MaintenanceItem) -> str:
             return '<span class="rag rag-green">Completed</span>'
         if _maintenance_purchase_status_key(item) == "ordered":
             return '<span class="rag rag-amber">Ordered</span>'
-        return '<span class="pill">Logged</span>'
+        return '<span class="rag rag-red">Logged</span>'
     return _maintenance_stage_html(getattr(item, "stage", getattr(item, "status", "")))
 
 
@@ -421,9 +421,11 @@ def _maintenance_priority_html(priority: object) -> str:
     key = _maintenance_priority_key(priority)
     if key == "high":
         return '<span class="rag rag-red">High</span>'
+    if key == "medium":
+        return '<span class="rag rag-amber">Medium</span>'
     if key == "low":
-        return '<span class="pill">Low</span>'
-    return '<span class="pill">Medium</span>'
+        return '<span class="rag rag-green">Low</span>'
+    return '<span class="rag rag-amber">Medium</span>'
 
 
 def _date_input_value(value: object) -> str:
@@ -2088,7 +2090,7 @@ def maintenance_admin(
     selected_category = _maintenance_category_key(category, allow_blank=True)
     selected_priority = _maintenance_priority_key(priority, allow_blank=True)
     selected_stage = _maintenance_stage_key(stage or status, allow_blank=True)
-    selected_scope = "open" if str(scope or "").strip().lower() == "open" else "all"
+    selected_scope = "all" if str(scope or "").strip().lower() == "all" else "open"
     if selected_category == "purchase":
         selected_stage = ""
     staff_rows = (
@@ -2119,13 +2121,15 @@ def maintenance_admin(
         category_key = _maintenance_category_key(selected_category_value)
         purchase_style = "display: block;" if category_key == "purchase" else "display: none;"
         work_style = "display: block;" if category_key != "purchase" else "display: none;"
+        purchase_disabled = "" if category_key == "purchase" else " disabled"
+        work_disabled = "" if category_key != "purchase" else " disabled"
         purchase_status = _purchase_status_key(selected_stage_value)
         return f"""
       <div data-maintenance-field-group="purchase" data-display-style="block" style="{purchase_style}">
-        <label><span>Status</span>{_select_html("stage", PURCHASE_STATUS_OPTIONS, purchase_status)}</label>
+        <label><span>Status</span>{_select_html("stage", PURCHASE_STATUS_OPTIONS, purchase_status).replace("<select ", f"<select{purchase_disabled} ", 1)}</label>
       </div>
       <div data-maintenance-field-group="work" data-display-style="block" style="{work_style}">
-        <label><span>Status</span>{_select_html("stage", MAINTENANCE_STAGE_OPTIONS, selected_stage_value)}</label>
+        <label><span>Status</span>{_select_html("stage", MAINTENANCE_STAGE_OPTIONS, selected_stage_value).replace("<select ", f"<select{work_disabled} ", 1)}</label>
       </div>"""
 
     all_items = session.execute(select(MaintenanceItem)).scalars().all()
@@ -2221,9 +2225,7 @@ def maintenance_admin(
         days_label = str(_maintenance_days_transpired(item))
         assignee_label = _maintenance_assignee_label(item, session)
         detail_text = str(getattr(item, "detail", "") or "").strip()
-        stage_detail = _maintenance_stage_date_detail(item)
         detail_html = f'<br><span class="muted">{_esc(detail_text)}</span>' if detail_text else ""
-        item_meta_html = f'<div class="muted" style="margin-top: 4px;">{stage_detail}</div>'
         item_stage = (
             _maintenance_purchase_status_key(item)
             if _maintenance_is_purchase_item(item)
@@ -2275,7 +2277,7 @@ def maintenance_admin(
             f"<td>{_esc(recorded_label)}</td>"
             f"<td>{_esc(days_label)}</td>"
             f"<td><span class=\"pill\">{_esc(category_label)}</span></td>"
-            f"<td><strong>{_esc(item.title)}</strong>{detail_html}{item_meta_html}</td>"
+            f"<td><strong>{_esc(item.title)}</strong>{detail_html}</td>"
             f"<td>{_esc(assignee_label)}</td>"
             f"<td>{_maintenance_priority_html(getattr(item, 'priority', 'medium'))}</td>"
             f"<td>{_maintenance_status_html(item)}</td>"
@@ -2393,6 +2395,9 @@ def maintenance_admin(
         const displayStyle = field.getAttribute('data-display-style') || 'block';
         const visible = categoryValue === 'purchase' ? group === 'purchase' : group === 'work';
         field.style.display = visible ? displayStyle : 'none';
+        field.querySelectorAll('input, select, textarea').forEach((control) => {{
+          control.disabled = !visible;
+        }});
       }});
     }};
     const applyCategoryDefaults = (forceDefaults) => {{
