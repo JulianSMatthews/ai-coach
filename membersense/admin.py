@@ -657,6 +657,21 @@ def _layout(request: Request, title: str, body: str) -> HTMLResponse:
     .grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }}
     .metric {{ border-left: 4px solid var(--accent); padding: 10px 12px; background: #f9fbfa; }}
     .metric strong {{ display: block; font-size: 24px; }}
+    .maintenance-summary {{
+      display: flex;
+      flex-wrap: nowrap;
+      gap: 10px;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }}
+    .summary-chip {{
+      flex: 1 0 132px;
+      border-radius: 8px;
+      padding: 10px 12px;
+      min-width: 0;
+    }}
+    .summary-chip strong {{ display: block; font-size: 24px; line-height: 1; margin-bottom: 7px; }}
+    .summary-chip span {{ font-size: 11px; font-weight: 900; text-transform: uppercase; }}
     .muted {{ color: var(--muted); }}
     table {{ border-collapse: collapse; width: 100%; background: var(--surface); }}
     th, td {{ border-bottom: 1px solid var(--line); padding: 10px 8px; text-align: left; vertical-align: top; }}
@@ -2344,28 +2359,7 @@ def maintenance_admin(
     <tbody>{''.join(table_rows) or '<tr><td colspan="8">No items match the current filters.</td></tr>'}</tbody>
   </table>
 </section>"""
-    body = f"""
-<section>
-  <div class="inline" style="justify-content: space-between;">
-    <div>
-      <h2>Maintenance</h2>
-      <p class="muted">Track purchases and maintenance by simple status, with recorded date, elapsed days, and allocation.</p>
-    </div>
-    <div class="inline">
-      <a class="button secondary" href="{open_review_href}">Review open items</a>
-    </div>
-  </div>
-  {notice_html}
-  <div class="grid">
-    <div class="metric"><strong>{purchase_active_count}</strong><span>Active purchase items</span></div>
-    <div class="metric"><strong>{purchase_completed_count}</strong><span>Completed purchase items</span></div>
-    <div class="metric"><strong>{maintenance_active_count}</strong><span>Active maintenance items</span></div>
-    <div class="metric"><strong>{logged_count}</strong><span>Logged</span></div>
-    <div class="metric"><strong>{scheduled_count}</strong><span>Scheduled</span></div>
-    <div class="metric"><strong>{complete_count}</strong><span>Completed</span></div>
-    <div class="metric"><strong>{high_priority_active_count}</strong><span>High priority active</span></div>
-  </div>
-</section>
+    add_form_html = f"""
 <section>
   <h2>Add Maintenance Item</h2>
   <form method="post" action="{_post_action(request, '/admin/maintenance/items')}" class="stack maintenance-item-form" data-purchase-staff-id="{purchase_staff_id}">
@@ -2396,6 +2390,28 @@ def maintenance_admin(
     <label><span>Notes</span><textarea name="detail" placeholder="Optional location or follow-up notes"></textarea></label>
     <button type="submit">Add maintenance item</button>
   </form>
+</section>"""
+    body = f"""
+<section>
+  <div class="inline" style="justify-content: space-between;">
+    <div>
+      <h2>Maintenance</h2>
+      <p class="muted">Track purchases and maintenance by simple status, with recorded date, elapsed days, and allocation.</p>
+    </div>
+    <div class="inline">
+      <a class="button secondary" href="{open_review_href}">Review open items</a>
+    </div>
+  </div>
+  {notice_html}
+  <div class="maintenance-summary">
+    <div class="summary-chip category-purchase"><strong>{purchase_active_count}</strong><span>Active purchases</span></div>
+    <div class="summary-chip rag-green"><strong>{purchase_completed_count}</strong><span>Completed purchases</span></div>
+    <div class="summary-chip category-maintenance"><strong>{maintenance_active_count}</strong><span>Active maintenance</span></div>
+    <div class="summary-chip rag-red"><strong>{logged_count}</strong><span>Logged</span></div>
+    <div class="summary-chip rag-amber"><strong>{scheduled_count}</strong><span>Scheduled</span></div>
+    <div class="summary-chip rag-green"><strong>{complete_count}</strong><span>Completed</span></div>
+    <div class="summary-chip rag-red"><strong>{high_priority_active_count}</strong><span>High priority</span></div>
+  </div>
 </section>
 <section>
   <div class="inline" style="justify-content: space-between;">
@@ -2412,6 +2428,8 @@ def maintenance_admin(
     </form>
   </div>
 </section>
+{table_html}
+{add_form_html}
 <script>
 (function () {{
   const forms = document.querySelectorAll('.maintenance-item-form');
@@ -2456,7 +2474,6 @@ def maintenance_admin(
   }});
 }})();
 </script>"""
-    body += table_html
     return _layout(request, "Maintenance", body)
 
 
