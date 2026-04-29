@@ -36,6 +36,7 @@ def _env(name: str, default: str = "") -> str:
 
 APP_NAME = "ClubSense"
 GYM_NAME = _env("MEMBERSENSE_GYM_NAME", "Anytime Fitness High Wycombe")
+APP_TITLE = f"{APP_NAME} - {GYM_NAME}"
 DATABASE_URL = _env("MEMBERSENSE_DATABASE_URL", "sqlite:///./membersense.db")
 
 ADMIN_TOKEN = _env("MEMBERSENSE_ADMIN_TOKEN")

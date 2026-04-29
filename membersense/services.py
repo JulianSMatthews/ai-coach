@@ -1066,9 +1066,15 @@ def survey_link_invite_text(member: Member | None, flow_key: str, survey_url: st
     flow = flow_for_key(flow_key)
     first_name = member_first_name(member)
     greeting = f"Hi {first_name}," if first_name else "Hi,"
+    link = str(survey_url or "").strip()
+    if flow.key == "new_member":
+        return (
+            f"{greeting} Welcome to {config.GYM_NAME}, please click on the link below to complete a quick survey, "
+            f"so that we can make sure we tailor our support for you. {link}"
+        )
     return (
         f"{greeting} please complete this quick {flow.label.lower()} for {config.GYM_NAME}: "
-        f"{str(survey_url or '').strip()}"
+        f"{link}"
     )
 
 
@@ -1082,10 +1088,7 @@ def send_survey_link_to_member(
     if not link:
         raise ValueError("Survey link is missing")
     ensure_app_link_token(session, conversation, commit=False)
-    flow = effective_survey_flow(session, conversation.flow_key)
-    first_name = member_first_name(member)
-    greeting = f"Hi {first_name}," if first_name else "Hi,"
-    text = f"{greeting} please complete this quick {flow.label.lower()} for {config.GYM_NAME}: {link}"
+    text = survey_link_invite_text(member, conversation.flow_key, link)
     return send_to_member(session, member, text, conversation)
 
 

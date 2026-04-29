@@ -596,7 +596,7 @@ def _layout(request: Request, title: str, body: str) -> HTMLResponse:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{_esc(title)} - {config.GYM_NAME}</title>
+  <title>{_esc(title)} - {config.APP_TITLE}</title>
   <style>
     :root {{
       --ink: #171717;
@@ -1366,7 +1366,7 @@ def _public_survey_layout(title: str, body: str) -> HTMLResponse:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{_esc(title)} - {config.GYM_NAME}</title>
+  <title>{_esc(title)} - {config.APP_TITLE}</title>
   <style>
     :root {{
       --background: #ffffff;
@@ -1472,6 +1472,13 @@ def _public_survey_layout(title: str, body: str) -> HTMLResponse:
       padding: 12px;
       font-weight: 800;
     }}
+    .submitting {{
+      display: none;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }}
+    .submitting.is-visible {{ display: block; }}
     @media (max-width: 640px) {{
       main {{ align-items: flex-start; padding: 14px; }}
       .shell {{ padding: 20px; }}
@@ -1480,6 +1487,37 @@ def _public_survey_layout(title: str, body: str) -> HTMLResponse:
 </head>
 <body>
   <main><section class="shell">{body}</section></main>
+  <script>
+    (() => {{
+      const form = document.querySelector('form[data-auto-advance="1"]');
+      if (!form) return;
+      const radioInputs = Array.from(form.querySelectorAll('input[type="radio"][name="answer"]'));
+      if (!radioInputs.length) return;
+      const submitButton = form.querySelector('button[type="submit"]');
+      const status = form.querySelector('[data-submit-status]');
+      let submitting = false;
+      const markSubmitting = () => {{
+        if (status) status.classList.add('is-visible');
+        if (submitButton) submitButton.setAttribute('disabled', 'disabled');
+      }};
+      const submitForm = () => {{
+        if (submitting) return;
+        submitting = true;
+        markSubmitting();
+        form.requestSubmit();
+      }};
+      radioInputs.forEach((input) => {{
+        input.addEventListener('change', () => {{
+          window.setTimeout(submitForm, 120);
+        }});
+      }});
+      form.addEventListener('submit', () => {{
+        if (submitting) return;
+        submitting = true;
+        markSubmitting();
+      }});
+    }})();
+  </script>
 </body>
 </html>"""
     return HTMLResponse(html)
@@ -1551,9 +1589,10 @@ def _public_survey_response(
 <h1>{_esc(question.text)}</h1>
 <div class="progress"><span style="width: {pct}%"></span></div>
 {error_html}
-<form method="post">
+<form method="post" data-auto-advance="1">
   {''.join(option_inputs)}
   <button type="submit">Continue</button>
+  <p class="submitting" data-submit-status>Saving your answer and moving to the next question…</p>
 </form>"""
     return _public_survey_layout(flow.label, body)
 
@@ -1593,7 +1632,7 @@ def _auth_layout(title: str, body: str) -> HTMLResponse:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{_esc(title)} - {config.GYM_NAME}</title>
+  <title>{_esc(title)} - {config.APP_TITLE}</title>
   <style>
     :root {{
       --ink: #171717;
