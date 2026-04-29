@@ -84,6 +84,12 @@ PURCHASE_STATUS_OPTIONS: tuple[tuple[str, str], ...] = (
     ("ordered", "Ordered"),
     ("completed", "Completed"),
 )
+MAINTENANCE_STATUS_FILTER_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("logged", "Logged"),
+    ("scheduled", "Scheduled"),
+    ("ordered", "Ordered"),
+    ("completed", "Completed"),
+)
 MAINTENANCE_ALLOCATION_OPTIONS: tuple[tuple[str, str], ...] = (
     ("staff_person", "Staff person"),
     ("cleaners", "Cleaners"),
@@ -282,6 +288,20 @@ def _purchase_status_key(value: object, *, allow_blank: bool = False) -> str:
     return token if token in allowed else ("logged" if not allow_blank else "")
 
 
+def _maintenance_status_filter_key(value: object, *, allow_blank: bool = False) -> str:
+    token = str(value or "").strip().lower()
+    allowed = {key for key, _label in MAINTENANCE_STATUS_FILTER_OPTIONS}
+    if allow_blank and not token:
+        return ""
+    if token in {"complete", "done"}:
+        return "completed"
+    if token in {"order_parts", "pending", "open"}:
+        return "logged"
+    if token in {"arrange_work", "scheduled_work", "in_progress"}:
+        return "scheduled"
+    return token if token in allowed else ("logged" if not allow_blank else "")
+
+
 def _maintenance_allocation_key(value: object) -> str:
     token = str(value or "").strip().lower()
     allowed = {key for key, _label in MAINTENANCE_ALLOCATION_OPTIONS}
@@ -431,6 +451,12 @@ def _maintenance_status_html(item: MaintenanceItem) -> str:
             return '<span class="rag rag-amber">Ordered</span>'
         return '<span class="rag rag-red">Logged</span>'
     return _maintenance_stage_html(getattr(item, "stage", getattr(item, "status", "")))
+
+
+def _maintenance_item_status_key(item: MaintenanceItem) -> str:
+    if _maintenance_is_purchase_item(item):
+        return _maintenance_purchase_status_key(item)
+    return _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", "")))
 
 
 def _maintenance_priority_html(priority: object) -> str:
@@ -762,6 +788,15 @@ def _layout(request: Request, title: str, body: str) -> HTMLResponse:
     .assignee-maintenance {{ background: #e0f2fe; color: #075985; border: 1px solid #bae6fd; }}
     .assignee-supplier {{ background: #f3e8ff; color: #6b21a8; border: 1px solid #e9d5ff; }}
     .assignee-unassigned {{ background: #f3f5f2; color: var(--muted); border: 1px solid var(--line); }}
+    .summary-chip.rag,
+    .summary-chip.category-purchase,
+    .summary-chip.category-maintenance {{
+      display: block;
+      flex: 1 0 132px;
+      border-radius: 8px;
+      padding: 10px 12px;
+      text-align: left;
+    }}
     .progress-mini {{
       min-width: 120px;
       height: 12px;
@@ -1871,12 +1906,17 @@ def dashboard(
     )
     open_tasks = session.scalar(select(func.count()).select_from(StaffTask).where(StaffTask.status == "open")) or 0
     all_maintenance_items = session.execute(select(MaintenanceItem)).scalars().all()
-    open_maintenance = sum(1 for item in all_maintenance_items if _maintenance_is_active(item))
     purchase_active_count = sum(
         1
         for item in all_maintenance_items
         if _maintenance_category_key(getattr(item, "category", "")) == "purchase"
         and _maintenance_is_active(item)
+    )
+    purchase_completed_count = sum(
+        1
+        for item in all_maintenance_items
+        if _maintenance_category_key(getattr(item, "category", "")) == "purchase"
+        and not _maintenance_is_active(item)
     )
     maintenance_active_count = sum(
         1
@@ -1895,6 +1935,12 @@ def dashboard(
         for item in all_maintenance_items
         if not _maintenance_is_purchase_item(item)
         and _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) == "scheduled"
+    )
+    complete_count = sum(
+        1
+        for item in all_maintenance_items
+        if not _maintenance_is_purchase_item(item)
+        and _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) == "completed"
     )
     high_priority_active_count = sum(
         1
@@ -1922,6 +1968,7 @@ def dashboard(
     ]
     overall_average_percent = (sum(overall_percents) / len(overall_percents)) if overall_percents else None
     overall_average_label = f"{overall_average_percent:.1f}%" if overall_average_percent is not None else "0%"
+    overall_average_rag = _okr_rag(overall_average_percent)
     overall_rag_counts = {"green": 0, "amber": 0, "red": 0, "grey": 0}
     for kr in all_krs:
         overall_rag_counts[
@@ -1953,6 +2000,7 @@ def dashboard(
         ]
         assigned_average_percent = (sum(assigned_percents) / len(assigned_percents)) if assigned_percents else None
         assigned_average_label = f"{assigned_average_percent:.1f}%" if assigned_average_percent is not None else "0%"
+        assigned_average_rag = _okr_rag(assigned_average_percent)
         assigned_rag_counts = {"green": 0, "amber": 0, "red": 0, "grey": 0}
         for kr in assigned_krs:
             assigned_rag_counts[
@@ -2029,7 +2077,7 @@ def dashboard(
                     + f'<input type="hidden" name="quarter" value="{_esc(selected_quarter)}">'
                     + '<input type="hidden" name="return_to" value="/admin">'
                     + f'<input type="number" step="0.01" min="0" name="actual_value" value="{_esc(_format_number(kr.actual_value))}" style="max-width: 110px;">'
-                    + "<button type=\"submit\">Update</button>"
+                    + "<button type=\"submit\">Update key result</button>"
                     + "</form>"
                 )
                 kr_rows.append(
@@ -2059,22 +2107,22 @@ def dashboard(
     </div>
   </div>
   <table>
-    <thead><tr><th>No.</th><th>Key result</th><th>Pace RAG</th><th>Update actual</th></tr></thead>
+    <thead><tr><th>No.</th><th>Key result</th><th>Pace RAG</th><th>Update</th></tr></thead>
     <tbody>{''.join(kr_rows)}</tbody>
   </table>
 </div>"""
             )
         assigned_section = f"""
 <details style="margin-top: 18px;"{' open' if updated is not None else ''}>
-  <summary style="cursor: pointer; font-weight: 800;">View and update your key results</summary>
+  <summary class="button secondary" style="cursor: pointer; width: fit-content;">Update your key results</summary>
   <div style="margin-top: 16px;">
     <p class="muted">Quarter: {_esc(selected_quarter)}. Showing only KRs assigned to you.</p>
-    <div class="grid">
-      <div class="metric"><strong>{len(assigned_krs)}</strong><span>Assigned key results</span></div>
-      <div class="metric"><strong>{assigned_average_label}</strong><span>Average achieved</span></div>
-      <div class="metric"><strong>{assigned_rag_counts['green']}</strong><span>Green KRs</span></div>
-      <div class="metric"><strong>{assigned_rag_counts['amber']}</strong><span>Amber KRs</span></div>
-      <div class="metric"><strong>{assigned_rag_counts['red']}</strong><span>Red KRs</span></div>
+    <div class="maintenance-summary">
+      <div class="summary-chip rag-grey"><strong>{len(assigned_krs)}</strong><span>Assigned KRs</span></div>
+      <div class="summary-chip rag-{assigned_average_rag}"><strong>{assigned_average_label}</strong><span>Average achieved</span></div>
+      <div class="summary-chip rag-green"><strong>{assigned_rag_counts['green']}</strong><span>Green KRs</span></div>
+      <div class="summary-chip rag-amber"><strong>{assigned_rag_counts['amber']}</strong><span>Amber KRs</span></div>
+      <div class="summary-chip rag-red"><strong>{assigned_rag_counts['red']}</strong><span>Red KRs</span></div>
     </div>
     {''.join(objective_sections) or f'<p class="muted">No key results are assigned to you for {_esc(selected_quarter)}.</p>'}
   </div>
@@ -2104,13 +2152,13 @@ def dashboard(
     </div>
   </div>
   {notice_html}
-  <div class="grid">
-    <div class="metric"><strong>{len(objectives)}</strong><span>Objectives</span></div>
-    <div class="metric"><strong>{len(all_krs)}</strong><span>Key results</span></div>
-    <div class="metric"><strong>{overall_average_label}</strong><span>Average achieved</span></div>
-    <div class="metric"><strong>{overall_rag_counts['green']}</strong><span>Green KRs</span></div>
-    <div class="metric"><strong>{overall_rag_counts['amber']}</strong><span>Amber KRs</span></div>
-    <div class="metric"><strong>{overall_rag_counts['red']}</strong><span>Red KRs</span></div>
+  <div class="maintenance-summary">
+    <div class="summary-chip rag-grey"><strong>{len(objectives)}</strong><span>Objectives</span></div>
+    <div class="summary-chip rag-grey"><strong>{len(all_krs)}</strong><span>Key results</span></div>
+    <div class="summary-chip rag-{overall_average_rag}"><strong>{overall_average_label}</strong><span>Average achieved</span></div>
+    <div class="summary-chip rag-green"><strong>{overall_rag_counts['green']}</strong><span>Green KRs</span></div>
+    <div class="summary-chip rag-amber"><strong>{overall_rag_counts['amber']}</strong><span>Amber KRs</span></div>
+    <div class="summary-chip rag-red"><strong>{overall_rag_counts['red']}</strong><span>Red KRs</span></div>
   </div>
   {assigned_section}
 </section>
@@ -2118,16 +2166,17 @@ def dashboard(
   <div class="inline" style="justify-content: space-between;">
     <div>
       <h2>Maintenance Dashboard</h2>
-      <p class="muted">Current open maintenance workload and stage position.</p>
+      <p class="muted">Current open maintenance workload and status position.</p>
     </div>
   </div>
-  <div class="grid">
-    <div class="metric"><strong>{open_maintenance}</strong><span>Active items</span></div>
-    <div class="metric"><strong>{purchase_active_count}</strong><span>Active purchases</span></div>
-    <div class="metric"><strong>{maintenance_active_count}</strong><span>Active maintenance</span></div>
-    <div class="metric"><strong>{order_parts_count}</strong><span>Logged</span></div>
-    <div class="metric"><strong>{arrange_work_count}</strong><span>Scheduled</span></div>
-    <div class="metric"><strong>{high_priority_active_count}</strong><span>High priority active</span></div>
+  <div class="maintenance-summary">
+    <div class="summary-chip category-purchase"><strong>{purchase_active_count}</strong><span>Active purchases</span></div>
+    <div class="summary-chip rag-green"><strong>{purchase_completed_count}</strong><span>Completed purchases</span></div>
+    <div class="summary-chip category-maintenance"><strong>{maintenance_active_count}</strong><span>Active maintenance</span></div>
+    <div class="summary-chip rag-red"><strong>{order_parts_count}</strong><span>Logged</span></div>
+    <div class="summary-chip rag-amber"><strong>{arrange_work_count}</strong><span>Scheduled</span></div>
+    <div class="summary-chip rag-green"><strong>{complete_count}</strong><span>Completed</span></div>
+    <div class="summary-chip rag-red"><strong>{high_priority_active_count}</strong><span>High priority</span></div>
   </div>
 </section>"""
     return _layout(request, "Member Dashboard", body)
@@ -2150,10 +2199,8 @@ def maintenance_admin(
 ):
     selected_category = _maintenance_category_key(category, allow_blank=True)
     selected_priority = _maintenance_priority_key(priority, allow_blank=True)
-    selected_stage = _maintenance_stage_key(stage or status, allow_blank=True)
+    selected_stage = _maintenance_status_filter_key(status or stage, allow_blank=True)
     selected_scope = "all" if str(scope or "").strip().lower() == "all" else "open"
-    if selected_category == "purchase":
-        selected_stage = ""
     staff_rows = (
         session.execute(select(StaffUser).where(StaffUser.is_active.is_(True)).order_by(StaffUser.name.asc()))
         .scalars()
@@ -2242,13 +2289,7 @@ def maintenance_admin(
         if (selected_scope != "open" or _maintenance_is_active(item))
         if (not selected_category or _maintenance_category_key(getattr(item, "category", "")) == selected_category)
         if (not selected_priority or _maintenance_priority_key(getattr(item, "priority", "")) == selected_priority)
-        and (
-            not selected_stage
-            or (
-                not _maintenance_is_purchase_item(item)
-                and _maintenance_stage_key(getattr(item, "stage", getattr(item, "status", ""))) == selected_stage
-            )
-        )
+        if (not selected_stage or _maintenance_item_status_key(item) == selected_stage)
     ]
     filtered_items = sorted(filtered_items, key=_maintenance_sort_key)
     notice_parts = []
@@ -2272,7 +2313,9 @@ def maintenance_admin(
     priority_filter_html = _select_html(
         "priority", MAINTENANCE_PRIORITY_OPTIONS, selected_priority, blank_label="All priorities"
     )
-    stage_filter_html = _select_html("stage", MAINTENANCE_STAGE_OPTIONS, selected_stage, blank_label="All stages")
+    status_filter_html = _select_html(
+        "status", MAINTENANCE_STATUS_FILTER_OPTIONS, selected_stage, blank_label="All statuses"
+    )
     scope_filter_html = _select_html(
         "scope",
         (("all", "All items"), ("open", "Open items only")),
@@ -2348,8 +2391,8 @@ def maintenance_admin(
         open_review_params["category"] = selected_category
     if selected_priority:
         open_review_params["priority"] = selected_priority
-    if selected_stage and selected_category != "purchase":
-        open_review_params["stage"] = selected_stage
+    if selected_stage:
+        open_review_params["status"] = selected_stage
     open_review_href = _href(request, f"/admin/maintenance?{urlencode(open_review_params)}")
     table_html = f"""
 <section>
@@ -2423,7 +2466,7 @@ def maintenance_admin(
       <label><span>View</span>{scope_filter_html}</label>
       <label><span>Category</span>{category_filter_html}</label>
       <label><span>Priority</span>{priority_filter_html}</label>
-      {'' if selected_category == 'purchase' else f'<label><span>Stage</span>{stage_filter_html}</label>'}
+      <label><span>Status</span>{status_filter_html}</label>
       <button type="submit">Filter</button>
     </form>
   </div>
@@ -2811,6 +2854,7 @@ def okrs(
     _: None = Depends(require_admin),
 ):
     selected_quarter = _normalize_quarter(quarter)
+    current_staff = staff_from_request(request, session)
     objectives = (
         session.execute(
             select(OkrObjective)
@@ -2850,6 +2894,49 @@ def okrs(
         notice_parts.append(str(error))
     notice_class = "error" if error else "pill"
     notice_html = f'<p><span class="{notice_class}">{_esc(" ".join(notice_parts))}</span></p>' if notice_parts else ""
+    assigned_update_section = ""
+    update_your_krs_button = ""
+    if current_staff is not None:
+        assigned_krs = [
+            kr
+            for kr in all_krs
+            if int(getattr(kr, "assigned_staff_id", 0) or 0) == int(getattr(current_staff, "id", 0) or 0)
+        ]
+        if assigned_krs:
+            update_your_krs_button = '<a class="button secondary" href="#your-key-results">Update your key results</a>'
+            assigned_rows = []
+            for kr in assigned_krs:
+                objective = getattr(kr, "objective", None)
+                objective_number = _parse_int(getattr(objective, "objective_number", None), 0)
+                key_result_number = _parse_int(getattr(kr, "key_result_number", None), 0)
+                kr_number = ".".join(str(part) for part in [objective_number, key_result_number] if part) or str(int(getattr(kr, "id", 0) or 0))
+                unit = str(kr.unit or "").strip()
+                target_label = f"{_format_number(kr.target_value)} {unit}".strip()
+                actual_label = f"{_format_number(kr.actual_value)} {unit}".strip()
+                pace_percent = _okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter)
+                assigned_rows.append(
+                    "<tr>"
+                    f"<td><strong>{_esc(kr_number)}</strong></td>"
+                    f"<td>{_esc(kr.title)}{_okr_actual_updated_html(getattr(kr, 'actual_updated_at', None))}<br><span class=\"muted\">Target: {_esc(target_label)} · Actual: {_esc(actual_label)}</span></td>"
+                    f"<td>{_okr_rag_html(pace_percent)}</td>"
+                    "<td>"
+                    f"<form method=\"post\" action=\"{_post_action(request, f'/admin/okrs/key-results/{int(kr.id)}/actual')}\" class=\"inline\">"
+                    f"<input type=\"hidden\" name=\"quarter\" value=\"{_esc(selected_quarter)}\">"
+                    f"<input type=\"number\" step=\"0.01\" min=\"0\" name=\"actual_value\" value=\"{_esc(_format_number(kr.actual_value))}\" style=\"max-width: 120px;\">"
+                    "<button type=\"submit\">Update key result</button>"
+                    "</form>"
+                    "</td>"
+                    "</tr>"
+                )
+            assigned_update_section = f"""
+<section id="your-key-results">
+  <h2>Your Key Results</h2>
+  <p class="muted">Update actual results for the key results assigned to you.</p>
+  <table>
+    <thead><tr><th>No.</th><th>Key result</th><th>Pace RAG</th><th>Update</th></tr></thead>
+    <tbody>{''.join(assigned_rows)}</tbody>
+  </table>
+</section>"""
 
     objective_sections = []
     for objective_index, objective in enumerate(objectives, start=1):
@@ -2906,7 +2993,7 @@ def okrs(
                 f"<form method=\"post\" action=\"{_post_action(request, f'/admin/okrs/key-results/{int(kr.id)}/actual')}\" class=\"inline\">"
                 f"<input type=\"hidden\" name=\"quarter\" value=\"{_esc(selected_quarter)}\">"
                 f"<input type=\"number\" step=\"0.01\" min=\"0\" name=\"actual_value\" value=\"{_esc(_format_number(kr.actual_value))}\" style=\"max-width: 120px;\">"
-                "<button type=\"submit\">Update actual</button>"
+                "<button type=\"submit\">Update key result</button>"
                 "</form>"
                 "</div>"
                 "</td>"
@@ -2944,6 +3031,7 @@ def okrs(
         <label><span>Quarter</span><input name="quarter" value="{_esc(selected_quarter)}" placeholder="2026-Q2"></label>
         <button type="submit">View</button>
       </form>
+      {update_your_krs_button}
       <a class="button secondary" href="{config_href}">Configure OKRs</a>
     </div>
   </div>
@@ -2957,6 +3045,7 @@ def okrs(
     <div class="metric"><strong>{rag_counts['red']}</strong><span>Red KRs</span></div>
   </div>
 </section>
+{assigned_update_section}
 {''.join(objective_sections) or f'<section><h2>No OKRs for this quarter yet.</h2><p class="muted">Create objectives and key results in <a href="{config_href}">OKR setup</a>.</p></section>'}"""
     return _layout(request, "OKRs", body)
 
