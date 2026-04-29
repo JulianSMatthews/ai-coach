@@ -122,8 +122,8 @@ DEFAULT_MAINTENANCE_ITEMS: tuple[dict[str, Any], ...] = (
     {"title": "Replace bathroom loo roll holders", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": False, "stage": "logged"},
     {"title": "Replace bathroom soap dispensers", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": False, "stage": "logged"},
     {"title": "Replace bathroom wooden benches", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": False, "stage": "logged"},
-    {"title": "Repair treadmill screen", "item_type": "maintenance_work", "category": "repair", "priority": "high", "allocation_type": "equipment_supplier", "needs_parts": False, "stage": "completed"},
-    {"title": "Repair treadmill foot", "item_type": "maintenance_work", "category": "repair", "priority": "high", "allocation_type": "equipment_supplier", "needs_parts": False, "stage": "completed"},
+    {"title": "Repair treadmill screen", "item_type": "maintenance_work", "category": "maintenance", "priority": "high", "allocation_type": "maint_main", "needs_parts": False, "stage": "completed"},
+    {"title": "Repair treadmill foot", "item_type": "maintenance_work", "category": "maintenance", "priority": "high", "allocation_type": "maint_main", "needs_parts": False, "stage": "completed"},
     {"title": "Replace bike strap", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": False, "stage": "logged"},
     {"title": "Clean glass on mezzanine", "item_type": "maintenance_work", "category": "maintenance", "priority": "medium", "allocation_type": "maint_main", "needs_parts": False, "stage": "completed"},
     {"title": "Replace boxing bag", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": False, "stage": "logged"},
@@ -135,7 +135,7 @@ DEFAULT_MAINTENANCE_ITEMS: tuple[dict[str, Any], ...] = (
     {"title": "Replace sandbags", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": False, "stage": "logged"},
     {"title": "Clean toilet lid and shower head", "item_type": "maintenance_work", "category": "maintenance", "priority": "medium", "allocation_type": "maint_main", "needs_parts": False, "stage": "scheduled"},
     {"title": "Remove mould from ceiling tiles", "item_type": "maintenance_work", "category": "maintenance", "priority": "high", "allocation_type": "maint_main", "needs_parts": False, "stage": "scheduled"},
-    {"title": "Tighten loose radiator in top bathroom", "item_type": "maintenance_work", "category": "repair", "priority": "high", "allocation_type": "equipment_supplier", "needs_parts": False, "stage": "scheduled"},
+    {"title": "Tighten loose radiator in top bathroom", "item_type": "maintenance_work", "category": "maintenance", "priority": "high", "allocation_type": "maint_main", "needs_parts": False, "stage": "scheduled"},
     {"title": "Order security wall backboards", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": False, "stage": "logged"},
     {"title": "Order new security wall lanyards", "item_type": "replacement_item", "category": "purchase", "priority": "medium", "allocation_type": "staff_person", "needs_parts": False, "stage": "logged"},
 )
@@ -143,12 +143,12 @@ DEFAULT_MAINTENANCE_ITEMS: tuple[dict[str, Any], ...] = (
 
 def _maintenance_category_key(value: object) -> str:
     token = str(value or "").strip().lower()
-    if token in {"purchase", "maintenance", "repair"}:
+    if token in {"purchase", "maintenance"}:
         return token
     if token in {"replacement_item"}:
         return "purchase"
-    if token in {"equipment"}:
-        return "repair"
+    if token in {"equipment", "repair"}:
+        return "maintenance"
     return "maintenance"
 
 
@@ -180,25 +180,20 @@ def _maintenance_default_allocation(category: object) -> str:
     category_key = _maintenance_category_key(category)
     if category_key == "purchase":
         return "staff_person"
-    if category_key == "repair":
-        return "equipment_supplier"
     return "maint_main"
 
 
 def _maintenance_category_from_row(title: object, item_type: object, category: object) -> str:
     category_key = _maintenance_category_key(category)
-    if category_key in {"purchase", "maintenance", "repair"} and str(category or "").strip().lower() in {
+    if category_key in {"purchase", "maintenance"} and str(category or "").strip().lower() in {
         "purchase",
         "maintenance",
-        "repair",
     }:
         return category_key
     item_type_key = str(item_type or "").strip().lower()
     title_key = " ".join(str(title or "").strip().lower().split())
     if item_type_key == "replacement_item" or title_key.startswith("replace ") or title_key.startswith("order "):
         return "purchase"
-    if title_key.startswith("repair ") or "tighten " in title_key or "fix " in title_key:
-        return "repair"
     return category_key
 
 
@@ -1609,7 +1604,7 @@ def sync_maintenance_items(session: Session) -> int:
         current_staff_id = int(getattr(row, "assigned_staff_id", 0) or 0)
         category_source = (
             current_category_raw
-            if current_category_raw in {"purchase", "maintenance", "repair"}
+            if current_category_raw in {"purchase", "maintenance"}
             else desired_meta.get("category") if desired_meta else current_category_raw
         )
         desired_category = _maintenance_category_from_row(

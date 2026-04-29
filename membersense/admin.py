@@ -64,7 +64,6 @@ router = APIRouter()
 MAINTENANCE_CATEGORY_OPTIONS: tuple[tuple[str, str], ...] = (
     ("purchase", "Purchase"),
     ("maintenance", "Maintenance"),
-    ("repair", "Repair"),
 )
 MAINTENANCE_PRIORITY_OPTIONS: tuple[tuple[str, str], ...] = (
     ("high", "High"),
@@ -207,7 +206,7 @@ def _maintenance_category_key(value: object, *, allow_blank: bool = False) -> st
     if token in {"replacement_item", "purchase"}:
         return "purchase"
     if token in {"equipment", "repair"}:
-        return "repair"
+        return "maintenance"
     if token in {"bathroom", "cleaning", "decor", "safety", "security", "facilities", "general"}:
         return "maintenance"
     return "maintenance" if not allow_blank else ""
@@ -238,7 +237,6 @@ def _maintenance_category_input_html(name: str, selected: object = "maintenance"
     descriptions = {
         "purchase": "Items to buy or replace. Defaults to Sophie.",
         "maintenance": "Routine upkeep, cleaning, or touch-up work. Defaults to Maint man.",
-        "repair": "Fixes or supplier-led repair work. Defaults to Equipment supplier.",
     }
     options = []
     for key, label in MAINTENANCE_CATEGORY_OPTIONS:
@@ -327,8 +325,6 @@ def _maintenance_default_assignment(category: object, *, purchase_staff_id: int 
     category_key = _maintenance_category_key(category)
     if category_key == "purchase":
         return "staff_person", int(purchase_staff_id or 0)
-    if category_key == "repair":
-        return "equipment_supplier", 0
     return "maint_main", 0
 
 
@@ -477,7 +473,7 @@ def _maintenance_stage_date_detail(item: MaintenanceItem) -> str:
 
 
 def _maintenance_sort_key(item: MaintenanceItem) -> tuple[int, int, int, str, int]:
-    category_order = {"purchase": 0, "maintenance": 1, "repair": 2}
+    category_order = {"purchase": 0, "maintenance": 1}
     stage_order = {"logged": 0, "scheduled": 1, "completed": 2}
     purchase_status_order = {"logged": 0, "ordered": 1, "completed": 2}
     priority_order = {"high": 0, "medium": 1, "low": 2}
@@ -1825,12 +1821,6 @@ def dashboard(
         if _maintenance_category_key(getattr(item, "category", "")) == "maintenance"
         and _maintenance_is_active(item)
     )
-    repair_active_count = sum(
-        1
-        for item in all_maintenance_items
-        if _maintenance_category_key(getattr(item, "category", "")) == "repair"
-        and _maintenance_is_active(item)
-    )
     order_parts_count = sum(
         1
         for item in all_maintenance_items
@@ -2072,7 +2062,6 @@ def dashboard(
     <div class="metric"><strong>{open_maintenance}</strong><span>Active items</span></div>
     <div class="metric"><strong>{purchase_active_count}</strong><span>Active purchases</span></div>
     <div class="metric"><strong>{maintenance_active_count}</strong><span>Active maintenance</span></div>
-    <div class="metric"><strong>{repair_active_count}</strong><span>Active repairs</span></div>
     <div class="metric"><strong>{order_parts_count}</strong><span>Logged</span></div>
     <div class="metric"><strong>{arrange_work_count}</strong><span>Scheduled</span></div>
     <div class="metric"><strong>{high_priority_active_count}</strong><span>High priority active</span></div>
@@ -2158,12 +2147,6 @@ def maintenance_admin(
         if _maintenance_category_key(getattr(item, "category", "")) == "maintenance"
         and _maintenance_is_active(item)
     )
-    repair_active_count = sum(
-        1
-        for item in all_items
-        if _maintenance_category_key(getattr(item, "category", "")) == "repair"
-        and _maintenance_is_active(item)
-    )
     logged_count = sum(
         1
         for item in all_items
@@ -2230,7 +2213,7 @@ def maintenance_admin(
         (("all", "All items"), ("open", "Open items only")),
         selected_scope,
     )
-    filtered_groups: dict[str, list[str]] = {"purchase": [], "maintenance": [], "repair": []}
+    filtered_groups: dict[str, list[str]] = {"purchase": [], "maintenance": []}
     for item in filtered_items:
         category_key = _maintenance_category_key(getattr(item, "category", ""))
         category_label = _maintenance_label(category_key, MAINTENANCE_CATEGORY_OPTIONS, "Maintenance")
@@ -2273,7 +2256,7 @@ def maintenance_admin(
           completed_value=getattr(item, "completed_on", None),
       )}
     </div>
-    <p class="muted" style="margin-top: 0;">Purchase defaults to Sophie, Maintenance defaults to Maint man, and Repair defaults to Equipment supplier.</p>
+    <p class="muted" style="margin-top: 0;">Purchase defaults to Sophie, and Maintenance defaults to Maint man.</p>
     <label><span>Notes</span><textarea name="detail">{_esc(detail_text)}</textarea></label>
     <div class="inline">
       <button type="submit" class="secondary">Save maintenance item</button>
@@ -2312,7 +2295,6 @@ def maintenance_admin(
         empty_by_category = {
             "purchase": "No purchase items match the current filters.",
             "maintenance": "No maintenance items match the current filters.",
-            "repair": "No repair items match the current filters.",
         }
         empty_label = empty_by_category.get(category_key, "No maintenance items match the current filters.")
         return f"""
@@ -2328,7 +2310,7 @@ def maintenance_admin(
   <div class="inline" style="justify-content: space-between;">
     <div>
       <h2>Maintenance</h2>
-      <p class="muted">Track purchases, maintenance, and repairs by simple status, with recorded date, elapsed days, and allocation.</p>
+      <p class="muted">Track purchases and maintenance by simple status, with recorded date, elapsed days, and allocation.</p>
     </div>
     <div class="inline">
       <a class="button secondary" href="{open_review_href}">Review open items</a>
@@ -2339,7 +2321,6 @@ def maintenance_admin(
     <div class="metric"><strong>{purchase_active_count}</strong><span>Active purchase items</span></div>
     <div class="metric"><strong>{purchase_completed_count}</strong><span>Completed purchase items</span></div>
     <div class="metric"><strong>{maintenance_active_count}</strong><span>Active maintenance items</span></div>
-    <div class="metric"><strong>{repair_active_count}</strong><span>Active repair items</span></div>
     <div class="metric"><strong>{logged_count}</strong><span>Logged</span></div>
     <div class="metric"><strong>{scheduled_count}</strong><span>Scheduled</span></div>
     <div class="metric"><strong>{complete_count}</strong><span>Completed</span></div>
@@ -2372,7 +2353,7 @@ def maintenance_admin(
           completed_value=None,
       )}
     </div>
-    <p class="muted" style="margin-top: 0;">Purchase defaults to Sophie, Maintenance defaults to Maint man, and Repair defaults to Equipment supplier.</p>
+    <p class="muted" style="margin-top: 0;">Purchase defaults to Sophie, and Maintenance defaults to Maint man.</p>
     <label><span>Notes</span><textarea name="detail" placeholder="Optional location or follow-up notes"></textarea></label>
     <button type="submit">Add maintenance item</button>
   </form>
@@ -2423,9 +2404,6 @@ def maintenance_admin(
         if (purchaseStaffId && Array.from(staffSelect.options).some((option) => option.value === purchaseStaffId)) {{
           staffSelect.value = purchaseStaffId;
         }}
-      }} else if (categoryValue === 'repair') {{
-        allocationSelect.value = 'equipment_supplier';
-        staffSelect.value = '';
       }} else {{
         allocationSelect.value = 'maint_main';
         staffSelect.value = '';
@@ -2440,12 +2418,9 @@ def maintenance_admin(
         body += table_section("Purchase Log", "purchase")
     elif selected_category == "maintenance":
         body += table_section("Maintenance Log", "maintenance")
-    elif selected_category == "repair":
-        body += table_section("Repair Log", "repair")
     else:
         body += table_section("Purchase Log", "purchase")
         body += table_section("Maintenance Log", "maintenance")
-        body += table_section("Repair Log", "repair")
     return _layout(request, "Maintenance", body)
 
 

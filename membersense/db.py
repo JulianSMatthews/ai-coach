@@ -177,13 +177,13 @@ def _migrate_maintenance_table() -> None:
             conn.exec_driver_sql(
                 f"UPDATE {table_name} "
                 "SET category = CASE "
-                "WHEN lower(trim(coalesce(category, ''))) IN ('purchase', 'maintenance', 'repair') THEN lower(trim(category)) "
+                "WHEN lower(trim(coalesce(category, ''))) IN ('purchase', 'maintenance') THEN lower(trim(category)) "
                 "WHEN lower(trim(coalesce(item_type, ''))) = 'replacement_item' THEN 'purchase' "
                 "WHEN lower(trim(coalesce(title, ''))) LIKE 'replace %' THEN 'purchase' "
                 "WHEN lower(trim(coalesce(title, ''))) LIKE 'order %' THEN 'purchase' "
-                "WHEN lower(trim(coalesce(title, ''))) LIKE 'repair %' THEN 'repair' "
-                "WHEN lower(trim(coalesce(title, ''))) LIKE '%tighten %' THEN 'repair' "
-                "WHEN lower(trim(coalesce(category, ''))) = 'equipment' THEN 'repair' "
+                "WHEN lower(trim(coalesce(title, ''))) LIKE 'repair %' THEN 'maintenance' "
+                "WHEN lower(trim(coalesce(title, ''))) LIKE '%tighten %' THEN 'maintenance' "
+                "WHEN lower(trim(coalesce(category, ''))) IN ('equipment', 'repair') THEN 'maintenance' "
                 "ELSE 'maintenance' END"
             )
             conn.exec_driver_sql(
@@ -213,12 +213,6 @@ def _migrate_maintenance_table() -> None:
                 "AND (allocation_type IS NULL OR trim(allocation_type) = '' "
                 "OR lower(trim(coalesce(allocation_type, ''))) IN ('team', 'individual', 'external', 'external_supplier', 'supplier'))"
             )
-            conn.exec_driver_sql(
-                f"UPDATE {table_name} SET allocation_type = 'equipment_supplier' "
-                "WHERE lower(trim(coalesce(category, ''))) = 'repair' "
-                "AND (allocation_type IS NULL OR trim(allocation_type) = '' "
-                "OR lower(trim(coalesce(allocation_type, ''))) IN ('team', 'individual', 'external', 'external_supplier', 'supplier'))"
-            )
             return
         if dialect == "postgresql":
             for name, (_, postgres_type) in columns_to_add.items():
@@ -243,13 +237,13 @@ def _migrate_maintenance_table() -> None:
             conn.exec_driver_sql(
                 f"UPDATE {table_name} "
                 "SET category = CASE "
-                "WHEN lower(btrim(coalesce(category, ''))) IN ('purchase', 'maintenance', 'repair') THEN lower(btrim(category)) "
+                "WHEN lower(btrim(coalesce(category, ''))) IN ('purchase', 'maintenance') THEN lower(btrim(category)) "
                 "WHEN lower(btrim(coalesce(item_type, ''))) = 'replacement_item' THEN 'purchase' "
                 "WHEN lower(btrim(coalesce(title, ''))) LIKE 'replace %%' THEN 'purchase' "
                 "WHEN lower(btrim(coalesce(title, ''))) LIKE 'order %%' THEN 'purchase' "
-                "WHEN lower(btrim(coalesce(title, ''))) LIKE 'repair %%' THEN 'repair' "
-                "WHEN lower(btrim(coalesce(title, ''))) LIKE '%%tighten %%' THEN 'repair' "
-                "WHEN lower(btrim(coalesce(category, ''))) = 'equipment' THEN 'repair' "
+                "WHEN lower(btrim(coalesce(title, ''))) LIKE 'repair %%' THEN 'maintenance' "
+                "WHEN lower(btrim(coalesce(title, ''))) LIKE '%%tighten %%' THEN 'maintenance' "
+                "WHEN lower(btrim(coalesce(category, ''))) IN ('equipment', 'repair') THEN 'maintenance' "
                 "ELSE 'maintenance' END"
             )
             conn.exec_driver_sql(
@@ -276,12 +270,6 @@ def _migrate_maintenance_table() -> None:
             conn.exec_driver_sql(
                 f"UPDATE {table_name} SET allocation_type = 'maint_main' "
                 "WHERE lower(btrim(coalesce(category, ''))) = 'maintenance' "
-                "AND (allocation_type IS NULL OR btrim(allocation_type) = '' "
-                "OR lower(btrim(coalesce(allocation_type, ''))) IN ('team', 'individual', 'external', 'external_supplier', 'supplier'))"
-            )
-            conn.exec_driver_sql(
-                f"UPDATE {table_name} SET allocation_type = 'equipment_supplier' "
-                "WHERE lower(btrim(coalesce(category, ''))) = 'repair' "
                 "AND (allocation_type IS NULL OR btrim(allocation_type) = '' "
                 "OR lower(btrim(coalesce(allocation_type, ''))) IN ('team', 'individual', 'external', 'external_supplier', 'supplier'))"
             )
