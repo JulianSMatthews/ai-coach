@@ -2892,11 +2892,21 @@ def okrs(
     assigned_update_section = ""
     update_your_krs_button = ""
     if current_staff is not None:
-        assigned_krs = [
-            kr
-            for kr in all_krs
-            if int(getattr(kr, "assigned_staff_id", 0) or 0) == int(getattr(current_staff, "id", 0) or 0)
-        ]
+        assigned_rows = session.execute(
+            select(OkrObjective, OkrKeyResult)
+            .join(OkrKeyResult, OkrKeyResult.objective_id == OkrObjective.id)
+            .where(
+                OkrObjective.quarter == selected_quarter,
+                OkrKeyResult.assigned_staff_id == int(current_staff.id),
+            )
+            .order_by(
+                func.coalesce(OkrObjective.objective_number, 999999).asc(),
+                OkrObjective.id.asc(),
+                func.coalesce(OkrKeyResult.key_result_number, 999999).asc(),
+                OkrKeyResult.id.asc(),
+            )
+        ).all()
+        assigned_krs = [kr for _objective, kr in assigned_rows]
         if assigned_krs:
             update_your_krs_button = '<a class="button secondary" href="#your-key-results">Update your key results</a>'
             assigned_percents = [
@@ -2912,37 +2922,109 @@ def okrs(
                 assigned_rag_counts[
                     _okr_rag(_okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter))
                 ] += 1
-            assigned_rows = []
-            for kr in assigned_krs:
-                objective = getattr(kr, "objective", None)
-                objective_number = _parse_int(getattr(objective, "objective_number", None), 0)
-                key_result_number = _parse_int(getattr(kr, "key_result_number", None), 0)
-                kr_number = ".".join(str(part) for part in [objective_number, key_result_number] if part) or str(int(getattr(kr, "id", 0) or 0))
-                unit = str(kr.unit or "").strip()
-                target_label = f"{_format_number(kr.target_value)} {unit}".strip()
-                actual_label = f"{_format_number(kr.actual_value)} {unit}".strip()
-                direction_label = "Lower is better" if str(kr.direction or "").strip().lower() == "decrease" else "Higher is better"
-                percent = _okr_percent(kr.actual_value, kr.target_value, kr.direction)
-                pace_percent = _okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter)
-                pace_hint_html = _okr_pace_hint_html(kr.target_value, kr.direction, unit, selected_quarter)
-                assigned_rows.append(
-                    "<tr>"
-                    f"<td style=\"width: 72px;\"><strong>{_esc(kr_number)}</strong></td>"
-                    "<td>"
-                    '<div style="display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap;">'
-                    f'<div style="min-width: 240px; flex: 1 1 320px;"><strong>{_esc(kr.title)}</strong>{_okr_actual_updated_html(getattr(kr, "actual_updated_at", None))}<br><span class="muted">Target: {_esc(target_label)} · Actual: {_esc(actual_label)} · {_esc(direction_label)}</span></div>'
-                    f'<div style="flex: 0 0 260px;">{_okr_percent_inline_html(percent, width_px=170)}</div>'
-                    "</div>"
-                    "</td>"
-                    f"<td style=\"width: 220px;\">{_okr_rag_html(pace_percent)}<br>{pace_hint_html}</td>"
-                    "<td style=\"width: 180px;\">"
-                    f"<form method=\"post\" action=\"{_post_action(request, f'/admin/okrs/key-results/{int(kr.id)}/actual')}\" class=\"inline\">"
-                    f"<input type=\"hidden\" name=\"quarter\" value=\"{_esc(selected_quarter)}\">"
-                    f"<input type=\"number\" step=\"0.01\" min=\"0\" name=\"actual_value\" value=\"{_esc(_format_number(kr.actual_value))}\" style=\"max-width: 120px;\">"
-                    "<button type=\"submit\">Update key result</button>"
-                    "</form>"
-                    "</td>"
-                    "</tr>"
+            objective_positions: dict[int, int] = {}
+            objective_kr_positions: dict[int, int] = {}
+            grouped_objectives: list[dict[str, object]] = []
+            groups_by_id: dict[int, dict[str, object]] = {}
+            for objective, kr in assigned_rows:
+                objective_id = int(getattr(objective, "id", 0) or 0)
+                if objective_id not in objective_positions:
+                    objective_positions[objective_id] = len(objective_positions) + 1
+                if objective_id not in groups_by_id:
+                    objective_number = (
+                        _parse_int(getattr(objective, "objective_number", None), objective_positions[objective_id])
+                        or objective_positions[objective_id]
+                    )
+                    group = {"objective": objective, "objective_number": objective_number, "rows": []}
+                    groups_by_id[objective_id] = group
+                    grouped_objectives.append(group)
+                objective_kr_positions[objective_id] = objective_kr_positions.get(objective_id, 0) + 1
+                objective_number = int(groups_by_id[objective_id]["objective_number"])
+                kr_part_number = (
+                    _parse_int(getattr(kr, "key_result_number", None), objective_kr_positions[objective_id])
+                    or objective_kr_positions[objective_id]
+                )
+                kr_number = f"{objective_number}.{kr_part_number}"
+                rows = groups_by_id[objective_id]["rows"]
+                if isinstance(rows, list):
+                    rows.append((kr_number, kr))
+
+            assigned_objective_sections = []
+            for group in grouped_objectives:
+                objective = group["objective"]
+                objective_number = int(group["objective_number"])
+                grouped_rows = group["rows"] if isinstance(group.get("rows"), list) else []
+                key_results = [row_kr for _row_number, row_kr in grouped_rows if isinstance(row_kr, OkrKeyResult)]
+                objective_percents = [
+                    pct
+                    for pct in (_okr_percent(kr.actual_value, kr.target_value, kr.direction) for kr in key_results)
+                    if pct is not None
+                ]
+                objective_pace_percents = [
+                    pct
+                    for pct in (
+                        _okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter)
+                        for kr in key_results
+                    )
+                    if pct is not None
+                ]
+                objective_percent = (sum(objective_percents) / len(objective_percents)) if objective_percents else None
+                objective_pace_percent = (
+                    sum(objective_pace_percents) / len(objective_pace_percents)
+                    if objective_pace_percents
+                    else None
+                )
+                champions = str(getattr(objective, "champions", "") or "").strip()
+                kr_rows = []
+                for kr_number, kr in grouped_rows:
+                    percent = _okr_percent(kr.actual_value, kr.target_value, kr.direction)
+                    pace_percent = _okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter)
+                    unit = str(kr.unit or "").strip()
+                    target_label = f"{_format_number(kr.target_value)} {unit}".strip()
+                    actual_label = f"{_format_number(kr.actual_value)} {unit}".strip()
+                    direction_label = "Lower is better" if str(kr.direction or "").strip().lower() == "decrease" else "Higher is better"
+                    actual_updated_html = _okr_actual_updated_html(getattr(kr, "actual_updated_at", None))
+                    pace_hint_html = _okr_pace_hint_html(kr.target_value, kr.direction, unit, selected_quarter)
+                    update_form = (
+                        '<form method="post" action="'
+                        + _post_action(request, f"/admin/okrs/key-results/{int(kr.id)}/actual")
+                        + '" class="inline" style="justify-content: flex-end;">'
+                        + f'<input type="hidden" name="quarter" value="{_esc(selected_quarter)}">'
+                        + f'<input type="number" step="0.01" min="0" name="actual_value" value="{_esc(_format_number(kr.actual_value))}" style="max-width: 110px;">'
+                        + "<button type=\"submit\">Update key result</button>"
+                        + "</form>"
+                    )
+                    kr_rows.append(
+                        "<tr>"
+                        f"<td style=\"width: 72px;\"><strong>{_esc(kr_number)}</strong></td>"
+                        "<td>"
+                        '<div style="display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap;">'
+                        f'<div style="min-width: 240px; flex: 1 1 320px;"><strong>{_esc(kr.title)}</strong>{actual_updated_html}<br><span class="muted">Target: {_esc(target_label)} · Actual: {_esc(actual_label)} · {_esc(direction_label)}</span></div>'
+                        f'<div style="flex: 0 0 260px;">{_okr_percent_inline_html(percent, width_px=170)}</div>'
+                        "</div>"
+                        "</td>"
+                        f"<td style=\"width: 220px;\">{_okr_rag_html(pace_percent)}<br>{pace_hint_html}</td>"
+                        f"<td style=\"width: 180px;\">{update_form}</td>"
+                        "</tr>"
+                    )
+                assigned_objective_sections.append(
+                    f"""
+<div style="border-top: 1px solid var(--line); padding-top: 16px; margin-top: 16px;">
+  <div class="inline" style="justify-content: space-between; align-items: flex-start;">
+    <div>
+      <h3 style="margin: 0 0 6px;">Objective {objective_number}: {_esc(getattr(objective, 'area', ''))}</h3>
+      <p><strong>{_esc(getattr(objective, 'title', ''))}</strong></p>
+      {f'<p class="muted">Champions: {_esc(champions)}</p>' if champions else ''}
+    </div>
+    <div style="text-align: right;">
+      {_okr_rag_html(objective_pace_percent)}<br>{_okr_percent_inline_html(objective_percent, width_px=120)}
+    </div>
+  </div>
+  <table>
+    <thead><tr><th>No.</th><th>Key result</th><th>Pace RAG</th><th>Update</th></tr></thead>
+    <tbody>{''.join(kr_rows)}</tbody>
+  </table>
+</div>"""
                 )
             assigned_update_section = f"""
 <details id="your-key-results" style="margin-top: 18px;"{' open' if updated is not None else ''}>
@@ -2956,10 +3038,7 @@ def okrs(
       <div class="summary-chip rag-amber"><strong>{assigned_rag_counts['amber']}</strong><span>Amber KRs</span></div>
       <div class="summary-chip rag-red"><strong>{assigned_rag_counts['red']}</strong><span>Red KRs</span></div>
     </div>
-    <table>
-      <thead><tr><th>No.</th><th>Key result</th><th>Pace RAG</th><th>Update</th></tr></thead>
-      <tbody>{''.join(assigned_rows)}</tbody>
-    </table>
+    {''.join(assigned_objective_sections) or f'<p class="muted">No key results are assigned to you for {_esc(selected_quarter)}.</p>'}
   </div>
 </details>"""
     else:
@@ -3004,15 +3083,6 @@ def okrs(
             actual_label = f"{_format_number(kr.actual_value)} {unit}".strip()
             actual_updated_html = _okr_actual_updated_html(getattr(kr, "actual_updated_at", None))
             pace_hint_html = _okr_pace_hint_html(kr.target_value, kr.direction, unit, selected_quarter)
-            update_form = (
-                '<form method="post" action="'
-                + _post_action(request, f"/admin/okrs/key-results/{int(kr.id)}/actual")
-                + '" class="inline" style="justify-content: flex-end;">'
-                + f'<input type="hidden" name="quarter" value="{_esc(selected_quarter)}">'
-                + f'<input type="number" step="0.01" min="0" name="actual_value" value="{_esc(_format_number(kr.actual_value))}" style="max-width: 110px;">'
-                + "<button type=\"submit\">Update key result</button>"
-                + "</form>"
-            )
             kr_rows.append(
                 "<tr>"
                 f"<td style=\"width: 72px;\"><strong>{_esc(kr_number)}</strong></td>"
@@ -3023,7 +3093,6 @@ def okrs(
                 "</div>"
                 "</td>"
                 f"<td style=\"width: 220px;\">{_okr_rag_html(pace_percent)}<br>{pace_hint_html}</td>"
-                f"<td style=\"width: 180px;\">{update_form}</td>"
                 "</tr>"
             )
         objective_sections.append(
@@ -3040,8 +3109,8 @@ def okrs(
     </div>
   </div>
   <table>
-    <thead><tr><th>No.</th><th>Key result</th><th>Pace RAG</th><th>Update</th></tr></thead>
-    <tbody>{''.join(kr_rows) or '<tr><td colspan="4">No key results yet.</td></tr>'}</tbody>
+    <thead><tr><th>No.</th><th>Key result</th><th>Pace RAG</th></tr></thead>
+    <tbody>{''.join(kr_rows) or '<tr><td colspan="3">No key results yet.</td></tr>'}</tbody>
   </table>
 </div>"""
         )
