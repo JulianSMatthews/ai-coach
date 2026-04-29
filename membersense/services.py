@@ -167,6 +167,15 @@ def _maintenance_stage_key(value: object) -> str:
     return "logged"
 
 
+def _purchase_status_key(value: object) -> str:
+    token = str(value or "").strip().lower()
+    if token in {"completed", "complete", "done"}:
+        return "completed"
+    if token == "ordered":
+        return "ordered"
+    return "logged"
+
+
 def _maintenance_default_allocation(category: object) -> str:
     category_key = _maintenance_category_key(category)
     if category_key == "purchase":
@@ -1550,7 +1559,7 @@ def seed_default_maintenance_items(session: Session) -> int:
         stage = _maintenance_stage_key(item.get("stage") or "logged")
         allocation_key = _maintenance_default_allocation(category_key)
         if category_key == "purchase":
-            stage = "completed" if stage == "completed" else "logged"
+            stage = _purchase_status_key(item.get("stage") or "logged")
         completed_date = completed_at.date() if stage == "completed" and category_key != "purchase" else None
         row = MaintenanceItem(
             title=title,
@@ -1628,8 +1637,8 @@ def sync_maintenance_items(session: Session) -> int:
         current_stage = str(getattr(row, "stage", "") or "").strip().lower()
         current_ordered_on = getattr(row, "ordered_on", None)
         if desired_category == "purchase":
-            purchase_status = _maintenance_stage_key(getattr(row, "status", "") or current_stage)
-            desired_stage = "completed" if purchase_status == "completed" or current_ordered_on is not None else "logged"
+            purchase_status = _purchase_status_key(getattr(row, "status", "") or current_stage)
+            desired_stage = "ordered" if current_ordered_on is not None and purchase_status != "completed" else purchase_status
         elif current_stage not in {"logged", "scheduled", "completed"}:
             current_status = str(getattr(row, "status", "") or "").strip().lower()
             if _maintenance_stage_key(current_status) == "completed" or getattr(row, "completed_at", None) is not None:

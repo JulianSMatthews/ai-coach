@@ -82,6 +82,7 @@ MAINTENANCE_STAGE_OPTIONS: tuple[tuple[str, str], ...] = (
 )
 PURCHASE_STATUS_OPTIONS: tuple[tuple[str, str], ...] = (
     ("logged", "Logged"),
+    ("ordered", "Ordered"),
     ("completed", "Completed"),
 )
 MAINTENANCE_ALLOCATION_OPTIONS: tuple[tuple[str, str], ...] = (
@@ -271,6 +272,18 @@ def _maintenance_stage_key(value: object, *, allow_blank: bool = False) -> str:
     return token if token in allowed else ("logged" if not allow_blank else "")
 
 
+def _purchase_status_key(value: object, *, allow_blank: bool = False) -> str:
+    token = str(value or "").strip().lower()
+    allowed = {key for key, _label in PURCHASE_STATUS_OPTIONS}
+    if allow_blank and not token:
+        return ""
+    if token in {"complete", "done"}:
+        return "completed"
+    if token in {"order_parts", "pending", "open", "scheduled"}:
+        return "logged"
+    return token if token in allowed else ("logged" if not allow_blank else "")
+
+
 def _maintenance_allocation_key(value: object) -> str:
     token = str(value or "").strip().lower()
     allowed = {key for key, _label in MAINTENANCE_ALLOCATION_OPTIONS}
@@ -328,11 +341,16 @@ def _maintenance_is_purchase_item(item: MaintenanceItem) -> bool:
 
 
 def _maintenance_purchase_status_key(item: MaintenanceItem) -> str:
-    status_key = _maintenance_stage_key(getattr(item, "status", ""))
-    if status_key == "completed":
+    status_key = _purchase_status_key(getattr(item, "status", ""))
+    if status_key in {"ordered", "completed"}:
+        return status_key
+    stage_key = _purchase_status_key(getattr(item, "stage", ""))
+    if stage_key in {"ordered", "completed"}:
+        return stage_key
+    if getattr(item, "completed_at", None) is not None:
         return "completed"
     if getattr(item, "ordered_on", None) is not None:
-        return "completed"
+        return "ordered"
     return "logged"
 
 
@@ -397,6 +415,8 @@ def _maintenance_status_html(item: MaintenanceItem) -> str:
     if _maintenance_is_purchase_item(item):
         if _maintenance_purchase_status_key(item) == "completed":
             return '<span class="rag rag-green">Completed</span>'
+        if _maintenance_purchase_status_key(item) == "ordered":
+            return '<span class="rag rag-amber">Ordered</span>'
         return '<span class="pill">Logged</span>'
     return _maintenance_stage_html(getattr(item, "stage", getattr(item, "status", "")))
 
@@ -459,7 +479,7 @@ def _maintenance_stage_date_detail(item: MaintenanceItem) -> str:
 def _maintenance_sort_key(item: MaintenanceItem) -> tuple[int, int, int, str, int]:
     category_order = {"purchase": 0, "maintenance": 1, "repair": 2}
     stage_order = {"logged": 0, "scheduled": 1, "completed": 2}
-    purchase_status_order = {"logged": 0, "completed": 1}
+    purchase_status_order = {"logged": 0, "ordered": 1, "completed": 2}
     priority_order = {"high": 0, "medium": 1, "low": 2}
     category_key = _maintenance_category_key(getattr(item, "category", ""))
     if category_key == "purchase":
@@ -2110,9 +2130,7 @@ def maintenance_admin(
         category_key = _maintenance_category_key(selected_category_value)
         purchase_style = "display: block;" if category_key == "purchase" else "display: none;"
         work_style = "display: block;" if category_key != "purchase" else "display: none;"
-        purchase_status = _maintenance_stage_key(selected_stage_value)
-        if purchase_status == "scheduled":
-            purchase_status = "logged"
+        purchase_status = _purchase_status_key(selected_stage_value)
         return f"""
       <div data-maintenance-field-group="purchase" data-display-style="block" style="{purchase_style}">
         <label><span>Status</span>{_select_html("stage", PURCHASE_STATUS_OPTIONS, purchase_status)}</label>
@@ -2483,9 +2501,7 @@ def maintenance_create_item(
     if allocation != "staff_person":
         staff_id = 0
     if category_key == "purchase":
-        stage_key = _maintenance_stage_key(stage)
-        if stage_key == "scheduled":
-            stage_key = "logged"
+        stage_key = _purchase_status_key(stage)
         needs_parts_flag = False
         parts_due_date = None
         work_due_date = None
@@ -2598,9 +2614,7 @@ def maintenance_update_item(
     if allocation != "staff_person":
         staff_id = 0
     if category_key == "purchase":
-        stage_key = _maintenance_stage_key(stage)
-        if stage_key == "scheduled":
-            stage_key = "logged"
+        stage_key = _purchase_status_key(stage)
         needs_parts_flag = False
         parts_due_date = None
         work_due_date = None
@@ -2684,9 +2698,7 @@ def maintenance_update_item_status(
     if row is None:
         raise HTTPException(status_code=404, detail="Maintenance item not found")
     if _maintenance_is_purchase_item(row):
-        stage_key = _maintenance_stage_key(stage or status)
-        if stage_key == "scheduled":
-            stage_key = "logged"
+        stage_key = _purchase_status_key(stage or status)
         row.stage = stage_key
         row.status = stage_key
         row.needs_parts = False
