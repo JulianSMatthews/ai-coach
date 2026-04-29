@@ -2865,12 +2865,6 @@ def okrs(
         .all()
     )
 
-    def staff_name(staff_id: int | None) -> str:
-        if not staff_id:
-            return ""
-        staff = session.get(StaffUser, int(staff_id))
-        return str(getattr(staff, "name", "") or "").strip()
-
     all_krs: list[OkrKeyResult] = []
     for objective in objectives:
         all_krs.extend(_sort_okr_key_results(objective.key_results))
@@ -2884,6 +2878,7 @@ def okrs(
     for kr in all_krs:
         rag_counts[_okr_rag(_okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter))] += 1
     average_percent_label = f"{average_percent:.1f}%" if average_percent is not None else "0%"
+    average_percent_rag = _okr_rag(average_percent)
     config_href = _href(request, f"/admin/okrs/config?{urlencode({'quarter': selected_quarter})}")
     notice_parts = []
     if created is not None:
@@ -2895,7 +2890,6 @@ def okrs(
     notice_class = "error" if error else "pill"
     notice_html = f'<p><span class="{notice_class}">{_esc(" ".join(notice_parts))}</span></p>' if notice_parts else ""
     assigned_update_section = ""
-    update_your_krs_button = ""
     if current_staff is not None:
         assigned_krs = [
             kr
@@ -2903,7 +2897,19 @@ def okrs(
             if int(getattr(kr, "assigned_staff_id", 0) or 0) == int(getattr(current_staff, "id", 0) or 0)
         ]
         if assigned_krs:
-            update_your_krs_button = '<a class="button secondary" href="#your-key-results">Update your key results</a>'
+            assigned_percents = [
+                pct
+                for pct in (_okr_percent(kr.actual_value, kr.target_value, kr.direction) for kr in assigned_krs)
+                if pct is not None
+            ]
+            assigned_average_percent = (sum(assigned_percents) / len(assigned_percents)) if assigned_percents else None
+            assigned_average_label = f"{assigned_average_percent:.1f}%" if assigned_average_percent is not None else "0%"
+            assigned_average_rag = _okr_rag(assigned_average_percent)
+            assigned_rag_counts = {"green": 0, "amber": 0, "red": 0, "grey": 0}
+            for kr in assigned_krs:
+                assigned_rag_counts[
+                    _okr_rag(_okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter))
+                ] += 1
             assigned_rows = []
             for kr in assigned_krs:
                 objective = getattr(kr, "objective", None)
@@ -2913,13 +2919,21 @@ def okrs(
                 unit = str(kr.unit or "").strip()
                 target_label = f"{_format_number(kr.target_value)} {unit}".strip()
                 actual_label = f"{_format_number(kr.actual_value)} {unit}".strip()
+                direction_label = "Lower is better" if str(kr.direction or "").strip().lower() == "decrease" else "Higher is better"
+                percent = _okr_percent(kr.actual_value, kr.target_value, kr.direction)
                 pace_percent = _okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter)
+                pace_hint_html = _okr_pace_hint_html(kr.target_value, kr.direction, unit, selected_quarter)
                 assigned_rows.append(
                     "<tr>"
-                    f"<td><strong>{_esc(kr_number)}</strong></td>"
-                    f"<td>{_esc(kr.title)}{_okr_actual_updated_html(getattr(kr, 'actual_updated_at', None))}<br><span class=\"muted\">Target: {_esc(target_label)} · Actual: {_esc(actual_label)}</span></td>"
-                    f"<td>{_okr_rag_html(pace_percent)}</td>"
+                    f"<td style=\"width: 72px;\"><strong>{_esc(kr_number)}</strong></td>"
                     "<td>"
+                    '<div style="display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap;">'
+                    f'<div style="min-width: 240px; flex: 1 1 320px;"><strong>{_esc(kr.title)}</strong>{_okr_actual_updated_html(getattr(kr, "actual_updated_at", None))}<br><span class="muted">Target: {_esc(target_label)} · Actual: {_esc(actual_label)} · {_esc(direction_label)}</span></div>'
+                    f'<div style="flex: 0 0 260px;">{_okr_percent_inline_html(percent, width_px=170)}</div>'
+                    "</div>"
+                    "</td>"
+                    f"<td style=\"width: 220px;\">{_okr_rag_html(pace_percent)}<br>{pace_hint_html}</td>"
+                    "<td style=\"width: 180px;\">"
                     f"<form method=\"post\" action=\"{_post_action(request, f'/admin/okrs/key-results/{int(kr.id)}/actual')}\" class=\"inline\">"
                     f"<input type=\"hidden\" name=\"quarter\" value=\"{_esc(selected_quarter)}\">"
                     f"<input type=\"number\" step=\"0.01\" min=\"0\" name=\"actual_value\" value=\"{_esc(_format_number(kr.actual_value))}\" style=\"max-width: 120px;\">"
@@ -2929,14 +2943,28 @@ def okrs(
                     "</tr>"
                 )
             assigned_update_section = f"""
-<section id="your-key-results">
-  <h2>Your Key Results</h2>
-  <p class="muted">Update actual results for the key results assigned to you.</p>
-  <table>
-    <thead><tr><th>No.</th><th>Key result</th><th>Pace RAG</th><th>Update</th></tr></thead>
-    <tbody>{''.join(assigned_rows)}</tbody>
-  </table>
-</section>"""
+<details id="your-key-results" style="margin-top: 18px;"{' open' if updated is not None else ''}>
+  <summary class="button secondary" style="cursor: pointer; width: fit-content;">Update your key results</summary>
+  <div style="margin-top: 16px;">
+    <p class="muted">Quarter: {_esc(selected_quarter)}. Showing only KRs assigned to you.</p>
+    <div class="maintenance-summary">
+      <div class="summary-chip rag-grey"><strong>{len(assigned_krs)}</strong><span>Assigned KRs</span></div>
+      <div class="summary-chip rag-{assigned_average_rag}"><strong>{assigned_average_label}</strong><span>Average achieved</span></div>
+      <div class="summary-chip rag-green"><strong>{assigned_rag_counts['green']}</strong><span>Green KRs</span></div>
+      <div class="summary-chip rag-amber"><strong>{assigned_rag_counts['amber']}</strong><span>Amber KRs</span></div>
+      <div class="summary-chip rag-red"><strong>{assigned_rag_counts['red']}</strong><span>Red KRs</span></div>
+    </div>
+    <table>
+      <thead><tr><th>No.</th><th>Key result</th><th>Pace RAG</th><th>Update</th></tr></thead>
+      <tbody>{''.join(assigned_rows)}</tbody>
+    </table>
+  </div>
+</details>"""
+    else:
+        assigned_update_section = """
+<div style="margin-top: 18px;">
+  <p class="muted">Sign in with a staff account to view and update your own assigned key results here.</p>
+</div>"""
 
     objective_sections = []
     for objective_index, objective in enumerate(objectives, start=1):
@@ -2961,7 +2989,6 @@ def okrs(
             if objective_pace_percents
             else None
         )
-        owner = staff_name(objective.owner_staff_id)
         champions = str(getattr(objective, "champions", "") or "").strip()
         kr_rows = []
         for kr_index, kr in enumerate(key_results, start=1):
@@ -2969,54 +2996,52 @@ def okrs(
             kr_number = f"{objective_number}.{kr_part_number}"
             percent = _okr_percent(kr.actual_value, kr.target_value, kr.direction)
             pace_percent = _okr_pace_percent(kr.actual_value, kr.target_value, kr.direction, selected_quarter)
-            assigned = staff_name(kr.assigned_staff_id)
-            if assigned:
-                allocated_to = assigned
-            else:
-                allocated_to = str(kr.team_label or "").strip() or "Team"
             unit = str(kr.unit or "").strip()
             direction_label = "Lower is better" if str(kr.direction or "").strip().lower() == "decrease" else "Higher is better"
             target_label = f"{_format_number(kr.target_value)} {unit}".strip()
             actual_label = f"{_format_number(kr.actual_value)} {unit}".strip()
             actual_updated_html = _okr_actual_updated_html(getattr(kr, "actual_updated_at", None))
             pace_hint_html = _okr_pace_hint_html(kr.target_value, kr.direction, unit, selected_quarter)
+            update_form = (
+                '<form method="post" action="'
+                + _post_action(request, f"/admin/okrs/key-results/{int(kr.id)}/actual")
+                + '" class="inline" style="justify-content: flex-end;">'
+                + f'<input type="hidden" name="quarter" value="{_esc(selected_quarter)}">'
+                + f'<input type="number" step="0.01" min="0" name="actual_value" value="{_esc(_format_number(kr.actual_value))}" style="max-width: 110px;">'
+                + "<button type=\"submit\">Update key result</button>"
+                + "</form>"
+            )
             kr_rows.append(
                 "<tr>"
-                f"<td><strong>{_esc(kr_number)}</strong></td>"
-                f"<td>{_esc(kr.title)}{actual_updated_html}<br><span class=\"muted\">Allocated to: {_esc(allocated_to)}</span></td>"
-                f"<td>{_esc(target_label)}<br><span class=\"muted\">{_esc(direction_label)}</span></td>"
-                f"<td>{_esc(actual_label)}</td>"
-                f"<td>{_okr_percent_html(percent)}</td>"
-                f"<td>{_okr_rag_html(pace_percent)}<br>{pace_hint_html}</td>"
+                f"<td style=\"width: 72px;\"><strong>{_esc(kr_number)}</strong></td>"
                 "<td>"
-                '<div class="stack">'
-                f"<form method=\"post\" action=\"{_post_action(request, f'/admin/okrs/key-results/{int(kr.id)}/actual')}\" class=\"inline\">"
-                f"<input type=\"hidden\" name=\"quarter\" value=\"{_esc(selected_quarter)}\">"
-                f"<input type=\"number\" step=\"0.01\" min=\"0\" name=\"actual_value\" value=\"{_esc(_format_number(kr.actual_value))}\" style=\"max-width: 120px;\">"
-                "<button type=\"submit\">Update key result</button>"
-                "</form>"
+                '<div style="display: flex; gap: 14px; align-items: center; justify-content: space-between; flex-wrap: wrap;">'
+                f'<div style="min-width: 240px; flex: 1 1 320px;"><strong>{_esc(kr.title)}</strong>{actual_updated_html}<br><span class="muted">Target: {_esc(target_label)} · Actual: {_esc(actual_label)} · {_esc(direction_label)}</span></div>'
+                f'<div style="flex: 0 0 260px;">{_okr_percent_inline_html(percent, width_px=170)}</div>'
                 "</div>"
                 "</td>"
+                f"<td style=\"width: 220px;\">{_okr_rag_html(pace_percent)}<br>{pace_hint_html}</td>"
+                f"<td style=\"width: 180px;\">{update_form}</td>"
                 "</tr>"
             )
         objective_sections.append(
             f"""
-<section>
-  <div class="inline" style="justify-content: space-between;">
+<div style="border-top: 1px solid var(--line); padding-top: 16px; margin-top: 16px;">
+  <div class="inline" style="justify-content: space-between; align-items: flex-start;">
     <div>
-      <h2>Objective {objective_number}: {_esc(objective.area)}</h2>
+      <h3 style="margin: 0 0 6px;">Objective {objective_number}: {_esc(objective.area)}</h3>
       <p><strong>{_esc(objective.title)}</strong></p>
-      <p class="muted">{_esc(objective.description or '')}</p>
-      <p class="muted">Quarter: {_esc(objective.quarter)}{f' · Champions: {_esc(champions)}' if champions else ''}{f' · Owner: {_esc(owner)}' if owner else ''}</p>
+      {f'<p class="muted">Champions: {_esc(champions)}</p>' if champions else ''}
     </div>
-    <div>{_okr_rag_html(objective_pace_percent)}<br>{_okr_percent_html(objective_percent)}</div>
+    <div style="text-align: right;">
+      {_okr_rag_html(objective_pace_percent)}<br>{_okr_percent_inline_html(objective_percent, width_px=120)}
+    </div>
   </div>
-  <h3>Key Results for Objective {objective_number}</h3>
   <table>
-    <thead><tr><th>No.</th><th>Key result</th><th>Target</th><th>Actual</th><th>Achieved</th><th>Pace RAG</th><th>Actions</th></tr></thead>
-    <tbody>{''.join(kr_rows) or '<tr><td colspan="7">No key results yet.</td></tr>'}</tbody>
+    <thead><tr><th>No.</th><th>Key result</th><th>Pace RAG</th><th>Update</th></tr></thead>
+    <tbody>{''.join(kr_rows) or '<tr><td colspan="4">No key results yet.</td></tr>'}</tbody>
   </table>
-</section>"""
+</div>"""
         )
 
     body = f"""
@@ -3031,22 +3056,21 @@ def okrs(
         <label><span>Quarter</span><input name="quarter" value="{_esc(selected_quarter)}" placeholder="2026-Q2"></label>
         <button type="submit">View</button>
       </form>
-      {update_your_krs_button}
       <a class="button secondary" href="{config_href}">Configure OKRs</a>
     </div>
   </div>
   {notice_html}
-  <div class="grid">
-    <div class="metric"><strong>{len(objectives)}</strong><span>Objectives</span></div>
-    <div class="metric"><strong>{len(all_krs)}</strong><span>Key results</span></div>
-    <div class="metric"><strong>{average_percent_label}</strong><span>Average achieved</span></div>
-    <div class="metric"><strong>{rag_counts['green']}</strong><span>Green KRs</span></div>
-    <div class="metric"><strong>{rag_counts['amber']}</strong><span>Amber KRs</span></div>
-    <div class="metric"><strong>{rag_counts['red']}</strong><span>Red KRs</span></div>
+  <div class="maintenance-summary">
+    <div class="summary-chip rag-grey"><strong>{len(objectives)}</strong><span>Objectives</span></div>
+    <div class="summary-chip rag-grey"><strong>{len(all_krs)}</strong><span>Key results</span></div>
+    <div class="summary-chip rag-{average_percent_rag}"><strong>{average_percent_label}</strong><span>Average achieved</span></div>
+    <div class="summary-chip rag-green"><strong>{rag_counts['green']}</strong><span>Green KRs</span></div>
+    <div class="summary-chip rag-amber"><strong>{rag_counts['amber']}</strong><span>Amber KRs</span></div>
+    <div class="summary-chip rag-red"><strong>{rag_counts['red']}</strong><span>Red KRs</span></div>
   </div>
-</section>
-{assigned_update_section}
-{''.join(objective_sections) or f'<section><h2>No OKRs for this quarter yet.</h2><p class="muted">Create objectives and key results in <a href="{config_href}">OKR setup</a>.</p></section>'}"""
+  {assigned_update_section}
+  {''.join(objective_sections) or f'<p class="muted">Create objectives and key results in <a href="{config_href}">OKR setup</a>.</p>'}
+</section>"""
     return _layout(request, "OKRs", body)
 
 
