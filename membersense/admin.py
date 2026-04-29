@@ -373,6 +373,22 @@ def _maintenance_assignee_label(item: MaintenanceItem, session: Session) -> str:
     return _maintenance_label(allocation, MAINTENANCE_ALLOCATION_OPTIONS, "Maint man")
 
 
+def _maintenance_assignee_html(item: MaintenanceItem, session: Session) -> str:
+    label = _maintenance_assignee_label(item, session)
+    allocation = _maintenance_allocation_key(getattr(item, "allocation_type", "maint_main"))
+    if getattr(item, "assigned_staff_id", None):
+        class_name = "assignee-staff"
+    elif allocation == "cleaners":
+        class_name = "assignee-cleaners"
+    elif allocation == "equipment_supplier":
+        class_name = "assignee-supplier"
+    elif allocation == "staff_person":
+        class_name = "assignee-unassigned"
+    else:
+        class_name = "assignee-maintenance"
+    return f'<span class="assignee-badge {class_name}">{_esc(label)}</span>'
+
+
 def _maintenance_days_transpired(item: MaintenanceItem) -> int:
     created_value = getattr(item, "created_at", None)
     if created_value is None:
@@ -426,6 +442,13 @@ def _maintenance_priority_html(priority: object) -> str:
     if key == "low":
         return '<span class="rag rag-green">Low</span>'
     return '<span class="rag rag-amber">Medium</span>'
+
+
+def _maintenance_category_html(category: object) -> str:
+    key = _maintenance_category_key(category)
+    if key == "purchase":
+        return '<span class="category-badge category-purchase">PURCHASE</span>'
+    return '<span class="category-badge category-maintenance">MAINTENANCE</span>'
 
 
 def _date_input_value(value: object) -> str:
@@ -701,6 +724,29 @@ def _layout(request: Request, title: str, body: str) -> HTMLResponse:
     .rag-amber {{ background: #fff7df; color: #92400e; border: 1px solid #f2d086; }}
     .rag-red {{ background: #fff1ef; color: #991b1b; border: 1px solid #efb4aa; }}
     .rag-grey {{ background: #f3f5f2; color: var(--muted); border: 1px solid var(--line); }}
+    .category-badge {{
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 9px;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }}
+    .category-purchase {{ background: #eef2ff; color: #3730a3; border: 1px solid #c7d2fe; }}
+    .category-maintenance {{ background: #e0f2fe; color: #075985; border: 1px solid #bae6fd; }}
+    .assignee-badge {{
+      display: inline-block;
+      border-radius: 999px;
+      padding: 3px 9px;
+      font-size: 12px;
+      font-weight: 900;
+      text-transform: uppercase;
+    }}
+    .assignee-staff {{ background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }}
+    .assignee-cleaners {{ background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }}
+    .assignee-maintenance {{ background: #e0f2fe; color: #075985; border: 1px solid #bae6fd; }}
+    .assignee-supplier {{ background: #f3e8ff; color: #6b21a8; border: 1px solid #e9d5ff; }}
+    .assignee-unassigned {{ background: #f3f5f2; color: var(--muted); border: 1px solid var(--line); }}
     .progress-mini {{
       min-width: 120px;
       height: 12px;
@@ -2217,13 +2263,11 @@ def maintenance_admin(
         (("all", "All items"), ("open", "Open items only")),
         selected_scope,
     )
-    filtered_groups: dict[str, list[str]] = {"purchase": [], "maintenance": []}
+    table_rows: list[str] = []
     for item in filtered_items:
         category_key = _maintenance_category_key(getattr(item, "category", ""))
-        category_label = _maintenance_label(category_key, MAINTENANCE_CATEGORY_OPTIONS, "Maintenance")
         recorded_label = _datetime(getattr(item, "created_at", None)) or "Not recorded"
         days_label = str(_maintenance_days_transpired(item))
-        assignee_label = _maintenance_assignee_label(item, session)
         detail_text = str(getattr(item, "detail", "") or "").strip()
         detail_html = f'<br><span class="muted">{_esc(detail_text)}</span>' if detail_text else ""
         item_stage = (
@@ -2272,13 +2316,13 @@ def maintenance_admin(
     <button type="submit" class="danger">Delete maintenance item</button>
   </form>
 </details>"""
-        filtered_groups.setdefault(category_key, []).append(
+        table_rows.append(
             "<tr>"
             f"<td>{_esc(recorded_label)}</td>"
             f"<td>{_esc(days_label)}</td>"
-            f"<td><span class=\"pill\">{_esc(category_label)}</span></td>"
+            f"<td>{_maintenance_category_html(category_key)}</td>"
             f"<td><strong>{_esc(item.title)}</strong>{detail_html}</td>"
-            f"<td>{_esc(assignee_label)}</td>"
+            f"<td>{_maintenance_assignee_html(item, session)}</td>"
             f"<td>{_maintenance_priority_html(getattr(item, 'priority', 'medium'))}</td>"
             f"<td>{_maintenance_status_html(item)}</td>"
             f"<td>{edit_form}</td>"
@@ -2292,19 +2336,12 @@ def maintenance_admin(
     if selected_stage and selected_category != "purchase":
         open_review_params["stage"] = selected_stage
     open_review_href = _href(request, f"/admin/maintenance?{urlencode(open_review_params)}")
-    def table_section(title: str, category_key: str) -> str:
-        rows = filtered_groups.get(category_key) or []
-        empty_by_category = {
-            "purchase": "No purchase items match the current filters.",
-            "maintenance": "No maintenance items match the current filters.",
-        }
-        empty_label = empty_by_category.get(category_key, "No maintenance items match the current filters.")
-        return f"""
+    table_html = f"""
 <section>
-  <h2>{_esc(title)}</h2>
+  <h2>Maintenance Log</h2>
   <table>
     <thead><tr><th>Recorded</th><th>Days</th><th>Category</th><th>Item</th><th>Allocated to</th><th>Priority</th><th>Status</th><th>Action</th></tr></thead>
-    <tbody>{''.join(rows) or f'<tr><td colspan="8">{_esc(empty_label)}</td></tr>'}</tbody>
+    <tbody>{''.join(table_rows) or '<tr><td colspan="8">No items match the current filters.</td></tr>'}</tbody>
   </table>
 </section>"""
     body = f"""
@@ -2419,13 +2456,7 @@ def maintenance_admin(
   }});
 }})();
 </script>"""
-    if selected_category == "purchase":
-        body += table_section("Purchase Log", "purchase")
-    elif selected_category == "maintenance":
-        body += table_section("Maintenance Log", "maintenance")
-    else:
-        body += table_section("Purchase Log", "purchase")
-        body += table_section("Maintenance Log", "maintenance")
+    body += table_html
     return _layout(request, "Maintenance", body)
 
 
