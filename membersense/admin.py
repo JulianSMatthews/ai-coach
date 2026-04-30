@@ -3031,7 +3031,7 @@ def okrs(
 <details id="your-key-results" style="margin-top: 18px;"{' open' if updated is not None else ''}>
   <summary class="button secondary" style="cursor: pointer; width: fit-content;">Update your key results</summary>
   <div style="margin-top: 16px;">
-    <p class="muted">Quarter: {_esc(selected_quarter)}. Showing only KRs assigned to you.</p>
+    <p class="muted">Quarter: {_esc(selected_quarter)}. Showing only key results assigned to {_esc(getattr(current_staff, 'name', '') or getattr(current_staff, 'email', '') or 'you')}.</p>
     <div class="maintenance-summary">
       <div class="summary-chip rag-grey"><strong>{len(assigned_krs)}</strong><span>Assigned KRs</span></div>
       <div class="summary-chip rag-{assigned_average_rag}"><strong>{assigned_average_label}</strong><span>Average achieved</span></div>
@@ -3042,6 +3042,11 @@ def okrs(
     {''.join(assigned_objective_sections) or f'<p class="muted">No key results are assigned to you for {_esc(selected_quarter)}.</p>'}
   </div>
 </details>"""
+        else:
+            assigned_update_section = f"""
+<div style="margin-top: 18px;">
+  <p class="muted">No key results are assigned to {_esc(getattr(current_staff, 'name', '') or getattr(current_staff, 'email', '') or 'you')} for {_esc(selected_quarter)}.</p>
+</div>"""
     else:
         assigned_update_section = """
 <div style="margin-top: 18px;">
@@ -3141,7 +3146,12 @@ def okrs(
     <div class="summary-chip rag-red"><strong>{rag_counts['red']}</strong><span>Red KRs</span></div>
   </div>
   {assigned_update_section}
-  {''.join(objective_sections) or f'<p class="muted">Create objectives and key results in <a href="{config_href}">OKR setup</a>.</p>'}
+  <details style="margin-top: 18px;">
+    <summary class="button secondary" style="cursor: pointer; width: fit-content;">View all OKRs</summary>
+    <div style="margin-top: 16px;">
+      {''.join(objective_sections) or f'<p class="muted">Create objectives and key results in <a href="{config_href}">OKR setup</a>.</p>'}
+    </div>
+  </details>
 </section>"""
     return _layout(request, "OKRs", body)
 
