@@ -2135,17 +2135,9 @@ def dashboard(
 
     body = f"""
 <section>
-  <div class="inline" style="justify-content: space-between;">
-    <div>
-      <h2>Member Dashboard</h2>
-      <p class="muted">Current member status, activity, expiry, and open staff workload.</p>
-    </div>
-    <div class="inline">
-      <a class="button secondary" href="{_href(request, '/admin/members')}">View members</a>
-      <a class="button secondary" href="{_href(request, '/admin/inactive')}">Member lists</a>
-      <a class="button secondary" href="{_href(request, '/admin/reports/visits')}">Visit report</a>
-      <a class="button secondary" href="{_href(request, '/admin/tasks')}">Staff tasks</a>
-    </div>
+  <div>
+    <h2>Member Dashboard</h2>
+    <p class="muted">Current member status, activity, expiry, and open staff workload.</p>
   </div>
   <div class="maintenance-summary">
     <div class="summary-chip rag-grey"><strong>{current_count}</strong><span>Current members</span></div>
@@ -2901,7 +2893,6 @@ def okrs(
     notice_class = "error" if error else "pill"
     notice_html = f'<p><span class="{notice_class}">{_esc(" ".join(notice_parts))}</span></p>' if notice_parts else ""
     assigned_update_section = ""
-    update_your_krs_button = ""
     if current_staff is not None:
         assigned_rows = session.execute(
             select(OkrObjective, OkrKeyResult)
@@ -2919,7 +2910,6 @@ def okrs(
         ).all()
         assigned_krs = [kr for _objective, kr in assigned_rows]
         if assigned_krs:
-            update_your_krs_button = '<a class="button secondary" href="#your-key-results">Update your key results</a>'
             assigned_percents = [
                 pct
                 for pct in (_okr_percent(kr.actual_value, kr.target_value, kr.direction) for kr in assigned_krs)
@@ -3138,7 +3128,6 @@ def okrs(
         <label><span>Quarter</span><input name="quarter" value="{_esc(selected_quarter)}" placeholder="2026-Q2"></label>
         <button type="submit">View</button>
       </form>
-      {update_your_krs_button}
       <a class="button secondary" href="{config_href}">Configure OKRs</a>
     </div>
   </div>
