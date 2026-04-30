@@ -43,6 +43,7 @@ from .prompts import build_prompt
 from . import prompts as prompts_module
 from .models import User
 from .education_plan import (
+    education_lesson_avatar_payload,
     ensure_education_plan_schema,
     generate_all_education_programme_avatar_videos,
     generate_education_lesson_avatar,
@@ -574,6 +575,11 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
         payload_variants: list[dict[str, object]] = []
         for variant in variants_by_day.get(int(day.id), []):
             quiz = quiz_by_variant.get(int(variant.id))
+            avatar_payload = education_lesson_avatar_payload(variant) or {}
+            playable_video_url = (
+                str(avatar_payload.get("url") or avatar_payload.get("video_url") or "").strip()
+                or str(getattr(variant, "video_url", "") or "").strip()
+            )
             questions = []
             if quiz is not None:
                 for question in questions_by_quiz.get(int(quiz.id), []):
@@ -596,7 +602,7 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
                     "summary": str(getattr(variant, "summary", "") or ""),
                     "script": str(getattr(variant, "script", "") or ""),
                     "action_prompt": str(getattr(variant, "action_prompt", "") or ""),
-                    "video_url": str(getattr(variant, "video_url", "") or ""),
+                    "video_url": playable_video_url,
                     "poster_url": str(getattr(variant, "poster_url", "") or ""),
                     "avatar_character": str(getattr(variant, "avatar_character", "") or ""),
                     "avatar_style": str(getattr(variant, "avatar_style", "") or ""),
@@ -6473,7 +6479,11 @@ async def save_education_programme(
                         pass
                 elif getattr(variant_row, "avatar_generated_at", None) is None:
                     variant_row.avatar_generated_at = None
-                variant_row.content_item_id = int(raw_variant.get("content_item_id")) if raw_variant.get("content_item_id") else None
+                raw_content_item_id = raw_variant.get("content_item_id")
+                if raw_content_item_id:
+                    variant_row.content_item_id = int(raw_content_item_id)
+                elif reset_avatar_media:
+                    variant_row.content_item_id = None
                 variant_row.takeaway_default = str(raw_variant.get("takeaway_default") or "").strip() or None
                 variant_row.takeaway_if_low_score = str(raw_variant.get("takeaway_if_low_score") or "").strip() or None
                 variant_row.takeaway_if_high_score = str(raw_variant.get("takeaway_if_high_score") or "").strip() or None

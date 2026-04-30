@@ -459,7 +459,7 @@ def _lesson_variant_video_url(row: EducationLessonVariant | None) -> str | None:
 
 
 def _lesson_variant_playable_media_url(row: EducationLessonVariant | None) -> str | None:
-    return _lesson_variant_video_url(row)
+    return _lesson_variant_video_url(row) or _avatar_result_url(row)
 
 
 def _lesson_variant_has_playable_media(row: EducationLessonVariant | None) -> bool:
@@ -472,7 +472,7 @@ def education_lesson_avatar_payload(row: EducationLessonVariant | None) -> dict[
     defaults = azure_avatar_defaults()
     title = str(getattr(row, "title", "") or "").strip()
     script = str(getattr(row, "script", "") or "").strip()
-    url = _lesson_variant_video_url(row)
+    url = _lesson_variant_playable_media_url(row)
     result_url = _avatar_result_url(row)
     poster_url = _normalize_media_url(getattr(row, "poster_url", None))
     character = str(getattr(row, "avatar_character", "") or "").strip()
