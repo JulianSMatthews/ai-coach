@@ -1529,6 +1529,54 @@ def _build_education_day_generation_prompt(
     )
 
 
+def _build_education_day_questions_generation_prompt(
+    *,
+    brief: str,
+    programme_context: dict[str, object],
+    day_index: int,
+) -> str:
+    output_schema = {
+        "day_index": day_index,
+        "variants": [
+            {
+                "level": "build",
+                "quiz": {
+                    "pass_score_pct": 66.67,
+                    "questions": [
+                        {
+                            "question_order": 1,
+                            "question_text": "string",
+                            "answer_type": "single_choice",
+                            "options_json": ["string", "string", "string", "string"],
+                            "correct_answer_json": "one exact option string",
+                            "explanation": "string",
+                        }
+                    ],
+                },
+            }
+        ],
+    }
+    return (
+        "You are regenerating quiz questions only for a HealthSense education programme day.\n"
+        "Return a single valid JSON object only. Do not use markdown, code fences, comments, or prose outside JSON.\n\n"
+        "Task:\n"
+        "- Regenerate only the quiz questions for the selected day from the task_description and existing lesson content.\n"
+        "- Do not rewrite or return lesson scripts, transcript text, video fields, daily actions, titles, summaries, takeaways, or avatar settings.\n"
+        "- Use the existing lesson script, summary, action prompt, and takeaways only as source material for quiz relevance.\n"
+        "- Return the same number of variants as supplied in CONTEXT_JSON, preserving each variant's level.\n"
+        "- Include exactly 3 quiz questions for each variant.\n"
+        "- Use answer_type='single_choice' unless the task_description clearly requires boolean or multi_choice.\n"
+        "- For single_choice questions, options_json must be an array of 4 short answer options.\n"
+        "- correct_answer_json must exactly match the correct option string for single_choice questions.\n"
+        "- Vary the position of the correct answer across quiz questions; do not always put it first.\n"
+        "- Use UK English, clear coaching language, and avoid diagnosis or medical claims.\n\n"
+        "CONTEXT_JSON:\n"
+        f"{json.dumps(programme_context, ensure_ascii=False, default=str)}\n\n"
+        "OUTPUT_SCHEMA_JSON:\n"
+        f"{json.dumps(output_schema, ensure_ascii=False)}\n"
+    )
+
+
 def _invoke_education_llm_prompt(
     *,
     prompt: str,
@@ -4572,6 +4620,142 @@ async def generate_education_programme_day_with_llm(request: Request):
     return {"ok": True, "model": resolved_model, "day": generated_day}
 
 
+@admin.post("/education-programmes/day/llm-generate-questions")
+async def generate_education_programme_day_questions_with_llm(request: Request):
+    ensure_education_plan_schema()
+    try:
+        payload = await request.json()
+    except Exception as exc:
+        raise HTTPException(400, f"Invalid JSON payload: {exc}")
+    if not isinstance(payload, dict):
+        raise HTTPException(400, "JSON payload must be an object")
+
+    brief = str(payload.get("brief") or "").strip()
+    if not brief:
+        brief = "Regenerate only the quiz questions for this selected education day."
+    existing_day = payload.get("existing_day") if isinstance(payload.get("existing_day"), dict) else {}
+    try:
+        day_index = int(payload.get("day_index") or existing_day.get("day_index") or 1)
+    except Exception:
+        day_index = 1
+    model_override = _normalize_model_override(str(payload.get("model_override") or ""))
+    concept_key = str(payload.get("programme_concept_key") or existing_day.get("concept_key") or "").strip().lower()
+    concept_label = str(payload.get("programme_concept_label") or existing_day.get("concept_label") or "").strip()
+    raw_variants = existing_day.get("variants") if isinstance(existing_day.get("variants"), list) else []
+    variant_context = []
+    for index, raw_variant in enumerate(raw_variants):
+        if not isinstance(raw_variant, dict):
+            continue
+        variant_context.append(
+            {
+                "variant_index": index,
+                "level": str(raw_variant.get("level") or "build").strip().lower() or "build",
+                "title": str(raw_variant.get("title") or "").strip(),
+                "summary": str(raw_variant.get("summary") or "").strip(),
+                "script": str(raw_variant.get("script") or "").strip(),
+                "action_prompt": str(raw_variant.get("action_prompt") or "").strip(),
+                "takeaway_default": str(raw_variant.get("takeaway_default") or "").strip(),
+                "takeaway_if_low_score": str(raw_variant.get("takeaway_if_low_score") or "").strip(),
+                "takeaway_if_high_score": str(raw_variant.get("takeaway_if_high_score") or "").strip(),
+                "existing_quiz": (raw_variant.get("quiz") if isinstance(raw_variant.get("quiz"), dict) else {}),
+            }
+        )
+    if not variant_context:
+        variant_context.append({"variant_index": 0, "level": "build", "existing_quiz": {}})
+
+    programme_context = {
+        "programme_name": str(payload.get("programme_name") or "").strip(),
+        "programme_code": str(payload.get("programme_code") or "").strip(),
+        "pillar_key": str(payload.get("pillar_key") or "").strip().lower(),
+        "programme_concept_key": concept_key,
+        "programme_concept_label": concept_label,
+        "selected_day_index": day_index,
+        "day_title": str(existing_day.get("default_title") or "").strip(),
+        "day_summary": str(existing_day.get("default_summary") or "").strip(),
+        "lesson_goal": str(existing_day.get("lesson_goal") or "").strip(),
+        "variants": variant_context,
+        "task_description": brief,
+    }
+    prompt = _build_education_day_questions_generation_prompt(
+        brief=brief,
+        programme_context=programme_context,
+        day_index=day_index,
+    )
+
+    try:
+        llm_result = _invoke_education_llm_prompt(
+            prompt=prompt,
+            touchpoint=EDUCATION_DAY_LLM_TOUCHPOINT,
+            model_override=model_override,
+        )
+        resolved_model = str(llm_result.get("model") or "")
+        duration_ms = int(llm_result.get("duration_ms") or 0)
+        content = str(llm_result.get("content") or "")
+    except Exception as exc:
+        raise HTTPException(500, f"LLM question generation failed: {exc}")
+
+    try:
+        raw_generated = _extract_llm_json_object(content)
+        generated = raw_generated.get("day") if isinstance(raw_generated.get("day"), dict) else raw_generated
+        raw_generated_variants = generated.get("variants") if isinstance(generated, dict) and isinstance(generated.get("variants"), list) else []
+        generated_variants = []
+        for index, existing_variant in enumerate(variant_context):
+            raw_variant = raw_generated_variants[index] if index < len(raw_generated_variants) and isinstance(raw_generated_variants[index], dict) else {}
+            quiz = raw_variant.get("quiz") if isinstance(raw_variant.get("quiz"), dict) else {}
+            raw_questions = quiz.get("questions") if isinstance(quiz.get("questions"), list) else []
+            questions = [
+                question
+                for question in (
+                    _normalise_generated_question(raw_question, q_index + 1)
+                    for q_index, raw_question in enumerate(raw_questions[:3])
+                )
+                if question is not None
+            ]
+            while len(questions) < 3:
+                questions.append(_blank_generated_quiz_question(len(questions) + 1))
+            try:
+                pass_score_pct = float(quiz.get("pass_score_pct") if quiz.get("pass_score_pct") not in (None, "") else 66.67)
+            except Exception:
+                pass_score_pct = 66.67
+            generated_variants.append(
+                {
+                    "level": str(raw_variant.get("level") or existing_variant.get("level") or "build").strip().lower() or "build",
+                    "quiz": {
+                        "pass_score_pct": pass_score_pct,
+                        "questions": questions,
+                    },
+                }
+            )
+        generated_day = {"day_index": day_index, "variants": generated_variants}
+    except Exception as exc:
+        raise HTTPException(502, f"LLM question response could not be used: {exc}")
+
+    _log_education_llm_generation(
+        touchpoint=EDUCATION_DAY_LLM_TOUCHPOINT,
+        prompt=prompt,
+        model=resolved_model,
+        duration_ms=duration_ms,
+        response_preview=content,
+        context_meta={
+            "programme_name": programme_context["programme_name"],
+            "programme_code": programme_context["programme_code"],
+            "pillar_key": programme_context["pillar_key"],
+            "programme_concept_key": concept_key,
+            "day_index": day_index,
+            "model_override": model_override,
+            "generation_scope": "questions_only",
+        },
+        prompt_variant="admin_editor_questions_only",
+        task_label=brief[:160],
+        prompt_blocks={
+            "context": json.dumps(programme_context, ensure_ascii=False, default=str),
+            "task": brief,
+        },
+        block_order=["context", "task"],
+    )
+    return {"ok": True, "model": resolved_model, "day": generated_day}
+
+
 @admin.get("/education-programmes/edit", response_class=HTMLResponse)
 def edit_education_programme(id: int | None = None):
     ensure_education_plan_schema()
@@ -4757,6 +4941,28 @@ def edit_education_programme(id: int | None = None):
               <span class="subtle programme-day-llm-status" id="day-llm-status"></span>
             </div>
           </details>
+          <details class="programme-day-llm" id="programme-day-questions-llm">
+            <summary>Regenerate selected day quiz questions only</summary>
+            <p class="help">Use this when the lesson script, transcript, avatar video, daily action, and takeaways should stay unchanged. Only the 3 quiz questions for each variant are replaced in the editor; save the programme to persist them.</p>
+            <div class="grid-2">
+              <div class="field">
+                <label>Model<br/>
+                  <select id="questions-llm-model">
+                    {day_llm_model_options_html}
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="field">
+              <label>Task description<br/>
+                <textarea id="questions-llm-brief" rows="4" placeholder="Example: Regenerate three clearer quiz questions that test the main points from this lesson, without changing the script or video."></textarea>
+              </label>
+            </div>
+            <div class="stack">
+              <button type="button" id="generate-selected-day-questions-llm">Generate questions only</button>
+              <span class="subtle programme-day-llm-status" id="questions-llm-status"></span>
+            </div>
+          </details>
           <div id="programme-days-root" class="programme-day-editor"></div>
         </div>
       </div>
@@ -4799,6 +5005,10 @@ def edit_education_programme(id: int | None = None):
         const dayLlmModel = document.getElementById('day-llm-model');
         const dayLlmButton = document.getElementById('generate-selected-day-llm');
         const dayLlmStatus = document.getElementById('day-llm-status');
+        const questionsLlmBrief = document.getElementById('questions-llm-brief');
+        const questionsLlmModel = document.getElementById('questions-llm-model');
+        const questionsLlmButton = document.getElementById('generate-selected-day-questions-llm');
+        const questionsLlmStatus = document.getElementById('questions-llm-status');
         const programmeLlmBrief = document.getElementById('programme-llm-brief');
         const programmeLlmModel = document.getElementById('programme-llm-model');
         const programmeLlmDays = document.getElementById('programme-llm-days');
@@ -5585,6 +5795,44 @@ def edit_education_programme(id: int | None = None):
           selectDay(selectedDayPosition);
         }}
 
+        function replaceSelectedDayQuestionsWithGenerated(generatedDay) {{
+          const dayEl = selectedDayElement();
+          if (!dayEl) {{
+            window.alert('Select a programme day first.');
+            return;
+          }}
+          const existingDay = collectDayData(dayEl);
+          const generated = generatedDay && typeof generatedDay === 'object'
+            ? (generatedDay.day && typeof generatedDay.day === 'object' ? generatedDay.day : generatedDay)
+            : {{}};
+          const generatedVariants = Array.isArray(generated.variants) ? generated.variants : [];
+          const existingVariants = Array.isArray(existingDay.variants) ? existingDay.variants : [];
+          existingDay.variants = existingVariants.map((variant, index) => {{
+            const generatedVariant = generatedVariants[index] && typeof generatedVariants[index] === 'object'
+              ? generatedVariants[index]
+              : {{}};
+            const generatedQuiz = generatedVariant.quiz && typeof generatedVariant.quiz === 'object'
+              ? generatedVariant.quiz
+              : {{}};
+            const existingQuiz = variant.quiz && typeof variant.quiz === 'object' ? variant.quiz : {{}};
+            const generatedQuestions = Array.isArray(generatedQuiz.questions) ? generatedQuiz.questions : [];
+            const existingQuestions = Array.isArray(existingQuiz.questions) ? existingQuiz.questions : [];
+            const questions = normaliseGeneratedQuestions(generatedQuestions, existingQuestions);
+            return {{
+              ...variant,
+              quiz: {{
+                ...existingQuiz,
+                pass_score_pct: generatedQuiz.pass_score_pct ?? existingQuiz.pass_score_pct ?? 66.67,
+                questions: questions.length ? questions : existingQuestions,
+              }},
+            }};
+          }});
+          dayEl.outerHTML = renderDay(existingDay);
+          renderDaySummaries();
+          updateAllVariantAvatarReviewStates();
+          selectDay(selectedDayPosition);
+        }}
+
         function normaliseGeneratedProgrammeForEditor(generatedProgramme) {{
           const generated = generatedProgramme && typeof generatedProgramme === 'object'
             ? (generatedProgramme.programme && typeof generatedProgramme.programme === 'object' ? generatedProgramme.programme : generatedProgramme)
@@ -5753,6 +6001,64 @@ def edit_education_programme(id: int | None = None):
           }}
         }}
 
+        async function requestSelectedDayQuestionsLlmGeneration() {{
+          const dayEl = selectedDayElement();
+          if (!dayEl) {{
+            window.alert('Select a programme day first.');
+            return;
+          }}
+          const brief = String(questionsLlmBrief?.value || '').trim();
+          const existingDay = collectDayData(dayEl);
+          const payload = {{
+            brief,
+            model_override: String(questionsLlmModel?.value || '').trim(),
+            programme_name: String(form.querySelector('input[name="name"]')?.value || '').trim(),
+            programme_code: String(form.querySelector('input[name="code"]')?.value || '').trim(),
+            pillar_key: selectedProgrammePillar(),
+            programme_concept_key: selectedProgrammeConceptKey(),
+            programme_concept_label: resolvedProgrammeConceptLabel(),
+            day_index: existingDay.day_index || selectedDayPosition + 1,
+            existing_day: existingDay,
+          }};
+          const previousText = questionsLlmButton ? questionsLlmButton.textContent : '';
+          if (questionsLlmButton) {{
+            questionsLlmButton.disabled = true;
+            questionsLlmButton.textContent = 'Generating...';
+          }}
+          if (questionsLlmStatus) {{
+            questionsLlmStatus.textContent = 'Generating quiz questions only...';
+          }}
+          try {{
+            const response = await fetch('/admin/education-programmes/day/llm-generate-questions', {{
+              method: 'POST',
+              headers: {{ 'Content-Type': 'application/json' }},
+              body: JSON.stringify(payload),
+            }});
+            const result = await response.json().catch(() => ({{}}));
+            if (!response.ok || result.ok === false) {{
+              throw new Error(String(result.error || result.detail || 'LLM question generation failed.'));
+            }}
+            if (!result.day) {{
+              throw new Error('LLM response did not include quiz questions.');
+            }}
+            replaceSelectedDayQuestionsWithGenerated(result.day);
+            if (questionsLlmStatus) {{
+              questionsLlmStatus.textContent = `Generated questions with ${{result.model || 'selected model'}}. Review them, then save.`;
+            }}
+          }} catch (err) {{
+            const message = err instanceof Error ? err.message : String(err);
+            if (questionsLlmStatus) {{
+              questionsLlmStatus.textContent = message;
+            }}
+            window.alert(message);
+          }} finally {{
+            if (questionsLlmButton) {{
+              questionsLlmButton.disabled = false;
+              questionsLlmButton.textContent = previousText || 'Generate questions only';
+            }}
+          }}
+        }}
+
         function renderDays(days) {{
           const sortedDays = [...days]
             .sort((left, right) => Number(left.day_index || 0) - Number(right.day_index || 0));
@@ -5894,6 +6200,10 @@ def edit_education_programme(id: int | None = None):
 
         dayLlmButton?.addEventListener('click', function() {{
           void requestSelectedDayLlmGeneration();
+        }});
+
+        questionsLlmButton?.addEventListener('click', function() {{
+          void requestSelectedDayQuestionsLlmGeneration();
         }});
 
         programmeLlmButton?.addEventListener('click', function() {{
