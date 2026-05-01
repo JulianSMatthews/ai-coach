@@ -1087,6 +1087,11 @@ def survey_link_invite_text(member: Member | None, flow_key: str, survey_url: st
             f"{greeting} Welcome to {config.GYM_NAME}, please click on the link below to complete a quick survey, "
             f"so that we can make sure we tailor our support for you. {link}"
         )
+    if flow.key == "exit":
+        return (
+            f"{greeting} we are sorry to see you go! Please take a minute to let us know if there is anything "
+            f"we can do to keep you, and your overall experience as an Anytime Fitness member. {link}"
+        )
     return (
         f"{greeting} please complete this quick {flow.label.lower()} for {config.GYM_NAME}: "
         f"{link}"

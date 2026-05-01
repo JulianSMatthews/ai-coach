@@ -100,10 +100,7 @@ SURVEY_FLOWS: dict[str, SurveyFlow] = {
     "exit": SurveyFlow(
         key="exit",
         label="Exit survey",
-        intro=(
-            "We are sorry to see you go! Please take a minute to let us know if there is anything we can do to keep "
-            "you, and your overall experience as an Anytime Fitness member."
-        ),
+        intro="Please answer the quick questions below when you are ready.",
         questions=(
             SurveyQuestion(
                 "reason",
@@ -167,6 +164,10 @@ def _question_options_from_payload(raw: object, fallback: tuple[str, ...]) -> tu
 
 
 _OLD_EXIT_INTRO = f"It is the {GYM_NAME} team. Sorry to see you leave. Could we ask a few quick questions so we can understand what happened?"
+_EXIT_SMS_INVITE_BODY = (
+    "We are sorry to see you go! Please take a minute to let us know if there is anything we can do to keep "
+    "you, and your overall experience as an Anytime Fitness member."
+)
 _OLD_EXIT_COMPLETION = "Thank you. Your feedback helps the gym improve."
 _OLD_EXIT_REASON_OPTIONS = {"cost", "not using it", "moving away"}
 
@@ -183,7 +184,7 @@ def flow_from_config(flow_key: str, payload: dict[str, Any] | None) -> SurveyFlo
     intro = _clean_text(data.get("intro")) or base.intro
     completion = _clean_text(data.get("completion")) or base.completion
     if base.key == "exit":
-        if intro == _OLD_EXIT_INTRO:
+        if intro in {_OLD_EXIT_INTRO, _EXIT_SMS_INVITE_BODY}:
             intro = base.intro
         if completion == _OLD_EXIT_COMPLETION:
             completion = base.completion
