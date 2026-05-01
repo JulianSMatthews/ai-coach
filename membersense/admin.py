@@ -1529,6 +1529,22 @@ def _public_survey_layout(title: str, body: str) -> HTMLResponse:
       object-fit: cover;
     }}
     form {{ display: grid; gap: 12px; margin-top: 22px; }}
+    textarea {{
+      width: 100%;
+      min-height: 120px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font: inherit;
+      color: var(--text);
+      resize: vertical;
+      box-sizing: border-box;
+    }}
+    textarea:focus {{
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-soft);
+      outline: none;
+    }}
     .option-list {{
       display: grid;
       gap: 12px;
@@ -1581,6 +1597,27 @@ def _public_survey_layout(title: str, body: str) -> HTMLResponse:
     return HTMLResponse(html)
 
 
+def _public_survey_step(flow, answers: dict, step_index: int) -> int:
+    index = max(int(step_index or 0), 0)
+    while index < len(flow.questions):
+        question = flow.questions[index]
+        if flow.key == "exit" and question.key == "preventable_note":
+            value = str((answers or {}).get("preventable") or "").strip().lower()
+            if value not in {"y", "yes", "yeah", "yep", "sure"} and not value.startswith("yes"):
+                index += 1
+                continue
+        break
+    return index
+
+
+def _public_visible_questions(flow, answers: dict) -> list:
+    return [
+        question
+        for index, question in enumerate(flow.questions)
+        if _public_survey_step(flow, answers, index) == index
+    ]
+
+
 def _public_survey_response(
     conversation: Conversation,
     member: Member | None,
@@ -1593,10 +1630,11 @@ def _public_survey_response(
     if flow is None:
         raise HTTPException(status_code=404, detail="Survey not found")
     answers = dict(conversation.answers or {})
-    total = len(flow.questions)
-    step_index = max(min(int(conversation.step_index or 0), total), 0)
-    answered = sum(1 for question in flow.questions if str(answers.get(question.key) or "").strip())
-    if conversation.status == "completed" or step_index >= total:
+    visible_questions = _public_visible_questions(flow, answers)
+    total = len(visible_questions) or len(flow.questions)
+    step_index = max(min(_public_survey_step(flow, answers, int(conversation.step_index or 0)), len(flow.questions)), 0)
+    answered = sum(1 for question in visible_questions if str(answers.get(question.key) or "").strip())
+    if conversation.status == "completed" or step_index >= len(flow.questions):
         thanks_name = member_first_name(member) or "there"
         body = f"""
 <p class="eyebrow">{_esc(config.GYM_NAME)}</p>
@@ -1631,23 +1669,35 @@ def _public_survey_response(
 </form>"""
         return _public_survey_layout(flow.label, body)
     question = flow.questions[step_index]
+    visible_index = next((idx for idx, item in enumerate(visible_questions) if item.key == question.key), step_index)
     pct = round((answered / max(total, 1)) * 100)
-    option_inputs = []
-    for option in question_options(question):
-        option_inputs.append(
-            f"""
+    options = question_options(question)
+    if options:
+        option_inputs = []
+        for option in options:
+            option_inputs.append(
+                f"""
 <button type="submit" name="answer" value="{_esc(option)}" class="option-button">{_esc(option)}</button>"""
-        )
-    error_html = f'<div class="error">{_esc(error)}</div>' if error else ""
-    body = f"""
-<p class="eyebrow">{_esc(config.GYM_NAME)} · Question {step_index + 1} of {total}</p>
-<h1>{_esc(question.text)}</h1>
-<div class="progress"><span style="width: {pct}%"></span></div>
-{error_html}
+            )
+        answer_control = f"""
 <p class="muted">Tap one answer to continue.</p>
 <form method="post">
   <div class="option-list">{''.join(option_inputs)}</div>
 </form>"""
+    else:
+        answer_control = """
+<p class="muted">Add a note to continue.</p>
+<form method="post">
+  <textarea name="answer" rows="5" required placeholder="Write your note here"></textarea>
+  <button type="submit">Save note</button>
+</form>"""
+    error_html = f'<div class="error">{_esc(error)}</div>' if error else ""
+    body = f"""
+<p class="eyebrow">{_esc(config.GYM_NAME)} · Question {visible_index + 1} of {total}</p>
+<h1>{_esc(question.text)}</h1>
+<div class="progress"><span style="width: {pct}%"></span></div>
+{error_html}
+{answer_control}"""
     return _public_survey_layout(flow.label, body)
 
 

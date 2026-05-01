@@ -111,6 +111,7 @@ SURVEY_FLOWS: dict[str, SurveyFlow] = {
             SurveyQuestion("equipment_experience", "How well did the equipment meet your needs?", options=("Good", "Okay", "Poor")),
             SurveyQuestion("team_experience", "How was your experience with the team?", options=("Good", "Okay", "Poor")),
             SurveyQuestion("preventable", "Was there anything the gym could have done differently?", options=("Yes", "Not sure", "No")),
+            SurveyQuestion("preventable_note", "Please tell us what we could have done differently."),
             SurveyQuestion("future", "Would you consider coming back in the future?", options=("Yes", "Maybe", "No")),
         ),
         completion="Thank you for your time. Your feedback helps us improve our offering!",
@@ -268,11 +269,11 @@ def _option_key(value: str) -> str:
 
 def normalize_option_answer(question: SurveyQuestion, inbound_text: str) -> str | None:
     options = question_options(question)
-    if not options:
-        return str(inbound_text or "").strip()
     raw = str(inbound_text or "").strip()
     if not raw:
         return None
+    if not options:
+        return raw
     raw_key = _option_key(raw)
     for idx, option in enumerate(options, start=1):
         if raw_key in {_option_key(option), str(idx), chr(96 + idx)}:

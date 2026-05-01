@@ -1119,15 +1119,34 @@ def _question_text(
     *,
     include_intro: bool = False,
     member: Member | None = None,
+    answers: dict[str, Any] | None = None,
 ) -> tuple[str, list[str]]:
     flow = effective_survey_flow(session, flow_key)
     question = flow.questions[step_index]
-    total = len(flow.questions)
-    prefix = f"Question {step_index + 1} of {total}: "
+    visible_questions = [
+        item for item in flow.questions if not _should_skip_question(flow.key, item.key, answers or {})
+    ]
+    total = len(visible_questions) or len(flow.questions)
+    visible_index = next((idx for idx, item in enumerate(visible_questions) if item.key == question.key), step_index)
+    prefix = f"Question {visible_index + 1} of {total}: "
     text = f"{prefix}{question.text}".strip()
     if include_intro:
         text = f"{survey_intro_for_member(member, flow.intro)}\n\n{text}".strip()
     return text, question_options(question)
+
+
+def _should_skip_question(flow_key: str, question_key: str, answers: dict[str, Any]) -> bool:
+    if flow_key == "exit" and question_key == "preventable_note":
+        value = str((answers or {}).get("preventable") or "").strip().lower()
+        return value not in {"y", "yes", "yeah", "yep", "sure"} and not value.startswith("yes")
+    return False
+
+
+def _next_survey_step(flow: SurveyFlow, answers: dict[str, Any], step_index: int) -> int:
+    index = max(int(step_index or 0), 0)
+    while index < len(flow.questions) and _should_skip_question(flow.key, flow.questions[index].key, answers):
+        index += 1
+    return index
 
 
 def inactive_member_candidates(session: Session, *, min_days: int = 14, limit: int = 200) -> list[Member]:
@@ -1322,7 +1341,7 @@ def continue_app_conversation(session: Session, member: Member, conversation: Co
         return conversation
     flow = effective_survey_flow(session, conversation.flow_key)
     answers = dict(conversation.answers or {})
-    step_index = int(conversation.step_index or 0)
+    step_index = _next_survey_step(flow, answers, int(conversation.step_index or 0))
     if step_index >= len(flow.questions):
         conversation.status = "completed"
         conversation.completed_at = conversation.completed_at or datetime.utcnow()
@@ -1332,9 +1351,11 @@ def continue_app_conversation(session: Session, member: Member, conversation: Co
     question = flow.questions[step_index]
     answer = normalize_option_answer(question, inbound_text)
     if answer is None:
-        raise ValueError("Choose one of the available options.")
+        if question_options(question):
+            raise ValueError("Choose one of the available options.")
+        raise ValueError("Add a note to continue.")
     answers[question.key] = answer
-    step_index += 1
+    step_index = _next_survey_step(flow, answers, step_index + 1)
     conversation.answers = answers
     conversation.step_index = step_index
     conversation.updated_at = datetime.utcnow()
@@ -1355,12 +1376,12 @@ def continue_app_conversation(session: Session, member: Member, conversation: Co
 def continue_conversation(session: Session, member: Member, conversation: Conversation, inbound_text: str) -> Conversation:
     flow = effective_survey_flow(session, conversation.flow_key)
     answers = dict(conversation.answers or {})
-    step_index = int(conversation.step_index or 0)
+    step_index = _next_survey_step(flow, answers, int(conversation.step_index or 0))
     if step_index < len(flow.questions):
         question = flow.questions[step_index]
         answer = normalize_option_answer(question, inbound_text)
         if answer is None:
-            message, options = _question_text(session, conversation.flow_key, step_index)
+            message, options = _question_text(session, conversation.flow_key, step_index, answers=answers)
             send_to_member(
                 session,
                 member,
@@ -1370,7 +1391,7 @@ def continue_conversation(session: Session, member: Member, conversation: Conver
             )
             return conversation
         answers[question.key] = answer
-        step_index += 1
+        step_index = _next_survey_step(flow, answers, step_index + 1)
     conversation.answers = answers
     conversation.step_index = step_index
     conversation.updated_at = datetime.utcnow()
@@ -1387,7 +1408,7 @@ def continue_conversation(session: Session, member: Member, conversation: Conver
         return conversation
     session.add(conversation)
     session.flush()
-    message, options = _question_text(session, conversation.flow_key, step_index)
+    message, options = _question_text(session, conversation.flow_key, step_index, answers=answers)
     send_to_member(session, member, message, conversation, quick_replies=options)
     return conversation
 
