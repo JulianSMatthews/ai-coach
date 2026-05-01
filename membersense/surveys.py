@@ -96,16 +96,23 @@ SURVEY_FLOWS: dict[str, SurveyFlow] = {
     "exit": SurveyFlow(
         key="exit",
         label="Exit survey",
-        intro=f"It is the {GYM_NAME} team. Sorry to see you leave. Could we ask a few quick questions so we can understand what happened?",
+        intro=(
+            "We are sorry to see you go! Please take a minute to let us know if there is anything we can do to keep "
+            "you, and your overall experience as an Anytime Fitness member."
+        ),
         questions=(
-            SurveyQuestion("reason", "What is the main reason you are leaving?", options=("Cost", "Not using it", "Moving away")),
+            SurveyQuestion(
+                "reason",
+                "What is the main reason you are leaving?",
+                options=("Relocation", "Redundancy", "Injury/illness", "Lack of use"),
+            ),
             SurveyQuestion("gym_experience", "How was your overall experience of the gym environment?", options=("Good", "Okay", "Poor")),
             SurveyQuestion("equipment_experience", "How well did the equipment meet your needs?", options=("Good", "Okay", "Poor")),
             SurveyQuestion("team_experience", "How was your experience with the team?", options=("Good", "Okay", "Poor")),
             SurveyQuestion("preventable", "Was there anything the gym could have done differently?", options=("Yes", "Not sure", "No")),
             SurveyQuestion("future", "Would you consider coming back in the future?", options=("Yes", "Maybe", "No")),
         ),
-        completion="Thank you. Your feedback helps the gym improve.",
+        completion="Thank you for your time. Your feedback helps us improve our offering!",
     ),
     "visit": SurveyFlow(
         key="visit",
@@ -151,13 +158,31 @@ def _question_options_from_payload(raw: object, fallback: tuple[str, ...]) -> tu
         values = [str(item or "").strip() for item in raw]
     else:
         values = []
-    cleaned = tuple(value for value in values if value)[:3]
+    cleaned = tuple(value for value in values if value)[:4]
     return cleaned or fallback
+
+
+_OLD_EXIT_INTRO = f"It is the {GYM_NAME} team. Sorry to see you leave. Could we ask a few quick questions so we can understand what happened?"
+_OLD_EXIT_COMPLETION = "Thank you. Your feedback helps the gym improve."
+_OLD_EXIT_REASON_OPTIONS = {"cost", "not using it", "moving away"}
+
+
+def _is_old_exit_reason_payload(item: dict[str, Any]) -> bool:
+    text = _clean_text(item.get("text")).lower()
+    options = {str(option or "").strip().lower() for option in item.get("options") or [] if str(option or "").strip()}
+    return text == "what is the main reason you are leaving?" and bool(options) and options.issubset(_OLD_EXIT_REASON_OPTIONS)
 
 
 def flow_from_config(flow_key: str, payload: dict[str, Any] | None) -> SurveyFlow:
     base = flow_for_key(flow_key)
     data = payload if isinstance(payload, dict) else {}
+    intro = _clean_text(data.get("intro")) or base.intro
+    completion = _clean_text(data.get("completion")) or base.completion
+    if base.key == "exit":
+        if intro == _OLD_EXIT_INTRO:
+            intro = base.intro
+        if completion == _OLD_EXIT_COMPLETION:
+            completion = base.completion
     question_payloads = []
     if not is_outcome_locked_flow(base.key):
         question_payloads = data.get("questions") if isinstance(data.get("questions"), list) else []
@@ -169,6 +194,8 @@ def flow_from_config(flow_key: str, payload: dict[str, Any] | None) -> SurveyFlo
     questions = []
     for question in base.questions:
         item = by_key.get(question.key, {})
+        if base.key == "exit" and question.key == "reason" and _is_old_exit_reason_payload(item):
+            item = {}
         questions.append(
             SurveyQuestion(
                 key=question.key,
@@ -180,9 +207,9 @@ def flow_from_config(flow_key: str, payload: dict[str, Any] | None) -> SurveyFlo
     return SurveyFlow(
         key=base.key,
         label=_clean_text(data.get("label")) or base.label,
-        intro=_clean_text(data.get("intro")) or base.intro,
+        intro=intro,
         questions=tuple(questions),
-        completion=_clean_text(data.get("completion")) or base.completion,
+        completion=completion,
         avatar_script=_clean_text(data.get("avatar_script")),
         avatar_video_url=_clean_text(data.get("avatar_video_url")),
         avatar_poster_url=_clean_text(data.get("avatar_poster_url")),
@@ -227,7 +254,7 @@ def flow_config_payload(flow: SurveyFlow) -> dict[str, Any]:
 def question_options(question: SurveyQuestion | None) -> list[str]:
     if question is None:
         return []
-    return [str(option).strip() for option in question.options if str(option or "").strip()][:3]
+    return [str(option).strip() for option in question.options if str(option or "").strip()][:4]
 
 
 def _option_key(value: str) -> str:
@@ -392,7 +419,10 @@ def classify_response(flow_key: str, answers: dict[str, Any]) -> dict[str, Any]:
         experience_text = f"{gym_experience} {equipment_experience} {team_experience}"
         save = _yesish(preventable) or _maybeish(preventable) or _yesish(future) or _maybeish(future)
         poor_experience = _contains_any(experience_text, ("poor", "bad", "dirty", "broken", "rude", "unhelpful"))
-        urgent = _contains_any(reason, ("staff", "dirty", "equipment", "rude", "complaint", "price", "cost", "value")) or poor_experience
+        urgent = _contains_any(
+            reason,
+            ("staff", "dirty", "equipment", "rude", "complaint", "price", "cost", "value", "injury", "illness", "redundancy"),
+        ) or poor_experience
         return {
             "save_opportunity": "yes" if save else "no",
             "gym_experience": gym_experience or "not recorded",

@@ -615,7 +615,7 @@ def save_survey_config(
                 option_values = [str(part or "").strip() for part in raw_options]
             else:
                 option_values = []
-            options = [option for option in option_values if option][:3] or list(base_question.options)
+            options = [option for option in option_values if option][:4] or list(base_question.options)
             stored_questions.append(
                 {
                     "key": base_question.key,

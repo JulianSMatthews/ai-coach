@@ -452,6 +452,14 @@ def _avatar_result_url(row: EducationLessonVariant | None) -> str | None:
     return None
 
 
+def _avatar_input_payload(row: EducationLessonVariant | None) -> dict[str, Any]:
+    payload = getattr(row, "avatar_payload_json", None) if row is not None else None
+    if not isinstance(payload, dict):
+        return {}
+    value = payload.get("avatar_input")
+    return value if isinstance(value, dict) else {}
+
+
 def _lesson_variant_video_url(row: EducationLessonVariant | None) -> str | None:
     if row is None:
         return None
@@ -471,7 +479,8 @@ def education_lesson_avatar_payload(row: EducationLessonVariant | None) -> dict[
         return None
     defaults = azure_avatar_defaults()
     title = str(getattr(row, "title", "") or "").strip()
-    script = str(getattr(row, "script", "") or "").strip()
+    avatar_input = _avatar_input_payload(row)
+    script = str(avatar_input.get("script") or "").strip() or str(getattr(row, "script", "") or "").strip()
     url = _lesson_variant_playable_media_url(row)
     result_url = _avatar_result_url(row)
     poster_url = _normalize_media_url(getattr(row, "poster_url", None))
@@ -509,6 +518,7 @@ def education_lesson_avatar_payload(row: EducationLessonVariant | None) -> dict[
         "resultUrl": result_url,
         "title": title or "Education lesson",
         "script": script or None,
+        "video_script": script or None,
         "poster_url": poster_url,
         "character": character or str(defaults.get("character") or "lisa"),
         "style": style or str(defaults.get("style") or "graceful-sitting"),
@@ -676,7 +686,16 @@ def _save_education_avatar_generation_result(
     row.avatar_error = str(error or "").strip() or None
     row.avatar_source = "azure_batch"
     row.avatar_summary_url = str(summary_url or "").strip() or None
-    row.avatar_payload_json = response_payload or None
+    payload_snapshot = dict(response_payload or {})
+    payload_snapshot["avatar_input"] = {
+        "title": title,
+        "script": script,
+        "poster_url": poster_url,
+        "character": character,
+        "style": style,
+        "voice": voice,
+    }
+    row.avatar_payload_json = payload_snapshot
     if resolved_status_key == "succeeded" and video_bytes:
         filename = (
             f"education-avatar-{int(getattr(row, 'id', 0) or 0)}-"

@@ -1141,8 +1141,6 @@ def _send_segment(
             continue
         if not member_contact_phone(member):
             continue
-        if active_conversation_for_member(session, int(member.id)):
-            continue
         try:
             _start_and_send_survey_link(request, session, member, flow_key)
         except Exception as exc:

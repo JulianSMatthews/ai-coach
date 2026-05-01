@@ -580,6 +580,7 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
                 str(avatar_payload.get("url") or avatar_payload.get("video_url") or "").strip()
                 or str(getattr(variant, "video_url", "") or "").strip()
             )
+            video_script = str(avatar_payload.get("video_script") or avatar_payload.get("script") or "").strip()
             questions = []
             if quiz is not None:
                 for question in questions_by_quiz.get(int(quiz.id), []):
@@ -601,6 +602,7 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
                     "title": str(getattr(variant, "title", "") or ""),
                     "summary": str(getattr(variant, "summary", "") or ""),
                     "script": str(getattr(variant, "script", "") or ""),
+                    "video_script": video_script,
                     "action_prompt": str(getattr(variant, "action_prompt", "") or ""),
                     "video_url": playable_video_url,
                     "poster_url": str(getattr(variant, "poster_url", "") or ""),
@@ -3990,7 +3992,7 @@ def simulate_education_programme(id: int):
     const posterUrl = String(variant?.poster_url || '').trim();
     const actionPrompt = String(variant?.action_prompt || '').trim();
     const summary = String(variant?.summary || day?.default_summary || '').trim();
-    const script = String(variant?.script || '').trim();
+    const script = String(variant?.video_script || variant?.script || '').trim();
     const takeaway = submission?.takeaway ? String(submission.takeaway || '').trim() : '';
     const passScore = Number(variant?.quiz?.pass_score_pct);
     const progressLabel = submission
