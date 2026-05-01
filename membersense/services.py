@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from sqlalchemy import desc, func, or_, select
+from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from . import config
@@ -1214,11 +1214,16 @@ def last_visit_range_candidates(
             select(Member)
             .where(
                 *_current_member_filters(today),
-                Member.last_visit_date.is_not(None),
-                Member.last_visit_date >= earliest,
-                Member.last_visit_date <= latest,
+                or_(
+                    Member.last_visit_date.is_(None),
+                    and_(
+                        Member.last_visit_date.is_not(None),
+                        Member.last_visit_date >= earliest,
+                        Member.last_visit_date <= latest,
+                    ),
+                ),
             )
-            .order_by(Member.last_visit_date.desc(), Member.id.desc())
+            .order_by(Member.last_visit_date.is_(None).desc(), Member.last_visit_date.desc(), Member.id.desc())
             .limit(max(int(limit or 200), 1))
         )
         .scalars()

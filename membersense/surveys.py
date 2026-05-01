@@ -45,7 +45,7 @@ SURVEY_FLOWS: dict[str, SurveyFlow] = {
                 "goal",
                 "What is your main goal from joining the gym?",
                 helper="Purpose: gives staff context for the induction or coaching conversation.",
-                options=("Lose weight", "Build strength", "Get fitter / healthier"),
+                options=("Lose weight", "Build strength", "Get fitter / healthier", "Mental wellbeing"),
             ),
             SurveyQuestion(
                 "experience",
@@ -89,7 +89,11 @@ SURVEY_FLOWS: dict[str, SurveyFlow] = {
         questions=(
             SurveyQuestion("reason", "What has been the main reason you have not been training recently?", options=("Time", "Motivation", "Injury or pain")),
             SurveyQuestion("intent", "Do you want to get back into a routine at the gym?", options=("Yes", "Not sure", "No")),
-            SurveyQuestion("support", "What would make it easier to come back?", options=("Simple plan", "Trainer check-in", "Class")),
+            SurveyQuestion(
+                "support",
+                "What would make it easier to come back?",
+                options=("Workout guidance from a coach", "Personal training session", "More hours in the day"),
+            ),
         ),
         completion="Thanks for replying. The team will use this to help make the next step easier.",
     ),
@@ -126,7 +130,7 @@ SURVEY_FLOWS: dict[str, SurveyFlow] = {
             SurveyQuestion("equipment_experience", "How was the equipment during your visit?", options=("Good", "Okay", "Poor")),
             SurveyQuestion("team_experience", "How was your interaction with the team today?", options=("Good", "Okay", "Poor")),
             SurveyQuestion("support", "Would support from the team help before your next visit?", options=("Yes", "Maybe", "No")),
-            SurveyQuestion("next_step", "What would help most for your next session?", options=("Training plan", "Technique help", "Class or booking")),
+            SurveyQuestion("next_step", "What would help most for your next session?", options=("Training plan", "Technique help", "Nutritional guidance")),
         ),
         completion="Thanks. The team has your feedback and will follow up if support would help.",
     ),
