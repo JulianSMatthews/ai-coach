@@ -7,6 +7,7 @@ import {
 } from "@/lib/api";
 import { Card, PageShell, SectionHeader } from "@/components/ui";
 import TextScale from "@/components/TextScale";
+import AppNav from "@/components/AppNav";
 import AssessmentChatBox from "./AssessmentChatBox";
 import LeadAssessmentBranding from "./LeadAssessmentBranding";
 import LatestAssessmentPanel from "./LatestAssessmentPanel";
@@ -279,6 +280,11 @@ export default async function AssessmentChatPage(props: PageProps) {
   const onboarding = status.onboarding || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
   const themePreference = prefs.theme || "dark";
+  const promptState = (status.prompt_state_override || "").toLowerCase();
+  const promptBadge =
+    promptState && promptState !== "live"
+      ? `${promptState.charAt(0).toUpperCase()}${promptState.slice(1)} mode`
+      : "";
   const assessmentCompleted =
     status.status === "completed" ||
     Boolean(onboarding.assessment_completed_at) ||
@@ -326,6 +332,7 @@ export default async function AssessmentChatPage(props: PageProps) {
   return (
     <PageShell defaultTheme={themePreference} className={pageShellClassName} contentClassName={pageContentClassName}>
       <TextScale defaultScale={textScale} />
+      {!leadFlow && !leadGuest ? <AppNav userId={userId} promptBadge={promptBadge} /> : null}
 
       <section className="space-y-3 sm:space-y-4">
         {chatIntroText ? <p className="text-sm text-[#6b6257]">{chatIntroText}</p> : null}
