@@ -171,12 +171,24 @@ _EXIT_SMS_INVITE_BODY = (
 )
 _OLD_EXIT_COMPLETION = "Thank you. Your feedback helps the gym improve."
 _OLD_EXIT_REASON_OPTIONS = {"cost", "not using it", "moving away"}
+_OLD_INACTIVE_SUPPORT_TERMS = ("class", "classes")
+_OLD_VISIT_OPTION_TERMS = ("class", "classes", "booking", "bookings")
 
 
 def _is_old_exit_reason_payload(item: dict[str, Any]) -> bool:
     text = _clean_text(item.get("text")).lower()
     options = {str(option or "").strip().lower() for option in item.get("options") or [] if str(option or "").strip()}
     return text == "what is the main reason you are leaving?" and bool(options) and options.issubset(_OLD_EXIT_REASON_OPTIONS)
+
+
+def _has_old_inactive_support_option(item: dict[str, Any]) -> bool:
+    options = [str(option or "").strip().lower() for option in item.get("options") or [] if str(option or "").strip()]
+    return any(any(term in option for term in _OLD_INACTIVE_SUPPORT_TERMS) for option in options)
+
+
+def _has_old_visit_option(item: dict[str, Any]) -> bool:
+    options = [str(option or "").strip().lower() for option in item.get("options") or [] if str(option or "").strip()]
+    return any(any(term in option for term in _OLD_VISIT_OPTION_TERMS) for option in options)
 
 
 def flow_from_config(flow_key: str, payload: dict[str, Any] | None) -> SurveyFlow:
@@ -201,6 +213,10 @@ def flow_from_config(flow_key: str, payload: dict[str, Any] | None) -> SurveyFlo
     for question in base.questions:
         item = by_key.get(question.key, {})
         if base.key == "exit" and question.key == "reason" and _is_old_exit_reason_payload(item):
+            item = {}
+        if base.key == "inactive" and question.key == "support" and _has_old_inactive_support_option(item):
+            item = {}
+        if base.key == "visit" and _has_old_visit_option(item):
             item = {}
         questions.append(
             SurveyQuestion(
@@ -452,7 +468,7 @@ def classify_response(flow_key: str, answers: dict[str, Any]) -> dict[str, Any]:
         experience_detail = f"{experience} {gym_experience} {equipment_experience} {team_experience}"
         needs_support = _yesish(support) or _maybeish(support) or _contains_any(
             f"{experience_detail} {next_step}",
-            ("difficult", "hard", "pain", "injury", "help", "plan", "technique", "class", "poor", "bad"),
+            ("difficult", "hard", "pain", "injury", "help", "plan", "technique", "poor", "bad"),
         )
         priority = "high" if _contains_any(experience_detail, ("difficult", "hard", "pain", "injury", "poor", "bad")) else "normal"
         return {
