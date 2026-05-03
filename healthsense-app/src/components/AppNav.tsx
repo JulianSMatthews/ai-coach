@@ -16,9 +16,8 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
   const links: Array<{ label: string; href: string }> = [
     { label: "Home", href: `/assessment/${userId}/chat` },
     { label: "Preferences", href: `/preferences/${userId}` },
+    { label: "Wearables", href: `/preferences/${userId}/wearables` },
     { label: "Support", href: "/support" },
-  ];
-  const legalLinks: Array<{ label: string; href: string }> = [
     { label: "Privacy", href: "/privacy" },
     { label: "Terms", href: "/terms" },
     { label: "Delete account", href: "/delete-account" },
@@ -52,7 +51,7 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
           </a>
           <button
             type="button"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] md:hidden"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--accent)] md:hidden"
             aria-label="Open menu"
             aria-expanded={open}
             onClick={() => setOpen(true)}
@@ -68,7 +67,7 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
             </svg>
           </button>
         </div>
-        <div className="hidden flex-wrap items-center gap-2 md:flex md:flex-nowrap">
+        <div className="hidden flex-wrap items-center gap-2 md:flex">
           {links.map((link) => (
             <a
               key={link.label}
@@ -99,11 +98,11 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
           <div className="flex items-center justify-between">
             <a href={`/assessment/${userId}/chat`} className="flex items-center gap-2" aria-label="HealthSense home">
               <img src="/healthsense-logo.svg" alt="HealthSense" className="hs-brand-logo h-9 w-auto" />
-              <span className="text-[11px] uppercase tracking-[0.22em] text-[var(--text-secondary)]">{APP_LABEL}</span>
+              <span className="text-[11px] text-[var(--text-secondary)]">{APP_LABEL}</span>
             </a>
             <button
               type="button"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)]"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--accent)]"
               aria-label="Close menu"
               onClick={() => setOpen(false)}
             >
@@ -142,15 +141,6 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
             <LogoutButton className="w-full text-center" />
           </div>
 
-          <div className="mt-6 border-t border-[var(--border)] pt-5">
-            <div className="grid gap-2 text-xs uppercase tracking-[0.16em] text-[var(--text-secondary)]">
-              {legalLinks.map((link) => (
-                <a key={link.href} href={link.href} onClick={() => setOpen(false)}>
-                  {link.label}
-                </a>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
     </>

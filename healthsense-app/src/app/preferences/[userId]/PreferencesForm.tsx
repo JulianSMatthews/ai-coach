@@ -1,27 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { DEFAULT_TEXT_SCALE_STRING } from "@/lib/textScale";
+import { applyThemePreference, normalizeThemePreference } from "@/lib/theme";
 
 type PreferencesFormProps = {
   userId: string;
   initialEmail?: string;
-  initialNote?: string;
-  initialTextScale?: string;
-  initialTrainingObjective?: string;
+  initialTheme?: string;
 };
 
 export default function PreferencesForm({
   userId,
   initialEmail = "",
-  initialNote = "",
-  initialTextScale = DEFAULT_TEXT_SCALE_STRING,
-  initialTrainingObjective = "",
+  initialTheme = "dark",
 }: PreferencesFormProps) {
   const [email, setEmail] = useState(initialEmail || "");
-  const [note, setNote] = useState(initialNote);
-  const [textScale, setTextScale] = useState(initialTextScale || DEFAULT_TEXT_SCALE_STRING);
-  const [trainingObjective, setTrainingObjective] = useState(initialTrainingObjective || "");
+  const [theme, setTheme] = useState(() => {
+    const normalized = normalizeThemePreference(initialTheme);
+    return normalized === "light" ? "light" : "dark";
+  });
   const [changePassword, setChangePassword] = useState(false);
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
@@ -44,9 +41,7 @@ export default function PreferencesForm({
       const payload: Record<string, unknown> = {
         userId,
         email: email.trim(),
-        note,
-        text_scale: textScale,
-        training_objective: trainingObjective,
+        theme,
         preferred_channel: "app",
       };
       if (changePassword) {
@@ -63,8 +58,7 @@ export default function PreferencesForm({
       }
       setStatus("Saved");
       if (typeof window !== "undefined") {
-        window.localStorage.setItem("healthsense.textScale", textScale || DEFAULT_TEXT_SCALE_STRING);
-        document.documentElement.style.setProperty("--text-scale", textScale || DEFAULT_TEXT_SCALE_STRING);
+        applyThemePreference(theme, true);
       }
       if (changePassword) {
         setPassword("");
@@ -82,118 +76,84 @@ export default function PreferencesForm({
   return (
     <form onSubmit={onSubmit} className="space-y-6" autoComplete="off">
       <section className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
-        <h3 className="text-lg font-semibold text-[#1e1b16]">Coaching</h3>
+        <h3 className="text-lg font-semibold text-[#1e1b16]">Preferences</h3>
         <div className="mt-4 grid gap-4">
           <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Coaching note</label>
-            <textarea
-              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-              rows={4}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-              placeholder="Add context for your coach..."
-            />
-          </div>
-
-          <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Training objective</label>
-            <textarea
-              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-              rows={3}
-              value={trainingObjective}
-              onChange={(e) => setTrainingObjective(e.target.value)}
-              placeholder="Objective from your assessment..."
-            />
-            <p className="mt-2 text-xs text-[#6b6257]">This comes from your assessment and can be edited.</p>
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
-        <h3 className="text-lg font-semibold text-[#1e1b16]">Display</h3>
-        <div className="mt-4 grid gap-4">
-          <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Text size</label>
+            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Theme</label>
             <select
               className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-              value={textScale}
-              onChange={(e) => setTextScale(e.target.value)}
+              value={theme}
+              onChange={(e) => setTheme(e.target.value === "light" ? "light" : "dark")}
             >
-              <option value={DEFAULT_TEXT_SCALE_STRING}>default</option>
-              <option value="1.0">smaller</option>
-              <option value="1.1">large</option>
-              <option value="1.2">extra large</option>
-              <option value="1.3">huge</option>
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
             </select>
-            <p className="mt-2 text-xs text-[#6b6257]">Adjusts the overall font size across the dashboard.</p>
           </div>
         </div>
       </section>
 
       <section className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
-        <h3 className="text-lg font-semibold text-[#1e1b16]">Email</h3>
-        <div className="mt-4 rounded-2xl border border-[#efe7db] bg-white p-4">
-          <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Email</label>
-          <input
-            className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-            type="email"
-            name="contact_email"
-            autoComplete="section-profile email"
-            inputMode="email"
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-          />
-          <p className="mt-2 text-xs text-[#6b6257]">Optional, used for account recovery and important updates.</p>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
-        <h3 className="text-lg font-semibold text-[#1e1b16]">Password</h3>
-        <div className="mt-4 rounded-2xl border border-[#efe7db] bg-white p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Password</label>
-            <label className="flex items-center gap-2 text-xs text-[#6b6257]">
-              <input
-                type="checkbox"
-                className="h-4 w-4 rounded border-[#efe7db]"
-                checked={changePassword}
-                onChange={(e) => {
-                  const next = e.target.checked;
-                  setChangePassword(next);
-                  if (!next) {
-                    setPassword("");
-                    setPasswordConfirm("");
-                  }
-                }}
-              />
-              Change password
-            </label>
+        <h3 className="text-lg font-semibold text-[#1e1b16]">Account</h3>
+        <div className="mt-4 grid gap-4">
+          <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
+            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Email</label>
+            <input
+              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+              type="email"
+              name="contact_email"
+              autoComplete="section-profile email"
+              inputMode="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+            />
+            <p className="mt-2 text-xs text-[#6b6257]">Optional, used for account recovery and important updates.</p>
           </div>
-          <input
-            className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm disabled:opacity-60"
-            type="password"
-            name="new_password"
-            autoComplete="new-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="Set a password for login"
-            disabled={!changePassword}
-          />
-          <input
-            className="mt-3 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm disabled:opacity-60"
-            type="password"
-            name="confirm_new_password"
-            autoComplete="new-password"
-            value={passwordConfirm}
-            onChange={(e) => setPasswordConfirm(e.target.value)}
-            placeholder="Confirm password"
-            disabled={!changePassword}
-          />
-          <p className="mt-2 text-xs text-[#6b6257]">Minimum 8 characters.</p>
+          <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Password</label>
+              <label className="flex items-center gap-2 text-xs text-[#6b6257]">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4 rounded border-[#efe7db]"
+                  checked={changePassword}
+                  onChange={(e) => {
+                    const next = e.target.checked;
+                    setChangePassword(next);
+                    if (!next) {
+                      setPassword("");
+                      setPasswordConfirm("");
+                    }
+                  }}
+                />
+                Change password
+              </label>
+            </div>
+            <input
+              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm disabled:opacity-60"
+              type="password"
+              name="new_password"
+              autoComplete="new-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Set a password for login"
+              disabled={!changePassword}
+            />
+            <input
+              className="mt-3 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm disabled:opacity-60"
+              type="password"
+              name="confirm_new_password"
+              autoComplete="new-password"
+              value={passwordConfirm}
+              onChange={(e) => setPasswordConfirm(e.target.value)}
+              placeholder="Confirm password"
+              disabled={!changePassword}
+            />
+            <p className="mt-2 text-xs text-[#6b6257]">Minimum 8 characters.</p>
+          </div>
         </div>
       </section>
 

@@ -85,7 +85,7 @@ export default function WearablesPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           userId,
-          redirect_path: `/preferences/${userId}`,
+          redirect_path: `/preferences/${userId}/wearables`,
         }),
       });
       const data = (await res.json().catch(() => ({}))) as {
@@ -166,26 +166,6 @@ export default function WearablesPanel({
                 );
               })}
             </select>
-            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-              {providers.map((provider) => {
-                const key = String(provider.provider || "").trim().toLowerCase();
-                const selected = key === String(activeProvider?.provider || "").trim().toLowerCase();
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setSelectedProvider(key)}
-                    className={
-                      selected
-                        ? "shrink-0 rounded-full border border-[var(--accent)] bg-[var(--accent)] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white"
-                        : "shrink-0 rounded-full border border-[#efe7db] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#6b6257]"
-                    }
-                  >
-                    {provider.label || provider.provider || "Wearable"}
-                  </button>
-                );
-              })}
-            </div>
           </div>
 
           {activeProvider ? (() => {
