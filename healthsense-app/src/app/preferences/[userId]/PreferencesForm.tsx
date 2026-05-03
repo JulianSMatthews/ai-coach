@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { applyThemePreference, normalizeThemePreference } from "@/lib/theme";
 import { DEFAULT_TEXT_SCALE_STRING } from "@/lib/textScale";
 
 type PreferencesFormProps = {
@@ -9,7 +8,6 @@ type PreferencesFormProps = {
   initialEmail?: string;
   initialNote?: string;
   initialTextScale?: string;
-  initialTheme?: string;
   initialTrainingObjective?: string;
 };
 
@@ -18,13 +16,11 @@ export default function PreferencesForm({
   initialEmail = "",
   initialNote = "",
   initialTextScale = DEFAULT_TEXT_SCALE_STRING,
-  initialTheme = "dark",
   initialTrainingObjective = "",
 }: PreferencesFormProps) {
   const [email, setEmail] = useState(initialEmail || "");
   const [note, setNote] = useState(initialNote);
   const [textScale, setTextScale] = useState(initialTextScale || DEFAULT_TEXT_SCALE_STRING);
-  const [theme, setTheme] = useState(normalizeThemePreference(initialTheme));
   const [trainingObjective, setTrainingObjective] = useState(initialTrainingObjective || "");
   const [changePassword, setChangePassword] = useState(false);
   const [password, setPassword] = useState("");
@@ -50,7 +46,6 @@ export default function PreferencesForm({
         email: email.trim(),
         note,
         text_scale: textScale,
-        theme,
         training_objective: trainingObjective,
         preferred_channel: "app",
       };
@@ -70,7 +65,6 @@ export default function PreferencesForm({
       if (typeof window !== "undefined") {
         window.localStorage.setItem("healthsense.textScale", textScale || DEFAULT_TEXT_SCALE_STRING);
         document.documentElement.style.setProperty("--text-scale", textScale || DEFAULT_TEXT_SCALE_STRING);
-        applyThemePreference(theme, true);
       }
       if (changePassword) {
         setPassword("");
@@ -117,7 +111,7 @@ export default function PreferencesForm({
 
       <section className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
         <h3 className="text-lg font-semibold text-[#1e1b16]">Display</h3>
-        <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <div className="mt-4 grid gap-4">
           <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
             <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Text size</label>
             <select
@@ -132,20 +126,6 @@ export default function PreferencesForm({
               <option value="1.3">huge</option>
             </select>
             <p className="mt-2 text-xs text-[#6b6257]">Adjusts the overall font size across the dashboard.</p>
-          </div>
-
-          <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Appearance</label>
-            <select
-              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
-              value={theme}
-              onChange={(e) => setTheme(normalizeThemePreference(e.target.value))}
-            >
-              <option value="system">match device</option>
-              <option value="light">light</option>
-              <option value="dark">dark</option>
-            </select>
-            <p className="mt-2 text-xs text-[#6b6257]">Switch the user app between light and dark mode.</p>
           </div>
         </div>
       </section>

@@ -15,7 +15,7 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
   const [open, setOpen] = useState(false);
   const links: Array<{ label: string; href: string }> = [
     { label: "Home", href: `/assessment/${userId}/chat` },
-    { label: "Prefs", href: `/preferences/${userId}` },
+    { label: "Preferences", href: `/preferences/${userId}` },
     { label: "Support", href: "/support" },
   ];
   const legalLinks: Array<{ label: string; href: string }> = [
@@ -35,7 +35,7 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
 
   return (
     <>
-      <nav className="sticky top-0 z-30 mb-4 flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-3 text-xs uppercase tracking-[0.16em] text-[var(--text-secondary)] backdrop-blur sm:px-4 md:static md:mb-6 md:flex-row md:flex-nowrap md:items-center md:rounded-full md:px-6 md:py-3 md:tracking-[0.2em]">
+      <nav className="sticky top-0 z-30 mb-2 flex min-w-0 flex-col gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-2.5 py-2 text-xs text-[var(--text-secondary)] backdrop-blur sm:px-3 md:static md:mb-4 md:flex-row md:flex-nowrap md:items-center md:rounded-full md:px-5 md:py-2">
         <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
           <a href={`/assessment/${userId}/chat`} className="flex items-center gap-2" aria-label="HealthSense home">
             <img
@@ -48,7 +48,7 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
               alt="HealthSense"
               className="hs-brand-mark hidden h-8 w-auto md:block"
             />
-            <span className="text-[11px] uppercase tracking-[0.22em] text-[var(--text-secondary)]">{APP_LABEL}</span>
+            <span className="text-[11px] text-[var(--text-secondary)]">{APP_LABEL}</span>
           </a>
           <button
             type="button"
@@ -119,13 +119,13 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
             </button>
           </div>
 
-          <div className="mt-6 grid gap-3 text-[13px] uppercase tracking-[0.18em] text-[var(--text-primary)]">
+          <div className="mt-4 grid gap-2 text-[13px] text-[var(--text-primary)]">
             {links.map((link) => (
               <a
                 key={link.label}
                 href={link.href}
                 onClick={() => setOpen(false)}
-                className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-5 py-3 text-sm"
+                className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm"
               >
                 {link.label}
               </a>
@@ -138,7 +138,7 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
             </div>
           ) : null}
 
-          <div className="mt-6">
+          <div className="mt-4">
             <LogoutButton className="w-full text-center" />
           </div>
 

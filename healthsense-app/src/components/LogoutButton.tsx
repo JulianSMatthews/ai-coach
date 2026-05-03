@@ -5,7 +5,7 @@ type LogoutButtonProps = {
   label?: string;
 };
 
-export default function LogoutButton({ className = "", label = "Log out" }: LogoutButtonProps) {
+export default function LogoutButton({ className = "", label = "Logout" }: LogoutButtonProps) {
   const handleLogout = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     try {
@@ -22,7 +22,7 @@ export default function LogoutButton({ className = "", label = "Log out" }: Logo
   return (
     <form onSubmit={handleLogout}>
       <button
-        className={`rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs uppercase tracking-[0.2em] text-[var(--text-secondary)] ${className}`}
+        className={`rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-xs text-[var(--text-secondary)] ${className}`}
       >
         {label}
       </button>

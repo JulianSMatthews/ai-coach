@@ -1,6 +1,5 @@
 import HealthSenseMark from "@/components/HealthSenseMark";
 import AboutCloseButton from "@/components/AboutCloseButton";
-import AboutMenu from "@/components/AboutMenu";
 import type { ReactNode } from "react";
 
 type LegalPageProps = {
@@ -14,8 +13,7 @@ export default function LegalPage({ eyebrow, title, subtitle, children }: LegalP
   return (
     <main className="h-[100dvh] overflow-hidden bg-[var(--background)] px-4 pb-[max(1rem,env(safe-area-inset-bottom))] pt-[max(1rem,env(safe-area-inset-top))] text-[var(--foreground)] sm:px-6">
       <div className="mx-auto flex h-full w-full max-w-3xl flex-col gap-3">
-        <div className="flex shrink-0 items-center justify-between gap-3">
-          <AboutMenu buttonClassName="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[13px] font-semibold text-[var(--text-secondary)] shadow-[0_10px_24px_-18px_var(--shadow-strong)]" />
+        <div className="flex shrink-0 items-center justify-end gap-3">
           <AboutCloseButton />
         </div>
 

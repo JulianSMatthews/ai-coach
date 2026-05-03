@@ -22,8 +22,7 @@ import {
   type AppleHealthAuthorizationState,
 } from "@/lib/appleHealth";
 import { Capacitor } from "@capacitor/core";
-import AboutMenu from "@/components/AboutMenu";
-import { applyThemePreference, readStoredThemePreference } from "@/lib/theme";
+import { readStoredThemePreference } from "@/lib/theme";
 import { getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
 import LeadAssessmentBranding from "./LeadAssessmentBranding";
@@ -1215,7 +1214,6 @@ export default function LatestAssessmentPanel({
     () => resolveSummaryPanelVisible(initialSummary, readMorningSequenceState(userId, initialSummary.today)),
   );
   const [displayTheme, setDisplayTheme] = useState<DisplayTheme>("dark");
-  const [togglingDisplay, setTogglingDisplay] = useState(false);
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<PillarTrackerDetailResponse | null>(null);
   const [draft, setDraft] = useState<Record<string, number>>({});
@@ -1317,11 +1315,6 @@ export default function LatestAssessmentPanel({
       : "Close";
   const trackerPillarLabel = detail?.pillar?.label || selectedPillarKey?.replace(/_/g, " ") || "";
   const trackerPillarKey = String(detail?.pillar?.pillar_key || selectedPillarKey || "").trim().toLowerCase();
-  const displayLabel = displayTheme === "dark" ? "light" : "dark";
-  const displayButtonClassName =
-    displayLabel === "dark"
-      ? "rounded-full border border-[#2f3542] bg-[#1c2230] px-3 py-1.5 text-[13px] font-semibold text-white shadow-[0_10px_24px_-18px_rgba(12,18,28,0.9)] disabled:cursor-not-allowed disabled:opacity-60"
-      : "rounded-full border border-[#d9cdbb] bg-white px-3 py-1.5 text-[13px] font-semibold text-[#5d5348] shadow-[0_10px_24px_-18px_rgba(93,83,72,0.45)] disabled:cursor-not-allowed disabled:opacity-60";
   const objectivesSections = useMemo(
     () => (Array.isArray(weeklyObjectives?.sections) ? weeklyObjectives.sections : []),
     [weeklyObjectives],
@@ -2312,33 +2305,6 @@ export default function LatestAssessmentPanel({
     }
   }, [submitUrinePhotoCapture]);
 
-  const toggleDisplayTheme = useCallback(async () => {
-    if (togglingDisplay) return;
-    const currentTheme = resolveCurrentDisplayTheme();
-    const nextTheme: DisplayTheme = currentTheme === "dark" ? "light" : "dark";
-    setTogglingDisplay(true);
-    setDisplayTheme(nextTheme);
-    applyThemePreference(nextTheme, true);
-    try {
-      const res = await fetch("/api/preferences", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          userId,
-          theme: nextTheme,
-        }),
-      });
-      if (!res.ok) {
-        throw new Error("Failed to save display preference.");
-      }
-    } catch {
-      setDisplayTheme(currentTheme);
-      applyThemePreference(currentTheme, true);
-    } finally {
-      setTogglingDisplay(false);
-    }
-  }, [togglingDisplay, userId]);
-
   const applyWeeklyObjectivesPayload = useCallback((payload: WeeklyObjectivesResponse | null) => {
     setWeeklyObjectives(payload);
     const nextPillarDrafts: Record<string, Record<string, number | null>> = {};
@@ -2905,17 +2871,6 @@ export default function LatestAssessmentPanel({
           ref={summaryPanelRef}
           className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-5 sm:py-5"
         >
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <AboutMenu buttonClassName={displayButtonClassName} />
-            <button
-              type="button"
-              onClick={() => void toggleDisplayTheme()}
-              disabled={togglingDisplay}
-              className={displayButtonClassName}
-            >
-              {displayLabel}
-            </button>
-          </div>
           <div className="relative">
             <div className="grid grid-cols-2 gap-3">
               {pillars.map((pillar) => {
