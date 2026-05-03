@@ -177,6 +177,10 @@ details > summary::-webkit-details-marker {
   filter: brightness(0) invert(0.96);
 }
 
+:root[data-theme="dark"] .hs-brand-logo-color {
+  filter: none !important;
+}
+
 @media (max-width: 640px) {
   body .text-xs { font-size: calc(0.9rem * var(--text-scale)); }
   body .text-sm { font-size: calc(1.05rem * var(--text-scale)); }

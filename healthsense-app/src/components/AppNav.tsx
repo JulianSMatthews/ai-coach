@@ -5,23 +5,46 @@ import LogoutButton from "@/components/LogoutButton";
 import { Badge } from "@/components/ui";
 
 type AppNavProps = {
-  userId: string;
+  userId?: string;
   promptBadge?: string;
 };
 
 const APP_LABEL = process.env.NODE_ENV === "development" ? "App (Develop)" : "App";
 
-export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
+function readSessionUserId() {
+  if (typeof window === "undefined") return "";
+  try {
+    const cookieUserId = document.cookie
+      .split("; ")
+      .find((item) => item.startsWith("hs_user_id="))
+      ?.split("=")[1];
+    return decodeURIComponent(cookieUserId || window.localStorage.getItem("hs_user_id_local") || "");
+  } catch {
+    return "";
+  }
+}
+
+export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
   const [open, setOpen] = useState(false);
+  const [sessionUserId, setSessionUserId] = useState(userId);
+  const resolvedUserId = sessionUserId || userId;
   const links: Array<{ label: string; href: string }> = [
-    { label: "Home", href: `/assessment/${userId}/chat` },
-    { label: "Preferences", href: `/preferences/${userId}` },
-    { label: "Wearables", href: `/preferences/${userId}/wearables` },
+    { label: "Home", href: resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login" },
+    ...(resolvedUserId
+      ? [
+          { label: "Preferences", href: `/preferences/${resolvedUserId}` },
+          { label: "Wearables", href: `/preferences/${resolvedUserId}/wearables` },
+        ]
+      : []),
     { label: "Support", href: "/support" },
     { label: "Privacy", href: "/privacy" },
     { label: "Terms", href: "/terms" },
     { label: "Delete account", href: "/delete-account" },
   ];
+
+  useEffect(() => {
+    setSessionUserId(userId || readSessionUserId());
+  }, [userId]);
 
   useEffect(() => {
     if (!open) return;
@@ -36,22 +59,22 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
     <>
       <nav className="sticky top-0 z-30 mb-2 flex min-w-0 flex-col gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-2.5 py-2 text-xs text-[var(--text-secondary)] backdrop-blur sm:px-3 md:static md:mb-4 md:flex-row md:flex-nowrap md:items-center md:rounded-full md:px-5 md:py-2">
         <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
-          <a href={`/assessment/${userId}/chat`} className="flex items-center gap-2" aria-label="HealthSense home">
+          <a href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-center gap-2" aria-label="HealthSense home">
             <img
               src="/healthsense-logo.svg"
               alt="HealthSense"
-              className="hs-brand-logo h-8 w-auto md:hidden"
+              className="hs-brand-logo hs-brand-logo-color h-8 w-auto md:hidden"
             />
             <img
               src="/healthsense-mark.svg"
               alt="HealthSense"
-              className="hs-brand-mark hidden h-8 w-auto md:block"
+              className="hs-brand-mark hs-brand-logo-color hidden h-8 w-auto md:block"
             />
             <span className="text-[11px] text-[var(--text-secondary)]">{APP_LABEL}</span>
           </a>
           <button
             type="button"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--accent)] md:hidden"
+            className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--accent)] text-white md:hidden"
             aria-label="Open menu"
             aria-expanded={open}
             onClick={() => setOpen(true)}
@@ -71,7 +94,7 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
           {links.map((link) => (
             <a
               key={link.label}
-              className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1"
+              className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-sm"
               href={link.href}
             >
               {link.label}
@@ -96,13 +119,13 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
           }`}
         >
           <div className="flex items-center justify-between">
-            <a href={`/assessment/${userId}/chat`} className="flex items-center gap-2" aria-label="HealthSense home">
-              <img src="/healthsense-logo.svg" alt="HealthSense" className="hs-brand-logo h-9 w-auto" />
+            <a href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-center gap-2" aria-label="HealthSense home">
+              <img src="/healthsense-logo.svg" alt="HealthSense" className="hs-brand-logo hs-brand-logo-color h-9 w-auto" />
               <span className="text-[11px] text-[var(--text-secondary)]">{APP_LABEL}</span>
             </a>
             <button
               type="button"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--surface)] text-[var(--accent)]"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--accent)] text-white"
               aria-label="Close menu"
               onClick={() => setOpen(false)}
             >
