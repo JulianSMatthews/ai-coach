@@ -15,7 +15,7 @@ export function PageShell({
 }) {
   return (
     <main
-      className={`min-h-[100dvh] overflow-x-hidden bg-[var(--background)] px-6 py-10 text-[var(--foreground)] ${className}`.trim()}
+      className={`min-h-[100dvh] overflow-x-hidden bg-[var(--background)] px-4 py-6 text-[var(--foreground)] sm:px-6 sm:py-10 ${className}`.trim()}
     >
       <SessionBootstrap />
       <ThemeBootstrap defaultTheme={defaultTheme} />
@@ -33,7 +33,7 @@ export function Card({
   className?: string;
 }) {
   return (
-    <div className={`rounded-3xl border border-[var(--border-strong)] bg-[var(--surface)] p-6 ${className}`} {...props}>
+    <div className={`rounded-3xl border border-[var(--border-strong)] bg-[var(--surface)] p-4 sm:p-6 ${className}`} {...props}>
       {children}
     </div>
   );
@@ -53,7 +53,7 @@ export function SectionHeader({
   brandMark?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-3xl border border-[var(--border-strong)] bg-[var(--surface-translucent)] p-8 shadow-[0_30px_80px_-60px_var(--shadow-strong)] backdrop-blur">
+    <div className="rounded-3xl border border-[var(--border-strong)] bg-[var(--surface-translucent)] p-5 shadow-[0_30px_80px_-60px_var(--shadow-strong)] backdrop-blur sm:p-8">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="space-y-2">
           {brandMark ? <div className="flex items-center gap-3">{brandMark}</div> : null}

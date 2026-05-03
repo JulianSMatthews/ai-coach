@@ -1,10 +1,9 @@
-import { getBillingPlans, getUserStatus, getWearables } from "@/lib/api";
+import { getUserStatus, getWearables } from "@/lib/api";
 import { Card, PageShell, SectionHeader } from "@/components/ui";
 import PreferencesForm from "./PreferencesForm";
 import WearablesPanel from "./WearablesPanel";
 import TextScale from "@/components/TextScale";
 import AppNav from "@/components/AppNav";
-import BillingCheckoutCard from "@/components/BillingCheckoutCard";
 import { DEFAULT_TEXT_SCALE_STRING } from "@/lib/textScale";
 
 type PageProps = {
@@ -15,10 +14,9 @@ type PageProps = {
 export default async function PreferencesPage(props: PageProps) {
   const { userId } = await props.params;
   const searchParams = props.searchParams ? await props.searchParams : {};
-  const [data, wearables, billingPlans] = await Promise.all([
+  const [data, wearables] = await Promise.all([
     getUserStatus(userId),
     getWearables(userId),
-    getBillingPlans(),
   ]);
   const user = data.user || {};
   const prefs = data.coaching_preferences || {};
@@ -33,7 +31,6 @@ export default async function PreferencesPage(props: PageProps) {
     String(Array.isArray(value) ? value[0] : value || "").trim();
   const wearableStatus = firstValue(searchParams?.wearable_status);
   const wearableMessage = firstValue(searchParams?.wearable_message) || null;
-  const billingFlag = firstValue(searchParams?.billing) || null;
   const displayName = user.display_name || user.first_name || "User";
   const displayFirstName = displayName.split(" ")[0];
 
@@ -55,7 +52,6 @@ export default async function PreferencesPage(props: PageProps) {
               userId={String(userId)}
               initialEmail={user.email || ""}
               initialNote={prefs.note || ""}
-              initialVoice={prefs.voice || ""}
               initialTextScale={prefs.text_scale || DEFAULT_TEXT_SCALE_STRING}
               initialTheme={themePreference}
               initialTrainingObjective={prefs.training_objective || ""}
@@ -69,16 +65,6 @@ export default async function PreferencesPage(props: PageProps) {
             providers={wearables.providers || []}
             initialMessage={wearableMessage}
             initialStatus={wearableStatus}
-          />
-        </Card>
-
-        <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
-          <BillingCheckoutCard
-            userId={String(userId)}
-            billingState={user.billing_status || null}
-            billingFlag={billingFlag}
-            plans={billingPlans.plans || []}
-            defaultPriceId={billingPlans.default_price_id ?? null}
           />
         </Card>
       </section>

@@ -15,7 +15,7 @@ export default function DeleteAccountPage() {
           trend, urine test, preference, session, and message records where we are able to delete them.
         </p>
         <p>
-          Some payment, security, legal, or operational records may need to be retained where required by law or for
+          Some security, legal, or operational records may need to be retained where required by law or for
           legitimate business record keeping.
         </p>
       </section>

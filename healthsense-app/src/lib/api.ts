@@ -10,8 +10,6 @@ export type UserStatusResponse = {
     email?: string;
     consent_given?: boolean;
     consent_at?: string;
-    billing_status?: string | null;
-    billing_provider?: string | null;
     last_inbound_message_at?: string | null;
   };
   active_domain?: string | null;
@@ -646,30 +644,6 @@ export type EducationPlanTodayResponse = {
   takeaway?: string | null;
 };
 
-export type BillingPriceOption = {
-  id?: number;
-  plan_id?: number;
-  currency?: string;
-  amount_minor?: number;
-  currency_exponent?: number;
-  interval?: string;
-  interval_count?: number;
-  is_default?: boolean;
-};
-
-export type BillingPlanOption = {
-  id?: number;
-  code?: string;
-  name?: string;
-  description?: string | null;
-  prices?: BillingPriceOption[];
-};
-
-export type BillingPlansResponse = {
-  plans?: BillingPlanOption[];
-  default_price_id?: number | null;
-};
-
 function getBaseUrl() {
   const base = process.env.API_BASE_URL;
   if (!base) {
@@ -803,8 +777,4 @@ export async function getEducationPlanToday(
   return apiGet<EducationPlanTodayResponse>(`/api/v1/users/${userId}/education-plan/today`, {
     query: { anchor_date: anchorDate },
   });
-}
-
-export async function getBillingPlans(): Promise<BillingPlansResponse> {
-  return apiGet<BillingPlansResponse>("/api/v1/billing/plans");
 }

@@ -5,7 +5,7 @@ export default function SupportPage() {
     <LegalPage
       eyebrow="Support"
       title="Support"
-      subtitle="Get help with access, coaching, billing, biometrics, urine testing, or account changes."
+      subtitle="Get help with access, coaching, biometrics, urine testing, or account changes."
     >
       <section className="space-y-1.5">
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Contact HealthSense</h2>
@@ -25,7 +25,7 @@ export default function SupportPage() {
           <a className="text-[var(--accent)] underline" href="/delete-account">
             Delete account
           </a>{" "}
-          page. We may verify your identity before deleting health, coaching, billing, and message records.
+          page. We may verify your identity before deleting health, coaching, and message records.
         </p>
       </section>
 

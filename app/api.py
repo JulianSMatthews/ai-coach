@@ -6348,6 +6348,197 @@ def api_auth_login_verify(payload: dict, request: Request):
     }
 
 
+@api_v1.post("/auth/register/request")
+def api_auth_register_request(payload: dict, request: Request):
+    body = payload if isinstance(payload, dict) else {}
+
+    def _titlecase_name(value: object) -> str:
+        raw = _strip_invisible(str(value or "")).strip()
+        if not raw:
+            return ""
+        return " ".join(part.capitalize() for part in raw.split())
+
+    first_name = _titlecase_name(body.get("first_name"))
+    surname = _titlecase_name(body.get("surname"))
+    phone_raw = _strip_invisible(str(body.get("phone") or "")).strip()
+    requested_channel = str(body.get("channel") or "auto").strip().lower() or "auto"
+    accepted_terms = _is_truthy_token(body.get("accepted_terms"))
+    if requested_channel not in {"auto", "whatsapp", "sms"}:
+        raise HTTPException(status_code=400, detail="channel must be auto|whatsapp|sms")
+    if not first_name or not surname:
+        raise HTTPException(status_code=400, detail="first_name and surname are required")
+    if len(first_name) > 120 or len(surname) > 120:
+        raise HTTPException(status_code=400, detail="name is too long")
+    if not accepted_terms:
+        raise HTTPException(status_code=400, detail="terms must be accepted")
+    if not phone_raw:
+        raise HTTPException(status_code=400, detail="phone required")
+    phone_norm = _norm_phone(phone_raw)
+    digits = "".join(ch for ch in phone_norm if ch.isdigit())
+    if not phone_norm.startswith("+") or len(digits) < 8:
+        raise HTTPException(status_code=400, detail="phone must be a valid international number")
+
+    now = datetime.utcnow()
+    code = f"{secrets.randbelow(1_000_000):06d}"
+    with SessionLocal() as s:
+        existing = s.execute(select(User).where(User.phone.in_([phone_norm, f"whatsapp:{phone_norm}"]))).scalar_one_or_none()
+        if existing and getattr(existing, "phone_verified_at", None) is not None:
+            raise HTTPException(status_code=409, detail="account already exists")
+        if existing:
+            user = existing
+            user.first_name = first_name
+            user.surname = surname
+            user.updated_on = now
+            user.consent_given = True
+            user.consent_at = user.consent_at or now
+        else:
+            club_id = _resolve_default_club_id(s)
+            user = User(
+                first_name=first_name,
+                surname=surname,
+                phone=phone_norm,
+                club_id=club_id,
+                created_on=now,
+                updated_on=now,
+                consent_given=True,
+                consent_at=now,
+            )
+            s.add(user)
+        if hasattr(user, "consent_yes_at") and not getattr(user, "consent_yes_at", None):
+            try:
+                user.consent_yes_at = now
+            except Exception:
+                pass
+        s.flush()
+        user_id = int(user.id)
+        _set_pref_value(s, user_id, "account_created_source", "ios_app")
+        _set_pref_value(s, user_id, "terms_accepted_at", _utc_now_iso())
+        otp = AuthOtp(
+            user_id=user_id,
+            channel=requested_channel,
+            purpose="account_create",
+            code_hash=_hash_otp(code),
+            expires_at=now + timedelta(minutes=_OTP_TTL_MINUTES),
+            ip=getattr(request.client, "host", None),
+            user_agent=request.headers.get("user-agent"),
+        )
+        s.add(otp)
+        try:
+            s.commit()
+        except IntegrityError:
+            s.rollback()
+            raise HTTPException(status_code=409, detail="account already exists")
+        s.refresh(otp)
+        otp_id = int(otp.id)
+        otp_expires_at = otp.expires_at
+
+    try:
+        channel_used = _send_auth_code(
+            user_id=user_id,
+            user_phone=phone_norm,
+            user_email=None,
+            code=code,
+            channel=requested_channel,
+            purpose_label="account code",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(
+            f"[auth][otp] register send failed user_id={user_id} channel={requested_channel} "
+            f"phone={phone_norm} error={e}"
+        )
+        raise HTTPException(status_code=500, detail=f"failed to send otp: {e}")
+    with SessionLocal() as s:
+        otp_row = s.query(AuthOtp).filter(AuthOtp.id == otp_id).one_or_none()
+        if otp_row:
+            otp_row.channel = channel_used
+            s.commit()
+
+    return {
+        "otp_id": otp_id,
+        "expires_at": otp_expires_at.isoformat(),
+        "channel": channel_used,
+        "setup_required": True,
+    }
+
+
+@api_v1.post("/auth/register/verify")
+def api_auth_register_verify(payload: dict, request: Request):
+    body = payload if isinstance(payload, dict) else {}
+    phone_raw = body.get("phone")
+    otp_id = body.get("otp_id")
+    code = body.get("code")
+    remember_raw = body.get("remember_me")
+    remember_me = True if remember_raw is None else bool(remember_raw)
+    if not phone_raw or not otp_id or not code:
+        raise HTTPException(status_code=400, detail="phone, otp_id, and code required")
+    try:
+        otp_id = int(otp_id)
+    except Exception:
+        raise HTTPException(status_code=400, detail="otp_id must be an integer")
+
+    phone_norm = _norm_phone(str(phone_raw))
+    now = datetime.utcnow()
+    first_login_marked = False
+    with SessionLocal() as s:
+        user = s.execute(select(User).where(User.phone.in_([phone_norm, f"whatsapp:{phone_norm}"]))).scalar_one_or_none()
+        if not user:
+            raise HTTPException(status_code=404, detail="user not found")
+        otp = s.query(AuthOtp).filter(AuthOtp.id == otp_id, AuthOtp.user_id == user.id).one_or_none()
+        if not otp or otp.purpose != "account_create":
+            raise HTTPException(status_code=404, detail="otp not found")
+        if otp.consumed_at is not None:
+            raise HTTPException(status_code=400, detail="otp already used")
+        if otp.expires_at <= now:
+            raise HTTPException(status_code=400, detail="otp expired")
+        if not _verify_otp(str(code), otp.code_hash):
+            raise HTTPException(status_code=401, detail="invalid otp")
+        otp.consumed_at = now
+        if getattr(user, "phone_verified_at", None) is None:
+            user.phone_verified_at = now
+        try:
+            user.updated_on = now
+        except Exception:
+            pass
+        user_id = int(user.id)
+        session_token = secrets.token_urlsafe(32)
+        ttl_days = _SESSION_TTL_DAYS_REMEMBER if remember_me else _SESSION_TTL_DAYS
+        session = AuthSession(
+            user_id=user_id,
+            token_hash=_hash_token(session_token),
+            created_at=now,
+            expires_at=now + timedelta(days=ttl_days),
+            ip=getattr(request.client, "host", None),
+            user_agent=request.headers.get("user-agent"),
+        )
+        s.add(session)
+        first_login_marked = _set_pref_value(
+            s,
+            user_id,
+            ONBOARDING_PREF_KEYS["first_login"],
+            _utc_now_iso(),
+            only_if_missing=True,
+        )
+        s.commit()
+        expires_at = session.expires_at
+
+    _log_app_engagement_event(
+        user_id=user_id,
+        unit_type="app_account_created",
+        meta={"source": "auth_register_verify"},
+    )
+    if first_login_marked:
+        evaluate_and_enable_coaching(user_id)
+    return {
+        "session_token": session_token,
+        "user_id": user_id,
+        "expires_at": expires_at.isoformat(),
+        "setup_required": True,
+        "remember_days": _SESSION_TTL_DAYS_REMEMBER if remember_me else _SESSION_TTL_DAYS,
+    }
+
+
 @api_v1.post("/auth/password/reset/request")
 def api_auth_password_reset_request(payload: dict, request: Request):
     email_raw = (payload or {}).get("email")
@@ -8021,7 +8212,7 @@ def api_user_preferences_update(
     x_admin_user_id: str | None = Header(None, alias="X-Admin-User-Id"),
 ):
     """
-    Update coaching preferences for a user (note, voice, coaching access, channel, display).
+    Update coaching preferences for a user (note, coaching access, channel, display, account details).
     """
     allowed_channels = {"whatsapp", "app", "sms", "email"}
     allowed_themes = {"light", "dark", "system"}
@@ -8041,10 +8232,11 @@ def api_user_preferences_update(
         if email is not None:
             email_val = str(email).strip().lower()
             if not email_val:
-                raise HTTPException(status_code=400, detail="email is required")
-            if "@" not in email_val or "." not in email_val.split("@")[-1]:
+                u.email = None
+            elif "@" not in email_val or "." not in email_val.split("@")[-1]:
                 raise HTTPException(status_code=400, detail="invalid email")
-            u.email = email_val
+            else:
+                u.email = email_val
 
         note = payload.get("note") if isinstance(payload, dict) else None
         if note is not None:

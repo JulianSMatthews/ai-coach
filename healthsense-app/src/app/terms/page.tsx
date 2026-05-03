@@ -36,17 +36,17 @@ export default function TermsPage() {
       </section>
 
       <section className="space-y-1.5">
-        <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Subscriptions</h2>
+        <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Access</h2>
         <p>
-          HealthSense subscriptions are for coaching service access and related account support. If your subscription is
-          managed directly with HealthSense staff, support can help with billing questions.
+          HealthSense is currently free to access in this app version. If this changes in a future iOS version, any
+          digital subscription offered in the app will use Apple In-App Purchase.
         </p>
       </section>
 
       <section className="space-y-1.5">
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Contact</h2>
         <p>
-          For support, billing, privacy, or deletion requests, contact{" "}
+          For support, privacy, or deletion requests, contact{" "}
           <a className="text-[var(--accent)] underline" href="mailto:support@healthsense.coach">
             support@healthsense.coach
           </a>

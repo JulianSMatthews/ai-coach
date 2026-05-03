@@ -35,7 +35,7 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
 
   return (
     <>
-      <nav className="sticky top-0 z-30 -mx-6 mb-4 flex flex-col gap-2 border-y border-[var(--border)] bg-[var(--surface-soft)] px-6 py-3 text-xs uppercase tracking-[0.2em] text-[var(--text-secondary)] backdrop-blur md:static md:mx-0 md:mb-6 md:flex-row md:flex-nowrap md:items-center md:border md:border-[var(--border)] md:rounded-full md:px-6 md:py-3">
+      <nav className="sticky top-0 z-30 mb-4 flex min-w-0 flex-col gap-2 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-3 py-3 text-xs uppercase tracking-[0.16em] text-[var(--text-secondary)] backdrop-blur sm:px-4 md:static md:mb-6 md:flex-row md:flex-nowrap md:items-center md:rounded-full md:px-6 md:py-3 md:tracking-[0.2em]">
         <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
           <a href={`/assessment/${userId}/chat`} className="flex items-center gap-2" aria-label="HealthSense home">
             <img
@@ -92,7 +92,7 @@ export default function AppNav({ userId, promptBadge = "" }: AppNavProps) {
           onClick={() => setOpen(false)}
         />
         <div
-          className={`absolute right-0 top-0 h-full w-full max-w-sm transform bg-[var(--surface-soft)] px-6 pb-8 pt-6 shadow-2xl transition-transform duration-300 ${
+          className={`absolute right-0 top-0 h-full w-full max-w-sm transform overflow-y-auto overscroll-contain bg-[var(--surface-soft)] px-5 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] shadow-2xl transition-transform duration-300 sm:px-6 ${
             open ? "translate-x-0" : "translate-x-full"
           }`}
         >

@@ -40,6 +40,12 @@ export function friendlyAuthError(raw: unknown): string {
   }
   if (lower.includes("email or phone required")) return "Enter your phone number to continue.";
   if (lower.includes("phone required")) return "Enter your phone number to continue.";
+  if (lower.includes("account already exists")) return "An account already exists for that mobile number. Sign in instead.";
+  if (lower.includes("first_name and surname")) return "Enter your first name and surname to create your account.";
+  if (lower.includes("terms must be accepted")) return "Accept the Terms and Privacy Policy to create your account.";
+  if (lower.includes("phone must be a valid international number")) {
+    return "Enter a valid mobile number, ideally with country code.";
+  }
   if (lower.includes("user not found")) return "We couldn’t find an account for that mobile number.";
   if (lower.includes("email address required")) {
     return "Email sign-in is unavailable right now. Use your mobile number instead.";

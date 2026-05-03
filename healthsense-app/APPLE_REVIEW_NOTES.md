@@ -38,11 +38,10 @@ The reviewer should be able to test:
 
 ## Subscription/payment explanation
 
-The iOS app does not take payment in-app. In the native iOS app, subscription setup is directed to HealthSense support.
-Subscriptions relate to the HealthSense coaching service and account support.
+HealthSense is currently free to access in this iOS version. No payment, subscription, external checkout, or support-led
+subscription setup is offered in the app.
 
-If the commercial model changes to unlock digital-only app features inside iOS, use Apple's In-App Purchase before
-submission.
+If a future version charges for digital app features, it will use Apple's In-App Purchase before submission.
 
 ## Support and deletion
 

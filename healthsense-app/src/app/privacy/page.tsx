@@ -35,7 +35,7 @@ export default function PrivacyPage() {
       <section className="space-y-1.5">
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Service providers</h2>
         <p>
-          We use trusted providers for hosting, authentication, messaging, payments, analytics, AI generation, and media
+          We use trusted providers for hosting, authentication, messaging, analytics, AI generation, and media
           processing. They process data only as needed to provide HealthSense services.
         </p>
       </section>
