@@ -12,23 +12,9 @@ type AppNavProps = {
 
 const APP_SUFFIX = process.env.NODE_ENV === "development" ? "App (Develop)" : "App";
 
-function readSessionUserId() {
-  if (typeof window === "undefined") return "";
-  try {
-    const cookieUserId = document.cookie
-      .split("; ")
-      .find((item) => item.startsWith("hs_user_id="))
-      ?.split("=")[1];
-    return decodeURIComponent(cookieUserId || window.localStorage.getItem("hs_user_id_local") || "");
-  } catch {
-    return "";
-  }
-}
-
 export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
   const [open, setOpen] = useState(false);
-  const [sessionUserId, setSessionUserId] = useState(userId);
-  const resolvedUserId = sessionUserId || userId;
+  const resolvedUserId = String(userId || "").trim();
   const links: Array<{ label: string; href: string }> = [
     { label: "Home", href: resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login" },
     ...(resolvedUserId
@@ -42,10 +28,6 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
     { label: "Terms", href: "/terms" },
     { label: "Delete account", href: "/delete-account" },
   ];
-
-  useEffect(() => {
-    setSessionUserId(userId || readSessionUserId());
-  }, [userId]);
 
   useEffect(() => {
     if (!open) return;

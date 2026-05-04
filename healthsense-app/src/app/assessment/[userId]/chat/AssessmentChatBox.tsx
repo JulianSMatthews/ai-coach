@@ -1667,6 +1667,7 @@ export default function AssessmentChatBox({
 
     const interval = window.setInterval(() => {
       if (document.visibilityState && document.visibilityState !== "visible") return;
+      if (showGuidedHomeChatPanel) return;
       void poll();
     }, 8000);
 
@@ -1674,7 +1675,7 @@ export default function AssessmentChatBox({
       cancelled = true;
       window.clearInterval(interval);
     };
-  }, [refreshChatState]);
+  }, [refreshChatState, showGuidedHomeChatPanel]);
 
   useEffect(() => {
     setShowCoachingPlan(false);
@@ -2411,7 +2412,7 @@ export default function AssessmentChatBox({
               </div>
             </div>
           ) : homeSurface === "insight" ? (
-            educationPlanLoading && !educationPlan ? (
+            (educationPlanLoading || (!educationPlan && !educationPlanError)) ? (
               <div className="flex min-h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
                 <p className="text-sm text-[#6b6257]">
                   Loading today&apos;s education programme…
@@ -2609,7 +2610,7 @@ export default function AssessmentChatBox({
             )
           ) : homeSurface === "habits" ? (
             <div className="flex min-h-full flex-col">
-              {dailyHabitPlanLoading && !dailyHabitPlan ? (
+              {(dailyHabitPlanLoading || (!dailyHabitPlan && !dailyHabitPlanError)) ? (
                 <div className="flex min-h-full items-center rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
                   <p className="text-sm text-[#6b6257]">
                     Reviewing your tracker and preparing today&apos;s plan…
@@ -2711,7 +2712,7 @@ export default function AssessmentChatBox({
             </div>
           )}
         </div>
-        <div className="shrink-0 border-t border-[#efe7db] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-5">
+        <div className="shrink-0 border-t border-[#efe7db] bg-[#fffaf3] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-5">
           {viewingHomeSurfaceFromSummary ? (
             <div className="flex justify-end">
               <button
