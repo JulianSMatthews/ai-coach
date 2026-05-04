@@ -9,7 +9,7 @@ type AppNavProps = {
   promptBadge?: string;
 };
 
-const APP_LABEL = process.env.NODE_ENV === "development" ? "App (Develop)" : "App";
+const APP_LABEL = process.env.NODE_ENV === "development" ? "HealthSense App (Develop)" : "HealthSense App";
 
 function readSessionUserId() {
   if (typeof window === "undefined") return "";
@@ -57,24 +57,19 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
 
   return (
     <>
-      <nav className="sticky top-0 z-30 mb-2 flex min-w-0 flex-col gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-2.5 py-2 text-xs text-[var(--text-secondary)] backdrop-blur sm:px-3 md:static md:mb-4 md:flex-row md:flex-nowrap md:items-center md:rounded-full md:px-5 md:py-2">
+      <nav className="sticky top-0 z-30 mb-2 flex min-w-0 flex-col gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-2.5 py-1.5 text-xs text-[var(--text-secondary)] backdrop-blur sm:px-3 md:static md:mb-4 md:flex-row md:flex-nowrap md:items-center md:rounded-full md:px-5 md:py-2">
         <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
           <a href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-center gap-2" aria-label="HealthSense home">
             <img
-              src="/healthsense-logo.svg"
-              alt="HealthSense"
-              className="hs-brand-logo hs-brand-logo-color h-8 w-auto md:hidden"
-            />
-            <img
               src="/healthsense-mark.svg"
               alt="HealthSense"
-              className="hs-brand-mark hs-brand-logo-color hidden h-8 w-auto md:block"
+              className="hs-brand-mark hs-brand-logo-color h-7 w-auto"
             />
-            <span className="text-[11px] text-[var(--text-secondary)]">{APP_LABEL}</span>
+            <span className="text-xs font-semibold text-white sm:text-sm">{APP_LABEL}</span>
           </a>
           <button
             type="button"
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--accent)] text-white md:hidden"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--accent)] text-white md:hidden"
             aria-label="Open menu"
             aria-expanded={open}
             onClick={() => setOpen(true)}
@@ -120,8 +115,8 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
         >
           <div className="flex items-center justify-between">
             <a href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-center gap-2" aria-label="HealthSense home">
-              <img src="/healthsense-logo.svg" alt="HealthSense" className="hs-brand-logo hs-brand-logo-color h-9 w-auto" />
-              <span className="text-[11px] text-[var(--text-secondary)]">{APP_LABEL}</span>
+              <img src="/healthsense-mark.svg" alt="HealthSense" className="hs-brand-mark hs-brand-logo-color h-9 w-auto" />
+              <span className="text-sm font-semibold text-white">{APP_LABEL}</span>
             </a>
             <button
               type="button"
@@ -161,7 +156,7 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
           ) : null}
 
           <div className="mt-4">
-            <LogoutButton className="w-full text-center" />
+            <LogoutButton className="w-full px-4 py-2.5 text-center" />
           </div>
 
         </div>

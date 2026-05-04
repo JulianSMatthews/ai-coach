@@ -991,7 +991,7 @@ export default function AssessmentChatBox({
       : null;
   const homePanelHeightClass =
     homeSurface === "tracking"
-      ? "h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] sm:h-[44vh] sm:min-h-[20rem] sm:max-h-[28rem]"
+      ? "h-[calc(100dvh-6.5rem)] max-h-[calc(100dvh-6.5rem)] sm:h-[44vh] sm:min-h-[20rem] sm:max-h-[28rem]"
       : homeSurface === "ask"
         ? "h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] sm:h-[58vh] sm:min-h-[22rem] sm:max-h-[38rem]"
         : "h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] sm:h-[78vh] sm:min-h-[32rem] sm:max-h-[56rem]";
