@@ -65,7 +65,7 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
               alt="HealthSense"
               className="hs-brand-mark hs-brand-logo-color h-7 w-auto"
             />
-            <span className="text-xs font-semibold text-white sm:text-sm">{APP_LABEL}</span>
+            <span className="text-[11px] text-white">{APP_LABEL}</span>
           </a>
           <button
             type="button"
@@ -116,7 +116,7 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
           <div className="flex items-center justify-between">
             <a href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-center gap-2" aria-label="HealthSense home">
               <img src="/healthsense-mark.svg" alt="HealthSense" className="hs-brand-mark hs-brand-logo-color h-9 w-auto" />
-              <span className="text-sm font-semibold text-white">{APP_LABEL}</span>
+              <span className="text-[11px] text-white">{APP_LABEL}</span>
             </a>
             <button
               type="button"

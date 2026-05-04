@@ -993,8 +993,8 @@ export default function AssessmentChatBox({
     homeSurface === "tracking"
       ? "h-[calc(100dvh-6.5rem)] max-h-[calc(100dvh-6.5rem)] sm:h-[44vh] sm:min-h-[20rem] sm:max-h-[28rem]"
       : homeSurface === "ask"
-        ? "h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] sm:h-[58vh] sm:min-h-[22rem] sm:max-h-[38rem]"
-        : "h-[calc(100dvh-2rem)] max-h-[calc(100dvh-2rem)] sm:h-[78vh] sm:min-h-[32rem] sm:max-h-[56rem]";
+        ? "h-[calc(100dvh-6.5rem)] max-h-[calc(100dvh-6.5rem)] sm:h-[58vh] sm:min-h-[22rem] sm:max-h-[38rem]"
+        : "h-[calc(100dvh-6.5rem)] max-h-[calc(100dvh-6.5rem)] sm:h-[78vh] sm:min-h-[32rem] sm:max-h-[56rem]";
   const insightQuizSubmitVisible =
     homeSurface === "insight" &&
     educationQuizQuestions.length > 0 &&
@@ -2741,11 +2741,11 @@ export default function AssessmentChatBox({
               Start daily check-in
             </button>
           ) : insightQuizSubmitVisible ? (
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-[11px] uppercase tracking-[0.16em] text-[#8c7f70]">
                 {`${currentHomeSurfaceIndex + 1} of ${HOME_SURFACE_SEQUENCE.length}`}
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
                 {previousHomeSurface ? (
                   <button
                     type="button"
@@ -2778,11 +2778,11 @@ export default function AssessmentChatBox({
               </div>
             </div>
           ) : (
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-[11px] uppercase tracking-[0.16em] text-[#8c7f70]">
                 {`${currentHomeSurfaceIndex + 1} of ${HOME_SURFACE_SEQUENCE.length}`}
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap justify-end gap-2">
                 {previousHomeSurface ? (
                   <button
                     type="button"
