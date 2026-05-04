@@ -9,7 +9,7 @@ type AppNavProps = {
   promptBadge?: string;
 };
 
-const APP_LABEL = process.env.NODE_ENV === "development" ? "HealthSense App (Develop)" : "HealthSense App";
+const APP_SUFFIX = process.env.NODE_ENV === "development" ? "App (Develop)" : "App";
 
 function readSessionUserId() {
   if (typeof window === "undefined") return "";
@@ -65,7 +65,10 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
               alt="HealthSense"
               className="hs-brand-mark hs-brand-logo-color h-7 w-auto"
             />
-            <span className="text-[11px] text-white">{APP_LABEL}</span>
+            <span className="flex items-baseline gap-1 text-white">
+              <span className="text-sm font-semibold leading-none">HealthSense</span>
+              <span className="text-[10px] leading-none">{APP_SUFFIX}</span>
+            </span>
           </a>
           <button
             type="button"
@@ -116,7 +119,10 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
           <div className="flex items-center justify-between">
             <a href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-center gap-2" aria-label="HealthSense home">
               <img src="/healthsense-mark.svg" alt="HealthSense" className="hs-brand-mark hs-brand-logo-color h-9 w-auto" />
-              <span className="text-[11px] text-white">{APP_LABEL}</span>
+              <span className="flex items-baseline gap-1 text-white">
+                <span className="text-sm font-semibold leading-none">HealthSense</span>
+                <span className="text-[10px] leading-none">{APP_SUFFIX}</span>
+              </span>
             </a>
             <button
               type="button"

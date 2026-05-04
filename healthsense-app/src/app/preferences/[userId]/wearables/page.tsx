@@ -1,7 +1,7 @@
 import { getUserStatus, getWearables } from "@/lib/api";
 import AppNav from "@/components/AppNav";
 import TextScale from "@/components/TextScale";
-import { Card, PageShell, SectionHeader } from "@/components/ui";
+import { Card, PageShell } from "@/components/ui";
 import WearablesPanel from "../WearablesPanel";
 
 type PageProps = {
@@ -33,11 +33,11 @@ export default async function WearablesPage(props: PageProps) {
     <PageShell defaultTheme={themePreference}>
       <TextScale defaultScale={textScale} />
       <AppNav userId={userId} promptBadge={promptBadge} />
-      <SectionHeader
-        eyebrow="Wearables"
-        title="Wearables"
-        subtitle={`${displayFirstName} · Connected health data`}
-      />
+      <header className="rounded-3xl border border-[var(--border-strong)] bg-[var(--surface-translucent)] p-4 shadow-[0_30px_80px_-60px_var(--shadow-strong)] backdrop-blur">
+        <p className="text-[11px] uppercase tracking-[0.22em] text-[var(--text-secondary)]">Wearables</p>
+        <h1 className="mt-2 text-[22px] leading-7">Wearables</h1>
+        <p className="mt-1 text-[13px] text-[var(--text-secondary)]">{displayFirstName} · Connected health data</p>
+      </header>
 
       <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
         <WearablesPanel

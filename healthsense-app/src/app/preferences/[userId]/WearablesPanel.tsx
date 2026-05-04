@@ -126,8 +126,8 @@ export default function WearablesPanel({
   return (
     <div className="space-y-4">
       <div className="space-y-2">
-        <h2 className="text-xl">Wearables</h2>
-        <p className="text-sm text-[#6b6257]">
+        <h2 className="text-base font-semibold">Wearables</h2>
+        <p className="text-[13px] text-[#6b6257]">
           Connect a wearable source so recovery, sleep, and training signals can feed into coaching.
         </p>
       </div>
@@ -136,8 +136,8 @@ export default function WearablesPanel({
         <div
           className={
             messageTone === "error"
-              ? "rounded-2xl border border-[#f0c7c0] bg-[#fff1ee] px-4 py-3 text-sm text-[#8b3a2d]"
-              : "rounded-2xl border border-[#d7efe7] bg-[#f4fbf8] px-4 py-3 text-sm text-[#285b4a]"
+              ? "rounded-2xl border border-[#f0c7c0] bg-[#fff1ee] px-4 py-3 text-[13px] text-[#8b3a2d]"
+              : "rounded-2xl border border-[#d7efe7] bg-[#f4fbf8] px-4 py-3 text-[13px] text-[#285b4a]"
           }
         >
           {message}
@@ -145,15 +145,15 @@ export default function WearablesPanel({
       ) : null}
 
       {!providers.length ? (
-        <div className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4 text-sm text-[#6b6257]">
+        <div className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4 text-[13px] text-[#6b6257]">
           No wearable sources are available yet.
         </div>
       ) : (
         <>
           <div className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-3">
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Wearable source</label>
+            <label className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">Wearable source</label>
             <select
-              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-[13px]"
               value={String(activeProvider?.provider || "").trim().toLowerCase()}
               onChange={(event) => setSelectedProvider(event.target.value)}
             >
@@ -180,7 +180,7 @@ export default function WearablesPanel({
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
-                      <h3 className="text-lg font-semibold text-[#1e1b16]">
+                      <h3 className="text-base font-semibold text-[#1e1b16]">
                         {provider.label || provider.provider || "Wearable"}
                       </h3>
                       <span className="rounded-full border border-[#efe7db] bg-white px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">
@@ -188,7 +188,7 @@ export default function WearablesPanel({
                       </span>
                     </div>
                     {provider.description ? (
-                      <p className="mt-2 text-sm text-[#6b6257]">{provider.description}</p>
+                      <p className="mt-2 text-[13px] text-[#6b6257]">{provider.description}</p>
                     ) : null}
                   </div>
                   <span
@@ -205,20 +205,20 @@ export default function WearablesPanel({
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <div className="rounded-xl border border-[#efe7db] bg-white px-3 py-3">
                     <p className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">Last sync</p>
-                    <p className="mt-1 text-sm text-[#1e1b16]">
+                    <p className="mt-1 text-[13px] text-[#1e1b16]">
                       {provider.last_sync_at ? formatDate(provider.last_sync_at) : "Not yet synced"}
                     </p>
                     {provider.last_sync_status ? (
-                      <p className="mt-1 text-xs text-[#6b6257]">
+                      <p className="mt-1 text-[11px] text-[#6b6257]">
                         Status: {String(provider.last_sync_status).replace(/_/g, " ")}
                       </p>
                     ) : null}
                   </div>
                   <div className="rounded-xl border border-[#efe7db] bg-white px-3 py-3">
                     <p className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">Imported days</p>
-                    <p className="mt-1 text-sm text-[#1e1b16]">{provider.metric_days_count || 0}</p>
+                    <p className="mt-1 text-[13px] text-[#1e1b16]">{provider.metric_days_count || 0}</p>
                     {provider.latest_metric_date ? (
-                      <p className="mt-1 text-xs text-[#6b6257]">
+                      <p className="mt-1 text-[11px] text-[#6b6257]">
                         Latest: {formatDate(provider.latest_metric_date)}
                       </p>
                     ) : null}
@@ -226,10 +226,10 @@ export default function WearablesPanel({
                 </div>
 
                 {provider.note ? (
-                  <p className="mt-4 text-sm leading-6 text-[#3c332b]">{provider.note}</p>
+                  <p className="mt-4 text-[13px] leading-5 text-[#3c332b]">{provider.note}</p>
                 ) : null}
                 {provider.last_sync_error ? (
-                  <p className="mt-3 text-sm text-[#8b3a2d]">{provider.last_sync_error}</p>
+                  <p className="mt-3 text-[13px] text-[#8b3a2d]">{provider.last_sync_error}</p>
                 ) : null}
 
                 <div className="mt-4 flex flex-wrap gap-2">

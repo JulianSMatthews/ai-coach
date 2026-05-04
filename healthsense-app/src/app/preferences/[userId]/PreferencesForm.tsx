@@ -76,12 +76,12 @@ export default function PreferencesForm({
   return (
     <form onSubmit={onSubmit} className="space-y-6" autoComplete="off">
       <section className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
-        <h3 className="text-lg font-semibold text-[#1e1b16]">Preferences</h3>
+        <h3 className="text-base font-semibold text-[#1e1b16]">Preferences</h3>
         <div className="mt-4 grid gap-4">
           <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Theme</label>
+            <label className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">Theme</label>
             <select
-              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-[13px]"
               value={theme}
               onChange={(e) => setTheme(e.target.value === "light" ? "light" : "dark")}
             >
@@ -93,12 +93,12 @@ export default function PreferencesForm({
       </section>
 
       <section className="rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-4">
-        <h3 className="text-lg font-semibold text-[#1e1b16]">Account</h3>
+        <h3 className="text-base font-semibold text-[#1e1b16]">Account</h3>
         <div className="mt-4 grid gap-4">
           <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
-            <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Email</label>
+            <label className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">Email</label>
             <input
-              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm"
+              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-[13px]"
               type="email"
               name="contact_email"
               autoComplete="section-profile email"
@@ -110,12 +110,12 @@ export default function PreferencesForm({
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
             />
-            <p className="mt-2 text-xs text-[#6b6257]">Optional, used for account recovery and important updates.</p>
+            <p className="mt-2 text-[11px] text-[#6b6257]">Optional, used for account recovery and important updates.</p>
           </div>
           <div className="rounded-2xl border border-[#efe7db] bg-white p-4">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Password</label>
-              <label className="flex items-center gap-2 text-xs text-[#6b6257]">
+              <label className="text-[11px] uppercase tracking-[0.18em] text-[#6b6257]">Password</label>
+              <label className="flex items-center gap-2 text-[11px] text-[#6b6257]">
                 <input
                   type="checkbox"
                   className="h-4 w-4 rounded border-[#efe7db]"
@@ -133,7 +133,7 @@ export default function PreferencesForm({
               </label>
             </div>
             <input
-              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm disabled:opacity-60"
+              className="mt-2 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-[13px] disabled:opacity-60"
               type="password"
               name="new_password"
               autoComplete="new-password"
@@ -143,7 +143,7 @@ export default function PreferencesForm({
               disabled={!changePassword}
             />
             <input
-              className="mt-3 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-sm disabled:opacity-60"
+              className="mt-3 w-full rounded-xl border border-[#efe7db] bg-white px-3 py-2 text-[13px] disabled:opacity-60"
               type="password"
               name="confirm_new_password"
               autoComplete="new-password"
@@ -152,7 +152,7 @@ export default function PreferencesForm({
               placeholder="Confirm password"
               disabled={!changePassword}
             />
-            <p className="mt-2 text-xs text-[#6b6257]">Minimum 8 characters.</p>
+            <p className="mt-2 text-[11px] text-[#6b6257]">Minimum 8 characters.</p>
           </div>
         </div>
       </section>
@@ -160,12 +160,12 @@ export default function PreferencesForm({
       <div className="flex flex-wrap items-center gap-3">
         <button
           type="submit"
-          className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-full border border-[var(--accent)] bg-[var(--accent)] px-5 py-2 text-[13px] font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
           disabled={saving}
         >
           {saving ? "Saving…" : "Save changes"}
         </button>
-        {status ? <p className="text-sm text-[#6b6257]">{status}</p> : null}
+        {status ? <p className="text-[13px] text-[#6b6257]">{status}</p> : null}
       </div>
     </form>
   );
