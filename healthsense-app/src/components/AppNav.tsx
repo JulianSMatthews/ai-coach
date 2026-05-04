@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import LogoutButton from "@/components/LogoutButton";
 import { Badge } from "@/components/ui";
@@ -59,7 +60,7 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
     <>
       <nav className="sticky top-0 z-30 mb-2 flex min-w-0 flex-col gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-2.5 py-1.5 text-xs text-[var(--text-secondary)] backdrop-blur sm:px-3 md:static md:mb-4 md:flex-row md:flex-nowrap md:items-center md:rounded-full md:px-5 md:py-2">
         <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
-          <a href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-center gap-2" aria-label="HealthSense home">
+          <Link href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-center gap-2" aria-label="HealthSense home">
             <img
               src="/healthsense-mark.svg"
               alt="HealthSense"
@@ -69,7 +70,7 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
               <span className="text-sm font-semibold leading-none">HealthSense</span>
               <span className="text-[10px] leading-none">{APP_SUFFIX}</span>
             </span>
-          </a>
+          </Link>
           <button
             type="button"
             className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--accent)] text-white md:hidden"
@@ -90,13 +91,13 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
         </div>
         <div className="hidden flex-wrap items-center gap-2 md:flex">
           {links.map((link) => (
-            <a
+            <Link
               key={link.label}
               className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-sm"
               href={link.href}
             >
               {link.label}
-            </a>
+            </Link>
           ))}
           {promptBadge ? <Badge label={promptBadge} /> : null}
           <LogoutButton />
@@ -117,13 +118,13 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
           }`}
         >
           <div className="flex items-center justify-between">
-            <a href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-center gap-2" aria-label="HealthSense home">
+            <Link href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-center gap-2" aria-label="HealthSense home">
               <img src="/healthsense-mark.svg" alt="HealthSense" className="hs-brand-mark hs-brand-logo-color h-9 w-auto" />
               <span className="flex items-baseline gap-1 text-white">
                 <span className="text-sm font-semibold leading-none">HealthSense</span>
                 <span className="text-[10px] leading-none">{APP_SUFFIX}</span>
               </span>
-            </a>
+            </Link>
             <button
               type="button"
               className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--accent)] text-white"
@@ -144,14 +145,14 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
 
           <div className="mt-4 grid gap-2 text-[13px] text-[var(--text-primary)]">
             {links.map((link) => (
-              <a
+              <Link
                 key={link.label}
                 href={link.href}
                 onClick={() => setOpen(false)}
                 className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm"
               >
                 {link.label}
-              </a>
+              </Link>
             ))}
           </div>
 

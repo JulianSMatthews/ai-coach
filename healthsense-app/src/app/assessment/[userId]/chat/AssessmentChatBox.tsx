@@ -2659,7 +2659,7 @@ export default function AssessmentChatBox({
           ) : (
             <div className="flex min-h-full flex-col">
               <div className="flex min-h-full flex-col justify-center">
-                {finalGiaMessageLoading ? (
+                {finalGiaMessageLoading || (!finalGiaMessage && !finalGiaMessageError) ? (
                   <div className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-5">
                     <p className="text-sm font-semibold text-[#1e1b16]">Gia is reviewing today&apos;s tracker results…</p>
                     <p className="mt-2 text-sm leading-6 text-[#6b6257]">
