@@ -1527,6 +1527,23 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
     today = tracker_today()
     summary = get_pillar_tracker_summary(user_id, anchor=today)
     weakest = _select_weakest_pillar(summary)
+    latest_tracker_save = get_recent_tracker_save_focus(user_id, current_day=today)
+    preferred_concept_key = _normalize_concept_token(selected_concept_key)
+    preferred_pillar_key = None
+    preferred_anchor = None
+    if isinstance(latest_tracker_save, dict):
+        preferred_pillar_key = str(latest_tracker_save.get("pillar_key") or "").strip().lower() or None
+        preferred_anchor = latest_tracker_save.get("score_date") if isinstance(latest_tracker_save.get("score_date"), date) else None
+        if preferred_concept_key is None:
+            preferred_concept_key = _normalize_concept_token(latest_tracker_save.get("concept_key"))
+    focus_concepts, selected_focus_concept = _select_focus_concepts(
+        user_id,
+        summary,
+        today=today,
+        preferred_concept_key=preferred_concept_key,
+        preferred_pillar_key=preferred_pillar_key,
+        preferred_anchor=preferred_anchor,
+    )
     snapshots: dict[str, dict[str, Any]] = {}
     for pillar_row in (summary.get("pillars") or []):
         if not isinstance(pillar_row, dict):
@@ -1539,8 +1556,16 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
     fasting_context = _load_fasting_context(user_id)
     tracker_review = _build_tracker_review(snapshots, planned_training=planned_training)
     time_context = _build_time_context(today)
-    selected_pillar_key = str(weakest.get("pillar_key") or "nutrition").strip().lower() or "nutrition"
-    selected_pillar_label = str(weakest.get("label") or selected_pillar_key.title()).strip() or selected_pillar_key.title()
+    selected_pillar_key = str(
+        (selected_focus_concept or {}).get("pillar_key")
+        or weakest.get("pillar_key")
+        or "nutrition"
+    ).strip().lower() or "nutrition"
+    selected_pillar_label = str(
+        (selected_focus_concept or {}).get("pillar_label")
+        or weakest.get("label")
+        or selected_pillar_key.title()
+    ).strip() or selected_pillar_key.title()
     okr_context: dict[str, Any] = {}
     selected_pillar_payload = {
         "pillar_key": selected_pillar_key,
@@ -1569,9 +1594,22 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
     return {
         "user_name": _load_user_name(user_id),
         "plan_date": today.isoformat(),
-        "tracker_focus_date": today.isoformat(),
-        "tracker_focus_source": "all_daily_tracking",
-        "latest_tracker_save": None,
+        "tracker_focus_date": str((selected_focus_concept or {}).get("anchor_date") or "").strip()
+        or (preferred_anchor.isoformat() if isinstance(preferred_anchor, date) else today.isoformat()),
+        "tracker_focus_source": "latest_tracker_save" if latest_tracker_save else "all_daily_tracking",
+        "latest_tracker_save": (
+            {
+                **latest_tracker_save,
+                "score_date": latest_tracker_save.get("score_date").isoformat()
+                if isinstance(latest_tracker_save.get("score_date"), date)
+                else latest_tracker_save.get("score_date"),
+                "session_day": latest_tracker_save.get("session_day").isoformat()
+                if isinstance(latest_tracker_save.get("session_day"), date)
+                else latest_tracker_save.get("session_day"),
+            }
+            if isinstance(latest_tracker_save, dict)
+            else None
+        ),
         "weakest_pillar": {
             "pillar_key": str(weakest.get("pillar_key") or "nutrition").strip().lower(),
             "label": str(weakest.get("label") or "").strip() or str(weakest.get("pillar_key") or "nutrition").strip().title(),
@@ -1583,8 +1621,8 @@ def _build_generation_context(user_id: int, *, selected_concept_key: str | None 
             **selected_pillar_payload,
         },
         "pillar_scores": pillars_payload,
-        "focus_concepts": [],
-        "selected_focus_concept": None,
+        "focus_concepts": focus_concepts,
+        "selected_focus_concept": selected_focus_concept,
         "okr_context": okr_context,
         "tracker_review": tracker_review,
         "day_brief": day_brief,

@@ -106,6 +106,19 @@ details > summary::-webkit-details-marker {
   display: none;
 }
 
+.hs-home-panel-shell {
+  backface-visibility: hidden;
+  contain: layout paint;
+  transform: translateZ(0);
+}
+
+.hs-home-panel-scroll {
+  -webkit-overflow-scrolling: touch;
+  backface-visibility: hidden;
+  contain: layout paint;
+  transform: translateZ(0);
+}
+
 :root[data-theme="dark"] .bg-white,
 :root[data-theme="dark"] .bg-white\/70,
 :root[data-theme="dark"] .bg-white\/80,

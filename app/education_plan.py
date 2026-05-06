@@ -2097,8 +2097,15 @@ def _get_or_create_active_plan(
     context: dict[str, Any],
     context_hash: str,
 ) -> tuple[UserEducationPlan | None, EducationProgramme | None]:
+    selected_focus = context.get("selected_focus_concept") if isinstance(context.get("selected_focus_concept"), dict) else {}
+    selected_pillar = context.get("selected_pillar") if isinstance(context.get("selected_pillar"), dict) else {}
     preferred_pillar = (
-        str(((context.get("weakest_pillar") or {}).get("pillar_key")) or "").strip().lower()
+        str(
+            selected_focus.get("pillar_key")
+            or selected_pillar.get("pillar_key")
+            or ((context.get("weakest_pillar") or {}).get("pillar_key"))
+            or ""
+        ).strip().lower()
         if isinstance(context.get("weakest_pillar"), dict)
         else ""
     )
@@ -2129,6 +2136,9 @@ def _get_or_create_active_plan(
         preferred_pillar,
         allowed=available_concepts or None,
     )
+    selected_focus_concept = _normalize_concept_key(selected_focus.get("concept_key"))
+    if selected_focus_concept and (not available_concepts or selected_focus_concept in available_concepts):
+        preferred_concept = selected_focus_concept
     if preferred_concept is None:
         preferred_concept = _weakest_assessment_concept_key(
             assessment,

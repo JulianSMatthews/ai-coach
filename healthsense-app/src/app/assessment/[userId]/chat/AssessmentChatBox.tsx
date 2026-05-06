@@ -822,6 +822,8 @@ export default function AssessmentChatBox({
     sent80: false,
     sent100: false,
   });
+  const homePanelShellRef = useRef<HTMLDivElement | null>(null);
+  const homePanelScrollerRef = useRef<HTMLDivElement | null>(null);
   const finalGiaRequestIdRef = useRef(0);
   const finalGiaListenRequestIdRef = useRef(0);
   const finalGiaSpeechRef = useRef<{ close?: () => void } | null>(null);
@@ -1585,6 +1587,40 @@ export default function AssessmentChatBox({
   }, [showGuidedHomeChatPanel, homeSurface, educationAvatarPending, loadEducationPlan]);
 
   useEffect(() => {
+    if (!showGuidedHomeChatPanel || typeof window === "undefined") return;
+    const scroller = homePanelScrollerRef.current;
+    const shell = homePanelShellRef.current;
+    if (scroller) {
+      scroller.scrollTop = 0;
+    }
+    let rafOne = 0;
+    let rafTwo = 0;
+    rafOne = window.requestAnimationFrame(() => {
+      if (shell) {
+        shell.style.transform = "translateZ(0)";
+        void shell.offsetHeight;
+      }
+      if (scroller) {
+        scroller.style.transform = "translateZ(0)";
+        void scroller.offsetHeight;
+      }
+      rafTwo = window.requestAnimationFrame(() => {
+        if (shell) {
+          shell.style.transform = "";
+        }
+        if (scroller) {
+          scroller.style.transform = "";
+        }
+        window.dispatchEvent(new Event("resize"));
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(rafOne);
+      window.cancelAnimationFrame(rafTwo);
+    };
+  }, [showGuidedHomeChatPanel, homeSurface]);
+
+  useEffect(() => {
     if (educationVideoProgressRef.current.key === educationMediaKey) return;
     educationVideoProgressRef.current = {
       key: educationMediaKey,
@@ -2333,7 +2369,7 @@ export default function AssessmentChatBox({
 
   const homeChatPanel = showGuidedHomeChatPanel ? (
     <section className="-mx-3 overflow-hidden border-y border-[#e7e1d6] bg-white sm:mx-0 sm:rounded-[28px] sm:border sm:shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)]">
-      <div className={`flex ${homePanelHeightClass} min-h-0 flex-col`}>
+      <div ref={homePanelShellRef} className={`hs-home-panel-shell flex ${homePanelHeightClass} min-h-0 flex-col`}>
         <div className="shrink-0 border-b border-[#efe7db] bg-[#fffaf3] px-4 py-4 sm:px-5">
           {homeSurface === "insight" && educationPlan?.available ? (
             <div className="min-w-0 space-y-1">
@@ -2370,7 +2406,7 @@ export default function AssessmentChatBox({
             </>
           )}
         </div>
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
+        <div ref={homePanelScrollerRef} className="hs-home-panel-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5">
           {homeSurface === "tracking" ? (
             <div className="flex min-h-full flex-col gap-4">
               <div className="rounded-[24px] border border-[#efe7db] bg-[#fffaf3] px-4 py-4 sm:px-5 sm:py-5">
