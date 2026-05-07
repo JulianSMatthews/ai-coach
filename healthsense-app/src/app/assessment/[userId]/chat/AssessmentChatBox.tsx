@@ -2459,6 +2459,16 @@ export default function AssessmentChatBox({
                 {educationPlanLoading && educationPlan ? (
                   <p className="text-sm text-[#6b6257]">Refreshing today&apos;s lesson…</p>
                 ) : null}
+                {educationFocusCompleted || educationQuizCompleted ? (
+                  <div className="rounded-[20px] border border-[#b9d8c2] bg-[#f3fbf5] px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#317a4d]">
+                      Today&apos;s focus complete
+                    </p>
+                    <p className="mt-1 text-sm text-[#4f6f59]">
+                      This focus has been completed for today.
+                    </p>
+                  </div>
+                ) : null}
                 <div className="rounded-[20px] border border-[#efe7db] bg-white px-4 py-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
                     {educationProgrammeName || "Education programme"}
@@ -2749,17 +2759,7 @@ export default function AssessmentChatBox({
           )}
         </div>
         <div className="shrink-0 border-t border-[#efe7db] bg-[#fffaf3] px-4 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-3 sm:px-5">
-          {viewingHomeSurfaceFromSummary ? (
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={() => setJourneyCompleted(true)}
-                className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
-              >
-                Close
-              </button>
-            </div>
-          ) : homeSurface === "tracking" ? (
+          {homeSurface === "tracking" && !viewingHomeSurfaceFromSummary ? (
             <button
               type="button"
               onClick={() => {
@@ -2780,10 +2780,12 @@ export default function AssessmentChatBox({
           ) : insightQuizSubmitVisible ? (
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="text-[11px] uppercase tracking-[0.16em] text-[#8c7f70]">
-                {`${currentHomeSurfaceIndex + 1} of ${HOME_SURFACE_SEQUENCE.length}`}
+                {viewingHomeSurfaceFromSummary
+                  ? "Daily view"
+                  : `${currentHomeSurfaceIndex + 1} of ${HOME_SURFACE_SEQUENCE.length}`}
               </div>
               <div className="flex flex-wrap justify-end gap-2">
-                {previousHomeSurface ? (
+                {previousHomeSurface && !viewingHomeSurfaceFromSummary ? (
                   <button
                     type="button"
                     onClick={() => setHomeSurface(previousHomeSurface)}
@@ -2792,7 +2794,7 @@ export default function AssessmentChatBox({
                     Back
                   </button>
                 ) : null}
-                {nextHomeSurface ? (
+                {nextHomeSurface && !viewingHomeSurfaceFromSummary ? (
                   <button
                     type="button"
                     onClick={() => {
@@ -2813,6 +2815,16 @@ export default function AssessmentChatBox({
                   {educationQuizSubmitting ? "Saving" : "Submit quick check"}
                 </button>
               </div>
+            </div>
+          ) : viewingHomeSurfaceFromSummary ? (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => setJourneyCompleted(true)}
+                className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#5d5348]"
+              >
+                Close
+              </button>
             </div>
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-2">
