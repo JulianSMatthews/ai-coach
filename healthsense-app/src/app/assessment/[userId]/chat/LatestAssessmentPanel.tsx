@@ -2697,9 +2697,6 @@ export default function LatestAssessmentPanel({
     setDraft({});
     setDetailError(null);
     setSaveError(null);
-    const resolvedAnchorDate =
-      anchorDate ||
-      (!guided ? String(summary?.today || "").trim() || undefined : undefined);
     if (guided && typeof window !== "undefined") {
       window.dispatchEvent(
         new CustomEvent("healthsense-home-surface", {
@@ -2709,8 +2706,8 @@ export default function LatestAssessmentPanel({
         }),
       );
     }
-    await loadTrackerDetail(normalizedPillarKey, resolvedAnchorDate);
-  }, [loadTrackerDetail, summary?.today]);
+    await loadTrackerDetail(normalizedPillarKey, anchorDate);
+  }, [loadTrackerDetail]);
 
   const closeTracker = () => {
     setSelectedPillarKey(null);
@@ -2882,7 +2879,7 @@ export default function LatestAssessmentPanel({
                     key={pillarKey}
                     type="button"
                     onClick={() =>
-                      void openTracker(pillarKey, String(summary?.today || "").trim() || undefined, {
+                      void openTracker(pillarKey, undefined, {
                         guided: false,
                       })
                     }

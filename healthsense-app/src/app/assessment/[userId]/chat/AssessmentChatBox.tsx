@@ -137,7 +137,7 @@ const HOME_SURFACE_COPY: Record<
     eyebrow: "Step 2 of 4",
     title: "Today's plan",
     description: "Review the key moments for today, then continue to today's lesson.",
-    nextLabel: "Start lesson",
+    nextLabel: "Start today's focus",
   },
   insight: {
     eyebrow: "Step 3 of 4",
