@@ -315,8 +315,7 @@ def _pillar_allows_yesterday_catchup(pillar_key: str) -> bool:
 
 
 def _pillar_yesterday_catchup_is_time_limited(pillar_key: str) -> bool:
-    key = str(pillar_key or "").strip().lower()
-    return key in {"nutrition", "training", "resilience"}
+    return False
 
 
 def _yesterday_catchup_allowed(now: datetime | None = None) -> bool:
