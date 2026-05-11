@@ -962,7 +962,7 @@ export default function AssessmentChatBox({
   const educationFocusStatusDetail = educationFocusCompleted
     ? "This programme day is complete. The next day will appear on your next daily focus."
     : educationQuizCompleted
-      ? "The quick check is saved. This focus will move on when the remaining completion step is done."
+      ? "The quick check is saved. Refreshing this focus will mark the programme day complete."
       : educationCompletionStatus === "video_done"
         ? "The video is complete. Submit the quick check to complete today's focus."
         : "Complete today's focus to unlock the next programme day.";

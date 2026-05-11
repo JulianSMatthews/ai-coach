@@ -2399,9 +2399,8 @@ def _sync_progress_completion(
     has_video = bool(getattr(progress, "video_completed_at", None))
     has_quiz = bool(getattr(progress, "quiz_completed_at", None))
     video_required = _lesson_variant_has_playable_media(lesson_variant)
-    video_done = has_video or not video_required
-    quiz_done = has_quiz or not quiz_required
-    if video_done and quiz_done:
+    focus_done = has_quiz if quiz_required else (has_video or not video_required)
+    if focus_done:
         progress.completion_status = "completed"
         if getattr(progress, "completed_at", None) is None:
             progress.completed_at = _now_utc()
