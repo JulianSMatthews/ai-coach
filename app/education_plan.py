@@ -2393,10 +2393,15 @@ def _select_takeaway(lesson_variant: EducationLessonVariant | None, score_pct: f
 def _sync_progress_completion(
     progress: UserEducationDayProgress,
     lesson_variant: EducationLessonVariant | None = None,
+    *,
+    quiz_required: bool = True,
 ) -> None:
     has_video = bool(getattr(progress, "video_completed_at", None))
     has_quiz = bool(getattr(progress, "quiz_completed_at", None))
-    if has_video and has_quiz:
+    video_required = _lesson_variant_has_playable_media(lesson_variant)
+    video_done = has_video or not video_required
+    quiz_done = has_quiz or not quiz_required
+    if video_done and quiz_done:
         progress.completion_status = "completed"
         if getattr(progress, "completed_at", None) is None:
             progress.completed_at = _now_utc()
@@ -2431,7 +2436,8 @@ def _sync_existing_plan_completion_states(
     for progress, lesson_variant in rows:
         before_status = str(getattr(progress, "completion_status", "") or "")
         before_completed_at = getattr(progress, "completed_at", None)
-        _sync_progress_completion(progress, lesson_variant)
+        quiz = _quiz_row(session, int(getattr(lesson_variant, "id", 0) or 0) or None)
+        _sync_progress_completion(progress, lesson_variant, quiz_required=bool(quiz))
         if (
             before_status != str(getattr(progress, "completion_status", "") or "")
             or before_completed_at != getattr(progress, "completed_at", None)
@@ -2610,7 +2616,7 @@ def _lesson_state(
         lesson_variant=lesson_variant,
         lesson_date=anchor,
     )
-    _sync_progress_completion(progress, lesson_variant)
+    _sync_progress_completion(progress, lesson_variant, quiz_required=bool(quiz_questions))
     session.add(progress)
     session.flush()
     quiz_answers_by_question: dict[int, UserEducationQuizAnswer] = {}
@@ -2752,7 +2758,8 @@ def record_education_video_progress(
             progress.video_completed_at = _now_utc()
         lesson_variant_id = int((((state.get("lesson") or {}).get("lesson_variant_id")) or getattr(progress, "lesson_variant_id", 0) or 0) or 0)
         lesson_variant = session.get(EducationLessonVariant, lesson_variant_id) if lesson_variant_id else None
-        _sync_progress_completion(progress, lesson_variant)
+        quiz = _quiz_row(session, lesson_variant_id)
+        _sync_progress_completion(progress, lesson_variant, quiz_required=bool(quiz))
         session.add(progress)
         plan = session.get(UserEducationPlan, int(state.get("plan_id") or 0))
         if plan is not None:
@@ -2828,7 +2835,8 @@ def submit_education_quiz(
         takeaway_text, takeaway_variant = _select_takeaway(lesson_variant, score_pct)
         progress.takeaway_text_shown = takeaway_text
         progress.takeaway_variant = takeaway_variant
-        _sync_progress_completion(progress, lesson_variant)
+        quiz = _quiz_row(session, lesson_variant_id)
+        _sync_progress_completion(progress, lesson_variant, quiz_required=bool(quiz))
         session.add(progress)
         plan = session.get(UserEducationPlan, int(state.get("plan_id") or 0))
         if plan is not None:

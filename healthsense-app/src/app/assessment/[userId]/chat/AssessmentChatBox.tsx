@@ -952,6 +952,20 @@ export default function AssessmentChatBox({
   const educationFocusCompleted = Boolean(
     educationPlan?.progress?.completed_at || educationCompletionStatus === "completed",
   );
+  const educationFocusStatusTitle = educationFocusCompleted
+    ? "Today's focus complete"
+    : educationQuizCompleted
+      ? "Quick check complete"
+      : educationCompletionStatus === "video_done"
+        ? "Video complete"
+        : "Today's focus not complete";
+  const educationFocusStatusDetail = educationFocusCompleted
+    ? "This focus has been completed for today."
+    : educationQuizCompleted
+      ? "The quick check is saved. This focus will move on when the remaining completion step is done."
+      : educationCompletionStatus === "video_done"
+        ? "The video is complete. Submit the quick check to complete today's focus."
+        : "Complete today's focus to unlock the next programme day.";
   const educationStreakDays = Math.max(0, Math.floor(Number(educationPlan?.streak_days || 0) || 0));
   const educationBestStreakDays = Math.max(0, Math.floor(Number(educationPlan?.best_streak_days || 0) || 0));
   const educationStreakLabel = `${educationStreakDays} day${educationStreakDays === 1 ? "" : "s"}`;
@@ -2459,13 +2473,21 @@ export default function AssessmentChatBox({
                 {educationPlanLoading && educationPlan ? (
                   <p className="text-sm text-[#6b6257]">Refreshing today&apos;s lesson…</p>
                 ) : null}
-                {educationFocusCompleted || educationQuizCompleted ? (
-                  <div className="rounded-[20px] border border-[#b9d8c2] bg-[#f3fbf5] px-4 py-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#317a4d]">
-                      Today&apos;s focus complete
+                {educationPlan?.progress ? (
+                  <div className={`rounded-[20px] border px-4 py-3 ${
+                    educationFocusCompleted
+                      ? "border-[#b9d8c2] bg-[#f3fbf5]"
+                      : "border-[#e4d4bd] bg-[#fffaf3]"
+                  }`}>
+                    <p className={`text-[11px] font-semibold uppercase tracking-[0.16em] ${
+                      educationFocusCompleted ? "text-[#317a4d]" : "text-[#8a5a1f]"
+                    }`}>
+                      {educationFocusStatusTitle}
                     </p>
-                    <p className="mt-1 text-sm text-[#4f6f59]">
-                      This focus has been completed for today.
+                    <p className={`mt-1 text-sm ${
+                      educationFocusCompleted ? "text-[#4f6f59]" : "text-[#6b6257]"
+                    }`}>
+                      {educationFocusStatusDetail}
                     </p>
                   </div>
                 ) : null}
