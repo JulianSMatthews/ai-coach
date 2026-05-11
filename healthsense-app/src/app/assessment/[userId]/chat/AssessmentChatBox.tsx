@@ -960,7 +960,7 @@ export default function AssessmentChatBox({
         ? "Video complete"
         : "Today's focus not complete";
   const educationFocusStatusDetail = educationFocusCompleted
-    ? "This focus has been completed for today."
+    ? "This programme day is complete. The next day will appear on your next daily focus."
     : educationQuizCompleted
       ? "The quick check is saved. This focus will move on when the remaining completion step is done."
       : educationCompletionStatus === "video_done"
@@ -982,6 +982,11 @@ export default function AssessmentChatBox({
       : educationDayIndex > 0
         ? `Day ${educationDayIndex}`
         : "";
+  const educationCurrentDayLabel = educationDayIndex > 0
+    ? educationDurationDays > 0
+      ? `Day ${educationDayIndex} of ${educationDurationDays}`
+      : `Day ${educationDayIndex}`
+    : "Today's focus";
   const educationFocusStreakSummary = [
     educationCompletedDaysLabel,
     `${educationStreakLabel} focus streak`,
@@ -2482,7 +2487,7 @@ export default function AssessmentChatBox({
                     <p className={`text-[11px] font-semibold uppercase tracking-[0.16em] ${
                       educationFocusCompleted ? "text-[#317a4d]" : "text-[#8a5a1f]"
                     }`}>
-                      {educationFocusStatusTitle}
+                      {educationCurrentDayLabel} · {educationFocusStatusTitle}
                     </p>
                     <p className={`mt-1 text-sm ${
                       educationFocusCompleted ? "text-[#4f6f59]" : "text-[#6b6257]"
