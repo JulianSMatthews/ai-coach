@@ -952,20 +952,6 @@ export default function AssessmentChatBox({
   const educationFocusCompleted = Boolean(
     educationPlan?.progress?.completed_at || educationCompletionStatus === "completed",
   );
-  const educationFocusStatusTitle = educationFocusCompleted
-    ? "Today's focus complete"
-    : educationQuizCompleted
-      ? "Quick check complete"
-      : educationCompletionStatus === "video_done"
-        ? "Video complete"
-        : "Today's focus not complete";
-  const educationFocusStatusDetail = educationFocusCompleted
-    ? "This programme day is complete. The next day will appear on your next daily focus."
-    : educationQuizCompleted
-      ? "The quick check is saved. Refreshing this focus will mark the programme day complete."
-      : educationCompletionStatus === "video_done"
-        ? "The video is complete. Submit the quick check to complete today's focus."
-        : "Complete today's focus to unlock the next programme day.";
   const educationStreakDays = Math.max(0, Math.floor(Number(educationPlan?.streak_days || 0) || 0));
   const educationBestStreakDays = Math.max(0, Math.floor(Number(educationPlan?.best_streak_days || 0) || 0));
   const educationStreakLabel = `${educationStreakDays} day${educationStreakDays === 1 ? "" : "s"}`;
@@ -982,11 +968,6 @@ export default function AssessmentChatBox({
       : educationDayIndex > 0
         ? `Day ${educationDayIndex}`
         : "";
-  const educationCurrentDayLabel = educationDayIndex > 0
-    ? educationDurationDays > 0
-      ? `Day ${educationDayIndex} of ${educationDurationDays}`
-      : `Day ${educationDayIndex}`
-    : "Today's focus";
   const educationFocusStreakSummary = [
     educationCompletedDaysLabel,
     `${educationStreakLabel} focus streak`,
@@ -2477,24 +2458,6 @@ export default function AssessmentChatBox({
               <div className="flex min-h-full flex-col gap-3">
                 {educationPlanLoading && educationPlan ? (
                   <p className="text-sm text-[#6b6257]">Refreshing today&apos;s lesson…</p>
-                ) : null}
-                {educationPlan?.progress ? (
-                  <div className={`rounded-[20px] border px-4 py-3 ${
-                    educationFocusCompleted
-                      ? "border-[#b9d8c2] bg-[#f3fbf5]"
-                      : "border-[#e4d4bd] bg-[#fffaf3]"
-                  }`}>
-                    <p className={`text-[11px] font-semibold uppercase tracking-[0.16em] ${
-                      educationFocusCompleted ? "text-[#317a4d]" : "text-[#8a5a1f]"
-                    }`}>
-                      {educationCurrentDayLabel} · {educationFocusStatusTitle}
-                    </p>
-                    <p className={`mt-1 text-sm ${
-                      educationFocusCompleted ? "text-[#4f6f59]" : "text-[#6b6257]"
-                    }`}>
-                      {educationFocusStatusDetail}
-                    </p>
-                  </div>
                 ) : null}
                 <div className="rounded-[20px] border border-[#efe7db] bg-white px-4 py-3">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
