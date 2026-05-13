@@ -432,6 +432,11 @@ def _normalize_media_url(raw: str | None) -> str | None:
     return value or None
 
 
+def _is_azure_blob_media_url(raw: str | None) -> bool:
+    value = str(raw or "").strip().lower()
+    return "blob.core.windows.net" in value and "/batchsynthesis-output/" in value
+
+
 def _avatar_result_url(row: EducationLessonVariant | None) -> str | None:
     payload = getattr(row, "avatar_payload_json", None) if row is not None else None
     if not isinstance(payload, dict):
@@ -463,11 +468,18 @@ def _avatar_input_payload(row: EducationLessonVariant | None) -> dict[str, Any]:
 def _lesson_variant_video_url(row: EducationLessonVariant | None) -> str | None:
     if row is None:
         return None
-    return _normalize_media_url(getattr(row, "video_url", None))
+    url = _normalize_media_url(getattr(row, "video_url", None))
+    if _is_azure_blob_media_url(url):
+        return None
+    return url
 
 
 def _lesson_variant_playable_media_url(row: EducationLessonVariant | None) -> str | None:
-    return _lesson_variant_video_url(row) or _avatar_result_url(row)
+    video_url = _lesson_variant_video_url(row)
+    if video_url:
+        return video_url
+    result_url = _avatar_result_url(row)
+    return None if _is_azure_blob_media_url(result_url) else result_url
 
 
 def _lesson_variant_has_playable_media(row: EducationLessonVariant | None) -> bool:
@@ -686,6 +698,8 @@ def _save_education_avatar_generation_result(
     row.avatar_error = str(error or "").strip() or None
     row.avatar_source = "azure_batch"
     row.avatar_summary_url = str(summary_url or "").strip() or None
+    if resolved_status_key != "succeeded" and _is_azure_blob_media_url(getattr(row, "video_url", None)):
+        row.video_url = None
     payload_snapshot = dict(response_payload or {})
     payload_snapshot["avatar_input"] = {
         "title": title,
@@ -807,7 +821,7 @@ def _refresh_lesson_variant_avatar_media(
 ) -> EducationLessonVariant | None:
     if row is None:
         return None
-    if _normalize_media_url(getattr(row, "video_url", None)):
+    if _lesson_variant_video_url(row):
         return row
     job_id = str(getattr(row, "avatar_job_id", "") or "").strip()
     status = str(getattr(row, "avatar_status", "") or "").strip().lower()

@@ -576,10 +576,7 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
         for variant in variants_by_day.get(int(day.id), []):
             quiz = quiz_by_variant.get(int(variant.id))
             avatar_payload = education_lesson_avatar_payload(variant) or {}
-            playable_video_url = (
-                str(avatar_payload.get("url") or avatar_payload.get("video_url") or "").strip()
-                or str(getattr(variant, "video_url", "") or "").strip()
-            )
+            playable_video_url = str(avatar_payload.get("url") or avatar_payload.get("video_url") or "").strip()
             video_script = str(avatar_payload.get("video_script") or avatar_payload.get("script") or "").strip()
             questions = []
             if quiz is not None:
