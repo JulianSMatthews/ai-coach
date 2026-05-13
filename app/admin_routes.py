@@ -5930,7 +5930,7 @@ def edit_education_programme(id: int | None = None):
             }}
             replaceProgrammeWithGenerated(result.programme);
             if (programmeLlmStatus) {{
-              programmeLlmStatus.textContent = `Draft generated with ${{result.model || 'selected model'}}. Review and save the programme, then use Generate missing videos for avatar video.`;
+              programmeLlmStatus.textContent = `Generated with ${{result.model || 'selected model'}}. Review the full programme, then save.`;
             }}
           }} catch (err) {{
             const message = err instanceof Error ? err.message : String(err);
@@ -5993,7 +5993,7 @@ def edit_education_programme(id: int | None = None):
             }}
             replaceSelectedDayWithGenerated(result.day);
             if (dayLlmStatus) {{
-              dayLlmStatus.textContent = `Draft generated with ${{result.model || 'selected model'}}. Review and save the day, then generate avatar video separately.`;
+              dayLlmStatus.textContent = `Generated with ${{result.model || 'selected model'}}. Review the draft, then save.`;
             }}
           }} catch (err) {{
             const message = err instanceof Error ? err.message : String(err);

@@ -26,7 +26,7 @@ services:
       - key: AZURE_SPEECH_ENDPOINT
         sync: false
       - key: USE_AZURE_AVATAR
-        value: "1"
+        value: "0"
       - key: USE_AZURE_AVATAR_REALTIME_SUMMARY
         value: "1"
       - key: AZURE_AVATAR_KEY
@@ -111,8 +111,6 @@ services:
         value: "420"
       - key: REPORTS_BASE_URL
         sync: false
-      - key: REPORTS_UPLOAD_TOKEN
-        sync: false
       - key: REPORTS_DIR
         value: "/var/data/reports"
       - key: RESET_DB_ON_STARTUP
@@ -161,63 +159,6 @@ services:
         sync: false
       - key: ADMIN_USER_ID
         sync: false
-
-  - type: worker
-    name: healthsense-worker
-    env: python
-    plan: starter
-    region: oregon
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python run_worker.py"
-    envVars:
-      - key: ENV
-        value: "production"
-      - key: DATABASE_URL
-        fromDatabase:
-          name: healthsense-db
-          property: connectionString
-      - key: API_BASE_URL
-        sync: false
-      - key: PUBLIC_BASE_URL
-        sync: false
-      - key: OPENAI_API_KEY
-        sync: false
-      - key: USE_AZURE_SPEECH
-        value: "0"
-      - key: AZURE_SPEECH_KEY
-        sync: false
-      - key: AZURE_SPEECH_REGION
-        sync: false
-      - key: AZURE_SPEECH_ENDPOINT
-        sync: false
-      - key: USE_AZURE_AVATAR
-        value: "1"
-      - key: AZURE_AVATAR_KEY
-        sync: false
-      - key: AZURE_AVATAR_REGION
-        sync: false
-      - key: AZURE_AVATAR_ENDPOINT
-        sync: false
-      - key: AZURE_AVATAR_GBP_PER_MINUTE
-        sync: false
-      - key: AZURE_AVATAR_CHARS_PER_MIN
-        sync: false
-      - key: ADMIN_API_TOKEN
-        sync: false
-      - key: REPORTS_BASE_URL
-        sync: false
-      - key: REPORTS_UPLOAD_TOKEN
-        sync: false
-      - key: PROMPT_WORKER_MODE
-        value: "1"
-      - key: PODCAST_WORKER_MODE
-        value: "0"
-      - key: WORKER_WAIT_FOR_API
-        value: "1"
-      - key: WORKER_POLL_SECONDS
-        value: "2"
-      - key: WORKER_LOCK_TIMEOUT_MINUTES
-        value: "240"
 
   - type: web
     name: healthsense-admin
