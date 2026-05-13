@@ -614,8 +614,17 @@ def _write_education_report_bytes(path_under_reports: str, raw_bytes: bytes) -> 
     from .reporting import _reports_root_global
 
     rel_path = _normalize_reports_rel_path(path_under_reports)
-    upload_url = (os.getenv("REPORTS_UPLOAD_URL") or "").strip()
     upload_token = (os.getenv("REPORTS_UPLOAD_TOKEN") or "").strip()
+    upload_url = (os.getenv("REPORTS_UPLOAD_URL") or "").strip()
+    if not upload_url and upload_token:
+        api_base = (
+            os.getenv("API_BASE_URL")
+            or os.getenv("PUBLIC_BASE_URL")
+            or os.getenv("API_PUBLIC_BASE_URL")
+            or ""
+        ).strip()
+        if api_base:
+            upload_url = f"{api_base.rstrip('/')}/api/v1/reports/upload"
     if upload_url and upload_token:
         try:
             payload = json.dumps(
