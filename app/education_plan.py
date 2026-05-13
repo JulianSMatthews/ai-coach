@@ -6,6 +6,7 @@ import json
 import os
 import re
 import secrets
+import urllib.parse
 import urllib.request
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -463,7 +464,34 @@ def _avatar_input_payload(row: EducationLessonVariant | None) -> dict[str, Any]:
 def _lesson_variant_video_url(row: EducationLessonVariant | None) -> str | None:
     if row is None:
         return None
-    return _normalize_media_url(getattr(row, "video_url", None))
+    url = _normalize_media_url(getattr(row, "video_url", None))
+    if url and _reports_media_file_missing(url):
+        return None
+    return url
+
+
+def _reports_media_file_missing(raw_url: str | None) -> bool:
+    if str(os.getenv("PROMPT_WORKER_PROCESS") or "").strip().lower() in {"1", "true", "yes", "on"}:
+        return False
+    url = str(raw_url or "").strip()
+    if not url:
+        return False
+    try:
+        path = urllib.parse.urlparse(url).path if url.startswith(("http://", "https://")) else url
+    except Exception:
+        return False
+    marker = "/reports/"
+    if marker not in path:
+        return False
+    rel_path = path.split(marker, 1)[1].strip("/")
+    if not rel_path or ".." in rel_path.split("/"):
+        return False
+    try:
+        from .reporting import _reports_root_global
+
+        return not os.path.isfile(os.path.join(_reports_root_global(), *rel_path.split("/")))
+    except Exception:
+        return False
 
 
 def _lesson_variant_playable_media_url(row: EducationLessonVariant | None) -> str | None:
@@ -625,6 +653,12 @@ def _write_education_report_bytes(path_under_reports: str, raw_bytes: bytes) -> 
         ).strip()
         if api_base:
             upload_url = f"{api_base.rstrip('/')}/api/v1/reports/upload"
+    running_in_worker = str(os.getenv("PROMPT_WORKER_PROCESS") or "").strip().lower() in {"1", "true", "yes", "on"}
+    if running_in_worker and not (upload_url and upload_token):
+        raise RuntimeError(
+            "Education avatar video was generated on the worker but cannot be published because "
+            "REPORTS_UPLOAD_TOKEN and API_BASE_URL or REPORTS_UPLOAD_URL are not configured."
+        )
     if upload_url and upload_token:
         try:
             payload = json.dumps(
@@ -650,6 +684,8 @@ def _write_education_report_bytes(path_under_reports: str, raw_bytes: bytes) -> 
                 return uploaded_url
         except Exception as exc:
             print(f"[education] report upload error: {exc}")
+            if running_in_worker:
+                raise RuntimeError(f"Education avatar video upload failed: {exc}") from exc
     root = _reports_root_global()
     out_path = os.path.join(root, *rel_path.split("/"))
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
@@ -816,7 +852,7 @@ def _refresh_lesson_variant_avatar_media(
 ) -> EducationLessonVariant | None:
     if row is None:
         return None
-    if _normalize_media_url(getattr(row, "video_url", None)):
+    if _lesson_variant_video_url(row):
         return row
     job_id = str(getattr(row, "avatar_job_id", "") or "").strip()
     status = str(getattr(row, "avatar_status", "") or "").strip().lower()
