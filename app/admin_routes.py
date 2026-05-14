@@ -2104,23 +2104,47 @@ def _education_avatar_all_result_page(title: str, result: dict) -> HTMLResponse:
     return _wrap_page(title, body)
 
 
-def _education_avatar_batch_queued_page(job_id: int, *, created: bool, active_only: bool, regenerate: bool) -> HTMLResponse:
+def _education_avatar_batch_queued_page(
+    job_id: int,
+    *,
+    created: bool,
+    active_only: bool = True,
+    regenerate: bool,
+    programme_id: int | None = None,
+    programme_name: str | None = None,
+) -> HTMLResponse:
     status = "queued" if created else "already queued or running"
-    scope = "active programmes" if active_only else "all programmes"
+    scope = (
+        f"programme {programme_id}"
+        if programme_id
+        else ("active programmes" if active_only else "all programmes")
+    )
+    back_link = (
+        f"<a class='button-link' href='/admin/education-programmes/edit?id={int(programme_id)}'>Back to programme</a>"
+        if programme_id
+        else "<a class='button-link' href='/admin/education-programmes'>Back to education programmes</a>"
+    )
+    heading = "Education Avatar Programme Batch Queued" if programme_id else "Education Avatar Batch Queued"
+    programme_line = (
+        f"<p><strong>{html.escape(str(programme_name or 'Education programme'))}</strong></p>"
+        if programme_id
+        else ""
+    )
     body = (
-        "<h2>Education Avatar Batch Queued</h2>"
+        f"<h2>{heading}</h2>"
         f"{_build_version_label()}"
         "<div class='card'>"
+        f"{programme_line}"
         f"<p><strong>Job {html.escape(str(job_id))}</strong> is {html.escape(status)}.</p>"
         f"<p class='help'>The worker will generate missing avatar videos across {html.escape(scope)} one at a time. "
         "Each video is started, waited for, cached, and then the next missing video is attempted.</p>"
         f"<p class='help'>Regenerate existing videos: {'yes' if regenerate else 'no'}.</p>"
         "<div class='stack'>"
-        "<a class='button-link' href='/admin/education-programmes'>Back to education programmes</a>"
+        f"{back_link}"
         "</div>"
         "</div>"
     )
-    return _wrap_page("Education Avatar Batch Queued", body)
+    return _wrap_page(heading, body)
 
 
 def _promote_templates_batch(source_state: str, target_state: str, note: str | None = None) -> int:
@@ -4244,11 +4268,51 @@ def refresh_all_education_programme_avatars(
 def generate_education_programme_avatars(
     programme_id: int,
     regenerate: str | None = Form(default=None),
+    max_new_jobs: str | None = Form(default=None),
+    wait_for_completion: str | None = Form(default=None),
+    enqueue: str | None = Form(default=None),
 ):
+    regenerate_flag = _truthy_form_value(regenerate)
+    wait_for_completion_flag = _truthy_form_value(wait_for_completion)
+    max_new_jobs_value = _optional_positive_int(max_new_jobs)
+    if _truthy_form_value(enqueue):
+        ensure_job_table()
+        programme_name = None
+        with SessionLocal() as s:
+            row = s.get(EducationProgramme, int(programme_id))
+            if row is None:
+                raise HTTPException(404, "Education programme not found")
+            programme_name = str(getattr(row, "name", "") or "").strip() or None
+        payload = {
+            "programme_id": int(programme_id),
+            "regenerate": regenerate_flag,
+            "max_new_jobs": max_new_jobs_value or 1,
+            "wait_for_completion": True,
+            "trigger": "admin_education_avatar_generate_programme",
+        }
+        job_id, created = enqueue_job_once(
+            "education_avatar_generate_programme",
+            payload,
+            payload_match={
+                "trigger": "admin_education_avatar_generate_programme",
+                "programme_id": int(programme_id),
+                "regenerate": regenerate_flag,
+            },
+            running_stale_minutes=240,
+        )
+        return _education_avatar_batch_queued_page(
+            int(job_id),
+            created=bool(created),
+            regenerate=regenerate_flag,
+            programme_id=int(programme_id),
+            programme_name=programme_name,
+        )
     try:
         result = generate_education_programme_avatar_videos(
             int(programme_id),
-            regenerate=_truthy_form_value(regenerate),
+            regenerate=regenerate_flag,
+            max_new_jobs=max_new_jobs_value,
+            wait_for_completion=wait_for_completion_flag,
         )
     except RuntimeError as exc:
         message = str(exc)
@@ -4798,20 +4862,24 @@ def edit_education_programme(id: int | None = None):
         avatar_bulk_html = (
             "<div class='programme-video-actions' style='margin-top:12px; padding-top:12px; border-top:1px solid var(--border);'>"
             "<h3 class='section-title'>Avatar videos</h3>"
-            "<p class='help'>Generate and review lesson avatar videos from this programme header. Existing videos are skipped unless you choose regenerate.</p>"
+            "<p class='help'>Generate and review lesson avatar videos from this programme header. The default batch runs sequentially in the worker so Azure concurrency does not block later days.</p>"
             "<div class='stack'>"
             f"<form method='post' action='/admin/education-programmes/{programme_id}/avatar/generate' "
-            "onsubmit=\"return confirm('Start missing avatar videos for every active lesson in this programme?');\">"
-            "<button type='submit' class='secondary'>Generate missing videos</button>"
+            "onsubmit=\"return confirm('Queue missing avatar videos for every active lesson in this programme? The worker will generate them one at a time.');\">"
+            "<input type='hidden' name='enqueue' value='1' />"
+            "<input type='hidden' name='wait_for_completion' value='1' />"
+            "<button type='submit' class='secondary'>Queue missing videos sequentially</button>"
             "</form>"
             f"<form method='post' action='/admin/education-programmes/{programme_id}/avatar/refresh' "
             "onsubmit=\"return confirm('Refresh all pending avatar jobs for this programme?');\">"
             "<button type='submit' class='secondary'>Refresh pending videos</button>"
             "</form>"
             f"<form method='post' action='/admin/education-programmes/{programme_id}/avatar/generate' "
-            "onsubmit=\"return confirm('Regenerate avatar videos for every active lesson in this programme? This will replace existing generated jobs when the new videos are ready.');\">"
+            "onsubmit=\"return confirm('Queue regeneration for every active lesson in this programme? The worker will replace existing videos one at a time.');\">"
+            "<input type='hidden' name='enqueue' value='1' />"
+            "<input type='hidden' name='wait_for_completion' value='1' />"
             "<input type='hidden' name='regenerate' value='1' />"
-            "<button type='submit' class='danger'>Regenerate all videos</button>"
+            "<button type='submit' class='danger'>Queue regeneration sequentially</button>"
             "</form>"
             "<button type='button' class='secondary' id='review-selected-day-video-button'>Review selected day video</button>"
             "<button type='button' class='secondary' id='generate-selected-day-video-button'>Generate selected day video</button>"

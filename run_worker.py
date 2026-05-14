@@ -32,7 +32,10 @@ from app.reporting import (
 )
 from app.db import SessionLocal, _table_exists, engine
 from app.coach_home_refresh import run_coach_home_tracker_refresh
-from app.education_plan import generate_all_education_programme_avatar_videos
+from app.education_plan import (
+    generate_all_education_programme_avatar_videos,
+    generate_education_programme_avatar_videos,
+)
 from app.models import User, AssessSession, PillarResult
 from app.okr import generate_and_update_okrs_for_pillar
 from app.wearables import ensure_wearables_schema, process_sync_run as process_wearable_sync_run
@@ -338,6 +341,59 @@ def _process_education_avatar_generate_all(payload: dict) -> dict:
     return result
 
 
+def _process_education_avatar_generate_programme(payload: dict) -> dict:
+    programme_id = payload.get("programme_id")
+    if not programme_id:
+        raise ValueError("education_avatar_generate_programme requires programme_id")
+    current_job_id = payload.get("job_id")
+    regenerate = bool(payload.get("regenerate", False))
+    max_new_jobs = payload.get("max_new_jobs")
+    try:
+        max_new_jobs_val = int(max_new_jobs) if max_new_jobs is not None else 1
+    except Exception:
+        max_new_jobs_val = 1
+    result = generate_education_programme_avatar_videos(
+        int(programme_id),
+        regenerate=regenerate,
+        max_new_jobs=max(1, int(max_new_jobs_val or 1)),
+        stop_on_quota=True,
+        wait_for_completion=True,
+    )
+    counts = result.get("counts") if isinstance(result.get("counts"), dict) else {}
+    should_continue = (
+        int(counts.get("deferred") or 0) > 0
+        or int(counts.get("pending") or 0) > 0
+    )
+    if should_continue and int(counts.get("errors") or 0) == 0:
+        poll_attempt = max(0, int(payload.get("poll_attempt") or 0)) + 1
+        delay_seconds = max(10, queue_requeue_delay_seconds(poll_attempt))
+        trigger = payload.get("trigger") or "worker_education_avatar_generate_programme"
+        next_job_id, created = enqueue_job_once(
+            "education_avatar_generate_programme",
+            {
+                "programme_id": int(programme_id),
+                "regenerate": regenerate,
+                "max_new_jobs": max(1, int(max_new_jobs_val or 1)),
+                "wait_for_completion": True,
+                "trigger": trigger,
+                "poll_attempt": poll_attempt,
+            },
+            available_at=datetime.utcnow() + timedelta(seconds=delay_seconds),
+            payload_match={
+                "trigger": trigger,
+                "programme_id": int(programme_id),
+                "regenerate": regenerate,
+            },
+            exclude_job_id=int(current_job_id) if current_job_id is not None else None,
+            running_stale_minutes=240,
+        )
+        result["requeued_job_id"] = int(next_job_id)
+        result["requeued_created"] = bool(created)
+        result["poll_attempt"] = int(poll_attempt)
+        result["delay_seconds"] = int(delay_seconds)
+    return result
+
+
 def process_job(kind: str, payload: dict) -> dict:
     if kind in {"day_prompt", "weekstart_flow", "kickoff_flow", "thursday_flow", "friday_flow"}:
         return {"ok": True, "retired": True, "kind": kind}
@@ -367,6 +423,8 @@ def process_job(kind: str, payload: dict) -> dict:
         return _process_coach_home_tracker_refresh(payload)
     if kind == "education_avatar_generate_all":
         return _process_education_avatar_generate_all(payload)
+    if kind == "education_avatar_generate_programme":
+        return _process_education_avatar_generate_programme(payload)
     raise ValueError(f"Unknown job kind: {kind}")
 
 
