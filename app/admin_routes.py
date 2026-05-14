@@ -4814,6 +4814,8 @@ def edit_education_programme(id: int | None = None):
             "<button type='submit' class='danger'>Regenerate all videos</button>"
             "</form>"
             "<button type='button' class='secondary' id='review-selected-day-video-button'>Review selected day video</button>"
+            "<button type='button' class='secondary' id='generate-selected-day-video-button'>Generate selected day video</button>"
+            "<button type='button' class='secondary' id='refresh-selected-day-video-button'>Refresh selected day video</button>"
             "</div>"
             "</div>"
         )
@@ -5026,6 +5028,8 @@ def edit_education_programme(id: int | None = None):
         const programmeConceptLabelInput = document.getElementById('programme_concept_label');
         const pillarDisplayInput = document.getElementById('programme_pillar_display');
         const reviewSelectedDayVideoButton = document.getElementById('review-selected-day-video-button');
+        const generateSelectedDayVideoButton = document.getElementById('generate-selected-day-video-button');
+        const refreshSelectedDayVideoButton = document.getElementById('refresh-selected-day-video-button');
         const avatarReviewModal = document.getElementById('avatar-review-modal');
         const avatarReviewVideo = document.getElementById('avatar-review-video');
         const avatarReviewTitle = document.getElementById('avatar-review-title');
@@ -5636,6 +5640,28 @@ def edit_education_programme(id: int | None = None):
           openAvatarReview(variantWithVideo);
         }}
 
+        function selectedDayAvatarVariantElement() {{
+          const dayEl = selectedDayElement();
+          if (!dayEl) {{
+            window.alert('Select a programme day first.');
+            return null;
+          }}
+          const variants = Array.from(dayEl.querySelectorAll(':scope .js-variants-root > .js-variant'));
+          const activeVariant = variants.find((variantEl) => Boolean(variantEl.querySelector('.js-variant-active')?.checked));
+          const variantEl = activeVariant || variants[0] || null;
+          if (!variantEl) {{
+            window.alert('The selected day does not have a lesson variant yet.');
+            return null;
+          }}
+          return variantEl;
+        }}
+
+        function requestSelectedDayAvatar(mode) {{
+          const variantEl = selectedDayAvatarVariantElement();
+          if (!variantEl) return;
+          void requestVariantAvatar(variantEl, mode);
+        }}
+
         async function requestVariantAvatar(variantEl, mode) {{
           const variantId = String(variantEl.querySelector('.js-variant-id')?.value || '').trim();
           if (!variantId) {{
@@ -6216,6 +6242,14 @@ def edit_education_programme(id: int | None = None):
         }});
 
         reviewSelectedDayVideoButton?.addEventListener('click', openSelectedDayVideoReview);
+        generateSelectedDayVideoButton?.addEventListener('click', function() {{
+          if (window.confirm('Generate or regenerate the avatar video for the selected programme day?')) {{
+            requestSelectedDayAvatar('generate');
+          }}
+        }});
+        refreshSelectedDayVideoButton?.addEventListener('click', function() {{
+          requestSelectedDayAvatar('refresh');
+        }});
         avatarReviewClose?.addEventListener('click', closeAvatarReview);
         avatarReviewModal?.addEventListener('click', function(event) {{
           if (event.target === avatarReviewModal) {{
