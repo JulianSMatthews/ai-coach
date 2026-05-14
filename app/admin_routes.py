@@ -6552,6 +6552,7 @@ async def save_education_programme(
                 if reset_avatar_media:
                     variant_row.avatar_source = _raw_variant_text("avatar_source") or None
                     variant_row.avatar_summary_url = _raw_variant_text("avatar_summary_url") or None
+                    variant_row.avatar_payload_json = None
                 else:
                     variant_row.avatar_source = _preserve_runtime_text("avatar_source", getattr(variant_row, "avatar_source", None))
                     variant_row.avatar_summary_url = _preserve_runtime_text("avatar_summary_url", getattr(variant_row, "avatar_summary_url", None))

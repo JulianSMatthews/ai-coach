@@ -1107,7 +1107,16 @@ def generate_education_programme_avatar_videos(
                 continue
             status_key = str(getattr(row, "avatar_status", "") or "").strip().lower()
             job_id = str(getattr(row, "avatar_job_id", "") or "").strip()
-            if not regenerate and _avatar_result_url(row):
+            result_url = _avatar_result_url(row)
+            if not regenerate and result_url and not job_id and not status_key:
+                item["previous_error"] = "Cleared orphaned avatar result metadata with no stored video or job reference."
+                row.avatar_payload_json = None
+                row.avatar_summary_url = None
+                row.avatar_error = None
+                session.add(row)
+                session.flush()
+                result_url = None
+            if not regenerate and result_url:
                 stale_result_reason: str | None = None
                 try:
                     refreshed = _refresh_lesson_variant_avatar_media(session, row, raise_errors=True) or row
