@@ -5037,6 +5037,11 @@ def edit_education_programme(id: int | None = None):
         const avatarReviewOpenLink = document.getElementById('avatar-review-open-link');
         const avatarReviewClose = document.getElementById('avatar-review-close');
         let selectedDayPosition = 0;
+        let programmeDraftDirty = false;
+
+        function markProgrammeDraftDirty() {{
+          programmeDraftDirty = true;
+        }}
 
         function escapeHtml(value) {{
           return String(value ?? '')
@@ -5656,16 +5661,47 @@ def edit_education_programme(id: int | None = None):
           return variantEl;
         }}
 
-        function requestSelectedDayAvatar(mode) {{
+        function prepareStructureField() {{
+          structureField.value = JSON.stringify(serializeStructure());
+        }}
+
+        async function saveProgrammeDraftForVideoAction() {{
+          if (!programmeDraftDirty) return true;
+          if (!form.reportValidity()) return false;
+          try {{
+            prepareStructureField();
+          }} catch (_err) {{
+            window.alert('Failed to prepare programme structure for saving.');
+            return false;
+          }}
+          const response = await fetch(form.action, {{
+            method: 'POST',
+            body: new FormData(form),
+            redirect: 'follow',
+          }});
+          if (!response.ok) {{
+            const message = await response.text().catch(() => '');
+            window.alert(message || `Save failed before video generation (HTTP ${{response.status}}).`);
+            return false;
+          }}
+          programmeDraftDirty = false;
+          return true;
+        }}
+
+        async function requestSelectedDayAvatar(mode) {{
           const variantEl = selectedDayAvatarVariantElement();
           if (!variantEl) return;
+          const saved = await saveProgrammeDraftForVideoAction();
+          if (!saved) return;
           void requestVariantAvatar(variantEl, mode);
         }}
 
         async function requestVariantAvatar(variantEl, mode) {{
+          const saved = await saveProgrammeDraftForVideoAction();
+          if (!saved) return;
           const variantId = String(variantEl.querySelector('.js-variant-id')?.value || '').trim();
           if (!variantId) {{
-            window.alert('Save this programme before generating avatar video for this lesson.');
+            window.alert('Save this programme, reload the editor, then generate avatar video for this lesson.');
             return;
           }}
           const generateButton = variantEl.querySelector('.js-generate-avatar');
@@ -5821,6 +5857,7 @@ def edit_education_programme(id: int | None = None):
           const existingDay = collectDayData(dayEl);
           const replacement = normaliseGeneratedDayForEditor(generatedDay, existingDay);
           dayEl.outerHTML = renderDay(replacement);
+          markProgrammeDraftDirty();
           renderDaySummaries();
           updateAllVariantAvatarReviewStates();
           selectDay(selectedDayPosition);
@@ -5859,6 +5896,7 @@ def edit_education_programme(id: int | None = None):
             }};
           }});
           dayEl.outerHTML = renderDay(existingDay);
+          markProgrammeDraftDirty();
           renderDaySummaries();
           updateAllVariantAvatarReviewStates();
           selectDay(selectedDayPosition);
@@ -5886,6 +5924,7 @@ def edit_education_programme(id: int | None = None):
           }}
           selectedDayPosition = 0;
           renderDays(replacementDays);
+          markProgrammeDraftDirty();
           selectDay(0);
         }}
 
@@ -6113,6 +6152,7 @@ def edit_education_programme(id: int | None = None):
           const days = collectAllDaysFromDom();
           days.push(emptyDay(nextIndex));
           selectedDayPosition = days.length - 1;
+          markProgrammeDraftDirty();
           renderDays(days);
         }});
 
@@ -6138,6 +6178,7 @@ def edit_education_programme(id: int | None = None):
             if (removedPosition >= 0 && selectedDayPosition > removedPosition) {{
               selectedDayPosition -= 1;
             }}
+            markProgrammeDraftDirty();
             renderDaySummaries();
             return;
           }}
@@ -6147,12 +6188,14 @@ def edit_education_programme(id: int | None = None):
             const variantsRoot = dayEl.querySelector('.js-variants-root');
             if (!variantsRoot) return;
             variantsRoot.insertAdjacentHTML('beforeend', renderVariant(collectDayData(dayEl), emptyVariant()));
+            markProgrammeDraftDirty();
             renderDaySummaries();
             updateAllVariantAvatarReviewStates();
             return;
           }}
           if (target.classList.contains('js-remove-variant')) {{
             target.closest('.js-variant')?.remove();
+            markProgrammeDraftDirty();
             renderDaySummaries();
             return;
           }}
@@ -6222,6 +6265,7 @@ def edit_education_programme(id: int | None = None):
         root.addEventListener('input', function(event) {{
           const target = event.target;
           if (!(target instanceof HTMLElement)) return;
+          markProgrammeDraftDirty();
           if (target.classList.contains('js-variant-video-url')) {{
             const variantEl = target.closest('.js-variant');
             if (variantEl) updateVariantAvatarReviewState(variantEl);
@@ -6264,12 +6308,21 @@ def edit_education_programme(id: int | None = None):
 
         form.addEventListener('submit', function(event) {{
           try {{
-            structureField.value = JSON.stringify(serializeStructure());
+            prepareStructureField();
+            programmeDraftDirty = false;
           }} catch (err) {{
             event.preventDefault();
             window.alert('Failed to prepare programme structure for saving.');
           }}
         }});
+
+        for (const videoForm of document.querySelectorAll('.programme-video-actions form')) {{
+          videoForm.addEventListener('submit', function(event) {{
+            if (!programmeDraftDirty) return;
+            event.preventDefault();
+            window.alert('Save the generated programme draft before running whole-programme video actions.');
+          }});
+        }}
 
         refreshProgrammeConceptChoices();
         programmeConceptInput.dataset.previousLabel = String(programmeConceptLabelInput?.value || '').trim();
