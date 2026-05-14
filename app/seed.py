@@ -3051,6 +3051,7 @@ def _upsert_education_programme_doc(
     level: str = "build",
     pass_score_pct: float = 66.67,
     is_active: bool = True,
+    overwrite_existing: bool = True,
 ) -> dict[str, Any]:
     pillar_token = str(pillar_key or "").strip().lower()
     concept_token = str(concept_key or "").strip().lower()
@@ -3086,6 +3087,20 @@ def _upsert_education_programme_doc(
         session.flush()
         created_programme = True
     else:
+        if not overwrite_existing:
+            return {
+                "created_programme": False,
+                "skipped_existing": True,
+                "programme_id": int(programme.id),
+                "code": code_token,
+                "name": str(getattr(programme, "name", "") or resolved_name),
+                "pillar_key": str(getattr(programme, "pillar_key", "") or pillar_token),
+                "concept_key": str(getattr(programme, "concept_key", "") or concept_token),
+                "days": len(days),
+                "variant_ids": [],
+                "quiz_ids": [],
+                "questions": sum(len(day.get("questions") or []) for day in days),
+            }
         programme.pillar_key = pillar_token
         programme.concept_key = concept_token
         programme.concept_label = resolved_label
@@ -3238,6 +3253,7 @@ def upsert_education_programme_from_docx(
     level: str = "build",
     pass_score_pct: float = 66.67,
     is_active: bool = True,
+    overwrite_existing: bool = True,
 ) -> dict[str, Any]:
     from .education_plan import ensure_education_plan_schema
 
@@ -3253,12 +3269,15 @@ def upsert_education_programme_from_docx(
         level=level,
         pass_score_pct=pass_score_pct,
         is_active=is_active,
+        overwrite_existing=overwrite_existing,
     )
 
 
 def upsert_education_programme_from_definition(
     session: Session,
     definition: dict[str, Any],
+    *,
+    overwrite_existing: bool = True,
 ) -> dict[str, Any]:
     from .education_plan import ensure_education_plan_schema
 
@@ -3275,6 +3294,7 @@ def upsert_education_programme_from_definition(
         level=str(definition.get("level") or "build").strip() or "build",
         pass_score_pct=float(definition.get("pass_score_pct") or 66.67),
         is_active=bool(definition.get("is_active", True)),
+        overwrite_existing=overwrite_existing,
     )
 
 
@@ -3355,8 +3375,13 @@ def _sync_education_seed_definitions(
 ) -> list[dict[str, Any]]:
     upsert_pillars(session)
     upsert_concepts(session)
+    overwrite_builtin_programmes = os.getenv("EDUCATION_PROGRAMME_SEED_OVERWRITE_EXISTING") == "1"
     results = [
-        upsert_education_programme_from_definition(session, definition)
+        upsert_education_programme_from_definition(
+            session,
+            definition,
+            overwrite_existing=overwrite_builtin_programmes,
+        )
         for definition in BUILTIN_EDUCATION_PROGRAMMES
     ]
     if include_env:
