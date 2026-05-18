@@ -26,7 +26,7 @@ import threading
 import shutil
 from email.message import EmailMessage
 from urllib.parse import parse_qs, urlencode, urlparse, quote
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 from fastapi import FastAPI, APIRouter, Request, Response, Depends, Header, HTTPException, status, Body, BackgroundTasks
@@ -151,6 +151,7 @@ from .avatar import (
     create_batch_avatar,
     generate_batch_avatar_video,
     get_batch_avatar,
+    list_batch_avatars,
     download_batch_avatar_output,
 )
 from .usage import (
@@ -165,6 +166,7 @@ from .usage import (
     estimate_avatar_cost_from_seconds,
     resolve_llm_rates,
     log_usage_event,
+    log_azure_batch_avatar_usage_once,
 )
 from .usage_rates import fetch_provider_rates
 from .concepts import ensure_concept_measure_labels
@@ -7563,6 +7565,8 @@ def api_public_user_assessment_summary_realtime_session(
     user_id: int,
     body: dict[str, Any] | None = Body(default=None),
 ):
+    if not _is_truthy_env(os.getenv("ALLOW_PUBLIC_AZURE_REALTIME_AVATAR")):
+        raise HTTPException(status_code=403, detail="Public realtime summary avatar is disabled.")
     body = body or {}
     run_id = body.get("run_id")
     try:
@@ -15598,6 +15602,77 @@ def admin_usage_avatar_costs(
     }
 
 
+def _azure_batch_job_created_at(payload: dict[str, Any]) -> datetime | None:
+    raw = str(payload.get("createdDateTime") or payload.get("lastActionDateTime") or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(microsecond=0)
+    return parsed.astimezone(timezone.utc).replace(tzinfo=None, microsecond=0)
+
+
+@admin.post("/usage/avatar-costs/sync-azure")
+def admin_usage_avatar_costs_sync_azure(
+    days: int | None = None,
+    hours: int | None = None,
+    start: str | None = None,
+    end: str | None = None,
+    limit: int | None = None,
+    admin_user: User = Depends(_require_admin),
+):
+    start_utc, end_utc, _window_meta = _resolve_admin_time_window(
+        days=days,
+        hours=hours,
+        start=start,
+        end=end,
+        default_days=31,
+        max_days=365,
+    )
+    try:
+        limit_val = int(limit or 500)
+    except Exception:
+        limit_val = 500
+    limit_val = max(1, min(limit_val, 1000))
+    jobs = list_batch_avatars(limit=limit_val)
+    seen = 0
+    imported = 0
+    skipped = 0
+    with SessionLocal() as s:
+        for job in jobs:
+            if not isinstance(job, dict):
+                skipped += 1
+                continue
+            created_at = _azure_batch_job_created_at(job)
+            if created_at and (created_at < start_utc or created_at >= end_utc):
+                skipped += 1
+                continue
+            seen += 1
+            if log_azure_batch_avatar_usage_once(
+                job,
+                session=s,
+                tag="azure_batch",
+                model="batch_avatar",
+                commit=False,
+            ):
+                imported += 1
+            else:
+                skipped += 1
+        s.commit()
+    return {
+        "as_of_uk": datetime.now(UK_TZ).isoformat(),
+        "window": {"start_utc": start_utc.isoformat(), "end_utc": end_utc.isoformat()},
+        "azure_jobs_seen_in_window": seen,
+        "usage_events_imported": imported,
+        "skipped": skipped,
+        "limit": limit_val,
+        "next": "/admin/usage/avatar-costs",
+    }
+
+
 @admin.post("/usage/settings/fetch")
 def admin_usage_settings_fetch(admin_user: User = Depends(_require_admin)):
     current = get_usage_settings()
@@ -20444,6 +20519,15 @@ def admin_reports_sections(
         limit=prompt_limit_val,
         admin_user=admin_user,
     )
+    avatar_costs = admin_usage_avatar_costs(
+        days=resolved_days,
+        hours=resolved_hours,
+        start=start,
+        end=end,
+        user_id=user_id,
+        limit=50,
+        admin_user=admin_user,
+    )
 
     totals = marketing.get("totals") or {}
     funnel = marketing.get("funnel") or {}
@@ -20466,10 +20550,12 @@ def admin_reports_sections(
         "llm_cost_gbp": float(llm_total.get("cost_est_gbp") or 0.0),
         "tts_cost_gbp": float(total_tts.get("cost_est_gbp") or 0.0),
         "whatsapp_cost_gbp": float(whatsapp_total.get("cost_est_gbp") or 0.0),
+        "avatar_cost_gbp": float((usage_summary.get("avatar_total") or {}).get("cost_est_gbp") or 0.0),
         "llm_tokens_in": int(llm_total.get("tokens_in") or 0),
         "llm_tokens_out": int(llm_total.get("tokens_out") or 0),
         "prompt_cost_total_gbp": float(prompt_costs.get("total_cost_gbp") or 0.0),
         "prompt_rows": int(len(prompt_costs.get("rows") or [])),
+        "avatar_rows": int(len(avatar_costs.get("rows") or [])),
     }
 
     sections = [
@@ -20493,6 +20579,7 @@ def admin_reports_sections(
             "data": {
                 "usage_summary": usage_summary,
                 "prompt_costs": prompt_costs,
+                "avatar_costs": avatar_costs,
             },
         },
     ]
@@ -20506,6 +20593,8 @@ def admin_reports_sections(
             "marketing": "/admin/marketing/funnel",
             "cost_summary": "/admin/usage/summary",
             "prompt_costs": "/admin/usage/prompt-costs",
+            "avatar_costs": "/admin/usage/avatar-costs",
+            "avatar_costs_sync_azure": "/admin/usage/avatar-costs/sync-azure",
             "recent_reports": "/admin/reports/recent",
         },
     }

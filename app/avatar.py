@@ -352,6 +352,32 @@ def get_batch_avatar(job_id: str) -> dict[str, Any]:
     return data
 
 
+def list_batch_avatars(*, limit: int = 500) -> list[dict[str, Any]]:
+    limit_val = max(1, min(int(limit or 500), 1000))
+    url = f"{_avatar_api_base()}/avatar/batchsyntheses?api-version=2024-08-01"
+    rows: list[dict[str, Any]] = []
+    while url and len(rows) < limit_val:
+        response = requests.get(url, headers=_azure_headers(), timeout=60)
+        _raise_for_avatar_http_error(response, "list")
+        data = response.json()
+        if isinstance(data, list):
+            batch = data
+            next_url = None
+        elif isinstance(data, dict):
+            raw_batch = data.get("values") or data.get("value") or data.get("items") or []
+            batch = raw_batch if isinstance(raw_batch, list) else []
+            next_url = str(data.get("nextLink") or data.get("@nextLink") or "").strip() or None
+        else:
+            raise RuntimeError("Azure avatar list returned invalid response")
+        for item in batch:
+            if isinstance(item, dict):
+                rows.append(item)
+                if len(rows) >= limit_val:
+                    break
+        url = next_url
+    return rows
+
+
 def wait_for_batch_avatar(job_id: str, *, timeout_seconds: int | None = None, poll_seconds: int | None = None) -> dict[str, Any]:
     defaults = azure_avatar_defaults()
     timeout = timeout_seconds or defaults["timeout_seconds"]

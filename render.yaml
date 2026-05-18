@@ -28,7 +28,7 @@ services:
       - key: USE_AZURE_AVATAR
         value: "0"
       - key: USE_AZURE_AVATAR_REALTIME_SUMMARY
-        value: "1"
+        value: "0"
       - key: AZURE_AVATAR_KEY
         sync: false
       - key: AZURE_AVATAR_REGION

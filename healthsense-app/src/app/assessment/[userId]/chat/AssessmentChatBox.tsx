@@ -2057,7 +2057,6 @@ export default function AssessmentChatBox({
                   audioUrl={completionSummaryMedia?.audioUrl || null}
                   maxSessionSeconds={completionSummaryMedia?.realtimeMaxSessionSeconds ?? null}
                   maxReplays={completionSummaryMedia?.realtimeMaxReplays ?? null}
-                  autoStart
                   introMessage={null}
                   onPhaseChange={setRealtimeSummaryPhase}
                 />

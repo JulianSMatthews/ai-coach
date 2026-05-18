@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import json
 import os
 import math
@@ -524,6 +524,117 @@ def log_usage_event(
         print(f"[usage] log failed: {e}")
 
 
+def _parse_azure_datetime(value: str | None) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(microsecond=0)
+    return parsed.astimezone(timezone.utc).replace(tzinfo=None, microsecond=0)
+
+
+def _azure_batch_avatar_usage_payload(
+    payload: dict,
+    *,
+    fallback_tag: str | None = None,
+    extra_meta: dict | None = None,
+) -> dict | None:
+    if not isinstance(payload, dict):
+        return None
+    job_id = str(payload.get("id") or "").strip()
+    if not job_id:
+        return None
+    props = payload.get("properties") if isinstance(payload.get("properties"), dict) else {}
+    billing = props.get("billingDetails") if isinstance(props.get("billingDetails"), dict) else {}
+    seconds = _to_float(
+        billing.get("talkingAvatarDurationSeconds")
+        or billing.get("durationSeconds")
+        or props.get("durationSeconds")
+    )
+    if seconds is None or seconds <= 0:
+        return None
+    cost_estimate, rate_per_minute, rate_source = estimate_avatar_cost_from_seconds(seconds)
+    created_at = (
+        _parse_azure_datetime(str(payload.get("createdDateTime") or ""))
+        or _parse_azure_datetime(str(payload.get("lastActionDateTime") or ""))
+    )
+    display_name = str(payload.get("displayName") or payload.get("description") or "").strip() or None
+    meta = {
+        "mode": "azure_batch",
+        "azure_status": str(payload.get("status") or "").strip() or None,
+        "display_name": display_name,
+        "text_chars": _to_float(billing.get("neuralCharacters")),
+        "rate_gbp_per_minute": rate_per_minute,
+        "rate_source": rate_source,
+        "billing_details": billing or None,
+    }
+    if extra_meta:
+        meta.update(extra_meta)
+    return {
+        "created_at": created_at,
+        "request_id": job_id,
+        "model": "batch_avatar",
+        "units": float(seconds),
+        "unit_type": "avatar_seconds",
+        "cost_estimate": cost_estimate,
+        "duration_ms": int(float(seconds) * 1000),
+        "tag": fallback_tag or "azure_batch",
+        "meta": meta,
+    }
+
+
+def log_azure_batch_avatar_usage_once(
+    payload: dict,
+    *,
+    session: Session,
+    user_id: int | None = None,
+    tag: str | None = None,
+    model: str | None = None,
+    extra_meta: dict | None = None,
+    commit: bool = False,
+) -> bool:
+    try:
+        usage = _azure_batch_avatar_usage_payload(payload, fallback_tag=tag, extra_meta=extra_meta)
+        if not usage:
+            return False
+        existing = (
+            session.query(UsageEvent.id)
+            .filter(
+                UsageEvent.product == "avatar",
+                UsageEvent.request_id == usage["request_id"],
+            )
+            .first()
+        )
+        if existing:
+            return False
+        row = UsageEvent(
+            created_at=usage.get("created_at") or datetime.utcnow().replace(microsecond=0),
+            user_id=user_id,
+            provider="azure",
+            product="avatar",
+            model=model or usage.get("model"),
+            units=float(usage.get("units") or 0.0),
+            unit_type=str(usage.get("unit_type") or "avatar_seconds"),
+            cost_estimate=float(usage.get("cost_estimate") or 0.0),
+            currency="GBP",
+            request_id=str(usage.get("request_id") or "").strip(),
+            duration_ms=usage.get("duration_ms"),
+            tag=str(usage.get("tag") or tag or "azure_batch"),
+            meta=usage.get("meta") if isinstance(usage.get("meta"), dict) else None,
+        )
+        session.add(row)
+        if commit:
+            session.commit()
+        return True
+    except Exception as e:
+        print(f"[usage] azure batch avatar log failed: {e}")
+        return False
+
+
 def _estimate_tts_cost(chars: float) -> tuple[float, float, str]:
     rate, source = _tts_rate_gbp_per_1m_chars()
     cost = (chars / 1_000_000.0) * rate if chars else 0.0
@@ -797,6 +908,10 @@ def get_avatar_usage_rows(
                 "user_id": getattr(row, "user_id", None),
                 "model": getattr(row, "model", None),
                 "request_id": getattr(row, "request_id", None),
+                "mode": meta.get("mode"),
+                "title": meta.get("title") or meta.get("display_name"),
+                "lesson_variant_id": meta.get("lesson_variant_id"),
+                "azure_status": meta.get("azure_status"),
                 "run_id": meta.get("run_id"),
                 "character": meta.get("character"),
                 "style": meta.get("style"),

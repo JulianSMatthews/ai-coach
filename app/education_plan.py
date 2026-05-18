@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import ast
+import hashlib
 import json
 import os
 import re
@@ -41,6 +42,7 @@ from .models import (
 )
 from .okr import _normalize_concept_key
 from .pillar_tracker import tracker_today
+from .usage import log_azure_batch_avatar_usage_once
 
 _EDUCATION_PLAN_SCHEMA_READY = False
 _WATCH_COMPLETE_THRESHOLD_PCT = 80.0
@@ -666,6 +668,24 @@ def _safe_avatar_asset_token(value: str | None) -> str:
     return token[:48] or secrets.token_hex(6)
 
 
+def _stable_education_avatar_job_id(row: EducationLessonVariant, avatar_input: dict[str, Any]) -> str:
+    fingerprint_source = json.dumps(
+        {
+            "row_id": int(getattr(row, "id", 0) or 0),
+            "title": str(avatar_input.get("title") or "").strip(),
+            "script": str(avatar_input.get("script") or "").strip(),
+            "character": str(avatar_input.get("character") or "").strip(),
+            "style": str(avatar_input.get("style") or "").strip(),
+            "voice": str(avatar_input.get("voice") or "").strip(),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    digest = hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()[:12]
+    row_id = int(getattr(row, "id", 0) or 0)
+    return f"edu-avatar-{row_id}-{digest}" if row_id > 0 else f"edu-avatar-{digest}"
+
+
 def _save_education_avatar_generation_result(
     session,
     *,
@@ -718,6 +738,21 @@ def _save_education_avatar_generation_result(
         row.video_url = _write_education_report_bytes(f"content/education/{filename}", video_bytes)
         row.avatar_generated_at = _now_utc()
     session.add(row)
+    if resolved_status_key == "succeeded" and isinstance(response_payload, dict):
+        log_azure_batch_avatar_usage_once(
+            response_payload,
+            session=session,
+            tag="education",
+            model="batch_education_avatar",
+            extra_meta={
+                "lesson_variant_id": int(getattr(row, "id", 0) or 0) or None,
+                "title": title,
+                "character": character,
+                "style": style,
+                "voice": voice,
+            },
+            commit=False,
+        )
     session.commit()
     session.refresh(row)
     return education_lesson_avatar_payload(row) or {}
@@ -1247,12 +1282,35 @@ def generate_education_programme_avatar_videos(
                 items.append(item)
                 continue
             try:
+                stable_job_id = _stable_education_avatar_job_id(row, avatar_input)
+                item["job_id"] = stable_job_id
+                row.avatar_status = "submitting"
+                row.avatar_job_id = stable_job_id
+                row.avatar_error = None
+                row.avatar_source = "azure_batch"
+                row.avatar_character = str(avatar_input.get("character") or "").strip() or None
+                row.avatar_style = str(avatar_input.get("style") or "").strip() or None
+                row.avatar_voice = str(avatar_input.get("voice") or "").strip() or None
+                row.avatar_payload_json = {
+                    "avatar_input": {
+                        "title": str(avatar_input.get("title") or "Education lesson"),
+                        "script": script,
+                        "poster_url": str(avatar_input.get("poster_url") or "").strip() or None,
+                        "character": str(avatar_input.get("character") or ""),
+                        "style": str(avatar_input.get("style") or ""),
+                        "voice": str(avatar_input.get("voice") or ""),
+                    }
+                }
+                session.add(row)
+                session.commit()
+                session.refresh(row)
                 result = create_batch_avatar(
                     script=script,
                     title=str(avatar_input.get("title") or "Education lesson"),
                     character=str(avatar_input.get("character") or ""),
                     style=str(avatar_input.get("style") or ""),
                     voice=str(avatar_input.get("voice") or ""),
+                    job_id=stable_job_id,
                 )
                 new_job_id = str(result.get("id") or "").strip()
                 if not new_job_id:

@@ -392,6 +392,7 @@ export default function RealtimeSummaryAvatar({
   }, [audioUrl, persistPlayback, playbackStorageKey, runId, text, userId]);
 
   const showVideoSurface = playing;
+  const showStartAction = !playing && !starting && !alreadyPlayed;
   const showSummaryActions =
     phase !== "preparing" &&
     ((showReadAction && Boolean(effectiveText)) || (showListenAction && Boolean(effectiveAudioUrl)));
@@ -410,6 +411,15 @@ export default function RealtimeSummaryAvatar({
           </div>
         ) : null}
         <div className="flex flex-wrap items-center gap-2">
+          {showStartAction ? (
+            <button
+              type="button"
+              onClick={() => void startRealtimeAvatar()}
+              className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+            >
+              Play video
+            </button>
+          ) : null}
           {showStopAction && playing ? (
             <button
               type="button"
