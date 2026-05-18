@@ -4,9 +4,11 @@ import os
 import re
 import time
 import uuid
+from datetime import datetime, timezone
 from html import escape
 from typing import Any
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -91,6 +93,14 @@ def normalize_batch_avatar_choice(character: str | None, style: str | None) -> t
 def _safe_int(value: str | None, default: int) -> int:
     try:
         parsed = int(str(value or "").strip())
+    except Exception:
+        return default
+    return parsed if parsed > 0 else default
+
+
+def _safe_float(value: str | None, default: float) -> float:
+    try:
+        parsed = float(str(value or "").strip())
     except Exception:
         return default
     return parsed if parsed > 0 else default
@@ -288,6 +298,98 @@ def build_realtime_avatar_session_bootstrap(
     }
 
 
+def _avatar_daily_limit_minutes() -> float:
+    return _safe_float(os.getenv("AZURE_AVATAR_DAILY_MINUTE_LIMIT"), 10.0)
+
+
+def _avatar_budget_timezone() -> ZoneInfo:
+    name = str(os.getenv("AZURE_AVATAR_DAILY_LIMIT_TIMEZONE") or "Europe/London").strip()
+    try:
+        return ZoneInfo(name)
+    except Exception:
+        return ZoneInfo("UTC")
+
+
+def _parse_avatar_job_datetime(value: str | None) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _avatar_job_billed_seconds(payload: dict[str, Any]) -> float:
+    props = payload.get("properties") if isinstance(payload.get("properties"), dict) else {}
+    billing = props.get("billingDetails") if isinstance(props.get("billingDetails"), dict) else {}
+    for value in (
+        billing.get("talkingAvatarDurationSeconds"),
+        billing.get("durationSeconds"),
+        props.get("durationSeconds"),
+    ):
+        try:
+            seconds = float(value or 0.0)
+        except Exception:
+            seconds = 0.0
+        if seconds > 0:
+            return seconds
+    return 0.0
+
+
+def _estimate_avatar_script_minutes(script: str) -> float:
+    chars_per_minute = _safe_float(os.getenv("AZURE_AVATAR_CHARS_PER_MIN"), 900.0)
+    chars = len(str(script or "").strip())
+    if chars <= 0:
+        return 0.0
+    return max(chars / chars_per_minute, 0.25)
+
+
+def _get_existing_batch_avatar(batch_id: str) -> dict[str, Any] | None:
+    response = requests.get(
+        f"{_avatar_api_base()}/avatar/batchsyntheses/{batch_id}?api-version=2024-08-01",
+        headers=_azure_headers(),
+        timeout=30,
+    )
+    if response.status_code == 404:
+        return None
+    _raise_for_avatar_http_error(response, "status lookup")
+    data = response.json()
+    if not isinstance(data, dict):
+        raise RuntimeError("Azure avatar status returned invalid response")
+    return data
+
+
+def _enforce_batch_avatar_daily_limit(*, script: str, batch_id: str) -> None:
+    limit_minutes = _avatar_daily_limit_minutes()
+    if limit_minutes <= 0:
+        return
+    tz = _avatar_budget_timezone()
+    today = datetime.now(tz).date()
+    used_seconds = 0.0
+    for job in list_batch_avatars(limit=_safe_int(os.getenv("AZURE_AVATAR_DAILY_LIMIT_LIST_LIMIT"), 1000)):
+        if not isinstance(job, dict):
+            continue
+        created_at = _parse_avatar_job_datetime(
+            str(job.get("createdDateTime") or job.get("lastActionDateTime") or "")
+        )
+        if created_at is None or created_at.astimezone(tz).date() != today:
+            continue
+        used_seconds += _avatar_job_billed_seconds(job)
+    used_minutes = used_seconds / 60.0
+    estimated_minutes = _estimate_avatar_script_minutes(script)
+    if used_minutes + estimated_minutes > limit_minutes:
+        raise RuntimeError(
+            "Azure avatar daily minute limit reached: "
+            f"{used_minutes:.2f} min already billed today, "
+            f"{estimated_minutes:.2f} min estimated for job {batch_id}, "
+            f"limit {limit_minutes:.2f} min."
+        )
+
+
 def create_batch_avatar(
     *,
     script: str,
@@ -303,6 +405,11 @@ def create_batch_avatar(
         style or defaults["style"],
     )
     batch_id = _sanitize_job_id(job_id or f"{title or 'intro-avatar'}-{uuid.uuid4().hex[:12]}")
+    if job_id:
+        existing = _get_existing_batch_avatar(batch_id)
+        if existing is not None:
+            return existing
+    _enforce_batch_avatar_daily_limit(script=script, batch_id=batch_id)
     payload: dict[str, Any] = {
         "displayName": title or "Intro avatar",
         "description": "HealthSense assessment intro avatar",

@@ -43,6 +43,10 @@ services:
         sync: false
       - key: AZURE_AVATAR_CHARS_PER_MIN
         sync: false
+      - key: AZURE_AVATAR_DAILY_MINUTE_LIMIT
+        value: "10"
+      - key: AZURE_AVATAR_DAILY_LIMIT_TIMEZONE
+        value: "Europe/London"
       - key: ASS_MODEL
         value: "gpt-5.1"
       - key: LLM_MODEL
