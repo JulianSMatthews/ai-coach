@@ -1266,12 +1266,14 @@ class EducationProgramme(Base):
     llm_task_description = Column(Text, nullable=True)
     llm_video_duration = Column(String(120), nullable=True)
     is_active = Column(Boolean, nullable=False, server_default=text("true"), index=True)
+    is_released = Column(Boolean, nullable=False, server_default=text("false"), index=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())
 
     __table_args__ = (
         Index("ix_education_programmes_pillar_active", "pillar_key", "is_active"),
         Index("ix_education_programmes_pillar_concept_active", "pillar_key", "concept_key", "is_active"),
+        Index("ix_education_programmes_released_active", "is_released", "is_active"),
     )
 
 

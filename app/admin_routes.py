@@ -528,6 +528,7 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
             "llm_task_description": "",
             "llm_video_duration": "",
             "is_active": True,
+            "is_released": False,
             "days": [],
         }
     day_rows = (
@@ -648,6 +649,7 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
         "llm_task_description": str(getattr(row, "llm_task_description", "") or ""),
         "llm_video_duration": str(getattr(row, "llm_video_duration", "") or ""),
         "is_active": bool(row.is_active),
+        "is_released": bool(getattr(row, "is_released", False)),
         "days": payload_days,
     }
 
@@ -3200,6 +3202,15 @@ def list_education_programmes():
             f"<td>{html.escape(row_name)}</td>"
             f"<td>{duration_days}</td>"
             f"<td>{'✓' if bool(row.is_active) else '✕'}</td>"
+            "<td>"
+            "<form method='post' action='/admin/education-programmes/release' style='display:inline;'>"
+            f"<input type='hidden' name='id' value='{row_id}' />"
+            f"<input type='hidden' name='is_released' value='{'0' if bool(getattr(row, 'is_released', False)) else '1'}' />"
+            f"<button type='submit' class='{'secondary' if bool(getattr(row, 'is_released', False)) else ''}' style='padding:6px 10px;'>"
+            f"{'Released' if bool(getattr(row, 'is_released', False)) else 'Draft'}"
+            "</button>"
+            "</form>"
+            "</td>"
             f"<td>{html.escape(str(row.updated_at or ''))}</td>"
             "<td>"
             "<div class='stack'>"
@@ -3246,8 +3257,8 @@ def list_education_programmes():
         "</div>"
         "<div class='card'>"
         "<table>"
-        "<tr><th>ID</th><th>Concept</th><th>Derived Pillar</th><th>Code</th><th>Name</th><th>Days</th><th>Active</th><th>Updated</th><th>Action</th></tr>"
-        + ("".join(items) if items else "<tr><td colspan='9'><em>No education programmes configured yet.</em></td></tr>")
+        "<tr><th>ID</th><th>Concept</th><th>Derived Pillar</th><th>Code</th><th>Name</th><th>Days</th><th>Active</th><th>Release</th><th>Updated</th><th>Action</th></tr>"
+        + ("".join(items) if items else "<tr><td colspan='10'><em>No education programmes configured yet.</em></td></tr>")
         + "</table>"
         "</div>"
     )
@@ -4200,6 +4211,22 @@ def delete_education_programme(
     return RedirectResponse(url="/admin/education-programmes", status_code=303)
 
 
+@admin.post("/education-programmes/release")
+def release_education_programme(
+    id: int = Form(...),
+    is_released: str | None = Form(default=None),
+):
+    ensure_education_plan_schema()
+    with SessionLocal() as s:
+        row = s.get(EducationProgramme, int(id))
+        if row is None:
+            raise HTTPException(404, "Education programme not found")
+        row.is_released = _truthy_form_value(is_released)
+        s.add(row)
+        s.commit()
+    return RedirectResponse(url="/admin/education-programmes", status_code=303)
+
+
 @admin.post("/education-programmes/avatar/generate-all", response_class=HTMLResponse)
 def generate_all_education_programme_avatars(
     active_only: str | None = Form(default="1"),
@@ -4939,6 +4966,10 @@ def edit_education_programme(id: int | None = None):
         </div>
         <div class='field'>
           <label><input type="checkbox" name="is_active" {"checked" if bool(programme_payload.get("is_active", True)) else ""} /> Active programme</label>
+        </div>
+        <div class='field'>
+          <label><input type="checkbox" name="is_released" {"checked" if bool(programme_payload.get("is_released", False)) else ""} /> Released to app</label>
+          <p class='help'>Only released active programmes can be assigned or shown in the member app.</p>
         </div>
       </div>
 
@@ -6414,6 +6445,7 @@ async def save_education_programme(
     llm_task_description: str | None = Form(default=None),
     llm_video_duration: str | None = Form(default=None),
     is_active: str | None = Form(default=None),
+    is_released: str | None = Form(default=None),
     structure_json: str | None = Form(default=None),
 ):
     ensure_education_plan_schema()
@@ -6510,6 +6542,7 @@ async def save_education_programme(
             row.llm_task_description = llm_task_description_text or None
             row.llm_video_duration = llm_video_duration_text or None
             row.is_active = is_active is not None
+            row.is_released = is_released is not None
             s.add(row)
             s.flush()
         else:
@@ -6522,6 +6555,7 @@ async def save_education_programme(
             row.llm_task_description = llm_task_description_text or None
             row.llm_video_duration = llm_video_duration_text or None
             row.is_active = is_active is not None
+            row.is_released = is_released is not None
         s.add(row)
         s.flush()
 

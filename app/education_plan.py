@@ -68,6 +68,7 @@ _EDUCATION_SCHEMA_COLUMNS = {
         "concept_label": "varchar(160)",
         "llm_task_description": "text",
         "llm_video_duration": "varchar(120)",
+        "is_released": "boolean DEFAULT false NOT NULL",
     },
     "education_programme_days": {
         "concept_key": "varchar(64)",
@@ -105,6 +106,7 @@ _EDUCATION_SCHEMA_INDEX_SQL = (
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_education_programmes_code ON education_programmes(code);",
     "CREATE INDEX IF NOT EXISTS ix_education_programmes_pillar_active ON education_programmes(pillar_key, is_active);",
     "CREATE INDEX IF NOT EXISTS ix_education_programmes_pillar_concept_active ON education_programmes(pillar_key, concept_key, is_active);",
+    "CREATE INDEX IF NOT EXISTS ix_education_programmes_released_active ON education_programmes(is_released, is_active);",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_education_programme_days_programme_day ON education_programme_days(programme_id, day_index);",
     "CREATE INDEX IF NOT EXISTS ix_education_programme_days_programme_concept ON education_programme_days(programme_id, concept_key);",
     "CREATE UNIQUE INDEX IF NOT EXISTS uq_education_lesson_variants_day_level ON education_lesson_variants(programme_day_id, level);",
@@ -1806,6 +1808,14 @@ def _resolve_plan_date(anchor: date | None) -> date:
     return anchor if isinstance(anchor, date) else tracker_today()
 
 
+def _programme_is_available_in_app(programme: EducationProgramme | None) -> bool:
+    return bool(
+        programme is not None
+        and getattr(programme, "is_active", False)
+        and getattr(programme, "is_released", False)
+    )
+
+
 def _select_programme(
     session,
     pillar_key: str | None,
@@ -1829,6 +1839,7 @@ def _select_programme(
     def _select_with_filters(*filters: Any) -> EducationProgramme | None:
         stmt = select(EducationProgramme).where(
             EducationProgramme.is_active.is_(True),
+            EducationProgramme.is_released.is_(True),
             concept_programme,
             *filters,
         )
@@ -2196,6 +2207,7 @@ def _get_or_create_active_plan(
             select(EducationProgramme)
             .where(
                 EducationProgramme.is_active.is_(True),
+                EducationProgramme.is_released.is_(True),
                 EducationProgramme.pillar_key == preferred_pillar,
                 EducationProgramme.concept_key.isnot(None),
                 EducationProgramme.concept_key != "",
@@ -2256,7 +2268,7 @@ def _get_or_create_active_plan(
     existing_ready_for_rollover = (
         existing is not None
         and existing_programme_for_rollover is not None
-        and bool(getattr(existing_programme_for_rollover, "is_active", False))
+        and _programme_is_available_in_app(existing_programme_for_rollover)
         and _plan_ready_for_next_programme(
             session,
             plan=existing,
@@ -2300,7 +2312,7 @@ def _get_or_create_active_plan(
     programme: EducationProgramme | None = None
     if existing is not None:
         programme = session.get(EducationProgramme, int(existing.programme_id))
-        if programme is None or not bool(getattr(programme, "is_active", False)):
+        if not _programme_is_available_in_app(programme):
             existing.status = "paused"
             session.add(existing)
             session.flush()
