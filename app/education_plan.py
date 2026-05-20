@@ -148,7 +148,7 @@ def _ensure_education_columns() -> None:
                         )
                     )
         if inspector.has_table("education_programmes") and dialect == "postgresql":
-            conn.execute(text("ALTER TABLE education_programmes ALTER COLUMN is_active SET DEFAULT false;"))
+            conn.execute(text("ALTER TABLE education_programmes ALTER COLUMN is_active SET DEFAULT true;"))
 
 
 def _apply_education_data_migrations() -> None:
@@ -168,7 +168,7 @@ def _apply_education_data_migrations() -> None:
         ).first()
         if existing:
             return
-        conn.execute(text("UPDATE education_programmes SET is_active = false, is_released = false;"))
+        conn.execute(text("UPDATE education_programmes SET is_released = false;"))
         conn.execute(
             text("INSERT INTO education_schema_migrations (key) VALUES (:key)"),
             {"key": migration_key},
@@ -1076,7 +1076,7 @@ def _education_avatar_programme_ids(*, active_only: bool = True) -> list[int]:
     with SessionLocal() as session:
         stmt = select(EducationProgramme.id).order_by(EducationProgramme.updated_at.desc(), EducationProgramme.id.desc())
         if active_only:
-            stmt = stmt.where(EducationProgramme.is_active.is_(True))
+            stmt = stmt.where(EducationProgramme.is_released.is_(True))
         return [int(programme_id) for programme_id in session.execute(stmt).scalars().all() if programme_id is not None]
 
 
@@ -1503,7 +1503,7 @@ def generate_all_education_programme_avatar_videos(
             )
     return {
         "ok": counts.get("errors", 0) == 0,
-        "scope": "all_active_programmes" if active_only else "all_programmes",
+        "scope": "all_released_programmes" if active_only else "all_programmes",
         "programme_count": len(programme_ids),
         "active_only": bool(active_only),
         "regenerate": bool(regenerate),
@@ -1610,7 +1610,7 @@ def refresh_all_education_programme_avatar_videos(
             )
     return {
         "ok": counts.get("errors", 0) == 0,
-        "scope": "all_active_programmes" if active_only else "all_programmes",
+        "scope": "all_released_programmes" if active_only else "all_programmes",
         "programme_count": len(programme_ids),
         "active_only": bool(active_only),
         "counts": counts,
@@ -1838,7 +1838,6 @@ def _resolve_plan_date(anchor: date | None) -> date:
 def _programme_is_available_in_app(programme: EducationProgramme | None) -> bool:
     return bool(
         programme is not None
-        and getattr(programme, "is_active", False)
         and getattr(programme, "is_released", False)
     )
 
@@ -1865,7 +1864,6 @@ def _select_programme(
     )
     def _select_with_filters(*filters: Any) -> EducationProgramme | None:
         stmt = select(EducationProgramme).where(
-            EducationProgramme.is_active.is_(True),
             EducationProgramme.is_released.is_(True),
             concept_programme,
             *filters,
@@ -2233,7 +2231,6 @@ def _get_or_create_active_plan(
         session.execute(
             select(EducationProgramme)
             .where(
-                EducationProgramme.is_active.is_(True),
                 EducationProgramme.is_released.is_(True),
                 EducationProgramme.pillar_key == preferred_pillar,
                 EducationProgramme.concept_key.isnot(None),
@@ -2681,7 +2678,7 @@ def _lesson_state(
             "lesson_date": anchor.isoformat(),
             "plan_id": int(plan.id),
             "programme_id": int(programme.id),
-            "reason": "No lesson is configured for today in the active programme.",
+            "reason": "No lesson is configured for today in the released programme.",
         }
     concept_key = str(getattr(programme_day, "concept_key", "") or "").strip().lower()
     pillar_key = str(getattr(plan, "pillar_key", "") or getattr(programme, "pillar_key", "") or "").strip().lower()

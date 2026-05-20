@@ -527,7 +527,7 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
             "duration_days": 0,
             "llm_task_description": "",
             "llm_video_duration": "",
-            "is_active": False,
+            "is_active": True,
             "is_released": False,
             "days": [],
         }
@@ -2024,7 +2024,7 @@ def _education_avatar_all_result_page(title: str, result: dict) -> HTMLResponse:
     note = (
         "Sequential generation starts one Azure job, waits for it to complete, caches the video, then moves to the next missing lesson."
         if is_generation
-        else "Refresh checks pending Azure jobs across active programmes and stores completed videos for Daily Focus."
+        else "Refresh checks pending Azure jobs across released programmes and stores completed videos for Daily Focus."
     )
     programme_rows = []
     detail_rows = []
@@ -2119,7 +2119,7 @@ def _education_avatar_batch_queued_page(
     scope = (
         f"programme {programme_id}"
         if programme_id
-        else ("active programmes" if active_only else "all programmes")
+        else ("released programmes" if active_only else "all programmes")
     )
     back_link = (
         f"<a class='button-link' href='/admin/education-programmes/edit?id={int(programme_id)}'>Back to programme</a>"
@@ -3201,7 +3201,6 @@ def list_education_programmes():
             f"<td>{html.escape(row_code)}</td>"
             f"<td>{html.escape(row_name)}</td>"
             f"<td>{duration_days}</td>"
-            f"<td>{'✓' if bool(row.is_active) else '✕'}</td>"
             "<td>"
             "<form method='post' action='/admin/education-programmes/release' style='display:inline;'>"
             f"<input type='hidden' name='id' value='{row_id}' />"
@@ -3233,7 +3232,7 @@ def list_education_programmes():
         "<div class='nav'><a href='/admin/education-programmes/edit'>Create new programme</a></div>"
         "<div class='card'>"
         "<h3 class='section-title'>Avatar video batch</h3>"
-        "<p class='help'>Run avatar video jobs across every active education programme. The safe batch completes one video before starting the next.</p>"
+        "<p class='help'>Run avatar video jobs across released education programmes. The safe batch completes one video before starting the next.</p>"
         "<div class='stack'>"
         "<form method='post' action='/admin/education-programmes/avatar/generate-all' "
         "onsubmit=\"return confirm('Generate all missing avatar videos sequentially? This can take a long time because each video must complete before the next starts.');\">"
@@ -3243,9 +3242,9 @@ def list_education_programmes():
         "<button type='submit' class='secondary'>Generate all missing videos sequentially</button>"
         "</form>"
         "<form method='post' action='/admin/education-programmes/avatar/refresh-all' "
-        "onsubmit=\"return confirm('Refresh all pending avatar jobs for every active education programme?');\">"
+        "onsubmit=\"return confirm('Refresh all pending avatar jobs for every released education programme?');\">"
         "<input type='hidden' name='active_only' value='1' />"
-        "<button type='submit' class='secondary'>Refresh pending videos for all active programmes</button>"
+        "<button type='submit' class='secondary'>Refresh pending videos for all released programmes</button>"
         "</form>"
         "<form method='post' action='/admin/education-programmes/avatar/generate-all' "
         "onsubmit=\"return confirm('Start up to two missing Azure jobs without waiting? Use this only if Azure quota allows concurrent jobs.');\">"
@@ -3257,8 +3256,8 @@ def list_education_programmes():
         "</div>"
         "<div class='card'>"
         "<table>"
-        "<tr><th>ID</th><th>Concept</th><th>Derived Pillar</th><th>Code</th><th>Name</th><th>Days</th><th>Active</th><th>Release</th><th>Updated</th><th>Action</th></tr>"
-        + ("".join(items) if items else "<tr><td colspan='10'><em>No education programmes configured yet.</em></td></tr>")
+        "<tr><th>ID</th><th>Concept</th><th>Derived Pillar</th><th>Code</th><th>Name</th><th>Days</th><th>Release</th><th>Updated</th><th>Action</th></tr>"
+        + ("".join(items) if items else "<tr><td colspan='9'><em>No education programmes configured yet.</em></td></tr>")
         + "</table>"
         "</div>"
     )
@@ -4194,14 +4193,14 @@ def delete_education_programme(
             .count()
         )
         if plan_count:
-            row.is_active = False
+            row.is_released = False
             s.add(row)
             s.commit()
             body = (
                 "<h2>Programme not deleted</h2>"
                 "<div class='card'>"
                 f"<p>Programme <strong>{html.escape(code)}</strong> has {int(plan_count)} user education plan(s) attached.</p>"
-                "<p>It has been deactivated instead, so it will no longer be selected for new users.</p>"
+                "<p>It has been moved back to draft instead, so it will no longer be selected for new users.</p>"
                 "<p class='nav'><a href='/admin/education-programmes'>Back to education programmes</a></p>"
                 "</div>"
             )
@@ -4965,11 +4964,8 @@ def edit_education_programme(id: int | None = None):
           </div>
         </div>
         <div class='field'>
-          <label><input type="checkbox" name="is_active" {"checked" if bool(programme_payload.get("is_active", False)) else ""} /> Active programme</label>
-        </div>
-        <div class='field'>
           <label><input type="checkbox" name="is_released" {"checked" if bool(programme_payload.get("is_released", False)) else ""} /> Released to app</label>
-          <p class='help'>Only released active programmes can be assigned or shown in the member app.</p>
+          <p class='help'>Only released programmes can be assigned or shown in the member app.</p>
         </div>
       </div>
 
@@ -6444,7 +6440,6 @@ async def save_education_programme(
     name: str = Form(...),
     llm_task_description: str | None = Form(default=None),
     llm_video_duration: str | None = Form(default=None),
-    is_active: str | None = Form(default=None),
     is_released: str | None = Form(default=None),
     structure_json: str | None = Form(default=None),
 ):
@@ -6541,7 +6536,7 @@ async def save_education_programme(
             row.duration_days = resolved_duration
             row.llm_task_description = llm_task_description_text or None
             row.llm_video_duration = llm_video_duration_text or None
-            row.is_active = is_active is not None
+            row.is_active = True
             row.is_released = is_released is not None
             s.add(row)
             s.flush()
@@ -6554,7 +6549,7 @@ async def save_education_programme(
             row.duration_days = resolved_duration
             row.llm_task_description = llm_task_description_text or None
             row.llm_video_duration = llm_video_duration_text or None
-            row.is_active = is_active is not None
+            row.is_active = True
             row.is_released = is_released is not None
         s.add(row)
         s.flush()
