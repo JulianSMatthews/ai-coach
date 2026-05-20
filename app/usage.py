@@ -934,7 +934,7 @@ def get_avatar_usage_rows(
     limit_val = max(1, min(int(limit or 50), 200))
     default_rate, default_source = _avatar_rate_gbp_per_minute()
     with SessionLocal() as s:
-        q = (
+        base_q = (
             s.query(UsageEvent)
             .filter(
                 UsageEvent.created_at >= start_utc,
@@ -942,20 +942,37 @@ def get_avatar_usage_rows(
                 UsageEvent.product == "avatar",
                 UsageEvent.unit_type == "avatar_seconds",
             )
-            .order_by(UsageEvent.created_at.desc(), UsageEvent.id.desc())
         )
         if tag:
-            q = q.filter(UsageEvent.tag == tag)
+            base_q = base_q.filter(UsageEvent.tag == tag)
         if user_id:
-            q = q.filter(UsageEvent.user_id == user_id)
-        rows = q.limit(limit_val).all()
+            base_q = base_q.filter(UsageEvent.user_id == user_id)
+        all_rows = base_q.order_by(UsageEvent.created_at.desc(), UsageEvent.id.desc()).all()
+        rows = all_rows[:limit_val]
         education_context = _education_avatar_context_for_usage_rows(s, rows)
 
     out: list[dict] = []
-    total_cost = 0.0
-    total_seconds = 0.0
-    daily_totals: dict[str, dict[str, float | int | str]] = {}
-    for row in rows:
+    window_total_cost = 0.0
+    window_total_seconds = 0.0
+    window_daily_totals: dict[str, dict[str, float | int | str]] = {}
+    for row in all_rows:
+        created_at_value = getattr(row, "created_at", None)
+        day_key = created_at_value.date().isoformat() if created_at_value else "unknown"
+        seconds_est = float(getattr(row, "units", 0.0) or 0.0)
+        minutes_est = seconds_est / 60.0 if seconds_est else 0.0
+        cost_est = float(getattr(row, "cost_estimate", 0.0) or 0.0)
+        day_total = window_daily_totals.setdefault(
+            day_key,
+            {"date": day_key, "events": 0, "seconds_est": 0.0, "minutes_est": 0.0, "cost_est_gbp": 0.0},
+        )
+        day_total["events"] = int(day_total.get("events") or 0) + 1
+        day_total["seconds_est"] = float(day_total.get("seconds_est") or 0.0) + seconds_est
+        day_total["minutes_est"] = float(day_total.get("minutes_est") or 0.0) + minutes_est
+        day_total["cost_est_gbp"] = float(day_total.get("cost_est_gbp") or 0.0) + cost_est
+        window_total_cost += cost_est
+        window_total_seconds += seconds_est
+
+    def _avatar_usage_row_payload(row: UsageEvent) -> dict:
         meta = _meta_to_dict(getattr(row, "meta", None))
         variant_id = _avatar_lesson_variant_id_from_usage(row, meta)
         education = education_context.get(int(variant_id or 0), {}) if variant_id else {}
@@ -972,49 +989,60 @@ def get_avatar_usage_rows(
         created_at_value = getattr(row, "created_at", None)
         created_at_iso = created_at_value.isoformat() if created_at_value else None
         day_key = created_at_value.date().isoformat() if created_at_value else "unknown"
-        day_total = daily_totals.setdefault(
-            day_key,
-            {"date": day_key, "events": 0, "seconds_est": 0.0, "minutes_est": 0.0, "cost_est_gbp": 0.0},
+        programme_name = education.get("programme_name") or meta.get("programme_name")
+        programme_code = education.get("programme_code") or meta.get("programme_code")
+        programme_id = education.get("programme_id") or meta.get("programme_id")
+        programme_label = (
+            str(programme_name or "").strip()
+            or str(programme_code or "").strip()
+            or (f"Programme {programme_id}" if programme_id else None)
         )
-        day_total["events"] = int(day_total.get("events") or 0) + 1
-        day_total["seconds_est"] = float(day_total.get("seconds_est") or 0.0) + seconds_est
-        day_total["minutes_est"] = float(day_total.get("minutes_est") or 0.0) + minutes_est
-        day_total["cost_est_gbp"] = float(day_total.get("cost_est_gbp") or 0.0) + cost_est
-        out.append(
-            {
-                "event_id": int(getattr(row, "id", 0) or 0),
-                "created_at": created_at_iso,
-                "date": day_key,
-                "user_id": getattr(row, "user_id", None),
-                "model": getattr(row, "model", None),
-                "request_id": getattr(row, "request_id", None),
-                "mode": meta.get("mode"),
-                "title": meta.get("title") or meta.get("display_name"),
-                "programme_id": education.get("programme_id") or meta.get("programme_id"),
-                "programme_code": education.get("programme_code") or meta.get("programme_code"),
-                "programme_name": education.get("programme_name") or meta.get("programme_name"),
-                "programme_day_id": education.get("programme_day_id") or meta.get("programme_day_id"),
-                "day_index": education.get("day_index") or meta.get("day_index"),
-                "lesson_variant_id": education.get("lesson_variant_id") or meta.get("lesson_variant_id") or variant_id,
-                "lesson_level": education.get("level") or meta.get("level"),
-                "lesson_title": education.get("lesson_title") or meta.get("lesson_title") or meta.get("title"),
-                "azure_status": meta.get("azure_status"),
-                "run_id": meta.get("run_id"),
-                "character": meta.get("character"),
-                "style": meta.get("style"),
-                "voice": meta.get("voice"),
-                "text_chars": meta.get("text_chars"),
-                "seconds_est": round(seconds_est, 2),
-                "minutes_est": round(minutes_est, 2),
-                "duration_ms": getattr(row, "duration_ms", None),
-                "rate_gbp_per_minute": float(rate) if rate is not None else None,
-                "rate_source": rate_source,
-                "cost_est_gbp": round(cost_est, 6),
-                "working": working,
-            }
-        )
-        total_cost += cost_est
-        total_seconds += seconds_est
+        lesson_title = education.get("lesson_title") or meta.get("lesson_title") or meta.get("title")
+        return {
+            "event_id": int(getattr(row, "id", 0) or 0),
+            "created_at": created_at_iso,
+            "date": day_key,
+            "user_id": getattr(row, "user_id", None),
+            "model": getattr(row, "model", None),
+            "request_id": getattr(row, "request_id", None),
+            "mode": meta.get("mode"),
+            "title": meta.get("title") or meta.get("display_name"),
+            "programme_id": programme_id,
+            "programme_code": programme_code,
+            "programme_name": programme_name,
+            "programme_label": programme_label,
+            "programme_day_id": education.get("programme_day_id") or meta.get("programme_day_id"),
+            "day_index": education.get("day_index") or meta.get("day_index"),
+            "lesson_variant_id": education.get("lesson_variant_id") or meta.get("lesson_variant_id") or variant_id,
+            "lesson_level": education.get("level") or meta.get("level"),
+            "lesson_title": lesson_title,
+            "transaction_label": " · ".join(
+                part
+                for part in (
+                    str(programme_label or "").strip(),
+                    f"Day {education.get('day_index') or meta.get('day_index')}" if (education.get("day_index") or meta.get("day_index")) else "",
+                    str(lesson_title or "").strip(),
+                )
+                if part
+            )
+            or meta.get("title")
+            or meta.get("display_name"),
+            "azure_status": meta.get("azure_status"),
+            "run_id": meta.get("run_id"),
+            "character": meta.get("character"),
+            "style": meta.get("style"),
+            "voice": meta.get("voice"),
+            "text_chars": meta.get("text_chars"),
+            "seconds_est": round(seconds_est, 2),
+            "minutes_est": round(minutes_est, 2),
+            "duration_ms": getattr(row, "duration_ms", None),
+            "rate_gbp_per_minute": float(rate) if rate is not None else None,
+            "rate_source": rate_source,
+            "cost_est_gbp": round(cost_est, 6),
+            "working": working,
+        }
+
+    out = [_avatar_usage_row_payload(row) for row in rows]
 
     daily_totals_out = [
         {
@@ -1024,14 +1052,21 @@ def get_avatar_usage_rows(
             "minutes_est": round(float(item.get("minutes_est") or 0.0), 2),
             "cost_est_gbp": round(float(item.get("cost_est_gbp") or 0.0), 6),
         }
-        for _date, item in sorted(daily_totals.items(), reverse=True)
+        for _date, item in sorted(window_daily_totals.items(), reverse=True)
     ]
+    transactions_by_date = []
+    for daily in daily_totals_out:
+        date_key = str(daily.get("date") or "")
+        date_rows = [row for row in out if row.get("date") == date_key]
+        transactions_by_date.append({**daily, "rows": date_rows})
     return out, {
-        "events": len(out),
-        "seconds_est": round(total_seconds, 2),
-        "minutes_est": round(total_seconds / 60.0, 2) if total_seconds else 0.0,
-        "cost_est_gbp": round(total_cost, 6),
+        "events": len(all_rows),
+        "returned_events": len(out),
+        "seconds_est": round(window_total_seconds, 2),
+        "minutes_est": round(window_total_seconds / 60.0, 2) if window_total_seconds else 0.0,
+        "cost_est_gbp": round(window_total_cost, 6),
         "daily_totals": daily_totals_out,
+        "transactions_by_date": transactions_by_date,
     }
 
 

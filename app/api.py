@@ -15599,6 +15599,9 @@ def admin_usage_avatar_costs(
         "rows": rows_out,
         "total_cost_gbp": round(float(totals.get("cost_est_gbp") or 0.0), 6),
         "daily_totals": totals.get("daily_totals") or [],
+        "transactions_by_date": totals.get("transactions_by_date") or [],
+        "total_events": int(totals.get("events") or len(rows_out)),
+        "returned_events": int(totals.get("returned_events") or len(rows_out)),
         "limit": limit_val,
     }
 
