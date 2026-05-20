@@ -4,12 +4,21 @@ from datetime import datetime, timedelta, timezone
 import json
 import os
 import math
+import re
 
 from sqlalchemy import func, case, text as sa_text
 from sqlalchemy.orm import Session
 
 from .db import SessionLocal, engine, _is_postgres, _table_exists
-from .models import UsageEvent, UsageRollupDaily, UsageSettings, LLMPromptLog
+from .models import (
+    EducationLessonVariant,
+    EducationProgramme,
+    EducationProgrammeDay,
+    UsageEvent,
+    UsageRollupDaily,
+    UsageSettings,
+    LLMPromptLog,
+)
 
 
 _USAGE_SCHEMA_READY = False
@@ -587,6 +596,61 @@ def _azure_batch_avatar_usage_payload(
     }
 
 
+def _avatar_lesson_variant_id_from_usage(row: UsageEvent, meta: dict) -> int | None:
+    raw = meta.get("lesson_variant_id")
+    if raw is not None:
+        try:
+            value = int(str(raw).strip())
+            if value > 0:
+                return value
+        except Exception:
+            pass
+    request_id = str(getattr(row, "request_id", "") or "").strip()
+    match = re.match(r"^edu-avatar-(\d+)-", request_id)
+    if match:
+        try:
+            return int(match.group(1))
+        except Exception:
+            return None
+    return None
+
+
+def _education_avatar_context_for_usage_rows(session: Session, rows: list[UsageEvent]) -> dict[int, dict[str, object]]:
+    variant_ids = {
+        int(variant_id)
+        for row in rows
+        for variant_id in [_avatar_lesson_variant_id_from_usage(row, _meta_to_dict(getattr(row, "meta", None)))]
+        if variant_id
+    }
+    if not variant_ids:
+        return {}
+    result: dict[int, dict[str, object]] = {}
+    joined_rows = (
+        session.query(EducationLessonVariant, EducationProgrammeDay, EducationProgramme)
+        .join(EducationProgrammeDay, EducationLessonVariant.programme_day_id == EducationProgrammeDay.id)
+        .join(EducationProgramme, EducationProgrammeDay.programme_id == EducationProgramme.id)
+        .filter(EducationLessonVariant.id.in_(sorted(variant_ids)))
+        .all()
+    )
+    for variant, day, programme in joined_rows:
+        variant_id = int(getattr(variant, "id", 0) or 0)
+        result[variant_id] = {
+            "lesson_variant_id": variant_id,
+            "programme_id": int(getattr(programme, "id", 0) or 0) or None,
+            "programme_code": str(getattr(programme, "code", "") or "").strip() or None,
+            "programme_name": str(getattr(programme, "name", "") or "").strip() or None,
+            "programme_day_id": int(getattr(day, "id", 0) or 0) or None,
+            "day_index": int(getattr(day, "day_index", 0) or 0) or None,
+            "level": str(getattr(variant, "level", "") or "").strip() or None,
+            "lesson_title": (
+                str(getattr(variant, "title", "") or "").strip()
+                or str(getattr(day, "default_title", "") or "").strip()
+                or None
+            ),
+        }
+    return result
+
+
 def log_azure_batch_avatar_usage_once(
     payload: dict,
     *,
@@ -885,12 +949,16 @@ def get_avatar_usage_rows(
         if user_id:
             q = q.filter(UsageEvent.user_id == user_id)
         rows = q.limit(limit_val).all()
+        education_context = _education_avatar_context_for_usage_rows(s, rows)
 
     out: list[dict] = []
     total_cost = 0.0
     total_seconds = 0.0
+    daily_totals: dict[str, dict[str, float | int | str]] = {}
     for row in rows:
         meta = _meta_to_dict(getattr(row, "meta", None))
+        variant_id = _avatar_lesson_variant_id_from_usage(row, meta)
+        education = education_context.get(int(variant_id or 0), {}) if variant_id else {}
         seconds_est = float(getattr(row, "units", 0.0) or 0.0)
         minutes_est = seconds_est / 60.0 if seconds_est else 0.0
         cost_est = float(getattr(row, "cost_estimate", 0.0) or 0.0)
@@ -901,16 +969,35 @@ def get_avatar_usage_rows(
         working = None
         if rate is not None:
             working = f"({minutes_est:.2f} min * £{float(rate):.4f}/min) = £{(minutes_est * float(rate)):.4f}"
+        created_at_value = getattr(row, "created_at", None)
+        created_at_iso = created_at_value.isoformat() if created_at_value else None
+        day_key = created_at_value.date().isoformat() if created_at_value else "unknown"
+        day_total = daily_totals.setdefault(
+            day_key,
+            {"date": day_key, "events": 0, "seconds_est": 0.0, "minutes_est": 0.0, "cost_est_gbp": 0.0},
+        )
+        day_total["events"] = int(day_total.get("events") or 0) + 1
+        day_total["seconds_est"] = float(day_total.get("seconds_est") or 0.0) + seconds_est
+        day_total["minutes_est"] = float(day_total.get("minutes_est") or 0.0) + minutes_est
+        day_total["cost_est_gbp"] = float(day_total.get("cost_est_gbp") or 0.0) + cost_est
         out.append(
             {
                 "event_id": int(getattr(row, "id", 0) or 0),
-                "created_at": getattr(row, "created_at", None).isoformat() if getattr(row, "created_at", None) else None,
+                "created_at": created_at_iso,
+                "date": day_key,
                 "user_id": getattr(row, "user_id", None),
                 "model": getattr(row, "model", None),
                 "request_id": getattr(row, "request_id", None),
                 "mode": meta.get("mode"),
                 "title": meta.get("title") or meta.get("display_name"),
-                "lesson_variant_id": meta.get("lesson_variant_id"),
+                "programme_id": education.get("programme_id") or meta.get("programme_id"),
+                "programme_code": education.get("programme_code") or meta.get("programme_code"),
+                "programme_name": education.get("programme_name") or meta.get("programme_name"),
+                "programme_day_id": education.get("programme_day_id") or meta.get("programme_day_id"),
+                "day_index": education.get("day_index") or meta.get("day_index"),
+                "lesson_variant_id": education.get("lesson_variant_id") or meta.get("lesson_variant_id") or variant_id,
+                "lesson_level": education.get("level") or meta.get("level"),
+                "lesson_title": education.get("lesson_title") or meta.get("lesson_title") or meta.get("title"),
                 "azure_status": meta.get("azure_status"),
                 "run_id": meta.get("run_id"),
                 "character": meta.get("character"),
@@ -929,11 +1016,22 @@ def get_avatar_usage_rows(
         total_cost += cost_est
         total_seconds += seconds_est
 
+    daily_totals_out = [
+        {
+            "date": str(item.get("date") or ""),
+            "events": int(item.get("events") or 0),
+            "seconds_est": round(float(item.get("seconds_est") or 0.0), 2),
+            "minutes_est": round(float(item.get("minutes_est") or 0.0), 2),
+            "cost_est_gbp": round(float(item.get("cost_est_gbp") or 0.0), 6),
+        }
+        for _date, item in sorted(daily_totals.items(), reverse=True)
+    ]
     return out, {
         "events": len(out),
         "seconds_est": round(total_seconds, 2),
         "minutes_est": round(total_seconds / 60.0, 2) if total_seconds else 0.0,
         "cost_est_gbp": round(total_cost, 6),
+        "daily_totals": daily_totals_out,
     }
 
 

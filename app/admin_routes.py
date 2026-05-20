@@ -25,6 +25,7 @@ from .models import (
     EducationProgrammeDay,
     EducationQuiz,
     EducationQuizQuestion,
+    BackgroundJob,
     PillarResult,
     PromptTemplate,
     PromptSettings,
@@ -52,6 +53,7 @@ from .education_plan import (
     refresh_education_lesson_avatar,
     refresh_education_programme_avatar_videos,
 )
+from .usage import estimate_avatar_cost_from_text
 from .kickoff import _programme_blocks as kickoff_programme_blocks, _okr_by_pillar as kickoff_okr_by_pillar
 from .kickoff import _latest_assessment as kickoff_latest_assessment, _latest_psych as kickoff_latest_psych
 from .prompts import kr_payload_list, primary_kr_payload
@@ -2142,9 +2144,230 @@ def _education_avatar_batch_queued_page(
         "Each video is started, waited for, cached, and then the next missing video is attempted.</p>"
         f"<p class='help'>Regenerate existing videos: {'yes' if regenerate else 'no'}.</p>"
         "<div class='stack'>"
+        f"<a class='button-link' href='/admin/education-programmes/avatar/job-status?job_id={int(job_id)}"
+        f"{('&programme_id=' + str(int(programme_id))) if programme_id else ''}'>View live progress</a>"
         f"{back_link}"
         "</div>"
         "</div>"
+    )
+    return _wrap_page(heading, body)
+
+
+def _avatar_progress_state(row: EducationLessonVariant) -> str:
+    avatar = education_lesson_avatar_payload(row) or {}
+    if str(avatar.get("url") or avatar.get("video_url") or "").strip():
+        return "ready"
+    status = str(getattr(row, "avatar_status", "") or "").strip().lower()
+    if status in {"submitting", "notstarted", "running", "processing"}:
+        return "in progress"
+    if status in {"failed", "cancelled", "canceled"}:
+        return "error"
+    if str(getattr(row, "avatar_job_id", "") or "").strip():
+        return status or "pending"
+    if str(getattr(row, "script", "") or "").strip():
+        return "missing"
+    return "skipped"
+
+
+def _education_avatar_programme_progress(session, programme_id: int) -> tuple[dict[str, int], list[dict[str, object]], dict[str, float]]:
+    rows = (
+        session.query(EducationLessonVariant, EducationProgrammeDay)
+        .join(EducationProgrammeDay, EducationLessonVariant.programme_day_id == EducationProgrammeDay.id)
+        .filter(EducationProgrammeDay.programme_id == int(programme_id))
+        .order_by(EducationProgrammeDay.day_index.asc(), EducationLessonVariant.level.asc(), EducationLessonVariant.id.asc())
+        .all()
+    )
+    counts: dict[str, int] = {}
+    items: list[dict[str, object]] = []
+    exposure = {"missing_minutes": 0.0, "missing_cost_gbp": 0.0, "in_progress_minutes": 0.0, "in_progress_cost_gbp": 0.0}
+    for variant, day in rows:
+        state = _avatar_progress_state(variant)
+        counts[state] = int(counts.get(state, 0) or 0) + 1
+        script = str(getattr(variant, "script", "") or "").strip()
+        cost_estimate, seconds_est, rate_per_minute, _chars_per_minute, rate_source = estimate_avatar_cost_from_text(script)
+        minutes_est = float(seconds_est or 0.0) / 60.0
+        if state == "missing":
+            exposure["missing_minutes"] += minutes_est
+            exposure["missing_cost_gbp"] += float(cost_estimate or 0.0)
+        elif state == "in progress":
+            exposure["in_progress_minutes"] += minutes_est
+            exposure["in_progress_cost_gbp"] += float(cost_estimate or 0.0)
+        avatar = education_lesson_avatar_payload(variant) or {}
+        items.append(
+            {
+                "day_index": int(getattr(day, "day_index", 0) or 0),
+                "level": str(getattr(variant, "level", "") or "").strip() or "-",
+                "title": str(getattr(variant, "title", "") or getattr(day, "default_title", "") or "").strip() or "-",
+                "state": state,
+                "avatar_status": str(getattr(variant, "avatar_status", "") or "").strip() or "-",
+                "job_id": str(getattr(variant, "avatar_job_id", "") or "").strip() or "",
+                "error": str(getattr(variant, "avatar_error", "") or "").strip() or "",
+                "video_url": str(avatar.get("url") or avatar.get("video_url") or "").strip() or "",
+                "minutes_est": minutes_est,
+                "cost_estimate": float(cost_estimate or 0.0),
+                "rate_per_minute": float(rate_per_minute or 0.0),
+                "rate_source": rate_source,
+            }
+        )
+    return counts, items, exposure
+
+
+def _json_pretty(value: object) -> str:
+    try:
+        return json.dumps(value, indent=2, sort_keys=True, default=str)
+    except Exception:
+        return str(value)
+
+
+@admin.get("/education-programmes/avatar/job-status", response_class=HTMLResponse)
+def education_programme_avatar_job_status(job_id: int | None = None, programme_id: int | None = None):
+    ensure_job_table()
+    ensure_education_plan_schema()
+    job = None
+    job_payload: dict[str, object] = {}
+    job_result: dict[str, object] = {}
+    with SessionLocal() as s:
+        if job_id is not None:
+            job = s.get(BackgroundJob, int(job_id))
+            if job is None:
+                raise HTTPException(404, "Background job not found")
+            job_payload = dict(job.payload or {}) if isinstance(job.payload, dict) else {}
+            job_result = dict(job.result or {}) if isinstance(job.result, dict) else {}
+            if programme_id is None and job_payload.get("programme_id"):
+                try:
+                    programme_id = int(job_payload.get("programme_id") or 0)
+                except Exception:
+                    programme_id = None
+        programme = s.get(EducationProgramme, int(programme_id)) if programme_id else None
+        counts: dict[str, int] = {}
+        items: list[dict[str, object]] = []
+        exposure = {"missing_minutes": 0.0, "missing_cost_gbp": 0.0, "in_progress_minutes": 0.0, "in_progress_cost_gbp": 0.0}
+        if programme is not None:
+            counts, items, exposure = _education_avatar_programme_progress(s, int(programme.id))
+        recent_jobs = (
+            s.query(BackgroundJob)
+            .filter(BackgroundJob.kind.in_(["education_avatar_generate_programme", "education_avatar_generate_all"]))
+            .order_by(BackgroundJob.created_at.desc(), BackgroundJob.id.desc())
+            .limit(10)
+            .all()
+        )
+
+    heading = "Education Avatar Job Progress"
+    job_html = ""
+    if job is not None:
+        result_counts = job_result.get("counts") if isinstance(job_result.get("counts"), dict) else None
+        requeued_job_id = job_result.get("requeued_job_id") if isinstance(job_result, dict) else None
+        requeued_html = (
+            f"<a href='/admin/education-programmes/avatar/job-status?job_id={html.escape(str(requeued_job_id))}'>"
+            f"Job {html.escape(str(requeued_job_id))}</a>"
+            if requeued_job_id
+            else "-"
+        )
+        job_html = (
+            "<div class='card'>"
+            "<h3 class='section-title'>Queue job</h3>"
+            "<table>"
+            f"<tr><th>Job</th><td>{int(job.id)}</td></tr>"
+            f"<tr><th>Kind</th><td>{html.escape(str(job.kind or ''))}</td></tr>"
+            f"<tr><th>Status</th><td><strong>{html.escape(str(job.status or ''))}</strong></td></tr>"
+            f"<tr><th>Attempts</th><td>{html.escape(str(job.attempts or 0))}</td></tr>"
+            f"<tr><th>Locked by</th><td>{html.escape(str(job.locked_by or '-'))}</td></tr>"
+            f"<tr><th>Locked at</th><td>{html.escape(str(job.locked_at or '-'))}</td></tr>"
+            f"<tr><th>Available at</th><td>{html.escape(str(job.available_at or '-'))}</td></tr>"
+            f"<tr><th>Created</th><td>{html.escape(str(job.created_at or '-'))}</td></tr>"
+            f"<tr><th>Updated</th><td>{html.escape(str(job.updated_at or '-'))}</td></tr>"
+            f"<tr><th>Error</th><td>{html.escape(str(job.error or '-'))}</td></tr>"
+            f"<tr><th>Result counts</th><td>{html.escape(_json_pretty(result_counts or {}))}</td></tr>"
+            f"<tr><th>Requeued job</th><td>{requeued_html}</td></tr>"
+            "</table>"
+            "<details style='margin-top:10px;'><summary>Payload/result JSON</summary>"
+            f"<pre>{html.escape(_json_pretty({'payload': job_payload, 'result': job_result}))}</pre>"
+            "</details>"
+            "</div>"
+        )
+
+    programme_html = ""
+    if programme is not None:
+        count_bits = " · ".join(f"{html.escape(str(key))}: {int(value)}" for key, value in sorted(counts.items()))
+        rows_html = []
+        for item in items:
+            video_url = str(item.get("video_url") or "")
+            job_ref = str(item.get("job_id") or "")
+            error = str(item.get("error") or "")
+            video_html = f"<a href='{html.escape(video_url)}'>video</a>" if video_url else "-"
+            rows_html.append(
+                "<tr>"
+                f"<td>{int(item.get('day_index') or 0)}</td>"
+                f"<td>{html.escape(str(item.get('level') or ''))}</td>"
+                f"<td>{html.escape(str(item.get('title') or ''))}</td>"
+                f"<td><strong>{html.escape(str(item.get('state') or ''))}</strong></td>"
+                f"<td>{html.escape(str(item.get('avatar_status') or ''))}</td>"
+                f"<td>{html.escape(job_ref[:72])}</td>"
+                f"<td>{float(item.get('minutes_est') or 0.0):.2f}</td>"
+                f"<td>£{float(item.get('cost_estimate') or 0.0):.2f}</td>"
+                f"<td>{video_html}</td>"
+                f"<td>{html.escape(error[:180]) if error else '-'}</td>"
+                "</tr>"
+            )
+        programme_html = (
+            "<div class='card'>"
+            f"<h3 class='section-title'>{html.escape(str(getattr(programme, 'name', '') or 'Programme'))}</h3>"
+            f"<p class='help'>Programme {int(programme.id)} · {html.escape(str(getattr(programme, 'code', '') or ''))}</p>"
+            f"<p><strong>Progress:</strong> {count_bits or 'no lesson variants found'}</p>"
+            "<p class='help'>"
+            f"Missing exposure estimate: {exposure['missing_minutes']:.2f} min / £{exposure['missing_cost_gbp']:.2f}. "
+            f"In-progress estimate: {exposure['in_progress_minutes']:.2f} min / £{exposure['in_progress_cost_gbp']:.2f}."
+            "</p>"
+            "<table>"
+            "<tr><th>Day</th><th>Level</th><th>Title</th><th>State</th><th>Azure status</th><th>Azure job id</th><th>Est min</th><th>Est cost</th><th>Video</th><th>Error</th></tr>"
+            + ("".join(rows_html) if rows_html else "<tr><td colspan='10'><em>No lesson variants found.</em></td></tr>")
+            + "</table>"
+            "</div>"
+        )
+    else:
+        programme_html = "<div class='card'><p class='help'>No specific programme is attached to this job.</p></div>"
+
+    recent_rows = []
+    for row in recent_jobs:
+        payload = row.payload if isinstance(row.payload, dict) else {}
+        recent_programme_id = payload.get("programme_id")
+        recent_rows.append(
+            "<tr>"
+            f"<td><a href='/admin/education-programmes/avatar/job-status?job_id={int(row.id)}"
+            f"{('&programme_id=' + html.escape(str(recent_programme_id))) if recent_programme_id else ''}'>"
+            f"{int(row.id)}</a></td>"
+            f"<td>{html.escape(str(row.kind or ''))}</td>"
+            f"<td>{html.escape(str(row.status or ''))}</td>"
+            f"<td>{html.escape(str(recent_programme_id or '-'))}</td>"
+            f"<td>{html.escape(str(row.attempts or 0))}</td>"
+            f"<td>{html.escape(str(row.created_at or '-'))}</td>"
+            f"<td>{html.escape(str(row.updated_at or '-'))}</td>"
+            "</tr>"
+        )
+    recent_html = (
+        "<div class='card'>"
+        "<h3 class='section-title'>Recent education avatar jobs</h3>"
+        "<table><tr><th>Job</th><th>Kind</th><th>Status</th><th>Programme</th><th>Attempts</th><th>Created</th><th>Updated</th></tr>"
+        + ("".join(recent_rows) if recent_rows else "<tr><td colspan='7'><em>No recent jobs found.</em></td></tr>")
+        + "</table></div>"
+    )
+    programme_link = (
+        f"<a class='button-link' href='/admin/education-programmes/edit?id={int(programme_id)}'>Back to programme</a>"
+        if programme_id
+        else ""
+    )
+    body = (
+        f"<h2>{heading}</h2>"
+        f"{_build_version_label()}"
+        "<meta http-equiv='refresh' content='20'>"
+        "<p class='help'>This page auto-refreshes every 20 seconds. It uses local job and lesson state, so it is safe to keep open while the worker runs.</p>"
+        "<div class='nav'>"
+        "<a class='button-link' href='/admin/education-programmes'>Back to education programmes</a>"
+        f"{programme_link}"
+        "</div>"
+        f"{job_html}"
+        f"{programme_html}"
+        f"{recent_html}"
     )
     return _wrap_page(heading, body)
 
@@ -4910,6 +5133,7 @@ def edit_education_programme(id: int | None = None):
             "<button type='button' class='secondary' id='review-selected-day-video-button'>Review selected day video</button>"
             "<button type='button' class='secondary' id='generate-selected-day-video-button'>Generate selected day video</button>"
             "<button type='button' class='secondary' id='refresh-selected-day-video-button'>Refresh selected day video</button>"
+            f"<a class='button-link' href='/admin/education-programmes/avatar/job-status?programme_id={programme_id}'>View avatar progress</a>"
             "</div>"
             "</div>"
         )

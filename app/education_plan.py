@@ -768,6 +768,12 @@ def _save_education_avatar_generation_result(
         row.avatar_generated_at = _now_utc()
     session.add(row)
     if resolved_status_key == "succeeded" and isinstance(response_payload, dict):
+        programme_day = session.get(EducationProgrammeDay, int(getattr(row, "programme_day_id", 0) or 0))
+        programme = (
+            session.get(EducationProgramme, int(getattr(programme_day, "programme_id", 0) or 0))
+            if programme_day is not None
+            else None
+        )
         log_azure_batch_avatar_usage_once(
             response_payload,
             session=session,
@@ -775,6 +781,13 @@ def _save_education_avatar_generation_result(
             model="batch_education_avatar",
             extra_meta={
                 "lesson_variant_id": int(getattr(row, "id", 0) or 0) or None,
+                "programme_id": int(getattr(programme, "id", 0) or 0) or None,
+                "programme_code": str(getattr(programme, "code", "") or "").strip() or None,
+                "programme_name": str(getattr(programme, "name", "") or "").strip() or None,
+                "programme_day_id": int(getattr(programme_day, "id", 0) or 0) or None,
+                "day_index": int(getattr(programme_day, "day_index", 0) or 0) or None,
+                "level": str(getattr(row, "level", "") or "").strip() or None,
+                "lesson_title": title,
                 "title": title,
                 "character": character,
                 "style": style,
