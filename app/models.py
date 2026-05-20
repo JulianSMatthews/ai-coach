@@ -1265,7 +1265,7 @@ class EducationProgramme(Base):
     duration_days = Column(Integer, nullable=False, server_default=text("21"))
     llm_task_description = Column(Text, nullable=True)
     llm_video_duration = Column(String(120), nullable=True)
-    is_active = Column(Boolean, nullable=False, server_default=text("true"), index=True)
+    is_active = Column(Boolean, nullable=False, server_default=text("false"), index=True)
     is_released = Column(Boolean, nullable=False, server_default=text("false"), index=True)
     created_at = Column(DateTime, nullable=False, server_default=func.now())
     updated_at = Column(DateTime, nullable=False, server_default=func.now(), onupdate=func.now())

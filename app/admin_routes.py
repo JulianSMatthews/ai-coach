@@ -527,7 +527,7 @@ def _education_programme_payload(session, row: EducationProgramme | None) -> dic
             "duration_days": 0,
             "llm_task_description": "",
             "llm_video_duration": "",
-            "is_active": True,
+            "is_active": False,
             "is_released": False,
             "days": [],
         }
@@ -4965,7 +4965,7 @@ def edit_education_programme(id: int | None = None):
           </div>
         </div>
         <div class='field'>
-          <label><input type="checkbox" name="is_active" {"checked" if bool(programme_payload.get("is_active", True)) else ""} /> Active programme</label>
+          <label><input type="checkbox" name="is_active" {"checked" if bool(programme_payload.get("is_active", False)) else ""} /> Active programme</label>
         </div>
         <div class='field'>
           <label><input type="checkbox" name="is_released" {"checked" if bool(programme_payload.get("is_released", False)) else ""} /> Released to app</label>

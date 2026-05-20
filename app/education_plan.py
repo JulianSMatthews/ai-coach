@@ -147,6 +147,32 @@ def _ensure_education_columns() -> None:
                             f"ADD COLUMN {column_name} {column_type};"
                         )
                     )
+        if inspector.has_table("education_programmes") and dialect == "postgresql":
+            conn.execute(text("ALTER TABLE education_programmes ALTER COLUMN is_active SET DEFAULT false;"))
+
+
+def _apply_education_data_migrations() -> None:
+    migration_key = "2026_05_20_education_programmes_inactive_by_default"
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS education_schema_migrations ("
+                "key varchar(160) PRIMARY KEY, "
+                "applied_at timestamp DEFAULT CURRENT_TIMESTAMP"
+                ");"
+            )
+        )
+        existing = conn.execute(
+            text("SELECT key FROM education_schema_migrations WHERE key = :key"),
+            {"key": migration_key},
+        ).first()
+        if existing:
+            return
+        conn.execute(text("UPDATE education_programmes SET is_active = false, is_released = false;"))
+        conn.execute(
+            text("INSERT INTO education_schema_migrations (key) VALUES (:key)"),
+            {"key": migration_key},
+        )
 
 
 def ensure_education_plan_schema() -> None:
@@ -157,6 +183,7 @@ def ensure_education_plan_schema() -> None:
         for table in _EDUCATION_SCHEMA_TABLES:
             table.create(bind=engine, checkfirst=True)
         _ensure_education_columns()
+        _apply_education_data_migrations()
         with engine.begin() as conn:
             for sql in _EDUCATION_SCHEMA_INDEX_SQL:
                 conn.execute(text(sql))
