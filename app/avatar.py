@@ -11,6 +11,9 @@ from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 import requests
+from sqlalchemy import text
+
+from .db import engine
 
 
 def _is_truthy_env(value: str | None) -> bool:
@@ -302,6 +305,10 @@ def _avatar_daily_limit_minutes() -> float:
     return _safe_float(os.getenv("AZURE_AVATAR_DAILY_MINUTE_LIMIT"), 10.0)
 
 
+def _avatar_daily_extension_minutes() -> float:
+    return _safe_float(os.getenv("AZURE_AVATAR_DAILY_EXTENSION_MINUTES"), 10.0)
+
+
 def _avatar_budget_timezone() -> ZoneInfo:
     name = str(os.getenv("AZURE_AVATAR_DAILY_LIMIT_TIMEZONE") or "Europe/London").strip()
     try:
@@ -348,6 +355,70 @@ def _estimate_avatar_script_minutes(script: str) -> float:
     return max(chars / chars_per_minute, 0.25)
 
 
+def _avatar_daily_limit_day_key() -> tuple[str, ZoneInfo]:
+    tz = _avatar_budget_timezone()
+    return datetime.now(tz).date().isoformat(), tz
+
+
+def _ensure_avatar_daily_limit_table() -> None:
+    with engine.begin() as conn:
+        conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS azure_avatar_daily_limit_extensions ("
+                "day_key varchar(32) PRIMARY KEY, "
+                "timezone varchar(80) NOT NULL, "
+                "extra_minutes double precision NOT NULL DEFAULT 0, "
+                "updated_at timestamp DEFAULT CURRENT_TIMESTAMP"
+                ");"
+            )
+        )
+
+
+def _approved_avatar_extra_minutes(day_key: str | None = None) -> float:
+    resolved_day, _tz = _avatar_daily_limit_day_key()
+    day = str(day_key or resolved_day).strip()
+    try:
+        _ensure_avatar_daily_limit_table()
+        with engine.begin() as conn:
+            row = conn.execute(
+                text("SELECT extra_minutes FROM azure_avatar_daily_limit_extensions WHERE day_key = :day_key"),
+                {"day_key": day},
+            ).first()
+        return float(row[0] or 0.0) if row else 0.0
+    except Exception:
+        return 0.0
+
+
+def approve_avatar_daily_limit_extension(*, minutes: float | None = None) -> dict[str, Any]:
+    day_key, tz = _avatar_daily_limit_day_key()
+    increment = float(minutes if minutes is not None else _avatar_daily_extension_minutes())
+    increment = max(0.1, min(increment, 120.0))
+    _ensure_avatar_daily_limit_table()
+    with engine.begin() as conn:
+        existing = conn.execute(
+            text("SELECT extra_minutes FROM azure_avatar_daily_limit_extensions WHERE day_key = :day_key"),
+            {"day_key": day_key},
+        ).first()
+        if existing:
+            conn.execute(
+                text(
+                    "UPDATE azure_avatar_daily_limit_extensions "
+                    "SET extra_minutes = extra_minutes + :increment, timezone = :timezone, updated_at = CURRENT_TIMESTAMP "
+                    "WHERE day_key = :day_key"
+                ),
+                {"day_key": day_key, "increment": increment, "timezone": str(tz.key)},
+            )
+        else:
+            conn.execute(
+                text(
+                    "INSERT INTO azure_avatar_daily_limit_extensions (day_key, timezone, extra_minutes) "
+                    "VALUES (:day_key, :timezone, :increment)"
+                ),
+                {"day_key": day_key, "increment": increment, "timezone": str(tz.key)},
+            )
+    return avatar_daily_limit_status()
+
+
 def _get_existing_batch_avatar(batch_id: str) -> dict[str, Any] | None:
     response = requests.get(
         f"{_avatar_api_base()}/avatar/batchsyntheses/{batch_id}?api-version=2024-08-01",
@@ -363,10 +434,8 @@ def _get_existing_batch_avatar(batch_id: str) -> dict[str, Any] | None:
     return data
 
 
-def _enforce_batch_avatar_daily_limit(*, script: str, batch_id: str) -> None:
-    limit_minutes = _avatar_daily_limit_minutes()
-    if limit_minutes <= 0:
-        return
+def avatar_daily_limit_status(*, estimated_minutes: float = 0.0) -> dict[str, Any]:
+    base_limit_minutes = _avatar_daily_limit_minutes()
     tz = _avatar_budget_timezone()
     today = datetime.now(tz).date()
     used_seconds = 0.0
@@ -380,13 +449,35 @@ def _enforce_batch_avatar_daily_limit(*, script: str, batch_id: str) -> None:
             continue
         used_seconds += _avatar_job_billed_seconds(job)
     used_minutes = used_seconds / 60.0
+    approved_extra_minutes = _approved_avatar_extra_minutes(today.isoformat())
+    effective_limit_minutes = base_limit_minutes + approved_extra_minutes
+    remaining_minutes = max(0.0, effective_limit_minutes - used_minutes)
+    return {
+        "day_key": today.isoformat(),
+        "timezone": str(getattr(tz, "key", "UTC")),
+        "base_limit_minutes": round(base_limit_minutes, 2),
+        "approved_extra_minutes": round(approved_extra_minutes, 2),
+        "effective_limit_minutes": round(effective_limit_minutes, 2),
+        "used_minutes": round(used_minutes, 2),
+        "remaining_minutes": round(remaining_minutes, 2),
+        "estimated_next_minutes": round(float(estimated_minutes or 0.0), 2),
+        "would_exceed": bool(effective_limit_minutes > 0 and used_minutes + float(estimated_minutes or 0.0) > effective_limit_minutes),
+        "extension_minutes": round(_avatar_daily_extension_minutes(), 2),
+    }
+
+
+def _enforce_batch_avatar_daily_limit(*, script: str, batch_id: str) -> None:
+    if _avatar_daily_limit_minutes() <= 0:
+        return
     estimated_minutes = _estimate_avatar_script_minutes(script)
-    if used_minutes + estimated_minutes > limit_minutes:
+    status = avatar_daily_limit_status(estimated_minutes=estimated_minutes)
+    if status["would_exceed"]:
         raise RuntimeError(
             "Azure avatar daily minute limit reached: "
-            f"{used_minutes:.2f} min already billed today, "
+            f"{float(status['used_minutes']):.2f} min already billed today, "
             f"{estimated_minutes:.2f} min estimated for job {batch_id}, "
-            f"limit {limit_minutes:.2f} min."
+            f"approved limit {float(status['effective_limit_minutes']):.2f} min. "
+            f"Approve another {float(status['extension_minutes']):.2f} minutes to continue."
         )
 
 
@@ -551,6 +642,8 @@ __all__ = [
     "azure_summary_realtime_settings",
     "build_avatar_ssml",
     "build_realtime_avatar_session_bootstrap",
+    "avatar_daily_limit_status",
+    "approve_avatar_daily_limit_extension",
     "create_batch_avatar",
     "download_batch_avatar_output",
     "generate_batch_avatar_video",

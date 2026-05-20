@@ -53,6 +53,7 @@ from .education_plan import (
     refresh_education_lesson_avatar,
     refresh_education_programme_avatar_videos,
 )
+from .avatar import approve_avatar_daily_limit_extension, avatar_daily_limit_status
 from .usage import estimate_avatar_cost_from_text
 from .kickoff import _programme_blocks as kickoff_programme_blocks, _okr_by_pillar as kickoff_okr_by_pillar
 from .kickoff import _latest_assessment as kickoff_latest_assessment, _latest_psych as kickoff_latest_psych
@@ -2221,6 +2222,26 @@ def _json_pretty(value: object) -> str:
         return str(value)
 
 
+@admin.post("/education-programmes/avatar/approve-daily-minutes")
+def approve_education_avatar_daily_minutes(
+    job_id: int | None = Form(default=None),
+    programme_id: int | None = Form(default=None),
+    minutes: str | None = Form(default=None),
+):
+    try:
+        minutes_value = float(str(minutes or "").strip()) if str(minutes or "").strip() else None
+    except Exception:
+        minutes_value = None
+    approve_avatar_daily_limit_extension(minutes=minutes_value)
+    params = []
+    if job_id:
+        params.append(f"job_id={int(job_id)}")
+    if programme_id:
+        params.append(f"programme_id={int(programme_id)}")
+    suffix = ("?" + "&".join(params)) if params else ""
+    return RedirectResponse(url=f"/admin/education-programmes/avatar/job-status{suffix}", status_code=303)
+
+
 @admin.get("/education-programmes/avatar/job-status", response_class=HTMLResponse)
 def education_programme_avatar_job_status(job_id: int | None = None, programme_id: int | None = None):
     ensure_job_table()
@@ -2253,8 +2274,53 @@ def education_programme_avatar_job_status(job_id: int | None = None, programme_i
             .limit(10)
             .all()
         )
+    try:
+        estimated_next_minutes = max(
+            float(exposure.get("missing_minutes") or 0.0),
+            float(exposure.get("in_progress_minutes") or 0.0),
+        )
+        limit_status = avatar_daily_limit_status(estimated_minutes=estimated_next_minutes)
+    except Exception as exc:
+        limit_status = {"error": str(exc)}
 
     heading = "Education Avatar Job Progress"
+    limit_html = ""
+    if limit_status.get("error"):
+        limit_html = (
+            "<div class='card'>"
+            "<h3 class='section-title'>Daily avatar cap</h3>"
+            f"<p class='help'>Could not load cap status: {html.escape(str(limit_status.get('error') or 'unknown error'))}</p>"
+            "</div>"
+        )
+    else:
+        would_exceed = bool(limit_status.get("would_exceed"))
+        approve_form = (
+            "<form method='post' action='/admin/education-programmes/avatar/approve-daily-minutes' "
+            "onsubmit=\"return confirm('Approve another block of Azure avatar minutes for today? This allows more billable video generation.');\">"
+            f"<input type='hidden' name='job_id' value='{html.escape(str(job_id or ''))}' />"
+            f"<input type='hidden' name='programme_id' value='{html.escape(str(programme_id or ''))}' />"
+            f"<input type='hidden' name='minutes' value='{float(limit_status.get('extension_minutes') or 10.0):.2f}' />"
+            f"<button type='submit' class='danger'>Approve another {float(limit_status.get('extension_minutes') or 10.0):.0f} minutes today</button>"
+            "</form>"
+        )
+        limit_html = (
+            "<div class='card'>"
+            "<h3 class='section-title'>Daily avatar cap</h3>"
+            f"<p><strong>{float(limit_status.get('used_minutes') or 0.0):.2f}</strong> / "
+            f"<strong>{float(limit_status.get('effective_limit_minutes') or 0.0):.2f}</strong> minutes used today "
+            f"({html.escape(str(limit_status.get('timezone') or ''))}).</p>"
+            f"<p class='help'>Base cap: {float(limit_status.get('base_limit_minutes') or 0.0):.2f} min. "
+            f"Approved extra: {float(limit_status.get('approved_extra_minutes') or 0.0):.2f} min. "
+            f"Remaining: {float(limit_status.get('remaining_minutes') or 0.0):.2f} min. "
+            f"Estimated next/remaining programme work: {float(limit_status.get('estimated_next_minutes') or 0.0):.2f} min.</p>"
+            + (
+                "<p><strong>Cap reached for the next video.</strong> Generation will remain deferred until you approve more minutes or the daily window resets.</p>"
+                if would_exceed
+                else "<p class='help'>Generation is currently within the approved daily allowance.</p>"
+            )
+            + approve_form
+            + "</div>"
+        )
     job_html = ""
     if job is not None:
         result_counts = job_result.get("counts") if isinstance(job_result.get("counts"), dict) else None
@@ -2367,6 +2433,7 @@ def education_programme_avatar_job_status(job_id: int | None = None, programme_i
         "<a class='button-link' href='/admin/education-programmes'>Back to education programmes</a>"
         f"{programme_link}"
         "</div>"
+        f"{limit_html}"
         f"{job_html}"
         f"{programme_html}"
         f"{recent_html}"
