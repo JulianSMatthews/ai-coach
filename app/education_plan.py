@@ -1285,6 +1285,21 @@ def generate_education_programme_avatar_videos(
                             )
                             counts["pending"] += 1
                 except Exception as exc:
+                    if "status lookup returned 404" in str(exc).lower():
+                        row.avatar_status = "deferred"
+                        row.avatar_error = "Azure job was not created or is no longer available; cleared pending job reference for retry."
+                        row.avatar_job_id = None
+                        session.add(row)
+                        session.commit()
+                        item.update(
+                            {
+                                "status": "deferred",
+                                "reason": row.avatar_error,
+                            }
+                        )
+                        counts["deferred"] += 1
+                        items.append(item)
+                        continue
                     counts["errors"] += 1
                     item.update({"status": "error", "reason": str(exc), "job_id": job_id})
                 items.append(item)
@@ -1323,8 +1338,8 @@ def generate_education_programme_avatar_videos(
                 counts["deferred"] += 1
                 items.append(item)
                 continue
+            stable_job_id = _stable_education_avatar_job_id(row, avatar_input)
             try:
-                stable_job_id = _stable_education_avatar_job_id(row, avatar_input)
                 item["job_id"] = stable_job_id
                 row.avatar_status = "submitting"
                 row.avatar_job_id = stable_job_id
@@ -1433,6 +1448,14 @@ def generate_education_programme_avatar_videos(
                     generation_halted_reason = (
                         "Azure avatar job quota or rate limit reached; refresh pending videos later, then run generation again."
                     )
+                    current_job_id = str(getattr(row, "avatar_job_id", "") or "").strip()
+                    current_status = str(getattr(row, "avatar_status", "") or "").strip().lower()
+                    if current_job_id == stable_job_id and current_status == "submitting":
+                        row.avatar_status = "deferred"
+                        row.avatar_job_id = None
+                        row.avatar_error = str(exc)[:1000]
+                        session.add(row)
+                        session.commit()
                     item.update({"status": "deferred", "reason": generation_halted_reason})
                     counts["deferred"] += 1
                 else:

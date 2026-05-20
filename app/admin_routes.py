@@ -2158,6 +2158,8 @@ def _avatar_progress_state(row: EducationLessonVariant) -> str:
     if str(avatar.get("url") or avatar.get("video_url") or "").strip():
         return "ready"
     status = str(getattr(row, "avatar_status", "") or "").strip().lower()
+    if status == "deferred":
+        return "deferred"
     if status in {"submitting", "notstarted", "running", "processing"}:
         return "in progress"
     if status in {"failed", "cancelled", "canceled"}:
