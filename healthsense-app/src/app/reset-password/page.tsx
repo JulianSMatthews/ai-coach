@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { friendlyAuthError } from "@/lib/authErrors";
-import HealthSenseMark from "@/components/HealthSenseMark";
+import CoachSenseMark from "@/components/CoachSenseMark";
 
 function looksLikePhone(value: string) {
   const trimmed = value.trim();
@@ -153,7 +153,7 @@ export default function ResetPasswordPage() {
       <div className="mx-auto flex w-full max-w-md flex-col gap-6 rounded-3xl border border-[#e7e1d6] bg-white p-8 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.5)]">
         <div>
           <div className="flex items-center">
-            <HealthSenseMark className="h-10 w-7" />
+            <CoachSenseMark className="h-10 w-7" />
           </div>
           <h1 className="mt-4 text-3xl">Reset password</h1>
           <p className="mt-2 text-sm text-[#6b6257]">

@@ -351,7 +351,7 @@ export default function AssessmentPromptCard({
                     <div className="flex items-end justify-between gap-4">
                       <div>
                         <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
-                          {showLeadIntroPreview ? "Example HealthSense Score" : "HealthSense Score"}
+                          {showLeadIntroPreview ? "Example CoachSense Score" : "CoachSense Score"}
                         </p>
                         <p className="mt-1 text-4xl font-semibold text-[#1e1b16]">
                           {combinedPreviewScore ?? "--"}

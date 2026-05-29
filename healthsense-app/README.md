@@ -1,4 +1,4 @@
-This is the user-facing HealthSense web app built with Next.js and React.
+This is the user-facing CoachSense web app built with Next.js and React.
 
 ## Capacitor iOS Shell
 

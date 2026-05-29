@@ -599,7 +599,7 @@ export default async function ReportingPage({
                 </div>
               </form>
               <p className="mt-3 text-sm text-[#6b6257]">
-                Shared key: {leadStartKey ? "included automatically" : "not set on healthsense-admin"}
+                Shared key: {leadStartKey ? "included automatically" : "not set on CoachSense Admin"}
               </p>
               <p className="mt-1 text-sm text-[#6b6257]">
                 Landing intro avatar: {introAvatarToken === "1" ? "on" : "off"}

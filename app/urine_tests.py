@@ -613,9 +613,9 @@ def analyse_urine_test_photo(image_data_url: str) -> dict[str, Any]:
     )
     user_text = (
         "Inspect the image for a Siemens Multistix urine strip photographed at about 60 seconds after dipping. "
-        "No external colour chart is required; use this embedded HealthSense reference map:\n"
+        "No external colour chart is required; use this embedded CoachSense reference map:\n"
         f"{reference_json}\n\n"
-        "Use this HealthSense output mapping only:\n"
+        "Use this CoachSense output mapping only:\n"
         "- hydration from specific gravity: well, ok, low\n"
         "- uti from leukocytes + nitrite: clear, watch, flagged\n"
         "- protein: clear, trace, flagged\n"

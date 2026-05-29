@@ -51,7 +51,12 @@ def _dedupe_known(keys: Iterable[str]) -> tuple[str, ...]:
 
 
 def active_pillar_keys() -> tuple[str, ...]:
-    raw = os.getenv("HEALTHSENSE_ACTIVE_PILLARS") or os.getenv("ACTIVE_PILLARS") or ""
+    raw = (
+        os.getenv("COACHSENSE_ACTIVE_PILLARS")
+        or os.getenv("HEALTHSENSE_ACTIVE_PILLARS")
+        or os.getenv("ACTIVE_PILLARS")
+        or ""
+    )
     configured = _dedupe_known(raw.split(",")) if raw.strip() else ()
     return configured or DEFAULT_ACTIVE_PILLARS
 

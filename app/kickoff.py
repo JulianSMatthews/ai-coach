@@ -285,7 +285,7 @@ def generate_kickoff_podcast_transcript(
 
     # Fallback transcript
     parts = []
-    parts.append(f"Hi {name}, I’m {coach_name}, your HealthSense coach.")
+    parts.append(f"Hi {name}, I’m {coach_name}, your CoachSense coach.")
     if mode == "weekstart":
         blk = current_block or first_block
         if blk:
@@ -312,7 +312,7 @@ def generate_kickoff_podcast_transcript(
     else:
         if scores:
             score_bits = ", ".join(f"{s['pillar'].title()} {s['score']}/100" for s in scores)
-            parts.append(f"Your HealthSense Scores: {score_bits}.")
+            parts.append(f"Your CoachSense Scores: {score_bits}.")
         if psych_payload:
             parts.append("Your habit readiness shows how we’ll tailor support so it matches your pace and preferences.")
         parts.append("Your 12-week plan: three weeks each on Nutrition, Recovery, Training, then Resilience, building step by step.")

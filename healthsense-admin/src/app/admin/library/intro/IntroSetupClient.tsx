@@ -66,28 +66,28 @@ const INTRO_HELP_AVATAR_CONFIGS: Array<{
     slot: "habits",
     fieldPrefix: "app_habits_avatar",
     label: "Habits help video",
-    description: "Shown from the HealthSense intro modal when the user wants a quick walkthrough of habits.",
+    description: "Shown from the CoachSense intro modal when the user wants a quick walkthrough of habits.",
     defaultTitle: "Habits",
   },
   {
     slot: "insight",
     fieldPrefix: "app_insight_avatar",
     label: "Insight help video",
-    description: "Shown from the HealthSense intro modal for the Insight area.",
+    description: "Shown from the CoachSense intro modal for the Insight area.",
     defaultTitle: "Insight",
   },
   {
     slot: "ask",
     fieldPrefix: "app_ask_avatar",
     label: "Ask help video",
-    description: "Shown from the HealthSense intro modal for the Ask coaching area.",
+    description: "Shown from the CoachSense intro modal for the Ask coaching area.",
     defaultTitle: "Ask",
   },
   {
     slot: "daily_tracking",
     fieldPrefix: "app_daily_tracking_avatar",
     label: "Daily tracking help video",
-    description: "Shown from the HealthSense intro modal for daily pillar tracking.",
+    description: "Shown from the CoachSense intro modal for daily pillar tracking.",
     defaultTitle: "Daily tracking",
   },
 ];
@@ -309,10 +309,10 @@ export default function IntroSetupClient({
   );
 
   const [active, setActive] = useState(Boolean(appIntro.active));
-  const [title, setTitle] = useState(appIntro.title || "Welcome to HealthSense");
+  const [title, setTitle] = useState(appIntro.title || "Welcome to CoachSense");
   const [welcomeTemplate, setWelcomeTemplate] = useState(
     appIntro.welcome_message_template ||
-      "{first_name}, Welcome to HealthSense please listen to our introductory podcast to get started on your journey.",
+      "{first_name}, Welcome to CoachSense please listen to our introductory podcast to get started on your journey.",
   );
   const [body, setBody] = useState(appIntro.body || "");
   const [podcastUrl, setPodcastUrl] = useState(appIntro.podcast_url || "");
@@ -321,7 +321,7 @@ export default function IntroSetupClient({
     appIntro.app_intro_avatar?.url || "",
   );
   const [appIntroAvatarTitle, setAppIntroAvatarTitle] = useState(
-    appIntro.app_intro_avatar?.title || "Welcome to HealthSense",
+    appIntro.app_intro_avatar?.title || "Welcome to CoachSense",
   );
   const [appIntroAvatarScript, setAppIntroAvatarScript] = useState(
     appIntro.app_intro_avatar?.script || "",
@@ -362,7 +362,7 @@ export default function IntroSetupClient({
     appIntro.coach_product_avatar?.url || "",
   );
   const [coachProductAvatarTitle, setCoachProductAvatarTitle] = useState(
-    appIntro.coach_product_avatar?.title || "How HealthSense works",
+    appIntro.coach_product_avatar?.title || "How CoachSense works",
   );
   const [coachProductAvatarScript, setCoachProductAvatarScript] = useState(
     appIntro.coach_product_avatar?.script || "",
@@ -540,16 +540,16 @@ export default function IntroSetupClient({
 
   useEffect(() => {
     setActive(Boolean(appIntro.active));
-    setTitle(appIntro.title || "Welcome to HealthSense");
+    setTitle(appIntro.title || "Welcome to CoachSense");
     setWelcomeTemplate(
       appIntro.welcome_message_template ||
-        "{first_name}, Welcome to HealthSense please listen to our introductory podcast to get started on your journey.",
+        "{first_name}, Welcome to CoachSense please listen to our introductory podcast to get started on your journey.",
     );
     setBody(appIntro.body || "");
     setPodcastUrl(appIntro.podcast_url || "");
     setPodcastVoice(appIntro.podcast_voice || "");
     setAppIntroAvatarUrl(appIntro.app_intro_avatar?.url || "");
-    setAppIntroAvatarTitle(appIntro.app_intro_avatar?.title || "Welcome to HealthSense");
+    setAppIntroAvatarTitle(appIntro.app_intro_avatar?.title || "Welcome to CoachSense");
     setAppIntroAvatarScript(appIntro.app_intro_avatar?.script || "");
     setAppIntroAvatarPosterUrl(appIntro.app_intro_avatar?.poster_url || "");
     setAppIntroAvatarCharacter(appIntro.app_intro_avatar?.character || "lisa");
@@ -562,7 +562,7 @@ export default function IntroSetupClient({
     setAppIntroAvatarSummaryUrl(appIntro.app_intro_avatar?.summary_url || "");
     setHelpAvatars(introHelpAvatarMapFromIntro(appIntro));
     setCoachProductAvatarUrl(appIntro.coach_product_avatar?.url || "");
-    setCoachProductAvatarTitle(appIntro.coach_product_avatar?.title || "How HealthSense works");
+    setCoachProductAvatarTitle(appIntro.coach_product_avatar?.title || "How CoachSense works");
     setCoachProductAvatarScript(appIntro.coach_product_avatar?.script || "");
     setCoachProductAvatarPosterUrl(appIntro.coach_product_avatar?.poster_url || "");
     setCoachProductAvatarCharacter(appIntro.coach_product_avatar?.character || "lisa");
@@ -614,16 +614,16 @@ export default function IntroSetupClient({
         : null;
     if (!result) return;
     setActive(Boolean(result.active));
-    setTitle(result.title || "Welcome to HealthSense");
+    setTitle(result.title || "Welcome to CoachSense");
     setWelcomeTemplate(
       result.welcome_message_template ||
-        "{first_name}, Welcome to HealthSense please listen to our introductory podcast to get started on your journey.",
+        "{first_name}, Welcome to CoachSense please listen to our introductory podcast to get started on your journey.",
     );
     setBody(result.body || "");
     setPodcastUrl(result.podcast_url || "");
     setPodcastVoice(result.podcast_voice || "");
     setAppIntroAvatarUrl(result.app_intro_avatar?.url || "");
-    setAppIntroAvatarTitle(result.app_intro_avatar?.title || "Welcome to HealthSense");
+    setAppIntroAvatarTitle(result.app_intro_avatar?.title || "Welcome to CoachSense");
     setAppIntroAvatarScript(result.app_intro_avatar?.script || "");
     setAppIntroAvatarPosterUrl(result.app_intro_avatar?.poster_url || "");
     setAppIntroAvatarCharacter(result.app_intro_avatar?.character || "lisa");
@@ -636,7 +636,7 @@ export default function IntroSetupClient({
     setAppIntroAvatarSummaryUrl(result.app_intro_avatar?.summary_url || "");
     setHelpAvatars(introHelpAvatarMapFromIntro(result));
     setCoachProductAvatarUrl(result.coach_product_avatar?.url || "");
-    setCoachProductAvatarTitle(result.coach_product_avatar?.title || "How HealthSense works");
+    setCoachProductAvatarTitle(result.coach_product_avatar?.title || "How CoachSense works");
     setCoachProductAvatarScript(result.coach_product_avatar?.script || "");
     setCoachProductAvatarPosterUrl(result.coach_product_avatar?.poster_url || "");
     setCoachProductAvatarCharacter(result.coach_product_avatar?.character || "lisa");
@@ -656,7 +656,7 @@ export default function IntroSetupClient({
         : null;
     if (!result) return;
     setCoachProductAvatarUrl(result.coach_product_avatar?.url || "");
-    setCoachProductAvatarTitle(result.coach_product_avatar?.title || "How HealthSense works");
+    setCoachProductAvatarTitle(result.coach_product_avatar?.title || "How CoachSense works");
     setCoachProductAvatarScript(result.coach_product_avatar?.script || "");
     setCoachProductAvatarPosterUrl(result.coach_product_avatar?.poster_url || "");
     setCoachProductAvatarCharacter(result.coach_product_avatar?.character || "lisa");
@@ -703,7 +703,7 @@ export default function IntroSetupClient({
         : null;
     if (!avatar) return;
     setAppIntroAvatarUrl(String(avatar.url || "").trim());
-    setAppIntroAvatarTitle(String(avatar.title || "").trim() || "Welcome to HealthSense");
+    setAppIntroAvatarTitle(String(avatar.title || "").trim() || "Welcome to CoachSense");
     setAppIntroAvatarScript(String(avatar.script || "").trim());
     setAppIntroAvatarPosterUrl(String(avatar.poster_url || "").trim());
     setAppIntroAvatarCharacter(String(avatar.character || "").trim() || "lisa");
@@ -752,7 +752,7 @@ export default function IntroSetupClient({
         : null;
     if (!avatar) return;
     setCoachProductAvatarUrl(String(avatar.url || "").trim());
-    setCoachProductAvatarTitle(String(avatar.title || "").trim() || "How HealthSense works");
+    setCoachProductAvatarTitle(String(avatar.title || "").trim() || "How CoachSense works");
     setCoachProductAvatarScript(String(avatar.script || "").trim());
     setCoachProductAvatarPosterUrl(String(avatar.poster_url || "").trim());
     setCoachProductAvatarCharacter(String(avatar.character || "").trim() || "lisa");
@@ -919,8 +919,8 @@ export default function IntroSetupClient({
 
           <section className="rounded-2xl border border-[#efe7db] bg-white p-4">
             <SectionHeading
-              label="HealthSense app intro"
-              description="Controls the onboarding intro inside the HealthSense app, including welcome copy and podcast audio."
+              label="CoachSense app intro"
+              description="Controls the onboarding intro inside the CoachSense app, including welcome copy and podcast audio."
             />
             <div className="mt-4 flex flex-wrap gap-2">
               <TabButton
@@ -1463,7 +1463,7 @@ export default function IntroSetupClient({
       {activeTab === "coaching" ? (
         <section className="rounded-2xl border border-[#efe7db] bg-white p-4">
           <SectionHeading
-            label="HealthSense coaching"
+            label="CoachSense coaching"
             description="Controls the explainer shown when the user opens their personal coaching plan above the OKRs."
           />
           <form action={coachSaveAction} className="mt-4 space-y-4">

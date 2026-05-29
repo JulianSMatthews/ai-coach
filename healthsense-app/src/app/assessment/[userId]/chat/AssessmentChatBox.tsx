@@ -2173,7 +2173,7 @@ export default function AssessmentChatBox({
                 <div className="min-w-0 flex-1 space-y-2">
                   <div className="flex items-end justify-between gap-4">
                     <div>
-                      <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">HealthSense Score</p>
+                      <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">CoachSense Score</p>
                       <p className="mt-1 text-4xl font-semibold text-[#1e1b16]">{resultSummary.combined}</p>
                     </div>
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#8c7f70]">out of 100</p>
@@ -2246,7 +2246,7 @@ export default function AssessmentChatBox({
       <div className="border-b border-[#efe7db] px-4 py-4 sm:px-6">
         <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">Early access</p>
         <p className="mt-1 text-sm text-[#3c332b]">
-          Watch the explainer below, then create your HealthSense mobile login and keep this assessment linked to your app account.
+          Watch the explainer below, then create your CoachSense mobile login and keep this assessment linked to your app account.
         </p>
       </div>
       {String(coachProductAvatar?.url || "").trim() ? (
@@ -2267,8 +2267,8 @@ export default function AssessmentChatBox({
           <h2 className="text-2xl text-[#1e1b16]">Create your early access mobile login</h2>
           <p className="text-sm text-[#6b6257]">
             {identityRequired
-              ? "Add your details below to create your HealthSense login. You will log in with your mobile number, and this assessment will stay linked to your account."
-              : "Confirm your details below to finish your HealthSense login. You will log in with your mobile number, and this assessment will stay linked to your account."}
+              ? "Add your details below to create your CoachSense login. You will log in with your mobile number, and this assessment will stay linked to your account."
+              : "Confirm your details below to finish your CoachSense login. You will log in with your mobile number, and this assessment will stay linked to your account."}
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
@@ -2343,7 +2343,7 @@ export default function AssessmentChatBox({
           {claimSuccess ? (
             <div className="mt-3 space-y-2">
               <p className="text-sm text-[#3c332b]">
-                Your HealthSense account is ready. This assessment is linked to it, and you will log in with your mobile number.
+                Your CoachSense account is ready. This assessment is linked to it, and you will log in with your mobile number.
               </p>
               {claimNextPath ? (
                 <button

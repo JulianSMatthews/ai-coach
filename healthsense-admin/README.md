@@ -1,4 +1,4 @@
-HealthSense Admin is the staff-facing console for operating the HealthSense user app.
+CoachSense Admin is the staff-facing console for operating the CoachSense user app.
 
 ## Current Scope
 

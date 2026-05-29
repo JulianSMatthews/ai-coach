@@ -213,7 +213,7 @@ export default async function BillingPage() {
               <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Name</label>
               <input
                 name="name"
-                placeholder="HealthSense Monthly"
+                placeholder="CoachSense Monthly"
                 className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
                 required
               />

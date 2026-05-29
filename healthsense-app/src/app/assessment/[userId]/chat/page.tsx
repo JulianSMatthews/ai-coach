@@ -193,8 +193,8 @@ async function getAppIntroLibraryMedia(): Promise<IntroLibraryMediaBundle> {
       } | null;
     };
     return {
-      appIntroAvatar: mapIntroAvatar(payload.app_intro_avatar, "Welcome to HealthSense"),
-      coachProductAvatar: mapIntroAvatar(payload.coach_product_avatar, "How HealthSense works"),
+      appIntroAvatar: mapIntroAvatar(payload.app_intro_avatar, "Welcome to CoachSense"),
+      coachProductAvatar: mapIntroAvatar(payload.coach_product_avatar, "How CoachSense works"),
       helpVideos: {
         habits: mapIntroAvatar(payload.app_habits_avatar, "Habits"),
         insight: mapIntroAvatar(payload.app_insight_avatar, "Insight"),

@@ -5,12 +5,12 @@ export default function TermsPage() {
     <LegalPage
       eyebrow="Terms"
       title="Terms of use"
-      subtitle="Effective 21 April 2026. These terms explain how HealthSense should be used."
+      subtitle="Effective 21 April 2026. These terms explain how CoachSense should be used."
     >
       <section className="space-y-1.5">
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Coaching, not medical care</h2>
         <p>
-          HealthSense provides wellbeing coaching, habit support, education, and trend information. It does not provide
+          CoachSense provides wellbeing coaching, habit support, education, and trend information. It does not provide
           medical diagnosis, treatment, emergency support, or a replacement for professional medical advice.
         </p>
         <p>
@@ -38,7 +38,7 @@ export default function TermsPage() {
       <section className="space-y-1.5">
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Access</h2>
         <p>
-          HealthSense is currently free to access in this app version. If this changes in a future iOS version, any
+          CoachSense is currently free to access in this app version. If this changes in a future iOS version, any
           digital subscription offered in the app will use Apple In-App Purchase.
         </p>
       </section>
@@ -47,8 +47,8 @@ export default function TermsPage() {
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Contact</h2>
         <p>
           For support, privacy, or deletion requests, contact{" "}
-          <a className="text-[var(--accent)] underline" href="mailto:support@healthsense.coach">
-            support@healthsense.coach
+          <a className="text-[var(--accent)] underline" href="mailto:support@coachsense.coach">
+            support@coachsense.coach
           </a>
           .
         </p>

@@ -90,7 +90,7 @@ export default function IntroWelcomeModal({ userId, intro }: IntroWelcomeModalPr
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4 py-6">
       <div className="w-full max-w-2xl rounded-3xl border border-[#e7e1d6] bg-white p-6 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.5)]">
         <p className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">{intro?.title || "Welcome"}</p>
-        <p className="mt-3 whitespace-pre-wrap text-base text-[#1e1b16]">{intro?.message || "Welcome to HealthSense."}</p>
+        <p className="mt-3 whitespace-pre-wrap text-base text-[#1e1b16]">{intro?.message || "Welcome to CoachSense."}</p>
 
         {hasPodcast ? (
           <div className="mt-4 rounded-2xl border border-[#efe7db] bg-[#fdfaf4] p-3">
