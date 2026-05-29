@@ -6812,7 +6812,7 @@ async def save_education_programme(
             raise HTTPException(400, "programme_concept_key is ambiguous; provide a pillar-specific concept code")
         concept_row = concept_candidates[0]
         pillar_token = str(getattr(concept_row, "pillar_key", "") or "").strip().lower()
-        if pillar_token not in {"nutrition", "training", "resilience", "recovery"}:
+        if pillar_token not in {"nutrition", "training", "reflection", "purpose", "resilience", "recovery"}:
             raise HTTPException(400, "programme_concept_key must resolve to a supported pillar")
         if not programme_concept_text:
             programme_concept_text = str(getattr(concept_row, "name", "") or "").strip()

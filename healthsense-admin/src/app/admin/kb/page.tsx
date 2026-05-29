@@ -8,7 +8,7 @@ type KbPageProps = {
 
 export const dynamic = "force-dynamic";
 
-const PILLAR_OPTIONS = ["", "nutrition", "training", "resilience", "recovery", "goals"];
+const PILLAR_OPTIONS = ["", "reflection", "purpose", "resilience", "recovery", "nutrition", "training", "goals"];
 
 export default async function KbPage({ searchParams }: KbPageProps) {
   const resolvedSearchParams = await searchParams;

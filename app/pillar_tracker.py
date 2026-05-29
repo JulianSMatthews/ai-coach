@@ -13,6 +13,7 @@ from sqlalchemy import desc, select
 from .db import SessionLocal, engine
 from .models import AssessmentRun, DailyPillarTrackerEntry, PillarResult, OKRObjective, OKRKeyResult, OKRKrEntry, User, UserPreference
 from .okr import _GUIDE, _guess_concept_from_description, _normalize_concept_key
+from .pillar_config import ACTIVE_PILLAR_KEYS, pillar_label
 _TRACKER_SCHEMA_READY = False
 _TRACKER_TIMEZONE = (os.getenv("PILLAR_TRACKER_TIMEZONE") or "Europe/London").strip() or "Europe/London"
 _FASTING_MODE_PREF_KEY = "weekly_objectives_fasting_mode"
@@ -106,6 +107,14 @@ class PillarTrackerResolvedTarget:
     start_date: date | None = None
 
 
+_REFLECTION_PURPOSE_OPTIONS = (
+    PillarTrackerOption(0, "No"),
+    PillarTrackerOption(1, "A little"),
+    PillarTrackerOption(2, "Mostly"),
+    PillarTrackerOption(3, "Yes"),
+)
+
+
 PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
     "nutrition": (
         PillarTrackerConceptDefinition(
@@ -179,6 +188,90 @@ PILLAR_TRACKER_CONFIG: dict[str, tuple[PillarTrackerConceptDefinition, ...]] = {
             target_value=1,
             target_direction="gte",
             score_mode="binary",
+        ),
+    ),
+    "reflection": (
+        PillarTrackerConceptDefinition(
+            concept_key="self_awareness",
+            label="Self-Awareness",
+            helper="Did you take time to reflect on your thoughts, actions or decisions today?",
+            options=_REFLECTION_PURPOSE_OPTIONS,
+            target_value=3,
+            target_direction="gte",
+            score_mode="likert",
+            score_ceiling=3,
+        ),
+        PillarTrackerConceptDefinition(
+            concept_key="emotional_awareness",
+            label="Emotional Awareness",
+            helper="Were you aware of how you were feeling emotionally today?",
+            options=_REFLECTION_PURPOSE_OPTIONS,
+            target_value=3,
+            target_direction="gte",
+            score_mode="likert",
+            score_ceiling=3,
+        ),
+        PillarTrackerConceptDefinition(
+            concept_key="mindfulness_presence",
+            label="Presence",
+            helper="Were you present and focused for most of today?",
+            options=_REFLECTION_PURPOSE_OPTIONS,
+            target_value=3,
+            target_direction="gte",
+            score_mode="likert",
+            score_ceiling=3,
+        ),
+        PillarTrackerConceptDefinition(
+            concept_key="pattern_recognition",
+            label="Learning & Patterns",
+            helper="Did you notice a pattern or learn something about yourself today?",
+            options=_REFLECTION_PURPOSE_OPTIONS,
+            target_value=3,
+            target_direction="gte",
+            score_mode="likert",
+            score_ceiling=3,
+        ),
+    ),
+    "purpose": (
+        PillarTrackerConceptDefinition(
+            concept_key="meaning_fulfilment",
+            label="Meaning",
+            helper="Did today feel meaningful and worthwhile?",
+            options=_REFLECTION_PURPOSE_OPTIONS,
+            target_value=3,
+            target_direction="gte",
+            score_mode="likert",
+            score_ceiling=3,
+        ),
+        PillarTrackerConceptDefinition(
+            concept_key="direction_vision",
+            label="Direction",
+            helper="Did your actions move you closer to what matters most?",
+            options=_REFLECTION_PURPOSE_OPTIONS,
+            target_value=3,
+            target_direction="gte",
+            score_mode="likert",
+            score_ceiling=3,
+        ),
+        PillarTrackerConceptDefinition(
+            concept_key="values_alignment",
+            label="Values",
+            helper="Did you act in line with your values today?",
+            options=_REFLECTION_PURPOSE_OPTIONS,
+            target_value=3,
+            target_direction="gte",
+            score_mode="likert",
+            score_ceiling=3,
+        ),
+        PillarTrackerConceptDefinition(
+            concept_key="contribution_connection",
+            label="Contribution",
+            helper="Did you positively contribute to or connect with someone today?",
+            options=_REFLECTION_PURPOSE_OPTIONS,
+            target_value=3,
+            target_direction="gte",
+            score_mode="likert",
+            score_ceiling=3,
         ),
     ),
     "resilience": (
@@ -311,7 +404,7 @@ def _to_tracker_local_date(value: Any) -> date | None:
 
 def _pillar_allows_yesterday_catchup(pillar_key: str) -> bool:
     key = str(pillar_key or "").strip().lower()
-    return key in {"nutrition", "training", "resilience", "recovery"}
+    return key in PILLAR_TRACKER_CONFIG
 
 
 def _pillar_yesterday_catchup_is_time_limited(pillar_key: str) -> bool:
@@ -391,14 +484,8 @@ def _week_days(anchor: date) -> list[date]:
 
 
 def _pillar_label(pillar_key: str) -> str:
-    labels = {
-        "nutrition": "Nutrition",
-        "training": "Training",
-        "resilience": "Resilience",
-        "recovery": "Recovery",
-    }
     key = str(pillar_key or "").strip().lower()
-    return labels.get(key, key.replace("_", " ").title())
+    return pillar_label(key)
 
 
 def _user_pref_value(session, user_id: int, key: str) -> str | None:
@@ -1673,7 +1760,9 @@ def get_pillar_tracker_summary(user_id: int, anchor: date | None = None) -> dict
     baseline_scores = _latest_assessment_scores_for_user(user_id)
     week_days = _week_days(resolved_anchor)
     pillars = []
-    for pillar_key in PILLAR_TRACKER_CONFIG.keys():
+    for pillar_key in ACTIVE_PILLAR_KEYS:
+        if pillar_key not in PILLAR_TRACKER_CONFIG:
+            continue
         required_concepts = tracker_concepts_for_pillar(pillar_key, user_id=int(user_id))
         entries_by_day = _load_week_entries(user_id, pillar_key, resolved_anchor)
         resolved_targets = _resolve_pillar_targets_for_user(user_id, pillar_key, required_concepts)
@@ -1690,7 +1779,7 @@ def get_pillar_tracker_summary(user_id: int, anchor: date | None = None) -> dict
                 baseline_score=baseline_scores.get(pillar_key),
             )
         )
-    total_pillars = len(PILLAR_TRACKER_CONFIG)
+    total_pillars = len(pillars)
     today_completed_pillars_count = sum(1 for pillar in pillars if pillar.get("today_complete") is True)
     return {
         "week": {

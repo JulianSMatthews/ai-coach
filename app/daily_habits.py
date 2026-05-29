@@ -22,9 +22,10 @@ from .pillar_tracker import (
 )
 from .prompts import build_prompt, ensure_builtin_prompt_templates, run_llm_prompt
 from .wearables import get_apple_health_resting_hr_summary
+from .pillar_config import ACTIVE_PILLAR_KEYS, pillar_label
 
 _DAILY_HABITS_SCHEMA_READY = False
-_PILLAR_ORDER = ("nutrition", "training", "resilience", "recovery")
+_PILLAR_ORDER = ACTIVE_PILLAR_KEYS
 _CURRENT_HABIT_PLAN_VERSION = 13
 _DAY_PLAN_SCOPE_KEY = "__day_plan__"
 _TRAINING_SESSION_CONCEPT_KEYS = frozenset({"cardio_frequency", "strength_training", "flexibility_mobility"})
@@ -515,7 +516,8 @@ def _load_pillar_okr_context(user_id: int, pillar_key: str, *, concept_key: str 
 def _select_weakest_pillar(summary: dict[str, Any]) -> dict[str, Any]:
     pillars = list(summary.get("pillars") or [])
     if not pillars:
-        return {"pillar_key": "nutrition", "label": "Nutrition", "score": None}
+        fallback = _PILLAR_ORDER[0] if _PILLAR_ORDER else "reflection"
+        return {"pillar_key": fallback, "label": pillar_label(fallback), "score": None}
 
     def _sort_key(row: dict[str, Any]) -> tuple[int, int, int]:
         score = _safe_int(row.get("score"))

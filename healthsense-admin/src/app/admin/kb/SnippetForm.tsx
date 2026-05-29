@@ -10,7 +10,7 @@ type SnippetFormProps = {
 
 const emptyState = { ok: false, error: null as string | null };
 
-const PILLAR_OPTIONS = ["nutrition", "training", "resilience", "recovery", "goals"];
+const PILLAR_OPTIONS = ["reflection", "purpose", "resilience", "recovery", "nutrition", "training", "goals"];
 
 export default function SnippetForm({ snippet }: SnippetFormProps) {
   const [saveState, saveAction, savePending] = useActionState(saveKbSnippetAction, emptyState);
@@ -24,7 +24,7 @@ export default function SnippetForm({ snippet }: SnippetFormProps) {
           <label className="text-xs uppercase tracking-[0.2em] text-[#6b6257]">Pillar</label>
           <select
             name="pillar_key"
-            defaultValue={snippet?.pillar_key || "nutrition"}
+            defaultValue={snippet?.pillar_key || "reflection"}
             className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
             required
           >

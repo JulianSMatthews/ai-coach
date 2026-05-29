@@ -8,6 +8,7 @@ from typing import List, Tuple, Optional
 
 from sqlalchemy.orm import Session
 from sqlalchemy import select
+from .pillar_config import ACTIVE_PILLAR_KEYS
 
 from .models import (
     OKRKeyResult,
@@ -59,7 +60,7 @@ def select_top_krs_for_user(session: Session, user_id: int, limit: int | None = 
     """
     Returns a list of (kr_id, rationale) ordered by priority for the given user.
     """
-    programme_order = ["nutrition", "recovery", "training", "resilience"]
+    programme_order = list(ACTIVE_PILLAR_KEYS)
     rows = (
         session.execute(
             select(OKRKeyResult, OKRObjective, OKRCycle)

@@ -16,8 +16,9 @@ from .pillar_tracker import (
     tracker_concepts_for_pillar,
     tracker_today,
 )
+from .pillar_config import ACTIVE_PILLAR_KEYS
 
-PILLAR_ORDER: tuple[str, ...] = ("nutrition", "training", "resilience", "recovery")
+PILLAR_ORDER: tuple[str, ...] = ACTIVE_PILLAR_KEYS
 WELLBEING_KEY = "wellbeing"
 FASTING_MODE_PREF_KEY = "weekly_objectives_fasting_mode"
 FASTING_GOAL_DAYS_PREF_KEY = "weekly_objectives_fasting_goal_days"

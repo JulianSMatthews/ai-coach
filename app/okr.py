@@ -328,6 +328,24 @@ def _guess_concept_from_description(pillar_slug: str, desc: str) -> str | None:
             return "strength_training"
         if any(phrase in raw for phrase in ("cardio", "running", "cycling", "swimming")):
             return "cardio_frequency"
+    if pillar_slug == "reflection":
+        if any(phrase in raw for phrase in ("emotion", "feeling", "feelings")):
+            return "emotional_awareness"
+        if any(phrase in raw for phrase in ("present", "presence", "focused", "mindful", "mindfulness")):
+            return "mindfulness_presence"
+        if any(phrase in raw for phrase in ("pattern", "learn", "lesson", "insight")):
+            return "pattern_recognition"
+        if any(phrase in raw for phrase in ("self-awareness", "self awareness", "reflect", "thought", "decision")):
+            return "self_awareness"
+    if pillar_slug == "purpose":
+        if any(phrase in raw for phrase in ("meaning", "meaningful", "worthwhile", "fulfilment", "fulfillment")):
+            return "meaning_fulfilment"
+        if any(phrase in raw for phrase in ("direction", "vision", "closer", "matters most")):
+            return "direction_vision"
+        if any(phrase in raw for phrase in ("value", "values", "aligned", "alignment")):
+            return "values_alignment"
+        if any(phrase in raw for phrase in ("contribution", "contribute", "connection", "connect")):
+            return "contribution_connection"
     if pillar_slug == "resilience":
         if any(
             phrase in raw
@@ -824,6 +842,18 @@ _GUIDE: dict[str, dict[str, dict[str, str]]] = {
         "strength_training":    {"label": "strength sessions",         "unit": "sessions/week", "low": "increase", "high": "maintain"},
         "flexibility_mobility": {"label": "mobility/flexibility work", "unit": "sessions/week", "low": "increase", "high": "maintain"},
     },
+    "reflection": {
+        "self_awareness":       {"label": "self-awareness reflection", "unit": "days/week", "low": "increase", "high": "maintain"},
+        "emotional_awareness":  {"label": "emotional awareness", "unit": "days/week", "low": "increase", "high": "maintain"},
+        "mindfulness_presence": {"label": "presence and focus", "unit": "days/week", "low": "increase", "high": "maintain"},
+        "pattern_recognition":  {"label": "learning and pattern recognition", "unit": "days/week", "low": "increase", "high": "maintain"},
+    },
+    "purpose": {
+        "meaning_fulfilment":      {"label": "meaning and fulfilment", "unit": "days/week", "low": "increase", "high": "maintain"},
+        "direction_vision":        {"label": "direction toward what matters", "unit": "days/week", "low": "increase", "high": "maintain"},
+        "values_alignment":        {"label": "values-aligned actions", "unit": "days/week", "low": "increase", "high": "maintain"},
+        "contribution_connection": {"label": "contribution and connection", "unit": "days/week", "low": "increase", "high": "maintain"},
+    },
     "resilience": {
         "emotional_regulation": {"label": "emotional regulation practice", "unit": "days/week", "low": "increase", "high": "maintain"},
         "optimism_perspective": {"label": "optimism/perspective drills",   "unit": "days/week", "low": "increase", "high": "maintain"},
@@ -878,6 +908,8 @@ def _fallback_structured_okr(pillar_slug: str, pillar_score: float | None):
     obj = {
         "nutrition":  "Improve daily nutrition habits",
         "training":   "Improve training consistency and quality",
+        "reflection": "Build a consistent reflection practice",
+        "purpose":    "Strengthen daily purpose and values-aligned action",
         "resilience": "Strengthen stress recovery and emotional regulation",
         "recovery":   "Upgrade sleep and day-to-day recovery routines",
     }.get(pillar_slug, "Improve key behaviours for this pillar")
@@ -891,6 +923,16 @@ def _fallback_structured_okr(pillar_slug: str, pillar_score: float | None):
             {"kr_key": "cardio_step", "description": "Add one additional cardio session per week.", "concept_key": "cardio_frequency"},
             {"kr_key": "strength_step", "description": "Add one additional strength session per week.", "concept_key": "strength_training"},
             {"kr_key": "mobility_step", "description": "Add one mobility session per week.", "concept_key": "flexibility_mobility"},
+        ],
+        "reflection": [
+            {"kr_key": "awareness_step", "description": "Reflect on your thoughts, actions, or decisions on more days each week.", "concept_key": "self_awareness"},
+            {"kr_key": "emotion_step", "description": "Pause to notice your emotional state on more days each week.", "concept_key": "emotional_awareness"},
+            {"kr_key": "presence_step", "description": "Create one present and focused block on more days each week.", "concept_key": "mindfulness_presence"},
+        ],
+        "purpose": [
+            {"kr_key": "meaning_step", "description": "Do one thing that makes the day feel meaningful or worthwhile.", "concept_key": "meaning_fulfilment"},
+            {"kr_key": "direction_step", "description": "Choose one action that moves you closer to what matters most.", "concept_key": "direction_vision"},
+            {"kr_key": "values_step", "description": "Choose one values-aligned action each day.", "concept_key": "values_alignment"},
         ],
         "resilience": [
             {"kr_key": "stress_step", "description": "Practice one short stress-recovery technique daily.", "concept_key": "stress_recovery"},

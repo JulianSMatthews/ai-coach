@@ -21,6 +21,8 @@ const emptyAvatarState = {
   avatar: null as Record<string, unknown> | null,
 };
 const pillarOptions = [
+  { value: "reflection", label: "Reflection" },
+  { value: "purpose", label: "Purpose" },
   { value: "nutrition", label: "Nutrition" },
   { value: "recovery", label: "Recovery" },
   { value: "training", label: "Training" },
@@ -241,7 +243,7 @@ export default function ContentEditorForm({
           <select
             name="pillar_key"
             className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
-            defaultValue={content?.pillar_key || "nutrition"}
+            defaultValue={content?.pillar_key || "reflection"}
           >
             {pillarOptions.map((p) => (
               <option key={p.value} value={p.value}>

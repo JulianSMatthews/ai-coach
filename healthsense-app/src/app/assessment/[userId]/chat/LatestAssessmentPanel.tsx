@@ -37,7 +37,7 @@ type LatestAssessmentPanelProps = {
 type TrackerReturnSurface = "tracking" | "habits" | "insight" | "ask";
 type MorningSequenceState = "idle" | "in_progress" | "completed";
 type DisplayTheme = "light" | "dark";
-type ObjectivesSectionKey = "nutrition" | "training" | "resilience" | "recovery" | "wellbeing";
+type ObjectivesSectionKey = "reflection" | "purpose" | "nutrition" | "training" | "resilience" | "recovery" | "wellbeing";
 type UrineCaptureState = "ready" | "timing" | "saving" | "queued" | "analysed" | "review" | "error";
 type BiomarkerExplanationKey = "training_readiness" | "rhr" | "hrv" | "activity_status" | "active_minutes" | "steps" | "urine";
 type BiomarkerExplanationTone = "purple" | "green" | "amber" | "red" | "neutral";
@@ -52,7 +52,7 @@ type BiomarkerExplanationScaleRow = {
   tone?: BiomarkerExplanationTone;
 };
 
-const PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"];
+const PILLAR_ORDER = ["reflection", "purpose", "resilience", "recovery", "nutrition", "training"];
 const HEALTHSENSE_ORANGE = "#c54817";
 const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
 const URINE_CAPTURE_TIMER_SECONDS = 60;

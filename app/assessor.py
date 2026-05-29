@@ -53,12 +53,13 @@ from .nudges import send_message
 from .llm import _llm
 
 from .job_queue import enqueue_job, should_use_worker
-from .seed import PILLAR_PREAMBLE_QUESTIONS
+from .seed import CONCEPTS, PILLAR_PREAMBLE_QUESTIONS
 
 # Report 
 
 from .reporting import generate_progress_report_html, _fetch_okrs_for_run
 from . import psych
+from .pillar_config import ACTIVE_PILLAR_KEYS, PILLAR_LABELS
 
 # Optional integrations (fail-safe no-ops if missing)
 try:
@@ -85,7 +86,7 @@ except Exception:  # pragma: no cover
 # Config
 # ──────────────────────────────────────────────────────────────────────────────
 
-PILLAR_ORDER = ["nutrition", "training", "resilience", "recovery"]  # explicit order
+PILLAR_ORDER = list(ACTIVE_PILLAR_KEYS)
 MAIN_QUESTIONS_PER_PILLAR = 5
 CLARIFIER_SOFT_CAP = 6
 TURN_HARD_CAP = 60
@@ -866,6 +867,8 @@ def _normalize_pillar_name(token: str) -> str | None:
     mapping = {
         "nutrition": ["nutrition", "nutri", "n"],
         "training": ["training", "train", "t"],
+        "reflection": ["reflection", "reflect", "journal"],
+        "purpose": ["purpose", "meaning", "values"],
         "resilience": ["resilience", "resil", "r"],
         "recovery": ["recovery", "recov", "rec", "c"],
     }
@@ -1056,16 +1059,13 @@ PILLAR_PREFERENCE_KEYS = {
     "training": "training_focus",
 }
 
-REFLECTION_PILLAR_LABELS = {
-    "nutrition": "Nutrition",
-    "training": "Training",
-    "recovery": "Recovery",
-    "resilience": "Resilience",
-}
+REFLECTION_PILLAR_LABELS = PILLAR_LABELS
 
 REFLECTION_PILLAR_ALIASES = {
     "nutrition": {"nutrition", "food", "eating"},
     "training": {"training", "exercise", "movement", "fitness"},
+    "reflection": {"reflection", "reflect", "journal"},
+    "purpose": {"purpose", "meaning", "values"},
     "recovery": {"recovery", "sleep", "rest"},
     "resilience": {"resilience", "mindset", "stress", "mental"},
 }
@@ -1076,25 +1076,37 @@ REFLECTION_EXPLANATION_MESSAGES = {
     "nutrition": [
         "Great — nutrition is a powerful foundation for health and energy.",
         "But even with good nutrition habits, many people find their progress is limited by sleep, recovery, or stress.",
-        "In the next few questions we’ll look at how your habits across all four pillars compare.",
+        "In the next few questions we’ll look at how your habits across your active pillars compare.",
         "This will reveal your HealthSense Score and highlight the area most likely to improve your health.",
     ],
     "training": [
         "Great — regular movement is one of the strongest predictors of long-term health.",
         "However, training works best when it’s supported by good recovery, nutrition, and resilience to stress.",
-        "In the next few questions we’ll analyse your habits across all four pillars to see how they work together.",
+        "In the next few questions we’ll analyse your habits across your active pillars to see how they work together.",
+        "You’ll then receive your HealthSense Score and personalised insights.",
+    ],
+    "reflection": [
+        "Great — reflection helps turn daily experience into useful learning.",
+        "It works best when it connects with purpose, recovery, and resilience.",
+        "In the next few questions we’ll look at how your habits across your active pillars compare.",
+        "You’ll then receive your HealthSense Score and personalised insights.",
+    ],
+    "purpose": [
+        "Great — purpose helps connect daily action to what matters most.",
+        "It works best when it is supported by reflection, recovery, and resilience.",
+        "In the next few questions we’ll look at how your habits across your active pillars compare.",
         "You’ll then receive your HealthSense Score and personalised insights.",
     ],
     "recovery": [
         "Great — recovery is one of the most overlooked pillars of health.",
         "Quality sleep and recovery allow your body and mind to adapt, repair, and perform at their best.",
-        "Next we’ll look at how your habits across all four pillars interact to determine your overall health profile.",
+        "Next we’ll look at how your habits across your active pillars interact to determine your overall health profile.",
         "You’ll receive your HealthSense Score and insight into what may be holding you back.",
     ],
     "resilience": [
         "Great — resilience and stress management play a huge role in long-term health.",
         "Even strong nutrition and training habits can be disrupted when stress and recovery aren’t balanced.",
-        "In the next few questions we’ll analyse your habits across all four pillars.",
+        "In the next few questions we’ll analyse your habits across your active pillars.",
         "You’ll receive your HealthSense Score and discover which area may have the greatest impact on your health.",
     ],
 }
@@ -1234,8 +1246,14 @@ def _load_pillar_concepts(session, cap: int = 5) -> dict[str, list[str]]:
     Order: concept.code asc (fallback to name).
     """
     rows = session.execute(select(Concept.pillar_key, Concept.code, Concept.name)).all()
+    active = set(PILLAR_ORDER)
+    seeded_codes = {pillar: set(mapping.keys()) for pillar, mapping in (CONCEPTS or {}).items()}
     buckets: dict[str, list[tuple[str, str]]] = {}
     for pillar_key, code, name in rows:
+        if pillar_key not in active:
+            continue
+        if seeded_codes.get(pillar_key) and code not in seeded_codes[pillar_key]:
+            continue
         buckets.setdefault(pillar_key, []).append((code or "", name or ""))
     out: dict[str, list[str]] = {}
     for pk, items in buckets.items():
@@ -2166,16 +2184,16 @@ def start_combined_assessment(user: User, *, force_intro: bool = False):
         # Init state
         state = {
             "turns": [],
-            "current": "nutrition",
+            "current": PILLAR_ORDER[0] if PILLAR_ORDER else "reflection",
             "phase": "reflection",
             "results": {},
             "turn_idx": 0,
             "run_id": None,
-            "concept_idx": {"nutrition": 0, "training": 0, "resilience": 0, "recovery": 0},
-            "concept_scores": {"nutrition": {}, "training": {}, "resilience": {}, "recovery": {}},
-            "kb_used": {"nutrition": {}, "training": {}, "resilience": {}, "recovery": {}},
+            "concept_idx": {key: 0 for key in PILLAR_ORDER},
+            "concept_scores": {key: {} for key in PILLAR_ORDER},
+            "kb_used": {key: {} for key in PILLAR_ORDER},
             "pillar_concepts": {},  # will be loaded from DB
-            "concept_progress": {"nutrition": {}, "training": {}, "resilience": {}, "recovery": {}},
+            "concept_progress": {key: {} for key in PILLAR_ORDER},
             "question_seq": 0,
             "question_numbers": {},
             "total_questions": 0,
@@ -2331,15 +2349,9 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         # Re-asks the most recent main question so the next reply overwrites that concept's answer.
         if cmd in {"redo", "redo last", "redo last question", "redo question"}:
             turns = state["turns"]
-            concept_progress = state.setdefault("concept_progress", {
-                "nutrition": {}, "training": {}, "resilience": {}, "recovery": {}
-            })
-            concept_scores = state.setdefault("concept_scores", {
-                "nutrition": {}, "training": {}, "resilience": {}, "recovery": {}
-            })
-            concept_idx_map = state.setdefault("concept_idx", {
-                "nutrition": 0, "training": 0, "resilience": 0, "recovery": 0
-            })
+            concept_progress = state.setdefault("concept_progress", {key: {} for key in PILLAR_ORDER})
+            concept_scores = state.setdefault("concept_scores", {key: {} for key in PILLAR_ORDER})
+            concept_idx_map = state.setdefault("concept_idx", {key: 0 for key in PILLAR_ORDER})
             qa_snapshots = state.setdefault("qa_snapshots", {})
 
             last_answer_idx = None
@@ -2348,7 +2360,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 t = turns[idx]
                 if t.get("role") == "user":
                     last_answer_idx = idx
-                    last_answer_pillar = t.get("pillar") or state.get("current", "nutrition")
+                    last_answer_pillar = t.get("pillar") or state.get("current", PILLAR_ORDER[0] if PILLAR_ORDER else "reflection")
                     break
             search_range = range(len(turns) - 1, -1, -1)
             if last_answer_idx is not None:
@@ -2371,7 +2383,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                     break
             target = last_main or last_any_q
             if target and target.get("question"):
-                target_pillar = target.get("pillar") or state.get("current", "nutrition")
+                target_pillar = target.get("pillar") or state.get("current", PILLAR_ORDER[0] if PILLAR_ORDER else "reflection")
                 target_concept = target.get("concept")
                 q_text = target.get("question")
                 # Drop any turns captured after the original question so we get a clean redo
@@ -2449,9 +2461,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             pillar_state["answer"] = ""
             state["awaiting_preamble"] = None
             repair_pillar = str(state.get("current") or awaiting_pillar or "").strip().lower()
-            concept_idx_map = state.setdefault("concept_idx", {
-                "nutrition": 0, "training": 0, "resilience": 0, "recovery": 0
-            })
+            concept_idx_map = state.setdefault("concept_idx", {key: 0 for key in PILLAR_ORDER})
             pillar_concepts = (state.get("pillar_concepts") or {}).get(repair_pillar) or []
             try:
                 current_idx = max(0, int(concept_idx_map.get(repair_pillar, 0) or 0))
@@ -2475,9 +2485,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                         "concept": repair_concept,
                         "is_main": True,
                     })
-                    concept_progress = state.setdefault("concept_progress", {
-                        "nutrition": {}, "training": {}, "resilience": {}, "recovery": {}
-                    })
+                    concept_progress = state.setdefault("concept_progress", {key: {} for key in PILLAR_ORDER})
                     concept_progress.setdefault(repair_pillar, {}).setdefault(repair_concept, {
                         "main_asked": True, "clarifiers": 0, "scored": False, "summary_logged": False
                     })
@@ -2522,14 +2530,14 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
             _commit_state(s, sess, state)
             return True
 
-        pillar = state.get("current", "nutrition")
+        pillar = state.get("current", PILLAR_ORDER[0] if PILLAR_ORDER else "reflection")
         concept_idx_map = state.get("concept_idx", {})
         concept_scores = state.get("concept_scores", {})
         kb_used = state.get("kb_used", {})
         turns = state["turns"]
         concept_progress = state.get("concept_progress", {})
         if not concept_progress:
-            concept_progress = {"nutrition": {}, "training": {}, "resilience": {}, "recovery": {}}
+            concept_progress = {key: {} for key in PILLAR_ORDER}
             state["concept_progress"] = concept_progress
 
         # Ensure pillar_concepts present (reload if missing)

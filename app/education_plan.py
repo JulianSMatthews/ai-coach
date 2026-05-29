@@ -42,6 +42,7 @@ from .models import (
 )
 from .okr import _normalize_concept_key
 from .pillar_tracker import tracker_today
+from .pillar_config import pillar_label
 from .usage import log_azure_batch_avatar_usage_once
 
 _EDUCATION_PLAN_SCHEMA_READY = False
@@ -216,14 +217,7 @@ def _now_utc() -> datetime:
 
 
 def _pillar_label(pillar_key: str | None) -> str:
-    token = str(pillar_key or "").strip().lower()
-    lookup = {
-        "nutrition": "Nutrition",
-        "training": "Training",
-        "resilience": "Resilience",
-        "recovery": "Recovery",
-    }
-    return lookup.get(token, token.title() or "Education")
+    return pillar_label(pillar_key) or "Education"
 
 
 def _normalize_level(value: Any) -> str:

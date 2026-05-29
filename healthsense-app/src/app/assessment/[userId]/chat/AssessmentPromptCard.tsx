@@ -161,8 +161,8 @@ function renderFormattedQuestion(text: string): ReactNode {
 const LEAD_INTRO_PREVIEW: NonNullable<AssessmentCurrentPrompt["result_preview"]> = {
   combined: 66,
   pillars: [
-    { pillar_key: "nutrition", label: "Nutrition", score: 48, complete: true },
-    { pillar_key: "training", label: "Training", score: 72, complete: true },
+    { pillar_key: "reflection", label: "Reflection", score: 48, complete: true },
+    { pillar_key: "purpose", label: "Purpose", score: 72, complete: true },
     { pillar_key: "recovery", label: "Recovery", score: 69, complete: true },
     { pillar_key: "resilience", label: "Resilience", score: 75, complete: true },
   ],

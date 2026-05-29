@@ -113,7 +113,7 @@ type GiaMessageRealtimeSessionResponse = {
 };
 
 const HOME_SURFACE_SEQUENCE: HomeSurface[] = ["tracking", "habits", "insight", "ask"];
-const TRACKING_STEP_PILLARS = ["Nutrition", "Training", "Resilience", "Recovery"];
+const TRACKING_STEP_PILLARS = ["Reflection", "Purpose", "Resilience", "Recovery"];
 const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
 type MorningSequenceState = "idle" | "in_progress" | "completed";
 const DAY_PLAN_MOMENT_ORDER = ["morning", "midday", "afternoon", "evening"] as const;

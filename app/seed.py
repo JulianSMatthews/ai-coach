@@ -71,6 +71,8 @@ DEFAULT_DAY_REOPEN_BUTTON_TITLE = "Send daily message"
 PILLARS = [
     ("nutrition",  "Nutrition"),
     ("training",   "Training"),
+    ("reflection", "Reflection"),
+    ("purpose",    "Purpose"),
     ("resilience", "Resilience"),
     ("recovery",   "Recovery"),
 ]
@@ -89,6 +91,18 @@ CONCEPTS: Dict[str, Dict[str, str]] = {
         "strength_training":    "Strength training",
         "flexibility_mobility": "Flexibility & mobility",
         "creatine":             "Creatine",
+    },
+    "reflection": {
+        "self_awareness":        "Self-Awareness",
+        "emotional_awareness":   "Emotional Awareness",
+        "mindfulness_presence":  "Presence",
+        "pattern_recognition":   "Learning & Patterns",
+    },
+    "purpose": {
+        "meaning_fulfilment":       "Meaning",
+        "direction_vision":         "Direction",
+        "values_alignment":         "Values",
+        "contribution_connection":  "Contribution",
     },
     "resilience": {
         "emotional_regulation":   "Calm & Control",
@@ -141,6 +155,34 @@ CONCEPT_QUESTIONS = {
         },
         "flexibility_mobility": {
             "primary": "In the last 7 days, on how many days did you do stretching, yoga, or mobility work for at least 10 minutes?"
+        },
+    },
+    "reflection": {
+        "self_awareness": {
+            "primary": "In the past 7 days, on how many days did you take time to reflect on your thoughts, actions or decisions?"
+        },
+        "emotional_awareness": {
+            "primary": "In the past 7 days, on how many days were you aware of how you were feeling emotionally?"
+        },
+        "mindfulness_presence": {
+            "primary": "In the past 7 days, on how many days were you present and focused for most of the day?"
+        },
+        "pattern_recognition": {
+            "primary": "In the past 7 days, on how many days did you notice a pattern or learn something about yourself?"
+        },
+    },
+    "purpose": {
+        "meaning_fulfilment": {
+            "primary": "In the past 7 days, on how many days did the day feel meaningful and worthwhile?"
+        },
+        "direction_vision": {
+            "primary": "In the past 7 days, on how many days did your actions move you closer to what matters most?"
+        },
+        "values_alignment": {
+            "primary": "In the past 7 days, on how many days did you act in line with your values?"
+        },
+        "contribution_connection": {
+            "primary": "In the past 7 days, on how many days did you positively contribute to or connect with someone?"
         },
     },
     "resilience": {
@@ -209,6 +251,42 @@ KB_SNIPPETS: Dict[str, Dict[str, List[Dict]]] = {
         "flexibility_mobility": [
             {"title": "Baseline habit", "text": "≥10 minutes on ≥3 days/week; link to a fixed time (post-workout or pre-bed)."},
             {"title": "Scoring cue (0–5 days/wk)", "text": "Consistency beats one-off long sessions; more days at 10–15 min score higher."},
+        ],
+    },
+    "reflection": {
+        "self_awareness": [
+            {"title": "Reflect on choices", "text": "Self-awareness grows by briefly reviewing thoughts, actions, and decisions without judging them."},
+            {"title": "Scoring cue (0-7 days/wk)", "text": "More days with intentional self-reflection score higher."},
+        ],
+        "emotional_awareness": [
+            {"title": "Notice emotion", "text": "Being aware of emotional state helps make reactions, needs, and patterns clearer."},
+            {"title": "Scoring cue (0-7 days/wk)", "text": "Reward consistent emotional awareness, even when it is brief."},
+        ],
+        "mindfulness_presence": [
+            {"title": "Present and focused", "text": "Presence means giving attention to what is happening now rather than running on autopilot."},
+            {"title": "Scoring cue (0-7 days/wk)", "text": "More days with steady presence and focus score higher."},
+        ],
+        "pattern_recognition": [
+            {"title": "Spot patterns", "text": "Noticing repeated patterns turns daily experience into useful learning and better choices."},
+            {"title": "Scoring cue (0-7 days/wk)", "text": "More days noticing a pattern or useful lesson score higher."},
+        ],
+    },
+    "purpose": {
+        "meaning_fulfilment": [
+            {"title": "Meaningful days", "text": "Meaning often comes from small worthwhile actions, not only major achievements."},
+            {"title": "Scoring cue (0-7 days/wk)", "text": "More days that feel meaningful and worthwhile score higher."},
+        ],
+        "direction_vision": [
+            {"title": "Move toward what matters", "text": "Purpose strengthens when daily actions point toward what matters most."},
+            {"title": "Scoring cue (0-7 days/wk)", "text": "More days with action that supports direction score higher."},
+        ],
+        "values_alignment": [
+            {"title": "Act in line with values", "text": "Values alignment means behaviour and choices match what matters most."},
+            {"title": "Scoring cue (0-7 days/wk)", "text": "More days with clear values-aligned action score higher."},
+        ],
+        "contribution_connection": [
+            {"title": "Contribution and connection", "text": "Contributing to or connecting with someone can make purpose practical and relational."},
+            {"title": "Scoring cue (0-7 days/wk)", "text": "More days with positive contribution or connection score higher."},
         ],
     },
     "resilience": {
@@ -1295,6 +1373,18 @@ CONCEPT_SCORE_BOUNDS = {
         "strength_training":    {"zero_score": 0, "max_score": 4},
         "flexibility_mobility": {"zero_score": 0, "max_score": 4},
         "creatine":             {"zero_score": 0, "max_score": 7},
+    },
+    "reflection": {
+        "self_awareness":       {"zero_score": 0, "max_score": 7},
+        "emotional_awareness":  {"zero_score": 0, "max_score": 7},
+        "mindfulness_presence": {"zero_score": 0, "max_score": 7},
+        "pattern_recognition":  {"zero_score": 0, "max_score": 7},
+    },
+    "purpose": {
+        "meaning_fulfilment":      {"zero_score": 0, "max_score": 7},
+        "direction_vision":        {"zero_score": 0, "max_score": 7},
+        "values_alignment":        {"zero_score": 0, "max_score": 7},
+        "contribution_connection": {"zero_score": 0, "max_score": 7},
     },
     "resilience": {
         "emotional_regulation":   {"zero_score": 0, "max_score": 7},

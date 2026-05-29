@@ -12,6 +12,8 @@ type LibraryContentGeneratorClientProps = {
 const emptyState: GeneratorState = { ok: false, error: null };
 
 const pillarOptions = [
+  { value: "reflection", label: "Reflection" },
+  { value: "purpose", label: "Purpose" },
   { value: "nutrition", label: "Nutrition" },
   { value: "recovery", label: "Recovery" },
   { value: "training", label: "Training" },
@@ -185,7 +187,7 @@ export default function LibraryContentGeneratorClient({ templates }: LibraryCont
               <select
                 name="pillar_key"
                 className="mt-2 w-full rounded-xl border border-[#efe7db] px-3 py-2 text-sm"
-                defaultValue={metaPillar || "nutrition"}
+                defaultValue={metaPillar || "reflection"}
               >
                 {pillarOptions.map((p) => (
                   <option key={p.value} value={p.value}>

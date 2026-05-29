@@ -12,6 +12,8 @@ type TemplateFormProps = {
 const emptyState = { ok: false, error: null as string | null };
 const pillarOptions = [
   { value: "", label: "Any pillar" },
+  { value: "reflection", label: "Reflection" },
+  { value: "purpose", label: "Purpose" },
   { value: "nutrition", label: "Nutrition" },
   { value: "recovery", label: "Recovery" },
   { value: "training", label: "Training" },

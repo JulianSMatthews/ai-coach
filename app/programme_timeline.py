@@ -3,12 +3,9 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from typing import Any
 
-PILLAR_SEQUENCE: list[tuple[str, str]] = [
-    ("nutrition", "Nutrition"),
-    ("recovery", "Recovery"),
-    ("training", "Training"),
-    ("resilience", "Resilience"),
-]
+from .pillar_config import ACTIVE_PILLAR_KEYS, pillar_label
+
+PILLAR_SEQUENCE: list[tuple[str, str]] = [(key, pillar_label(key)) for key in ACTIVE_PILLAR_KEYS]
 
 BLOCK_WEEKS = 3
 BLOCK_DAYS = BLOCK_WEEKS * 7

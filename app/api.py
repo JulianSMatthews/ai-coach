@@ -457,6 +457,7 @@ debug_log(f"🚀 app.api loaded: v-2025-09-04E (ENV={ENV})", tag="startup")
 
 # Seed import
 from .seed import run_seed, sync_assessment_seed_definitions, sync_education_seed_definitions  # fallback
+from .pillar_config import pillar_label
 
 # Assessor entrypoints
 
@@ -1354,7 +1355,7 @@ def _assessment_section_progress_payloads(state_obj: dict) -> list[dict[str, obj
         sections.append(
             {
                 "key": pillar_key,
-                "label": pillar_key.replace("_", " ").title(),
+                "label": pillar_label(pillar_key),
                 "index": pillar_idx,
                 "value": int(display_value),
                 "answered": int(answered),
@@ -1423,7 +1424,7 @@ def _assessment_current_prompt_payload(session, state_obj: dict) -> dict[str, ob
         preview_pillars: list[dict[str, object]] = []
         preview_scores: list[int] = []
         for preview_key in PILLAR_ORDER:
-            preview_label = preview_key.replace("_", " ").title()
+            preview_label = pillar_label(preview_key)
             preview_row = results_map.get(preview_key) if isinstance(results_map.get(preview_key), dict) else {}
             raw_score = preview_row.get("overall") if isinstance(preview_row, dict) else None
             preview_score: int | None = None
@@ -5135,7 +5136,7 @@ INTRO_BODY_DEFAULT = (
 )
 INTRO_ASSESSMENT_AVATAR_SCRIPT_DEFAULT = (
     "Welcome to HealthSense.\n\n"
-    "This assessment measures four pillars of health: Nutrition, Training, Recovery, and Resilience.\n\n"
+    "This assessment measures your active HealthSense pillars: Reflection, Purpose, Recovery, and Resilience.\n\n"
     "In around three minutes, you'll receive your HealthSense Score and a personal coaching plan "
     "designed to help you improve your wellbeing.\n\n"
     "When you're ready, press continue to begin."
@@ -5178,7 +5179,7 @@ INTRO_HELP_AVATAR_SPECS: dict[str, dict[str, str]] = {
         "title_default": "Ask",
         "script_default": (
             "Ask lets you message Gia directly when you want quick coaching support.\n\n"
-            "Use it to ask focused questions about nutrition, training, recovery, or resilience, "
+            "Use it to ask focused questions about reflection, purpose, recovery, or resilience, "
             "and get a clear reply that fits where you are right now."
         ),
         "filename_prefix": "intro-ask-avatar",
@@ -5187,7 +5188,7 @@ INTRO_HELP_AVATAR_SPECS: dict[str, dict[str, str]] = {
         "tag_prefix": "app_daily_tracking_avatar",
         "title_default": "Daily tracking",
         "script_default": (
-            "Daily tracking helps you log how you are doing across nutrition, training, recovery, and resilience.\n\n"
+            "Daily tracking helps you log how you are doing across reflection, purpose, recovery, and resilience.\n\n"
             "It shows what you completed today, whether you are on track, and how your routines are building over time."
         ),
         "filename_prefix": "intro-daily-tracking-avatar",

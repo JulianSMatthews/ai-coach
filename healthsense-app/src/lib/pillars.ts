@@ -1,4 +1,4 @@
-export type PillarKey = "nutrition" | "recovery" | "training" | "resilience" | "habit_forming";
+export type PillarKey = "nutrition" | "recovery" | "training" | "reflection" | "purpose" | "resilience" | "habit_forming";
 
 export type PillarMeta = {
   key: PillarKey;
@@ -37,6 +37,24 @@ export const PILLARS: PillarMeta[] = [
     bg: "#f2fae8",
     border: "#a7d37f",
     icon: "/icons/pillar-training.svg",
+  },
+  {
+    key: "reflection",
+    label: "Reflection",
+    note: "Awareness, check-ins, and learning.",
+    accent: "#7c5cff",
+    bg: "#f2efff",
+    border: "#b7a7ff",
+    icon: "/icons/pillar-resilience.svg",
+  },
+  {
+    key: "purpose",
+    label: "Purpose",
+    note: "Values, meaning, and direction.",
+    accent: "#0f8b8d",
+    bg: "#e8f7f7",
+    border: "#7bc7c8",
+    icon: "/icons/pillar-habit-forming.svg",
   },
   {
     key: "resilience",

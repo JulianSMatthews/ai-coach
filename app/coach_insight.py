@@ -11,8 +11,9 @@ from .daily_habits import build_daily_tracker_generation_context_snapshot
 from .models import ContentLibraryItem, UserPreference
 from .okr import _normalize_concept_key
 from .pillar_tracker import get_pillar_tracker_detail, get_pillar_tracker_summary, tracker_today
+from .pillar_config import ACTIVE_PILLAR_KEYS, pillar_label
 
-_PILLAR_ORDER = ("nutrition", "training", "resilience", "recovery")
+_PILLAR_ORDER = ACTIVE_PILLAR_KEYS
 _INTRO_SOURCE_TYPES = ("app_intro", "assessment_intro")
 _INSIGHT_CACHE_KEY = "coach_home_insight_cache"
 
@@ -37,7 +38,8 @@ def _pillar_rank(pillar_key: str) -> int:
 def _select_weakest_pillar(summary: dict[str, Any]) -> dict[str, Any]:
     pillars = list(summary.get("pillars") or [])
     if not pillars:
-        return {"pillar_key": "nutrition", "label": "Nutrition", "score": None}
+        fallback = _PILLAR_ORDER[0] if _PILLAR_ORDER else "reflection"
+        return {"pillar_key": fallback, "label": pillar_label(fallback), "score": None}
 
     def _sort_key(row: dict[str, Any]) -> tuple[int, int, str]:
         score = _safe_int(row.get("score"))

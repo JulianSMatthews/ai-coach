@@ -23,6 +23,7 @@ from .okr import (
     _normalize_concept_key,
 )
 from .pillar_tracker import PILLAR_TRACKER_CONFIG, _value_meets_threshold
+from .pillar_config import ACTIVE_PILLAR_KEYS, pillar_label
 from .models import (
     AssessmentRun,
     AssessmentNarrative,
@@ -2310,10 +2311,10 @@ def _format_finished_for_pdf(val: Any, *, tz_env: str = "REPORT_TZ") -> str:
         return str(val)
 
 def _pillar_order() -> List[str]:
-    return ["nutrition", "training", "resilience", "recovery"]
+    return list(ACTIVE_PILLAR_KEYS)
 
 def _title_for_pillar(p: str) -> str:
-    return (p or "").replace("_", " ").title()
+    return pillar_label(p)
 
 def _concept_display(code: str) -> str:
     return (code or "").replace("_", " ").title()
@@ -3620,7 +3621,7 @@ def _collect_summary_rows(start_dt: datetime, end_dt: datetime, club_id: int | N
             # Overall: prefer stored combined_overall, else mean of available pillars
             combined = getattr(run, "combined_overall", None)
             if combined is None:
-                vals = [v for v in [pmap.get("nutrition"), pmap.get("training"), pmap.get("resilience"), pmap.get("recovery")] if isinstance(v, (int, float))]
+                vals = [v for v in (pmap.get(key) for key in _pillar_order()) if isinstance(v, (int, float))]
                 combined = round(sum(vals) / max(1, len(vals)), 0) if vals else 0.0
             else:
                 combined = round(_to_float(combined, 0.0)) if combined is not None else 0.0
@@ -3630,8 +3631,7 @@ def _collect_summary_rows(start_dt: datetime, end_dt: datetime, club_id: int | N
                 "role": _display_role(user),
                 "finished_at": getattr(run, "finished_at", None),
                 "overall": combined,
-                "nutrition": pmap.get("nutrition"),
-                "training": pmap.get("training"),
+                **{key: pmap.get(key) for key in _pillar_order()},
                 "resilience": pmap.get("resilience"),
                 "recovery": pmap.get("recovery"),
                 "user_id": getattr(user, "id", None),
@@ -3684,7 +3684,8 @@ def _write_summary_pdf(path: str, start_str: str, end_str: str, rows: list[dict]
     story += [Paragraph(f"Total assessments: {total}<br/>Average overall score: {avg_overall}<br/>{best_line}", styles["Normal"]), Spacer(1, 12)]
 
     # Table
-    header = ["#", "Name", "Date Completed", "Overall", "Nutrition", "Training", "Resilience", "Recovery", "Assessment", "Progress"]
+    pillar_keys = _pillar_order()
+    header = ["#", "Name", "Date Completed", "Overall"] + [_title_for_pillar(key) for key in pillar_keys] + ["Assessment", "Progress"]
     data = [header]
     from reportlab.platypus import Paragraph
     for idx, r in enumerate(rows, start=1):
@@ -3699,20 +3700,21 @@ def _write_summary_pdf(path: str, start_str: str, end_str: str, rows: list[dict]
         prog_url = r.get("progress_url") or ""
         dash_cell = Paragraph(f"<link href='{dash_url}' color='blue'>assessment</link>" if dash_url else "", wrap)
         prog_cell = Paragraph(f"<link href='{prog_url}' color='blue'>progress</link>" if prog_url else "", wrap)
+        pillar_cells = [
+            "" if r.get(key) is None else f"{_to_float(r.get(key), 0.0):.0f}"
+            for key in pillar_keys
+        ]
         data.append([
             str(idx),
             name_cell,
             date_str,
             f"{_to_float(r.get('overall'), 0.0):.0f}",
-            "" if r.get("nutrition") is None else f"{_to_float(r.get('nutrition'), 0.0):.0f}",
-            "" if r.get("training")  is None else f"{_to_float(r.get('training'), 0.0):.0f}",
-            "" if r.get("resilience") is None else f"{_to_float(r.get('resilience'), 0.0):.0f}",
-            "" if r.get("recovery")  is None else f"{_to_float(r.get('recovery'), 0.0):.0f}",
+            *pillar_cells,
             dash_cell,
             prog_cell,
         ])
 
-    table = Table(data, repeatRows=1, colWidths=[24, 150, 90, 60, 60, 60, 70, 60, 90, 90])
+    table = Table(data, repeatRows=1)
     table.setStyle(TableStyle([
         ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#003366")),
         ("TEXTCOLOR", (0,0), (-1,0), colors.whitesmoke),
@@ -3990,8 +3992,8 @@ def _write_pdf(path: str, user: User, run: AssessmentRun, pillars: List[PillarRe
         y = top - 54
         y = _write_heading(y, "Purpose of This Report")
         y = _write_para(y, (
-            "This report provides a snapshot of your current wellbeing across four key areas — "
-            "Nutrition, Training, Resilience, and Recovery. It combines your assessment results "
+            "This report provides a snapshot of your current wellbeing across your active HealthSense pillars. "
+            "It combines your assessment results "
             "with goal-oriented OKRs to help you focus on the habits that drive performance and wellbeing.")) - 8
 
         y = _write_heading(y, "How to Read Your Scores")
@@ -5566,7 +5568,7 @@ def generate_progress_report_html(user_id: int, anchor_date: date | None = None)
     by_pillar: dict[str, list[dict]] = defaultdict(list)
     for row in rows:
         by_pillar[row.get("pillar", "")].append(row)
-    programme_order = ["nutrition", "recovery", "training", "resilience"]
+    programme_order = _pillar_order()
     ordered_rows = []
     for p in programme_order:
         ordered_rows.extend(by_pillar.get(p, []))
