@@ -1260,7 +1260,7 @@ export default function LatestAssessmentPanel({
   const [urineCaptureNowMs, setUrineCaptureNowMs] = useState(() => Date.now());
   const modalOverlayOpen = biometricsModalOpen || objectivesModalOpen || Boolean(selectedPillarKey);
   const homeDockButtonClassName =
-    "flex aspect-square w-full flex-col items-center justify-center gap-1 rounded-none border px-1 py-1 text-center shadow-none transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
+    "flex min-h-[4.9rem] w-full flex-col items-center justify-center gap-1 rounded-[18px] border px-2 py-2 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
   const homeDockSecondaryClassName =
     "border-black bg-white text-black hover:bg-[#f3f3f3]";
   const homeDockPrimaryClassName =
@@ -2872,7 +2872,7 @@ export default function LatestAssessmentPanel({
       {summaryPanelVisible ? (
         <section
           ref={summaryPanelRef}
-          className="border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4 pb-32 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-5 sm:py-5 sm:pb-36"
+          className="px-4 py-4 pb-28 sm:px-5 sm:py-5 sm:pb-32"
         >
           <div className="relative">
             <div className="grid grid-cols-2 gap-3">
@@ -2889,7 +2889,7 @@ export default function LatestAssessmentPanel({
                         guided: false,
                       })
                     }
-                    className="aspect-square border border-[#efe7db] bg-white px-3 py-3 text-left transition hover:border-[#dccfbe]"
+                    className="aspect-square border border-black bg-white px-3 py-3 text-left transition"
                   >
                     <div className="flex h-full flex-col items-center justify-center text-center">
                       <WeeklyScoreRing value={score} tone={palette.accent} />
@@ -2919,29 +2919,29 @@ export default function LatestAssessmentPanel({
       {summaryPanelVisible ? (
         <div className="fixed inset-x-0 bottom-0 z-40 pointer-events-none">
           <div className="mx-auto w-full max-w-2xl px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
-            <div className="pointer-events-auto border border-black bg-white p-1">
+            <div className="pointer-events-auto overflow-hidden rounded-[28px] border border-black bg-white p-1">
               <div className="grid grid-cols-4 gap-1">
                 <button type="button" onClick={handleReviewBiometricsPress} className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}>
-                  <BiometricsIcon className="h-4 w-4 text-black" />
-                  <span className="text-[9px] font-semibold leading-none sm:text-[10px]">
+                  <BiometricsIcon className="h-5 w-5 text-black" />
+                  <span className="text-[11px] font-semibold leading-none sm:text-xs">
                     Bio
                   </span>
                 </button>
                 <button type="button" onClick={() => openDailyMenuSurface("habits")} className={`${homeDockButtonClassName} ${homeDockPrimaryClassName}`}>
-                  <HabitStepsIcon className="h-4 w-4 text-white" />
-                  <span className="text-[9px] font-semibold leading-none sm:text-[10px]">
+                  <HabitStepsIcon className="h-5 w-5 text-white" />
+                  <span className="text-[11px] font-semibold leading-none sm:text-xs">
                     Plan
                   </span>
                 </button>
                 <button type="button" onClick={() => openDailyMenuSurface("insight")} className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}>
-                  <InsightIcon className="h-4 w-4 text-black" />
-                  <span className="text-[9px] font-semibold leading-none sm:text-[10px]">
+                  <InsightIcon className="h-5 w-5 text-black" />
+                  <span className="text-[11px] font-semibold leading-none sm:text-xs">
                     Learn
                   </span>
                 </button>
                 <button type="button" onClick={() => openDailyMenuSurface("ask")} className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}>
-                  <GiaMessageIcon className="h-4 w-4 text-black" />
-                  <span className="text-[9px] font-semibold leading-none sm:text-[10px]">
+                  <GiaMessageIcon className="h-5 w-5 text-black" />
+                  <span className="text-[11px] font-semibold leading-none sm:text-xs">
                     Coach
                   </span>
                 </button>
