@@ -10,8 +10,6 @@ type AppNavProps = {
   promptBadge?: string;
 };
 
-const APP_SUFFIX = process.env.NODE_ENV === "development" ? "App (Develop)" : "App";
-
 export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
   const [open, setOpen] = useState(false);
   const resolvedUserId = String(userId || "").trim();
@@ -44,7 +42,6 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
         <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
           <Link href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-baseline gap-1 text-white" aria-label="HealthSense home">
             <span className="text-sm font-semibold leading-none">HealthSense</span>
-            <span className="text-[10px] leading-none">{APP_SUFFIX}</span>
           </Link>
           <button
             type="button"
@@ -95,7 +92,6 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
           <div className="flex items-center justify-between">
             <Link href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-baseline gap-1 text-black" aria-label="HealthSense home">
               <span className="text-sm font-semibold leading-none">HealthSense</span>
-              <span className="text-[10px] leading-none">{APP_SUFFIX}</span>
             </Link>
             <button
               type="button"
