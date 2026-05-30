@@ -1107,11 +1107,11 @@ function WeeklyScoreRing({ value, tone, compact = false }: { value?: number | nu
   );
 }
 
-function HabitStepsIcon() {
+function HabitStepsIcon({ className = "h-5 w-5 text-[var(--accent)]" }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 24 24"
-      className="h-5 w-5 text-[var(--accent)]"
+      className={className}
       aria-hidden="true"
       fill="none"
       stroke="currentColor"
@@ -1129,11 +1129,11 @@ function HabitStepsIcon() {
   );
 }
 
-function InsightIcon() {
+function InsightIcon({ className = "h-5 w-5 text-[var(--accent)]" }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 24 24"
-      className="h-5 w-5 text-[var(--accent)]"
+      className={className}
       aria-hidden="true"
       fill="none"
       stroke="currentColor"
@@ -1148,11 +1148,11 @@ function InsightIcon() {
   );
 }
 
-function GiaMessageIcon() {
+function GiaMessageIcon({ className = "h-5 w-5 text-[var(--accent)]" }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 24 24"
-      className="h-5 w-5 text-[var(--accent)]"
+      className={className}
       aria-hidden="true"
       fill="none"
       stroke="currentColor"
@@ -1167,11 +1167,11 @@ function GiaMessageIcon() {
   );
 }
 
-function BiometricsIcon() {
+function BiometricsIcon({ className = "h-5 w-5 text-[var(--accent)]" }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 24 24"
-      className="h-5 w-5 text-[var(--accent)]"
+      className={className}
       aria-hidden="true"
       fill="none"
       stroke="currentColor"
@@ -1260,7 +1260,11 @@ export default function LatestAssessmentPanel({
   const [urineCaptureNowMs, setUrineCaptureNowMs] = useState(() => Date.now());
   const modalOverlayOpen = biometricsModalOpen || objectivesModalOpen || Boolean(selectedPillarKey);
   const homeDockButtonClassName =
-    "flex min-h-[4.5rem] w-full items-center gap-3 rounded-[22px] border border-[#d9cdbb] bg-white px-4 py-3 text-left shadow-[0_18px_34px_-32px_rgba(30,27,22,0.4)] transition hover:border-[#ccbda9] hover:bg-[#fffdfa] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2";
+    "flex min-h-[4.35rem] w-full flex-col items-center justify-center gap-1.5 rounded-[20px] border px-2 py-2 text-center shadow-[0_14px_24px_-22px_rgba(30,27,22,0.3)] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2";
+  const homeDockSecondaryClassName =
+    "border-[#e7e1d6] bg-white text-[#1e1b16] hover:border-[#cfc0ae] hover:bg-[#fffcf7]";
+  const homeDockPrimaryClassName =
+    "border-[var(--accent)] bg-[var(--accent)] text-white hover:brightness-[1.02]";
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
   const orderedPillarKeys = pillars
@@ -2868,7 +2872,7 @@ export default function LatestAssessmentPanel({
       {summaryPanelVisible ? (
         <section
           ref={summaryPanelRef}
-          className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4 pb-48 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-5 sm:py-5 sm:pb-52"
+          className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4 pb-32 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-5 sm:py-5 sm:pb-36"
         >
           <div className="relative">
             <div className="grid grid-cols-2 gap-3">
@@ -2914,31 +2918,31 @@ export default function LatestAssessmentPanel({
 
       {summaryPanelVisible ? (
         <div className="fixed inset-x-0 bottom-0 z-40 pointer-events-none">
-          <div className="mx-auto w-full max-w-2xl px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-5">
-            <div className="pointer-events-auto rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3]/96 p-3 shadow-[0_28px_80px_-50px_rgba(30,27,22,0.58)] backdrop-blur-md">
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                <button type="button" onClick={handleReviewBiometricsPress} className={homeDockButtonClassName}>
-                  <BiometricsIcon />
-                  <span className="min-w-0 text-sm font-semibold leading-tight text-[#1e1b16]">
+          <div className="mx-auto w-full max-w-2xl px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
+            <div className="pointer-events-auto rounded-[30px] border border-[#e7e1d6] bg-[#fffaf3]/95 p-2 shadow-[0_24px_70px_-44px_rgba(30,27,22,0.56)] backdrop-blur-md">
+              <div className="grid grid-cols-4 gap-2">
+                <button type="button" onClick={handleReviewBiometricsPress} className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}>
+                  <BiometricsIcon className="h-5 w-5 text-[#c54817]" />
+                  <span className="text-[10px] font-semibold leading-tight sm:text-[11px]">
                     Review biometrics
                   </span>
                 </button>
-                <button type="button" onClick={() => openDailyMenuSurface("habits")} className={homeDockButtonClassName}>
-                  <HabitStepsIcon />
-                  <span className="min-w-0 text-sm font-semibold leading-tight text-[#1e1b16]">
+                <button type="button" onClick={() => openDailyMenuSurface("habits")} className={`${homeDockButtonClassName} ${homeDockPrimaryClassName}`}>
+                  <HabitStepsIcon className="h-5 w-5 text-white" />
+                  <span className="text-[10px] font-semibold leading-tight sm:text-[11px]">
                     Plan for the day
                   </span>
                 </button>
-                <button type="button" onClick={() => openDailyMenuSurface("insight")} className={homeDockButtonClassName}>
-                  <InsightIcon />
-                  <span className="min-w-0 text-sm font-semibold leading-tight text-[#1e1b16]">
+                <button type="button" onClick={() => openDailyMenuSurface("insight")} className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}>
+                  <InsightIcon className="h-5 w-5 text-[#c54817]" />
+                  <span className="text-[10px] font-semibold leading-tight sm:text-[11px]">
                     Today&apos;s focus
                   </span>
                 </button>
-                <button type="button" onClick={() => openDailyMenuSurface("ask")} className={homeDockButtonClassName}>
-                  <GiaMessageIcon />
-                  <span className="min-w-0 text-sm font-semibold leading-tight text-[#1e1b16]">
-                    Gia&apos;s message of the day
+                <button type="button" onClick={() => openDailyMenuSurface("ask")} className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}>
+                  <GiaMessageIcon className="h-5 w-5 text-[#c54817]" />
+                  <span className="text-[10px] font-semibold leading-tight sm:text-[11px]">
+                    Gia&apos;s message
                   </span>
                 </button>
               </div>
