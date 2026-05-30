@@ -1621,6 +1621,21 @@ export default function AssessmentChatBox({
   }, [showGuidedHomeChatPanel, homeSurface]);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+    const bridge = window as Window & {
+      healthsenseSetHomeSurface?: (surface: HomeSurface) => void;
+    };
+    bridge.healthsenseSetHomeSurface = (surface: HomeSurface) => {
+      setHomeSurface(surface);
+    };
+    return () => {
+      if (bridge.healthsenseSetHomeSurface) {
+        delete bridge.healthsenseSetHomeSurface;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (educationVideoProgressRef.current.key === educationMediaKey) return;
     educationVideoProgressRef.current = {
       key: educationMediaKey,

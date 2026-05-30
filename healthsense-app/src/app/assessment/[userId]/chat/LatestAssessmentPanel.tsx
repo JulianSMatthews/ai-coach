@@ -2833,6 +2833,10 @@ export default function LatestAssessmentPanel({
 
   const openDailyMenuSurface = (surface: "habits" | "insight" | "ask") => {
     if (typeof window !== "undefined") {
+      const bridge = window as Window & {
+        healthsenseSetHomeSurface?: (nextSurface: "habits" | "insight" | "ask") => void;
+      };
+      bridge.healthsenseSetHomeSurface?.(surface);
       window.dispatchEvent(
         new CustomEvent("healthsense-home-surface", {
           detail: {

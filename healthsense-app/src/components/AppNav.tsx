@@ -41,7 +41,7 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
       <nav className="sticky top-0 z-30 mb-2 flex min-w-0 flex-col gap-1 px-0 py-0 text-xs text-[var(--text-secondary)] md:static md:mb-4 md:flex-row md:flex-nowrap md:items-center md:px-0 md:py-0">
         <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
           <Link href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-baseline gap-1 text-white" aria-label="HealthSense home">
-            <span className="text-sm font-semibold leading-none">HealthSense</span>
+            <span className="sr-only">HealthSense</span>
           </Link>
           <button
             type="button"
@@ -91,7 +91,7 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
         >
           <div className="flex items-center justify-between">
             <Link href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-baseline gap-1 text-black" aria-label="HealthSense home">
-              <span className="text-sm font-semibold leading-none">HealthSense</span>
+              <span className="sr-only">HealthSense</span>
             </Link>
             <button
               type="button"
