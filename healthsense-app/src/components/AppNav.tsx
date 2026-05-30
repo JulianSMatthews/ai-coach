@@ -40,12 +40,12 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
     <>
       <nav className="sticky top-0 z-30 mb-2 flex min-w-0 flex-col gap-1 px-0 py-0 text-xs text-[var(--text-secondary)] md:static md:mb-4 md:flex-row md:flex-nowrap md:items-center md:px-0 md:py-0">
         <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
-          <Link href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-baseline gap-1 text-black" aria-label="HealthSense home">
+          <Link href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-baseline gap-1 text-white" aria-label="HealthSense home">
             <span className="text-sm font-semibold leading-none">HealthSense</span>
           </Link>
           <button
             type="button"
-            className="flex h-8 w-8 items-center justify-center border border-black bg-black text-white md:hidden"
+            className="flex h-8 w-8 items-center justify-center border border-black bg-white text-black md:hidden"
             aria-label="Open menu"
             aria-expanded={open}
             onClick={() => setOpen(true)}
@@ -95,7 +95,7 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
             </Link>
             <button
               type="button"
-              className="flex h-9 w-9 items-center justify-center border border-black bg-black text-white"
+              className="flex h-9 w-9 items-center justify-center border border-black bg-white text-black"
               aria-label="Close menu"
               onClick={() => setOpen(false)}
             >

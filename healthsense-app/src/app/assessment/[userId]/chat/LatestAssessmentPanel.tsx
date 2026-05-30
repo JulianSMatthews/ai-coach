@@ -1262,9 +1262,9 @@ export default function LatestAssessmentPanel({
   const homeDockButtonClassName =
     "flex h-[4.75rem] w-full flex-col items-center justify-center gap-1 rounded-none border px-2 py-2 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
   const homeDockSecondaryClassName =
-    "border-black bg-white text-black hover:bg-[#f3f3f3]";
+    "border-2 border-black bg-white text-black hover:bg-[#f3f3f3]";
   const homeDockPrimaryClassName =
-    "border-black bg-black text-white hover:brightness-[1.05]";
+    "border-2 border-black bg-black text-white hover:brightness-[1.05]";
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
   const orderedPillarKeys = pillars
@@ -2919,7 +2919,7 @@ export default function LatestAssessmentPanel({
       {summaryPanelVisible ? (
         <div className="fixed inset-x-0 bottom-0 z-40 pointer-events-none">
           <div className="mx-auto w-full max-w-2xl px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
-            <div className="pointer-events-auto overflow-hidden border border-black bg-white p-1 shadow-[0_14px_30px_-24px_rgba(0,0,0,0.35)]">
+            <div className="pointer-events-auto overflow-hidden bg-transparent p-0">
               <div className="grid grid-cols-4 gap-1">
                 <button type="button" onClick={handleReviewBiometricsPress} className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}>
                   <BiometricsIcon className="h-5 w-5 text-black" />
