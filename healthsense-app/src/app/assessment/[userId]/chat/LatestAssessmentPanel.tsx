@@ -1259,6 +1259,8 @@ export default function LatestAssessmentPanel({
   const [urinePhotoCapturedAtMs, setUrinePhotoCapturedAtMs] = useState<number | null>(null);
   const [urineCaptureNowMs, setUrineCaptureNowMs] = useState(() => Date.now());
   const modalOverlayOpen = biometricsModalOpen || objectivesModalOpen || Boolean(selectedPillarKey);
+  const homeDockButtonClassName =
+    "flex min-h-[4.5rem] w-full items-center gap-3 rounded-[22px] border border-[#d9cdbb] bg-white px-4 py-3 text-left shadow-[0_18px_34px_-32px_rgba(30,27,22,0.4)] transition hover:border-[#ccbda9] hover:bg-[#fffdfa] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2";
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
   const orderedPillarKeys = pillars
@@ -2866,7 +2868,7 @@ export default function LatestAssessmentPanel({
       {summaryPanelVisible ? (
         <section
           ref={summaryPanelRef}
-          className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-5 sm:py-5"
+          className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4 pb-48 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-5 sm:py-5 sm:pb-52"
         >
           <div className="relative">
             <div className="grid grid-cols-2 gap-3">
@@ -2907,49 +2909,42 @@ export default function LatestAssessmentPanel({
               </button>
             </div>
           </div>
-          <div className="mt-4 space-y-2.5">
-            <button
-              type="button"
-              onClick={handleReviewBiometricsPress}
-              className="flex min-h-[4.75rem] w-full flex-col items-start justify-center rounded-[24px] border border-[#d9cdbb] bg-white px-5 py-3 text-left shadow-[0_18px_34px_-32px_rgba(30,27,22,0.4)]"
-            >
-              <div className="flex items-center gap-3">
-                <BiometricsIcon />
-                <span className="text-base font-semibold text-[#1e1b16]">Review biometrics</span>
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => openDailyMenuSurface("habits")}
-              className="flex min-h-[4.75rem] w-full flex-col items-start justify-center rounded-[24px] border border-[#d9cdbb] bg-white px-5 py-3 text-left shadow-[0_18px_34px_-32px_rgba(30,27,22,0.4)]"
-            >
-              <div className="flex items-center gap-3">
-                <HabitStepsIcon />
-                <span className="text-base font-semibold text-[#1e1b16]">Plan for the day</span>
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => openDailyMenuSurface("insight")}
-              className="flex min-h-[4.75rem] w-full flex-col items-start justify-center rounded-[24px] border border-[#d9cdbb] bg-white px-5 py-3 text-left shadow-[0_18px_34px_-32px_rgba(30,27,22,0.4)]"
-            >
-              <div className="flex items-center gap-3">
-                <InsightIcon />
-                <span className="text-base font-semibold text-[#1e1b16]">Today&apos;s focus</span>
-              </div>
-            </button>
-            <button
-              type="button"
-              onClick={() => openDailyMenuSurface("ask")}
-              className="flex min-h-[4.75rem] w-full flex-col items-start justify-center rounded-[24px] border border-[#d9cdbb] bg-white px-5 py-3 text-left shadow-[0_18px_34px_-32px_rgba(30,27,22,0.4)]"
-            >
-              <div className="flex items-center gap-3">
-                <GiaMessageIcon />
-                <span className="text-base font-semibold text-[#1e1b16]">Gia&apos;s message of the day</span>
-              </div>
-            </button>
-          </div>
         </section>
+      ) : null}
+
+      {summaryPanelVisible ? (
+        <div className="fixed inset-x-0 bottom-0 z-40 pointer-events-none">
+          <div className="mx-auto w-full max-w-2xl px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] sm:px-5">
+            <div className="pointer-events-auto rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3]/96 p-3 shadow-[0_28px_80px_-50px_rgba(30,27,22,0.58)] backdrop-blur-md">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <button type="button" onClick={handleReviewBiometricsPress} className={homeDockButtonClassName}>
+                  <BiometricsIcon />
+                  <span className="min-w-0 text-sm font-semibold leading-tight text-[#1e1b16]">
+                    Review biometrics
+                  </span>
+                </button>
+                <button type="button" onClick={() => openDailyMenuSurface("habits")} className={homeDockButtonClassName}>
+                  <HabitStepsIcon />
+                  <span className="min-w-0 text-sm font-semibold leading-tight text-[#1e1b16]">
+                    Plan for the day
+                  </span>
+                </button>
+                <button type="button" onClick={() => openDailyMenuSurface("insight")} className={homeDockButtonClassName}>
+                  <InsightIcon />
+                  <span className="min-w-0 text-sm font-semibold leading-tight text-[#1e1b16]">
+                    Today&apos;s focus
+                  </span>
+                </button>
+                <button type="button" onClick={() => openDailyMenuSurface("ask")} className={homeDockButtonClassName}>
+                  <GiaMessageIcon />
+                  <span className="min-w-0 text-sm font-semibold leading-tight text-[#1e1b16]">
+                    Gia&apos;s message of the day
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       ) : null}
 
       {biometricsModalOpen ? (
