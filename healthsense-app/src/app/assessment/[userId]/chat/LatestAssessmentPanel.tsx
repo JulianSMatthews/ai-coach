@@ -3638,14 +3638,14 @@ export default function LatestAssessmentPanel({
                   <p className="text-xs uppercase tracking-[0.22em] text-[#6b6257]">
                     {selectedObjectivesSection
                       ? selectedObjectivesSection === "wellbeing"
-                        ? "General objectives"
+                        ? "General options"
                         : selectedObjectivesPillar?.label || "Weekly objectives"
                       : "Weekly objectives"}
                   </p>
                   <p className="text-sm text-[#6b6257]">
                     {selectedObjectivesSection
                       ? selectedObjectivesSection === "wellbeing"
-                        ? "Set optional general tracking preferences."
+                        ? "Set optional general tracking preferences and home pillar visibility."
                         : "Choose your target for each concept this week."
                       : "Select a pillar to set or adjust this week's targets."}
                   </p>

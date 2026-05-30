@@ -13,7 +13,7 @@ from sqlalchemy import desc, select
 from .db import SessionLocal, engine
 from .models import AssessmentRun, DailyPillarTrackerEntry, PillarResult, OKRObjective, OKRKeyResult, OKRKrEntry, User, UserPreference
 from .okr import _GUIDE, _guess_concept_from_description, _normalize_concept_key
-from .pillar_config import ACTIVE_PILLAR_KEYS, pillar_label
+from .pillar_config import active_pillar_keys, pillar_label
 _TRACKER_SCHEMA_READY = False
 _TRACKER_TIMEZONE = (os.getenv("PILLAR_TRACKER_TIMEZONE") or "Europe/London").strip() or "Europe/London"
 _FASTING_MODE_PREF_KEY = "weekly_objectives_fasting_mode"
@@ -1760,7 +1760,7 @@ def get_pillar_tracker_summary(user_id: int, anchor: date | None = None) -> dict
     baseline_scores = _latest_assessment_scores_for_user(user_id)
     week_days = _week_days(resolved_anchor)
     pillars = []
-    for pillar_key in ACTIVE_PILLAR_KEYS:
+    for pillar_key in active_pillar_keys(user_id):
         if pillar_key not in PILLAR_TRACKER_CONFIG:
             continue
         required_concepts = tracker_concepts_for_pillar(pillar_key, user_id=int(user_id))
