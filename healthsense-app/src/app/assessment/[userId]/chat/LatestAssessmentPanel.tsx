@@ -1261,10 +1261,7 @@ export default function LatestAssessmentPanel({
   const modalOverlayOpen = biometricsModalOpen || objectivesModalOpen || Boolean(selectedPillarKey);
   const homeDockButtonClassName =
     "flex h-[4.75rem] w-full flex-col items-center justify-center gap-1 rounded-none border px-2 py-2 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
-  const homeDockSecondaryClassName = "border-2 border-black text-black hover:opacity-95";
-  const homeDockPrimaryClassName = "border-2 border-black text-white hover:brightness-[1.05]";
-  const homeDockSecondaryStyle = { backgroundColor: "#ffffff", color: "#000000", borderColor: "#000000" };
-  const homeDockPrimaryStyle = { backgroundColor: "#000000", color: "#ffffff", borderColor: "#000000" };
+  const homeDockButtonStyle = { backgroundColor: "#000000", color: "#ffffff", borderColor: "#000000" };
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
   const orderedPillarKeys = pillars
@@ -2931,10 +2928,10 @@ export default function LatestAssessmentPanel({
                 <button
                   type="button"
                   onClick={handleReviewBiometricsPress}
-                  className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}
-                  style={homeDockSecondaryStyle}
+                  className={homeDockButtonClassName}
+                  style={homeDockButtonStyle}
                 >
-                  <BiometricsIcon className="h-5 w-5 text-black" />
+                  <BiometricsIcon className="h-5 w-5 text-white" />
                   <span className="text-[11px] font-semibold leading-none sm:text-xs">
                     Bio
                   </span>
@@ -2942,8 +2939,8 @@ export default function LatestAssessmentPanel({
                 <button
                   type="button"
                   onClick={() => openDailyMenuSurface("habits")}
-                  className={`${homeDockButtonClassName} ${homeDockPrimaryClassName}`}
-                  style={homeDockPrimaryStyle}
+                  className={homeDockButtonClassName}
+                  style={homeDockButtonStyle}
                 >
                   <HabitStepsIcon className="h-5 w-5 text-white" />
                   <span className="text-[11px] font-semibold leading-none sm:text-xs">
@@ -2953,10 +2950,10 @@ export default function LatestAssessmentPanel({
                 <button
                   type="button"
                   onClick={() => openDailyMenuSurface("insight")}
-                  className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}
-                  style={homeDockSecondaryStyle}
+                  className={homeDockButtonClassName}
+                  style={homeDockButtonStyle}
                 >
-                  <InsightIcon className="h-5 w-5 text-black" />
+                  <InsightIcon className="h-5 w-5 text-white" />
                   <span className="text-[11px] font-semibold leading-none sm:text-xs">
                     Learn
                   </span>
@@ -2964,10 +2961,10 @@ export default function LatestAssessmentPanel({
                 <button
                   type="button"
                   onClick={() => openDailyMenuSurface("ask")}
-                  className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}
-                  style={homeDockSecondaryStyle}
+                  className={homeDockButtonClassName}
+                  style={homeDockButtonStyle}
                 >
-                  <GiaMessageIcon className="h-5 w-5 text-black" />
+                  <GiaMessageIcon className="h-5 w-5 text-white" />
                   <span className="text-[11px] font-semibold leading-none sm:text-xs">
                     Coach
                   </span>
