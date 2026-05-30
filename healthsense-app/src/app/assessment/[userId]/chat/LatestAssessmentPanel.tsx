@@ -2919,7 +2919,7 @@ export default function LatestAssessmentPanel({
       {summaryPanelVisible ? (
         <div className="fixed inset-x-0 bottom-0 z-40 pointer-events-none">
           <div className="mx-auto w-full max-w-2xl px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
-            <div className="pointer-events-auto overflow-hidden border border-black bg-white p-1 shadow-none">
+            <div className="pointer-events-auto overflow-hidden border border-black bg-white p-1 shadow-[0_14px_30px_-24px_rgba(0,0,0,0.35)]">
               <div className="grid grid-cols-4 gap-1">
                 <button type="button" onClick={handleReviewBiometricsPress} className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}>
                   <BiometricsIcon className="h-5 w-5 text-black" />
