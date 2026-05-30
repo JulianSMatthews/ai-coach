@@ -45,7 +45,8 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
           </Link>
           <button
             type="button"
-            className="flex h-8 w-8 items-center justify-center border border-black bg-white text-black md:hidden"
+            className="flex h-8 w-8 items-center justify-center border border-black md:hidden"
+            style={{ backgroundColor: "#ffffff", color: "#000000" }}
             aria-label="Open menu"
             aria-expanded={open}
             onClick={() => setOpen(true)}
@@ -95,7 +96,8 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
             </Link>
             <button
               type="button"
-              className="flex h-9 w-9 items-center justify-center border border-black bg-white text-black"
+              className="flex h-9 w-9 items-center justify-center border border-black"
+              style={{ backgroundColor: "#ffffff", color: "#000000" }}
               aria-label="Close menu"
               onClick={() => setOpen(false)}
             >

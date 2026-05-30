@@ -1261,10 +1261,10 @@ export default function LatestAssessmentPanel({
   const modalOverlayOpen = biometricsModalOpen || objectivesModalOpen || Boolean(selectedPillarKey);
   const homeDockButtonClassName =
     "flex h-[4.75rem] w-full flex-col items-center justify-center gap-1 rounded-none border px-2 py-2 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
-  const homeDockSecondaryClassName =
-    "border-2 border-black bg-white text-black hover:bg-[#f3f3f3]";
-  const homeDockPrimaryClassName =
-    "border-2 border-black bg-black text-white hover:brightness-[1.05]";
+  const homeDockSecondaryClassName = "border-2 border-black text-black hover:opacity-95";
+  const homeDockPrimaryClassName = "border-2 border-black text-white hover:brightness-[1.05]";
+  const homeDockSecondaryStyle = { backgroundColor: "#ffffff", color: "#000000", borderColor: "#000000" };
+  const homeDockPrimaryStyle = { backgroundColor: "#000000", color: "#ffffff", borderColor: "#000000" };
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
   const orderedPillarKeys = pillars
@@ -2923,27 +2923,50 @@ export default function LatestAssessmentPanel({
       {summaryPanelVisible ? (
         <div className="fixed inset-x-0 bottom-0 z-40 pointer-events-none">
           <div className="mx-auto w-full max-w-2xl px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
-            <div className="pointer-events-auto overflow-hidden bg-transparent p-0">
+            <div
+              className="pointer-events-auto overflow-hidden"
+              style={{ backgroundColor: "#ffffff", border: "2px solid #000000" }}
+            >
               <div className="grid grid-cols-4 gap-1">
-                <button type="button" onClick={handleReviewBiometricsPress} className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}>
+                <button
+                  type="button"
+                  onClick={handleReviewBiometricsPress}
+                  className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}
+                  style={homeDockSecondaryStyle}
+                >
                   <BiometricsIcon className="h-5 w-5 text-black" />
                   <span className="text-[11px] font-semibold leading-none sm:text-xs">
                     Bio
                   </span>
                 </button>
-                <button type="button" onClick={() => openDailyMenuSurface("habits")} className={`${homeDockButtonClassName} ${homeDockPrimaryClassName}`}>
+                <button
+                  type="button"
+                  onClick={() => openDailyMenuSurface("habits")}
+                  className={`${homeDockButtonClassName} ${homeDockPrimaryClassName}`}
+                  style={homeDockPrimaryStyle}
+                >
                   <HabitStepsIcon className="h-5 w-5 text-white" />
                   <span className="text-[11px] font-semibold leading-none sm:text-xs">
                     Plan
                   </span>
                 </button>
-                <button type="button" onClick={() => openDailyMenuSurface("insight")} className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}>
+                <button
+                  type="button"
+                  onClick={() => openDailyMenuSurface("insight")}
+                  className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}
+                  style={homeDockSecondaryStyle}
+                >
                   <InsightIcon className="h-5 w-5 text-black" />
                   <span className="text-[11px] font-semibold leading-none sm:text-xs">
                     Learn
                   </span>
                 </button>
-                <button type="button" onClick={() => openDailyMenuSurface("ask")} className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}>
+                <button
+                  type="button"
+                  onClick={() => openDailyMenuSurface("ask")}
+                  className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}
+                  style={homeDockSecondaryStyle}
+                >
                   <GiaMessageIcon className="h-5 w-5 text-black" />
                   <span className="text-[11px] font-semibold leading-none sm:text-xs">
                     Coach
