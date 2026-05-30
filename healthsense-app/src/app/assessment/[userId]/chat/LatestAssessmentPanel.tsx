@@ -1260,7 +1260,7 @@ export default function LatestAssessmentPanel({
   const [urineCaptureNowMs, setUrineCaptureNowMs] = useState(() => Date.now());
   const modalOverlayOpen = biometricsModalOpen || objectivesModalOpen || Boolean(selectedPillarKey);
   const homeDockButtonClassName =
-    "flex min-h-[4.9rem] w-full flex-col items-center justify-center gap-1 rounded-[18px] border px-2 py-2 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
+    "flex aspect-square w-full flex-col items-center justify-center gap-1 rounded-none border px-2 py-2 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
   const homeDockSecondaryClassName =
     "border-black bg-white text-black hover:bg-[#f3f3f3]";
   const homeDockPrimaryClassName =
@@ -2919,29 +2919,29 @@ export default function LatestAssessmentPanel({
       {summaryPanelVisible ? (
         <div className="fixed inset-x-0 bottom-0 z-40 pointer-events-none">
           <div className="mx-auto w-full max-w-2xl px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
-            <div className="pointer-events-auto overflow-hidden rounded-[28px] border border-black bg-white p-1">
+            <div className="pointer-events-auto overflow-hidden border border-black bg-white p-1">
               <div className="grid grid-cols-4 gap-1">
                 <button type="button" onClick={handleReviewBiometricsPress} className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}>
-                  <BiometricsIcon className="h-5 w-5 text-black" />
-                  <span className="text-[11px] font-semibold leading-none sm:text-xs">
+                  <BiometricsIcon className="h-6 w-6 text-black" />
+                  <span className="text-[10px] font-semibold leading-none sm:text-[11px]">
                     Bio
                   </span>
                 </button>
                 <button type="button" onClick={() => openDailyMenuSurface("habits")} className={`${homeDockButtonClassName} ${homeDockPrimaryClassName}`}>
-                  <HabitStepsIcon className="h-5 w-5 text-white" />
-                  <span className="text-[11px] font-semibold leading-none sm:text-xs">
+                  <HabitStepsIcon className="h-6 w-6 text-white" />
+                  <span className="text-[10px] font-semibold leading-none sm:text-[11px]">
                     Plan
                   </span>
                 </button>
                 <button type="button" onClick={() => openDailyMenuSurface("insight")} className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}>
-                  <InsightIcon className="h-5 w-5 text-black" />
-                  <span className="text-[11px] font-semibold leading-none sm:text-xs">
+                  <InsightIcon className="h-6 w-6 text-black" />
+                  <span className="text-[10px] font-semibold leading-none sm:text-[11px]">
                     Learn
                   </span>
                 </button>
                 <button type="button" onClick={() => openDailyMenuSurface("ask")} className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}>
-                  <GiaMessageIcon className="h-5 w-5 text-black" />
-                  <span className="text-[11px] font-semibold leading-none sm:text-xs">
+                  <GiaMessageIcon className="h-6 w-6 text-black" />
+                  <span className="text-[10px] font-semibold leading-none sm:text-[11px]">
                     Coach
                   </span>
                 </button>
