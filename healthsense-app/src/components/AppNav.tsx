@@ -38,14 +38,18 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
 
   return (
     <>
-      <nav className="sticky top-0 z-30 mb-2 flex min-w-0 flex-col gap-1 px-0 py-0 text-xs text-[var(--text-secondary)] md:static md:mb-4 md:flex-row md:flex-nowrap md:items-center md:px-0 md:py-0">
+      <nav className="sticky top-0 z-50 mb-2 flex min-w-0 flex-col gap-1 px-0 py-0 text-xs text-[var(--text-secondary)] md:static md:mb-4 md:flex-row md:flex-nowrap md:items-center md:px-0 md:py-0">
         <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
-          <Link href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-baseline gap-1 text-white" aria-label="HealthSense home">
-            <span className="sr-only">HealthSense</span>
+          <Link
+            href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"}
+            className="inline-flex h-11 w-11 items-center justify-center rounded-full border-2 border-black bg-white"
+            aria-label="HealthSense home"
+          >
+            <span className="block h-2.5 w-2.5 rounded-full bg-black" aria-hidden="true" />
           </Link>
           <button
             type="button"
-            className="flex h-8 w-8 items-center justify-center border border-black md:hidden"
+            className="inline-flex h-11 w-11 items-center justify-center rounded-full border-2 border-black md:hidden"
             style={{ backgroundColor: "#ffffff", color: "#000000" }}
             aria-label="Open menu"
             aria-expanded={open}
@@ -86,17 +90,22 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
           onClick={() => setOpen(false)}
         />
         <div
-          className={`absolute right-0 top-0 h-full w-full max-w-sm transform overflow-y-auto overscroll-contain bg-white px-5 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] transition-transform duration-300 sm:px-6 ${
+          className={`absolute right-0 top-0 h-full w-full max-w-sm transform overflow-y-auto overscroll-contain px-5 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] transition-transform duration-300 sm:px-6 ${
             open ? "translate-x-0" : "translate-x-full"
           }`}
+          style={{ backgroundColor: "#ffffff", color: "#000000" }}
         >
           <div className="flex items-center justify-between">
-            <Link href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-baseline gap-1 text-black" aria-label="HealthSense home">
-              <span className="sr-only">HealthSense</span>
+            <Link
+              href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border-2 border-black bg-white"
+              aria-label="HealthSense home"
+            >
+              <span className="block h-2.5 w-2.5 rounded-full bg-black" aria-hidden="true" />
             </Link>
             <button
               type="button"
-              className="flex h-9 w-9 items-center justify-center border border-black"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border-2 border-black"
               style={{ backgroundColor: "#ffffff", color: "#000000" }}
               aria-label="Close menu"
               onClick={() => setOpen(false)}
@@ -113,13 +122,14 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
             </button>
           </div>
 
-          <div className="mt-4 grid gap-2 text-[13px] text-[var(--text-primary)]">
+          <div className="mt-4 grid gap-2 text-[13px] text-black">
             {links.map((link) => (
               <Link
                 key={link.label}
                 href={link.href}
                 onClick={() => setOpen(false)}
-                className="border border-black bg-white px-4 py-2.5 text-sm text-black"
+                className="border-2 border-black px-4 py-2.5 text-sm text-black"
+                style={{ backgroundColor: "#ffffff" }}
               >
                 {link.label}
               </Link>
