@@ -12,7 +12,7 @@
 #   • Call sync_okrs_for_completed_pillar(...) at the end of a pillar assessment.
 #
 # CREATED: 2025-10-24
-# AUTHOR:  HealthSense / CoachSense Development Team
+# AUTHOR:  HealthSense Development Team
 # ==============================================================================
 
 from __future__ import annotations
