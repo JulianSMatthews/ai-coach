@@ -1260,7 +1260,7 @@ export default function LatestAssessmentPanel({
   const [urineCaptureNowMs, setUrineCaptureNowMs] = useState(() => Date.now());
   const modalOverlayOpen = biometricsModalOpen || objectivesModalOpen || Boolean(selectedPillarKey);
   const homeDockButtonClassName =
-    "flex min-h-[3.55rem] w-full flex-col items-center justify-center gap-1 rounded-[16px] border px-1.5 py-1.5 text-center shadow-[0_12px_18px_-18px_rgba(0,0,0,0.28)] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
+    "flex aspect-square w-full flex-col items-center justify-center gap-1 rounded-none border px-1 py-1 text-center shadow-none transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
   const homeDockSecondaryClassName =
     "border-black bg-white text-black hover:bg-[#f3f3f3]";
   const homeDockPrimaryClassName =
@@ -2872,7 +2872,7 @@ export default function LatestAssessmentPanel({
       {summaryPanelVisible ? (
         <section
           ref={summaryPanelRef}
-          className="rounded-[28px] border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4 pb-32 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-5 sm:py-5 sm:pb-36"
+          className="border border-[#e7e1d6] bg-[#fffaf3] px-4 py-4 pb-32 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.45)] sm:px-5 sm:py-5 sm:pb-36"
         >
           <div className="relative">
             <div className="grid grid-cols-2 gap-3">
@@ -2889,11 +2889,11 @@ export default function LatestAssessmentPanel({
                         guided: false,
                       })
                     }
-                    className="rounded-2xl border border-[#efe7db] bg-white px-3 py-4 text-left transition hover:border-[#dccfbe]"
+                    className="aspect-square border border-[#efe7db] bg-white px-3 py-3 text-left transition hover:border-[#dccfbe]"
                   >
-                    <div className="flex flex-col items-center text-center">
+                    <div className="flex h-full flex-col items-center justify-center text-center">
                       <WeeklyScoreRing value={score} tone={palette.accent} />
-                      <p className="mt-3 text-sm font-semibold text-[#1e1b16]">{pillar.label}</p>
+                      <p className="mt-2 text-sm font-semibold text-[#1e1b16]">{pillar.label}</p>
                     </div>
                   </button>
                 );
@@ -2919,8 +2919,8 @@ export default function LatestAssessmentPanel({
       {summaryPanelVisible ? (
         <div className="fixed inset-x-0 bottom-0 z-40 pointer-events-none">
           <div className="mx-auto w-full max-w-2xl px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
-            <div className="pointer-events-auto rounded-[30px] border border-[#e7e1d6] bg-[#fffaf3]/95 p-2 shadow-[0_24px_70px_-44px_rgba(30,27,22,0.56)] backdrop-blur-md">
-              <div className="grid grid-cols-4 gap-2">
+            <div className="pointer-events-auto border border-black bg-white p-1">
+              <div className="grid grid-cols-4 gap-1">
                 <button type="button" onClick={handleReviewBiometricsPress} className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}>
                   <BiometricsIcon className="h-4 w-4 text-black" />
                   <span className="text-[9px] font-semibold leading-none sm:text-[10px]">
