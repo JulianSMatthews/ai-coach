@@ -40,22 +40,15 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
 
   return (
     <>
-      <nav className="sticky top-0 z-30 mb-2 flex min-w-0 flex-col gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-2.5 py-1.5 text-xs text-[var(--text-secondary)] backdrop-blur sm:px-3 md:static md:mb-4 md:flex-row md:flex-nowrap md:items-center md:rounded-full md:px-5 md:py-2">
+      <nav className="sticky top-0 z-30 mb-2 flex min-w-0 flex-col gap-1 px-0 py-0 text-xs text-[var(--text-secondary)] md:static md:mb-4 md:flex-row md:flex-nowrap md:items-center md:px-0 md:py-0">
         <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
-          <Link href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-center gap-2" aria-label="HealthSense home">
-            <img
-              src="/healthsense-mark.svg"
-              alt="HealthSense"
-              className="hs-brand-mark hs-brand-logo-color h-7 w-auto"
-            />
-            <span className="flex items-baseline gap-1 text-white">
-              <span className="text-sm font-semibold leading-none">HealthSense</span>
-              <span className="text-[10px] leading-none">{APP_SUFFIX}</span>
-            </span>
+          <Link href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-baseline gap-1 text-white" aria-label="HealthSense home">
+            <span className="text-sm font-semibold leading-none">HealthSense</span>
+            <span className="text-[10px] leading-none">{APP_SUFFIX}</span>
           </Link>
           <button
             type="button"
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--accent)] text-white md:hidden"
+            className="flex h-8 w-8 items-center justify-center border border-black bg-black text-white md:hidden"
             aria-label="Open menu"
             aria-expanded={open}
             onClick={() => setOpen(true)}
@@ -75,7 +68,7 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
           {links.map((link) => (
             <Link
               key={link.label}
-              className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-3 py-1 text-sm"
+              className="border border-black bg-white px-3 py-1 text-sm text-black"
               href={link.href}
             >
               {link.label}
@@ -95,21 +88,18 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
           onClick={() => setOpen(false)}
         />
         <div
-          className={`absolute right-0 top-0 h-full w-full max-w-sm transform overflow-y-auto overscroll-contain bg-[var(--surface-soft)] px-5 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] shadow-2xl transition-transform duration-300 sm:px-6 ${
+          className={`absolute right-0 top-0 h-full w-full max-w-sm transform overflow-y-auto overscroll-contain bg-white px-5 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] transition-transform duration-300 sm:px-6 ${
             open ? "translate-x-0" : "translate-x-full"
           }`}
         >
           <div className="flex items-center justify-between">
-            <Link href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-center gap-2" aria-label="HealthSense home">
-              <img src="/healthsense-mark.svg" alt="HealthSense" className="hs-brand-mark hs-brand-logo-color h-9 w-auto" />
-              <span className="flex items-baseline gap-1 text-white">
-                <span className="text-sm font-semibold leading-none">HealthSense</span>
-                <span className="text-[10px] leading-none">{APP_SUFFIX}</span>
-              </span>
+            <Link href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-baseline gap-1 text-black" aria-label="HealthSense home">
+              <span className="text-sm font-semibold leading-none">HealthSense</span>
+              <span className="text-[10px] leading-none">{APP_SUFFIX}</span>
             </Link>
             <button
               type="button"
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--accent)] text-white"
+              className="flex h-9 w-9 items-center justify-center border border-black bg-black text-white"
               aria-label="Close menu"
               onClick={() => setOpen(false)}
             >
@@ -131,7 +121,7 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
                 key={link.label}
                 href={link.href}
                 onClick={() => setOpen(false)}
-                className="rounded-full border border-[var(--border)] bg-[var(--surface)] px-4 py-2.5 text-sm"
+                className="border border-black bg-white px-4 py-2.5 text-sm text-black"
               >
                 {link.label}
               </Link>
