@@ -1260,11 +1260,11 @@ export default function LatestAssessmentPanel({
   const [urineCaptureNowMs, setUrineCaptureNowMs] = useState(() => Date.now());
   const modalOverlayOpen = biometricsModalOpen || objectivesModalOpen || Boolean(selectedPillarKey);
   const homeDockButtonClassName =
-    "flex min-h-[3.55rem] w-full flex-col items-center justify-center gap-1 rounded-[16px] border px-1.5 py-1.5 text-center shadow-[0_12px_18px_-18px_rgba(30,27,22,0.28)] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2";
+    "flex min-h-[3.55rem] w-full flex-col items-center justify-center gap-1 rounded-[16px] border px-1.5 py-1.5 text-center shadow-[0_12px_18px_-18px_rgba(0,0,0,0.28)] transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
   const homeDockSecondaryClassName =
-    "border-[#e7e1d6] bg-white text-[#1e1b16] hover:border-[#cfc0ae] hover:bg-[#fffcf7]";
+    "border-black bg-white text-black hover:bg-[#f3f3f3]";
   const homeDockPrimaryClassName =
-    "border-[var(--accent)] bg-[var(--accent)] text-white hover:brightness-[1.02]";
+    "border-black bg-black text-white hover:brightness-[1.05]";
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
   const orderedPillarKeys = pillars
@@ -2922,7 +2922,7 @@ export default function LatestAssessmentPanel({
             <div className="pointer-events-auto rounded-[30px] border border-[#e7e1d6] bg-[#fffaf3]/95 p-2 shadow-[0_24px_70px_-44px_rgba(30,27,22,0.56)] backdrop-blur-md">
               <div className="grid grid-cols-4 gap-2">
                 <button type="button" onClick={handleReviewBiometricsPress} className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}>
-                  <BiometricsIcon className="h-4 w-4 text-[#c54817]" />
+                  <BiometricsIcon className="h-4 w-4 text-black" />
                   <span className="text-[9px] font-semibold leading-none sm:text-[10px]">
                     Bio
                   </span>
@@ -2934,13 +2934,13 @@ export default function LatestAssessmentPanel({
                   </span>
                 </button>
                 <button type="button" onClick={() => openDailyMenuSurface("insight")} className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}>
-                  <InsightIcon className="h-4 w-4 text-[#c54817]" />
+                  <InsightIcon className="h-4 w-4 text-black" />
                   <span className="text-[9px] font-semibold leading-none sm:text-[10px]">
                     Learn
                   </span>
                 </button>
                 <button type="button" onClick={() => openDailyMenuSurface("ask")} className={`${homeDockButtonClassName} ${homeDockSecondaryClassName}`}>
-                  <GiaMessageIcon className="h-4 w-4 text-[#c54817]" />
+                  <GiaMessageIcon className="h-4 w-4 text-black" />
                   <span className="text-[9px] font-semibold leading-none sm:text-[10px]">
                     Coach
                   </span>
