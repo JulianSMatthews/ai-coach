@@ -997,6 +997,9 @@ export default function AssessmentChatBox({
       : homeSurface === "ask"
         ? "h-[calc(100dvh-6.5rem)] max-h-[calc(100dvh-6.5rem)] sm:h-[58vh] sm:min-h-[22rem] sm:max-h-[38rem]"
         : "h-[calc(100dvh-6.5rem)] max-h-[calc(100dvh-6.5rem)] sm:h-[78vh] sm:min-h-[32rem] sm:max-h-[56rem]";
+  const homeOutlineButtonStyle = { backgroundColor: "#ffffff", color: "#5d5348", borderColor: "#d9cdbb" };
+  const homePlainButtonStyle = { backgroundColor: "#ffffff", color: "#000000", borderColor: "#000000" };
+  const homePrimaryButtonStyle = { backgroundColor: "#000000", color: "#ffffff", borderColor: "#000000" };
   const insightQuizSubmitVisible =
     homeSurface === "insight" &&
     educationQuizQuestions.length > 0 &&
@@ -2144,7 +2147,8 @@ export default function AssessmentChatBox({
                       <button
                         type="button"
                         onClick={() => setSummaryDetailMode((current) => (current === "read" ? null : "read"))}
-                        className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+                        className="rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em]"
+                        style={homeOutlineButtonStyle}
                       >
                         {summaryDetailMode === "read" ? "Hide read" : "Read"}
                       </button>
@@ -2153,7 +2157,8 @@ export default function AssessmentChatBox({
                       <button
                         type="button"
                         onClick={() => setSummaryDetailMode((current) => (current === "listen" ? null : "listen"))}
-                        className="rounded-full border border-[#d9cdbb] bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+                        className="rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em]"
+                        style={homeOutlineButtonStyle}
                       >
                         {summaryDetailMode === "listen" ? "Hide listen" : "Listen"}
                       </button>
@@ -2366,7 +2371,8 @@ export default function AssessmentChatBox({
                   onClick={() => {
                     window.location.href = claimNextPath;
                   }}
-                  className="w-full rounded-full border border-[#d9cdbb] bg-white px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-[#5d5348]"
+                  className="w-full rounded-full border px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em]"
+                  style={homeOutlineButtonStyle}
                 >
                   Open the app
                 </button>
@@ -2609,21 +2615,22 @@ export default function AssessmentChatBox({
                               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                                 {options.map((option) => {
                                   const active = selectedAnswerLabel === educationQuizOptionLabel(option);
+                                  const optionButtonStyle =
+                                    active && answered && isCorrect === true
+                                      ? { backgroundColor: "#ffffff", color: "#1e1b16", borderColor: "#7fb48f" }
+                                      : active && answered && isCorrect === false
+                                        ? { backgroundColor: "#ffffff", color: "#1e1b16", borderColor: "#c98977" }
+                                        : active
+                                          ? { backgroundColor: "#ffffff", color: "#1e1b16", borderColor: "#d3541b" }
+                                          : { backgroundColor: "#ffffff", color: "#6b6257", borderColor: "#efe7db" };
                                   return (
                                     <button
                                       key={option}
                                       type="button"
                                       onClick={() => selectEducationQuizAnswer(questionId, option)}
                                       disabled={educationQuizCompleted || educationQuizSubmitting}
-                                      className={`rounded-[14px] border px-3 py-2 text-left text-sm transition ${
-                                        active && answered && isCorrect === true
-                                          ? "border-[#7fb48f] bg-white text-[#1e1b16]"
-                                          : active && answered && isCorrect === false
-                                            ? "border-[#c98977] bg-white text-[#1e1b16]"
-                                            : active
-                                          ? "border-[var(--accent)] bg-white text-[#1e1b16]"
-                                          : "border-[#efe7db] bg-white text-[#6b6257]"
-                                      } disabled:cursor-not-allowed disabled:opacity-70`}
+                                      className="rounded-[14px] border px-3 py-2 text-left text-sm transition disabled:cursor-not-allowed disabled:opacity-70"
+                                      style={optionButtonStyle}
                                     >
                                       {option}
                                     </button>
@@ -2721,14 +2728,15 @@ export default function AssessmentChatBox({
                   <div className="border border-black bg-white px-4 py-5 sm:px-5 sm:py-6">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--accent)]">Gia</p>
-                      <button
-                        type="button"
-                        onClick={toggleFinalGiaListening}
-                        aria-pressed={finalGiaListening}
-                        className="border border-black bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-black"
-                      >
-                        {finalGiaListening ? "Stop" : "Listen"}
-                      </button>
+                    <button
+                      type="button"
+                      onClick={toggleFinalGiaListening}
+                      aria-pressed={finalGiaListening}
+                      className="border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
+                      style={homePlainButtonStyle}
+                    >
+                      {finalGiaListening ? "Stop" : "Listen"}
+                    </button>
                     </div>
                     {finalGiaListenError ? (
                       <p className="mt-2 text-sm text-[#8a3e1a]">{finalGiaListenError}</p>
@@ -2752,7 +2760,8 @@ export default function AssessmentChatBox({
                         stopFinalGiaListening();
                         void requestFinalGiaMessage();
                       }}
-                      className="mt-4 border border-black bg-black px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white"
+                      className="mt-4 border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
+                      style={homePrimaryButtonStyle}
                     >
                       Try again
                     </button>
@@ -2777,7 +2786,8 @@ export default function AssessmentChatBox({
                   );
                 }
               }}
-              className="w-full border border-black bg-black px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em] text-white"
+              className="w-full border px-4 py-3 text-center text-xs font-semibold uppercase tracking-[0.18em]"
+              style={homePrimaryButtonStyle}
             >
               Start daily check-in
             </button>
@@ -2793,7 +2803,8 @@ export default function AssessmentChatBox({
                   <button
                     type="button"
                     onClick={() => setHomeSurface(previousHomeSurface)}
-                    className="border border-black bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-black"
+                    className="border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
+                    style={homePlainButtonStyle}
                   >
                     Back
                   </button>
@@ -2805,7 +2816,8 @@ export default function AssessmentChatBox({
                       setEducationQuizMessage(null);
                       setHomeSurface(nextHomeSurface);
                     }}
-                    className="border border-black bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-black"
+                    className="border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
+                    style={homePlainButtonStyle}
                   >
                     Skip today&apos;s focus
                   </button>
@@ -2814,7 +2826,8 @@ export default function AssessmentChatBox({
                   type="button"
                   onClick={() => void submitEducationQuiz()}
                   disabled={educationQuizSubmitting}
-                  className="border border-black bg-black px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  className="border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] disabled:cursor-not-allowed disabled:opacity-60"
+                  style={homePrimaryButtonStyle}
                 >
                   {educationQuizSubmitting ? "Saving" : "Submit quick check"}
                 </button>
@@ -2825,7 +2838,8 @@ export default function AssessmentChatBox({
               <button
                 type="button"
                 onClick={() => setJourneyCompleted(true)}
-                className="border border-black bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-black"
+                className="border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
+                style={homePlainButtonStyle}
               >
                 Close
               </button>
@@ -2840,7 +2854,8 @@ export default function AssessmentChatBox({
                   <button
                     type="button"
                     onClick={() => setHomeSurface(previousHomeSurface)}
-                    className="border border-black bg-white px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-black"
+                    className="border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
+                    style={homePlainButtonStyle}
                   >
                     Back
                   </button>
@@ -2849,7 +2864,8 @@ export default function AssessmentChatBox({
                   <button
                     type="button"
                     onClick={() => setHomeSurface(nextHomeSurface)}
-                    className="border border-black bg-black px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white"
+                    className="border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em]"
+                    style={homePrimaryButtonStyle}
                   >
                     {homeSurfaceMeta.nextLabel}
                   </button>
@@ -2858,7 +2874,8 @@ export default function AssessmentChatBox({
                     type="button"
                     onClick={() => completeMorningSequence()}
                     disabled={finalGiaMessageLoading || !finalGiaMessage}
-                    className="border border-black bg-black px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-white disabled:cursor-not-allowed disabled:opacity-60"
+                    className="border px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] disabled:cursor-not-allowed disabled:opacity-60"
+                    style={homePrimaryButtonStyle}
                   >
                     Completed
                   </button>
