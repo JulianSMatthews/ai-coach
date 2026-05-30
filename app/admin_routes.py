@@ -1395,7 +1395,7 @@ def _build_education_programme_generation_prompt(
         }
     }
     return (
-        "You are creating a complete CoachSense concept-based education programme for the admin editor.\n"
+        "You are creating a complete HealthSense concept-based education programme for the admin editor.\n"
         "Return a single valid JSON object only. Do not use markdown, code fences, comments, or prose outside JSON.\n\n"
         "Task:\n"
         "- Regenerate the full concept programme from the task_description and selected concept.\n"
@@ -1447,7 +1447,7 @@ def _build_education_programme_outline_prompt(
         }
     }
     return (
-        "You are sketching the structure of a complete CoachSense concept-based education programme for the admin editor.\n"
+        "You are sketching the structure of a complete HealthSense concept-based education programme for the admin editor.\n"
         "Return a single valid JSON object only. Do not use markdown, code fences, comments, or prose outside JSON.\n\n"
         "Task:\n"
         "- Create the full concept programme outline from the task_description and selected concept.\n"
@@ -1514,7 +1514,7 @@ def _build_education_day_generation_prompt(
         ],
     }
     return (
-        "You are creating a CoachSense education programme day for the admin editor.\n"
+        "You are creating a HealthSense education programme day for the admin editor.\n"
         "Return a single valid JSON object only. Do not use markdown, code fences, comments, or prose outside JSON.\n\n"
         "Task:\n"
         "- Regenerate the selected day entirely from the task_description.\n"
@@ -1567,7 +1567,7 @@ def _build_education_day_questions_generation_prompt(
         ],
     }
     return (
-        "You are regenerating quiz questions only for a CoachSense education programme day.\n"
+        "You are regenerating quiz questions only for a HealthSense education programme day.\n"
         "Return a single valid JSON object only. Do not use markdown, code fences, comments, or prose outside JSON.\n\n"
         "Task:\n"
         "- Regenerate only the quiz questions for the selected day from the task_description and existing lesson content.\n"
@@ -4928,7 +4928,7 @@ async def generate_education_programme_day_with_llm(request: Request):
         ],
     }
     prompt = (
-        "You are creating a CoachSense education programme day for the admin editor.\n"
+        "You are creating a HealthSense education programme day for the admin editor.\n"
         "Return a single valid JSON object only. Do not use markdown, code fences, comments, or prose outside JSON.\n\n"
         "Task:\n"
         "- Regenerate the selected day entirely from the task_description.\n"

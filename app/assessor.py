@@ -816,12 +816,12 @@ def _compose_final_summary_message(user: User, state: dict) -> str:
     intro = f"🎯 *Assessment complete, {name}!*" if name else "🎯 *Assessment complete!*"
     combined_bar = _score_bar("Combined", combined)
     if _lead_identity_required(int(getattr(user, "id", 0) or 0)):
-        msg = f"{intro} Your full report is now ready in the CoachSense app."
+        msg = f"{intro} Your full report is now ready in the HealthSense app."
     else:
         msg = f"{intro} Your combined score is:\n{combined_bar}\n\n{breakdown}"
     try:
         assessment_url = _hsapp_assessment_url_for_user(user, reason="compose_final_summary_message")
-        msg += f"\n\nView your assessment in the CoachSense app: {assessment_url}"
+        msg += f"\n\nView your assessment in the HealthSense app: {assessment_url}"
     except Exception:
         pass
     return msg
@@ -1070,44 +1070,44 @@ REFLECTION_PILLAR_ALIASES = {
     "resilience": {"resilience", "mindset", "stress", "mental"},
 }
 
-LEAD_INTRO_PROMPT_TEXT = "Get your CoachSense Score and Personal Plan"
+LEAD_INTRO_PROMPT_TEXT = "Get your HealthSense Score and Personal Plan"
 REFLECTION_CONTINUE_VALUE = "continue_assessment"
 REFLECTION_EXPLANATION_MESSAGES = {
     "nutrition": [
         "Great — nutrition is a powerful foundation for health and energy.",
         "But even with good nutrition habits, many people find their progress is limited by sleep, recovery, or stress.",
         "In the next few questions we’ll look at how your habits across your active pillars compare.",
-        "This will reveal your CoachSense Score and highlight the area most likely to improve your health.",
+        "This will reveal your HealthSense Score and highlight the area most likely to improve your health.",
     ],
     "training": [
         "Great — regular movement is one of the strongest predictors of long-term health.",
         "However, training works best when it’s supported by good recovery, nutrition, and resilience to stress.",
         "In the next few questions we’ll analyse your habits across your active pillars to see how they work together.",
-        "You’ll then receive your CoachSense Score and personalised insights.",
+        "You’ll then receive your HealthSense Score and personalised insights.",
     ],
     "reflection": [
         "Great — reflection helps turn daily experience into useful learning.",
         "It works best when it connects with purpose, recovery, and resilience.",
         "In the next few questions we’ll look at how your habits across your active pillars compare.",
-        "You’ll then receive your CoachSense Score and personalised insights.",
+        "You’ll then receive your HealthSense Score and personalised insights.",
     ],
     "purpose": [
         "Great — purpose helps connect daily action to what matters most.",
         "It works best when it is supported by reflection, recovery, and resilience.",
         "In the next few questions we’ll look at how your habits across your active pillars compare.",
-        "You’ll then receive your CoachSense Score and personalised insights.",
+        "You’ll then receive your HealthSense Score and personalised insights.",
     ],
     "recovery": [
         "Great — recovery is one of the most overlooked pillars of health.",
         "Quality sleep and recovery allow your body and mind to adapt, repair, and perform at their best.",
         "Next we’ll look at how your habits across your active pillars interact to determine your overall health profile.",
-        "You’ll receive your CoachSense Score and insight into what may be holding you back.",
+        "You’ll receive your HealthSense Score and insight into what may be holding you back.",
     ],
     "resilience": [
         "Great — resilience and stress management play a huge role in long-term health.",
         "Even strong nutrition and training habits can be disrupted when stress and recovery aren’t balanced.",
         "In the next few questions we’ll analyse your habits across your active pillars.",
-        "You’ll receive your CoachSense Score and discover which area may have the greatest impact on your health.",
+        "You’ll receive your HealthSense Score and discover which area may have the greatest impact on your health.",
     ],
 }
 
@@ -3494,14 +3494,14 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
                 assessment_url = _hsapp_assessment_url_for_user(user, reason="assessment_completion_final_message")
                 if _lead_identity_required(int(getattr(user, "id", 0) or 0)):
                     final_msg = (
-                        f"{intro} Your full report is now ready in the CoachSense app.\n\n"
-                        f"View your assessment in the CoachSense app: {assessment_url}"
+                        f"{intro} Your full report is now ready in the HealthSense app.\n\n"
+                        f"View your assessment in the HealthSense app: {assessment_url}"
                     )
                 else:
                     final_msg = (
                         f"{intro} Your combined score is *{combined}/100*\n"
                         f"\n{breakdown}\n\n"
-                        f"View your assessment in the CoachSense app: {assessment_url}"
+                        f"View your assessment in the HealthSense app: {assessment_url}"
                     )
 
                 return _finalize_combined_assessment_completion(
@@ -3550,7 +3550,7 @@ def continue_combined_assessment(user: User, user_text: str) -> bool:
         _commit_state(s, sess, state)
         return True
 def send_menu_options(user: User) -> None:
-    _send_to_user(user, "Log into the CoachSense app to view your assessment.")
+    _send_to_user(user, "Log into the HealthSense app to view your assessment.")
 
 
 def _resolve_hsapp_base_url() -> tuple[str, dict]:
@@ -3704,7 +3704,7 @@ def send_hsapp_assessment_link(user: User) -> None:
     assessment_url = _hsapp_assessment_url_for_user(user, reason="send_hsapp_assessment_link")
     _send_to_user(
         user,
-        f"Your assessment is now in the CoachSense app. Open here: {assessment_url}",
+        f"Your assessment is now in the HealthSense app. Open here: {assessment_url}",
     )
 
 def send_dashboard_link(user: User) -> None:

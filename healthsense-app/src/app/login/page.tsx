@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { friendlyAuthError } from "@/lib/authErrors";
-import CoachSenseMark from "@/components/CoachSenseMark";
+import HealthSenseMark from "@/components/HealthSenseMark";
 
 function looksLikePhone(value: string) {
   const trimmed = value.trim();
@@ -274,11 +274,11 @@ export default function LoginPage() {
       <div className="mx-auto flex w-full max-w-md flex-col gap-6 rounded-3xl border border-[#e7e1d6] bg-white p-5 shadow-[0_30px_80px_-60px_rgba(30,27,22,0.5)] sm:p-8">
         <div>
           <div className="flex items-center">
-            <CoachSenseMark className="h-10 w-7" />
+            <HealthSenseMark className="h-10 w-7" />
           </div>
           <h1 className="mt-4 text-3xl">Sign in</h1>
           <p className="mt-2 text-sm text-[#6b6257]">
-            Sign in with your mobile number, or create a free CoachSense account.
+            Sign in with your mobile number, or create a free HealthSense account.
           </p>
         </div>
 

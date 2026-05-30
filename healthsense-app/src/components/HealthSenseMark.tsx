@@ -1,8 +1,8 @@
-type CoachSenseMarkProps = {
+type HealthSenseMarkProps = {
   className?: string;
 };
 
-export default function CoachSenseMark({ className = "h-10 w-7" }: CoachSenseMarkProps) {
+export default function HealthSenseMark({ className = "h-10 w-7" }: HealthSenseMarkProps) {
   return (
     <svg
       viewBox="140.52 92.96 230.96 326.06"

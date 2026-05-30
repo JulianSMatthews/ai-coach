@@ -503,7 +503,7 @@ def create_batch_avatar(
     _enforce_batch_avatar_daily_limit(script=script, batch_id=batch_id)
     payload: dict[str, Any] = {
         "displayName": title or "Intro avatar",
-        "description": "CoachSense assessment intro avatar",
+        "description": "HealthSense assessment intro avatar",
         "inputKind": "SSML",
         "inputs": [{"content": build_avatar_ssml(script, voice, defaults["locale"])}],
         "avatarConfig": {

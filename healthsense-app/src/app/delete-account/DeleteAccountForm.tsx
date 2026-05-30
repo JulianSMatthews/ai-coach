@@ -25,7 +25,7 @@ export default function DeleteAccountForm() {
     event.preventDefault();
     setStatus(null);
     if (!confirm) {
-      setStatus("Confirm that you want CoachSense to start account deletion.");
+      setStatus("Confirm that you want HealthSense to start account deletion.");
       return;
     }
     setSubmitting(true);
@@ -43,7 +43,7 @@ export default function DeleteAccountForm() {
       if (!res.ok) {
         throw new Error(payload?.error || "Deletion request failed.");
       }
-      setStatus("Deletion request received. CoachSense support will verify the request and follow up.");
+      setStatus("Deletion request received. HealthSense support will verify the request and follow up.");
       setReason("");
       setConfirm(false);
     } catch (error) {
@@ -99,7 +99,7 @@ export default function DeleteAccountForm() {
           onChange={(event) => setConfirm(event.target.checked)}
         />
         <span>
-          I understand this starts deletion of my CoachSense account and related coaching, health trend, assessment,
+          I understand this starts deletion of my HealthSense account and related coaching, health trend, assessment,
           and message records after identity verification.
         </span>
       </label>

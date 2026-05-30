@@ -13,11 +13,11 @@ const bodyFont = Source_Sans_3({
   subsets: ["latin"],
 });
 
-const appTitle = process.env.NODE_ENV === "development" ? "CoachSense App (Develop)" : "CoachSense App";
+const appTitle = process.env.NODE_ENV === "development" ? "HealthSense App (Develop)" : "HealthSense App";
 
 export const metadata: Metadata = {
   title: appTitle,
-  description: "CoachSense coaching and assessment app",
+  description: "HealthSense coaching and assessment app",
   icons: {
     icon: "/healthsense-mark.svg",
     shortcut: "/healthsense-mark.svg",

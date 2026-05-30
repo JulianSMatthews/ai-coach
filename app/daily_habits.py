@@ -2312,7 +2312,7 @@ def _generate_plan_from_llm(user_id: int, context: dict[str, Any]) -> dict[str, 
         assembly = build_prompt(
             "daily_habit_plan",
             user_id=user_id,
-            coach_name="CoachSense",
+            coach_name="HealthSense",
             user_name=user_name,
             locale="UK",
             timeframe="today",

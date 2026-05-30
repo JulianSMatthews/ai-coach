@@ -404,7 +404,7 @@ ADMIN_USAGE = (
 )
 
 UNKNOWN_USER_NAME_PROMPT = (
-    "Welcome to CoachSense. Before we begin, please reply with your first and last name "
+    "Welcome to HealthSense. Before we begin, please reply with your first and last name "
     "(e.g., 'Sam Smith')."
 )
 UNKNOWN_USER_NAME_CONFIRM_PREFIX = "I captured your name as "
@@ -447,7 +447,7 @@ def _uptime_seconds() -> int:
 def _print_env_banner():
     try:
         print("\n" + "═" * 72)
-        print(f"🚀 Starting CoachSense [{ENV.upper()}]")
+        print(f"🚀 Starting HealthSense [{ENV.upper()}]")
         print(f"🕒 App start (UK): {APP_START_UK_STR}")
         print("═" * 72 + "\n")
     except Exception:
@@ -3406,8 +3406,8 @@ def _send_auth_code(
 
     phone_target = str(user_phone or "").strip()
     email_target = _normalize_auth_email(user_email)
-    text = f"Your CoachSense {purpose_label} is {code}. It expires in {_OTP_TTL_MINUTES} minutes."
-    email_subject = f"Your CoachSense {purpose_label}"
+    text = f"Your HealthSense {purpose_label} is {code}. It expires in {_OTP_TTL_MINUTES} minutes."
+    email_subject = f"Your HealthSense {purpose_label}"
 
     def _try_email_via_smtp() -> str:
         host = (os.getenv("AUTH_SMTP_HOST") or "").strip()
@@ -5121,37 +5121,37 @@ ASSESSMENT_INTRO_SOURCE_TYPE = "assessment_intro"
 INTRO_PILLAR_KEY = "intro"
 INTRO_CONCEPT_CODE = "welcome"
 ASSESSMENT_INTRO_CONCEPT_CODE = "assessment"
-INTRO_TITLE_DEFAULT = "Welcome to CoachSense"
+INTRO_TITLE_DEFAULT = "Welcome to HealthSense"
 ASSESSMENT_INTRO_TITLE_DEFAULT = "Assessment intro"
 INTRO_AVATAR_TITLE_DEFAULT = "Assessment introduction"
-INTRO_APP_AVATAR_TITLE_DEFAULT = "Welcome to CoachSense"
-INTRO_COACH_PRODUCT_AVATAR_TITLE_DEFAULT = "How CoachSense works"
+INTRO_APP_AVATAR_TITLE_DEFAULT = "Welcome to HealthSense"
+INTRO_COACH_PRODUCT_AVATAR_TITLE_DEFAULT = "How HealthSense works"
 INTRO_WELCOME_TEMPLATE_DEFAULT = (
-    "{first_name}, Welcome to CoachSense please listen to our introductory podcast "
+    "{first_name}, Welcome to HealthSense please listen to our introductory podcast "
     "to get started on your journey."
 )
 INTRO_BODY_DEFAULT = (
-    "Welcome to CoachSense. Start by listening to the introduction, then review this guide "
+    "Welcome to HealthSense. Start by listening to the introduction, then review this guide "
     "to understand how your weekly coaching flow works."
 )
 INTRO_ASSESSMENT_AVATAR_SCRIPT_DEFAULT = (
-    "Welcome to CoachSense.\n\n"
-    "This assessment measures your active CoachSense pillars: Reflection, Purpose, Recovery, and Resilience.\n\n"
-    "In around three minutes, you'll receive your CoachSense Score and a personal coaching plan "
+    "Welcome to HealthSense.\n\n"
+    "This assessment measures your active HealthSense pillars: Reflection, Purpose, Recovery, and Resilience.\n\n"
+    "In around three minutes, you'll receive your HealthSense Score and a personal coaching plan "
     "designed to help you improve your wellbeing.\n\n"
     "When you're ready, press continue to begin."
 )
 INTRO_APP_AVATAR_SCRIPT_DEFAULT = (
-    "Welcome to CoachSense.\n\n"
+    "Welcome to HealthSense.\n\n"
     "This introduction explains how your onboarding works, what to expect from your weekly support, "
     "and how to get the most from your personal health journey.\n\n"
     "Listen to this short introduction, then continue to begin."
 )
 INTRO_COACH_PRODUCT_AVATAR_SCRIPT_DEFAULT = (
     "Welcome to your personal coaching plan.\n\n"
-    "CoachSense works by identifying the areas that will make the biggest difference to your wellbeing right now.\n\n"
+    "HealthSense works by identifying the areas that will make the biggest difference to your wellbeing right now.\n\n"
     "Your objectives and key results show where to focus first, and coaching turns them into practical weekly actions.\n\n"
-    "Review your plan below to see your priorities and how CoachSense will support you step by step."
+    "Review your plan below to see your priorities and how HealthSense will support you step by step."
 )
 INTRO_HELP_AVATAR_SPECS: dict[str, dict[str, str]] = {
     "habits": {
@@ -5169,7 +5169,7 @@ INTRO_HELP_AVATAR_SPECS: dict[str, dict[str, str]] = {
         "title_default": "Insight",
         "script_default": (
             "Insight gives you focused support for the concepts you are finding hardest right now.\n\n"
-            "Choose the area you want help with and CoachSense will show a short video, audio, "
+            "Choose the area you want help with and HealthSense will show a short video, audio, "
             "or read option to guide you."
         ),
         "filename_prefix": "intro-insight-avatar",
@@ -9600,7 +9600,7 @@ def api_user_coaching_history(
             coach_name=get_default_session_reopen_coach_name(),
             message_text=get_default_session_reopen_message_text(),
         )
-        return f"Hi {vars_map.get('1', 'there')}, {vars_map.get('2', 'Gia')} from CoachSense here. {vars_map.get('3', '')}".strip()
+        return f"Hi {vars_map.get('1', 'there')}, {vars_map.get('2', 'Gia')} from HealthSense here. {vars_map.get('3', '')}".strip()
 
     def _message_display_text(msg: MessageLog) -> str:
         raw_text = str(getattr(msg, "text", "") or "").strip()

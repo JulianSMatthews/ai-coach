@@ -1945,7 +1945,7 @@ export default function LatestAssessmentPanel({
       tone: ketogenicDietActive ? "purple" : "red",
       dotClassName: urineStatusDot(displayTheme, "ketones", "raised", { ketogenicDietActive }),
       meaning: ketogenicDietActive
-        ? "Higher ketone signal can fit a keto/low-carb objective; if glucose is also raised, CoachSense shows this as red."
+        ? "Higher ketone signal can fit a keto/low-carb objective; if glucose is also raised, HealthSense shows this as red."
         : "Higher ketone signal; more important when unexpected, repeated, or paired with raised glucose.",
     },
     {
@@ -1971,7 +1971,7 @@ export default function LatestAssessmentPanel({
       : activeBiomarkerExplanation === "rhr"
         ? {
             title: "Resting HR",
-            description: "Resting HR is your heart rate at rest. CoachSense compares it with your own recent 7-14 day baseline rather than using one fixed target.",
+            description: "Resting HR is your heart rate at rest. HealthSense compares it with your own recent 7-14 day baseline rather than using one fixed target.",
             result: rhrExplanationResult,
             scaleRows: rhrExplanationScaleRows,
             showMarkerColumn: false,
@@ -1979,7 +1979,7 @@ export default function LatestAssessmentPanel({
       : activeBiomarkerExplanation === "hrv"
         ? {
             title: "HRV",
-            description: "HRV is heart rate variability, measured in milliseconds. CoachSense compares it with your own recent 7-14 day baseline rather than using one fixed target.",
+            description: "HRV is heart rate variability, measured in milliseconds. HealthSense compares it with your own recent 7-14 day baseline rather than using one fixed target.",
             result: hrvExplanationResult,
             scaleRows: hrvExplanationScaleRows,
             showMarkerColumn: false,
@@ -2012,7 +2012,7 @@ export default function LatestAssessmentPanel({
           ? {
               title: "Urine",
               description:
-                "Urine uses the strip photo to group six dipstick readings into practical CoachSense markers. Hydration comes from specific gravity; UTI Signs combines leukocytes and nitrite; protein, blood, glucose, and ketones are screening signals that make most sense with context and repeat tests.",
+                "Urine uses the strip photo to group six dipstick readings into practical HealthSense markers. Hydration comes from specific gravity; UTI Signs combines leukocytes and nitrite; protein, blood, glucose, and ketones are screening signals that make most sense with context and repeat tests.",
               result: urineExplanationResult,
               scaleRows: urineExplanationScaleRows,
               showMarkerColumn: true,
@@ -2971,7 +2971,7 @@ export default function LatestAssessmentPanel({
                     {activeBiomarkerExplanationDetail
                       ? "Understand what this biomarker means, your latest result, and the scale."
                       : urineTestFlowOpen
-                      ? "Follow the 60-second CoachSense capture flow before taking the photo."
+                      ? "Follow the 60-second HealthSense capture flow before taking the photo."
                       : biometricSourceCheckOpen
                       ? "Review where each biometric comes from and what Gia can use."
                       : "Review your latest biometric measurements."}
@@ -3021,7 +3021,7 @@ export default function LatestAssessmentPanel({
                     </span>
                   </summary>
                   <p className={`mt-3 rounded-2xl border px-4 py-3 text-sm leading-6 ${biometricAboutPanelClassName}`}>
-                    CoachSense biometrics and urine markers are optional wellbeing screening and trend signals. They
+                    HealthSense biometrics and urine markers are optional wellbeing screening and trend signals. They
                     are not medical diagnosis or treatment advice. If a result is unexpected or you have symptoms,
                     retest where appropriate and speak to a qualified healthcare professional.
                   </p>
@@ -3082,7 +3082,7 @@ export default function LatestAssessmentPanel({
                             <p className="mt-1 text-sm text-[#6b6257]">
                               {urineCaptureStartedAt
                                 ? `${urineTimerSecondsLeft}s remaining. Take the photo when the timer reaches zero.`
-                                : "Start after dipping. CoachSense captures at 60 seconds for the selected marker set."}
+                                : "Start after dipping. HealthSense captures at 60 seconds for the selected marker set."}
                             </p>
                           </div>
                           <button

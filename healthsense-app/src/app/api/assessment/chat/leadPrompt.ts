@@ -1,4 +1,4 @@
-export const LEAD_Q1_FALLBACK = "Get your CoachSense Score and Personal Plan";
+export const LEAD_Q1_FALLBACK = "Get your HealthSense Score and Personal Plan";
 
 export function buildLeadFirstPrompt(_questionText?: string) {
   return {

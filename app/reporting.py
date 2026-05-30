@@ -94,7 +94,7 @@ except Exception:
 # Audit/logging controls (silence console by default)
 AUDIT_TO_CONSOLE = os.getenv("AUDIT_TO_CONSOLE", "0") == "1"
 AUDIT_TO_DB = os.getenv("AUDIT_TO_DB", "1") == "1"
-BRAND_NAME = (os.getenv("BRAND_NAME") or "CoachSense").strip()
+BRAND_NAME = (os.getenv("BRAND_NAME") or "HealthSense").strip()
 BRAND_YEAR = os.getenv("BRAND_YEAR") or str(datetime.utcnow().year)
 BRAND_FOOTER = f"© {BRAND_YEAR} {BRAND_NAME}. All rights reserved." if BRAND_NAME else ""
 FONT_FACE = (
@@ -886,7 +886,7 @@ def _assessment_completion_summary_fallback_text(
                 break
     sentences = [
         "Thanks for working through that.",
-        f"Your overall CoachSense score comes out at {combined}, which gives us a solid base to build from.",
+        f"Your overall HealthSense score comes out at {combined}, which gives us a solid base to build from.",
     ]
     if limiting:
         sentences.append(f"The main area most likely holding you back right now is {limiting['label']}.")
@@ -2044,10 +2044,10 @@ def generate_global_users_html() -> str:
         "<!doctype html>",
         "<html lang=\"en\">",
         "<meta charset=\"utf-8\">",
-        f"<title>{html.escape(BRAND_NAME or 'CoachSense')} · Global Users</title>",
+        f"<title>{html.escape(BRAND_NAME or 'HealthSense')} · Global Users</title>",
         css,
         "<body>",
-        f"<h1>{html.escape(BRAND_NAME or 'CoachSense')} · Global Users</h1>",
+        f"<h1>{html.escape(BRAND_NAME or 'HealthSense')} · Global Users</h1>",
         f"<div class=\"meta\">Total users: {len(users)} · Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</div>",
         "<table>",
         "<thead><tr>" + "".join(f"<th>{_esc(h)}</th>" for h in headers) + "</tr></thead>",
@@ -2177,10 +2177,10 @@ def generate_club_users_html(club_id: int) -> str:
         "<!doctype html>",
         "<html lang=\"en\">",
         "<meta charset=\"utf-8\">",
-        f"<title>{html.escape(BRAND_NAME or 'CoachSense')} · {html.escape(club_label)} · Users</title>",
+        f"<title>{html.escape(BRAND_NAME or 'HealthSense')} · {html.escape(club_label)} · Users</title>",
         css,
         "<body>",
-        f"<h1>{html.escape(BRAND_NAME or 'CoachSense')} · {html.escape(club_label)} · Users</h1>",
+        f"<h1>{html.escape(BRAND_NAME or 'HealthSense')} · {html.escape(club_label)} · Users</h1>",
         f"<div class=\"meta\">Total users: {len(users)} · Generated {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}</div>",
         "<table>",
         "<thead><tr>" + "".join(f"<th>{_esc(h)}</th>" for h in headers) + "</tr></thead>",
@@ -3992,7 +3992,7 @@ def _write_pdf(path: str, user: User, run: AssessmentRun, pillars: List[PillarRe
         y = top - 54
         y = _write_heading(y, "Purpose of This Report")
         y = _write_para(y, (
-            "This report provides a snapshot of your current wellbeing across your active CoachSense pillars. "
+            "This report provides a snapshot of your current wellbeing across your active HealthSense pillars. "
             "It combines your assessment results "
             "with goal-oriented OKRs to help you focus on the habits that drive performance and wellbeing.")) - 8
 
@@ -4873,7 +4873,7 @@ def generate_assessment_dashboard_html(run_id: int) -> str:
  <div class='section scores-section'>
     <div class='card summary-card'>
      <div class='summary-main'>
-       <h1>CoachSense Wellbeing Assessment</h1>
+       <h1>HealthSense Wellbeing Assessment</h1>
        <p>Hi {html.escape(first)}, here's your latest assessment snapshot.</p>
        <p style='color:#475467;'>Updated {html.escape(today)}</p>
      </div>
@@ -5610,10 +5610,10 @@ def generate_progress_report_html(user_id: int, anchor_date: date | None = None)
     html_doc = f"""<!doctype html>
 <html lang="en">
 <meta charset="utf-8">
-<title>{html.escape(display_name)} your CoachSense progress report — {anchor_label}</title>
+<title>{html.escape(display_name)} your HealthSense progress report — {anchor_label}</title>
 {css}
 <div style="text-align:center; background:#e6f4ff; border:1px solid #bee3ff; border-radius:12px; padding:12px;">
-<h1 style="margin:0;">{html.escape(display_name)} your CoachSense progress report</h1>
+<h1 style="margin:0;">{html.escape(display_name)} your HealthSense progress report</h1>
 <div class="meta">Report date: {anchor_label} (generated {reported_at})</div>
 </div>
 <div class="scorecard">

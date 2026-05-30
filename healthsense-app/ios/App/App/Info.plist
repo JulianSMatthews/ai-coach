@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>CoachSense</string>
+        <string>HealthSense</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -40,13 +40,13 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 		<key>NSHealthShareUsageDescription</key>
-		<string>CoachSense reads selected Apple Health metrics, including resting heart rate, heart rate variability, step count, and exercise minutes, to show wellbeing and training-readiness trends in the app.</string>
+		<string>HealthSense reads selected Apple Health metrics, including resting heart rate, heart rate variability, step count, and exercise minutes, to show wellbeing and training-readiness trends in the app.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>CoachSense uses the camera to capture Siemens Multistix urine test photos for optional biomarker screening.</string>
+	<string>HealthSense uses the camera to capture Siemens Multistix urine test photos for optional biomarker screening.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>CoachSense may save urine test photos only if you choose to save them.</string>
+	<string>HealthSense may save urine test photos only if you choose to save them.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>CoachSense may access selected photos if you choose to upload a urine test image from your library.</string>
+	<string>HealthSense may access selected photos if you choose to upload a urine test image from your library.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

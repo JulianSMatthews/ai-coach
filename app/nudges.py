@@ -54,14 +54,14 @@ _SESSION_REOPEN_DEFAULT_SENTENCE = "Let's pick up where you left off."
 _SESSION_REOPEN_DEFAULT_BUTTON_TITLE = "Continue coaching"
 _SESSION_REOPEN_DEFAULT_BUTTON_ID = "continue_coaching"
 _SESSION_REOPEN_DEFAULT_BODY = (
-    "Hi {{1}}, {{2}} from CoachSense here. "
+    "Hi {{1}}, {{2}} from HealthSense here. "
     "I'm ready to continue your coaching. {{3}} Please tap the button below to continue your wellbeing journey."
 )
 _DAY_REOPEN_DEFAULT_SENTENCE = "Your {day} coaching message is ready."
 _DAY_REOPEN_DEFAULT_BUTTON_TITLE = "Send daily message"
 _DAY_REOPEN_DEFAULT_BUTTON_ID = "send_daily_message"
 _DAY_REOPEN_DEFAULT_BODY = (
-    "Hi {{1}}, {{2}} from CoachSense here. {{3}} Please tap the button below to continue your wellbeing journey."
+    "Hi {{1}}, {{2}} from HealthSense here. {{3}} Please tap the button below to continue your wellbeing journey."
 )
 _QR_BOOTSTRAP_ATTEMPTS: dict[int, float] = {}
 _QR_BOOTSTRAP_MIN_INTERVAL = 60.0

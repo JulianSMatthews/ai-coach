@@ -42,14 +42,14 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
     <>
       <nav className="sticky top-0 z-30 mb-2 flex min-w-0 flex-col gap-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-soft)] px-2.5 py-1.5 text-xs text-[var(--text-secondary)] backdrop-blur sm:px-3 md:static md:mb-4 md:flex-row md:flex-nowrap md:items-center md:rounded-full md:px-5 md:py-2">
         <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
-          <Link href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-center gap-2" aria-label="CoachSense home">
+          <Link href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-center gap-2" aria-label="HealthSense home">
             <img
               src="/healthsense-mark.svg"
-              alt="CoachSense"
+              alt="HealthSense"
               className="hs-brand-mark hs-brand-logo-color h-7 w-auto"
             />
             <span className="flex items-baseline gap-1 text-white">
-              <span className="text-sm font-semibold leading-none">CoachSense</span>
+              <span className="text-sm font-semibold leading-none">HealthSense</span>
               <span className="text-[10px] leading-none">{APP_SUFFIX}</span>
             </span>
           </Link>
@@ -100,10 +100,10 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
           }`}
         >
           <div className="flex items-center justify-between">
-            <Link href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-center gap-2" aria-label="CoachSense home">
-              <img src="/healthsense-mark.svg" alt="CoachSense" className="hs-brand-mark hs-brand-logo-color h-9 w-auto" />
+            <Link href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"} className="flex items-center gap-2" aria-label="HealthSense home">
+              <img src="/healthsense-mark.svg" alt="HealthSense" className="hs-brand-mark hs-brand-logo-color h-9 w-auto" />
               <span className="flex items-baseline gap-1 text-white">
-                <span className="text-sm font-semibold leading-none">CoachSense</span>
+                <span className="text-sm font-semibold leading-none">HealthSense</span>
                 <span className="text-[10px] leading-none">{APP_SUFFIX}</span>
               </span>
             </Link>

@@ -92,8 +92,7 @@ def _resolve_home_pillar_keys(user_id: int | None) -> tuple[str, ...]:
 
 def active_pillar_keys(user_id: int | None = None) -> tuple[str, ...]:
     raw = (
-        os.getenv("COACHSENSE_ACTIVE_PILLARS")
-        or os.getenv("HEALTHSENSE_ACTIVE_PILLARS")
+        os.getenv("HEALTHSENSE_ACTIVE_PILLARS")
         or os.getenv("ACTIVE_PILLARS")
         or ""
     )

@@ -7,7 +7,7 @@ type LeadAssessmentBrandingProps = {
 export default function LeadAssessmentBranding({
   className = "",
   logoClassName = "h-8 w-8 flex-none sm:h-9 sm:w-9",
-  titleLines = ["Find out your", "CoachSense Score"],
+  titleLines = ["Find out your", "HealthSense Score"],
 }: LeadAssessmentBrandingProps) {
   const showTitle = titleLines.length > 0;
   return (

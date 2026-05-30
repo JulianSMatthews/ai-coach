@@ -86,13 +86,13 @@ export default async function EducationPage() {
         {!editorUrl ? (
           <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
             <p className="text-sm text-[#6b6257]">
-              `API_BASE_URL` is not configured for CoachSense Admin, so the education editor cannot be loaded here yet.
+              `API_BASE_URL` is not configured for HealthSense Admin, so the education editor cannot be loaded here yet.
             </p>
           </section>
         ) : editorProbe && !editorProbe.ok ? (
           <section className="rounded-3xl border border-[#e7e1d6] bg-white p-6">
             <p className="text-sm text-[#6b6257]">
-              The education editor backend could not be reached from CoachSense Admin.
+              The education editor backend could not be reached from HealthSense Admin.
             </p>
             <p className="mt-3 text-sm text-red-600">{editorProbe.message}</p>
             <p className="mt-3 text-xs text-[#8a8176]">

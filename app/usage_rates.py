@@ -290,7 +290,7 @@ def fetch_azure_tts_rate(region: str) -> dict[str, Any]:
 def fetch_azure_avatar_rate(region: str) -> dict[str, Any]:
     """
     Fetch Azure Speech standard avatar batch price per minute (USD) via Retail Prices API.
-    This matches the batch avatar mode used in CoachSense.
+    This matches the batch avatar mode used in HealthSense.
     """
     region = (region or "").strip().lower()
     if not region:

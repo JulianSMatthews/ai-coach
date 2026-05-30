@@ -5,7 +5,7 @@ export default function PrivacyPage() {
     <LegalPage
       eyebrow="Privacy"
       title="Privacy policy"
-      subtitle="Effective 21 April 2026. This explains the data CoachSense uses to provide coaching and wellbeing support."
+      subtitle="Effective 21 April 2026. This explains the data HealthSense uses to provide coaching and wellbeing support."
     >
       <section className="space-y-1.5">
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">What we collect</h2>
@@ -14,7 +14,7 @@ export default function PrivacyPage() {
           login/session details, assessment answers, coaching preferences, app activity, and support requests.
         </p>
         <p>
-          If you choose to use biometrics, CoachSense may read selected Apple Health metrics such as resting heart
+          If you choose to use biometrics, HealthSense may read selected Apple Health metrics such as resting heart
           rate, heart rate variability, step count, and exercise minutes. If you choose to use urine testing, we process
           the photo and derived marker results needed to show your screening history.
         </p>
@@ -36,7 +36,7 @@ export default function PrivacyPage() {
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Service providers</h2>
         <p>
           We use trusted providers for hosting, authentication, messaging, analytics, AI generation, and media
-          processing. They process data only as needed to provide CoachSense services.
+          processing. They process data only as needed to provide HealthSense services.
         </p>
       </section>
 
@@ -53,8 +53,8 @@ export default function PrivacyPage() {
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Contact</h2>
         <p>
           For privacy, support, or deletion requests, contact{" "}
-          <a className="text-[var(--accent)] underline" href="mailto:support@coachsense.coach">
-            support@coachsense.coach
+          <a className="text-[var(--accent)] underline" href="mailto:support@healthsense.coach">
+            support@healthsense.coach
           </a>
           .
         </p>

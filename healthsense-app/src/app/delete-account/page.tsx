@@ -6,12 +6,12 @@ export default function DeleteAccountPage() {
     <LegalPage
       eyebrow="Account"
       title="Delete account"
-      subtitle="Start a CoachSense account deletion request from inside the app."
+      subtitle="Start a HealthSense account deletion request from inside the app."
     >
       <section className="space-y-1.5">
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">What deletion includes</h2>
         <p>
-          Account deletion removes or disables your CoachSense user account and related assessment, coaching, biometric
+          Account deletion removes or disables your HealthSense user account and related assessment, coaching, biometric
           trend, urine test, preference, session, and message records where we are able to delete them.
         </p>
         <p>

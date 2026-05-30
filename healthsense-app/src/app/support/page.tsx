@@ -8,11 +8,11 @@ export default function SupportPage() {
       subtitle="Get help with access, coaching, biometrics, urine testing, or account changes."
     >
       <section className="space-y-1.5">
-        <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Contact CoachSense</h2>
+        <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Contact HealthSense</h2>
         <p>
           Email{" "}
-          <a className="text-[var(--accent)] underline" href="mailto:support@coachsense.coach">
-            support@coachsense.coach
+          <a className="text-[var(--accent)] underline" href="mailto:support@healthsense.coach">
+            support@healthsense.coach
           </a>{" "}
           and include your name, mobile number, and a short description of the issue.
         </p>
@@ -32,7 +32,7 @@ export default function SupportPage() {
       <section className="space-y-1.5">
         <h2 className="text-[17px] font-semibold text-[var(--text-primary)]">Medical or urgent concerns</h2>
         <p>
-          CoachSense is not monitored as an emergency service. If you have urgent symptoms or medical concerns, contact
+          HealthSense is not monitored as an emergency service. If you have urgent symptoms or medical concerns, contact
           a qualified healthcare professional or emergency services.
         </p>
       </section>
