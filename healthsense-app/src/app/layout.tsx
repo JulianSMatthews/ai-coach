@@ -15,6 +15,12 @@ const bodyFont = Source_Sans_3({
 
 const appTitle = process.env.NODE_ENV === "development" ? "HealthSense App (Develop)" : "HealthSense App";
 
+export const viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover" as const,
+};
+
 export const metadata: Metadata = {
   title: appTitle,
   description: "HealthSense coaching and assessment app",
@@ -36,12 +42,17 @@ export default function RootLayout({
       suppressHydrationWarning
       data-theme="dark"
       data-theme-preference="dark"
-      style={{ colorScheme: "dark" }}
+      style={{ colorScheme: "dark", backgroundColor: "var(--background)" }}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeBootstrapScript() }} />
       </head>
-      <body className={`${headingFont.variable} ${bodyFont.variable} antialiased`}>{children}</body>
+      <body
+        className={`${headingFont.variable} ${bodyFont.variable} antialiased`}
+        style={{ backgroundColor: "var(--background)" }}
+      >
+        {children}
+      </body>
     </html>
   );
 }

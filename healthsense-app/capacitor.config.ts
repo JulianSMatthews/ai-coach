@@ -8,7 +8,7 @@ const config: CapacitorConfig = {
   appName: "HealthSense",
   webDir: "capacitor-web",
   appendUserAgent: " HealthSenseIOS/1.0",
-  backgroundColor: "#f6f1e7",
+  backgroundColor: "#15110d",
   ios: {
     contentInset: "automatic",
     scrollEnabled: true,
