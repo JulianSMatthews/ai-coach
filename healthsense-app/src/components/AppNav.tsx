@@ -123,7 +123,7 @@ export default function AppNav({ userId = "", promptBadge = "", overallScore = n
           {links.map((link) => (
             <Link
               key={link.label}
-              className="border border-[#efe7db] bg-[#fffdf9] px-3 py-1 text-sm text-black"
+              className="rounded-full border border-[#efe7db] bg-[#fffdf9] px-3 py-1 text-sm text-black"
               href={link.href}
             >
               {link.label}
