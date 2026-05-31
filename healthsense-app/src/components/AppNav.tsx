@@ -11,6 +11,41 @@ type AppNavProps = {
   overallScore?: number | null;
 };
 
+function ScoreBadge({ score }: { score: number }) {
+  const pct = Math.max(0, Math.min(1, score / 100));
+  const size = 28;
+  const stroke = 4;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - pct);
+  return (
+    <span className="relative flex h-7 w-7 items-center justify-center">
+      <svg width={size} height={size} className="rotate-[-90deg]" aria-hidden="true">
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="rgba(197,72,23,0.18)"
+          strokeWidth={stroke}
+          fill="none"
+        />
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="#c54817"
+          strokeWidth={stroke}
+          fill="none"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+        />
+      </svg>
+      <span className="absolute text-[9px] font-semibold leading-none text-black">{score}</span>
+    </span>
+  );
+}
+
 export default function AppNav({ userId = "", promptBadge = "", overallScore = null }: AppNavProps) {
   const [open, setOpen] = useState(false);
   const resolvedUserId = String(userId || "").trim();
@@ -43,9 +78,18 @@ export default function AppNav({ userId = "", promptBadge = "", overallScore = n
       <nav className="sticky top-0 z-50 mb-2 flex min-w-0 flex-col gap-1 px-0 py-0 text-xs text-[var(--text-secondary)] md:static md:mb-4 md:flex-row md:flex-nowrap md:items-center md:px-0 md:py-0">
         <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
           {resolvedOverallScore !== null ? (
-            <div className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-2 border-black bg-white text-sm font-semibold text-black">
-              {resolvedOverallScore}
-            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (typeof window !== "undefined") {
+                  window.dispatchEvent(new CustomEvent("healthsense-open-objectives"));
+                }
+              }}
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-2 border-black bg-white"
+              aria-label="Open overall score"
+            >
+              <ScoreBadge score={resolvedOverallScore} />
+            </button>
           ) : (
             <div className="h-11 w-11 shrink-0" aria-hidden="true" />
           )}
@@ -137,8 +181,8 @@ export default function AppNav({ userId = "", promptBadge = "", overallScore = n
                 key={link.label}
                 href={link.href}
                 onClick={() => setOpen(false)}
-                className="border-2 border-black px-4 py-2.5 text-sm text-black"
-                style={{ backgroundColor: "#ffffff" }}
+                className="rounded-[18px] border border-[#e7e1d6] px-4 py-2.5 text-sm text-black transition"
+                style={{ backgroundColor: "#f6f1e7" }}
               >
                 {link.label}
               </Link>
@@ -152,7 +196,10 @@ export default function AppNav({ userId = "", promptBadge = "", overallScore = n
           ) : null}
 
           <div className="mt-4">
-            <LogoutButton className="w-full px-4 py-2.5 text-center" />
+            <LogoutButton
+              className="w-full rounded-[18px] px-4 py-2.5 text-center"
+              style={{ backgroundColor: "#f6f1e7", borderColor: "#e7e1d6", color: "#000000" }}
+            />
           </div>
 
         </div>

@@ -353,7 +353,6 @@ export default async function AssessmentChatPage(props: PageProps) {
           <LatestAssessmentPanel
             userId={userId}
             initialSummary={pillarTrackerSummary}
-            initialAssessmentCombinedScore={status.latest_run?.combined_overall ?? null}
             initialAssessmentReviewed={Boolean(onboarding.assessment_reviewed_at)}
           />
         ) : null}

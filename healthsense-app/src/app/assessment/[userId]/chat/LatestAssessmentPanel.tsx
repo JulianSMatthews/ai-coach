@@ -25,12 +25,10 @@ import { Capacitor } from "@capacitor/core";
 import { readStoredThemePreference } from "@/lib/theme";
 import { getPillarPalette } from "@/lib/pillars";
 import { ScoreRing } from "@/components/ui";
-import LeadAssessmentBranding from "./LeadAssessmentBranding";
 
 type LatestAssessmentPanelProps = {
   userId: string;
   initialSummary: PillarTrackerSummaryResponse;
-  initialAssessmentCombinedScore?: number | null;
   initialAssessmentReviewed?: boolean;
 };
 
@@ -53,7 +51,6 @@ type BiomarkerExplanationScaleRow = {
 };
 
 const PILLAR_ORDER = ["reflection", "purpose", "resilience", "recovery", "nutrition", "training"];
-const HEALTHSENSE_ORANGE = "#c54817";
 const MORNING_SEQUENCE_STORAGE_PREFIX = "hs:morning-sequence-complete";
 const URINE_CAPTURE_TIMER_SECONDS = 60;
 const URINE_RECENT_CAPTURE_WINDOW_MS = 5 * 60 * 1000;
@@ -1025,10 +1022,6 @@ function resolvePillarDisplayScore(pillar: PillarTrackerPillar): number | null {
   return resolveScore(pillar.score);
 }
 
-function resolvePillarSource(pillar: PillarTrackerPillar): "tracker" | "assessment" {
-  return resolveScore(pillar.tracker_score) !== null ? "tracker" : "assessment";
-}
-
 function circleDayTone(status?: string | null, isActive?: boolean): string {
   const activeRing = isActive ? " ring-1 ring-[#d9cdbb]" : "";
   if (status === "success") return `border-[#d5e8bf] bg-[#f2fae8] text-[#335f16]${activeRing}`;
@@ -1046,46 +1039,6 @@ function completeDayTone(complete?: boolean, score?: number | null, isToday?: bo
   }
   if (isToday) return "border-[#f3d8c9] bg-[#fff5ef] text-[#8a3e1a]";
   return "border-[#ece5d9] bg-white text-[#8c7f70]";
-}
-
-function CombinedLogoRing({ value }: { value: number }) {
-  const pct = Math.max(0, Math.min(1, value / 100));
-  const size = 84;
-  const stroke = 8;
-  const radius = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference * (1 - pct);
-  return (
-    <div className="relative flex h-[84px] w-[84px] items-center justify-center">
-      <svg width={size} height={size} className="rotate-[-90deg]">
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke="rgba(197,72,23,0.18)"
-          strokeWidth={stroke}
-          fill="none"
-        />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          stroke={HEALTHSENSE_ORANGE}
-          strokeWidth={stroke}
-          fill="none"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
-        />
-      </svg>
-      <div className="absolute flex h-[60px] w-[60px] items-center justify-center rounded-full bg-white">
-        <LeadAssessmentBranding
-          titleLines={[]}
-          logoClassName="h-8 w-8"
-        />
-      </div>
-    </div>
-  );
 }
 
 function WeeklyScoreRing({ value, tone, compact = false }: { value?: number | null; tone: string; compact?: boolean }) {
@@ -1206,7 +1159,6 @@ function formatWeeklyObjectiveSectionLabel(sectionKey: string, label?: string | 
 export default function LatestAssessmentPanel({
   userId,
   initialSummary,
-  initialAssessmentCombinedScore = null,
   initialAssessmentReviewed = false,
 }: LatestAssessmentPanelProps) {
   const [summary, setSummary] = useState<PillarTrackerSummaryResponse>(initialSummary);
@@ -1258,6 +1210,7 @@ export default function LatestAssessmentPanel({
   const [urinePhotoCapturedAt, setUrinePhotoCapturedAt] = useState<string | null>(null);
   const [urinePhotoCapturedAtMs, setUrinePhotoCapturedAtMs] = useState<number | null>(null);
   const [urineCaptureNowMs, setUrineCaptureNowMs] = useState(() => Date.now());
+  const [activeDockKey, setActiveDockKey] = useState<"bio" | "plan" | "learn" | "coach">("plan");
   const modalOverlayOpen = biometricsModalOpen || objectivesModalOpen || Boolean(selectedPillarKey);
   const homeDockButtonClassName =
     "flex h-[4.5rem] min-w-0 flex-col items-center justify-center gap-1 rounded-[18px] px-2 py-2 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
@@ -1281,20 +1234,6 @@ export default function LatestAssessmentPanel({
     }
     return orderedPillarKeys[currentIndex + 1] || null;
   }, [orderedPillarKeys]);
-  const hasTrackerScores = pillars.some((pillar) => resolvePillarSource(pillar) === "tracker");
-  const combinedScore = (() => {
-    if (!hasTrackerScores) {
-      const assessmentCombined = resolveScore(initialAssessmentCombinedScore);
-      if (assessmentCombined !== null) {
-        return assessmentCombined;
-      }
-    }
-    const scores = pillars
-      .map((pillar) => resolvePillarDisplayScore(pillar))
-      .filter((score): score is number => score !== null);
-    if (!scores.length) return 0;
-    return Math.round(scores.reduce((total, score) => total + score, 0) / scores.length);
-  })();
   const concepts = Array.isArray(detail?.concepts) ? detail?.concepts : [];
   const canSave =
     !saving &&
@@ -2454,6 +2393,15 @@ export default function LatestAssessmentPanel({
     setBiometricsActionError(null);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onOpenObjectives = () => {
+      void openObjectivesModal();
+    };
+    window.addEventListener("healthsense-open-objectives", onOpenObjectives);
+    return () => window.removeEventListener("healthsense-open-objectives", onOpenObjectives);
+  }, [openObjectivesModal]);
+
   const saveObjectivesSection = useCallback(async () => {
     if (!selectedObjectivesSection) return;
     setWeeklyObjectivesSaving(true);
@@ -2903,22 +2851,9 @@ export default function LatestAssessmentPanel({
                       <WeeklyScoreRing value={score} tone={palette.accent} />
                       <p className="mt-2 text-sm font-semibold text-[#1e1b16]">{pillar.label}</p>
                     </div>
-                  </button>
+                    </button>
                 );
               })}
-            </div>
-
-            <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-              <button
-                type="button"
-                onClick={() => void openObjectivesModal()}
-                className="pointer-events-auto rounded-full transition hover:scale-[1.01] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-4"
-                aria-label="Open weekly objectives"
-              >
-                <div className="relative">
-                  <CombinedLogoRing value={combinedScore} />
-                </div>
-              </button>
             </div>
           </div>
         </section>
@@ -2931,9 +2866,13 @@ export default function LatestAssessmentPanel({
               <div className="grid grid-cols-4 p-1">
                 <button
                   type="button"
-                  onClick={handleReviewBiometricsPress}
+                  onClick={() => {
+                    setActiveDockKey("bio");
+                    handleReviewBiometricsPress();
+                  }}
+                  aria-pressed={activeDockKey === "bio"}
                   className={homeDockButtonClassName}
-                  style={homeDockButtonStyleInactive}
+                  style={activeDockKey === "bio" ? homeDockButtonStyleActive : homeDockButtonStyleInactive}
                 >
                   <BiometricsIcon className="h-5 w-5 text-black" />
                   <span className="text-[11px] font-semibold leading-none sm:text-xs">
@@ -2942,9 +2881,13 @@ export default function LatestAssessmentPanel({
                 </button>
                 <button
                   type="button"
-                  onClick={() => openDailyMenuSurface("habits")}
+                  onClick={() => {
+                    setActiveDockKey("plan");
+                    openDailyMenuSurface("habits");
+                  }}
+                  aria-pressed={activeDockKey === "plan"}
                   className={homeDockButtonClassName}
-                  style={homeDockButtonStyleActive}
+                  style={activeDockKey === "plan" ? homeDockButtonStyleActive : homeDockButtonStyleInactive}
                 >
                   <HabitStepsIcon className="h-5 w-5 text-black" />
                   <span className="text-[11px] font-semibold leading-none sm:text-xs">
@@ -2953,9 +2896,13 @@ export default function LatestAssessmentPanel({
                 </button>
                 <button
                   type="button"
-                  onClick={() => openDailyMenuSurface("insight")}
+                  onClick={() => {
+                    setActiveDockKey("learn");
+                    openDailyMenuSurface("insight");
+                  }}
+                  aria-pressed={activeDockKey === "learn"}
                   className={homeDockButtonClassName}
-                  style={homeDockButtonStyleInactive}
+                  style={activeDockKey === "learn" ? homeDockButtonStyleActive : homeDockButtonStyleInactive}
                 >
                   <InsightIcon className="h-5 w-5 text-black" />
                   <span className="text-[11px] font-semibold leading-none sm:text-xs">
@@ -2964,9 +2911,13 @@ export default function LatestAssessmentPanel({
                 </button>
                 <button
                   type="button"
-                  onClick={() => openDailyMenuSurface("ask")}
+                  onClick={() => {
+                    setActiveDockKey("coach");
+                    openDailyMenuSurface("ask");
+                  }}
+                  aria-pressed={activeDockKey === "coach"}
                   className={homeDockButtonClassName}
-                  style={homeDockButtonStyleInactive}
+                  style={activeDockKey === "coach" ? homeDockButtonStyleActive : homeDockButtonStyleInactive}
                 >
                   <GiaMessageIcon className="h-5 w-5 text-black" />
                   <span className="text-[11px] font-semibold leading-none sm:text-xs">
