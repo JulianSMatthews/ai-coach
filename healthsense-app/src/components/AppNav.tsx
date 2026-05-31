@@ -13,13 +13,13 @@ type AppNavProps = {
 
 function ScoreBadge({ score }: { score: number }) {
   const pct = Math.max(0, Math.min(1, score / 100));
-  const size = 28;
-  const stroke = 4;
+  const size = 34;
+  const stroke = 4.5;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const offset = circumference * (1 - pct);
   return (
-    <span className="relative flex h-7 w-7 items-center justify-center">
+    <span className="relative flex h-9 w-9 items-center justify-center">
       <svg width={size} height={size} className="rotate-[-90deg]" aria-hidden="true">
         <circle
           cx={size / 2}
@@ -39,9 +39,9 @@ function ScoreBadge({ score }: { score: number }) {
           strokeDasharray={circumference}
           strokeDashoffset={offset}
           strokeLinecap="round"
-        />
-      </svg>
-      <span className="absolute text-[9px] font-semibold leading-none text-black">{score}</span>
+          />
+        </svg>
+      <span className="absolute text-[10px] font-semibold leading-none text-black">{score}</span>
     </span>
   );
 }
@@ -85,7 +85,7 @@ export default function AppNav({ userId = "", promptBadge = "", overallScore = n
                   window.dispatchEvent(new CustomEvent("healthsense-open-objectives"));
                 }
               }}
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-2 border-black bg-white"
+              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#efe7db] bg-[#fffdf9]"
               aria-label="Open overall score"
             >
               <ScoreBadge score={resolvedOverallScore} />
@@ -102,8 +102,8 @@ export default function AppNav({ userId = "", promptBadge = "", overallScore = n
           </Link>
           <button
             type="button"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-full border-2 border-black md:hidden"
-            style={{ backgroundColor: "#ffffff", color: "#000000" }}
+            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#efe7db] md:hidden"
+            style={{ backgroundColor: "#fffdf9", color: "#000000" }}
             aria-label="Open menu"
             aria-expanded={open}
             onClick={() => setOpen(true)}
@@ -123,7 +123,7 @@ export default function AppNav({ userId = "", promptBadge = "", overallScore = n
           {links.map((link) => (
             <Link
               key={link.label}
-              className="border border-black bg-white px-3 py-1 text-sm text-black"
+              className="border border-[#efe7db] bg-[#fffdf9] px-3 py-1 text-sm text-black"
               href={link.href}
             >
               {link.label}
@@ -146,7 +146,7 @@ export default function AppNav({ userId = "", promptBadge = "", overallScore = n
           className={`absolute right-0 top-0 h-full w-full max-w-sm transform overflow-y-auto overscroll-contain px-5 pb-[max(2rem,env(safe-area-inset-bottom))] pt-[max(1.5rem,env(safe-area-inset-top))] transition-transform duration-300 sm:px-6 ${
             open ? "translate-x-0" : "translate-x-full"
           }`}
-          style={{ backgroundColor: "#ffffff", color: "#000000" }}
+          style={{ backgroundColor: "#fffdf9", color: "#000000" }}
         >
           <div className="flex items-center justify-between">
             <Link
@@ -158,8 +158,8 @@ export default function AppNav({ userId = "", promptBadge = "", overallScore = n
             </Link>
             <button
               type="button"
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full border-2 border-black"
-              style={{ backgroundColor: "#ffffff", color: "#000000" }}
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#efe7db]"
+              style={{ backgroundColor: "#fffdf9", color: "#000000" }}
               aria-label="Close menu"
               onClick={() => setOpen(false)}
             >
