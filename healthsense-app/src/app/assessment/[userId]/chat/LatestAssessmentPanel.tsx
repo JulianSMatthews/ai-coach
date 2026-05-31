@@ -1266,7 +1266,8 @@ export default function LatestAssessmentPanel({
     backgroundColor: "#ededed",
     color: "#000000",
   };
-  const pillarTileClassName = "aspect-square rounded-[22px] border border-black bg-white px-3 py-3 text-left transition";
+  const pillarTileClassName = "aspect-square rounded-[22px] border border-black px-3 py-3 text-left transition";
+  const pillarTileStyle = { backgroundColor: "#f6f1e7" };
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
   const orderedPillarKeys = pillars
@@ -2896,6 +2897,7 @@ export default function LatestAssessmentPanel({
                       })
                     }
                       className={pillarTileClassName}
+                      style={pillarTileStyle}
                     >
                     <div className="flex h-full flex-col items-center justify-center text-center">
                       <WeeklyScoreRing value={score} tone={palette.accent} />
