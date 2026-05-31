@@ -332,7 +332,9 @@ export default async function AssessmentChatPage(props: PageProps) {
   return (
     <PageShell defaultTheme={themePreference} className={pageShellClassName} contentClassName={pageContentClassName}>
       <TextScale defaultScale={textScale} />
-      {!leadFlow && !leadGuest ? <AppNav userId={userId} promptBadge={promptBadge} /> : null}
+      {!leadFlow && !leadGuest ? (
+        <AppNav userId={userId} promptBadge={promptBadge} overallScore={status.latest_run?.combined_overall ?? null} />
+      ) : null}
 
       <section className="space-y-3 sm:space-y-4">
         {chatIntroText ? <p className="text-sm text-[#6b6257]">{chatIntroText}</p> : null}

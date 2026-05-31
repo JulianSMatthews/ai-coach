@@ -8,11 +8,13 @@ import { Badge } from "@/components/ui";
 type AppNavProps = {
   userId?: string;
   promptBadge?: string;
+  overallScore?: number | null;
 };
 
-export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
+export default function AppNav({ userId = "", promptBadge = "", overallScore = null }: AppNavProps) {
   const [open, setOpen] = useState(false);
   const resolvedUserId = String(userId || "").trim();
+  const resolvedOverallScore = Number.isFinite(Number(overallScore)) ? Math.max(0, Math.min(100, Math.round(Number(overallScore)))) : null;
   const links: Array<{ label: string; href: string }> = [
     { label: "Home", href: resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login" },
     ...(resolvedUserId
@@ -40,7 +42,13 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
     <>
       <nav className="sticky top-0 z-50 mb-2 flex min-w-0 flex-col gap-1 px-0 py-0 text-xs text-[var(--text-secondary)] md:static md:mb-4 md:flex-row md:flex-nowrap md:items-center md:px-0 md:py-0">
         <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
-          <div className="h-11 w-11 shrink-0" aria-hidden="true" />
+          {resolvedOverallScore !== null ? (
+            <div className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border-2 border-black bg-white text-sm font-semibold text-black">
+              {resolvedOverallScore}
+            </div>
+          ) : (
+            <div className="h-11 w-11 shrink-0" aria-hidden="true" />
+          )}
           <Link
             href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"}
             className="sr-only"
