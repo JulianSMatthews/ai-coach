@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { applyThemePreference, normalizeThemePreference } from "@/lib/theme";
+import { applyThemePreference, normalizeThemePreference, readStoredThemePreference } from "@/lib/theme";
 
 type PreferencesFormProps = {
   userId: string;
@@ -16,7 +16,8 @@ export default function PreferencesForm({
 }: PreferencesFormProps) {
   const [email, setEmail] = useState(initialEmail || "");
   const [theme, setTheme] = useState(() => {
-    const normalized = normalizeThemePreference(initialTheme);
+    const stored = readStoredThemePreference();
+    const normalized = normalizeThemePreference(stored || initialTheme);
     return normalized === "light" ? "light" : "dark";
   });
   const [changePassword, setChangePassword] = useState(false);
