@@ -1260,13 +1260,11 @@ export default function LatestAssessmentPanel({
   const [urineCaptureNowMs, setUrineCaptureNowMs] = useState(() => Date.now());
   const modalOverlayOpen = biometricsModalOpen || objectivesModalOpen || Boolean(selectedPillarKey);
   const homeDockButtonClassName =
-    "flex h-[4.75rem] min-w-0 flex-col items-center justify-center gap-1 px-2 py-2 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
-  const homeDockButtonStyleInactive = { backgroundColor: "#ffffff", color: "#000000", borderColor: "#000000" };
+    "flex h-[4.5rem] min-w-0 flex-col items-center justify-center gap-1 rounded-[18px] px-2 py-2 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
+  const homeDockButtonStyleInactive = { backgroundColor: "transparent", color: "#000000" };
   const homeDockButtonStyleActive = {
-    backgroundColor: "#ffffff",
+    backgroundColor: "#ededed",
     color: "#000000",
-    borderColor: "#000000",
-    boxShadow: "inset 0 0 0 2px #000000",
   };
   const pillarTileClassName = "aspect-square rounded-[22px] border border-black bg-white px-3 py-3 text-left transition";
 
@@ -2927,8 +2925,8 @@ export default function LatestAssessmentPanel({
       {summaryPanelVisible ? (
         <div className="fixed inset-x-0 bottom-0 z-40 pointer-events-none">
           <div className="mx-auto w-full max-w-2xl px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:px-5">
-            <div className="pointer-events-auto overflow-hidden rounded-[24px] border-2 border-black bg-white">
-              <div className="grid grid-cols-4 divide-x-2 divide-black">
+            <div className="pointer-events-auto overflow-hidden rounded-[28px] border border-[#e7e1d6] bg-white shadow-[0_18px_40px_-30px_rgba(30,27,22,0.35)]">
+              <div className="grid grid-cols-4 p-1">
                 <button
                   type="button"
                   onClick={handleReviewBiometricsPress}
