@@ -1263,6 +1263,7 @@ export default function LatestAssessmentPanel({
     "flex h-[4.75rem] min-w-0 flex-col items-center justify-center gap-1 px-2 py-2 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
   const homeDockButtonStyleInactive = { backgroundColor: "#ffffff", color: "#000000", borderColor: "#000000" };
   const homeDockButtonStyleActive = { backgroundColor: "#000000", color: "#ffffff", borderColor: "#000000" };
+  const pillarTileClassName = "aspect-square rounded-[22px] border border-black bg-white px-3 py-3 text-left transition";
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
   const orderedPillarKeys = pillars
@@ -2891,8 +2892,8 @@ export default function LatestAssessmentPanel({
                         guided: false,
                       })
                     }
-                    className="aspect-square border border-black bg-white px-3 py-3 text-left transition"
-                  >
+                      className={pillarTileClassName}
+                    >
                     <div className="flex h-full flex-col items-center justify-center text-center">
                       <WeeklyScoreRing value={score} tone={palette.accent} />
                       <p className="mt-2 text-sm font-semibold text-[#1e1b16]">{pillar.label}</p>

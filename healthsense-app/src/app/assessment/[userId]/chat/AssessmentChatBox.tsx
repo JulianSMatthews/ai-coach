@@ -997,6 +997,7 @@ export default function AssessmentChatBox({
       : homeSurface === "ask"
         ? "h-[calc(100dvh-6.5rem)] max-h-[calc(100dvh-6.5rem)] sm:h-[58vh] sm:min-h-[22rem] sm:max-h-[38rem]"
         : "h-[calc(100dvh-6.5rem)] max-h-[calc(100dvh-6.5rem)] sm:h-[78vh] sm:min-h-[32rem] sm:max-h-[56rem]";
+  const pillarTileClassName = "aspect-square rounded-[22px] border border-black bg-white px-3 py-3 text-left transition";
   const homeOutlineButtonStyle = { backgroundColor: "#ffffff", color: "#5d5348", borderColor: "#d9cdbb" };
   const homePlainButtonStyle = { backgroundColor: "#ffffff", color: "#000000", borderColor: "#000000" };
   const homePrimaryButtonStyle = { backgroundColor: "#000000", color: "#ffffff", borderColor: "#000000" };
@@ -2451,7 +2452,7 @@ export default function AssessmentChatBox({
                           );
                         }
                       }}
-                      className="aspect-square border border-black bg-white px-3 py-3 text-left transition"
+                      className={pillarTileClassName}
                     >
                       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
                         Pillar {index + 1}
