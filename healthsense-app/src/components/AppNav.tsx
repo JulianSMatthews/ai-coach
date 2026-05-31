@@ -42,10 +42,10 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
         <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
           <Link
             href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"}
-            className="inline-flex h-11 w-11 items-center justify-center rounded-full border-2 border-black bg-white"
+            className="sr-only"
             aria-label="HealthSense home"
           >
-            <span className="block h-2.5 w-2.5 rounded-full bg-black" aria-hidden="true" />
+            HealthSense home
           </Link>
           <button
             type="button"
@@ -98,10 +98,10 @@ export default function AppNav({ userId = "", promptBadge = "" }: AppNavProps) {
           <div className="flex items-center justify-between">
             <Link
               href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"}
-              className="inline-flex h-11 w-11 items-center justify-center rounded-full border-2 border-black bg-white"
+              className="sr-only"
               aria-label="HealthSense home"
             >
-              <span className="block h-2.5 w-2.5 rounded-full bg-black" aria-hidden="true" />
+              HealthSense home
             </Link>
             <button
               type="button"
