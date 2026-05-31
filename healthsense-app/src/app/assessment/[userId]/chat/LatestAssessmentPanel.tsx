@@ -1224,7 +1224,7 @@ export default function LatestAssessmentPanel({
     borderColor: "#d9d0c3",
     color: "#000000",
   };
-  const pillarTileClassName = "aspect-square rounded-[32px] border border-black px-3 py-3 text-left transition";
+  const pillarTileClassName = "aspect-square rounded-[32px] border border-[#e7e1d6] px-3 py-3 text-left transition";
   const pillarTileStyle = { backgroundColor: "#f6f1e7" };
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
