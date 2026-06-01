@@ -218,7 +218,8 @@ details > summary::-webkit-details-marker {
 }
 
 :root[data-theme="dark"] .hs-brand-logo,
-:root[data-theme="dark"] img[src$="/healthsense-logo.svg"] {
+:root[data-theme="dark"] img[src$="/healthsense-logo.svg"],
+:root[data-theme="dark"] img[src$="/coachsense-logo.svg"] {
   filter: brightness(0) invert(0.96);
 }
 
