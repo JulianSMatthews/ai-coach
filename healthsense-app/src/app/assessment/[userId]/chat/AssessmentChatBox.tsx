@@ -223,6 +223,15 @@ function normalizeDayPlanMomentKey(value: string | null | undefined): string {
   return token;
 }
 
+function normalizeLessonHeading(value: string | null | undefined): string {
+  const token = String(value || "").trim();
+  if (!token) return "";
+  return token
+    .replace(/\bDAY\s+(\d+)\b/gi, "Lesson $1")
+    .replace(/\bDays\b/g, "Lessons")
+    .replace(/\bday\s+(\d+)\b/gi, "Lesson $1");
+}
+
 function mergeDailyPlanItems(
   primaryItems: DailyHabitPlanItem[],
   fallbackItems: DailyHabitPlanItem[],
@@ -927,19 +936,19 @@ export default function AssessmentChatBox({
   const educationMediaKey = `${String(educationPlan?.plan_id || "education")}:${String(
     educationLesson?.lesson_variant_id || "",
   )}:${educationVideoUrl}`;
-  const educationProgrammeName = String(educationPlan?.programme?.name || "").trim();
+  const educationProgrammeName = normalizeLessonHeading(educationPlan?.programme?.name || "");
   const educationPillarPalette = getPillarPalette(educationPlan?.pillar_key);
   const educationPillarIconSrc = educationPillarPalette.icon;
   const educationPillarLabel = String(
     educationPlan?.pillar_label || educationPillarPalette.label || "",
   ).trim();
-  const educationConceptTitle = String(
+  const educationConceptTitle = normalizeLessonHeading(
     educationPlan?.concept_label || educationLesson?.title || educationPlan?.pillar_label || "",
-  ).trim();
+  );
   const educationDayIndex = Number(educationPlan?.day_index || 0);
   const educationDurationDays = Number(educationPlan?.programme?.duration_days || 0);
   const educationPreviousLesson = educationPlan?.previous_lesson || null;
-  const educationPreviousLearningTitle = String(educationPreviousLesson?.title || "").trim();
+  const educationPreviousLearningTitle = normalizeLessonHeading(educationPreviousLesson?.title || "");
   const educationPreviousLearningText = String(educationPreviousLesson?.takeaway || "").trim();
   const educationLessonQueue = useMemo(
     () => (Array.isArray(educationPlan?.lessons) ? educationPlan.lessons.filter(Boolean) : []),
@@ -2582,7 +2591,9 @@ export default function AssessmentChatBox({
                         const palette = getPillarPalette(lesson?.pillar_key);
                         const lessonDayIndex = Number(lesson?.day_index || 0);
                         const isSelected = lessonDayIndex === Number(selectedEducationLessonDayIndex || 0);
-                        const lessonTitle = String(lesson?.title || lesson?.concept_label || lesson?.pillar_label || "").trim();
+                        const lessonTitle = normalizeLessonHeading(
+                          lesson?.title || lesson?.concept_label || lesson?.pillar_label || "",
+                        );
                         const lessonDescription = String(lesson?.goal || lesson?.summary || "").trim();
                         return (
                           <button
@@ -2645,7 +2656,9 @@ export default function AssessmentChatBox({
                               <div className="grid gap-3">
                                 {group.lessons.map((lesson) => {
                                   const lessonDayIndex = Number(lesson?.day_index || 0);
-                                  const lessonTitle = String(lesson?.title || lesson?.concept_label || lesson?.pillar_label || "").trim();
+                                  const lessonTitle = normalizeLessonHeading(
+                                    lesson?.title || lesson?.concept_label || lesson?.pillar_label || "",
+                                  );
                                   const lessonDescription = String(lesson?.goal || lesson?.summary || "").trim();
                                   return (
                                     <button

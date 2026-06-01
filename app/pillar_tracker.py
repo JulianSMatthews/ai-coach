@@ -1738,13 +1738,17 @@ def _summary_pillar_payload(
 ) -> dict[str, Any]:
     tracker_score = _week_score(entries_by_day, required_concepts, evaluations_by_concept, week_days)
     completed_days = _completed_days(entries_by_day, required_concepts)
+    resolved_score = tracker_score if tracker_score is not None else baseline_score
+    if resolved_score is None:
+        resolved_score = 0
+    resolved_source = "tracker" if tracker_score is not None else "assessment" if baseline_score is not None else "default"
     return {
         "pillar_key": pillar_key,
         "label": _pillar_label(pillar_key),
-        "score": tracker_score if tracker_score is not None else baseline_score,
+        "score": resolved_score,
         "tracker_score": tracker_score,
         "baseline_score": baseline_score,
-        "source": "tracker" if tracker_score is not None else "assessment",
+        "source": resolved_source,
         "completed_days_count": len(completed_days),
         "streak_days": _completion_streak_days(entries_by_day, required_concepts, anchor),
         "today_complete": _day_complete(entries_by_day.get(current_day, {}), required_concepts),
