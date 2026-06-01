@@ -787,7 +787,7 @@ export default function AssessmentChatBox({
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [sending, setSending] = useState(false);
-  const [homeSurface, setHomeSurface] = useState<HomeSurface>("insight");
+  const [homeSurface, setHomeSurface] = useState<HomeSurface>("tracking");
   const [homeSurfaceEntryMode, setHomeSurfaceEntryMode] = useState<HomeSurfaceEntryMode>("guided");
   const [morningSequenceDay, setMorningSequenceDay] = useState(() =>
     resolveMorningSequenceDay(initialTrackerSummary),
