@@ -994,8 +994,8 @@ export default function AssessmentChatBox({
   );
   const educationStreakDays = Math.max(0, Math.floor(Number(educationPlan?.streak_days || 0) || 0));
   const educationBestStreakDays = Math.max(0, Math.floor(Number(educationPlan?.best_streak_days || 0) || 0));
-  const educationStreakLabel = `${educationStreakDays} day${educationStreakDays === 1 ? "" : "s"}`;
-  const educationBestStreakLabel = `${educationBestStreakDays} day${educationBestStreakDays === 1 ? "" : "s"}`;
+  const educationStreakLabel = `${educationStreakDays} lesson${educationStreakDays === 1 ? "" : "s"}`;
+  const educationBestStreakLabel = `${educationBestStreakDays} lesson${educationBestStreakDays === 1 ? "" : "s"}`;
   const educationCompletedDays = educationDurationDays > 0 && educationDayIndex > 0
     ? Math.min(
         educationDurationDays,
@@ -1004,13 +1004,13 @@ export default function AssessmentChatBox({
     : null;
   const educationCompletedDaysLabel =
     educationCompletedDays !== null && educationDurationDays > 0
-      ? `${educationCompletedDays}/${educationDurationDays} days complete`
+      ? `${educationCompletedDays}/${educationDurationDays} lessons complete`
       : educationDayIndex > 0
         ? `Lesson ${educationDayIndex}`
         : "";
   const educationFocusStreakSummary = [
     educationCompletedDaysLabel,
-    `${educationStreakLabel} focus streak`,
+    `${educationStreakLabel} lesson streak`,
     educationBestStreakDays > educationStreakDays ? `Best ${educationBestStreakLabel}` : "",
   ].filter(Boolean).join(" · ");
   const dailyHabits = useMemo(() => {
@@ -2688,7 +2688,7 @@ export default function AssessmentChatBox({
                 {educationPreviousLearningTitle || educationPreviousLearningText ? (
                   <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                      What we learnt yesterday
+                      What we learnt in the previous lesson
                     </p>
                     {educationPreviousLearningTitle ? (
                       <p className="mt-2 text-sm font-semibold text-[#1e1b16]">
