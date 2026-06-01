@@ -968,10 +968,28 @@ export default function AssessmentChatBox({
   );
   const selectedEducationLessonDay = Number(selectedEducationLesson?.day_index || educationDayIndex || 0);
   const selectedEducationLessonIsCurrent = Boolean(selectedEducationLesson?.is_current);
-  const educationQueueLessons = useMemo(
-    () => educationLessonQueue.filter((lesson) => !lesson?.is_current),
-    [educationLessonQueue],
-  );
+  const educationLessonRail = useMemo(() => {
+    const currentLesson = educationLessonQueue[educationCurrentLessonIndex] || educationPlan?.lesson || null;
+    const currentDayIndex = Number(currentLesson?.day_index || 0);
+    const seen = new Set<string>();
+    const ordered = [currentLesson, ...educationLessonQueue]
+      .filter(Boolean)
+      .filter((lesson) => {
+        const lessonDayIndex = Number(lesson?.day_index || 0);
+        const token = `${lesson?.programme_day_id || ""}:${lessonDayIndex}`;
+        if (seen.has(token)) return false;
+        seen.add(token);
+        return true;
+      })
+      .sort((left, right) => {
+        const leftDay = Number(left?.day_index || 0);
+        const rightDay = Number(right?.day_index || 0);
+        if (leftDay === currentDayIndex && rightDay !== currentDayIndex) return -1;
+        if (rightDay === currentDayIndex && leftDay !== currentDayIndex) return 1;
+        return leftDay - rightDay;
+      });
+    return ordered;
+  }, [educationCurrentLessonIndex, educationLessonQueue, educationPlan?.lesson]);
   const educationCourseGroups = useMemo(() => {
     const order = ["reflection", "purpose", "resilience", "recovery", "nutrition", "training"];
     const grouped = new Map<string, NonNullable<typeof educationLessonQueue>[number][]>();
@@ -2580,21 +2598,22 @@ export default function AssessmentChatBox({
                     </p>
                   ) : null}
                   <p className="mt-2 text-xs uppercase tracking-[0.14em] text-[#8c7f70]">
-                    {selectedEducationLessonIsCurrent ? "Today's lesson" : "Lesson preview"}
+                    {selectedEducationLessonIsCurrent ? "Today" : "Lesson preview"}
                   </p>
                 </div>
-                {educationQueueLessons.length ? (
+                {educationLessonRail.length ? (
                   <div className="rounded-[24px] bg-[#fcf8f0] px-4 py-4">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                        Other lessons
+                        Lessons
                       </p>
                       <p className="text-xs text-[#8c7f70]">
-                        Select one to preview
+                        Swipe to browse
                       </p>
                     </div>
-                    <div className="mt-3 space-y-3">
-                      {educationQueueLessons.map((lesson) => {
+                    <div className="mt-3 -mx-4 overflow-x-auto px-4 pb-1">
+                      <div className="flex gap-3 pr-4">
+                        {educationLessonRail.map((lesson) => {
                         const palette = getPillarPalette(lesson?.pillar_key);
                         const lessonDayIndex = Number(lesson?.day_index || 0);
                         const isSelected = lessonDayIndex === Number(selectedEducationLessonDayIndex || 0);
@@ -2607,7 +2626,7 @@ export default function AssessmentChatBox({
                             key={`${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
                             type="button"
                             onClick={() => setSelectedEducationLessonDayIndex(lessonDayIndex || null)}
-                            className="flex w-full items-start gap-3 rounded-[22px] border px-3 py-3 text-left transition"
+                            className="flex w-[17rem] shrink-0 items-start gap-3 rounded-[22px] border px-3 py-3 text-left transition sm:w-[18.5rem]"
                             style={{
                               backgroundColor: "var(--accent-soft)",
                               borderColor: isSelected ? "var(--accent)" : "var(--border-strong)",
@@ -2634,7 +2653,8 @@ export default function AssessmentChatBox({
                             </span>
                           </button>
                         );
-                      })}
+                        })}
+                      </div>
                     </div>
                   </div>
                 ) : null}
@@ -2645,7 +2665,7 @@ export default function AssessmentChatBox({
                     className="w-full rounded-full border px-4 py-3 text-sm font-semibold transition"
                     style={homePlainButtonStyle}
                   >
-                    {educationCoursesOpen ? "Hide courses" : "Explore courses"}
+                    {educationCoursesOpen ? "Hide topics" : "Explore topics"}
                   </button>
                   {educationCoursesOpen ? (
                     <div className="mt-4 space-y-4">
