@@ -2436,52 +2436,75 @@ export default function AssessmentChatBox({
                         })}
                       </div>
                     ) : (
-                      <div className="space-y-3">
-                        {educationExplorerLessons.map((lesson) => {
-                          const lessonDayIndex = Number(lesson?.day_index || 0);
-                          const lessonTitle = normalizeLessonHeading(
-                            lesson?.title || lesson?.concept_label || lesson?.pillar_label || "",
-                          );
-                          const lessonDescription = String(lesson?.goal || lesson?.summary || "").trim();
-                          return (
-                            <button
-                              key={`explore-${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
-                              type="button"
-                              onClick={() => {
-                                setSelectedEducationLessonDayIndex(lessonDayIndex || null);
-                                setEducationExplorerOpen(false);
-                                if (typeof window !== "undefined") {
-                                  window.dispatchEvent(
-                                    new CustomEvent("healthsense-education-start-lesson", {
-                                      detail: {
-                                        lesson_day_index: lessonDayIndex || null,
-                                        lesson_title: lessonTitle || null,
-                                        pillar_key: String(lesson?.pillar_key || "").trim() || null,
-                                      },
-                                    }),
-                                  );
-                                }
-                              }}
-                              className="flex w-full flex-col rounded-[28px] border border-[#e7e1d6] px-5 py-5 text-left transition"
-                              style={{ backgroundColor: "#d6ab81" }}
-                            >
-                              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#201813]/80">
-                                {String(lesson?.pillar_label || "").trim() || "Lesson"}
-                              </span>
-                              <span className="mt-3 block text-[1.55rem] font-semibold leading-[1.02] tracking-[-0.02em] text-[#18110d]">
-                                {lessonTitle || "Untitled lesson"}
-                              </span>
-                              {lessonDescription ? (
-                                <span className="mt-4 block text-sm leading-7 text-[#3c332b]">
-                                  {lessonDescription}
+                      <div className="-mx-1 overflow-x-auto px-1 pb-1">
+                        <div className="flex gap-3 pr-4">
+                          {educationExplorerLessons.map((lesson) => {
+                            const lessonDayIndex = Number(lesson?.day_index || 0);
+                            const lessonTitle = normalizeLessonHeading(
+                              lesson?.title || lesson?.concept_label || lesson?.pillar_label || "",
+                            );
+                            const lessonDescription = String(lesson?.goal || lesson?.summary || "").trim();
+                            const posterUrl = String(lesson?.content?.poster_url || lesson?.content?.avatar?.poster_url || "").trim();
+                            return (
+                              <button
+                                key={`explore-${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedEducationLessonDayIndex(lessonDayIndex || null);
+                                  setEducationExplorerOpen(false);
+                                  if (typeof window !== "undefined") {
+                                    window.dispatchEvent(
+                                      new CustomEvent("healthsense-education-start-lesson", {
+                                        detail: {
+                                          lesson_day_index: lessonDayIndex || null,
+                                          lesson_title: lessonTitle || null,
+                                          pillar_key: String(lesson?.pillar_key || "").trim() || null,
+                                        },
+                                      }),
+                                    );
+                                  }
+                                }}
+                                className="relative flex w-[18rem] shrink-0 overflow-hidden rounded-[30px] border border-transparent text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition sm:w-[20rem]"
+                                style={{ backgroundColor: "#d6ab81", minHeight: "24rem" }}
+                              >
+                                <span className="relative z-10 flex min-h-[24rem] w-full flex-col justify-between p-5 sm:p-6">
+                                  <span>
+                                    <span className="block text-[11px] font-medium uppercase tracking-[0.16em] text-[#201813]/80">
+                                      {String(lesson?.pillar_label || "").trim() || "Lesson"}
+                                    </span>
+                                    <span className="mt-4 block max-w-[12ch] text-[2.35rem] font-semibold leading-[0.95] tracking-[-0.02em] text-[#18110d] sm:text-[2.7rem]">
+                                      {lessonTitle || "Untitled lesson"}
+                                    </span>
+                                    {lessonDescription ? (
+                                      <span className="mt-4 block max-w-[16rem] text-[0.95rem] leading-7 text-[#3c332b]">
+                                        {lessonDescription}
+                                      </span>
+                                    ) : null}
+                                  </span>
+                                  <span className="relative z-10 flex items-end justify-between gap-3">
+                                    <span className="rounded-full bg-[#18110d] px-5 py-3 text-sm font-semibold text-white">
+                                      Start lesson
+                                    </span>
+                                    <span className="rounded-full bg-[#f5efe5] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#3c332b]">
+                                      {String(lesson?.day_index || 0).padStart(2, "0")}
+                                    </span>
+                                  </span>
                                 </span>
-                              ) : null}
-                              <span className="mt-5 inline-flex w-fit rounded-full bg-[#18110d] px-5 py-3 text-sm font-semibold text-white">
-                                Start lesson
-                              </span>
-                            </button>
-                          );
-                        })}
+                                {posterUrl ? (
+                                  <img
+                                    src={posterUrl}
+                                    alt=""
+                                    className="pointer-events-none absolute bottom-0 left-0 h-[64%] w-[70%] object-contain object-left-bottom"
+                                  />
+                                ) : (
+                                  <span className="pointer-events-none absolute bottom-0 left-0 h-[62%] w-[68%]">
+                                    <span className="absolute bottom-0 left-0 h-[72%] w-[78%] rounded-tr-[2rem] bg-[rgba(255,255,255,0.18)]" />
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     )}
                   </div>
