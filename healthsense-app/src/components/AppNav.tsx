@@ -86,7 +86,6 @@ export default function AppNav({
     ...(resolvedUserId
       ? [
           { label: "Preferences", href: `/preferences/${resolvedUserId}` },
-          { label: "Wearables", href: `/preferences/${resolvedUserId}/wearables` },
         ]
       : []),
     { label: "Support", href: "/support" },
