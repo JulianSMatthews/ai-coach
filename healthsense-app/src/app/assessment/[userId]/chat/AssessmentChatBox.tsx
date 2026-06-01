@@ -944,6 +944,7 @@ export default function AssessmentChatBox({
     if (!activeKey) return [];
     const seen = new Set<string>();
     return educationLessonRail
+      .filter((lesson) => !Boolean(lesson?.is_current))
       .filter((lesson) => String(lesson?.pillar_key || "").trim().toLowerCase() === activeKey)
       .filter((lesson) => {
         const conceptKey = String(lesson?.concept_key || "").trim().toLowerCase();
