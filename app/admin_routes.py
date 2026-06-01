@@ -1307,7 +1307,7 @@ def _normalise_generated_education_programme_outline(
                 {
                     "day_index": next_index,
                     "lesson_goal": "",
-                    "default_title": f"Day {next_index}",
+                    "default_title": f"Lesson {next_index}",
                     "default_summary": "",
                 }
             )
@@ -1782,17 +1782,17 @@ def _build_education_programme_day_brief(
     if brief:
         parts.append(f"Overall concept programme brief: {brief}")
     parts.append(
-        f"Generate day {int(outline_day.get('day_index') or 1)} of a {requested_days}-day concept programme."
+        f"Generate lesson {int(outline_day.get('day_index') or 1)} of a {requested_days}-lesson concept programme."
     )
     lesson_goal = str(outline_day.get("lesson_goal") or "").strip()
     if lesson_goal:
-        parts.append(f"Day lesson goal: {lesson_goal}")
+        parts.append(f"Lesson goal: {lesson_goal}")
     title = str(outline_day.get("default_title") or "").strip()
     if title:
-        parts.append(f"Day title direction: {title}")
+        parts.append(f"Lesson title direction: {title}")
     summary = str(outline_day.get("default_summary") or "").strip()
     if summary:
-        parts.append(f"Day summary direction: {summary}")
+        parts.append(f"Lesson summary direction: {summary}")
     parts.append(
         "Keep this day aligned to the selected concept and the supplied programme outline. Return the full day payload only."
     )
@@ -1925,7 +1925,7 @@ def _generate_education_programme_via_outline(
                     "day_index": day_index,
                     "model": str(outline_result.get("model") or ""),
                     "duration_ms": 0,
-                    "content": f"Day generation failed: {day_exc}",
+                    "content": f"Lesson generation failed: {day_exc}",
                     "prompt": "",
                     "context": extra_context,
                     "task_label": day_brief,
@@ -3998,12 +3998,12 @@ def simulate_education_programme(id: int):
         <div>
           <div class="simulator-stat-label">Progress</div>
           <div class="simulator-stat-value">${escapeHtml(String(completedCount))}/${escapeHtml(String(days.length))} day${days.length === 1 ? '' : 's'} reviewed</div>
-          <div class="simulator-summary-line">Current step: ${escapeHtml(activeDay ? `Day ${Number(activeDay.day_index || 0)}` : 'None')}</div>
+          <div class="simulator-summary-line">Current step: ${escapeHtml(activeDay ? `Lesson ${Number(activeDay.day_index || 0)}` : 'None')}</div>
         </div>
         <div>
           <div class="simulator-stat-label">Variant level</div>
           <div class="simulator-stat-value">${escapeHtml(selectedLevel || 'Default')}</div>
-          <div class="simulator-summary-line">${escapeHtml(state.completed ? 'Programme simulation complete.' : 'Advance one day at a time.')}</div>
+          <div class="simulator-summary-line">${escapeHtml(state.completed ? 'Programme simulation complete.' : 'Advance one lesson at a time.')}</div>
         </div>
       </div>
     `;
@@ -4011,7 +4011,7 @@ def simulate_education_programme(id: int):
 
   function renderDayList() {
     if (!days.length) {
-      dayListEl.innerHTML = '<div class="simulator-empty">No programme days are configured yet.</div>';
+        dayListEl.innerHTML = '<div class="simulator-empty">No programme lessons are configured yet.</div>';
       return;
     }
     dayListEl.innerHTML = days.map((day, index) => {
@@ -4025,7 +4025,7 @@ def simulate_education_programme(id: int):
         day?.default_title ||
         day?.concept_label ||
         day?.concept_key ||
-        `Day ${Number(day?.day_index || 0)}`
+        `Lesson ${Number(day?.day_index || 0)}`
       ).trim();
       const metaBits = [
         variant ? levelLabel(variant.level) : 'No variant',
@@ -4038,7 +4038,7 @@ def simulate_education_programme(id: int):
           data-day-position="${index}"
           ${isUnlocked ? '' : 'disabled'}>
           <div class="simulator-day-button-row">
-            <span class="simulator-day-button-title">Day ${escapeHtml(String(Number(day?.day_index || index + 1)))}<\/span>
+            <span class="simulator-day-button-title">Lesson ${escapeHtml(String(Number(day?.day_index || index + 1)))}<\/span>
             <span class="simulator-pill ${escapeHtml(badge.className)}">${escapeHtml(badge.label)}<\/span>
           <\/div>
           <div class="simulator-day-button-meta">${escapeHtml(title)}${metaBits.length ? ` · ${escapeHtml(metaBits.join(' · '))}` : ''}<\/div>
@@ -4297,7 +4297,7 @@ def simulate_education_programme(id: int):
 
   function renderDayDetail() {
     if (!days.length) {
-      detailEl.innerHTML = '<div class="simulator-empty">No programme days are configured yet.</div>';
+      detailEl.innerHTML = '<div class="simulator-empty">No programme lessons are configured yet.</div>';
       return;
     }
     const day = days[state.currentPosition] || days[0];
@@ -4309,7 +4309,7 @@ def simulate_education_programme(id: int):
       day?.default_title ||
       day?.concept_label ||
       day?.concept_key ||
-      `Day ${Number(day?.day_index || state.currentPosition + 1)}`
+      `Lesson ${Number(day?.day_index || state.currentPosition + 1)}`
     ).trim();
     const videoUrl = String(variant?.video_url || '').trim();
     const posterUrl = String(variant?.poster_url || '').trim();
@@ -4329,13 +4329,13 @@ def simulate_education_programme(id: int):
     detailEl.innerHTML = `
       <div class="simulator-toolbar">
         <div>
-          <p class="subtle" style="margin:0 0 6px;">Day ${escapeHtml(String(Number(day?.day_index || state.currentPosition + 1)))} of ${escapeHtml(String(days.length))}</p>
+          <p class="subtle" style="margin:0 0 6px;">Lesson ${escapeHtml(String(Number(day?.day_index || state.currentPosition + 1)))} of ${escapeHtml(String(days.length))}</p>
           <h3 class="simulator-day-heading">${escapeHtml(title)}</h3>
-          <p class="help" style="margin-bottom:0;">${escapeHtml(String(day?.concept_label || day?.concept_key || '').trim() || 'Concept programme day')} · ${escapeHtml(levelLabel(variant?.level || state.selectedLevel || 'build'))} · ${escapeHtml(progressLabel)}</p>
+          <p class="help" style="margin-bottom:0;">${escapeHtml(String(day?.concept_label || day?.concept_key || '').trim() || 'Concept programme lesson')} · ${escapeHtml(levelLabel(variant?.level || state.selectedLevel || 'build'))} · ${escapeHtml(progressLabel)}</p>
         </div>
         <div class="simulator-toolbar-actions">
-          ${submission ? '<button type="button" id="simulator-retry-day" class="secondary">Retry this day</button>' : ''}
-          ${submission ? `<button type="button" id="simulator-next-day">${state.currentPosition >= days.length - 1 ? 'Finish programme' : 'Next day'}</button>` : ''}
+          ${submission ? '<button type="button" id="simulator-retry-day" class="secondary">Retry this lesson</button>' : ''}
+          ${submission ? `<button type="button" id="simulator-next-day">${state.currentPosition >= days.length - 1 ? 'Finish programme' : 'Next lesson'}</button>` : ''}
         </div>
       </div>
       <div class="simulator-panel">
@@ -4391,11 +4391,11 @@ def simulate_education_programme(id: int):
             : ''}
           ${submission
             ? ''
-            : `<div class="actions"><button type="submit">${questions.length ? 'Score this day' : 'Mark day reviewed'}</button></div>`}
+            : `<div class="actions"><button type="submit">${questions.length ? 'Score this lesson' : 'Mark lesson reviewed'}</button></div>`}
         </form>
       </div>
       ${state.completed && state.currentPosition >= days.length - 1
-        ? '<div class="simulator-panel"><strong>Programme simulation complete.</strong><div class="help" style="margin-top:8px;">Use Reset simulation to run the concept again from day 1, or change level to test a different variant path.</div></div>'
+        ? '<div class="simulator-panel"><strong>Programme simulation complete.</strong><div class="help" style="margin-top:8px;">Use Reset simulation to run the concept again from lesson 1, or change level to test a different variant path.</div></div>'
         : ''}
     `;
 
@@ -4443,7 +4443,7 @@ def simulate_education_programme(id: int):
   });
 
   resetButtonEl.addEventListener('click', () => {
-    if (!window.confirm('Reset this programme simulation back to day 1?')) {
+    if (!window.confirm('Reset this programme simulation back to lesson 1?')) {
       return;
     }
     resetSimulation(state.selectedLevel || defaultLevel());
@@ -4833,7 +4833,7 @@ async def regenerate_education_concept_programme_with_llm(request: Request):
                         "strategy": generation_strategy,
                     },
                     prompt_variant="admin_programme_editor_day",
-                    task_label=str(day_log.get("task_label") or f"Generate day {day_index}"),
+                    task_label=str(day_log.get("task_label") or f"Generate lesson {day_index}"),
                     prompt_blocks={
                         "context": json.dumps(day_context, ensure_ascii=False, default=str),
                         "task": str(day_log.get("task_label") or ""),
@@ -5328,11 +5328,11 @@ def edit_education_programme(id: int | None = None):
             </div>
             <div class="field">
               <label>Task description<br/>
-                <textarea id="day-llm-brief" rows="4" placeholder="Example: Regenerate this day around sleep pressure and a consistent wake time for a build-level recovery programme."></textarea>
+                <textarea id="day-llm-brief" rows="4" placeholder="Example: Regenerate this lesson around sleep pressure and a consistent wake time for a build-level recovery programme."></textarea>
               </label>
             </div>
             <div class="stack">
-              <button type="button" id="generate-selected-day-llm">Generate day draft</button>
+              <button type="button" id="generate-selected-day-llm">Generate lesson draft</button>
               <span class="subtle programme-day-llm-status" id="day-llm-status"></span>
             </div>
           </details>
@@ -5622,7 +5622,7 @@ def edit_education_programme(id: int | None = None):
           const selectedDay = days[selectedDayPosition] || days[0];
           if (dayDetailTitle && selectedDay) {{
             const title = String(selectedDay.default_title || selectedDay.variants?.[0]?.title || '').trim() || 'Untitled lesson';
-            dayDetailTitle.textContent = `Day ${{selectedDay.day_index || selectedDayPosition + 1}} · ${{title}}`;
+            dayDetailTitle.textContent = `Lesson ${{selectedDay.day_index || selectedDayPosition + 1}} · ${{title}}`;
           }}
           if (dayDetailMeta && selectedDay) {{
             const variantCount = Array.isArray(selectedDay.variants) ? selectedDay.variants.length : 0;
@@ -5640,7 +5640,7 @@ def edit_education_programme(id: int | None = None):
             const status = dayVariantSummary(day);
             return `
               <button type="button" class="programme-day-summary js-select-day ${{position === selectedDayPosition ? 'is-selected' : ''}}" data-day-position="${{position}}">
-                <span class="programme-day-summary-index">Day ${{escapeHtml(day.day_index || position + 1)}}</span>
+                <span class="programme-day-summary-index">Lesson ${{escapeHtml(day.day_index || position + 1)}}</span>
                 <span>
                   <span class="programme-day-summary-title">${{escapeHtml(title)}}</span>
                   <span class="programme-day-summary-meta">${{escapeHtml(levels)}} · ${{quizCount}} quiz question${{quizCount === 1 ? '' : 's'}}</span>
@@ -5838,12 +5838,12 @@ def edit_education_programme(id: int | None = None):
             <div class="programme-day js-day">
               <input type="hidden" class="js-day-id" value="${{escapeHtml(day.id || '')}}" />
               <div class="stack" style="justify-content:space-between;">
-                <strong>Programme Day</strong>
-                <button type="button" class="danger js-remove-day">Remove day</button>
+                <strong>Programme Lesson</strong>
+                <button type="button" class="danger js-remove-day">Remove lesson</button>
               </div>
               <div class="grid-3" style="margin-top:10px;">
                 <div class="field">
-                  <label>Day index<br/><input type="number" class="js-day-index" min="1" max="90" value="${{escapeHtml(day.day_index || '')}}" /></label>
+                  <label>Lesson index<br/><input type="number" class="js-day-index" min="1" max="90" value="${{escapeHtml(day.day_index || '')}}" /></label>
                 </div>
                 <div class="field">
                   <label>Concept<br/><input type="text" value="${{escapeHtml(conceptLabel)}}" readonly /></label>
@@ -6021,7 +6021,7 @@ def edit_education_programme(id: int | None = None):
         function openSelectedDayVideoReview() {{
           const dayEl = selectedDayElement();
           if (!dayEl) {{
-            window.alert('Select a programme day first.');
+            window.alert('Select a programme lesson first.');
             return;
           }}
           const variantWithVideo = Array.from(dayEl.querySelectorAll(':scope .js-variants-root > .js-variant'))
@@ -6404,7 +6404,7 @@ def edit_education_programme(id: int | None = None):
           }}
           const brief = String(dayLlmBrief?.value || '').trim();
           if (!brief) {{
-            window.alert('Add a task description before generating a day draft.');
+            window.alert('Add a task description before generating a lesson draft.');
             dayLlmBrief?.focus();
             return;
           }}
@@ -6426,7 +6426,7 @@ def edit_education_programme(id: int | None = None):
             dayLlmButton.textContent = 'Generating...';
           }}
           if (dayLlmStatus) {{
-            dayLlmStatus.textContent = 'Generating day draft...';
+            dayLlmStatus.textContent = 'Generating lesson draft...';
           }}
           try {{
             const response = await fetch('/admin/education-programmes/day/llm-generate', {{
@@ -6436,10 +6436,10 @@ def edit_education_programme(id: int | None = None):
             }});
             const result = await response.json().catch(() => ({{}}));
             if (!response.ok || result.ok === false) {{
-              throw new Error(String(result.error || result.detail || 'LLM day generation failed.'));
+              throw new Error(String(result.error || result.detail || 'LLM lesson generation failed.'));
             }}
             if (!result.day) {{
-              throw new Error('LLM response did not include a day draft.');
+              throw new Error('LLM response did not include a lesson draft.');
             }}
             replaceSelectedDayWithGenerated(result.day);
             if (dayLlmStatus) {{
@@ -6454,7 +6454,7 @@ def edit_education_programme(id: int | None = None):
           }} finally {{
             if (dayLlmButton) {{
               dayLlmButton.disabled = false;
-              dayLlmButton.textContent = previousText || 'Generate day draft';
+              dayLlmButton.textContent = previousText || 'Generate lesson draft';
             }}
           }}
         }}
