@@ -1492,7 +1492,14 @@ def _build_concept_week_evaluations(
                 daily_positive = daily_status == "success"
                 if day >= effective_start:
                     cumulative_value += float(value)
-            if resolved_target.target_period == "week" and resolved_target.target_value is not None:
+            # Reflection and purpose are subjective Likert inputs; keep their displayed
+            # score on the raw Likert 0-100 mapping instead of converting them into
+            # weekly progress when an OKR target exists.
+            if (
+                concept_def.score_mode != "likert"
+                and resolved_target.target_period == "week"
+                and resolved_target.target_value is not None
+            ):
                 elapsed_days = max(0, (day - effective_start).days + 1) if day >= effective_start else 0
                 expected = _weekly_expected_value(resolved_target, elapsed_days=elapsed_days)
                 if value is not None:
