@@ -2879,7 +2879,10 @@ export default function LatestAssessmentPanel({
                   type="button"
                   onClick={() => {
                     setActiveDockKey("checkin");
-                    openDailyMenuSurface("insight");
+                    void openTracker(orderedPillarKeys[0] || "", undefined, {
+                      guided: true,
+                      returnSurface: "tracking",
+                    });
                   }}
                   aria-pressed={activeDockKey === "checkin"}
                   className={homeDockButtonClassName}
