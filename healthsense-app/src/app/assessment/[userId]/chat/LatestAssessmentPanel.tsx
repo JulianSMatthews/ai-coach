@@ -1021,7 +1021,7 @@ function resolveScore(value?: number | null): number | null {
 }
 
 function resolvePillarDisplayScore(pillar: PillarTrackerPillar): number | null {
-  return resolveScore(pillar.score);
+  return resolveScore(pillar.score ?? pillar.tracker_score ?? pillar.baseline_score);
 }
 
 function circleDayTone(status?: string | null, isActive?: boolean): string {
@@ -1169,7 +1169,7 @@ export default function LatestAssessmentPanel({
   const [summaryPanelVisible, setSummaryPanelVisible] = useState(
     () => resolveSummaryPanelVisible(initialSummary, readMorningSequenceState(userId, initialSummary.today)),
   );
-  const [displayTheme, setDisplayTheme] = useState<DisplayTheme>("dark");
+  const [displayTheme, setDisplayTheme] = useState<DisplayTheme>(() => resolveCurrentDisplayTheme());
   const [selectedPillarKey, setSelectedPillarKey] = useState<string | null>(null);
   const [detail, setDetail] = useState<PillarTrackerDetailResponse | null>(null);
   const [draft, setDraft] = useState<Record<string, number>>({});
@@ -1218,16 +1218,30 @@ export default function LatestAssessmentPanel({
   const modalOverlayOpen = biometricsModalOpen || objectivesModalOpen || Boolean(selectedPillarKey);
   const homeDockButtonClassName =
     "flex h-[4.5rem] min-w-0 flex-col items-center justify-center gap-1 rounded-[26px] border px-2 py-2 text-center transition focus:outline-none focus-visible:ring-2 focus-visible:ring-black focus-visible:ring-offset-2";
-  const homeDockButtonStyleInactive = {
-    backgroundColor: "#fffdf9",
-    borderColor: "#efe7db",
-    color: "#000000",
-  };
-  const homeDockButtonStyleActive = {
-    backgroundColor: "#ededed",
-    borderColor: "#d9d0c3",
-    color: "#000000",
-  };
+  const homeDockButtonStyleInactive =
+    displayTheme === "dark"
+      ? {
+          backgroundColor: "var(--surface-soft)",
+          borderColor: "var(--border)",
+          color: "var(--text-primary)",
+        }
+      : {
+          backgroundColor: "#fffdf9",
+          borderColor: "#efe7db",
+          color: "#000000",
+        };
+  const homeDockButtonStyleActive =
+    displayTheme === "dark"
+      ? {
+          backgroundColor: "var(--surface-muted)",
+          borderColor: "var(--border-strong)",
+          color: "var(--text-primary)",
+        }
+      : {
+          backgroundColor: "#ededed",
+          borderColor: "#d9d0c3",
+          color: "#000000",
+        };
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
   const visiblePillars = useMemo(
@@ -1243,9 +1257,18 @@ export default function LatestAssessmentPanel({
   const isCompactPillarGrid = visiblePillars.length <= 4;
   const pillarGridClassName = isCompactPillarGrid ? "grid grid-cols-2 gap-4 sm:gap-5" : "grid grid-cols-2 gap-3";
   const pillarTileClassName = isCompactPillarGrid
-    ? "min-h-[clamp(16rem,38vh,24rem)] rounded-[32px] px-3 py-4 text-left transition sm:min-h-[clamp(18rem,34vh,26rem)]"
+    ? "min-h-[clamp(12rem,30vh,18rem)] rounded-[32px] px-3 py-4 text-left transition sm:min-h-[clamp(13.5rem,26vh,19.5rem)]"
     : "min-h-[12.5rem] rounded-[32px] px-3 py-3 text-left transition sm:min-h-[14.5rem]";
-  const pillarTileStyle = { backgroundColor: "#fcf8f0" };
+  const pillarTileStyle =
+    displayTheme === "dark"
+      ? {
+          backgroundColor: "var(--surface)",
+          borderColor: "var(--border)",
+        }
+      : {
+          backgroundColor: "#fcf8f0",
+          borderColor: "#efe7db",
+        };
   const orderedPillarKeys = visiblePillars
     .map((pillar) => String(pillar.pillar_key || "").trim().toLowerCase())
     .filter((pillarKey) => Boolean(pillarKey));
@@ -2489,6 +2512,17 @@ export default function LatestAssessmentPanel({
 
   useEffect(() => {
     setDisplayTheme(resolveCurrentDisplayTheme());
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const syncTheme = () => setDisplayTheme(resolveCurrentDisplayTheme());
+    window.addEventListener("healthsense-theme-changed", syncTheme as EventListener);
+    window.addEventListener("storage", syncTheme);
+    return () => {
+      window.removeEventListener("healthsense-theme-changed", syncTheme as EventListener);
+      window.removeEventListener("storage", syncTheme);
+    };
   }, []);
 
   useEffect(() => {

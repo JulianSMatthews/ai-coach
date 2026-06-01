@@ -48,6 +48,13 @@ export function applyThemePreference(preferenceInput: unknown, persist = true): 
     window.localStorage.setItem(THEME_STORAGE_KEY, preference);
     writeThemeCookie(preference);
   }
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent("healthsense-theme-changed", {
+        detail: { preference, resolved },
+      }),
+    );
+  }
   return preference;
 }
 
