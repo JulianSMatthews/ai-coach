@@ -1228,7 +1228,11 @@ export default function LatestAssessmentPanel({
     borderColor: "#d9d0c3",
     color: "#000000",
   };
-  const pillarTileClassName = "min-h-[12.5rem] rounded-[32px] px-3 py-3 text-left transition sm:min-h-[14.5rem]";
+  const isCompactPillarGrid = visiblePillars.length <= 4;
+  const pillarGridClassName = isCompactPillarGrid ? "grid grid-cols-2 gap-4 sm:gap-5" : "grid grid-cols-2 gap-3";
+  const pillarTileClassName = isCompactPillarGrid
+    ? "min-h-[clamp(16rem,38vh,24rem)] rounded-[32px] px-3 py-4 text-left transition sm:min-h-[clamp(18rem,34vh,26rem)]"
+    : "min-h-[12.5rem] rounded-[32px] px-3 py-3 text-left transition sm:min-h-[14.5rem]";
   const pillarTileStyle = { backgroundColor: "#fcf8f0" };
 
   const pillars = sortPillars(Array.isArray(summary.pillars) ? summary.pillars : []);
@@ -2849,7 +2853,7 @@ export default function LatestAssessmentPanel({
           className="px-4 py-4 pb-28 sm:px-5 sm:py-5 sm:pb-32"
         >
           <div className="relative">
-            <div className="grid grid-cols-2 gap-3">
+            <div className={pillarGridClassName}>
               {visiblePillars.map((pillar) => {
                 const pillarKey = String(pillar.pillar_key || "").trim().toLowerCase();
                 const palette = getPillarPalette(pillarKey);
@@ -2863,12 +2867,12 @@ export default function LatestAssessmentPanel({
                         guided: false,
                       })
                     }
-                      className={pillarTileClassName}
-                      style={pillarTileStyle}
-                    >
+                    className={`${pillarTileClassName} h-full`}
+                    style={pillarTileStyle}
+                  >
                     <div className="flex h-full flex-col items-center justify-center text-center">
                       <WeeklyScoreRing value={score} tone={palette.accent} />
-                      <p className="mt-2 text-sm font-semibold text-[#1e1b16]">{pillar.label}</p>
+                      <p className="mt-2 text-sm font-semibold text-[var(--text-primary)]">{pillar.label}</p>
                     </div>
                     </button>
                 );
