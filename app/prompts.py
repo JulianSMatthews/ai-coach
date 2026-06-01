@@ -707,7 +707,7 @@ def _coach_home_history_lines(
             concept_label = str(education.get("concept_label") or "").strip()
             day_index = str(education.get("day_index") or "").strip()
             duration_days = str(education.get("duration_days") or "").strip()
-            day_label = f"Day {day_index} of {duration_days}" if day_index and duration_days else f"Day {day_index}" if day_index else ""
+            day_label = f"Lesson {day_index} of {duration_days}" if day_index and duration_days else f"Lesson {day_index}" if day_index else ""
             heading = " | ".join(part for part in [programme_name, concept_label, day_label] if part)
             if heading:
                 lines.append(f"Education programme: {heading}")

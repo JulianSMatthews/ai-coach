@@ -21935,7 +21935,7 @@ def admin_user_app_state(user_id: int, admin_user: User = Depends(_require_admin
                 bit
                 for bit in [
                     str(education.get("programme_name") or "").strip() or None,
-                    f"Day {int(education.get('current_day_index') or 0)}"
+                    f"Lesson {int(education.get('current_day_index') or 0)}"
                     if int(education.get("current_day_index") or 0) > 0
                     else None,
                 ]

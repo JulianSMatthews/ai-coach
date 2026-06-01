@@ -2008,7 +2008,7 @@ def _education_avatar_bulk_result_page(title: str, result: dict) -> HTMLResponse
         "</div>"
         "<div class='card'>"
         "<table>"
-        "<tr><th>Day</th><th>Level</th><th>Lesson</th><th>Status</th><th>Detail</th><th>Job ID</th><th>Video</th></tr>"
+        "<tr><th>Lesson</th><th>Level</th><th>Lesson</th><th>Status</th><th>Detail</th><th>Job ID</th><th>Video</th></tr>"
         + ("".join(rows) if rows else "<tr><td colspan='7'><em>No active lesson variants found.</em></td></tr>")
         + "</table>"
         "</div>"
@@ -2101,7 +2101,7 @@ def _education_avatar_all_result_page(title: str, result: dict) -> HTMLResponse:
         "<div class='card'>"
         "<h3 class='section-title'>Lesson variants</h3>"
         "<table>"
-        "<tr><th>Programme ID</th><th>Programme</th><th>Day</th><th>Level</th><th>Lesson</th><th>Status</th><th>Detail</th><th>Job ID</th><th>Video</th></tr>"
+        "<tr><th>Programme ID</th><th>Programme</th><th>Lesson</th><th>Level</th><th>Lesson</th><th>Status</th><th>Detail</th><th>Job ID</th><th>Video</th></tr>"
         + ("".join(detail_rows) if detail_rows else "<tr><td colspan='9'><em>No active lesson variants found.</em></td></tr>")
         + "</table>"
         "</div>"
@@ -2387,7 +2387,7 @@ def education_programme_avatar_job_status(job_id: int | None = None, programme_i
             f"In-progress estimate: {exposure['in_progress_minutes']:.2f} min / £{exposure['in_progress_cost_gbp']:.2f}."
             "</p>"
             "<table>"
-            "<tr><th>Day</th><th>Level</th><th>Title</th><th>State</th><th>Azure status</th><th>Azure job id</th><th>Est min</th><th>Est cost</th><th>Video</th><th>Error</th></tr>"
+            "<tr><th>Lesson</th><th>Level</th><th>Title</th><th>State</th><th>Azure status</th><th>Azure job id</th><th>Est min</th><th>Est cost</th><th>Video</th><th>Error</th></tr>"
             + ("".join(rows_html) if rows_html else "<tr><td colspan='10'><em>No lesson variants found.</em></td></tr>")
             + "</table>"
             "</div>"
@@ -6998,7 +6998,7 @@ async def save_education_programme(
                         try:
                             options_val = json.loads(options_val)
                         except Exception as exc:
-                            raise HTTPException(400, f"Day {day_row.day_index} variant {level} question {order}: invalid options JSON ({exc})")
+                            raise HTTPException(400, f"Lesson {day_row.day_index} variant {level} question {order}: invalid options JSON ({exc})")
                     if isinstance(correct_val, str) and correct_val.strip():
                         try:
                             correct_val = json.loads(correct_val)

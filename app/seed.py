@@ -2027,17 +2027,17 @@ def parse_education_programme_docx(path: str) -> dict[str, Any]:
 
     flush_day()
     if not days:
-        raise ValueError(f"No DAY sections found in education programme DOCX: {path}")
+        raise ValueError(f"No LESSON sections found in education programme DOCX: {path}")
     for day in days:
         if not str(day.get("script") or "").strip():
-            raise ValueError(f"Day {day.get('day_index')} is missing Script content in {path}")
+            raise ValueError(f"Lesson {day.get('day_index')} is missing Script content in {path}")
         if len(day.get("questions") or []) != 3:
-            raise ValueError(f"Day {day.get('day_index')} must contain exactly 3 questions in {path}")
+            raise ValueError(f"Lesson {day.get('day_index')} must contain exactly 3 questions in {path}")
         for question in day.get("questions") or []:
             if not question.get("options"):
-                raise ValueError(f"Day {day.get('day_index')} question is missing options in {path}")
+                raise ValueError(f"Lesson {day.get('day_index')} question is missing options in {path}")
             if not question.get("correct"):
-                raise ValueError(f"Day {day.get('day_index')} question is missing a (Correct) option in {path}")
+                raise ValueError(f"Lesson {day.get('day_index')} question is missing a (Correct) option in {path}")
     return {"title": programme_title, "days": days}
 
 

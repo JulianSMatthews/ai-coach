@@ -457,9 +457,9 @@ def _append_education_programme_lines(lines: list[str], tracker_context: dict) -
     day_index = _safe_int(education.get("day_index"))
     duration_days = _safe_int(education.get("duration_days"))
     day_label = (
-        f"Day {day_index} of {duration_days}"
+        f"Lesson {day_index} of {duration_days}"
         if day_index and duration_days
-        else f"Day {day_index}"
+        else f"Lesson {day_index}"
         if day_index
         else ""
     )

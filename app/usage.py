@@ -1020,7 +1020,7 @@ def get_avatar_usage_rows(
                 part
                 for part in (
                     str(programme_label or "").strip(),
-                    f"Day {education.get('day_index') or meta.get('day_index')}" if (education.get("day_index") or meta.get("day_index")) else "",
+                    f"Lesson {education.get('day_index') or meta.get('day_index')}" if (education.get("day_index") or meta.get("day_index")) else "",
                     str(lesson_title or "").strip(),
                 )
                 if part
