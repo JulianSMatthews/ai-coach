@@ -8138,6 +8138,34 @@ def api_user_status_v1(
         onboarding_state = _get_onboarding_state(s, user_id)
         assessment_completed = bool(str(onboarding_state.get("assessment_completed_at") or "").strip())
         intro_payload = _build_intro_payload(s, u, onboarding_state)
+        engagement_rows = (
+            s.execute(
+                select(UsageEvent.created_at)
+                .where(UsageEvent.user_id == user_id, UsageEvent.tag == APP_ENGAGEMENT_TAG)
+                .order_by(desc(UsageEvent.created_at))
+            )
+            .scalars()
+            .all()
+        )
+        engagement_days: list[date] = []
+        for created_at in engagement_rows:
+            if created_at is None:
+                continue
+            ts = created_at
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=ZoneInfo("UTC"))
+            engagement_days.append(ts.astimezone(UK_TZ).date())
+        unique_engagement_days = sorted(set(engagement_days), reverse=True)
+        latest_interaction_at = None
+        if engagement_rows and engagement_rows[0] is not None:
+            latest_ts = engagement_rows[0]
+            if latest_ts.tzinfo is None:
+                latest_ts = latest_ts.replace(tzinfo=ZoneInfo("UTC"))
+            latest_interaction_at = latest_ts.astimezone(UK_TZ).isoformat()
+        engagement_summary = {
+            "interaction_days_count": len(unique_engagement_days),
+            "latest_interaction_at": latest_interaction_at,
+        }
 
     data = {
         "user": {
@@ -8168,6 +8196,7 @@ def api_user_status_v1(
         "prompt_state_override": pref_map.get("prompt_state_override", ""),
         "onboarding": onboarding_state,
         "intro": intro_payload,
+        "engagement_summary": engagement_summary,
         "coaching_window": _build_coaching_window_payload(getattr(u, "last_inbound_message_at", None)),
     }
 

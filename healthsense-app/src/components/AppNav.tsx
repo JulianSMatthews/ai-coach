@@ -9,6 +9,7 @@ type AppNavProps = {
   userId?: string;
   promptBadge?: string;
   overallScore?: number | null;
+  interactionDaysCount?: number | null;
 };
 
 function ScoreBadge({ score }: { score: number }) {
@@ -46,10 +47,35 @@ function ScoreBadge({ score }: { score: number }) {
   );
 }
 
-export default function AppNav({ userId = "", promptBadge = "", overallScore = null }: AppNavProps) {
+function FlameBadge({ days }: { days: number }) {
+  return (
+    <span className="inline-flex h-11 items-center gap-1.5 rounded-full border border-[#efe7db] bg-[#fffdf9] px-3 text-black">
+      <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" aria-hidden="true">
+        <path
+          d="M12.5 3.5c.5 2.4-.7 3.8-2.1 5.4C8.8 10.3 7 12.4 7 15.1A5 5 0 0 0 12 20a5 5 0 0 0 5-4.9c0-1.8-.8-3.4-2-4.8-.4-.5-.9-1-1.3-1.6-.2.9-.7 1.7-1.5 2.4-.9-1-.8-2.5-.2-3.9.4-1 .5-1.9.5-3 0-.2 0-.4 0-.7Z"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.8"
+          strokeLinejoin="round"
+        />
+      </svg>
+      <span className="min-w-[0.9rem] text-sm font-semibold leading-none">{days}</span>
+    </span>
+  );
+}
+
+export default function AppNav({
+  userId = "",
+  promptBadge = "",
+  overallScore = null,
+  interactionDaysCount = null,
+}: AppNavProps) {
   const [open, setOpen] = useState(false);
   const resolvedUserId = String(userId || "").trim();
   const resolvedOverallScore = Number.isFinite(Number(overallScore)) ? Math.max(0, Math.min(100, Math.round(Number(overallScore)))) : null;
+  const resolvedInteractionDaysCount = Number.isFinite(Number(interactionDaysCount))
+    ? Math.max(0, Math.round(Number(interactionDaysCount)))
+    : null;
   const links: Array<{ label: string; href: string }> = [
     { label: "Home", href: resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login" },
     ...(resolvedUserId
@@ -77,22 +103,42 @@ export default function AppNav({ userId = "", promptBadge = "", overallScore = n
     <>
       <nav className="sticky top-0 z-50 mb-2 flex min-w-0 flex-col gap-1 px-0 py-0 text-xs text-[var(--text-secondary)] md:static md:mb-4 md:flex-row md:flex-nowrap md:items-center md:px-0 md:py-0">
         <div className="flex w-full items-center justify-between md:w-auto md:justify-start">
-          {resolvedOverallScore !== null ? (
+          <div className="h-11 w-11 shrink-0" aria-hidden="true" />
+          <div className="flex items-center gap-2">
+            {resolvedOverallScore !== null ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    window.dispatchEvent(new CustomEvent("healthsense-open-objectives"));
+                  }
+                }}
+                className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#efe7db] bg-[#fffdf9]"
+                aria-label="Open overall score"
+              >
+                <ScoreBadge score={resolvedOverallScore} />
+              </button>
+            ) : null}
+            {resolvedInteractionDaysCount !== null ? <FlameBadge days={resolvedInteractionDaysCount} /> : null}
             <button
               type="button"
-              onClick={() => {
-                if (typeof window !== "undefined") {
-                  window.dispatchEvent(new CustomEvent("healthsense-open-objectives"));
-                }
-              }}
-              className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-[#efe7db] bg-[#fffdf9]"
-              aria-label="Open overall score"
+              className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#efe7db] md:hidden"
+              style={{ backgroundColor: "#fffdf9", color: "#000000" }}
+              aria-label="Open menu"
+              aria-expanded={open}
+              onClick={() => setOpen(true)}
             >
-              <ScoreBadge score={resolvedOverallScore} />
+              <span className="sr-only">Open menu</span>
+              <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
+                <path
+                  d="M4 7h16M4 12h16M4 17h16"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                />
+              </svg>
             </button>
-          ) : (
-            <div className="h-11 w-11 shrink-0" aria-hidden="true" />
-          )}
+          </div>
           <Link
             href={resolvedUserId ? `/assessment/${resolvedUserId}/chat` : "/login"}
             className="sr-only"
@@ -100,24 +146,6 @@ export default function AppNav({ userId = "", promptBadge = "", overallScore = n
           >
             HealthSense home
           </Link>
-          <button
-            type="button"
-            className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-[#efe7db] md:hidden"
-            style={{ backgroundColor: "#fffdf9", color: "#000000" }}
-            aria-label="Open menu"
-            aria-expanded={open}
-            onClick={() => setOpen(true)}
-          >
-            <span className="sr-only">Open menu</span>
-            <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
-              <path
-                d="M4 7h16M4 12h16M4 17h16"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              />
-            </svg>
-          </button>
         </div>
         <div className="hidden flex-wrap items-center gap-2 md:flex">
           {links.map((link) => (

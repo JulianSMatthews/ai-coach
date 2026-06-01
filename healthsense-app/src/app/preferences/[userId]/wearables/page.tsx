@@ -13,7 +13,6 @@ export default async function WearablesPage(props: PageProps) {
   const { userId } = await props.params;
   const searchParams = props.searchParams ? await props.searchParams : {};
   const [data, wearables] = await Promise.all([getUserStatus(userId), getWearables(userId)]);
-  const user = data.user || {};
   const prefs = data.coaching_preferences || {};
   const textScale = prefs.text_scale ? Number.parseFloat(prefs.text_scale) : undefined;
   const themePreference = prefs.theme || "dark";
@@ -30,7 +29,7 @@ export default async function WearablesPage(props: PageProps) {
   return (
     <PageShell defaultTheme={themePreference}>
       <TextScale defaultScale={textScale} />
-      <AppNav userId={userId} promptBadge={promptBadge} />
+      <AppNav userId={userId} promptBadge={promptBadge} interactionDaysCount={data.engagement_summary?.interaction_days_count ?? null} />
 
       <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">
         <WearablesPanel

@@ -32,7 +32,7 @@ export default async function PreferencesPage(props: PageProps) {
   return (
     <PageShell defaultTheme={themePreference}>
       <TextScale defaultScale={textScale} />
-      <AppNav userId={userId} promptBadge={promptBadge} />
+      <AppNav userId={userId} promptBadge={promptBadge} interactionDaysCount={data.engagement_summary?.interaction_days_count ?? null} />
 
       <section className="grid gap-6">
         <Card className="shadow-[0_20px_70px_-50px_rgba(30,27,22,0.35)]">

@@ -28,6 +28,10 @@ export type UserStatusResponse = {
     preferred_channel?: string;
     marketing_opt_in?: string;
   };
+  engagement_summary?: {
+    interaction_days_count?: number | null;
+    latest_interaction_at?: string | null;
+  };
   onboarding?: {
     assessment_completed_at?: string | null;
     first_app_login_at?: string | null;
