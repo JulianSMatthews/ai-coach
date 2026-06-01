@@ -953,6 +953,16 @@ export default function AssessmentChatBox({
         return true;
       });
   }, [activeEducationExplorerPillarKey, educationLessonRail]);
+  const selectedEducationLesson = useMemo(() => {
+    const selectedDayIndex = Number(selectedEducationLessonDayIndex || 0);
+    const currentLesson = educationLessonRail.find((lesson) => Number(lesson?.day_index || 0) === selectedDayIndex);
+    return currentLesson || educationLessonRail[0] || educationPlan?.lesson || null;
+  }, [educationLessonRail, educationPlan?.lesson, selectedEducationLessonDayIndex]);
+  const selectedEducationLessonPosterUrl = String(
+    selectedEducationLesson?.content?.poster_url ||
+      selectedEducationLesson?.content?.avatar?.poster_url ||
+      "",
+  ).trim();
   const dailyHabits = useMemo(() => {
     const selected = Array.isArray(dailyHabitPlan?.habits) ? dailyHabitPlan.habits : [];
     const fallback = Array.isArray(dailyHabitPlan?.options) ? dailyHabitPlan.options : [];
@@ -2351,8 +2361,77 @@ export default function AssessmentChatBox({
               </div>
           ) : educationPlan?.available ? (
               <div className="flex min-h-full flex-col">
+                {selectedEducationLesson ? (() => {
+                  const lesson = selectedEducationLesson;
+                  const lessonDayIndex = Number(lesson?.day_index || 0);
+                  const lessonTitle = normalizeLessonHeading(
+                    lesson?.title || lesson?.concept_label || lesson?.pillar_label || "",
+                  );
+                  const lessonDescription = String(lesson?.goal || lesson?.summary || "").trim();
+                  const posterUrl = selectedEducationLessonPosterUrl;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedEducationLessonDayIndex(lessonDayIndex || null);
+                        setEducationExplorerOpen(true);
+                        if (typeof window !== "undefined") {
+                          window.dispatchEvent(
+                            new CustomEvent("healthsense-education-lesson-selected", {
+                              detail: {
+                                lesson_day_index: lessonDayIndex || null,
+                                lesson_title: lessonTitle || null,
+                                pillar_key: String(lesson?.pillar_key || "").trim() || null,
+                              },
+                            }),
+                          );
+                        }
+                      }}
+                      className="relative mx-auto flex w-full max-w-[22rem] overflow-hidden rounded-[30px] border border-transparent text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition sm:max-w-[25rem]"
+                      style={{ backgroundColor: "#d6ab81", minHeight: "30rem" }}
+                    >
+                      <span className="relative z-10 flex min-h-[30rem] w-full flex-col justify-between p-5 sm:p-6">
+                        <span>
+                          <span className="block text-[11px] font-medium uppercase tracking-[0.16em] text-[#201813]/80">
+                            {String(lesson?.pillar_label || "").trim() || "Lesson"}
+                          </span>
+                          <span className="mt-4 block max-w-[12ch] text-[2.5rem] font-semibold leading-[0.95] tracking-[-0.02em] text-[#18110d] sm:max-w-[11ch] sm:text-[3rem]">
+                            {lessonTitle || "Untitled lesson"}
+                          </span>
+                          {lessonDescription ? (
+                            <span className="mt-4 block max-w-[18rem] text-[0.95rem] leading-7 text-[#3c332b]">
+                              {lessonDescription}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className="relative z-10 flex items-end justify-between gap-3">
+                          <span className="rounded-full bg-[#18110d] px-5 py-3 text-sm font-semibold text-white">
+                            Start lesson
+                          </span>
+                          <span className="rounded-full bg-[#f5efe5] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#3c332b]">
+                            {String(lesson?.day_index || 0).padStart(2, "0")}
+                          </span>
+                        </span>
+                      </span>
+                      {posterUrl ? (
+                        <img
+                          src={posterUrl}
+                          alt=""
+                          className="pointer-events-none absolute bottom-0 left-0 h-[66%] w-[72%] object-contain object-left-bottom"
+                        />
+                      ) : (
+                        <span className="pointer-events-none absolute bottom-0 left-0 h-[64%] w-[70%]">
+                          <span className="absolute bottom-0 left-0 h-[72%] w-[78%] rounded-tr-[2rem] bg-[rgba(255,255,255,0.18)]" />
+                          <span className="absolute bottom-[7%] left-[12%] flex h-[6.5rem] w-[6.5rem] items-center justify-center rounded-[1.75rem] bg-[rgba(255,255,255,0.75)] text-4xl font-semibold text-[#18110d] shadow-[0_12px_32px_-24px_rgba(30,27,22,0.5)]">
+                            {String(lessonTitle || "L").trim().slice(0, 1).toUpperCase()}
+                          </span>
+                        </span>
+                      )}
+                    </button>
+                  );
+                })() : null}
                 {educationLessonRail.length ? (
-                  <div className="flex flex-1 items-center justify-center py-10 sm:py-14">
+                  <div className="mt-6 flex flex-1 items-start justify-center">
                     <div className="w-full overflow-x-auto px-4 pb-2">
                       <div className="flex justify-start gap-3 py-1 pr-4">
                       {educationLessonRail.map((lesson) => {
@@ -2367,27 +2446,39 @@ export default function AssessmentChatBox({
                         <button
                           key={`${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
                           type="button"
-                          onClick={() => setSelectedEducationLessonDayIndex(lessonDayIndex || null)}
-                          className="flex w-[15.75rem] shrink-0 items-start gap-3 rounded-[26px] border px-4 py-12 text-left transition sm:w-[17.5rem] sm:py-14"
+                          onClick={() => {
+                            setSelectedEducationLessonDayIndex(lessonDayIndex || null);
+                            setEducationExplorerOpen(true);
+                            if (typeof window !== "undefined") {
+                              window.dispatchEvent(
+                                new CustomEvent("healthsense-education-lesson-selected", {
+                                  detail: {
+                                    lesson_day_index: lessonDayIndex || null,
+                                    lesson_title: lessonTitle || null,
+                                    pillar_key: String(lesson?.pillar_key || "").trim() || null,
+                                  },
+                                }),
+                              );
+                            }
+                          }}
+                          className="flex w-[11.5rem] shrink-0 flex-col justify-between overflow-hidden rounded-[26px] px-4 py-4 text-left transition sm:w-[13rem] sm:py-5"
                           style={{
-                            backgroundColor: "#d3541b",
+                            backgroundColor: "#d6ab81",
                             boxShadow: isSelected
-                              ? "0 0 0 1px rgba(255,255,255,0.45) inset"
+                              ? "0 0 0 1px rgba(0,0,0,0.08) inset"
                               : "none",
                           }}
                         >
-                          <span className="min-w-0 flex-1">
-                            <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
+                          <span>
+                            <span className="block text-[10px] font-medium uppercase tracking-[0.14em] text-[#201813]/80">
                               {String(lesson?.pillar_label || palette.label || "").trim() || "Lesson"}
                             </span>
-                            <span className="mt-1 block text-sm font-semibold text-white">
+                            <span className="mt-2 block text-[1.4rem] font-semibold leading-[1.0] tracking-[-0.02em] text-[#18110d]">
                               {lessonTitle || "Untitled lesson"}
                             </span>
-                            {lessonDescription ? (
-                              <span className="mt-2 block text-sm leading-6 text-white/85">
-                                {lessonDescription}
-                              </span>
-                            ) : null}
+                          </span>
+                          <span className="mt-4 block text-sm leading-6 text-[#3c332b]">
+                            {lessonDescription || "Tap to select."}
                           </span>
                         </button>
                       );
@@ -2396,7 +2487,7 @@ export default function AssessmentChatBox({
                     </div>
                   </div>
                 ) : null}
-                <div className="mt-28 pb-2 sm:mt-32">
+                <div className="mt-16 pb-2 sm:mt-20">
                   <button
                     type="button"
                     onClick={() => {
