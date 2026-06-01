@@ -795,10 +795,10 @@ export default function AssessmentChatBox({
   const [selectedEducationLessonDayIndex, setSelectedEducationLessonDayIndex] = useState<number | null>(null);
   const [educationExplorerOpen, setEducationExplorerOpen] = useState(false);
   const [educationExplorerPillarKey, setEducationExplorerPillarKey] = useState<string | null>(null);
+  const [educationExplorerMode, setEducationExplorerMode] = useState<"pillars" | "lessons">("pillars");
   const educationPlanRequestIdRef = useRef(0);
   const homePanelShellRef = useRef<HTMLDivElement | null>(null);
   const homePanelScrollerRef = useRef<HTMLDivElement | null>(null);
-  const educationExplorerSectionRef = useRef<HTMLDivElement | null>(null);
   const finalGiaRequestIdRef = useRef(0);
   const finalGiaListenRequestIdRef = useRef(0);
   const finalGiaSpeechRef = useRef<{ close?: () => void } | null>(null);
@@ -2360,183 +2360,74 @@ export default function AssessmentChatBox({
                 </p>
               </div>
           ) : educationPlan?.available ? (
-              <div className="flex min-h-full flex-col">
-                {selectedEducationLesson ? (() => {
-                  const lesson = selectedEducationLesson;
-                  const lessonDayIndex = Number(lesson?.day_index || 0);
-                  const lessonTitle = normalizeLessonHeading(
-                    lesson?.title || lesson?.concept_label || lesson?.pillar_label || "",
-                  );
-                  const lessonDescription = String(lesson?.goal || lesson?.summary || "").trim();
-                  const posterUrl = selectedEducationLessonPosterUrl;
-                  return (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedEducationLessonDayIndex(lessonDayIndex || null);
-                        setEducationExplorerOpen(true);
-                        if (typeof window !== "undefined") {
-                          window.dispatchEvent(
-                            new CustomEvent("healthsense-education-lesson-selected", {
-                              detail: {
-                                lesson_day_index: lessonDayIndex || null,
-                                lesson_title: lessonTitle || null,
-                                pillar_key: String(lesson?.pillar_key || "").trim() || null,
-                              },
-                            }),
-                          );
-                        }
-                      }}
-                      className="relative mx-auto flex w-full max-w-[22rem] overflow-hidden rounded-[30px] border border-transparent text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition sm:max-w-[25rem]"
-                      style={{ backgroundColor: "#d6ab81", minHeight: "30rem" }}
-                    >
-                      <span className="relative z-10 flex min-h-[30rem] w-full flex-col justify-between p-5 sm:p-6">
-                        <span>
-                          <span className="block text-[11px] font-medium uppercase tracking-[0.16em] text-[#201813]/80">
-                            {String(lesson?.pillar_label || "").trim() || "Lesson"}
-                          </span>
-                          <span className="mt-4 block max-w-[12ch] text-[2.5rem] font-semibold leading-[0.95] tracking-[-0.02em] text-[#18110d] sm:max-w-[11ch] sm:text-[3rem]">
-                            {lessonTitle || "Untitled lesson"}
-                          </span>
-                          {lessonDescription ? (
-                            <span className="mt-4 block max-w-[18rem] text-[0.95rem] leading-7 text-[#3c332b]">
-                              {lessonDescription}
-                            </span>
-                          ) : null}
-                        </span>
-                        <span className="relative z-10 flex items-end justify-between gap-3">
-                          <span className="rounded-full bg-[#18110d] px-5 py-3 text-sm font-semibold text-white">
-                            Start lesson
-                          </span>
-                          <span className="rounded-full bg-[#f5efe5] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#3c332b]">
-                            {String(lesson?.day_index || 0).padStart(2, "0")}
-                          </span>
-                        </span>
-                      </span>
-                      {posterUrl ? (
-                        <img
-                          src={posterUrl}
-                          alt=""
-                          className="pointer-events-none absolute bottom-0 left-0 h-[66%] w-[72%] object-contain object-left-bottom"
-                        />
-                      ) : (
-                        <span className="pointer-events-none absolute bottom-0 left-0 h-[64%] w-[70%]">
-                          <span className="absolute bottom-0 left-0 h-[72%] w-[78%] rounded-tr-[2rem] bg-[rgba(255,255,255,0.18)]" />
-                          <span className="absolute bottom-[7%] left-[12%] flex h-[6.5rem] w-[6.5rem] items-center justify-center rounded-[1.75rem] bg-[rgba(255,255,255,0.75)] text-4xl font-semibold text-[#18110d] shadow-[0_12px_32px_-24px_rgba(30,27,22,0.5)]">
-                            {String(lessonTitle || "L").trim().slice(0, 1).toUpperCase()}
-                          </span>
-                        </span>
-                      )}
-                    </button>
-                  );
-                })() : null}
-                {educationLessonRail.length ? (
-                  <div className="mt-6 flex flex-1 items-start justify-center">
-                    <div className="w-full overflow-x-auto px-4 pb-2">
-                      <div className="flex justify-start gap-3 py-1 pr-4">
-                      {educationLessonRail.map((lesson) => {
-                      const palette = getPillarPalette(lesson?.pillar_key);
-                      const lessonDayIndex = Number(lesson?.day_index || 0);
-                      const isSelected = lessonDayIndex === Number(selectedEducationLessonDayIndex || 0);
-                      const lessonTitle = normalizeLessonHeading(
-                        lesson?.title || lesson?.concept_label || lesson?.pillar_label || "",
-                      );
-                      const lessonDescription = String(lesson?.goal || lesson?.summary || "").trim();
-                      return (
-                        <button
-                          key={`${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
-                          type="button"
-                          onClick={() => {
-                            setSelectedEducationLessonDayIndex(lessonDayIndex || null);
-                            setEducationExplorerOpen(true);
-                            if (typeof window !== "undefined") {
-                              window.dispatchEvent(
-                                new CustomEvent("healthsense-education-lesson-selected", {
-                                  detail: {
-                                    lesson_day_index: lessonDayIndex || null,
-                                    lesson_title: lessonTitle || null,
-                                    pillar_key: String(lesson?.pillar_key || "").trim() || null,
-                                  },
-                                }),
-                              );
-                            }
-                          }}
-                          className="flex w-[11.5rem] shrink-0 flex-col justify-between overflow-hidden rounded-[26px] px-4 py-4 text-left transition sm:w-[13rem] sm:py-5"
-                          style={{
-                            backgroundColor: "#d6ab81",
-                            boxShadow: isSelected
-                              ? "0 0 0 1px rgba(0,0,0,0.08) inset"
-                              : "none",
-                          }}
-                        >
-                          <span>
-                            <span className="block text-[10px] font-medium uppercase tracking-[0.14em] text-[#201813]/80">
-                              {String(lesson?.pillar_label || palette.label || "").trim() || "Lesson"}
-                            </span>
-                            <span className="mt-2 block text-[1.4rem] font-semibold leading-[1.0] tracking-[-0.02em] text-[#18110d]">
-                              {lessonTitle || "Untitled lesson"}
-                            </span>
-                          </span>
-                          <span className="mt-4 block text-sm leading-6 text-[#3c332b]">
-                            {lessonDescription || "Tap to select."}
-                          </span>
-                        </button>
-                      );
-                      })}
-                      </div>
+              educationExplorerOpen ? (
+                <div className="flex min-h-full flex-col">
+                  <div className="shrink-0 px-1 py-4 sm:px-2">
+                    <div className="flex items-center justify-between">
+                      <button
+                        type="button"
+                        onClick={() => setEducationExplorerOpen(false)}
+                        className="flex h-12 w-12 items-center justify-center rounded-full border border-[#e7e1d6] bg-[#ffffff] text-[#1e1b16] transition"
+                        aria-label="Back"
+                      >
+                        <span className="text-3xl leading-none">‹</span>
+                      </button>
+                      <p className="text-[2rem] font-semibold tracking-[-0.02em] text-[#1e1b16]">Pillars</p>
+                      <div className="h-12 w-12" />
+                    </div>
+                    <div className="mt-6 grid grid-cols-2 gap-1 rounded-[22px] bg-[#f4efe5] p-1">
+                      <button
+                        type="button"
+                        onClick={() => setEducationExplorerMode("pillars")}
+                        className="rounded-[18px] px-4 py-3 text-center text-sm font-semibold transition"
+                        style={educationExplorerMode === "pillars" ? homeDockActiveButtonStyle : homePlainButtonStyle}
+                      >
+                        Pillars
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEducationExplorerMode("lessons")}
+                        className="rounded-[18px] px-4 py-3 text-center text-sm font-semibold transition"
+                        style={educationExplorerMode === "lessons" ? homeDockActiveButtonStyle : homePlainButtonStyle}
+                      >
+                        Lessons
+                      </button>
                     </div>
                   </div>
-                ) : null}
-                <div className="mt-16 pb-2 sm:mt-20">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEducationExplorerOpen(true);
-                      setEducationExplorerPillarKey(educationExplorerPillars[0]?.pillar_key || null);
-                      window.setTimeout(() => {
-                        educationExplorerSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-                      }, 0);
-                    }}
-                    className="mx-auto block w-[min(100%,17rem)] rounded-full border px-4 py-3 text-sm font-semibold transition"
-                    style={{ backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" }}
-                  >
-                    Explore topics
-                  </button>
-                </div>
-                {educationExplorerOpen && educationExplorerPillars.length ? (
-                  <div ref={educationExplorerSectionRef} className="mt-10 space-y-4 pb-8">
-                    <div className="rounded-[28px] bg-[#fcf8f0] px-4 py-4 sm:px-5 sm:py-5">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                        Select a pillar
-                      </p>
-                      <div className="mt-4 space-y-3">
+                  <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-44 sm:px-5 sm:pb-52">
+                    {educationExplorerMode === "pillars" ? (
+                      <div className="space-y-3">
                         {educationExplorerPillars.map((pillar) => {
                           const active = pillar.pillar_key === activeEducationExplorerPillarKey;
+                          const palette = getPillarPalette(pillar.pillar_key);
                           return (
                             <button
                               key={pillar.pillar_key}
                               type="button"
-                              onClick={() => setEducationExplorerPillarKey(pillar.pillar_key)}
-                              className="flex w-full items-center justify-between rounded-[28px] border border-[#e7e1d6] px-5 py-5 text-left transition"
+                              onClick={() => {
+                                setEducationExplorerPillarKey(pillar.pillar_key);
+                                setEducationExplorerMode("lessons");
+                              }}
+                              className="flex min-h-[9rem] w-full items-center justify-between rounded-[28px] border border-[#e7e1d6] px-5 py-5 text-left transition"
                               style={{
                                 backgroundColor: active ? "#ece7dc" : "#f8f4eb",
                                 boxShadow: active ? "0 0 0 1px rgba(0,0,0,0.04) inset" : "none",
                               }}
                             >
                               <span className="min-w-0 pr-4">
-                                <span className="block text-[10px] font-semibold uppercase tracking-[0.16em] text-[#8a7f72]">
+                                <span className="block text-[11px] font-semibold uppercase tracking-[0.16em] text-[#8a7f72]">
                                   Pillar
                                 </span>
-                                <span className="mt-2 block text-[26px] leading-[1.06] font-semibold text-[#1e1b16] sm:text-[30px]">
+                                <span className="mt-3 block text-[2.3rem] font-semibold leading-[0.95] tracking-[-0.03em] text-[#1e1b16] sm:text-[2.8rem]">
                                   {pillar.pillar_label}
                                 </span>
-                                <span className="mt-3 block text-sm text-[#6b6257]">
+                                <span className="mt-4 block text-sm text-[#6b6257]">
                                   {pillar.lesson_count} lesson{pillar.lesson_count === 1 ? "" : "s"}
                                 </span>
                               </span>
                               <span
-                                className="ml-4 flex h-14 w-14 shrink-0 items-center justify-center rounded-full text-xl font-semibold"
-                                style={{ backgroundColor: "#ffffff", color: "#1e1b16" }}
+                                className="ml-4 flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-2xl font-semibold"
+                                style={{ backgroundColor: palette.surface, color: "#1e1b16" }}
                               >
                                 {pillar.lesson_count}
                               </span>
@@ -2544,12 +2435,8 @@ export default function AssessmentChatBox({
                           );
                         })}
                       </div>
-                    </div>
-                    <div className="rounded-[28px] bg-[#fcf8f0] px-4 py-4 sm:px-5 sm:py-5">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--accent)]">
-                        {String(activeEducationExplorerPillarKey || "").trim() ? getPillarPalette(activeEducationExplorerPillarKey || "").label : "Lessons"}
-                      </p>
-                      <div className="mt-4 flex gap-3 overflow-x-auto pb-1">
+                    ) : (
+                      <div className="space-y-3">
                         {educationExplorerLessons.map((lesson) => {
                           const lessonDayIndex = Number(lesson?.day_index || 0);
                           const lessonTitle = normalizeLessonHeading(
@@ -2560,32 +2447,200 @@ export default function AssessmentChatBox({
                             <button
                               key={`explore-${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
                               type="button"
-                              onClick={() => setSelectedEducationLessonDayIndex(lessonDayIndex || null)}
-                              className="flex w-[15.75rem] shrink-0 flex-col rounded-[26px] px-4 py-12 text-left transition sm:w-[17.5rem] sm:py-14"
-                              style={{
-                                backgroundColor: "#d3541b",
-                                color: "#ffffff",
+                              onClick={() => {
+                                setSelectedEducationLessonDayIndex(lessonDayIndex || null);
+                                setEducationExplorerOpen(false);
+                                if (typeof window !== "undefined") {
+                                  window.dispatchEvent(
+                                    new CustomEvent("healthsense-education-start-lesson", {
+                                      detail: {
+                                        lesson_day_index: lessonDayIndex || null,
+                                        lesson_title: lessonTitle || null,
+                                        pillar_key: String(lesson?.pillar_key || "").trim() || null,
+                                      },
+                                    }),
+                                  );
+                                }
                               }}
+                              className="flex w-full flex-col rounded-[28px] border border-[#e7e1d6] px-5 py-5 text-left transition"
+                              style={{ backgroundColor: "#d6ab81" }}
                             >
-                              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
+                              <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#201813]/80">
                                 {String(lesson?.pillar_label || "").trim() || "Lesson"}
                               </span>
-                              <span className="mt-2 block text-sm font-semibold text-white">
+                              <span className="mt-3 block text-[1.55rem] font-semibold leading-[1.02] tracking-[-0.02em] text-[#18110d]">
                                 {lessonTitle || "Untitled lesson"}
                               </span>
                               {lessonDescription ? (
-                                <span className="mt-3 block text-sm leading-6 text-white/85">
+                                <span className="mt-4 block text-sm leading-7 text-[#3c332b]">
                                   {lessonDescription}
                                 </span>
                               ) : null}
+                              <span className="mt-5 inline-flex w-fit rounded-full bg-[#18110d] px-5 py-3 text-sm font-semibold text-white">
+                                Start lesson
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="flex min-h-full flex-col">
+                  {selectedEducationLesson ? (() => {
+                    const lesson = selectedEducationLesson;
+                    const lessonDayIndex = Number(lesson?.day_index || 0);
+                    const lessonTitle = normalizeLessonHeading(
+                      lesson?.title || lesson?.concept_label || lesson?.pillar_label || "",
+                    );
+                    const lessonDescription = String(lesson?.goal || lesson?.summary || "").trim();
+                    const posterUrl = selectedEducationLessonPosterUrl;
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedEducationLessonDayIndex(lessonDayIndex || null);
+                          if (typeof window !== "undefined") {
+                            window.dispatchEvent(
+                              new CustomEvent("healthsense-education-lesson-selected", {
+                                detail: {
+                                  lesson_day_index: lessonDayIndex || null,
+                                  lesson_title: lessonTitle || null,
+                                  pillar_key: String(lesson?.pillar_key || "").trim() || null,
+                                },
+                              }),
+                            );
+                            window.dispatchEvent(
+                              new CustomEvent("healthsense-education-start-lesson", {
+                                detail: {
+                                  lesson_day_index: lessonDayIndex || null,
+                                  lesson_title: lessonTitle || null,
+                                  pillar_key: String(lesson?.pillar_key || "").trim() || null,
+                                },
+                              }),
+                            );
+                          }
+                        }}
+                        className="relative mx-auto flex w-full max-w-[22rem] overflow-hidden rounded-[30px] border border-transparent text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition sm:max-w-[25rem]"
+                        style={{ backgroundColor: "#d6ab81", minHeight: "30rem" }}
+                      >
+                        <span className="relative z-10 flex min-h-[30rem] w-full flex-col justify-between p-5 sm:p-6">
+                          <span>
+                            <span className="block text-[11px] font-medium uppercase tracking-[0.16em] text-[#201813]/80">
+                              {String(lesson?.pillar_label || "").trim() || "Lesson"}
+                            </span>
+                            <span className="mt-4 block max-w-[12ch] text-[2.5rem] font-semibold leading-[0.95] tracking-[-0.02em] text-[#18110d] sm:max-w-[11ch] sm:text-[3rem]">
+                              {lessonTitle || "Untitled lesson"}
+                            </span>
+                            {lessonDescription ? (
+                              <span className="mt-4 block max-w-[18rem] text-[0.95rem] leading-7 text-[#3c332b]">
+                                {lessonDescription}
+                              </span>
+                            ) : null}
+                          </span>
+                          <span className="relative z-10 flex items-end justify-between gap-3">
+                            <span className="rounded-full bg-[#18110d] px-5 py-3 text-sm font-semibold text-white">
+                              Start lesson
+                            </span>
+                            <span className="rounded-full bg-[#f5efe5] px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-[#3c332b]">
+                              {String(lesson?.day_index || 0).padStart(2, "0")}
+                            </span>
+                          </span>
+                        </span>
+                        {posterUrl ? (
+                          <img
+                            src={posterUrl}
+                            alt=""
+                            className="pointer-events-none absolute bottom-0 left-0 h-[66%] w-[72%] object-contain object-left-bottom"
+                          />
+                        ) : (
+                          <span className="pointer-events-none absolute bottom-0 left-0 h-[64%] w-[70%]">
+                            <span className="absolute bottom-0 left-0 h-[72%] w-[78%] rounded-tr-[2rem] bg-[rgba(255,255,255,0.18)]" />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })() : null}
+                  <div className="mt-6 flex flex-1 items-start justify-center">
+                    <div className="w-full overflow-x-auto px-4 pb-2">
+                      <div className="flex justify-start gap-3 py-1 pr-4">
+                        {educationLessonRail.map((lesson) => {
+                          const palette = getPillarPalette(lesson?.pillar_key);
+                          const lessonDayIndex = Number(lesson?.day_index || 0);
+                          const isSelected = lessonDayIndex === Number(selectedEducationLessonDayIndex || 0);
+                          const lessonTitle = normalizeLessonHeading(
+                            lesson?.title || lesson?.concept_label || lesson?.pillar_label || "",
+                          );
+                          const lessonDescription = String(lesson?.goal || lesson?.summary || "").trim();
+                          return (
+                            <button
+                              key={`${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
+                              type="button"
+                              onClick={() => {
+                                setSelectedEducationLessonDayIndex(lessonDayIndex || null);
+                                if (typeof window !== "undefined") {
+                                  window.dispatchEvent(
+                                    new CustomEvent("healthsense-education-lesson-selected", {
+                                      detail: {
+                                        lesson_day_index: lessonDayIndex || null,
+                                        lesson_title: lessonTitle || null,
+                                        pillar_key: String(lesson?.pillar_key || "").trim() || null,
+                                      },
+                                    }),
+                                  );
+                                  window.dispatchEvent(
+                                    new CustomEvent("healthsense-education-start-lesson", {
+                                      detail: {
+                                        lesson_day_index: lessonDayIndex || null,
+                                        lesson_title: lessonTitle || null,
+                                        pillar_key: String(lesson?.pillar_key || "").trim() || null,
+                                      },
+                                    }),
+                                  );
+                                }
+                              }}
+                              className="flex w-[11.5rem] shrink-0 flex-col justify-between overflow-hidden rounded-[26px] px-4 py-4 text-left transition sm:w-[13rem] sm:py-5"
+                              style={{
+                                backgroundColor: "#d6ab81",
+                                boxShadow: isSelected
+                                  ? "0 0 0 1px rgba(0,0,0,0.08) inset"
+                                  : "none",
+                              }}
+                            >
+                              <span>
+                                <span className="block text-[10px] font-medium uppercase tracking-[0.14em] text-[#201813]/80">
+                                  {String(lesson?.pillar_label || palette.label || "").trim() || "Lesson"}
+                                </span>
+                                <span className="mt-2 block text-[1.4rem] font-semibold leading-[1.0] tracking-[-0.02em] text-[#18110d]">
+                                  {lessonTitle || "Untitled lesson"}
+                                </span>
+                              </span>
+                              <span className="mt-4 block text-sm leading-6 text-[#3c332b]">
+                                {lessonDescription || "Tap to select."}
+                              </span>
                             </button>
                           );
                         })}
                       </div>
                     </div>
                   </div>
-                ) : null}
-              </div>
+                  <div className="mt-16 pb-2 sm:mt-20">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEducationExplorerOpen(true);
+                        setEducationExplorerMode("pillars");
+                        setEducationExplorerPillarKey(educationExplorerPillars[0]?.pillar_key || null);
+                      }}
+                      className="mx-auto block w-[min(100%,17rem)] rounded-full border px-4 py-3 text-sm font-semibold transition"
+                      style={{ backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" }}
+                    >
+                      Explore topics
+                    </button>
+                  </div>
+                </div>
+              )
             ) : (
               <div className="flex min-h-full items-center rounded-[24px] bg-[#fcf8f0] px-4 py-5">
                 <p className="text-sm text-[#6b6257]">
