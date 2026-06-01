@@ -2464,19 +2464,19 @@ export default function AssessmentChatBox({
                                     );
                                   }
                                 }}
-                                className="relative flex w-[18rem] shrink-0 overflow-hidden rounded-[30px] border border-transparent text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition sm:w-[20rem]"
-                                style={{ backgroundColor: "#d6ab81", minHeight: "24rem" }}
+                                className="relative flex w-[22rem] shrink-0 overflow-hidden rounded-[30px] border border-transparent text-left shadow-[0_18px_50px_-42px_rgba(30,27,22,0.45)] transition sm:w-[25rem]"
+                                style={{ backgroundColor: "#d6ab81", minHeight: "30rem" }}
                               >
-                                <span className="relative z-10 flex min-h-[24rem] w-full flex-col justify-between p-5 sm:p-6">
+                                <span className="relative z-10 flex min-h-[30rem] w-full flex-col justify-between p-5 sm:p-6">
                                   <span>
                                     <span className="block text-[11px] font-medium uppercase tracking-[0.16em] text-[#201813]/80">
                                       {String(lesson?.pillar_label || "").trim() || "Lesson"}
                                     </span>
-                                    <span className="mt-4 block max-w-[12ch] text-[2.35rem] font-semibold leading-[0.95] tracking-[-0.02em] text-[#18110d] sm:text-[2.7rem]">
+                                    <span className="mt-4 block max-w-[12ch] text-[2.5rem] font-semibold leading-[0.95] tracking-[-0.02em] text-[#18110d] sm:max-w-[11ch] sm:text-[3rem]">
                                       {lessonTitle || "Untitled lesson"}
                                     </span>
                                     {lessonDescription ? (
-                                      <span className="mt-4 block max-w-[16rem] text-[0.95rem] leading-7 text-[#3c332b]">
+                                      <span className="mt-4 block max-w-[18rem] text-[0.95rem] leading-7 text-[#3c332b]">
                                         {lessonDescription}
                                       </span>
                                     ) : null}
@@ -2494,10 +2494,10 @@ export default function AssessmentChatBox({
                                   <img
                                     src={posterUrl}
                                     alt=""
-                                    className="pointer-events-none absolute bottom-0 left-0 h-[64%] w-[70%] object-contain object-left-bottom"
+                                    className="pointer-events-none absolute bottom-0 left-0 h-[66%] w-[72%] object-contain object-left-bottom"
                                   />
                                 ) : (
-                                  <span className="pointer-events-none absolute bottom-0 left-0 h-[62%] w-[68%]">
+                                  <span className="pointer-events-none absolute bottom-0 left-0 h-[64%] w-[70%]">
                                     <span className="absolute bottom-0 left-0 h-[72%] w-[78%] rounded-tr-[2rem] bg-[rgba(255,255,255,0.18)]" />
                                   </span>
                                 )}
