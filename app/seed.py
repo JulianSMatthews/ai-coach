@@ -1859,7 +1859,7 @@ def upsert_messaging_defaults(session: Session) -> int:
     return created
 
 
-_EDUCATION_DAY_RE = re.compile(r"^\s*DAY\s+(\d+)\s*[-–]\s*(.+?)\s*$", re.IGNORECASE)
+_EDUCATION_LESSON_RE = re.compile(r"^\s*(?:LESSON|DAY)\s+(\d+)\s*[-–]\s*(.+?)\s*$", re.IGNORECASE)
 _EDUCATION_QUESTION_RE = re.compile(r"^\s*(\d+)[.)]\s*(.+?)\s*$")
 _EDUCATION_OPTION_RE = re.compile(r"^\s*([A-D])[.)]\s*(.+?)\s*$", re.IGNORECASE)
 _EDUCATION_SECTION_LABELS = {
@@ -1972,13 +1972,13 @@ def parse_education_programme_docx(path: str) -> dict[str, Any]:
         line = str(raw_line or "").strip()
         if not line or set(line) <= {"-"}:
             continue
-        day_match = _EDUCATION_DAY_RE.match(line)
-        if day_match:
+        lesson_match = _EDUCATION_LESSON_RE.match(line)
+        if lesson_match:
             flush_day()
             current_section = None
             current_day = {
-                "day_index": int(day_match.group(1)),
-                "title": str(day_match.group(2) or "").strip(),
+                "day_index": int(lesson_match.group(1)),
+                "title": str(lesson_match.group(2) or "").strip(),
                 "summary": "",
                 "questions": [],
                 "_script_lines": [],
