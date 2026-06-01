@@ -8189,6 +8189,8 @@ def api_user_status_v1(
             "voice": pref_map.get("tts_voice_pref", ""),
             "text_scale": pref_map.get("text_scale", ""),
             "theme": pref_map.get("theme", "system"),
+            "home_pillar_nutrition": pref_map.get("home_pillar_nutrition", "off"),
+            "home_pillar_training": pref_map.get("home_pillar_training", "off"),
             "training_objective": training_objective.objective if training_objective else "",
             "preferred_channel": pref_map.get("preferred_channel", "app"),
             "marketing_opt_in": pref_map.get("marketing_opt_in", ""),
@@ -8421,6 +8423,28 @@ def api_user_preferences_update(
             else:
                 if pref:
                     s.delete(pref)
+
+        home_pillar_nutrition = payload.get("home_pillar_nutrition") if isinstance(payload, dict) else None
+        if home_pillar_nutrition is not None:
+            nutrition_val = str(home_pillar_nutrition).strip().lower()
+            if nutrition_val in {"1", "true", "yes", "on"}:
+                nutrition_val = "on"
+            elif nutrition_val in {"0", "false", "no", "off", ""}:
+                nutrition_val = "off"
+            else:
+                raise HTTPException(status_code=400, detail="home_pillar_nutrition must be on|off")
+            _set_pref_value(s, user_id, "home_pillar_nutrition", nutrition_val)
+
+        home_pillar_training = payload.get("home_pillar_training") if isinstance(payload, dict) else None
+        if home_pillar_training is not None:
+            training_val = str(home_pillar_training).strip().lower()
+            if training_val in {"1", "true", "yes", "on"}:
+                training_val = "on"
+            elif training_val in {"0", "false", "no", "off", ""}:
+                training_val = "off"
+            else:
+                raise HTTPException(status_code=400, detail="home_pillar_training must be on|off")
+            _set_pref_value(s, user_id, "home_pillar_training", training_val)
 
         training_objective = payload.get("training_objective") if isinstance(payload, dict) else None
         if training_objective is not None:
