@@ -220,12 +220,6 @@ function firstSearchValue(value: string | string[] | undefined): string {
   return String(Array.isArray(value) ? value[0] : value || "").trim();
 }
 
-function isTruthyToken(value: string | string[] | undefined): boolean {
-  const raw = Array.isArray(value) ? value[0] : value;
-  const token = String(raw || "").trim().toLowerCase();
-  return token === "1" || token === "true" || token === "yes" || token === "on";
-}
-
 function resolveIntroAvatarOverride(value: string | string[] | undefined): boolean | null {
   const token = firstSearchValue(value).toLowerCase();
   if (!token) return null;
