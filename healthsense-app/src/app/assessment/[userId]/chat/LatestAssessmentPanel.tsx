@@ -2701,7 +2701,8 @@ export default function LatestAssessmentPanel({
         window.dispatchEvent(
           new CustomEvent("healthsense-home-surface", {
             detail: {
-              surface: "habits",
+              surface: "tracking",
+              complete: true,
             },
           }),
         );
@@ -2772,7 +2773,8 @@ export default function LatestAssessmentPanel({
         window.dispatchEvent(
           new CustomEvent("healthsense-home-surface", {
             detail: {
-              surface: "habits",
+              surface: "tracking",
+              complete: true,
             },
           }),
         );

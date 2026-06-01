@@ -1472,7 +1472,7 @@ export default function AssessmentChatBox({
   useEffect(() => {
     if (!showGuidedHomeChatPanel) {
       stopFinalGiaListening();
-      setHomeSurface("insight");
+      setHomeSurface("tracking");
       setHomeSurfaceEntryMode("guided");
     }
   }, [showGuidedHomeChatPanel, stopFinalGiaListening, userId]);
@@ -1583,17 +1583,17 @@ export default function AssessmentChatBox({
   useEffect(() => {
     if (typeof window === "undefined") return;
     const onSurfaceChange = (event: Event) => {
-      const detail = (event as CustomEvent<{ surface?: string; source?: string }>).detail;
+      const detail = (event as CustomEvent<{ surface?: string; source?: string; complete?: boolean }>).detail;
       const surface = String(detail?.surface || "").trim().toLowerCase();
       const source = String(detail?.source || "").trim().toLowerCase();
       const entryMode: HomeSurfaceEntryMode = source === "summary" ? "summary" : "guided";
       if (entryMode === "guided") {
-        writeMorningSequenceState(userId, morningSequenceDay, "in_progress");
+        writeMorningSequenceState(userId, morningSequenceDay, detail?.complete ? "completed" : "in_progress");
       }
-      setJourneyCompleted(false);
+      setJourneyCompleted(Boolean(detail?.complete));
       if (surface === "tracking") {
         setHomeSurfaceEntryMode(entryMode);
-        setHomeSurface("insight");
+        setHomeSurface("tracking");
         return;
       }
       if (surface === "insight") {
@@ -1729,7 +1729,6 @@ export default function AssessmentChatBox({
       writeMorningSequenceState(userId, morningSequenceDay, "in_progress");
       setJourneyCompleted(false);
       if (showGuidedHomeChatPanel) {
-        void loadDailyHabitPlan();
         void refreshChatState().catch(() => undefined);
       }
     };
