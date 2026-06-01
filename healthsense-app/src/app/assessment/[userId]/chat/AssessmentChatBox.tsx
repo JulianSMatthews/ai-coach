@@ -1,6 +1,5 @@
 "use client";
 
-import Image from "next/image";
 import { useSearchParams } from "next/navigation";
 import { FormEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
@@ -2308,8 +2307,9 @@ export default function AssessmentChatBox({
           ) : educationPlan?.available ? (
               <div className="flex min-h-full flex-col gap-4">
                 {educationLessonRail.length ? (
-                  <div className="-mx-4 overflow-x-auto px-4 pb-1">
-                    <div className="flex gap-3 pr-4">
+                  <div className="flex flex-1 items-center">
+                    <div className="-mx-4 w-full overflow-x-auto px-4 pb-1">
+                      <div className="flex justify-center gap-3 pr-4">
                       {educationLessonRail.map((lesson) => {
                       const palette = getPillarPalette(lesson?.pillar_key);
                       const lessonDayIndex = Number(lesson?.day_index || 0);
@@ -2323,27 +2323,22 @@ export default function AssessmentChatBox({
                           key={`${String(lesson?.programme_day_id || lessonDayIndex || lessonTitle || "")}`}
                           type="button"
                           onClick={() => setSelectedEducationLessonDayIndex(lessonDayIndex || null)}
-                          className="flex w-[17rem] shrink-0 items-start gap-3 rounded-[22px] border px-3 py-3 text-left transition sm:w-[18.5rem]"
+                          className="flex w-[19rem] shrink-0 items-start gap-3 rounded-[22px] border px-4 py-4 text-left transition sm:w-[22rem]"
                           style={{
-                            backgroundColor: "var(--accent-soft)",
+                            backgroundColor: "#d3541b",
                             borderColor: isSelected ? "var(--accent)" : "var(--border-strong)",
                             boxShadow: isSelected ? "0 0 0 1px var(--accent) inset" : "none",
                           }}
                         >
-                          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-[var(--chrome)]">
-                            {palette.icon ? (
-                              <Image src={palette.icon} alt="" width={22} height={22} className="h-5 w-5 object-contain" />
-                            ) : null}
-                          </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-tertiary)]">
+                            <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-white/80">
                               {String(lesson?.pillar_label || palette.label || "").trim() || "Lesson"}
                             </span>
-                            <span className="mt-1 block text-sm font-semibold text-[var(--text-primary)]">
+                            <span className="mt-1 block text-sm font-semibold text-white">
                               {lessonTitle || "Untitled lesson"}
                             </span>
                             {lessonDescription ? (
-                              <span className="mt-1 block text-sm leading-6 text-[var(--text-secondary)]">
+                              <span className="mt-2 block text-sm leading-6 text-white/85">
                                 {lessonDescription}
                               </span>
                             ) : null}
@@ -2351,6 +2346,7 @@ export default function AssessmentChatBox({
                         </button>
                       );
                       })}
+                      </div>
                     </div>
                   </div>
                 ) : null}
@@ -2369,7 +2365,7 @@ export default function AssessmentChatBox({
                     }
                   }}
                   className="w-full rounded-full border px-4 py-3 text-sm font-semibold transition"
-                  style={homePlainButtonStyle}
+                  style={{ backgroundColor: "#ffffff", color: "#000000", borderColor: "#e7e1d6" }}
                 >
                   Explore topics
                 </button>
