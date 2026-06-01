@@ -2427,7 +2427,7 @@ export default function AssessmentChatBox({
                               </span>
                               <span
                                 className="ml-4 flex h-16 w-16 shrink-0 items-center justify-center rounded-full text-2xl font-semibold"
-                                style={{ backgroundColor: palette.surface, color: "#1e1b16" }}
+                                style={{ backgroundColor: palette.bg, color: "#1e1b16" }}
                               >
                                 {pillar.lesson_count}
                               </span>
